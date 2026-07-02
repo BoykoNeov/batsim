@@ -190,3 +190,37 @@ fn parallel_reduces_pack_resistance_vs_single_cell() {
     assert!((sag1 - i * R0).abs() < 1e-6);
     assert!((sag2 - i * R0 / 2.0).abs() < 1e-6);
 }
+
+#[test]
+fn voltage_and_power_demands_solve_on_pack_aggregate() {
+    // The Voltage/Power demands are solved against the *aggregated* pack Thévenin,
+    // which above 1S1P is new Phase-1 surface. Verify on a uniform 2S2P from rest,
+    // where the aggregate is closed-form: two series groups each of two parallel
+    // cells give E_pack = 2·v0 and R_pack = series·(R0/parallel) = 2·(R0/2) = R0.
+    let v0 = 3.30;
+    let e_pack = 2.0 * v0;
+    let r_pack = R0; // 2·(R0/2)
+
+    // Voltage demand: i_g = (E_pack − v_target)/R_pack, exact (solved at start).
+    let mut pv = Pack::new(&config(2, 2, 0.5), flat_chem(v0)).unwrap();
+    let v_target = 6.0; // below E_pack = 6.6, so a discharge
+    let tele = pv.step(1e-6, Demand::Voltage(v_target), &env());
+    let expected_i = (e_pack - v_target) / r_pack;
+    assert!(
+        (tele.i_actual - expected_i).abs() < 1e-9,
+        "voltage: got {}, expected {expected_i}",
+        tele.i_actual
+    );
+    assert!(tele.i_actual > 0.0);
+
+    // Power demand: the solved operating point must satisfy V·I = P. With a tiny dt
+    // the end-of-step terminal voltage ≈ the start-of-step solve, so V·I ≈ P.
+    let mut pp = Pack::new(&config(2, 2, 0.5), flat_chem(v0)).unwrap();
+    let p_target = 50.0; // well under P_max = E_pack²/(4·R_pack) ≈ 544 W
+    let tele = pp.step(1e-6, Demand::Power(p_target), &env());
+    assert!(
+        (tele.v_terminal * tele.i_actual - p_target).abs() < 1e-5,
+        "power: V·I = {} W, expected {p_target}",
+        tele.v_terminal * tele.i_actual
+    );
+}

@@ -29,7 +29,15 @@ use crate::{Demand, Env, Telemetry};
 
 /// Current snapshot schema version. Bumped whenever [`Pack`]'s serialized layout
 /// changes (see `CLAUDE.md`).
-pub const SNAPSHOT_VERSION: u32 = 1;
+///
+/// v2 (Phase 1): the single `cell: CellModel` became `groups: Vec<ParallelGroup>`
+/// of per-cell `Cell`s, and config gained `scatter`. No migration ships because
+/// Phase 0 had no `snapshot()` method, so no v1 snapshots can exist. Note that
+/// under a self-describing-by-order format like bincode a *structural* change is
+/// caught at deserialization before [`Pack::restore`]'s version check runs; the
+/// version field's job is to guard future *semantic* changes to an unchanged
+/// layout.
+pub const SNAPSHOT_VERSION: u32 = 2;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
