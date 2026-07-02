@@ -25,7 +25,10 @@ pub mod pack;
 pub use chem::{ChemistryError, ChemistryParams};
 pub use ecm::{CellModel, EcmState};
 pub use flags::EventFlags;
-pub use pack::{BuildError, CellIndexError, CellView, Pack, PackConfig, Scatter, SNAPSHOT_VERSION};
+pub use pack::{
+    BuildError, CellIndexError, CellView, Pack, PackConfig, RestoreError, Scatter, Snapshot,
+    SNAPSHOT_VERSION,
+};
 
 /// What the outside world asks of the pack this step.
 #[derive(Clone, Copy, Debug, PartialEq)]

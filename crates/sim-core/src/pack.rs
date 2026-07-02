@@ -99,6 +99,34 @@ pub enum BuildError {
     Chemistry(#[from] crate::chem::ChemistryError),
 }
 
+/// Reasons [`Pack::restore`] can reject a [`Snapshot`].
+#[derive(Debug, Error, PartialEq)]
+pub enum RestoreError {
+    /// The snapshot's schema version is not the one this build understands.
+    #[error("snapshot schema version {found} is unsupported (this build expects {expected})")]
+    VersionMismatch {
+        /// Version recorded in the snapshot.
+        found: u32,
+        /// Version this build produces/consumes.
+        expected: u32,
+    },
+}
+
+/// A serializable capture of the entire engine state.
+///
+/// Per the design contract the whole engine is one serde value with a schema
+/// `version`; this newtype is that value plus a top-level version tag so an adapter
+/// can gate on it. Round-tripping a `Snapshot` through any serde format and calling
+/// [`Pack::restore`] reproduces the original trajectory exactly (see the replay
+/// test). The inner state is private; construct one via [`Pack::snapshot`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Snapshot {
+    /// Schema version of the captured state (mirrors the pack's own `version`).
+    pub version: u32,
+    /// The full ground-truth pack state.
+    pack: Pack,
+}
+
 /// A `(series, parallel)` cell index was out of range for the pack's topology.
 #[derive(Debug, Error, PartialEq)]
 #[error("cell index {s}S{p}P is out of range for a {series}S{parallel}P pack")]
@@ -239,6 +267,31 @@ impl Pack {
     #[must_use]
     pub fn sim_time_s(&self) -> f64 {
         self.sim_time_s
+    }
+
+    /// Capture the entire engine state as a versioned, serializable [`Snapshot`].
+    #[must_use]
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            version: self.version,
+            pack: self.clone(),
+        }
+    }
+
+    /// Rebuild a pack from a [`Snapshot`]. Continuing from the result reproduces the
+    /// original trajectory exactly.
+    ///
+    /// # Errors
+    /// Returns [`RestoreError::VersionMismatch`] if the snapshot's schema version is
+    /// not the one this build understands.
+    pub fn restore(snapshot: &Snapshot) -> Result<Self, RestoreError> {
+        if snapshot.version != SNAPSHOT_VERSION {
+            return Err(RestoreError::VersionMismatch {
+                found: snapshot.version,
+                expected: SNAPSHOT_VERSION,
+            });
+        }
+        Ok(snapshot.pack.clone())
     }
 
     /// Ground-truth view of the cell at series position `s`, parallel position `p`

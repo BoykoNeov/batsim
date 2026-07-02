@@ -14,3 +14,8 @@ rand_chacha = { workspace = true }
 rand_core = { workspace = true }
 bitflags = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+# Byte-exact serde format for the snapshot bit-identical replay test. Dev-only:
+# the engine never depends on a concrete serialization format (adapters choose).
+bincode = "1.3"
