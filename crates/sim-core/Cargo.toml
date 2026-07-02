@@ -19,3 +19,5 @@ thiserror = { workspace = true }
 # Byte-exact serde format for the snapshot bit-identical replay test. Dev-only:
 # the engine never depends on a concrete serialization format (adapters choose).
 bincode = "1.3"
+# Property-based testing of the invariants (charge conservation, SOC bounds, …).
+proptest = "1"
