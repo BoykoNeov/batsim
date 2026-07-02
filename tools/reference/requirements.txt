@@ -1,0 +1,11 @@
+# PyBaMM golden-reference pipeline dependencies (NOT part of the Rust build/CI).
+#
+# Pinned to the versions the committed CSVs under tests/golden/ were generated
+# with, so a regenerated golden is reproducible. Install into an isolated venv:
+#
+#   uv venv --python 3.11 .venv
+#   uv pip install -r tools/reference/requirements.txt
+#
+# (Python 3.11 chosen for the widest PyBaMM wheel coverage; 3.12/3.13 also work.
+# The default CasADi solver ships in the wheel — no SUNDIALS/IDAKLU build needed.)
+pybamm==26.6.2.0

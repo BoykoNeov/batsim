@@ -10,7 +10,9 @@ fn lfp_chemistry_loads_and_validates() {
 
     assert_eq!(chem.meta.id, "lfp_26650_generic");
     assert_eq!(chem.n_rc(), 1);
-    assert!((chem.cell.capacity_ah - 2.5).abs() < 1e-12);
+    // Usable capacity between the Prada2013 stoichiometry limits (see the golden
+    // pipeline in tools/reference); fitted, not the old datasheet-round 2.5 Ah.
+    assert!((chem.cell.capacity_ah - 2.303451).abs() < 1e-6);
     // OCV table is monotone and spans the usable range.
     assert_eq!(chem.ocv.soc.len(), chem.ocv.volts.len());
 }

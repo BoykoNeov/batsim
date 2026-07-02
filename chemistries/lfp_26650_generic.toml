@@ -9,23 +9,31 @@
 [meta]
 id         = "lfp_26650_generic"
 name       = "Generic LFP 26650"
-provenance = "OCV/R0 shape hand-fit to typical LFP 26650 datasheets; RC and remaining values are order-of-magnitude placeholders (TODO: fit against PyBaMM Prada2013)."
+provenance = "OCV and capacity fitted to PyBaMM Prada2013 (LFP) via tools/reference/fit_ocv.py; R0, RC, and the aging/safety sections remain order-of-magnitude placeholders (TODO: fit)."
 
 [cell]
-capacity_ah     = 2.5      # provenance: nominal for a 26650 LFP cell (datasheet class)
-v_max           = 3.65     # provenance: standard LFP charge cutoff
-v_min           = 2.00     # provenance: standard LFP discharge cutoff
+# provenance: usable capacity between the Prada2013 stoichiometry limits
+# (Q_n*(x_max-x_min)), computed by tools/reference/fit_ocv.py. Setting this to the
+# reference's usable capacity makes batsim's coulomb-counted SOC track PyBaMM's
+# stoichiometry SOC under constant current, which is what the golden CC test relies on.
+capacity_ah     = 2.303451
+v_max           = 3.65     # provenance: standard LFP charge cutoff (protection limit; Prada2013 OCV tops out at 3.60 V)
+v_min           = 2.00     # provenance: standard LFP discharge cutoff (matches Prada2013 lower cut-off)
 max_charge_c    = 1.0      # provenance: typical LFP continuous charge rating
 max_discharge_c = 3.0      # provenance: typical LFP continuous discharge rating
 t_charge_min_k  = 273.15   # provenance: charge inhibit below 0 degC (Li plating guard)
 t_max_k         = 333.15   # provenance: 60 degC operating ceiling (datasheet class)
 
-# Monotone OCV(soc); linear interpolation, clamped at the ends.
-# provenance: representative LFP open-circuit curve — flat mid-range plateau,
-# steep knees near the ends — hand-fit to datasheet discharge curves.
+# Monotone OCV(soc); linear interpolation, clamped at the ends. SOC here is the
+# stoichiometry-window state of charge (1 = fully charged). Grid is dense at the
+# steep, convex knees and coarse across the flat plateau.
+# provenance: thermodynamic cell OCV = U_p(y(soc)) - U_n(x(soc)) of the PyBaMM
+# Prada2013 parameter set, emitted by tools/reference/fit_ocv.py (pybamm 26.6.2.0).
+# Max piecewise-linear representation error vs the continuous OCV ~25 mV, confined
+# to the sub-1% bottom knee; a few mV across the plateau.
 [ocv]
-soc   = [0.00, 0.02, 0.05, 0.10, 0.20, 0.40, 0.60, 0.80, 0.90, 0.98, 1.00]
-volts = [2.00, 2.90, 3.15, 3.20, 3.26, 3.29, 3.31, 3.33, 3.34, 3.42, 3.60]
+soc   = [0.0000, 0.0025, 0.0050, 0.0075, 0.0100, 0.0125, 0.0150, 0.0175, 0.0200, 0.0300, 0.0400, 0.0500, 0.1000, 0.1500, 0.2500, 0.3500, 0.4500, 0.5500, 0.6500, 0.7500, 0.8500, 0.9000, 0.9500, 0.9600, 0.9700, 0.9800, 0.9825, 0.9850, 0.9875, 0.9900, 0.9925, 0.9950, 0.9975, 1.0000]
+volts = [2.0000, 2.0743, 2.1430, 2.2066, 2.2655, 2.3199, 2.3703, 2.4169, 2.4600, 2.6028, 2.7077, 2.7853, 2.9781, 3.1080, 3.1857, 3.2324, 3.2621, 3.2678, 3.2700, 3.2926, 3.3132, 3.3142, 3.3164, 3.3193, 3.3274, 3.3502, 3.3607, 3.3743, 3.3920, 3.4150, 3.4449, 3.4838, 3.5343, 3.6000]
 
 # Ohmic resistance R0[soc][temp_k], ohms. Bilinear interpolation, clamped.
 # provenance: order-of-magnitude placeholder — a few tens of milliohms, rising at

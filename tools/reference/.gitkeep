@@ -1,2 +1,0 @@
-# Python + PyBaMM scripts that GENERATE golden CSVs. Never in the Rust build or CI
-# path. See CLAUDE.md "Testing strategy". Regenerate with: python tools/reference/generate.py
