@@ -15,7 +15,7 @@
 //! A dt-invariance check confirms the exact update is stable/consistent at any dt.
 
 use sim_core::chem::{CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair};
-use sim_core::ecm::ocv_lookup;
+use sim_core::ecm::{ocv_lookup, r0_lookup};
 use sim_core::{Demand, Env, Pack, PackConfig};
 
 const R0: f64 = 0.02; // ohms
@@ -140,7 +140,10 @@ fn linear_ocv_segment_cc_discharge_matches_closed_form() {
         let tele = pack.step(dt, Demand::Current(i), &env());
         let t = pack.sim_time_s();
         let soc_t = soc0 - i * t / cap_as;
-        let expected = v_analytic(ocv_lookup(&ocv, soc_t), i, t);
+        // Inline the linear-segment OCV so `expected` does not depend on the
+        // function under test: OCV = 3.20 + (soc − 0.2)/(0.8 − 0.2)·(3.40 − 3.20).
+        let ocv_at_t = 3.20 + (soc_t - 0.2) / 0.6 * 0.20;
+        let expected = v_analytic(ocv_at_t, i, t);
         assert!(
             (tele.v_terminal - expected).abs() < 1e-9,
             "t={t}: got {}, expected {expected}",
@@ -218,6 +221,48 @@ fn dt_invariance_to_matching_sim_time() {
         coarse_last.v_terminal,
         fine_last.v_terminal
     );
+}
+
+#[test]
+fn ocv_lookup_interpolates_and_clamps() {
+    let table = OcvTable {
+        soc: vec![0.0, 0.5, 1.0],
+        volts: vec![3.0, 3.5, 3.6],
+    };
+    // Interior of the first segment: 3.0 + 0.5·(3.5 − 3.0) = 3.25.
+    assert!((ocv_lookup(&table, 0.25) - 3.25).abs() < 1e-12);
+    // Interior of the second segment: 3.5 + 0.5·(3.6 − 3.5) = 3.55.
+    assert!((ocv_lookup(&table, 0.75) - 3.55).abs() < 1e-12);
+    // Exact breakpoint.
+    assert!((ocv_lookup(&table, 0.5) - 3.5).abs() < 1e-12);
+    // Clamped below/above the table ends.
+    assert!((ocv_lookup(&table, -0.1) - 3.0).abs() < 1e-12);
+    assert!((ocv_lookup(&table, 1.5) - 3.6).abs() < 1e-12);
+}
+
+#[test]
+fn r0_lookup_bilinear_and_axis_orientation() {
+    // ohms[soc_idx][temp_idx]: corners are (soc=0,T=280)=0.05, (0,320)=0.03,
+    // (1,280)=0.04, (1,320)=0.02.
+    let table = R0Table {
+        soc: vec![0.0, 1.0],
+        temp_k: vec![280.0, 320.0],
+        ohms: vec![vec![0.05, 0.03], vec![0.04, 0.02]],
+    };
+    // Corners pin the axis orientation (a transposed grid would fail these).
+    assert!((r0_lookup(&table, 0.0, 280.0) - 0.05).abs() < 1e-12);
+    assert!((r0_lookup(&table, 0.0, 320.0) - 0.03).abs() < 1e-12);
+    assert!((r0_lookup(&table, 1.0, 280.0) - 0.04).abs() < 1e-12);
+    assert!((r0_lookup(&table, 1.0, 320.0) - 0.02).abs() < 1e-12);
+    // Center of the grid, bilinear:
+    //   T=300 in soc=0 row: 0.05 + 0.5·(0.03 − 0.05) = 0.04
+    //   T=300 in soc=1 row: 0.04 + 0.5·(0.02 − 0.04) = 0.03
+    //   soc=0.5 across rows: 0.04 + 0.5·(0.03 − 0.04) = 0.035
+    assert!((r0_lookup(&table, 0.5, 300.0) - 0.035).abs() < 1e-12);
+    // Interpolate along one axis only (soc clamped low): temp midpoint of row 0.
+    assert!((r0_lookup(&table, 0.0, 300.0) - 0.04).abs() < 1e-12);
+    // Clamp on both axes to a corner.
+    assert!((r0_lookup(&table, -0.5, 260.0) - 0.05).abs() < 1e-12);
 }
 
 #[test]
