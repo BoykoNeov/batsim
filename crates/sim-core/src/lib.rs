@@ -17,6 +17,16 @@
 
 #![forbid(unsafe_code)]
 
+pub mod chem;
+pub mod ecm;
+pub mod flags;
+pub mod pack;
+
+pub use chem::{ChemistryError, ChemistryParams};
+pub use ecm::{CellModel, EcmState};
+pub use flags::EventFlags;
+pub use pack::{BuildError, Pack, PackConfig, SNAPSHOT_VERSION};
+
 /// What the outside world asks of the pack this step.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Demand {
@@ -63,4 +73,6 @@ pub struct Telemetry {
     pub soh_capacity: f64,
     /// Resistance growth factor, ≥ 1.
     pub soh_resistance: f64,
+    /// Events raised during this step (protection trips, clamps, safety states).
+    pub flags: EventFlags,
 }
