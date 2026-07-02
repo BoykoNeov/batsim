@@ -1,0 +1,2 @@
+# Chemistry parameter sets (*.toml) land here — LFP and NMC first (Phase 0 exit).
+# One file per chemistry; validated by sim-data. See CLAUDE.md for the schema.

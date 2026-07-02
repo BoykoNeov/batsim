@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sim-core",
+    "crates/sim-data",
+]
+
+# Adapter crates (sim-server, sim-wasm, sim-godot, sim-py) are added in their
+# respective phases — see CLAUDE.md "Phased build plan".
+
+[workspace.package]
+edition = "2021"
+# Boyko Non-Commercial License v1.0 (BNCL-1.0) — non-commercial use only; not an
+# OSI/SPDX license, so use license-file rather than the `license` SPDX field.
+license-file = "LICENSE"
+publish = false
+repository = "https://github.com/BoykoNeov/batsim"
+rust-version = "1.94"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+rand_chacha = { version = "0.3", features = ["serde1"] }
+rand_core = "0.6"
+bitflags = { version = "2", features = ["serde"] }
+thiserror = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1

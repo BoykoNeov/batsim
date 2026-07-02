@@ -1,0 +1,12 @@
+# Rust build output
+/target
+
+# Backup / editor files
+**/*.rs.bk
+*.pdb
+
+# Local scratch (repo tree must never hold temp artifacts — see CLAUDE.md)
+/scratch
+
+# Per-user Claude Code settings (keep local; shared config can be committed later)
+.claude/settings.local.json
