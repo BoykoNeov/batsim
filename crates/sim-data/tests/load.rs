@@ -15,6 +15,18 @@ fn lfp_chemistry_loads_and_validates() {
     assert_eq!(chem.ocv.soc.len(), chem.ocv.volts.len());
 }
 
+/// The shipped NMC chemistry must parse and pass validation (two RC pairs).
+#[test]
+fn nmc_chemistry_loads_and_validates() {
+    let text = include_str!("../../../chemistries/nmc_18650_generic.toml");
+    let chem = parse_chemistry(text).expect("NMC chemistry should load and validate");
+
+    assert_eq!(chem.meta.id, "nmc_18650_generic");
+    assert_eq!(chem.n_rc(), 2);
+    assert!((chem.cell.capacity_ah - 3.0).abs() < 1e-12);
+    assert_eq!(chem.ocv.soc.len(), chem.ocv.volts.len());
+}
+
 /// A non-monotone OCV table must be rejected by validation, not silently accepted.
 #[test]
 fn non_monotone_ocv_is_rejected() {

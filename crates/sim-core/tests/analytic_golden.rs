@@ -20,9 +20,12 @@ use sim_core::{Demand, Env, Pack, PackConfig};
 
 const R0: f64 = 0.02; // ohms
 const R1: f64 = 0.01; // ohms
-const C1: f64 = 2000.0; // farads  => tau = 20 s
+const C1: f64 = 2000.0; // farads  => tau1 = 20 s
+const R2: f64 = 0.006; // ohms
+const C2: f64 = 5000.0; // farads  => tau2 = 30 s
 const CAP_AH: f64 = 2.5; // Ah
 const TAU: f64 = R1 * C1;
+const TAU2: f64 = R2 * C2;
 
 fn env() -> Env {
     Env {
@@ -60,6 +63,23 @@ fn synthetic_chem(ocv: OcvTable) -> ChemistryParams {
             c_farad: C1,
         }],
     }
+}
+
+/// Build a synthetic two-RC-pair chemistry with a caller-supplied OCV table and
+/// flat R0. Reuses the same limits as [`synthetic_chem`].
+fn synthetic_chem_2rc(ocv: OcvTable) -> ChemistryParams {
+    let mut chem = synthetic_chem(ocv);
+    chem.rc = vec![
+        RcPair {
+            r_ohms: R1,
+            c_farad: C1,
+        },
+        RcPair {
+            r_ohms: R2,
+            c_farad: C2,
+        },
+    ];
+    chem
 }
 
 fn config(initial_soc: f64) -> PackConfig {
@@ -121,6 +141,33 @@ fn linear_ocv_segment_cc_discharge_matches_closed_form() {
         let t = pack.sim_time_s();
         let soc_t = soc0 - i * t / cap_as;
         let expected = v_analytic(ocv_lookup(&ocv, soc_t), i, t);
+        assert!(
+            (tele.v_terminal - expected).abs() < 1e-9,
+            "t={t}: got {}, expected {expected}",
+            tele.v_terminal
+        );
+    }
+}
+
+#[test]
+fn constant_ocv_2rc_cc_discharge_matches_closed_form() {
+    // Two-RC cell (CellModel::Ecm2Rc). From rest the overpotential is the sum of
+    // two independent exponentials, so:
+    //   V(t) = V0 − I·R0 − I·R1·(1 − e^(−t/τ1)) − I·R2·(1 − e^(−t/τ2)).
+    let v0 = 3.30;
+    let chem = synthetic_chem_2rc(OcvTable {
+        soc: vec![0.0, 1.0],
+        volts: vec![v0, v0],
+    });
+    let mut pack = Pack::new(&config(0.5), chem).unwrap();
+
+    let i = 1.0;
+    let dt = 1.0;
+    for _ in 0..100 {
+        let tele = pack.step(dt, Demand::Current(i), &env());
+        let t = pack.sim_time_s();
+        let expected =
+            v0 - i * R0 - i * R1 * (1.0 - (-t / TAU).exp()) - i * R2 * (1.0 - (-t / TAU2).exp());
         assert!(
             (tele.v_terminal - expected).abs() < 1e-9,
             "t={t}: got {}, expected {expected}",

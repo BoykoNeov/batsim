@@ -1,0 +1,74 @@
+# Generic NMC 18650 cell parameters.
+#
+# Phase 0 consumes the [meta], [cell], [ocv], [r0], and [[rc]] sections. The
+# [thermal], [aging], and [safety] sections are declared for forward-compatibility
+# and ignored by the current loader. Every physical constant carries a provenance
+# note per the project rule: no unlabeled numbers.
+#
+# This cell uses two RC pairs (a fast charge-transfer pair and a slow diffusion
+# pair), exercising the 2-RC model path.
+
+[meta]
+id         = "nmc_18650_generic"
+name       = "Generic NMC 18650"
+provenance = "OCV/R0 shape hand-fit to typical NMC 18650 datasheets; RC and remaining values are order-of-magnitude placeholders (TODO: fit against PyBaMM Chen2020/OKane2022)."
+
+[cell]
+capacity_ah     = 3.0      # provenance: nominal for a high-capacity NMC 18650 (datasheet class)
+v_max           = 4.20     # provenance: standard NMC charge cutoff
+v_min           = 3.00     # provenance: conservative NMC discharge cutoff (datasheet class)
+max_charge_c    = 0.7      # provenance: typical NMC continuous charge rating (~0.5-1C)
+max_discharge_c = 2.0      # provenance: typical NMC continuous discharge rating for a capacity cell
+t_charge_min_k  = 273.15   # provenance: charge inhibit below 0 degC (Li plating guard)
+t_max_k         = 333.15   # provenance: 60 degC operating ceiling (datasheet class)
+
+# Monotone OCV(soc); linear interpolation, clamped at the ends.
+# provenance: representative sloped NMC open-circuit curve (no flat plateau,
+# unlike LFP) hand-fit to datasheet discharge curves.
+[ocv]
+soc   = [0.00, 0.05, 0.10, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95, 1.00]
+volts = [3.00, 3.40, 3.55, 3.63, 3.75, 3.87, 4.02, 4.11, 4.15, 4.20]
+
+# Ohmic resistance R0[soc][temp_k], ohms. Bilinear interpolation, clamped.
+# provenance: order-of-magnitude placeholder — a few tens of milliohms, rising at
+# low temperature and near the SOC extremes (TODO: fit). NMC R0 runs a little
+# lower than the LFP set.
+[r0]
+soc    = [0.0, 0.5, 1.0]
+temp_k = [263.15, 298.15, 318.15]
+ohms   = [[0.045, 0.018, 0.015],
+          [0.040, 0.016, 0.013],
+          [0.042, 0.017, 0.014]]
+
+# Fast charge-transfer RC pair. tau = 0.008 * 800 = 6.4 s.
+# provenance: order-of-magnitude placeholder (TODO: fit from GITT/pulse data).
+[[rc]]
+r_ohms  = 0.008
+c_farad = 800.0
+
+# Slow diffusion RC pair. tau = 0.006 * 8000 = 48 s.
+# provenance: order-of-magnitude placeholder (TODO: fit from GITT/pulse data).
+[[rc]]
+r_ohms  = 0.006
+c_farad = 8000.0
+
+# --- Sections below are declared for later phases and ignored in Phase 0. ---
+
+[thermal]
+heat_capacity_j_per_k = 55.0   # provenance: ~m*cp for an 18650 (~45 g, mixed materials); placeholder
+h_area_w_per_k        = 0.20   # provenance: natural-convection h*A placeholder for a bare cell
+
+[aging]
+cal_pre_exp                = 2.0e4    # provenance: placeholder — order-of-magnitude only, TODO fit
+cal_ea_j_per_mol           = 4.5e4    # provenance: placeholder Arrhenius activation energy, TODO fit
+cal_soc_stress             = [1.0, 1.1, 1.8]  # provenance: placeholder SOC stress at soc = 0.0/0.5/1.0 (NMC worse at high SOC)
+cyc_fade_per_ah            = 3.0e-5   # provenance: placeholder cycle fade per Ah throughput, TODO fit
+cyc_dod_stress_exp         = 1.2      # provenance: placeholder DOD stress exponent
+r_growth_per_capacity_loss = 1.5     # provenance: placeholder — resistance grows faster than capacity fades
+
+[safety]
+t_onset_k           = 443.15   # provenance: ~170 degC exothermic onset (NMC less stable than LFP); placeholder
+t_vent_k            = 473.15   # provenance: ~200 degC vent placeholder
+runaway_energy_j    = 90.0e3   # provenance: placeholder per-cell exothermic budget (NMC higher than LFP), TODO fit
+t_plating_min_k     = 273.15   # provenance: plating risk below 0 degC
+plating_c_threshold = 0.4      # provenance: placeholder C-rate above which cold-charge plating risk flags
