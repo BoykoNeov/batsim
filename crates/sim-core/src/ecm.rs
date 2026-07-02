@@ -13,6 +13,15 @@
 //! the electrical solve closed-form. The RC overpotentials and SOC are then
 //! advanced with that solved current. All [`crate::Telemetry`] values are reported
 //! from the **end-of-step** state.
+//!
+//! # Cell vs. pack responsibilities
+//! From Phase 1 on, the *current itself* is decided by the pack-level electrical
+//! solve (parallel cells share a node; series groups share a current), not by a
+//! per-cell demand. This module therefore exposes the two halves separately:
+//! [`cell_source`] returns a cell's start-of-step Thévenin `(E, R)` for the pack to
+//! aggregate, and [`advance_cell`] advances one cell's internal state given the
+//! current the pack solve assigned it. [`solve_current`] is the closed-form
+//! single-Thévenin demand solve, reused by the pack on its aggregate source.
 
 use serde::{Deserialize, Serialize};
 
@@ -60,17 +69,6 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s,
         }
     }
-}
-
-/// Result of advancing one cell by one step.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct CellOut {
-    /// End-of-step terminal voltage \[V\].
-    pub v_terminal: f64,
-    /// Current through the cell \[A\], discharge-positive.
-    pub i: f64,
-    /// Events raised during this step.
-    pub flags: EventFlags,
 }
 
 /// Linear-interpolate `ys` at `x` over ascending breakpoints `xs`, clamped at the
@@ -162,12 +160,19 @@ pub fn coulomb_step(
     (raw, flags)
 }
 
-/// Solve the single-cell operating current \[A\] for a [`Demand`] given the
-/// start-of-step Thevenin source `e = OCV − Σ V_rc` behind resistance `r0`.
+/// Solve the operating current \[A\] for a [`Demand`] against a single Thévenin
+/// source `e` behind resistance `r0`.
 ///
-/// Terminal voltage at current `i` is `V(i) = e − i·r0`.
+/// Terminal voltage at current `i` is `V(i) = e − i·r0`. This is closed-form for
+/// every demand variant, including `Power` (a quadratic with a physical-root
+/// selection). The pack layer calls this on its *aggregated* source
+/// `(E_pack, R_pack)`: because each cell is a fixed linear Thévenin over the step,
+/// the whole pack aggregates to one linear Thévenin and the same closed form is
+/// exact — so Phase 1 deliberately does **not** use the Newton/bisection loop that
+/// `CLAUDE.md` prescribes (that is forward-cover for models that are nonlinear
+/// within a step, e.g. SPM/DFN or mid-step derating, which Phase 1 does not have).
 #[must_use]
-fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
+pub(crate) fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
     match demand {
         Demand::Rest => 0.0,
         Demand::Current(i) => i,
@@ -187,33 +192,42 @@ fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
     }
 }
 
-/// Advance a single cell by one step. See the module-level note on step ordering:
-/// the current is solved from `state`'s start-of-step values; `state` is then
-/// advanced in place and the returned voltage reflects the end-of-step state.
+/// A cell's Thévenin equivalent for one step: source `e = OCV(soc,T) − Σ V_rc`
+/// behind resistance `r = R0(soc,T)·r0_factor`, both evaluated from the cell's
+/// current (start-of-step) state.
+///
+/// `r0_factor` folds in the cell's static manufacturing scatter / weak-cell
+/// resistance multiplier (nominal × factor; aging's `soh_resistance` multiplies in
+/// later). It is guaranteed `> 0` by the pack, so `r > 0`.
 #[must_use]
-pub fn cell_step(state: &mut EcmState, chem: &ChemistryParams, demand: Demand, dt: f64) -> CellOut {
-    // --- solve current from start-of-step state ---
-    let r0_start = r0_lookup(&chem.r0, state.soc, state.temp_k);
-    let ocv_start = ocv_lookup(&chem.ocv, state.soc);
-    let e = ocv_start - state.v_rc.iter().sum::<f64>();
-    let i = solve_current(demand, e, r0_start);
+pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f64) -> (f64, f64) {
+    let r = r0_lookup(&chem.r0, state.soc, state.temp_k) * r0_factor;
+    let e = ocv_lookup(&chem.ocv, state.soc) - state.v_rc.iter().sum::<f64>();
+    (e, r)
+}
 
-    // --- advance internal state with the solved current ---
+/// Advance one cell's internal state by `dt` seconds under the current `i`
+/// \[A, discharge-positive\] that the pack solve assigned it.
+///
+/// Updates every RC overpotential (exact exponential update) and SOC (coulomb
+/// counting). `eff_capacity_ah` is the cell's *effective* capacity — nominal ×
+/// capacity_factor (× `soh_capacity` once aging lands). Returns the SOC-clamp
+/// flags from the coulomb step. Terminal voltage is *not* returned here: the pack
+/// recomputes each group's shared node voltage from the end-of-step state via
+/// [`cell_source`] so parallel cells report one consistent voltage.
+#[must_use]
+pub(crate) fn advance_cell(
+    state: &mut EcmState,
+    chem: &ChemistryParams,
+    i: f64,
+    dt: f64,
+    eff_capacity_ah: f64,
+) -> EventFlags {
     for (k, v_rc) in state.v_rc.iter_mut().enumerate() {
         let pair = chem.rc[k];
         *v_rc = rc_update(*v_rc, i, pair.r_ohms, pair.c_farad, dt);
     }
-    let (soc_new, flags) = coulomb_step(state.soc, i, dt, chem.cell.capacity_ah, 1.0);
+    let (soc_new, flags) = coulomb_step(state.soc, i, dt, eff_capacity_ah, 1.0);
     state.soc = soc_new;
-
-    // --- report from end-of-step state ---
-    let r0_end = r0_lookup(&chem.r0, state.soc, state.temp_k);
-    let ocv_end = ocv_lookup(&chem.ocv, state.soc);
-    let v_terminal = ocv_end - i * r0_end - state.v_rc.iter().sum::<f64>();
-
-    CellOut {
-        v_terminal,
-        i,
-        flags,
-    }
+    flags
 }

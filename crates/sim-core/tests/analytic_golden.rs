@@ -89,6 +89,7 @@ fn config(initial_soc: f64) -> PackConfig {
         initial_soc,
         initial_temp_k: 298.15,
         seed: 0,
+        scatter: sim_core::Scatter::default(),
     }
 }
 
