@@ -1,8 +1,8 @@
 # Phase 3 — aging + faults
 
-**Status: slices A, B, C and D landed; E planned.** This file was written before the work so the
-decisions below are made once; the "learned while building" material is appended as
-each slice lands, the way `phase-2-thermal-bms.md` grew.
+**Status: complete — A, B, C, D and E all landed.** Both exit criteria pass. This file was
+written before the work so the decisions below are made once; the "learned while building"
+material is appended as each slice lands, the way `phase-2-thermal-bms.md` grew.
 
 | exit criterion (from `CLAUDE.md`) | to be met by |
 | --------------------------------- | ------------ |
@@ -17,7 +17,7 @@ each slice lands, the way `phase-2-thermal-bms.md` grew.
 | B | fault queue: timestamped injection API, `WeakCell`, `SoftInternalShort`, `ExternalShort`, `SensorStuck`/`SensorOffset` | **landed** (v7) |
 | C | plating: `PLATING_RISK` from cold-charge physics, accelerated fade, seeded soft-short probability | **landed** (v8) |
 | D | runaway: Arrhenius self-heating with a finite per-cell energy budget, `VENTED`, `THERMAL_RUNAWAY`, propagation, and the sub-step bound that makes it integrable | **landed** (v9) |
-| E | wrap-up: the two exit scenarios, aging/fault property tests, perf re-measure | planned |
+| E | wrap-up: the two exit scenarios, aging/fault property tests, perf re-measure | **landed** (no bump) |
 
 Each slice keeps `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` clean, and bumps
@@ -908,3 +908,191 @@ several cells can ignite one after another inside a single step.
 It self-reports rather than degrading silently: the `debug_assert` fires, and slice E's
 tests run in debug. Recorded here so that if it does fire, the next person reads it as the
 work cap binding rather than as a physics bug.
+
+---
+
+## Learned while building — slice E (wrap-up)
+
+**No snapshot bump.** Slice E adds tests and two benchmark cases and changes no engine
+code, so v9 stands — the first Phase 3 slice for which the end-of-slice layout check (the
+habit this plan opens by insisting on) comes back clean.
+
+New: `sim-core/tests/scenario_runaway.rs` (4 tests), `sim-core/tests/scenario_aging.rs`
+(3 tests), three properties in `sim-core/tests/properties.rs`, and two `full+aging`
+benchmark cases. Both exit criteria pass.
+
+### The exit criteria, and the fixture work each one actually needed
+
+**The runaway scenario needed a pack with a temperature gradient, and the benchmark's
+`k_neighbor` destroys one.** The chain the criterion asks for — overcharge, ignite,
+propagate — only means "propagate" if one cell reaches onset appreciably before its
+neighbours. But a strongly-coupled pack is nearly isothermal inside: the centre cell
+conducts its whole generation `q` to four neighbours, so the gradient is `q/(4k)`, which
+at the benchmark's `k` = 1 W/K and a realistic `q` is about **4 K**. Every cell would
+ignite together and "a neighbour followed" would be a statement about rounding.
+
+At `k` = 0.1 W/K the same fixture separates cleanly: centre 431.7 K, first ring 404.7 K,
+corners 383.8 K. The scenario ships at that value with the reasoning on the constant,
+because a reader who sees it disagree with the benchmark's 1 W/K is entitled to know it
+was chosen rather than defaulted.
+
+**The current then has to be tuned into a 30 K window, and both edges are load-bearing.**
+Ohmic heating alone must plateau *above* `t_onset_k` — otherwise nothing ever ignites and
+the live arm is testing a pack that cannot burn — and *below* `t_vent_k`, or the control
+arm vents on `I²R` and venting proves nothing about the reaction. The first fixture
+attempt (72 A) plateaued at 462 K, nine kelvin past vent, and the control obligingly
+vented every cell. At 60 A — 8.7 C per cell, which is the rate slice D's throwaway probe
+had already found — the plateau is 431.7 K: 8.5 K above onset, 21.5 K below vent.
+
+What the tuned fixture then produces is the criterion almost verbatim. Runaway is flagged
+at 2575 s, the centre vents at 2918 s, all four of its 4-connected neighbours at 3409 s,
+and the corners at 3652 s — the fire spreading outward one ring at a time, through the
+same `k_ij` links Phase 2 shipped.
+
+A third arm was worth adding beyond the two the criterion implies: the same abuse through
+a **protective BMS**, which derates 60 A to 6.91 A and leaves the pack at 298.96 K. Without
+it the scenario shows only that a fixture built to burn burns; with it, the pack burns
+exactly when the protection that exists to prevent it is absent, which is the contrast the
+phase is built around.
+
+**`MAX_RUNAWAY_SUBSTEPS` did not bind.** The pre-work flagged this slice as where
+sequential ignitions at a coarse `dt` could hit the 2048 cap; nine cells igniting in three
+waves at `dt` = 1 s did not, and the `debug_assert` that would have reported it runs in
+every one of these tests.
+
+**The 500-cycle criterion is two experiments, and this plan's own wording hid that.** The
+pre-work asks the fade curve to be "monotone decreasing, decelerating (the √t signature),
+resistance rising as capacity falls, faster fade at higher temperature and higher SOC".
+Those cannot all hold on one trajectory: calendar fade goes as `√t` and decelerates, cycle
+fade is linear in throughput, and 500 cycles is their sum. A single test asserting
+"decelerating" would have been asserting whichever term the fixture happened to let
+dominate.
+
+So the shape claims live on a rested pack (`√t`, both stress orderings) and the cycling
+claims on the cycled one (monotone, resistance pairing, near-linearity). Measured at the
+shipped LFP coefficients: a year on the shelf at 25 °C and full SOC fades **13.7 %**, four
+years fades exactly twice that — the ratio is `2.0` to within 1e-9, which is the
+rationalised calendar increment being *exact* rather than approximately right — and 500
+full-depth cycles fade **7.07 %**.
+
+**The cycle term is isolated by a control arm, not by subtracting a rest run.** The obvious
+control — cycle one pack, rest another for the same duration — conflates two things,
+because a cycled pack also spends time at high SOC where the calendar stress factor is 1.4.
+The control that works is the *same cycling run* with `cyc_fade_per_ah` set to zero:
+identical demands, identical SOC history, identical elapsed time, one coefficient
+different. Subtracting it leaves the cycle term alone, and the two signatures then separate
+exactly as they should — the cycle term costs 1.86 % then 1.78 % over the two halves (a
+ratio of **0.956**, near-linear), the calendar term underneath it 2.43 % then 1.01 % (a
+ratio of **0.414**, which is the `√t` signature).
+
+The subtraction is very slightly approximate and the test says so: the faded arm's cycles
+are marginally shorter, because the same 1 C current crosses a smaller tank faster, so it
+accrues marginally less calendar fade than its control. Under a percent of the term being
+isolated.
+
+One fixture detail worth copying: the cycling turnarounds are on **SOC**, not on a step
+count. SOC is the fraction of the capacity the pack has *today*, so a fixed step count
+would deepen every cycle as capacity fell, quietly turning a constant-depth experiment into
+an increasingly abusive one.
+
+### A property that passed for the wrong reason, and the guard added because of it
+
+`health_never_improves` asserts capacity SOH never rises and resistance SOH never falls. It
+passed on the first run. It was also worthless: the fixture's `cal_pre_exp` was set to
+`1e8` to make aging visible in a property's short trajectory, and `1e8` fades a cell by
+**2.46** over the longest run the generators produce — i.e. straight through
+`MIN_SOH_CAPACITY` within a few steps, after which the property was asserting the
+monotonicity of a clamped constant and would have passed against an engine that did no
+aging at all.
+
+The lesson generalises past this one test: **a monotonicity assertion is satisfied by a
+constant**, so any property of that shape needs a companion assertion that the quantity
+actually moved. Both are now there — health must have degraded, and must not be sitting on
+the floor — and `aging_chem`'s doc comment records the number and why it moved. At `5e4`
+the same trajectories fade between 6e-5 and 1.2e-3.
+
+The same guard then caught a genuine engine behaviour in the round-trip property: with the
+sub-clock period at 10 s, a one-step 0.5 s trajectory never ticks aging at all, so demanding
+fade would have been demanding something the engine is correct not to do. Those short
+trajectories are deliberately *kept* — a pack snapshotted mid-period is precisely the case
+where the accumulator has to survive — so the assertion is conditioned on the sub-clock
+having fired rather than tuned out of the input space.
+
+### The round-trip property was the coverage hole four slices had been widening
+
+Four consecutive slices added per-cell state — the SOH pair and its accumulators, the
+plating charge counter, the shunt conductance, the exothermic budget and vent latch — and
+the existing `snapshot_roundtrip_continues_identically` runs an unaged, fault-free,
+`[safety]`-less pack. None of that state had ever crossed a serde boundary under proptest,
+which is design principle 5's central claim going untested precisely where it got hardest.
+
+`snapshot_roundtrip_survives_aging_faults_and_plating` runs the pack **cold**, below
+`t_plating_min_k`, so every charging step above the C-rate threshold plates: that
+accumulates `q_plating` *and* rolls the seeded hazard, so the RNG stream has to survive the
+round trip and not merely the float state. It compares the tail step by step rather than
+only at the end, because a restored pack whose draws resumed one step out of phase would
+agree on the first step and diverge later. Verified by mutation: marking `q_plating`
+`#[serde(skip)]` fails it and nothing else.
+
+### Perf: measured at last, and the deferred optimisation is now declined
+
+Paired alternating rounds against `9da78ef` (the last pre-slice-A tree), `100S10P`, with the
+traps `docs/plans/pack-step-perf.md` lists. Five rounds; **round 3 discarded** because its
+`full` arm came in *cheaper* than its `current` arm, which is impossible — `full` is a
+strict superset of the work — and is therefore a machine transition mid-round rather than a
+measurement. Round 2 sits well outside the other three and is treated as an outlier.
+
+| case              | base (µs)   | slice E (µs) | Δ              |
+| ----------------- | ----------- | ------------ | -------------- |
+| `100S10P/current` | 52.4 – 54.9 | 57.1 – 59.6  | **+8 – 9 %**   |
+| `100S10P/full`    | 58.1 – 63.8 | 64.0 – 68.0  | **+7 – 10 %**  |
+| `1S1P/current`    | 144 ns      | 162 – 165 ns | **+12 – 14 %** |
+
+So the headline is that **Phase 3 slices A–D cost the step 7–10 % at 100S10P**, sign certain
+(the slice E arm was slower in every case of every kept round) and magnitude finally
+pinned, which is what slices A and B each deferred to here.
+
+**The budget is again unverifiable on this box, for the third session running.** The
+baseline arm measured 51–55 µs for `100S10P/current` where `pack-step-perf.md` recorded
+36–42 µs, so this machine is in its slow state at roughly 1.35×. Scaling the ratio onto the
+fast-state anchor puts the fully-featured step at ≈ **42–54 µs** against a < 50 µs budget —
+which is to say the budget has gone from comfortably met to **marginal**, and slice E does
+not claim it is met. That is a scaled inference and the range is the answer.
+
+**Aging itself is nearly free until the sub-clock fires, and expensive when it does.**
+Measured within single runs, so these three are mode-matched to each other:
+
+| case                          | µs (two runs) |
+| ----------------------------- | ------------- |
+| `full`                        | 68.8 / 68.5   |
+| `full+aging` (10 s period)    | 70.8 / 68.4   |
+| `full+aging_every_step` (0 s) | 104.8 / 102.3 |
+
+`full+aging` is indistinguishable from `full`: the always-paid part of slice A —
+`eff_r0_factor`'s extra multiply per cell, and the SOH aggregation in the reporting pass —
+is **below this box's noise floor**. The tick is the whole cost, at **+50 %** on a step that
+runs it. At the shipped 10 s default against a 0.1 s client `dt` that is one step in a
+hundred, so ~0.5 % amortised; a client that sets `sub_clock_period_s = 0` is choosing to pay
+it every step, which is legitimate and worth knowing.
+
+**This declines the optimisation slice A sketched.** Caching `r0_factor · soh_resistance` as
+a derived field on `Cell` would remove a multiply from the non-ticking path — the path that
+already measures as free — and would add eight bytes to a `Cell` that has grown from **64 to
+160 bytes** across Phase 3 (`CellAging` alone is 72 of them). Slice A asked for a measurement
+to justify it; the measurement declines it, and it carries a correctness obligation that
+would now buy nothing.
+
+**What the numbers suggest instead**, recorded as a hypothesis rather than a finding because
+nobody has profiled this: `Cell` at 2.5× its old size is 160 KB of hot state at 100S10P
+instead of 64 KB. Most of the growth is `CellAging`'s accumulators — `q_cal`, `q_cyc`,
+`q_plating`, `ah_since_tick`, `ah_plating_since_tick`, `soc_ref`, `discharging` — and **none
+of those is read on a non-ticking step**. Splitting them into a parallel array touched only
+at the aging tick would take `Cell` back toward 96 bytes while leaving the two `soh_*`
+multipliers hot. That is a structural change with its own snapshot-layout consequences, so
+it belongs in its own item, not in a wrap-up slice.
+
+The evidence is not all one way, and the counter-evidence is worth keeping: `1S1P` — where
+there is no cache pressure at all — shows a *larger* relative penalty (12–14 %) than
+`100S10P` does, so per-step fixed work is clearly part of the cost too. Both effects are
+present; neither is separately attributed, and the division-count style of reasoning that
+`pack-step-perf.md` warns about would be exactly the wrong way to settle it. Profile first.

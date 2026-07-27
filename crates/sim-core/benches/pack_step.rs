@@ -52,7 +52,8 @@
 //! # Configurations
 //! `current`, `power`, and the smaller topologies run with thermal and BMS **off** —
 //! the electrical baseline, and the configuration every historical number above was
-//! measured on. `full` is the same 1000-cell pack with every Phase 2 feature live.
+//! measured on. `full` is the same 1000-cell pack with every Phase 2 feature live, and
+//! `full+aging` / `full+aging_every_step` add Phase 3's aging on top of that.
 //! Compare like with like: a ratio taken across a configuration change is exactly the
 //! sort of measurement the warning above is about.
 //!
@@ -85,6 +86,22 @@
 //! the absolutes come from scaling the fast-state anchor by them. They are ranges
 //! because the measured ratios spanned one. See `docs/plans/pack-step-perf.md` for the
 //! raw rounds.
+//!
+//! ## Phase 3 (slice E re-measure)
+//! Paired alternating rounds against `9da78ef`, the last pre-aging tree. Phase 3's four
+//! slices cost **+7–10 %** at `100S10P` (both `current` and `full`) and **+12–14 %** at
+//! `1S1P`. This box was again in its slow state — the baseline arm measured 51–55 µs for
+//! `100S10P/current` against the 36–42 µs recorded above — so the ratio is the measured
+//! quantity and no absolute conclusion is drawn from the session. Scaled onto the
+//! fast-state anchor the fully-featured step lands at ≈ 42–54 µs, which makes the < 50 µs
+//! budget **marginal rather than met**.
+//!
+//! Aging splits in two, measured within single runs so the three are mode-matched:
+//! `full` 68.8/68.5 µs, `full+aging` 70.8/68.4 µs, `full+aging_every_step` 104.8/102.3 µs.
+//! The always-paid part of aging is below this box's noise floor; the sub-clock tick costs
+//! **+50 %** on a step that runs it, which at the shipped 10 s period against this file's
+//! 0.1 s `DT` is one step in a hundred. `docs/plans/phase-3-aging-faults.md` (slice E) has
+//! the full evidence and the reason the `r0_factor · soh_resistance` cache was declined.
 
 use std::hint::black_box;
 
@@ -92,9 +109,10 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
 use sim_core::bms::{BalancingConfig, BmsConfig, ProtectionConfig};
 use sim_core::chem::{
-    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, SafetyParams, ThermalParams,
+    AgingParams, CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, SafetyParams,
+    ThermalParams,
 };
-use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{AgingConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
 
 /// Simulation timestep \[s\] — a typical real-time client step. `dt` only enters
 /// through `exp(−dt/τ)` and the coulomb count, so its value does not change the
@@ -123,7 +141,18 @@ const SOC: f64 = 0.6;
 /// nothing in this file is a physical claim.
 fn lfp_like_chem() -> ChemistryParams {
     ChemistryParams {
-        aging: None,
+        // Present, like the shipped file's `[aging]` section. A chemistry that cannot
+        // age makes `PackConfig::aging = Some(..)` a build error, so the aging cases
+        // below need this — and the cases that leave aging off are unaffected by it,
+        // since nothing reads these coefficients until a pack asks to wear out.
+        aging: Some(AgingParams {
+            cal_pre_exp: 1.0e4,
+            cal_ea_j_per_mol: 5.0e4,
+            cal_soc_stress: vec![1.0, 1.0, 1.4],
+            cyc_fade_per_ah: 2.0e-5,
+            cyc_dod_stress_exp: 1.1,
+            r_growth_per_capacity_loss: 1.5,
+        }),
         // Present, like the shipped file's `[safety]` section, so the benchmark pays
         // the per-cell plating check *and* the per-cell onset comparison that a real
         // pack running this chemistry pays. Setting it to `None` would measure a
@@ -198,16 +227,20 @@ fn lfp_like_chem() -> ChemistryParams {
 /// [`make_full_pack`] for the everything-on cost.
 fn make_pack(series: u16, parallel: u16) -> Pack {
     Pack::new(
-        &pack_config(series, parallel, ThermalConfig::Isothermal, None),
+        &pack_config(series, parallel, ThermalConfig::Isothermal, None, None),
         lfp_like_chem(),
     )
     .expect("benchmark pack config is valid")
 }
 
 /// The same pack with every Phase 2 feature live: thermal network, sensors and SOC
-/// estimator, protection, and passive balancing. This is what a client that actually
-/// wants a simulated BMS pays.
-fn make_full_pack(series: u16, parallel: u16) -> Pack {
+/// estimator, protection, and passive balancing, plus optional aging on top.
+///
+/// `aging` is a parameter rather than a constant because the two configurations answer
+/// different questions and the module docs forbid mixing them: `None` is the
+/// end-of-Phase-2 `full` case every historical row was measured on, and `Some` prices
+/// what Phase 3 slice A costs a client that wants its pack to wear out.
+fn make_full_pack(series: u16, parallel: u16, aging: Option<AgingConfig>) -> Pack {
     let bms = BmsConfig {
         balancing: Some(BalancingConfig {
             bleed_r_ohms: 33.0,
@@ -241,6 +274,7 @@ fn make_full_pack(series: u16, parallel: u16) -> Pack {
                 k_neighbor_w_per_k: 1.0,
             },
             Some(bms),
+            aging,
         ),
         lfp_like_chem(),
     )
@@ -252,9 +286,10 @@ fn pack_config(
     parallel: u16,
     thermal: ThermalConfig,
     bms: Option<BmsConfig>,
+    aging: Option<AgingConfig>,
 ) -> PackConfig {
     PackConfig {
-        aging: None,
+        aging,
         bms,
         thermal,
         series,
@@ -369,7 +404,7 @@ fn bench_large_pack(c: &mut Criterion) {
 fn bench_full_pack(c: &mut Criterion) {
     let env = env();
     let i_1c = 10.0 * CAP_AH;
-    let mut pack = make_full_pack(100, 10);
+    let mut pack = make_full_pack(100, 10, None);
     let warm = pack.step(DT, Demand::Current(i_1c), &env);
 
     // The warm-up must not move the measured step onto a different branch. Two ways
@@ -399,11 +434,70 @@ fn bench_full_pack(c: &mut Criterion) {
     });
 }
 
+/// The everything-on pack with **aging live as well** — the Phase 3 configuration.
+///
+/// Two cases, because the aging sub-clock splits the cost in two and averaging them
+/// would hide both:
+///
+/// * `full+aging` runs the shipped-default 10 s period against this file's `DT` of
+///   0.1 s, so the tick fires on one step in a hundred and the measured step is the
+///   other ninety-nine: the always-paid part (`eff_r0_factor`'s extra multiply per
+///   cell, and the SOH aggregation in the reporting pass). Every measured iteration is
+///   a clone of the same warmed template, so the accumulator sits at the same 0.1 s
+///   each time and the tick genuinely never fires inside the timed region — this is a
+///   clean measurement of the non-ticking path, not an average over both.
+/// * `full+aging_every_step` sets the period to zero, which is a legitimate
+///   configuration and makes every step a ticking one. That is the upper bound, and it
+///   is the number that would have to move for the "cache `r0_factor · soh_resistance`
+///   as a derived field" optimisation sketched in `docs/plans/phase-3-aging-faults.md`
+///   (slice A) to be worth its correctness obligation.
+///
+/// Neither replaces `full`. A ratio taken across a configuration change is the mistake
+/// the module docs open with, so the Phase 2 row stays measurable on its own terms.
+fn bench_aging_pack(c: &mut Criterion) {
+    let env = env();
+    let i_1c = 10.0 * CAP_AH;
+    let mut group = c.benchmark_group("pack_step/100S10P");
+
+    for (name, period_s) in [("full+aging", 10.0), ("full+aging_every_step", 0.0)] {
+        let mut pack = make_full_pack(
+            100,
+            10,
+            Some(AgingConfig {
+                sub_clock_period_s: period_s,
+            }),
+        );
+        let warm = pack.step(DT, Demand::Current(i_1c), &env);
+        // The same warm-up guards the `full` case uses: a latched contactor or an open
+        // bleed switch would silently price a different code path.
+        assert!(
+            warm.flags.contains(EventFlags::BALANCING),
+            "{name}: warm-up left the bleed switches open"
+        );
+        assert!(
+            !pack.bms().expect("full pack has a bms").contactor_open(),
+            "{name}: warm-up latched the contactor"
+        );
+        assert!(warm.i_actual != 0.0, "{name}: warm-up derated to zero");
+
+        group.bench_function(name, |b| {
+            b.iter_batched_ref(
+                || pack.clone(),
+                |p| black_box(p.step(DT, Demand::Current(i_1c), &env)),
+                BatchSize::LargeInput,
+            );
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_single_cell,
     bench_mid_pack,
     bench_large_pack,
-    bench_full_pack
+    bench_full_pack,
+    bench_aging_pack
 );
 criterion_main!(benches);

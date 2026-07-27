@@ -3,8 +3,19 @@
 **Status:** all four items landed. Items 3 and 4 took the step **−34 to −43 %** against
 the end-of-Phase-2 tree, which puts it **inside** the < 50 µs budget for the first
 time — ≈ 36–42 µs baseline, ≈ 39–49 µs fully featured, scaled to the fast-state
-anchor. Ranges, not point estimates, on purpose. Nothing outstanding.
+anchor. Ranges, not point estimates, on purpose.
 **Baseline commit:** `5917bd9` ("Phase 1 wrap-up: criterion benchmarks for Pack::step").
+
+> **Superseded in part by Phase 3.** Slice E re-measured against `9da78ef`, the last
+> pre-aging tree: Phase 3's four slices cost **+7–10 %** at 100S10P, which moves the
+> fully-featured step to ≈ **42–54 µs** on the same scaled anchor and makes the budget
+> **marginal rather than met**. The evidence, the reason the `r0_factor · soh_resistance`
+> cache this doc's successors expected was *declined*, and the one open perf hypothesis
+> (`Cell` grew 64 → 160 bytes; `CellAging`'s accumulators are the bulk of it and are not
+> read on a non-ticking step) are in `docs/plans/phase-3-aging-faults.md` under "Learned
+> while building — slice E". The methodology sections below still stand and are still
+> the ones to follow — slice E discarded a round on exactly the transition they warn
+> about.
 **Owner decision needed:** none. Item 3 was taken with the design call the deferral
 was waiting on — see "Items 3 and 4" below for what invariant it added and what
 guards it.

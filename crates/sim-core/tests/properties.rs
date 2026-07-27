@@ -9,10 +9,13 @@ use proptest::prelude::*;
 
 use sim_core::bms::{BalancingConfig, BmsConfig, ProtectionConfig};
 use sim_core::chem::{
-    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+    AgingParams, CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, SafetyParams,
+    ThermalParams,
 };
 use sim_core::ecm::ocv_lookup;
-use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{
+    AgingConfig, Demand, Env, EventFlags, Fault, Pack, PackConfig, Scatter, ThermalConfig,
+};
 
 const CAP_AH: f64 = 2.5;
 
@@ -78,6 +81,61 @@ fn flat_chem() -> ChemistryParams {
         volts: vec![FLAT_V0, FLAT_V0],
         docv_dt_v_per_k: None,
     };
+    c
+}
+
+/// The same cell with aging coefficients and a `[safety]` section attached.
+///
+/// Phase 3 put four new pieces of per-cell state behind these two sections — the SOH
+/// pair and its accumulators, the plating charge counter, the internal-short
+/// conductance, and the exothermic budget — and the `chem()` above reaches none of
+/// them. Properties that need Phase 3 state to exist use this one.
+///
+/// The coefficients are deliberately **faster than anything shipped**: a property runs
+/// for tens of simulated seconds, and the shipped placeholders would fade a cell by
+/// ~1e-9 over that, which is a number every monotonicity assertion would pass on
+/// trivially. These are scaled to make the mechanisms visible in a short run, so
+/// nothing here is a physical claim about any chemistry.
+///
+/// Scaled, but **not** scaled past the point of meaning anything. `cal_pre_exp` was
+/// first set to `1e8`, which fades a cell by 2.46 over the longest trajectory a property
+/// here generates — i.e. straight through [`sim_core::aging::MIN_SOH_CAPACITY`] on the
+/// first few steps, after which `health_never_improves` was asserting monotonicity of a
+/// clamped constant and would have passed against an engine that did no aging at all.
+/// At `5e4` the same trajectory fades between 6e-5 and 1.2e-3, which is far above
+/// rounding and nowhere near the floor. The coverage assertions in that property exist
+/// to keep it that way.
+fn aging_chem() -> ChemistryParams {
+    let mut c = chem();
+    c.aging = Some(AgingParams {
+        cal_pre_exp: 5.0e4,
+        cal_ea_j_per_mol: 5.0e4,
+        cal_soc_stress: vec![1.0, 1.0, 1.4],
+        cyc_fade_per_ah: 1.0e-2,
+        cyc_dod_stress_exp: 1.1,
+        r_growth_per_capacity_loss: 1.5,
+    });
+    c.safety = Some(SafetyParams {
+        // Onset far above anything these packs reach: runaway has its own mid-burn
+        // snapshot test in `tests/runaway.rs`, and an exponential source term inside a
+        // property would make every shrunk counter-example a thermal investigation.
+        t_onset_k: 1.0e4,
+        t_vent_k: 1.1e4,
+        runaway_energy_j: 24.0e3,
+        runaway_power_w_at_onset: 0.0,
+        runaway_ea_j_per_mol: 0.0,
+        // Plating live, and reachable: the packs below run below this temperature so
+        // that any charging current above the C-rate threshold plates.
+        t_plating_min_k: 273.15,
+        plating_c_threshold: 0.5,
+        plating_fade_per_ah: 1.0e-2,
+        // High enough that a short actually forms on a useful fraction of the generated
+        // inputs. The *draw* happens on every tick with a positive hazard regardless, so
+        // the RNG-phase half of the round-trip property is covered either way; this is
+        // about also covering the branch where one fires.
+        plating_short_hazard_per_ah: 5.0,
+        plating_short_ohms: 50.0,
+    });
     c
 }
 
@@ -455,5 +513,232 @@ proptest! {
             let b = restored.step(dt, Demand::Current(i), &env());
             prop_assert_eq!(a, b);
         }
+    }
+
+    /// Charge conservation, **with a soft internal short draining a cell**. This is the
+    /// fault-aware form that `charge_conserved_without_clamp` documents and excludes:
+    /// leakage moves charge out of a cell without it ever crossing the pack terminals,
+    /// so the terminal integral alone falls short by exactly the short's throughput.
+    ///
+    /// Adding `∫ i_internal_short_a dt` closes it again. That is a stronger statement
+    /// than it looks: it says the current the engine *reports* through the shunt is the
+    /// same current it *charges* against the cells' coulomb counters. A shunt that
+    /// heated the cell but did not drain it, or drained it at the terminal voltage
+    /// instead of the node voltage, would pass every voltage assertion in the suite and
+    /// fail here.
+    ///
+    /// Aging is off: with SOH moving, stored charge is no longer `soc · capacity ·
+    /// factor` at a fixed capacity, and this property would be measuring two things.
+    #[test]
+    fn charge_conserved_through_an_internal_short(
+        parallel in 1u16..=4,
+        shorted in 0usize..4,
+        ohms in 5.0f64..200.0,
+        i in -2.0f64..2.0,
+        dt in 0.5f64..2.0,
+        nsteps in 1usize..80,
+        seed in any::<u64>(),
+    ) {
+        let p_short = shorted % parallel as usize;
+        let mut pack = Pack::new(&cfg(1, parallel, 0.6, seed, Scatter::default()), chem()).unwrap();
+        pack.schedule_fault(0.0, Fault::SoftInternalShort {
+            s: 0,
+            p: p_short as u16,
+            ohms,
+        }).unwrap();
+
+        let rem0 = total_remaining_ah(&pack, 1, parallel);
+        let mut q_as = 0.0; // amp-seconds out of the cells, terminals + leakage
+        for _ in 0..nsteps {
+            let tele = pack.step(dt, Demand::Current(i), &env());
+            prop_assert!(
+                !tele.flags.intersects(EventFlags::SOC_CLAMPED_HIGH | EventFlags::SOC_CLAMPED_LOW),
+                "unexpected clamp: {:?}", tele.flags
+            );
+            prop_assert!(
+                tele.i_internal_short_a > 0.0,
+                "an injected short should always be leaking, got {}", tele.i_internal_short_a
+            );
+            q_as += (tele.i_actual + tele.i_internal_short_a) * dt;
+        }
+        let rem1 = total_remaining_ah(&pack, 1, parallel);
+        let expected = 3600.0 * (rem0 - rem1);
+        prop_assert!(
+            (q_as - expected).abs() < 1e-6 + 1e-9 * q_as.abs(),
+            "charge: ∫(I + I_short) dt = {q_as}, 3600·Δrem = {expected}"
+        );
+    }
+
+    /// Health only ever gets worse. Capacity SOH never rises, resistance SOH never
+    /// falls, and neither leaves its stated range however the pack is driven.
+    ///
+    /// `CLAUDE.md` forbids modelling capacity fade without the matching resistance
+    /// growth, and this is that rule as an invariant rather than as a review comment:
+    /// the two are asserted to move together on every step of every trajectory, not
+    /// merely to exist.
+    ///
+    /// **Scatter is off**, and that is a real restriction rather than convenience.
+    /// `Telemetry::soh_capacity` aggregates with constant weights (each cell's nominal
+    /// capacity), so it is monotone on any pack. `soh_resistance` is a ratio of pack
+    /// resistances, and its per-cell weights are conductances that move with SOC and
+    /// temperature — on a *scattered* pack those weights re-sort as the trajectory runs,
+    /// so the aggregate can dip while every underlying cell has only got worse. On a
+    /// uniform pack the weights are equal and the ratio is exactly the common SOH.
+    #[test]
+    fn health_never_improves(
+        series in 1u16..=3,
+        parallel in 1u16..=3,
+        soc0 in 0.2f64..0.8,
+        currents in prop::collection::vec(-5.0f64..5.0, 1..40),
+        dt in 0.5f64..5.0,
+        seed in any::<u64>(),
+    ) {
+        let mut config = cfg(series, parallel, soc0, seed, Scatter::default());
+        config.aging = Some(AgingConfig { sub_clock_period_s: 0.0 });
+        // Warm, so this stays a pure aging property: below `t_plating_min_k` a charging
+        // step would also plate, and a plating short would drain one series group faster
+        // than the others and re-sort the resistance weights the doc comment warns about.
+        config.initial_temp_k = 298.15;
+        let mut pack = Pack::new(&config, aging_chem()).unwrap();
+
+        let mut prev = pack.step(0.0, Demand::Rest, &env());
+        for &i in &currents {
+            let tele = pack.step(dt, Demand::Current(i), &env());
+            prop_assert!(
+                tele.soh_capacity <= prev.soh_capacity,
+                "capacity SOH rose: {} -> {}", prev.soh_capacity, tele.soh_capacity
+            );
+            prop_assert!(
+                tele.soh_resistance >= prev.soh_resistance,
+                "resistance SOH fell: {} -> {}", prev.soh_resistance, tele.soh_resistance
+            );
+            prop_assert!(
+                tele.soh_capacity > 0.0 && tele.soh_capacity <= 1.0,
+                "soh_capacity {} outside (0, 1]", tele.soh_capacity
+            );
+            prop_assert!(
+                tele.soh_resistance >= 1.0,
+                "soh_resistance {} below 1", tele.soh_resistance
+            );
+            prev = tele;
+        }
+
+        // Coverage, not physics: a monotonicity assertion is satisfied by a constant, so
+        // without these the property would still pass against an engine that never aged
+        // anything — and did, on the first draft of this fixture (see `aging_chem`).
+        prop_assert!(
+            prev.soh_capacity < 1.0 && prev.soh_resistance > 1.0,
+            "nothing aged over the run, so monotonicity was asserted of a constant: \
+             capacity {}, resistance {}", prev.soh_capacity, prev.soh_resistance
+        );
+        prop_assert!(
+            prev.soh_capacity > 0.5,
+            "the fixture faded the pack to {} — it is sitting on the SOH floor, where \
+             monotonicity is again trivial", prev.soh_capacity
+        );
+    }
+
+    /// Snapshot round-trip with **every Phase 3 mechanism live at once**: aging,
+    /// plating (including its seeded soft-short draw), an injected internal short, an
+    /// external short, and a BMS whose current sensor is drawing noise from the same
+    /// RNG.
+    ///
+    /// `snapshot_roundtrip_continues_identically` above covers the electrical and
+    /// thermal state, but it runs an unaged, fault-free, `[safety]`-less pack — so four
+    /// consecutive slices added per-cell state (the SOH pair and its accumulators, the
+    /// plating charge counter, the shunt conductance, the exothermic budget and vent
+    /// latch) without any of it ever crossing a serde boundary under proptest. Design
+    /// principle 5 says the *entire* engine state round-trips; this is the version of
+    /// that claim with Phase 3 in it.
+    ///
+    /// The pack runs **cold** on purpose. Below `t_plating_min_k` every charging step
+    /// above the C-rate threshold plates, which both accumulates `q_plating` and rolls
+    /// the seeded hazard — so the RNG stream, not just the float state, has to survive
+    /// the round trip. A restored pack that resumed its draws one step out of phase
+    /// would agree on the first step and diverge on a later one, which is why the tail
+    /// is compared step by step rather than only at the end.
+    ///
+    /// Runaway state is excluded (the `[safety]` fixture puts onset out of reach); its
+    /// mid-burn snapshot is pinned directly in `tests/runaway.rs`.
+    #[test]
+    fn snapshot_roundtrip_survives_aging_faults_and_plating(
+        series in 1u16..=3,
+        parallel in 1u16..=3,
+        soc0 in 0.3f64..0.8,
+        seed in any::<u64>(),
+        short_ohms in 20.0f64..400.0,
+        ext_ohms in 5.0f64..50.0,
+        warmup in prop::collection::vec(-6.0f64..6.0, 1..15),
+        tail in prop::collection::vec(-6.0f64..6.0, 1..15),
+        dt in 0.5f64..3.0,
+    ) {
+        let mut config = cfg(series, parallel, soc0, seed, Scatter { capacity_sigma: 0.03, r0_sigma: 0.03 });
+        config.aging = Some(AgingConfig { sub_clock_period_s: 10.0 });
+        config.initial_temp_k = 263.15; // below t_plating_min_k, so charging plates
+        config.bms = Some(BmsConfig {
+            balancing: None,
+            protection: None, // an open contactor would end the trajectory early
+            current_offset_a: 0.01,
+            current_noise_sigma_a: 0.05,
+            temp_probes: vec![(0, 0)],
+            initial_soc_error: 0.02,
+            rest_current_threshold_a: 0.1,
+            rest_time_for_ocv_s: 600.0,
+            ocv_correction_gain: 0.5,
+            min_ocv_slope_v_per_soc: 0.05,
+        });
+        let mut original = Pack::new(&config, aging_chem()).unwrap();
+        original.schedule_fault(0.0, Fault::SoftInternalShort { s: 0, p: 0, ohms: short_ohms }).unwrap();
+        // Part-way through the warm-up, so the queue itself is mid-flight at the
+        // snapshot on some inputs and already drained on others.
+        original.schedule_fault(dt * warmup.len() as f64 * 0.5, Fault::ExternalShort { ohms: ext_ohms }).unwrap();
+
+        for &i in &warmup {
+            original.step(dt, Demand::Current(i), &env());
+        }
+
+        let bytes = bincode::serialize(&original.snapshot()).unwrap();
+        let snap: sim_core::Snapshot = bincode::deserialize(&bytes).unwrap();
+        let mut restored = Pack::restore(&snap).unwrap();
+
+        for &i in &tail {
+            let a = original.step(dt, Demand::Current(i), &env());
+            let b = restored.step(dt, Demand::Current(i), &env());
+            prop_assert_eq!(a, b);
+        }
+        // Telemetry is a summary; the per-cell state Phase 3 added is mostly not in it.
+        // Compare ground truth cell by cell, which is what actually pins `q_plating`,
+        // the shunt conductance and the SOH pair.
+        for s in 0..series as usize {
+            for p in 0..parallel as usize {
+                prop_assert_eq!(
+                    original.cell(s, p).unwrap(),
+                    restored.cell(s, p).unwrap(),
+                    "cell {}S{}P diverged", s, p
+                );
+            }
+        }
+
+        // Coverage: a round-trip property is happy to pass over state that never moved,
+        // so check the two mechanisms that are supposed to have written some.
+        //
+        // The aging check is conditional on the sub-clock having actually ticked. Short
+        // trajectories that never reach `sub_clock_period_s` are deliberately *kept* in
+        // the input space rather than tuned out — a pack snapshotted mid-period is
+        // precisely the case where the accumulator has to survive the round trip — so
+        // the assertion has to allow for them instead of demanding fade that the engine
+        // correctly has not applied yet.
+        let c0 = original.cell(0, 0).unwrap();
+        let period = original.aging().expect("aging configured").sub_clock_period_s();
+        prop_assert!(
+            original.sim_time_s() < period || c0.soh_capacity < 1.0,
+            "the sub-clock ticked ({} s elapsed, period {period} s) but aging never \
+             moved, so the SOH fields round-tripped their initial values",
+            original.sim_time_s()
+        );
+        prop_assert!(
+            c0.internal_short_conductance_s > 0.0,
+            "the injected short never fired, so the shunt round-tripped a zero"
+        );
     }
 }
