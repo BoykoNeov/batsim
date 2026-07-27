@@ -1187,9 +1187,20 @@ impl Pack {
                             // already computed — which is the same one-step latency
                             // every other end-of-step state change has.
                             //
-                            // `plating_short_ohms > 0` is guaranteed by validation
-                            // whenever the hazard that produced this roll is positive.
+                            // `plating_short_ohms > 0` is guaranteed here, but only by
+                            // a chain across three files: `validate()` requires it
+                            // whenever the hazard is positive, `short_probability`
+                            // returns zero unless the hazard is positive, and `tick`
+                            // only rolls on a positive probability. The assert makes
+                            // that chain mechanically checked instead of narratively
+                            // true — the same reason the Thévenin memo carries one.
                             if let Some(s) = safety {
+                                debug_assert!(
+                                    s.plating_short_ohms > 0.0,
+                                    "a plating short rolled against a non-positive \
+                                     resistance: validation should have rejected this \
+                                     chemistry"
+                                );
                                 cell.shunt_g += 1.0 / s.plating_short_ohms;
                             }
                         }

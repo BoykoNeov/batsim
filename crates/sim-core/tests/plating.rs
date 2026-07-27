@@ -26,8 +26,8 @@ use sim_core::chem::{
 };
 use sim_core::plating::{plating_fade_increment, plating_risk, short_probability};
 use sim_core::{
-    AgingConfig, BmsConfig, Demand, Env, EventFlags, Pack, PackConfig, ProtectionConfig, Scatter,
-    ThermalConfig,
+    AgingConfig, BmsConfig, Demand, Env, EventFlags, Fault, Pack, PackConfig, ProtectionConfig,
+    Scatter, ThermalConfig,
 };
 
 const CAP_AH: f64 = 2.5;
@@ -663,6 +663,56 @@ fn a_plating_run_replays_bit_identically_across_a_snapshot() {
     assert!(
         direct.last().expect("40 steps").i_internal_short_a > 0.0,
         "the replay is only meaningful if a short actually formed"
+    );
+}
+
+/// A plating short and an injected one compose the way two injected shorts do: the
+/// conductances add, because they are two leakage paths in parallel across the same
+/// cell's terminals. By the time it exists a plating short *is* a
+/// `Fault::SoftInternalShort` — the mechanism that created it leaves no trace on the
+/// cell — so anything else would be the odd behaviour.
+#[test]
+fn a_plating_short_composes_with_an_injected_one() {
+    let injected_ohms = 200.0;
+    let plating_ohms = 50.0;
+    let cfg = cfg(1, 0.05, COLD_K, every_step());
+    let mut pack = Pack::new(
+        &cfg,
+        chem(
+            Some(aging_params()),
+            Some(safety_params(0.0, 5.0, plating_ohms)),
+        ),
+    )
+    .expect("pack builds");
+    pack.schedule_fault(
+        0.0,
+        Fault::SoftInternalShort {
+            s: 0,
+            p: 0,
+            ohms: injected_ohms,
+        },
+    )
+    .expect("valid fault");
+
+    let e = env(COLD_K);
+    pack.step(1.0, Demand::Rest, &e);
+    assert!(
+        (shunt(&pack, 0, 0) - 1.0 / injected_ohms).abs() < 1e-15,
+        "only the injected short has fired yet"
+    );
+
+    charge(&mut pack, &e, HARD_CHARGE_A, 10.0, 60);
+    let total = shunt(&pack, 0, 0);
+    assert!(
+        total > 1.0 / injected_ohms,
+        "plating should have added a second leakage path: {total}"
+    );
+    // The plating short lands in whole multiples of its own conductance, so the total
+    // is the injected path plus an integer number of plated ones.
+    let plated = (total - 1.0 / injected_ohms) * plating_ohms;
+    assert!(
+        (plated - plated.round()).abs() < 1e-9 && plated.round() >= 1.0,
+        "the excess conductance should be a whole number of plating shorts, got {plated}"
     );
 }
 

@@ -571,6 +571,15 @@ different one, which is the assertion that stops the test passing vacuously.
 Both were verified by mutation: deleting the `if p > 0.0` guard fails exactly those two
 tests and nothing else.
 
+**What is *not* tested is the parallel axis.** Every pack in the order test is
+`parallel: 1`, so it pins series-major traversal and the skip-a-non-plating-cell rule
+and nothing about parallel-minor. That half rests on the loop structure — the same
+nested `groups` → `cells` iteration the scatter draws use — rather than on a test,
+because making one cell of a parallel group plate while its neighbour does not is
+awkward by construction: currents in a group split by state, so the capacity-factor
+trick that works in series does not transfer. Anyone touching that loop should know the
+guard is structural.
+
 ### Decisions slice C had to make that the pre-work did not anticipate
 
 **`[safety]` absent is not a build error**, unlike `[aging]`. The slice-A precedent does
