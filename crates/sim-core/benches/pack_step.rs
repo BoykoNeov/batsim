@@ -3,7 +3,23 @@
 //! `CLAUDE.md` sets a budget of **< 50 µs per step at 100S10P** (1000 cells) on a
 //! laptop. That is a budget to keep an eye on, not a test gate: a wall-clock
 //! assertion would be machine- and CI-dependent, so nothing here fails a build.
-//! Run it with `cargo bench -p sim-core`.
+//!
+//! Run it with `cargo bench -p sim-core --bench pack_step`. The `--bench` selector
+//! is not optional if you pass criterion flags: plain `cargo bench -p sim-core`
+//! also runs the lib's (empty) default bench harness, which does not understand
+//! `--save-baseline` and aborts the whole invocation.
+//!
+//! # Comparing two revisions — do not trust a saved baseline
+//! Criterion's `--save-baseline` / `--baseline` across separate sessions is
+//! **unreliable on this laptop**: it shows a bimodal ~1.4× swing in CPU state
+//! between runs (and sometimes within one run), which is larger than any
+//! optimisation measured so far. A cross-session comparison once reported −8.6 %
+//! for a change that a paired measurement put at −28.5 %.
+//!
+//! Measure a change by running both revisions back to back and repeating until
+//! two rounds agree with tight confidence intervals — a wide CI means the machine
+//! was in transition and the number is noise. Absolute figures below are only
+//! meaningful against each other.
 //!
 //! # Methodology
 //! Each measured iteration is **one** `step()` on a freshly cloned pack
@@ -25,6 +41,21 @@
 //! overhead leaking into the measurement. Note that the 1S1P figure is *not*
 //! `per_cell` — at one cell the per-step fixed overhead (the solve's scratch
 //! `Vec`s) dominates.
+//!
+//! # Last measured
+//! Paired same-session run, `100S10P/current` mode-matched on both arms (see
+//! `docs/plans/pack-step-perf.md` for the full evidence):
+//!
+//! | case              | before | after   |
+//! | ----------------- | ------ | ------- |
+//! | 1S1P/current      | 219 ns | 179 ns  |
+//! | 10S10P/current    | ~8.3 µs | 6.22 µs |
+//! | 100S10P/current   | 85.9 µs | 61.5 µs |
+//! | 100S10P/power     | ~86 µs  | 61.8 µs |
+//!
+//! "before" is the tree at commit `5917bd9`; "after" removes the scratch `Vec` in
+//! `r0_lookup` and binary-searches the interpolation breakpoints. Still ~1.23×
+//! over the 50 µs budget at 100S10P.
 
 use std::hint::black_box;
 
@@ -41,9 +72,14 @@ const DT: f64 = 0.1;
 /// Cell capacity \[Ah\], mirroring the chemistry below.
 const CAP_AH: f64 = 2.303451;
 
-/// Nominal-ish pack SOC to benchmark at. `interp1` scans the OCV breakpoints
-/// linearly from the low end, so where on the table SOC sits *does* affect the
-/// cost of a step; 0.6 is mid-plateau, which is the honest common case.
+/// Nominal-ish pack SOC to benchmark at — 0.6 is mid-plateau, the honest common
+/// case for a pack in service.
+///
+/// This used to matter for a second reason: the breakpoint search was a linear
+/// scan from the low end, so a step's cost depended on *where* on the table SOC
+/// sat. It is a binary search now, so the choice is about representativeness
+/// only. Keep it at a value with a full-length bracket search rather than an
+/// endpoint, so the clamp fast path does not flatter the measurement.
 const SOC: f64 = 0.6;
 
 /// Chemistry with the same *table shapes* as a real parameter set: 34-point OCV,

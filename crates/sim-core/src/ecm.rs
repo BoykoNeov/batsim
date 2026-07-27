@@ -71,28 +71,56 @@ impl CellModel {
     }
 }
 
-/// Linear-interpolate `ys` at `x` over ascending breakpoints `xs`, clamped at the
-/// ends. `xs` must be non-empty and the same length as `ys`.
+/// Locate `x` on ascending breakpoints `xs`, clamped at the ends.
+///
+/// Returns `(lo, hi, frac)`, the segment and blend weight to apply to *any*
+/// `ys` sharing these breakpoints (see [`lerp_at`]). Splitting the search from
+/// the blend lets [`r0_lookup`] reuse one SOC bracket across two rows of the
+/// `R0` grid instead of interpolating every row. `xs` must be non-empty.
+///
+/// At a clamped end it returns `lo == hi`, which [`lerp_at`] reads as "take the
+/// endpoint verbatim" — the blend is skipped rather than evaluated at `frac = 0`,
+/// so the clamped result is the table value bit-for-bit.
 #[must_use]
-fn interp1(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+fn bracket(xs: &[f64], x: f64) -> (usize, usize, f64) {
     let n = xs.len();
-    debug_assert!(n > 0 && n == ys.len());
-    if x <= xs[0] {
-        return ys[0];
+    debug_assert!(n > 0);
+    if n == 1 || x <= xs[0] {
+        return (0, 0, 0.0);
     }
     if x >= xs[n - 1] {
-        return ys[n - 1];
+        return (n - 1, n - 1, 0.0);
     }
-    // xs is ascending; find the bracketing segment.
-    let mut hi = 1;
-    while hi < n && xs[hi] < x {
-        hi += 1;
-    }
+    // xs is strictly ascending (validated at load), so the first breakpoint not
+    // below `x` brackets it from above. `x` is interior here, so the true `hi`
+    // is already in `1..=n-1`; the clamp only bites for a NaN `x`, where every
+    // comparison is false and `partition_point` answers 0. Pinning that case to
+    // hi = 1 keeps NaN flowing through as a NaN result instead of panicking on
+    // an index underflow — `step` must never panic.
+    let hi = xs.partition_point(|&v| v < x).clamp(1, n - 1);
     let lo = hi - 1;
     let span = xs[hi] - xs[lo];
     // span > 0 because xs is strictly ascending (validated) and x is interior.
     let frac = (x - xs[lo]) / span;
-    ys[lo] + frac * (ys[hi] - ys[lo])
+    (lo, hi, frac)
+}
+
+/// Apply a [`bracket`] result to one value column.
+#[must_use]
+fn lerp_at(ys: &[f64], (lo, hi, frac): (usize, usize, f64)) -> f64 {
+    if lo == hi {
+        ys[lo]
+    } else {
+        ys[lo] + frac * (ys[hi] - ys[lo])
+    }
+}
+
+/// Linear-interpolate `ys` at `x` over ascending breakpoints `xs`, clamped at the
+/// ends. `xs` must be non-empty and the same length as `ys`.
+#[must_use]
+fn interp1(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+    debug_assert!(!xs.is_empty() && xs.len() == ys.len());
+    lerp_at(ys, bracket(xs, x))
 }
 
 /// Open-circuit voltage \[V\] at the given SOC, by clamped linear interpolation.
@@ -105,14 +133,17 @@ pub fn ocv_lookup(table: &OcvTable, soc: f64) -> f64 {
 /// interpolation over the grid.
 #[must_use]
 pub fn r0_lookup(table: &R0Table, soc: f64, temp_k: f64) -> f64 {
-    // Interpolate along temperature within each soc row, then across soc rows.
-    // Reuse interp1 by materialising the per-row temperature interpolation.
-    let per_row: Vec<f64> = table
-        .ohms
-        .iter()
-        .map(|row| interp1(&table.temp_k, row, temp_k))
-        .collect();
-    interp1(&table.soc, &per_row, soc)
+    // Interpolate along temperature within each soc row, then across soc rows —
+    // but only the two rows the SOC bracket actually blends. Interpolating every
+    // row first (into a scratch Vec) would give the identical answer at the cost
+    // of a heap allocation on a path that runs twice per cell per step.
+    let (lo, hi, frac) = bracket(&table.soc, soc);
+    let r_lo = interp1(&table.temp_k, &table.ohms[lo], temp_k);
+    if lo == hi {
+        return r_lo;
+    }
+    let r_hi = interp1(&table.temp_k, &table.ohms[hi], temp_k);
+    r_lo + frac * (r_hi - r_lo)
 }
 
 /// Exact exponential update of one RC-pair overpotential for piecewise-constant
