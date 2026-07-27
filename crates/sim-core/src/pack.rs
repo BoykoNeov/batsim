@@ -504,11 +504,16 @@ impl Pack {
         let bleed_at = |g: usize| bleed_g.get(g).copied().unwrap_or(0.0);
 
         // --- start-of-step: per-cell and per-group Thévenin, then pack aggregate.
-        // group_src[g] = (E_g, R_g); cell_src[g][k] = (E_k, R_k).
+        // group_src[g] = (E_g, R_g); cell_src[g·parallel + k] = (E_k, R_k).
+        //
+        // `cell_src` is one flat buffer in the same series-major / parallel-minor
+        // order the rest of the step uses, not a `Vec` per group: identical values,
+        // but one allocation per step instead of one per series element (102 → 2 at
+        // 100S10P, counting `group_src`).
+        let n_cells = series * parallel;
         let mut group_src: Vec<(f64, f64)> = Vec::with_capacity(self.groups.len());
-        let mut cell_src: Vec<Vec<(f64, f64)>> = Vec::with_capacity(self.groups.len());
+        let mut cell_src: Vec<(f64, f64)> = Vec::with_capacity(n_cells);
         for (g_idx, group) in self.groups.iter().enumerate() {
-            let mut srcs = Vec::with_capacity(group.cells.len());
             // Σ 1/R_k, plus the bleed conductance if this group is balancing. Note the
             // bleed enters the *denominator only*: it draws current out of the node
             // without contributing any EMF.
@@ -519,10 +524,9 @@ impl Pack {
                 let g = 1.0 / r;
                 sum_g += g;
                 sum_eg += e * g;
-                srcs.push((e, r));
+                cell_src.push((e, r));
             }
             group_src.push((sum_eg / sum_g, 1.0 / sum_g));
-            cell_src.push(srcs);
         }
         // Series aggregate: same current through every group; voltages add.
         let e_pack: f64 = group_src.iter().map(|&(e, _)| e).sum();
@@ -553,7 +557,6 @@ impl Pack {
         // heat it makes); the per-cell array is only materialised when a live
         // thermal network is going to consume it.
         let thermal_live = matches!(self.thermal, ThermalConfig::Network { .. });
-        let n_cells = series * parallel;
         let mut heat_w: Vec<f64> = if thermal_live {
             Vec::with_capacity(n_cells)
         } else {
@@ -578,7 +581,7 @@ impl Pack {
                 flags |= EventFlags::BALANCING;
             }
             for (k, cell) in group.cells.iter_mut().enumerate() {
-                let (e_k, r_k) = cell_src[g][k];
+                let (e_k, r_k) = cell_src[g * parallel + k];
                 let i_k = (e_k - v_node) / r_k;
                 // Heat from the same start-of-step state that produced `i_k`, so
                 // the energy accounting closes exactly (see `cell_heat_w`).

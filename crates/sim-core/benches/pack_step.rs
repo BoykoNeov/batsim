@@ -28,6 +28,13 @@
 //! clamp branch and the OCV walk moves to a different segment, so the reported
 //! number would no longer be the code path it claims to measure.
 //!
+//! The clone template is **warmed with one step first** (see [`warmed`]). Without
+//! that, every measured iteration is the *first* step a pack ever takes, which is
+//! not what a client does and — from perf item 3 on — is a different code path.
+//! Numbers taken before the warm-up landed are comparable to the ones after: the
+//! only difference on the pre-item-3 engine is that the RC overpotentials start
+//! nonzero, which costs nothing.
+//!
 //! The returned `Telemetry` is `black_box`ed. `step`'s end-of-step reporting pass
 //! recomputes `cell_source` for every cell and feeds only the return value, so
 //! dropping it unused would let the optimiser delete that whole second pass —
@@ -79,7 +86,7 @@ use sim_core::bms::{BalancingConfig, BmsConfig, ProtectionConfig};
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
-use sim_core::{Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
 
 /// Simulation timestep \[s\] — a typical real-time client step. `dt` only enters
 /// through `exp(−dt/τ)` and the coulomb count, so its value does not change the
@@ -242,13 +249,30 @@ fn env() -> Env {
     }
 }
 
+/// Take one step before a pack becomes a clone template.
+///
+/// `iter_batched_ref` clones the template for every measured iteration, so a
+/// never-stepped template would make every measured step the *first* step that pack
+/// ever takes. That is not what a client does — and from perf item 3 on it is a
+/// materially different code path, because `Pack` reuses each cell's Thévenin
+/// `(E, R)` from the previous step's reporting pass and a first step necessarily
+/// computes it cold. Benchmarking cold clones would price that cache at exactly
+/// zero.
+///
+/// Warm up with the same `dt` and demand the case measures, so the measured step
+/// runs from the state its own demand produces.
+fn warmed(mut pack: Pack, demand: Demand) -> Pack {
+    pack.step(DT, demand, &env());
+    pack
+}
+
 /// One step of a single cell — the floor, dominated by the per-step fixed cost
 /// rather than by per-cell work (see the module docs).
 fn bench_single_cell(c: &mut Criterion) {
-    let pack = make_pack(1, 1);
-    let env = env();
     // ~1C discharge for one cell.
     let demand = Demand::Current(CAP_AH);
+    let pack = warmed(make_pack(1, 1), demand);
+    let env = env();
 
     c.bench_function("pack_step/1S1P/current", |b| {
         b.iter_batched_ref(
@@ -262,9 +286,9 @@ fn bench_single_cell(c: &mut Criterion) {
 /// One step of a 100-cell pack — the linearity anchor between 1S1P and 100S10P
 /// (see the module docs).
 fn bench_mid_pack(c: &mut Criterion) {
-    let pack = make_pack(10, 10);
-    let env = env();
     let demand = Demand::Current(10.0 * CAP_AH);
+    let pack = warmed(make_pack(10, 10), demand);
+    let env = env();
 
     c.bench_function("pack_step/10S10P/current", |b| {
         b.iter_batched_ref(
@@ -277,15 +301,15 @@ fn bench_mid_pack(c: &mut Criterion) {
 
 /// One step of the 1000-cell pack the `CLAUDE.md` budget is stated against.
 fn bench_large_pack(c: &mut Criterion) {
-    let pack = make_pack(100, 10);
     let env = env();
     let mut group = c.benchmark_group("pack_step/100S10P");
 
     // ~1C discharge: 10 parallel cells × 2.3 Ah ≈ 23 Ah of pack capacity.
     let i_1c = 10.0 * CAP_AH;
+    let cc_pack = warmed(make_pack(100, 10), Demand::Current(i_1c));
     group.bench_function("current", |b| {
         b.iter_batched_ref(
-            || pack.clone(),
+            || cc_pack.clone(),
             |p| black_box(p.step(DT, Demand::Current(i_1c), &env)),
             BatchSize::LargeInput,
         );
@@ -296,9 +320,10 @@ fn bench_large_pack(c: &mut Criterion) {
     // matters for this number: 100 series groups at ≈3.27 V and ≈23 A is ≈7.5 kW,
     // comfortably under max power, so the discriminant is positive and the
     // physical (lower-current) root is taken.
+    let cp_pack = warmed(make_pack(100, 10), Demand::Power(7500.0));
     group.bench_function("power", |b| {
         b.iter_batched_ref(
-            || pack.clone(),
+            || cp_pack.clone(),
             |p| black_box(p.step(DT, Demand::Power(7500.0), &env)),
             BatchSize::LargeInput,
         );
@@ -315,9 +340,28 @@ fn bench_large_pack(c: &mut Criterion) {
 /// separate cases rather than replacing the baseline — a mixed comparison across a
 /// configuration change is exactly the kind of measurement this file warns about.
 fn bench_full_pack(c: &mut Criterion) {
-    let pack = make_full_pack(100, 10);
     let env = env();
     let i_1c = 10.0 * CAP_AH;
+    let mut pack = make_full_pack(100, 10);
+    let warm = pack.step(DT, Demand::Current(i_1c), &env);
+
+    // The warm-up must not move the measured step onto a different branch. Two ways
+    // it could: a protection trip would latch the contactor and make every measured
+    // step the `i_actual == 0` path, and a bleed threshold crossing would take the
+    // balancing conductances out of the group solve. Either would silently price a
+    // different code path than the historical rows in the module docs.
+    assert!(
+        warm.flags.contains(EventFlags::BALANCING),
+        "warm-up left the bleed switches open; the `full` case would not measure balancing"
+    );
+    assert!(
+        !pack.bms().expect("full pack has a bms").contactor_open(),
+        "warm-up latched the contactor; the `full` case would measure an open pack"
+    );
+    assert!(
+        warm.i_actual != 0.0,
+        "warm-up derated the demand to zero: {warm:?}"
+    );
 
     c.bench_function("pack_step/100S10P/full", |b| {
         b.iter_batched_ref(
