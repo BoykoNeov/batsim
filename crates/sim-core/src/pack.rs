@@ -265,6 +265,53 @@ pub struct CellView {
     pub r0_factor: f64,
 }
 
+/// Per-cell start-of-step Thévenin `(E, R)`, carried across the step boundary.
+///
+/// A **memo of a pure function of pack state**, not state itself: entry `i` is
+/// exactly `cell_source(cell_i.state(), chem, cell_i.r0_factor)` in series-major /
+/// parallel-minor order. `step`'s end-of-step reporting pass computes those values
+/// for every cell, and the next step's start-of-step aggregation would recompute
+/// them from unchanged state — so the reporting pass fills this and the next step
+/// reads it, halving the per-cell table lookups (perf item 3 in
+/// `docs/plans/pack-step-perf.md`).
+///
+/// Empty means cold: recompute and refill. That is always *correct*, only slower,
+/// which is what makes the invalidation rule safe to get wrong in the conservative
+/// direction. Anything that mutates cell state or `r0_factor` outside `step` must
+/// clear it (today: [`Pack::set_cell_factors`]).
+///
+/// Two deliberate impls:
+///
+/// * **`PartialEq` is always `true`.** Two packs whose state is equal *are* equal,
+///   whether or not one happens to have a warm memo — and a serde round-trip
+///   deliberately produces a cold one (see below), so anything else would make
+///   `snapshot != roundtrip(snapshot)`. The cost is that
+///   `zero_length_step_does_not_mutate_state` can no longer see cache corruption;
+///   the `debug_assert` in `step`'s warm path is the compensating guard, and it
+///   turns *every* debug-mode test into a staleness check.
+/// * **`Debug` prints the length only.** A thousand `(f64, f64)` pairs in every
+///   `{:?}` of a pack is noise, and they are recomputable from what is printed
+///   alongside.
+///
+/// The field is `#[serde(skip)]`: no bytes are emitted, so **no `SNAPSHOT_VERSION`
+/// bump** — v5 blobs stay exactly as they were — and a restored pack starts cold
+/// and recomputes, which reproduces the trajectory bit-for-bit because a cold
+/// compute is by definition what the memo holds.
+#[derive(Clone, Default, Serialize, Deserialize)]
+struct SourceCache(Vec<(f64, f64)>);
+
+impl PartialEq for SourceCache {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for SourceCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SourceCache({} cells)", self.0.len())
+    }
+}
+
 /// A battery pack: the full, ground-truth simulation state.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Pack {
@@ -287,6 +334,9 @@ pub struct Pack {
     rng: ChaCha8Rng,
     /// Simulation time elapsed \[s\].
     sim_time_s: f64,
+    /// Memoised per-cell Thévenin sources; see [`SourceCache`]. Derived, not state.
+    #[serde(skip)]
+    src_cache: SourceCache,
 }
 
 impl Pack {
@@ -371,6 +421,8 @@ impl Pack {
             bms,
             rng,
             sim_time_s: 0.0,
+            // Cold: the first step computes every cell's Thévenin source and fills it.
+            src_cache: SourceCache::default(),
         })
     }
 
@@ -450,6 +502,12 @@ impl Pack {
             })?;
         cell.capacity_factor = capacity_factor.max(MIN_FACTOR);
         cell.r0_factor = r0_factor.max(MIN_FACTOR);
+        // `r0_factor` is an input to the memoised Thévenin source, so the whole memo
+        // is now suspect. Dropping it costs one cold step; keeping a stale entry
+        // would be a silent physics error. This is *the* invalidation point outside
+        // `step` — anything a later phase adds that mutates a cell from outside must
+        // do the same (see [`SourceCache`]).
+        self.src_cache.0.clear();
         Ok(())
     }
 
@@ -507,24 +565,51 @@ impl Pack {
         // group_src[g] = (E_g, R_g); cell_src[g·parallel + k] = (E_k, R_k).
         //
         // `cell_src` is one flat buffer in the same series-major / parallel-minor
-        // order the rest of the step uses, not a `Vec` per group: identical values,
-        // but one allocation per step instead of one per series element (102 → 2 at
-        // 100S10P, counting `group_src`).
+        // order the rest of the step uses, and it is *owned by the pack* — taken out
+        // here and put back at the end of the step. Two reasons: it costs no
+        // allocation at all after the first step, and (see [`SourceCache`]) when it
+        // arrives warm it already holds this step's values, because the previous
+        // step's reporting pass computed exactly `cell_source` over exactly this
+        // state. Taking it by value also sidesteps borrowing `self` twice in the
+        // loops below.
         let n_cells = series * parallel;
+        let mut cell_src = std::mem::take(&mut self.src_cache).0;
+        let warm = cell_src.len() == n_cells;
+        if !warm {
+            cell_src.clear();
+            cell_src.reserve(n_cells);
+        }
         let mut group_src: Vec<(f64, f64)> = Vec::with_capacity(self.groups.len());
-        let mut cell_src: Vec<(f64, f64)> = Vec::with_capacity(n_cells);
         for (g_idx, group) in self.groups.iter().enumerate() {
             // Σ 1/R_k, plus the bleed conductance if this group is balancing. Note the
             // bleed enters the *denominator only*: it draws current out of the node
             // without contributing any EMF.
             let mut sum_g = bleed_at(g_idx);
             let mut sum_eg = 0.0; // Σ E_k/R_k
-            for cell in &group.cells {
-                let (e, r) = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
+            for (k, cell) in group.cells.iter().enumerate() {
+                let (e, r) = if warm {
+                    let cached = cell_src[g_idx * parallel + k];
+                    // The memo must be bit-for-bit what a recompute would give. In
+                    // debug builds it is checked, every cell, every step — which makes
+                    // every test in the suite a staleness check, and is the guard that
+                    // pays for `SourceCache`'s always-equal `PartialEq`.
+                    debug_assert_eq!(
+                        (cached.0.to_bits(), cached.1.to_bits()),
+                        {
+                            let fresh = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
+                            (fresh.0.to_bits(), fresh.1.to_bits())
+                        },
+                        "stale Thévenin memo at cell {g_idx}S{k}P"
+                    );
+                    cached
+                } else {
+                    let fresh = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
+                    cell_src.push(fresh);
+                    fresh
+                };
                 let g = 1.0 / r;
                 sum_g += g;
                 sum_eg += e * g;
-                cell_src.push((e, r));
             }
             group_src.push((sum_eg / sum_g, 1.0 / sum_g));
         }
@@ -656,8 +741,12 @@ impl Pack {
         for (g_idx, group) in self.groups.iter().enumerate() {
             let mut sum_g = bleed_at(g_idx);
             let mut sum_eg = 0.0;
-            for cell in &group.cells {
+            for (k, cell) in group.cells.iter().enumerate() {
                 let (e, r) = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
+                // This is the *next* step's start-of-step source: nothing below
+                // mutates a cell, so the state it was computed from is the state the
+                // next step will find. Memoise it (see [`SourceCache`]).
+                cell_src[g_idx * parallel + k] = (e, r);
                 let g = 1.0 / r;
                 sum_g += g;
                 sum_eg += e * g;
@@ -703,6 +792,8 @@ impl Pack {
             }
         }
         let soc_bms = self.bms.as_ref().map(Bms::soc_estimate);
+        // Hand the buffer back, now holding the next step's start-of-step sources.
+        self.src_cache = SourceCache(cell_src);
 
         Telemetry {
             v_terminal,
