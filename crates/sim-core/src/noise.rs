@@ -6,10 +6,21 @@
 //! than hopeful. The RNG itself lives in [`crate::Pack`] and is part of the
 //! snapshot; nothing in this module holds state.
 //!
-//! Two callers today: manufacturing scatter at construction, and current-sensor
-//! noise per step.
+//! Three callers today: manufacturing scatter at construction, current-sensor noise
+//! per step, and the plating soft-short roll on the aging sub-clock.
 
 use rand_chacha::ChaCha8Rng;
+
+/// A uniform `f64` in `[0, 1)` with full 53-bit mantissa resolution.
+///
+/// Exposed for the plating short roll ([`crate::plating::short_probability`]), which
+/// wants a bare Bernoulli trial rather than a normal: `uniform_unit(rng) < p`. The
+/// half-open range is what makes `p == 0` impossible to pass — though callers must
+/// skip the draw entirely at `p == 0` anyway, to keep the RNG stream unshifted on a
+/// pack where nothing stochastic is happening.
+pub(crate) fn uniform_unit(rng: &mut ChaCha8Rng) -> f64 {
+    next_unit(rng)
+}
 
 /// A uniform `f64` in `[0, 1)` with full 53-bit mantissa resolution.
 fn next_unit(rng: &mut ChaCha8Rng) -> f64 {

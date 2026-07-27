@@ -236,3 +236,70 @@ fn shipped_aging_coefficients_give_a_plausible_one_year_fade() {
         );
     }
 }
+
+/// The same treatment for the shipped `[safety]` plating coefficients, and for the
+/// same reason: three numbers that each pass `validate()` in isolation can still be an
+/// implausible set together.
+///
+/// The unit of comparison is **one full cold charge above the C-rate threshold** — the
+/// event these coefficients exist to describe. Two bands, both wide:
+///
+/// * Fade per cold charge in 0.05–5 %. Below the floor, plating is a rounding error and
+///   nothing a student does will show it; above the ceiling, twenty cold charges scrap
+///   the pack and the fade curve is a cliff rather than a curve.
+/// * Short probability per cold charge in 0.01–5 %. The same argument: a hazard that
+///   never fires teaches nothing, and one that fires on the second charge stops being
+///   the rare stochastic outcome it is meant to model.
+///
+/// Both bands deliberately say nothing about where in them a fitted value would land —
+/// this is a guard against an unevaluated set, not a substitute for the fit the
+/// provenance notes still ask for. The runaway trio (`t_onset_k` / `t_vent_k` /
+/// `runaway_energy_j`) has exactly the same exposure and wants the same kind of check
+/// once the slice that consumes it lands.
+#[test]
+fn shipped_plating_coefficients_give_a_plausible_cold_charge_cost() {
+    for (name, text) in [
+        (
+            "lfp",
+            include_str!("../../../chemistries/lfp_26650_generic.toml"),
+        ),
+        (
+            "nmc",
+            include_str!("../../../chemistries/nmc_18650_generic.toml"),
+        ),
+    ] {
+        let chem = parse_chemistry(text).expect("shipped chemistry loads");
+        let safety = chem
+            .safety
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} must ship [safety] coefficients"));
+
+        // One full charge's worth of plated throughput.
+        let ah = chem.cell.capacity_ah;
+        let fade = sim_core::plating::plating_fade_increment(safety, ah);
+        assert!(
+            (0.000_5..=0.05).contains(&fade),
+            "{name}: one full cold charge fades {:.3} % — outside the plausible \
+             0.05–5 % band, so plating_fade_per_ah is not a sane value for this cell",
+            fade * 100.0
+        );
+
+        let p = sim_core::plating::short_probability(safety, ah);
+        assert!(
+            (0.000_1..=0.05).contains(&p),
+            "{name}: one full cold charge carries a {:.3} % chance of a soft short — \
+             outside the plausible 0.01–5 % band",
+            p * 100.0
+        );
+
+        // A soft short must be soft: far above the cell's own ohmic resistance, or it
+        // is a hard short wearing the wrong name, and the cell dies the instant it
+        // forms rather than draining over hours.
+        let r0_mid = sim_core::ecm::r0_lookup(&chem.r0, 0.5, 298.15);
+        assert!(
+            safety.plating_short_ohms > 100.0 * r0_mid,
+            "{name}: a {} ohm short against a {r0_mid} ohm cell is not a *soft* short",
+            safety.plating_short_ohms
+        );
+    }
+}

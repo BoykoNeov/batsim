@@ -1,6 +1,6 @@
 # Phase 3 — aging + faults
 
-**Status: slices A and B landed; C–E planned.** This file was written before the work so the
+**Status: slices A, B and C landed; D–E planned.** This file was written before the work so the
 decisions below are made once; the "learned while building" material is appended as
 each slice lands, the way `phase-2-thermal-bms.md` grew.
 
@@ -15,7 +15,7 @@ each slice lands, the way `phase-2-thermal-bms.md` grew.
 | ----- | ----- | ----- |
 | A | aging: `[aging]` into `ChemistryParams`, per-cell `soh_capacity`/`soh_resistance` + calendar accumulator on `Cell`, calendar **and** cycle fade, resistance growth, the aging sub-clock, pack-level SOH in `Telemetry` | **landed** (v6) |
 | B | fault queue: timestamped injection API, `WeakCell`, `SoftInternalShort`, `ExternalShort`, `SensorStuck`/`SensorOffset` | **landed** (v7) |
-| C | plating: `PLATING_RISK` from cold-charge physics, accelerated fade, seeded soft-short probability | planned |
+| C | plating: `PLATING_RISK` from cold-charge physics, accelerated fade, seeded soft-short probability | **landed** (v8) |
 | D | runaway: Arrhenius self-heating with a finite per-cell energy budget, `VENTED`, `THERMAL_RUNAWAY`, propagation, and the sub-step bound that makes it integrable | planned |
 | E | wrap-up: the two exit scenarios, aging/fault property tests, perf re-measure | planned |
 
@@ -231,11 +231,7 @@ provenance notes ask for.
 
 - ~~**Aging sub-clock period.**~~ Answered in slice A, below.
 - ~~**Cycle-fade DOD accounting without rainflow.**~~ Answered in slice A, below.
-- **Plating's soft-short probability** draws from the pack RNG, so it must draw in a
-  fixed order over cells (series-major, parallel-minor, like the scatter draws) or the
-  trajectory stops being a function of the seed. It also must not draw at all when the
-  probability is zero, for the same reason `draw_factors` short-circuits on zero
-  scatter.
+- ~~**Plating's soft-short probability** draw order.~~ Answered in slice C, below.
 - ~~**Does an external short bypass the contactor?**~~ Answered in slice B, below.
 
 ---
@@ -533,3 +529,147 @@ E's job and this box could not verify the budget in either arm last time. What c
 Slice E measures A and B together against `docs/plans/pack-step-perf.md`'s recorded
 39–49 µs, with the bench traps that doc lists (paired worktrees, alternating arm order,
 warmed clone template).
+
+---
+
+## Learned while building — slice C (plating)
+
+Snapshot layout v7 → **v8**. New module `sim-core/src/plating.rs`; new integration test
+`sim-core/tests/plating.rs` (19 tests). `ChemistryParams` gained `safety:
+Option<SafetyParams>` — the `[safety]` section both shipped files have carried since
+Phase 0 and that nothing had ever parsed — and `CellAging` gained `q_plating` and
+`ah_plating_since_tick`. **No new `Telemetry` or `CellView` fields**, which is the
+cheapest way to stay out of the `tele_bits`/`cell_bits` trap slice B documented.
+
+### The open question, answered
+
+**Draw order and the zero-probability short-circuit both shipped as specified**, and the
+interesting part is what it took to *test* them. The contract is: at most one draw per
+cell per aging tick, in series-major/parallel-minor order, and no draw at all when the
+probability is zero.
+
+The order test is a **pair of packs**. A 1S1P pack whose only cell plates, against a
+2S1P pack whose *second* cell plates and whose first does not — the first is given a
+tenfold capacity factor via `set_cell_factors`, so at the shared series current it sits
+at 0.2C, below the threshold. Zero scatter and no BMS means nothing else in either pack
+touches the RNG, so if the contract holds the plating cell in each consumes the
+identical stream and the two shunt histories match step for step.
+
+The probability is tuned to about 0.5 per tick so that twenty ticks contain **both**
+outcomes. That is the part worth copying: an outcome-only test would pass against an
+implementation where a roll that comes up high fails to consume its draw, because it
+would never notice the streams desynchronising. The short resistance is set to 1e9 ohms
+so the recorded events stay a pure readout of the RNG instead of feeding back into the
+physics being compared.
+
+The zero-probability test reads the draws through the **current sensor**: the BMS's
+noise is the only other RNG consumer, so `i_pack_a − i_actual − current_offset_a`
+recovers the raw draw. A cold pack with a zero hazard must produce the same sequence as
+a warm one that never plates — *and* a cold pack with a live hazard must produce a
+different one, which is the assertion that stops the test passing vacuously.
+
+Both were verified by mutation: deleting the `if p > 0.0` guard fails exactly those two
+tests and nothing else.
+
+### Decisions slice C had to make that the pre-work did not anticipate
+
+**`[safety]` absent is not a build error**, unlike `[aging]`. The slice-A precedent does
+not transfer: aging needed `MissingAgingParams` because `PackConfig::aging` is an
+explicit request the chemistry could not honour. Plating is emergent — nothing in the
+config asks for it — so there is no request for the silence to contradict. The right
+analogy is `ocv.docv_dt_v_per_k`, whose absence quietly disables entropic heating. A
+chemistry with no `[safety]` never raises `PLATING_RISK`, and that is the whole of it.
+
+**Three coefficients had to be invented**, because `CLAUDE.md`'s `[safety]` sketch has
+the two *thresholds* (`t_plating_min_k`, `plating_c_threshold`) but nothing saying what
+crossing them costs. Added, defaulted to zero, and documented as "reported but free"
+when omitted — which is exactly what a chemistry file written before this slice means,
+so nobody's parameter set breaks:
+
+- `plating_fade_per_ah` — capacity fraction per Ah carried while plating,
+- `plating_short_hazard_per_ah` — Poisson hazard per Ah plated,
+- `plating_short_ohms` — the resulting short's resistance, validated `> 0` **only when
+  the hazard is positive**, since otherwise no short can form and requiring it would
+  reject usable files.
+
+**Plating fade is a separate additive term, not "accelerated" cycle fade.** `CLAUDE.md`
+says "applies accelerated fade", and the obvious reading — a multiplier on the
+cycle-fade weight — was rejected. Cycle fade is weighted by `dod^(exp−1)`, and depth of
+discharge is *irrelevant* to plating: the loss is lithium that plated out of the cell,
+and it does not care how deep the excursion carrying it was. Folding plating through
+that weight would also have given a plating cell at a reversal (`dod = 0`) exactly zero
+damage. So `q_plating` is its own accumulator, its own coefficient, and unweighted.
+
+**The hazard is per amp-hour plated, not per second cold.** Two things fall out, both
+wanted. Dendrites grow from deposited lithium, so a cell sitting cold *at rest* accrues
+no hazard — right. And because the hazard is Poisson in plated charge, rolling once
+against 2 Ah is exactly as likely to short as rolling twice against 1 Ah: **the aging
+sub-clock period does not change how dangerous cold charging is.** A client cannot make
+its pack safer by choosing a coarser clock. Pinned by
+`the_short_hazard_does_not_depend_on_how_the_charge_is_split`.
+
+`short_probability` computes `−expm1(−λ·ah)` rather than `1 − exp(−λ·ah)`, the same
+cancellation-avoidance the calendar increment needed and for the same reason: `λ·ah` is
+routinely ~1e-6 in service.
+
+### The C-rate feedback loop, and why it is not one
+
+The C-rate is measured against the capacity the cell has **today** — nominal × factor ×
+`soh_capacity` — so an aged cell reaches the plating threshold at a lower absolute
+current. That is real behaviour, and it is also a feedback path from aging back into
+aging fed entirely by unfitted placeholders, which is the shape slice A's NMC rescale
+warns about. So it was answered rather than argued:
+
+- The C-rate enters as a **threshold**, not as a rate multiplier. Fade is
+  `plating_fade_per_ah · ah_plated` however far past the line the cell is, so aging can
+  switch plating *on* for a given current but can never make plating already happening
+  go faster.
+- The amp-hours a full charge moves **shrink** as capacity fades, so damage per cycle
+  decreases with age.
+
+`repeated_cold_charging_fades_without_running_away` pins it empirically at 40 aggressive
+cold cycles: health falls monotonically, the last five cycles cost less than the first
+five, and the trajectory stays far above `MIN_SOH_CAPACITY` instead of collapsing onto
+it. **Recommended for slice D:** the runaway term is a genuine exponential and will not
+have this defence, which is precisely why the pre-work already requires a two-`dt`
+integrator check there.
+
+### Known simplification worth naming
+
+**Plating-driven loss grows resistance at the *same* ratio as calendar and cycle loss.**
+`soh_resistance = 1 + r_growth_per_capacity_loss · (q_cal + q_cyc + q_plating)`, one
+coefficient for all three. Real plated lithium and the fresh SEI that grows on it raise
+impedance disproportionately, so a cell that lost 1 % to plating is harder to push
+current through than one that lost 1 % to shelf time. The model therefore
+**under-reports the resistance cost of plating**. Splitting the coupling needs a second
+coefficient in `[aging]` and a fit to justify it; recorded on `CellAging::tick` rather
+than left to be discovered.
+
+### The guard, extended to the shipped plating numbers
+
+`sim-data`'s `shipped_plating_coefficients_give_a_plausible_cold_charge_cost` does for
+`[safety]`'s plating half what slice A's test did for `[aging]`: it evaluates one full
+cold charge on each shipped chemistry against a band (0.05–5 % capacity, 0.01–5 % short
+probability), plus a check that the short is at least 100× the cell's `R0` and therefore
+actually *soft*. Bands, not fitted numbers, so it stays inside the shape-not-magnitude
+rule.
+
+**Slice D still owns the runaway trio.** `t_onset_k`, `t_vent_k` and `runaway_energy_j`
+are now parsed and validated (finite, positive, onset below vent) but nothing consumes
+them, and they have still never been evaluated *together* — the same exposure the NMC
+aging pair had for two phases.
+
+### Perf: what slice C added to the hot loop, for slice E to measure
+
+- **One branch per cell per step** for the plating check. On a chemistry with `[safety]`
+  the predicate is evaluated and its first test is `i_cell < 0.0`, which is false on any
+  discharge — so the common case is one predictable, correctly-predicted branch.
+- **Sixteen more bytes per `Cell`** (`q_plating`, `ah_plating_since_tick`), on top of
+  slice B's eight. At 100S10P this is the item with a plausible cache-line cost, and
+  `Cell` has now grown in three consecutive slices — worth looking at as a whole rather
+  than one slice at a time.
+- **One extra multiply-add and one branch per cell per aging tick**, which is off the
+  per-step path whenever the sub-clock period is not zero.
+
+The benchmark's `lfp_like_chem` now carries `[safety]`, matching the shipped file, so the
+plating branch is measured rather than optimised away by a `None` nobody ships.

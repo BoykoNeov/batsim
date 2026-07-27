@@ -92,7 +92,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
 use sim_core::bms::{BalancingConfig, BmsConfig, ProtectionConfig};
 use sim_core::chem::{
-    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, SafetyParams, ThermalParams,
 };
 use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
 
@@ -124,6 +124,19 @@ const SOC: f64 = 0.6;
 fn lfp_like_chem() -> ChemistryParams {
     ChemistryParams {
         aging: None,
+        // Present, like the shipped file's `[safety]` section, so the benchmark pays
+        // the per-cell plating check a real pack running this chemistry pays. Setting
+        // it to `None` would measure a configuration nobody ships.
+        safety: Some(SafetyParams {
+            t_onset_k: 423.15,
+            t_vent_k: 453.15,
+            runaway_energy_j: 60.0e3,
+            t_plating_min_k: 273.15,
+            plating_c_threshold: 0.5,
+            plating_fade_per_ah: 1.0e-3,
+            plating_short_hazard_per_ah: 1.0e-3,
+            plating_short_ohms: 50.0,
+        }),
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,

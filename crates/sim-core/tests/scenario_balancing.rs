@@ -40,6 +40,7 @@ fn env() -> Env {
 fn chem() -> ChemistryParams {
     ChemistryParams {
         aging: None,
+        safety: None,
         meta: ChemMeta {
             id: "bal".into(),
             name: "Balancing test cell".into(),

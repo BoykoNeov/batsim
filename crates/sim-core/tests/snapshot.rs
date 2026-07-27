@@ -27,6 +27,7 @@ fn env() -> Env {
 fn rich_chem() -> ChemistryParams {
     ChemistryParams {
         aging: None,
+        safety: None,
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,

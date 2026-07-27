@@ -1,9 +1,9 @@
 # Generic NMC 18650 cell parameters.
 #
-# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [thermal], and [aging].
-# The [safety] section is declared for forward-compatibility and ignored for now.
-# Every physical constant carries a provenance note per the project rule: no
-# unlabeled numbers.
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [thermal], [aging], and
+# [safety]. Within [safety] the plating fields are live; the runaway trio is validated
+# but not yet consumed. Every physical constant carries a provenance note per the
+# project rule: no unlabeled numbers.
 #
 # This cell uses two RC pairs (a fast charge-transfer pair and a slow diffusion
 # pair), exercising the 2-RC model path.
@@ -80,11 +80,23 @@ cyc_fade_per_ah            = 3.0e-5   # provenance: placeholder cycle fade per A
 cyc_dod_stress_exp         = 1.2      # provenance: placeholder DOD stress exponent (per-cycle convention)
 r_growth_per_capacity_loss = 1.5     # provenance: placeholder — resistance grows faster than capacity fades
 
-# --- Sections below are declared for later phases and ignored for now. ---
-
+# Emergent-failure thresholds. The plating half is live; the runaway trio
+# (t_onset_k / t_vent_k / runaway_energy_j) is validated but not yet consumed — the
+# runaway slice wires it in, and should evaluate the three TOGETHER before trusting
+# them, the way the [aging] pair had to be.
+#
+# Plating: the placeholders below are set worse than the LFP set across the board,
+# which is the right ordering — NMC/graphite cells are the ones fast-charged hard
+# enough for cold-charge plating to be the classic field failure, and they carry a
+# higher plating_c_threshold penalty because they are charged at higher rates to begin
+# with. Scale check at this cell's 3.0 Ah: one full cold charge above the threshold
+# costs ~0.45 % capacity and carries a ~0.6 % chance of leaving a soft short.
 [safety]
 t_onset_k           = 443.15   # provenance: ~170 degC exothermic onset (NMC less stable than LFP); placeholder
 t_vent_k            = 473.15   # provenance: ~200 degC vent placeholder
 runaway_energy_j    = 90.0e3   # provenance: placeholder per-cell exothermic budget (NMC higher than LFP), TODO fit
 t_plating_min_k     = 273.15   # provenance: plating risk below 0 degC
 plating_c_threshold = 0.4      # provenance: placeholder C-rate above which cold-charge plating risk flags
+plating_fade_per_ah        = 1.5e-3  # provenance: placeholder — set ~50x cyc_fade_per_ah and above the LFP figure, TODO fit
+plating_short_hazard_per_ah = 2.0e-3 # provenance: placeholder Poisson hazard per Ah plated, ~2x LFP, TODO fit
+plating_short_ohms         = 30.0    # provenance: placeholder soft short, ~5000x this cell's R0; TODO fit

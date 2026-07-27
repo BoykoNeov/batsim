@@ -1,9 +1,9 @@
 # Generic LFP 26650 cell parameters.
 #
-# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [thermal], and [aging].
-# The [safety] section is declared here for forward-compatibility and is ignored for
-# now (it is wired in during Phase 3's runaway slice). Every physical constant
-# carries a provenance note per the project rule: no unlabeled numbers.
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [thermal], [aging], and
+# [safety]. Within [safety] the plating fields are live; the runaway trio is validated
+# but not yet consumed. Every physical constant carries a provenance note per the
+# project rule: no unlabeled numbers.
 
 [meta]
 id         = "lfp_26650_generic"
@@ -76,11 +76,24 @@ cyc_fade_per_ah            = 2.0e-5   # provenance: placeholder cycle fade per A
 cyc_dod_stress_exp         = 1.1      # provenance: placeholder DOD stress exponent (per-cycle convention)
 r_growth_per_capacity_loss = 1.5     # provenance: placeholder — resistance grows faster than capacity fades
 
-# --- Sections below are declared for later phases and ignored for now. ---
-
+# Emergent-failure thresholds. The plating half is live; the runaway trio
+# (t_onset_k / t_vent_k / runaway_energy_j) is validated but not yet consumed — the
+# runaway slice wires it in, and should evaluate the three TOGETHER before trusting
+# them, the way the [aging] pair had to be.
+#
+# Plating: charging below t_plating_min_k above plating_c_threshold plates metallic
+# lithium. The three coefficients below say what that costs. Scale check on the
+# placeholders, at this cell's 2.303 Ah: one full cold charge above the threshold
+# moves ~2.3 Ah of plating throughput, so it costs ~0.23 % capacity (about 50x what
+# the same amp-hours cost as ordinary cycle fade) and carries a ~0.23 % chance of
+# leaving a soft internal short behind. Roughly 300 cold charges for an even chance of
+# a shorted cell — bad enough to matter, slow enough to be a curve rather than a cliff.
 [safety]
 t_onset_k           = 423.15   # provenance: ~150 degC exothermic onset (LFP is relatively stable); placeholder
 t_vent_k            = 453.15   # provenance: ~180 degC vent placeholder
 runaway_energy_j    = 60.0e3   # provenance: placeholder per-cell exothermic budget, TODO fit
 t_plating_min_k     = 273.15   # provenance: plating risk below 0 degC
 plating_c_threshold = 0.5      # provenance: placeholder C-rate above which cold-charge plating risk flags
+plating_fade_per_ah        = 1.0e-3  # provenance: placeholder — set ~50x cyc_fade_per_ah so plated charge is decisively worse than ordinary throughput, TODO fit
+plating_short_hazard_per_ah = 1.0e-3 # provenance: placeholder Poisson hazard per Ah plated, TODO fit
+plating_short_ohms         = 50.0    # provenance: placeholder soft short, ~2500x this cell's R0 (~66 mA leak at 3.3 V, days to drain); TODO fit

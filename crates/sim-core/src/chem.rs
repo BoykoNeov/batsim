@@ -29,8 +29,7 @@ fn is_non_negative(x: f64) -> bool {
 /// Full parameter set for one cell chemistry.
 ///
 /// The field grouping mirrors the TOML section layout (`[meta]`, `[cell]`,
-/// `[ocv]`, `[r0]`, `[[rc]]`, `[thermal]`). Aging and safety sections are added in
-/// their respective phases (see `CLAUDE.md`).
+/// `[ocv]`, `[r0]`, `[[rc]]`, `[thermal]`, `[aging]`, `[safety]`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChemistryParams {
     /// Identity and provenance (`[meta]`).
@@ -54,6 +53,82 @@ pub struct ChemistryParams {
     /// silence there is indistinguishable from coefficients that happen to be zero.
     #[serde(default)]
     pub aging: Option<AgingParams>,
+    /// Emergent-failure thresholds (`[safety]`), or `None` for a chemistry that
+    /// carries no safety data.
+    ///
+    /// Unlike [`Self::aging`], `None` here is **not** a build error, because nothing
+    /// in [`crate::PackConfig`] ever asks for plating or runaway — they are emergent,
+    /// discovered by the engine from the physics rather than switched on. A chemistry
+    /// with no `[safety]` section simply never raises
+    /// [`crate::EventFlags::PLATING_RISK`], the same way one with no
+    /// [`OcvTable::docv_dt_v_per_k`] column never generates entropic heat. There is no
+    /// configuration for the absence to contradict, so there is nothing to diagnose.
+    #[serde(default)]
+    pub safety: Option<SafetyParams>,
+}
+
+/// Thresholds for the two **emergent** failure modes (`[safety]`).
+///
+/// These are not injected faults. Nothing in this struct scripts an outcome: each
+/// number is a threshold or a rate that the ordinary physics is compared against, and
+/// the failure — if it happens — falls out of the same equations a healthy pack
+/// solves. See [`crate::plating`] for the cold-charge mechanism this slice wires in;
+/// the runaway trio is validated here and consumed by the runaway slice.
+///
+/// Every value in the shipped chemistries is a labelled placeholder. As with
+/// [`AgingParams`], scenarios should assert the *shape* of an outcome, never a number
+/// on it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SafetyParams {
+    /// Cell temperature \[K\] above which exothermic self-heating begins. Must be
+    /// finite and `> 0`, and below [`Self::t_vent_k`]. **Not yet consumed** — the
+    /// runaway slice owns it.
+    pub t_onset_k: f64,
+    /// Cell temperature \[K\] at which a cell vents. Must be finite and above
+    /// [`Self::t_onset_k`]. **Not yet consumed.**
+    pub t_vent_k: f64,
+    /// Finite exothermic energy budget of one cell \[J\]. Must be finite and `>= 0`.
+    /// **Not yet consumed.**
+    pub runaway_energy_j: f64,
+    /// Cell temperature \[K\] below which charging risks plating metallic lithium.
+    /// Must be finite and `> 0`.
+    ///
+    /// Distinct from [`CellLimits::t_charge_min_k`], which is the *BMS's* charge-inhibit
+    /// threshold — a policy the protection layer enforces from lagged sensor readings.
+    /// This one is physics, evaluated against ground truth. The two coincide in both
+    /// shipped chemistries, which is exactly what makes the BMS-on/BMS-off contrast
+    /// legible: protection exists to keep the pack out of this region.
+    pub t_plating_min_k: f64,
+    /// C-rate above which charging below [`Self::t_plating_min_k`] plates. Must be
+    /// finite and `>= 0`; `0` means any charge current at all plates when cold.
+    pub plating_c_threshold: f64,
+    /// Capacity fraction lost per amp-hour of charge carried under plating
+    /// conditions. Must be finite and `>= 0`; `0` (the default) means plating is
+    /// reported but costs nothing.
+    ///
+    /// Compare [`AgingParams::cyc_fade_per_ah`]: plating is a *separate, additive*
+    /// mechanism, not a multiplier on ordinary cycle fade, because the charge plated
+    /// is lost lithium inventory whatever excursion happened to be carrying it. It is
+    /// therefore deliberately **not** weighted by depth of discharge.
+    #[serde(default)]
+    pub plating_fade_per_ah: f64,
+    /// Poisson hazard rate \[1/Ah\] of a plating cell developing a soft internal
+    /// short, per amp-hour carried under plating conditions. Must be finite and
+    /// `>= 0`; `0` (the default) means plating never shorts a cell.
+    ///
+    /// Per amp-hour *plated*, not per second cold: dendrites grow from deposited
+    /// lithium, so a cell sitting cold at rest accrues no hazard at all.
+    #[serde(default)]
+    pub plating_short_hazard_per_ah: f64,
+    /// Leakage resistance \[ohms\] of the soft internal short a plating cell develops.
+    /// Must be finite and `> 0` **when [`Self::plating_short_hazard_per_ah`] is
+    /// positive**; ignored (and allowed to be the `0.0` default) when it is not, since
+    /// then no short can ever form.
+    ///
+    /// Should be far above the cell's own `R0` — that is what makes it a *soft* short,
+    /// draining and heating the cell over hours rather than instantly.
+    #[serde(default)]
+    pub plating_short_ohms: f64,
 }
 
 /// Semi-empirical aging coefficients (`[aging]`).
@@ -438,6 +513,63 @@ impl ChemistryParams {
             if !dod_exp_ok {
                 return Err(ChemistryError::BadRange {
                     what: "aging.cyc_dod_stress_exp must be finite and >= 1",
+                });
+            }
+        }
+
+        // --- Safety (optional) ---
+        // The runaway trio is validated here even though nothing reads it yet: the
+        // checks belong with the data, and a later slice should find them already in
+        // place rather than discovering a chemistry that parsed but cannot integrate.
+        if let Some(s) = &self.safety {
+            let positive: [(&'static str, f64); 2] = [
+                ("safety.t_onset_k", s.t_onset_k),
+                ("safety.t_vent_k", s.t_vent_k),
+            ];
+            for (what, value) in positive {
+                if !is_positive(value) || !value.is_finite() {
+                    return Err(ChemistryError::NotPositive { what, value });
+                }
+            }
+            if !is_positive(s.t_plating_min_k) || !s.t_plating_min_k.is_finite() {
+                return Err(ChemistryError::NotPositive {
+                    what: "safety.t_plating_min_k",
+                    value: s.t_plating_min_k,
+                });
+            }
+            let non_negative: [(&'static str, f64); 4] = [
+                ("safety.runaway_energy_j", s.runaway_energy_j),
+                ("safety.plating_c_threshold", s.plating_c_threshold),
+                ("safety.plating_fade_per_ah", s.plating_fade_per_ah),
+                (
+                    "safety.plating_short_hazard_per_ah",
+                    s.plating_short_hazard_per_ah,
+                ),
+            ];
+            for (what, value) in non_negative {
+                if !is_non_negative(value) || !value.is_finite() {
+                    return Err(ChemistryError::Negative { what, value });
+                }
+            }
+            let vent_above_onset = s.t_vent_k > s.t_onset_k;
+            if !vent_above_onset {
+                return Err(ChemistryError::BadRange {
+                    what: "safety.t_onset_k must be < safety.t_vent_k",
+                });
+            }
+            // Conditional on purpose: a chemistry file written before plating shorts
+            // existed omits this field entirely and defaults it to zero. That is a
+            // valid parameter set — it just cannot short — so requiring a positive
+            // resistance unconditionally would reject files that are perfectly usable.
+            // Once the hazard is positive the resistance is load-bearing, and a zero
+            // one would mean an infinite-conductance short: a dead cell, instantly.
+            if s.plating_short_hazard_per_ah > 0.0
+                && (!is_positive(s.plating_short_ohms) || !s.plating_short_ohms.is_finite())
+            {
+                return Err(ChemistryError::NotPositive {
+                    what:
+                        "safety.plating_short_ohms (required when plating_short_hazard_per_ah > 0)",
+                    value: s.plating_short_ohms,
                 });
             }
         }

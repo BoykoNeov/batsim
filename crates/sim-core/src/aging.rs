@@ -12,6 +12,13 @@
 //! * **Cycle fade** happens because charge moves. It is proportional to amp-hour
 //!   throughput, weighted by how deep the excursion carrying that throughput is.
 //!
+//! A third mechanism lives next door in [`crate::plating`] and accumulates into the
+//! same health state: charge carried while a cold cell is being charged hard plates
+//! metallic lithium out of the electrolyte, and that inventory does not come back.
+//! It is separate from cycle fade because it is not about how much charge moved but
+//! about *the conditions it moved under*, and it is only reachable through this
+//! module's sub-clock — a pack with `aging: None` reports the risk and pays nothing.
+//!
 //! Their sum is the capacity loss. `CLAUDE.md` forbids modelling that loss without
 //! the matching **resistance growth**, so both feed one growth factor:
 //! `soh_resistance = 1 + r_growth_per_capacity_loss · loss`. A pack that has faded
@@ -54,9 +61,12 @@
 //! client feeds, not only on their sum — the same accepted family of `dt`-dependence
 //! as the BMS's one-step sampling lag (see [`crate::bms`]).
 
+use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::chem::AgingParams;
+use crate::chem::{AgingParams, SafetyParams};
+use crate::noise::uniform_unit;
+use crate::plating::{plating_fade_increment, short_probability};
 
 /// True iff `x` is strictly positive. NaN yields `false`, so `!is_positive(x)`
 /// rejects NaN as well as non-positive values (and reads clear of clippy's
@@ -190,8 +200,20 @@ pub(crate) struct CellAging {
     q_cal: f64,
     /// Capacity fraction lost to cycle fade so far.
     q_cyc: f64,
+    /// Capacity fraction lost to lithium plating so far — a third, independent
+    /// mechanism (see [`crate::plating`]), kept separate from `q_cyc` for the same
+    /// reason calendar and cycle fade are kept apart: they integrate differently and
+    /// a reader should be able to attribute the damage.
+    q_plating: f64,
     /// Charge throughput \[Ah\] since the last aging update, both directions counted.
     ah_since_tick: f64,
+    /// The subset of `ah_since_tick` carried under plating conditions \[Ah\].
+    ///
+    /// An integral, not a state: an interval in which plating started and stopped
+    /// partway is accounted exactly, because a cell that stops plating simply stops
+    /// adding to this. That is why the short hazard is charged per amp-hour plated
+    /// rather than per second spent cold.
+    ah_plating_since_tick: f64,
     /// SOC at the last current reversal — the anchor the depth-of-discharge weight
     /// is measured from.
     soc_ref: f64,
@@ -208,7 +230,9 @@ impl CellAging {
             soh_resistance: 1.0,
             q_cal: 0.0,
             q_cyc: 0.0,
+            q_plating: 0.0,
             ah_since_tick: 0.0,
+            ah_plating_since_tick: 0.0,
             soc_ref: initial_soc,
             // Arbitrary but harmless: whichever way the pack actually starts moving,
             // the first current in the *other* direction re-anchors `soc_ref`, and a
@@ -265,8 +289,27 @@ impl CellAging {
     /// The cost is stated plainly: a cell being back-fed by its parallel neighbours
     /// while the pack as a whole discharges does not get a half-cycle boundary of its
     /// own. It inherits the pack's, and its depth is still measured from its own SOC.
-    pub(crate) fn accumulate(&mut self, i_cell: f64, i_pack: f64, dt: f64, soc_before: f64) {
-        self.ah_since_tick += i_cell.abs() * dt / 3600.0;
+    ///
+    /// # The plating share
+    ///
+    /// `plating` is [`crate::plating::plating_risk`] evaluated for this cell on this
+    /// step. When set, the step's throughput is added to the plating accumulator *as
+    /// well as* the ordinary one — plating amp-hours are still amp-hours through the
+    /// electrodes, so they keep paying ordinary cycle fade; the plating term is
+    /// additional damage on top, not a reclassification.
+    pub(crate) fn accumulate(
+        &mut self,
+        i_cell: f64,
+        i_pack: f64,
+        dt: f64,
+        soc_before: f64,
+        plating: bool,
+    ) {
+        let ah = i_cell.abs() * dt / 3600.0;
+        self.ah_since_tick += ah;
+        if plating {
+            self.ah_plating_since_tick += ah;
+        }
         if i_pack > 0.0 && !self.discharging {
             self.discharging = true;
             self.soc_ref = soc_before;
@@ -279,7 +322,31 @@ impl CellAging {
     /// Apply one aging update covering `dt_age` seconds, using the cell's
     /// end-of-step temperature and SOC as the stress conditions for the whole
     /// interval.
-    pub(crate) fn tick(&mut self, params: &AgingParams, dt_age: f64, temp_k: f64, soc: f64) {
+    ///
+    /// Returns `true` iff the plating hazard rolled a **new soft internal short** on
+    /// this cell this tick; the caller owns the cell's shunt conductance and applies
+    /// it. Returning the outcome rather than mutating from here keeps this type to
+    /// health bookkeeping and leaves the one place that writes `shunt_g` inside
+    /// [`crate::Pack`], next to where injected shorts land.
+    ///
+    /// # RNG contract
+    ///
+    /// At most **one** draw per cell per tick, and **no draw at all** unless the
+    /// plating short probability is strictly positive — the same short-circuit
+    /// `draw_factors` uses for zero scatter. Callers must invoke this in a fixed order
+    /// over cells (series-major, parallel-minor) or the trajectory stops being a
+    /// function of the seed. Both halves matter: without the short-circuit, merely
+    /// *configuring* a chemistry with plating coefficients would shift every downstream
+    /// draw on a pack that never gets cold.
+    pub(crate) fn tick(
+        &mut self,
+        params: &AgingParams,
+        safety: Option<&SafetyParams>,
+        dt_age: f64,
+        temp_k: f64,
+        soc: f64,
+        rng: &mut ChaCha8Rng,
+    ) -> bool {
         let k = calendar_rate(params, temp_k, soc);
         self.q_cal += calendar_increment(k, self.q_cal, dt_age);
 
@@ -289,12 +356,36 @@ impl CellAging {
         self.q_cyc += cycle_increment(params, self.ah_since_tick, dod);
         self.ah_since_tick = 0.0;
 
-        let loss = self.q_cal + self.q_cyc;
+        // Plating, if this chemistry can say what plating costs. The accumulator is
+        // cleared unconditionally: a chemistry with no `[safety]` section still lets
+        // the flag be raised, and letting untaxed plating throughput pile up would
+        // mean adding the section later retroactively billed for it.
+        let mut shorted = false;
+        if let Some(s) = safety {
+            let ah_plating = self.ah_plating_since_tick;
+            self.q_plating += plating_fade_increment(s, ah_plating);
+            let p = short_probability(s, ah_plating);
+            if p > 0.0 {
+                shorted = uniform_unit(rng) < p;
+            }
+        }
+        self.ah_plating_since_tick = 0.0;
+
+        let loss = self.q_cal + self.q_cyc + self.q_plating;
         self.soh_capacity = (1.0 - loss).max(MIN_SOH_CAPACITY);
         // Resistance keeps growing on the *unclamped* loss: a cell past the capacity
         // floor is a wreck, and reporting it as merely 1 % capacity but nominal
         // resistance would be the wrong kind of wrong.
+        //
+        // Plating-driven loss is coupled at the **same** ratio as calendar and cycle
+        // loss. That is a v1 simplification and worth naming: plated lithium and the
+        // fresh SEI that grows on it raise impedance disproportionately, so a real cell
+        // that lost 1 % to plating is harder to push current through than one that lost
+        // 1 % to shelf time. Splitting the coupling needs a second coefficient in
+        // `[aging]` and a fit to justify it; until then the honest statement is that
+        // this model under-reports the resistance cost of plating.
         self.soh_resistance = 1.0 + params.r_growth_per_capacity_loss * loss;
+        shorted
     }
 }
 

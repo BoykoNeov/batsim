@@ -31,6 +31,7 @@ use crate::ecm::{
 use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
+use crate::plating::plating_risk;
 use crate::thermal::{advance_temperatures, ThermalConfig, ThermalStep};
 use crate::{Demand, Env, Telemetry};
 
@@ -85,7 +86,14 @@ use crate::{Demand, Env, Telemetry};
 /// are genuine state: the queue is what has *not* happened yet, and a fired fault's
 /// effect has no other home. Same caveat as v3 about what actually rejects an older
 /// blob.
-pub const SNAPSHOT_VERSION: u32 = 7;
+///
+/// v8 (Phase 3, plating): `ChemistryParams` gained the optional `safety` coefficients
+/// (`[safety]`, previously parsed and discarded), and every cell's `CellAging` gained
+/// `q_plating` and `ah_plating_since_tick`. Both cell fields are genuine state: the
+/// first is fade already suffered, the second is throughput not yet charged for, and
+/// dropping either across a snapshot would let a client wash out damage by saving and
+/// reloading. Same caveat as v3 about what actually rejects an older blob.
+pub const SNAPSHOT_VERSION: u32 = 8;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -358,10 +366,12 @@ pub struct CellView {
 /// post-aging sources. Aging after the pass would poison the next step silently, and
 /// only a debug build would notice.
 ///
-/// An injected internal short is deliberately **not** part of this. It enters the
-/// solve as a conductance on the group node rather than as a transform of the cell's
-/// source (see [`crate::faults`]), so the invariant above is literally unchanged by
-/// faults and injecting a short needs no invalidation either.
+/// An internal short is deliberately **not** part of this — neither an injected one nor
+/// the one a plating cell can grow. Both enter the solve as a conductance on the group
+/// node rather than as a transform of the cell's source (see [`crate::faults`]), so the
+/// invariant above is literally unchanged by them and a short needs no invalidation
+/// either. That is what lets the plating roll sit inside the aging tick, which runs
+/// after the electrical solve and before the pass that fills this.
 ///
 /// Two deliberate impls:
 ///
@@ -826,10 +836,16 @@ impl Pack {
     /// [`crate::faults`]), the electrical solve then runs off **start-of-step**
     /// state, each cell's internal state is advanced with the current it was
     /// assigned, temperatures are integrated against the heat that current
-    /// generated (see [`crate::thermal`]), and all telemetry is reported from
-    /// **end-of-step** state. `env` supplies the thermal sink — coolant if present,
-    /// otherwise ambient — and is unused when the pack is
+    /// generated (see [`crate::thermal`]), aging's sub-clock is advanced, and all
+    /// telemetry is reported from **end-of-step** state. `env` supplies the thermal
+    /// sink — coolant if present, otherwise ambient — and is unused when the pack is
     /// [`ThermalConfig::Isothermal`].
+    ///
+    /// The aging update's position is load-bearing twice over: it must come after the
+    /// temperatures and SOCs it reads have settled, and before the reporting pass that
+    /// memoises each cell's Thévenin source. It is also the only place in a step that
+    /// can consume randomness besides the sensor sample — a cell that has been plating
+    /// rolls there for a soft internal short (see [`crate::plating`]).
     ///
     /// # Upper limit on `dt` with a live thermal network
     /// Temperatures are integrated with automatic sub-stepping, so any ordinary `dt`
@@ -998,6 +1014,11 @@ impl Pack {
         // the depth-of-discharge measurement is not, so the whole accumulation takes
         // the explicit zero-length-step gate.
         let aging_accumulates = self.aging.is_some() && dt > 0.0;
+        // Plating detection needs no configuration — it is emergent, so the chemistry
+        // supplying `[safety]` thresholds is the whole of the opt-in (see
+        // [`crate::plating`]). Hoisted out of the loop so a chemistry without the
+        // section costs one `Option` check per step rather than one per cell.
+        let safety = self.chem.safety.as_ref();
         let mut heat_w: Vec<f64> = if thermal_live {
             Vec::with_capacity(n_cells)
         } else {
@@ -1055,8 +1076,20 @@ impl Pack {
                     heat_w.push(q);
                 }
                 let soc_before = state.soc;
+                let temp_before = state.temp_k;
                 let eff_cap = cap_ah * cell.capacity_factor;
                 let soh_cap = cell.aging.soh_capacity;
+                // Plating: cold, charging, and above the C-rate threshold, judged from
+                // the same start-of-step state that produced `i_k`. This is an
+                // *observation*, so unlike every accumulator it is deliberately not
+                // gated on `dt > 0` — a zero-length probe step reports the conditions
+                // it finds, exactly as it already reports `q_gen_w` and `BALANCING`.
+                // Nothing here mutates, so that stays free.
+                let plating =
+                    safety.is_some_and(|s| plating_risk(s, i_k, temp_before, eff_cap * soh_cap));
+                if plating {
+                    flags |= EventFlags::PLATING_RISK;
+                }
                 flags |= advance_cell(
                     cell.model.state_mut(),
                     &self.chem,
@@ -1069,7 +1102,7 @@ impl Pack {
                     // Throughput from the cell's own current, half-cycle direction
                     // from the pack's — see `CellAging::accumulate` for why the two
                     // differ, and what goes wrong if they do not.
-                    cell.aging.accumulate(i_k, i_g, dt, soc_before);
+                    cell.aging.accumulate(i_k, i_g, dt, soc_before, plating);
                 }
             }
         }
@@ -1128,13 +1161,38 @@ impl Pack {
                     .aging
                     .as_ref()
                     .expect("Pack::new rejects aging config without chemistry coefficients");
+                let safety = self.chem.safety.as_ref();
+                // Borrow the two mutable fields once, up front: `groups` and `rng` are
+                // disjoint, and naming them here keeps the plating roll below from
+                // looking like a second mutable borrow of `self`.
+                let rng = &mut self.rng;
+                // Series-major, parallel-minor — the same order the scatter draws use,
+                // and the order the plating short roll's determinism depends on. Any
+                // reordering here silently changes which cell gets which draw and
+                // therefore the whole trajectory; see `CellAging::tick`.
                 for group in &mut self.groups {
                     for cell in &mut group.cells {
                         let (temp_k, soc) = {
                             let s = cell.model.state();
                             (s.temp_k, s.soc)
                         };
-                        cell.aging.tick(params, dt_age, temp_k, soc);
+                        let shorted = cell.aging.tick(params, safety, dt_age, temp_k, soc, rng);
+                        if shorted {
+                            // A plating short is physically the same object an injected
+                            // `SoftInternalShort` creates, so it lands the same way:
+                            // conductances add, and the shunt is *not* an input to the
+                            // memoised Thévenin source, so this needs no cache
+                            // invalidation (see [`crate::faults`]). It takes effect from
+                            // the next step's solve, because this step's currents were
+                            // already computed — which is the same one-step latency
+                            // every other end-of-step state change has.
+                            //
+                            // `plating_short_ohms > 0` is guaranteed by validation
+                            // whenever the hazard that produced this roll is positive.
+                            if let Some(s) = safety {
+                                cell.shunt_g += 1.0 / s.plating_short_ohms;
+                            }
+                        }
                     }
                 }
             }
