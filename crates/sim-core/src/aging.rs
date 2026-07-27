@@ -220,19 +220,46 @@ impl CellAging {
 
     /// Fold one step's current into the cycle-fade accumulators.
     ///
-    /// Called every step with the current the pack solve assigned this cell and the
-    /// cell's **start-of-step** SOC. Only the accumulation happens here; the fade
-    /// itself is applied on the sub-clock ([`CellAging::tick`]).
-    pub(crate) fn accumulate(&mut self, i: f64, dt: f64, soc_before: f64) {
-        self.ah_since_tick += i.abs() * dt / 3600.0;
-        // A sign change ends one half-cycle and starts the next, so the depth the
-        // next batch of throughput is charged at is measured from here. Exact zero
-        // current (rest, or an open contactor) is not a reversal — resting in the
-        // middle of a discharge does not turn it into two shallow ones.
-        if i > 0.0 && !self.discharging {
+    /// Called every step with the current the pack solve assigned this cell
+    /// (`i_cell`), the current the whole pack carried (`i_pack`), and the cell's
+    /// **start-of-step** SOC. Only the accumulation happens here; the fade itself is
+    /// applied on the sub-clock ([`CellAging::tick`]).
+    ///
+    /// # Why the two currents play different roles
+    ///
+    /// Throughput is genuinely per-cell: a low-resistance cell in a parallel group
+    /// carries more than its share and must be charged for it, and circulating
+    /// current between mismatched cells is real charge moving through real electrodes.
+    ///
+    /// The *direction* is taken from the pack, and that is a deliberate correction to
+    /// the obvious design. Anchoring the depth reference on each cell's own current
+    /// sign looks more precise and is a trap: at rest, `i_cell` is **not** zero.
+    /// A group's node voltage is a ratio of sums, so even a uniform pack circulates a
+    /// rounding-sized current, and a pack with any manufacturing scatter circulates a
+    /// real one — cells at different SOC push charge back and forth through each
+    /// other. Half the cells in a group therefore see a sign flip the moment the load
+    /// is removed, and an arbitrarily *small* reversal would discard the depth
+    /// accounting for the large excursion in progress. Resting in the middle of a
+    /// deep discharge would score it as two shallow ones. (Measured on a 1S2P pack
+    /// with 5 % scatter: a ten-hour rest mid-discharge cut one cell's cycle fade by
+    /// 5.8 %, for no physical reason.)
+    ///
+    /// `i_pack` is exactly `0.0` under [`crate::Demand::Rest`] and under an open
+    /// contactor, so resting does not re-anchor anything — which is what the model
+    /// intends, and it needs no threshold to achieve. Discarding tiny reversals is
+    /// what rainflow counting does properly; `CLAUDE.md` rules rainflow out for v1,
+    /// and a deadband would need a magic constant with no provenance, so the honest
+    /// v1 answer is that a half-cycle boundary is a **pack-level** event.
+    ///
+    /// The cost is stated plainly: a cell being back-fed by its parallel neighbours
+    /// while the pack as a whole discharges does not get a half-cycle boundary of its
+    /// own. It inherits the pack's, and its depth is still measured from its own SOC.
+    pub(crate) fn accumulate(&mut self, i_cell: f64, i_pack: f64, dt: f64, soc_before: f64) {
+        self.ah_since_tick += i_cell.abs() * dt / 3600.0;
+        if i_pack > 0.0 && !self.discharging {
             self.discharging = true;
             self.soc_ref = soc_before;
-        } else if i < 0.0 && self.discharging {
+        } else if i_pack < 0.0 && self.discharging {
             self.discharging = false;
             self.soc_ref = soc_before;
         }

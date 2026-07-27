@@ -265,11 +265,29 @@ rationalised form: the naive difference of square roots fails it badly at fine `
 This was expected to be an approximation and is not one; only the *stress sampling*
 (`k` re-evaluated per tick) is coarse.
 
-**Cycle-fade DOD.** The depth is measured from the SOC at the **last current
-reversal**, tracked per cell as `soc_ref` + a `discharging` flag. Two fields, not a
+**Cycle-fade DOD.** The depth is measured from the SOC at the **last reversal of the
+pack current**, tracked per cell as `soc_ref` + a `discharging` flag. Two fields, not a
 running min/max pair, because a half-cycle is monotone by construction — a reversal is
-what ends it. Exact-zero current is deliberately *not* a reversal, so resting mid-
-discharge does not split one deep cycle into two shallow ones.
+what ends it.
+
+The *pack* current, not the cell's own, and that took a correction. Anchoring on
+`i_cell` was the obvious design and is a trap: at rest `i_cell` is not zero. A group's
+node voltage is a ratio of sums, so a uniform pack circulates a rounding-sized current
+and a scattered pack circulates a real one, and half the cells in a group flip sign the
+moment the load comes off. An arbitrarily *small* reversal would then discard the depth
+accounting for the large excursion in progress — resting mid-discharge would score one
+deep cycle as two shallow ones, exactly what the design says it must not do. Measured
+on a 1S2P pack with 5 % scatter: a ten-hour rest cut one cell's cycle fade by **5.8 %**
+before the fix, and changes it by under 1 % after (that residual is real circulation
+throughput, which should count).
+
+`i_pack` is exactly `0.0` under `Demand::Rest` and under an open contactor, so this
+needs no threshold. Discarding insignificant reversals properly is what rainflow does,
+`CLAUDE.md` rules rainflow out for v1, and a deadband would need a magic constant with
+no provenance — so the v1 answer is that a half-cycle boundary is a **pack-level**
+event. The stated cost: a cell back-fed by its parallel neighbours while the pack
+discharges gets no half-cycle boundary of its own; it inherits the pack's, measured
+from its own SOC. `resting_mid_discharge_does_not_split_the_cycle` pins all of it.
 
 The weight is `dod^(exp − 1)`, **not** `dod^exp`. The literature parameterises cycle
 life per cycle (a depth-`D` cycle costs `∝ D^exp`) and that cycle moves `∝ D` amp-hours,
@@ -314,6 +332,22 @@ quite: `r_pack` includes each group's bleed conductance, and a closed bleed swit
 lowers group impedance without any cell having got healthier. The aggregation therefore
 runs in the reporting pass over cell conductances only, gated on aging being live so a
 non-aging pack pays nothing and reports the literal `1.0`.
+
+### A guard for the bug class the NMC rescale exposed
+
+The 260 %/year sat in the tree for two phases because `validate()` checks each aging
+number *in isolation* and every one of them passed — the failure is only visible in the
+`cal_pre_exp`/`cal_ea_j_per_mol` **pair**. `sim-data`'s
+`shipped_aging_coefficients_give_a_plausible_one_year_fade` now evaluates each shipped
+chemistry's actual one-year calendar fade at 25 °C / full SOC, and its 500-full-cycle
+fade, against a 1–50 % band. A band, not a fitted number, so it stays inside the "shape
+not magnitude" rule; wide enough that any honest placeholder passes, narrow enough that
+an unevaluated pair does not. Verified by reverting NMC to 2.0e4, which fails it with
+"fades 264.3 %".
+
+**Slice D should do the same for `[safety]`.** `t_onset_k`, `t_vent_k`, and
+`runaway_energy_j` are placeholders that have likewise never been evaluated together,
+and they interact through the Arrhenius self-heating term the same way.
 
 ### Perf: a real but unquantified regression, deferred to slice E
 

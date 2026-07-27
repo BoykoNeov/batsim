@@ -791,7 +791,10 @@ impl Pack {
                     soh_cap,
                 );
                 if aging_accumulates {
-                    cell.aging.accumulate(i_k, dt, soc_before);
+                    // Throughput from the cell's own current, half-cycle direction
+                    // from the pack's — see `CellAging::accumulate` for why the two
+                    // differ, and what goes wrong if they do not.
+                    cell.aging.accumulate(i_k, i_g, dt, soc_before);
                 }
             }
         }

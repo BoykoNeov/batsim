@@ -171,3 +171,68 @@ volts = [3.0, 3.4]
     let chem = parse_chemistry(&text).expect("an adiabatic cell is valid");
     assert_eq!(chem.thermal.h_area_w_per_k, 0.0);
 }
+
+/// Every shipped chemistry's aging coefficients must produce a *plausible* fade
+/// curve, not merely a valid one.
+///
+/// This test exists because of a bug it would have caught two phases earlier. Every
+/// `[aging]` number is a labelled placeholder, and `validate()` checks each one in
+/// isolation — finite, non-negative, exponent ≥ 1. But `cal_pre_exp` and
+/// `cal_ea_j_per_mol` only mean anything as a **pair**: the pre-exponential is the
+/// Arrhenius factor's scale at the chosen activation energy, so changing either alone
+/// moves the answer by orders of magnitude. NMC shipped a pair giving ~260 % calendar
+/// fade in a year at 25 °C — a pack dead within weeks — and nothing noticed, because
+/// nothing had ever evaluated the pair. Each number looked fine on its own, and each
+/// carried a provenance note.
+///
+/// So the guard is a **band**, not a fitted number, which keeps it consistent with the
+/// project rule that scenarios assert shape rather than magnitude. It says only "a
+/// battery that loses between 1 % and 50 % of its capacity in a year on the shelf at
+/// room temperature", which is wide enough that any honest placeholder passes and
+/// narrow enough that an unevaluated coefficient pair does not. The same shape of
+/// check is what `[safety]`'s onset/vent/energy-budget numbers will want when they are
+/// wired in.
+#[test]
+fn shipped_aging_coefficients_give_a_plausible_one_year_fade() {
+    const YEAR_S: f64 = 365.0 * 24.0 * 3600.0;
+    const ROOM_K: f64 = 298.15;
+
+    for (name, text) in [
+        (
+            "lfp",
+            include_str!("../../../chemistries/lfp_26650_generic.toml"),
+        ),
+        (
+            "nmc",
+            include_str!("../../../chemistries/nmc_18650_generic.toml"),
+        ),
+    ] {
+        let chem = parse_chemistry(text).expect("shipped chemistry loads");
+        let aging = chem
+            .aging
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} must ship [aging] coefficients"));
+
+        // Worst realistic storage condition the coefficients describe: room
+        // temperature, fully charged.
+        let k = sim_core::aging::calendar_rate(aging, ROOM_K, 1.0);
+        let fade = k * YEAR_S.sqrt();
+        assert!(
+            (0.01..=0.5).contains(&fade),
+            "{name}: one year at 25 C and full SOC fades {:.1} % — outside the \
+             plausible 1–50 % band, so cal_pre_exp and cal_ea_j_per_mol are not a \
+             sane pair",
+            fade * 100.0
+        );
+
+        // Cycle fade, same treatment: 500 full cycles of a nominal-capacity cell.
+        // Throughput counts both directions, hence the factor of two.
+        let throughput_ah = 500.0 * 2.0 * chem.cell.capacity_ah;
+        let cyc = sim_core::aging::cycle_increment(aging, throughput_ah, 1.0);
+        assert!(
+            (0.01..=0.5).contains(&cyc),
+            "{name}: 500 full cycles fade {:.1} % — outside the plausible 1–50 % band",
+            cyc * 100.0
+        );
+    }
+}

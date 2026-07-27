@@ -605,3 +605,65 @@ fn cycle_weight_uses_the_per_amp_hour_exponent() {
     assert_eq!(cycle_increment(&params, 1.0, 0.25), flat);
     assert_eq!(cycle_increment(&params, 1.0, 0.0), flat);
 }
+
+/// Resting mid-discharge must not score one deep cycle as two shallow ones.
+///
+/// This is the test that caught the design's first real bug. Anchoring the
+/// depth-of-discharge reference on each *cell's* current sign seemed obviously right,
+/// and it silently broke on any pack with manufacturing scatter: at rest the cells of
+/// a parallel group circulate real current through each other, so half of them see a
+/// sign flip the moment the load comes off, discarding the depth accounting for the
+/// discharge in progress. On this 1S2P pack with 5 % scatter it cut one cell's cycle
+/// fade by 5.8 % for no physical reason. The direction now comes from the pack
+/// current, which is exactly zero at rest.
+///
+/// Calendar fade is switched off so the ten idle hours contribute nothing but the
+/// circulation itself, and the comparison is purely about the cycle term.
+#[test]
+fn resting_mid_discharge_does_not_split_the_cycle() {
+    let mut c = cfg(
+        0.9,
+        298.15,
+        Some(AgingConfig {
+            sub_clock_period_s: 10.0,
+        }),
+    );
+    c.parallel = 2;
+    c.scatter = Scatter {
+        capacity_sigma: 0.05,
+        r0_sigma: 0.05,
+    };
+    let mut params = aging_params();
+    params.cal_pre_exp = 0.0;
+    let e = env(298.15);
+
+    let mut rested = Pack::new(&c, chem(Some(params.clone()))).expect("pack builds");
+    for _ in 0..60 {
+        rested.step(60.0, Demand::Current(2.0), &e);
+    }
+    for _ in 0..600 {
+        rested.step(60.0, Demand::Rest, &e);
+    }
+    for _ in 0..60 {
+        rested.step(60.0, Demand::Current(2.0), &e);
+    }
+
+    let mut straight = Pack::new(&c, chem(Some(params))).expect("pack builds");
+    for _ in 0..120 {
+        straight.step(60.0, Demand::Current(2.0), &e);
+    }
+
+    for p in 0..2 {
+        let a = 1.0 - rested.cell(0, p).expect("cell exists").soh_capacity;
+        let b = 1.0 - straight.cell(0, p).expect("cell exists").soh_capacity;
+        assert!(b > 0.0, "cell {p} must have accrued cycle fade");
+        let ratio = a / b;
+        // The rest is allowed to add a little fade — circulating current between
+        // mismatched cells is real charge moving, and ten hours of it counts. It must
+        // not *remove* any, which is what a spurious re-anchor would do.
+        assert!(
+            (0.97..=1.05).contains(&ratio),
+            "cell {p}: resting changed cycle fade by more than circulation explains              (rested {a}, straight {b}, ratio {ratio})"
+        );
+    }
+}

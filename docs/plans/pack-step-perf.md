@@ -271,9 +271,16 @@ Two consequences to know:
 `Pack::set_cell_factors` is the only invalidation point outside `step` today.
 **Phase 3 must add its own**: anything that mutates a cell's state or `r0_factor`
 from outside `step` — the fault queue, `WeakCell`, a soft internal short — has to
-clear it. Aging is safe as written only if it runs *inside* `step` before the
-end-of-step reporting pass; if it ever moves to a sub-clock that mutates cells
-outside that window, it needs an invalidation too.
+clear it.
+
+**Aging (Phase 3 slice A) is settled and needs no invalidation.** It runs inside
+`step`, between the thermal integration and the end-of-step reporting pass, so the
+pass memoises post-aging sources. The invariant was also restated rather than merely
+preserved: entry *i* is now `cell_source(state, chem, cell.eff_r0_factor())`, where
+that method is `r0_factor · soh_resistance`. The `debug_assert` checks the composed
+product, so every debug-mode aging test is a staleness check on the sequencing. If a
+later slice ever moves the aging update outside that window it needs an invalidation
+like any other outside mutation.
 
 ## Candidate fixes, cheapest first
 
@@ -392,9 +399,10 @@ Beyond those, get a profiler before guessing a fifth item.
 
 **The thing most likely to break next is not speed, it is item 3's invariant.** The
 memo is correct only while every mutation of a cell's state or `r0_factor` from
-outside `step` clears it. Phase 3 adds exactly the code that does that — the fault
-queue, `WeakCell`, soft internal shorts. Read "What item 3 costs in invariants" above
-before adding any of them. The `debug_assert` will catch a miss in any debug-mode
+outside `step` clears it. Phase 3 slice A cleared aging off that list (it mutates
+inside `step`, before the reporting pass — see above), but the fault queue,
+`WeakCell`, and soft internal shorts all still mutate from outside. Read "What item 3
+costs in invariants" above before adding any of them. The `debug_assert` will catch a miss in any debug-mode
 test, which is the safety net, but it is not a substitute for knowing the rule.
 
 Two things to know before the next re-measure:
@@ -417,3 +425,22 @@ Two things to know before the next re-measure:
   That priced item 3 at exactly zero until it was fixed — the memo is cold on step one
   by definition. `benches/pack_step.rs`'s `warmed()` does this; if a future change makes
   a step depend on prior steps in some other way, check that helper first.
+
+
+## Slice A (aging) added overhead; magnitude not established
+
+`eff_r0_factor()` puts one extra multiply on every `cell_source` call — twice per cell
+per step, unconditional — plus two branch-gated accumulations. Paired alternating
+worktree runs on `100S10P/full` put slice A above `HEAD` in all three passes (57.0 vs
+56.6, 60.7 vs 52.0, 52.9 vs 49.1 µs), so the sign is known and the magnitude is not:
+the noise band was wider than the effect.
+
+**That session's box could not verify the budget in either arm.** The *baseline*
+measured 49–57 µs where this document records 39–49 µs, i.e. the machine was running
+~25 % slow, so no absolute statement about the 50 µs budget can be drawn from those
+numbers — including the apparent overrun. Phase 3 slice E owns the honest re-measure.
+
+If the overhead does need removing, the fix is to store `r0_factor · soh_resistance`
+as a derived field on `Cell`, refreshed at the aging tick and in `set_cell_factors` —
+the same invariant-with-a-`debug_assert` shape item 3 already uses, and the same
+obligation: measure first, because it buys a field that can go stale.
