@@ -102,6 +102,7 @@ fn chem() -> ChemistryParams {
 /// attributable to the *lag*, not to sensor error.
 fn protecting_bms() -> BmsConfig {
     BmsConfig {
+        balancing: None,
         protection: Some(ProtectionConfig {
             // Generous margins: these scenarios should exercise the *derate* path, and
             // reaching the contactor would mean derating had failed.
@@ -347,6 +348,7 @@ fn overtemperature_latches_the_contactor_open() {
     // Start already above the hard threshold, which is what a runaway would look like
     // to the BMS. A tight margin keeps the scenario short.
     let bms = BmsConfig {
+        balancing: None,
         protection: Some(ProtectionConfig {
             v_hard_margin_v: 0.5,
             t_hard_margin_k: 5.0,
@@ -456,6 +458,7 @@ fn overshoot_is_one_step_and_bounded() {
 #[test]
 fn monitor_only_bms_estimates_without_protecting() {
     let bms = BmsConfig {
+        balancing: None,
         protection: None,
         ..protecting_bms()
     };

@@ -85,9 +85,50 @@ pub struct ProtectionConfig {
     pub t_hard_margin_k: f64,
 }
 
+/// Passive balancing: a bleed resistor across each parallel group, switched in when
+/// that group's measured voltage runs high.
+///
+/// Passive balancing does not move charge from a full group to an empty one — it
+/// wastes the excess as heat in the resistor so the others can catch up. That is why
+/// it only helps near the end of charge, and why the pack it balances ends up with
+/// *less* total energy than it started with. Demonstrating that trade-off is the
+/// point of having it.
+///
+/// # How it enters the solve
+///
+/// A closed bleed switch is simply a conductance `G_b = 1/R_bleed` across the group
+/// node, so the group's KCL becomes
+///
+/// ```text
+/// V = (Σ E_k/R_k − I) / (Σ 1/R_k + G_b)
+/// ```
+///
+/// The group Thévenin stays exactly linear (`R_g' = 1/(Σ1/R_k + G_b)`,
+/// `E_g' = (Σ E_k/R_k)·R_g'`), so series aggregation and the demand solve are
+/// untouched, and the per-cell currents automatically sum to `I + I_bleed`. No
+/// approximation and no extra iteration — one extra term in a denominator the step
+/// already computes.
+///
+/// The *decision* to close the switch is made from the lagged sensor frame, because
+/// that is a BMS control decision and the BMS only has sensors. The *physics* once
+/// closed is exact.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BalancingConfig {
+    /// Bleed resistance across one group \[ohms\]. Must be finite and `> 0`. Smaller
+    /// means faster balancing and more waste heat.
+    pub bleed_r_ohms: f64,
+    /// Measured group voltage above which that group's bleed switch closes \[V\].
+    ///
+    /// Set this near the top of charge: below it, bleeding just throws away energy
+    /// without reducing any imbalance that matters.
+    pub v_threshold_v: f64,
+}
+
 /// What the BMS is allowed to know and how badly its sensors lie.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BmsConfig {
+    /// Passive balancing policy, or `None` for a BMS that never balances.
+    pub balancing: Option<BalancingConfig>,
     /// Protection policy, or `None` for a **monitor-only** BMS.
     ///
     /// `None` still estimates SOC and reports sensor readings, it just never clamps a
@@ -254,6 +295,28 @@ impl Bms {
         let was_open = self.contactor_open;
         self.contactor_open = false;
         was_open
+    }
+
+    /// Fill `out` with each group's bleed conductance \[S\] for this step: `1/R_bleed`
+    /// where the switch is closed, `0.0` where it is open, in series order.
+    ///
+    /// Left empty when balancing is disabled, which the caller reads as "no bleed
+    /// anywhere". Decided from the lagged sensor frame — a real balancer switches on
+    /// what it measured, not on what is true — but note this is a pure read: it
+    /// mutates nothing, so it is safe to call on a zero-length probe step, where it
+    /// keeps the reported voltage consistent with the step that follows.
+    pub(crate) fn bleed_conductances(&self, out: &mut Vec<f64>) {
+        out.clear();
+        let Some(bal) = self.config.balancing else {
+            return;
+        };
+        let g = 1.0 / bal.bleed_r_ohms;
+        out.extend(
+            self.frame
+                .v_group
+                .iter()
+                .map(|&v| if v > bal.v_threshold_v { g } else { 0.0 }),
+        );
     }
 
     /// Apply protection to the current the demand solved for, returning the current

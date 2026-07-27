@@ -61,7 +61,14 @@ use crate::{Demand, Env, Telemetry};
 /// voltages in it depend on a current that is not stored, and its noise draw has
 /// already advanced the RNG. Same caveat as v3 about what actually rejects an older
 /// blob.
-pub const SNAPSHOT_VERSION: u32 = 4;
+///
+/// v5 (Phase 2, protection + balancing): `BmsConfig` gained `protection` and
+/// `balancing`, and `Bms` gained the latched `contactor_open`. This bump covers
+/// **two** slices: the protection slice changed the layout and failed to bump, and
+/// this note is the correction rather than a silent renumbering. No v4 snapshot has
+/// ever existed outside a single test process, so nothing needs migrating — but the
+/// rule is one bump per layout-changing slice, and it was missed once.
+pub const SNAPSHOT_VERSION: u32 = 5;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -487,13 +494,25 @@ impl Pack {
             }
         }
 
+        // --- passive balancing: a closed bleed switch is just a conductance across
+        // the group node. Reading it mutates nothing, so this runs on probe steps too,
+        // keeping the reported voltage consistent with the step that would follow.
+        let mut bleed_g: Vec<f64> = Vec::new();
+        if let Some(bms) = &self.bms {
+            bms.bleed_conductances(&mut bleed_g);
+        }
+        let bleed_at = |g: usize| bleed_g.get(g).copied().unwrap_or(0.0);
+
         // --- start-of-step: per-cell and per-group Thévenin, then pack aggregate.
         // group_src[g] = (E_g, R_g); cell_src[g][k] = (E_k, R_k).
         let mut group_src: Vec<(f64, f64)> = Vec::with_capacity(self.groups.len());
         let mut cell_src: Vec<Vec<(f64, f64)>> = Vec::with_capacity(self.groups.len());
-        for group in &self.groups {
+        for (g_idx, group) in self.groups.iter().enumerate() {
             let mut srcs = Vec::with_capacity(group.cells.len());
-            let mut sum_g = 0.0; // Σ 1/R_k  (conductance)
+            // Σ 1/R_k, plus the bleed conductance if this group is balancing. Note the
+            // bleed enters the *denominator only*: it draws current out of the node
+            // without contributing any EMF.
+            let mut sum_g = bleed_at(g_idx);
             let mut sum_eg = 0.0; // Σ E_k/R_k
             for cell in &group.cells {
                 let (e, r) = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
@@ -617,8 +636,10 @@ impl Pack {
         } else {
             Vec::new()
         };
-        for group in &self.groups {
-            let mut sum_g = 0.0;
+        let mut q_balancing_w = 0.0;
+        for (g_idx, group) in self.groups.iter().enumerate() {
+            let g_bleed = bleed_at(g_idx);
+            let mut sum_g = g_bleed;
             let mut sum_eg = 0.0;
             for cell in &group.cells {
                 let (e, r) = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
@@ -636,6 +657,12 @@ impl Pack {
             v_terminal += v_g;
             v_cell_min = v_cell_min.min(v_g);
             v_cell_max = v_cell_max.max(v_g);
+            if g_bleed > 0.0 {
+                // V²/R, dissipated in the bleed resistor — not in the cell, so this
+                // does not feed the thermal network.
+                q_balancing_w += v_g * v_g * g_bleed;
+                flags |= EventFlags::BALANCING;
+            }
             if self.bms.is_some() {
                 v_group.push(v_g);
             }
@@ -680,6 +707,7 @@ impl Pack {
             soh_capacity: 1.0,
             soh_resistance: 1.0,
             q_gen_w,
+            q_balancing_w,
             flags,
         }
     }
@@ -752,6 +780,22 @@ fn validate_bms(bms: &BmsConfig, series: u16, parallel: u16) -> Result<(), Build
                 field,
                 reason,
                 value,
+            });
+        }
+    }
+    if let Some(bal) = bms.balancing {
+        if !(bal.bleed_r_ohms.is_finite() && bal.bleed_r_ohms > 0.0) {
+            return Err(BuildError::BadBmsConfig {
+                field: "balancing.bleed_r_ohms",
+                reason: "must be finite and > 0",
+                value: bal.bleed_r_ohms,
+            });
+        }
+        if !bal.v_threshold_v.is_finite() {
+            return Err(BuildError::BadBmsConfig {
+                field: "balancing.v_threshold_v",
+                reason: "must be finite",
+                value: bal.v_threshold_v,
             });
         }
     }

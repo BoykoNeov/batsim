@@ -1,7 +1,7 @@
 # Phase 2 — thermal + BMS
 
-**Status:** slices A (thermal), B (sensors + estimator) and C (protection) landed.
-D–E open.
+**Status:** slices A (thermal), B (sensors + estimator), C (protection) and D
+(balancing) landed. E open.
 **Exit criteria** (from `CLAUDE.md`): centre cells run measurably hotter; the LFP
 estimator-drift scenario passes; protection scenarios pass with the BMS on, and the
 same demands violate limits with it off.
@@ -13,13 +13,17 @@ same demands violate limits with it off.
 | A | thermal network: `[thermal]` chemistry section, `ThermalConfig`, per-cell lumped nodes, heat generation, grid adjacency, Euler + sub-stepping, `Env` consumed, energy-balance property test | **done** |
 | B | sensor layer + SOC estimator: `BmsConfig`, sensor frame, coulomb-count estimator with drift, rest-gated OCV correction, `soc_bms` | **done** |
 | C | protection: OV/UV per group, OC (separate charge/discharge), OT/UT, charge inhibit, derate → contactor open, BMS-off contrast scenarios | **done** |
-| D | passive balancing: per-group bleed resistor above a voltage threshold | open |
+| D | passive balancing: per-group bleed resistor above a voltage threshold | **done** |
 | E | wrap-up: scenario tests, perf re-measure | open |
 
 Each slice keeps `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` clean, and bumps
-`SNAPSHOT_VERSION` if it changes the serialized layout (A took it 2 → 3). One bump
-per layout-changing slice — do not try to share one version across the phase.
+`SNAPSHOT_VERSION` if it changes the serialized layout. One bump per layout-changing
+slice — do not try to share one version across the phase. A took it 2 → 3, B 3 → 4, and
+D 4 → 5; **C changed the layout and forgot to bump**, so D's bump covers both. Nothing
+was harmed (no v4 snapshot outlived a test process) but it is exactly the kind of miss
+the rule exists to prevent, so check the layout at the end of every slice, not just the
+ones that feel like they touch state.
 
 ## Decisions already made (do not re-derive)
 

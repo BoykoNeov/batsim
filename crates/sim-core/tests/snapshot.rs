@@ -79,6 +79,7 @@ fn config() -> PackConfig {
         // stored, and its noise draw has already advanced the RNG — so if it were
         // ever left out of the snapshot, this test is what would notice.
         bms: Some(BmsConfig {
+            balancing: None,
             protection: None,
             current_offset_a: 0.01,
             current_noise_sigma_a: 0.05,

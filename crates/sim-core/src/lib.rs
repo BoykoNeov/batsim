@@ -28,7 +28,7 @@ mod noise;
 pub mod pack;
 pub mod thermal;
 
-pub use bms::{Bms, BmsConfig, SensorFrame};
+pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
 pub use chem::{ChemistryError, ChemistryParams, ThermalParams};
 pub use ecm::{CellModel, EcmState};
 pub use flags::EventFlags;
@@ -93,6 +93,13 @@ pub struct Telemetry {
     /// overpotential relaxes against a reversed current, or under a dominant
     /// endothermic entropic term.
     pub q_gen_w: f64,
+    /// Power burned in the passive balancing resistors this step \[W\].
+    ///
+    /// Zero unless at least one group's bleed switch is closed. This is energy
+    /// *thrown away* to bring high groups down — it is dissipated in the resistors,
+    /// not inside the cells, so it does not feed the thermal network. Watching it is
+    /// the honest way to see what passive balancing costs.
+    pub q_balancing_w: f64,
     /// Events raised during this step (protection trips, clamps, safety states).
     pub flags: EventFlags,
 }
