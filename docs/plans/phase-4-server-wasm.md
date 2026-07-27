@@ -77,7 +77,14 @@ physics-transparent in the same assertion. Include a mid-experiment
 snapshot → REST GET → REST POST → resume leg in the WebSocket run, so restore-over-the-wire
 is inside the same bit-identical claim.
 
-### Snapshots over JSON need `serde_json`'s `float_roundtrip` feature — measured, not assumed
+### Every `f64` crossing the wire needs `serde_json`'s `float_roundtrip` feature — measured, not assumed
+
+**This is not a snapshot-only concern**, though snapshots are where it was found. The
+exit gate parses `Telemetry` out of JSON to compare it bit-for-bit against an in-process
+run; without the feature that comparison can fail on `v_terminal` or `q_gen_w` with no
+snapshot anywhere near it. Any crate that parses engine floats out of JSON — server,
+wasm module, **and the test client** — is a consumer of this requirement.
+
 
 This is the finding that most deserves to be written down before anyone starts, because
 it fails *silently and rarely*.
@@ -97,8 +104,11 @@ continued trajectory bit-identical: false
 
 With `serde_json = { version = "1", features = ["float_roundtrip"] }` the same probe gives
 `true` on all three, including a 600-step run split by a JSON snapshot at step 300 on an
-aging + plating configuration (i.e. one that draws from the pack RNG mid-run). Note also
-that the re-serialized JSON *text* was unstable without the feature and stable with it.
+aging + plating configuration. That leg does draw from the pack RNG after the restore, and
+it was checked rather than assumed: `PLATING_RISK` was raised on 75 steps before the split
+and 75 after, and the serialized `word_pos` advanced 512 → 992 across the resumed half.
+Note also that the re-serialized JSON *text* was unstable without the feature and stable
+with it.
 
 Consequences to bake in:
 
@@ -131,6 +141,13 @@ So the boundary rejects, and the engine keeps its contract:
 - `n_steps` has a configured per-message cap (default 1 000 000). A single message must not
   be able to occupy the session task for minutes without the client being able to
   interleave anything.
+- **`n_steps / report_every_n_steps` has its own cap** (frames per reply, default 10 000),
+  rejected up front rather than truncated. The two caps are individually reasonable and
+  jointly a footgun: a million steps at the default `k = 1` is a million-frame batch reply,
+  which the "a batch delivers all its frames or errors" rule then obliges the server to
+  actually send. Failing the command with "asked for 1 000 000 frames, cap is 10 000; raise
+  `report_every_n_steps`" is the right answer — it names the knob, and it makes the
+  fast-forward case (huge `n_steps`, coarse `k`) the one that works by construction.
 
 Note the asymmetry the engine already has, because it tells you which half needs work:
 `Pack::schedule_fault` **does** validate (`FaultError::NotFinite`, index bounds), so the
@@ -190,10 +207,18 @@ Don't. A `Scenario` is the **initial condition and the pack's own pre-programmed
 misfortunes**:
 
 ```toml
+# Exactly one of these two, and both are top-level keys — they must appear *above*
+# the first table header or TOML swallows them into it. `chemistry` is an id the
+# adapter resolves; `chemistry_toml` is the parameter set inlined verbatim, which is
+# what makes a scenario self-contained for a server that ships no `chemistries/`
+# tree. Two plainly-named optional keys, deliberately not one untagged enum: untagged
+# enums in TOML are a known sharp edge, and "exactly one of these is required" is a
+# two-line validation with a good error message.
+chemistry = "lfp_26650_generic"
+# chemistry_toml = """ [meta] ... """
+
 [meta]
 name = "overcharge with the BMS off"
-
-chemistry = "lfp_26650_generic"   # id, or inline = """<toml text>"""
 
 [pack]                             # exactly PackConfig, serde as it already is
 series = 4
