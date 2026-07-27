@@ -1,16 +1,26 @@
-//! `sim-data` — TOML chemistry-parameter loading and validation.
+//! `sim-data` — TOML loading and validation for the engine's input files.
 //!
-//! Parses `chemistries/*.toml` parameter sets into [`sim_core::ChemistryParams`]
-//! and runs the engine's own [`ChemistryParams::validate`] on the result. All
-//! format-specific parsing (the `toml` crate) lives here; `sim-core` stays free of
-//! file formats and I/O.
+//! Two formats, both text-first because a browser has no filesystem:
+//!
+//! * **chemistries** (`chemistries/*.toml`) → [`sim_core::ChemistryParams`], validated
+//!   by the engine's own [`ChemistryParams::validate`];
+//! * **scenarios** (`scenarios/*.toml`) → [`Scenario`], a pack's initial condition and
+//!   its queued faults.
+//!
+//! All format-specific parsing (the `toml` crate) lives here; `sim-core` stays free of
+//! file formats and I/O. The `load_*_file` functions are thin `std::fs` wrappers over
+//! the `parse_*` ones, so a host without files simply does not call them.
 
 use std::path::Path;
 
-use sim_core::{ChemistryError, ChemistryParams};
+use sim_core::{BuildError, ChemistryError, ChemistryParams, FaultError};
 use thiserror::Error;
 
-/// Ways loading a chemistry can fail.
+pub mod scenario;
+
+pub use scenario::{load_scenario_file, parse_scenario, ChemistrySource, Scenario, ScenarioMeta};
+
+/// Ways loading a chemistry or a scenario can fail.
 #[derive(Debug, Error)]
 pub enum DataError {
     /// The file could not be read.
@@ -27,6 +37,20 @@ pub enum DataError {
     /// The parsed parameters failed physical/structural validation.
     #[error("invalid chemistry: {0}")]
     Invalid(#[from] ChemistryError),
+    /// A scenario parsed as TOML but is not a usable scenario.
+    ///
+    /// Its own variant rather than a reuse of [`Self::Invalid`]: these are the checks
+    /// no engine type could make (which chemistry key is set, whether an id is safe to
+    /// join onto a directory), so borrowing [`ChemistryError`]'s name for them would
+    /// misreport what failed.
+    #[error("invalid scenario: {0}")]
+    Scenario(String),
+    /// A scenario's pack could not be built for the chemistry it names.
+    #[error("building the scenario's pack: {0}")]
+    Build(#[from] BuildError),
+    /// A scenario's queued fault does not fit the pack it targets.
+    #[error("scheduling a scenario fault: {0}")]
+    Fault(#[from] FaultError),
 }
 
 /// Parse and validate a chemistry from TOML text.

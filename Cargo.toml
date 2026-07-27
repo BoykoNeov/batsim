@@ -19,6 +19,14 @@ rust-version = "1.94"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
+# `float_roundtrip` is NOT optional and is the reason this lives at the workspace
+# level: serde_json's default float parser is not correctly rounded, and its fast
+# path can return a value one ULP off the one ryu wrote. Measured on this engine —
+# a snapshot round-trip changed `v_rc` in the last bit and the continued trajectory
+# stopped being bit-identical. Every crate that parses engine floats out of JSON
+# (sim-server, sim-wasm, and any test client) inherits the feature from here so a
+# later crate cannot quietly forget it. See docs/plans/phase-4-server-wasm.md.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 toml = "0.8"
 rand_chacha = { version = "0.3", features = ["serde1"] }
 rand_core = "0.6"

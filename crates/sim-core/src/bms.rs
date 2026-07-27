@@ -129,6 +129,13 @@ pub struct BalancingConfig {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BmsConfig {
     /// Passive balancing policy, or `None` for a BMS that never balances.
+    ///
+    /// `#[serde(default)]` for the same reason [`crate::PackConfig`]'s own optional
+    /// slots carry it: TOML has no null, so without it "a BMS that never balances"
+    /// would be a state a scenario file could not express at all. Omission means off,
+    /// matching every other optional component. Deserialization-only — the field is
+    /// still always written, so no snapshot layout changes.
+    #[serde(default)]
     pub balancing: Option<BalancingConfig>,
     /// Protection policy, or `None` for a **monitor-only** BMS.
     ///
@@ -136,6 +143,9 @@ pub struct BmsConfig {
     /// demand — the BMS watches the pack drive itself past its limits. That is a
     /// distinct teaching case from having no BMS at all (where there is no estimate
     /// and no instrumentation either).
+    ///
+    /// `#[serde(default)]`: see [`Self::balancing`].
+    #[serde(default)]
     pub protection: Option<ProtectionConfig>,
     /// Systematic error added to every pack-current reading \[A\],
     /// discharge-positive. This is the error that *integrates*: a milliamp of offset

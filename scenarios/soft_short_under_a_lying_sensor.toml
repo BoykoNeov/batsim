@@ -1,0 +1,78 @@
+# A phase-3 fault scenario as a file: one cell springs an internal leak, and the
+# sensor that would have shown it is offset by exactly enough to hide it.
+#
+# The pack is fine on paper the whole time. Group 1 drains — a soft internal short
+# pulls current from the whole parallel group it sits in, not just its own cell —
+# while the voltage sensor on that group reports a value biased high. The BMS sees
+# four healthy groups and never trips; ground truth says otherwise, and the gap
+# between the two is the point. Compare `pack.bms` removed entirely: same physics,
+# no estimate and no instrumentation to be wrong.
+
+chemistry = "lfp_26650_generic"
+
+[meta]
+name = "soft internal short under a lying sensor"
+description = """
+4S2P LFP, thermally coupled, with a protective and balancing BMS. At t = 600 s a \
+5-ohm internal short appears on cell (1,0) and a +120 mV offset lands on the group-1 \
+voltage sensor in the same instant. Ground truth and the BMS view diverge; \
+Telemetry::soc_bms against Telemetry::soc_true is where to watch it."""
+
+[pack]
+series = 4
+parallel = 2
+initial_soc = 0.85
+initial_temp_k = 298.15
+seed = 20260727
+
+# Manufacturing spread, so the groups are not identical before anything goes wrong
+# and the short has a realistic baseline to stand out against.
+[pack.scatter]
+capacity_sigma = 0.02
+r0_sigma = 0.03
+
+# Enum, serde-default (externally tagged): the variant name is the table.
+# Dropping this section entirely would give an isothermal pack, which would hide the
+# short's self-heating — the one symptom the lying voltage sensor cannot suppress.
+[pack.thermal.Network]
+k_neighbor_w_per_k = 0.5
+
+# Aging is on, so the run also accumulates the resistance growth that makes an old
+# pack's imbalance worse. Every 10 s of simulation time, one update.
+[pack.aging]
+sub_clock_period_s = 10.0
+
+[pack.bms]
+# Sensor error the BMS cannot know about, on top of the injected fault below.
+current_offset_a = 0.02
+current_noise_sigma_a = 0.01
+# Two probes for four groups: the BMS cannot see the temperature of every cell, and
+# neither probe is on the cell that shorts.
+temp_probes = [[0, 0], [3, 0]]
+initial_soc_error = 0.03
+rest_current_threshold_a = 0.05
+rest_time_for_ocv_s = 600.0
+ocv_correction_gain = 0.1
+# LFP's plateau is flat enough that an OCV correction there is noise amplification;
+# below this slope the estimator declines to correct. Watching it decline is the
+# LFP-specific half of the lesson.
+min_ocv_slope_v_per_soc = 0.15
+
+[pack.bms.protection]
+v_hard_margin_v = 0.15
+t_hard_margin_k = 10.0
+
+[pack.bms.balancing]
+bleed_r_ohms = 33.0
+v_threshold_v = 3.45
+
+# Faults are read in file order and handed to the engine in that order. The queue
+# sorts by `at_s` and breaks ties by scheduling order, so these two sharing a
+# timestamp fire top-down as written here — the short first, then the lie about it.
+[[faults]]
+at_s = 600.0
+fault = { SoftInternalShort = { s = 1, p = 0, ohms = 5.0 } }
+
+[[faults]]
+at_s = 600.0
+fault = { SensorOffset = { sensor = { GroupVoltage = 1 }, offset = 0.12 } }

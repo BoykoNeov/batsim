@@ -1,6 +1,6 @@
 # Phase 4 — headless server + browser demo
 
-**Status: planned.** No slice has landed. This file is written before the work so the
+**Status: slice A landed.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` and `phase-3-aging-faults.md` grew.
 
@@ -16,7 +16,7 @@ purposes. That framing is load-bearing: see "The `SNAPSHOT_VERSION` canary".
 
 | slice | scope | state |
 | ----- | ----- | ----- |
-| A | wire contract, no new crates: serde on `Telemetry`/`Demand`/`Env`/`CellView`, `Scenario` + `parse_scenario` in `sim-data`, boundary validation helpers | planned |
+| A | wire contract, no new crates: serde on `Telemetry`/`Demand`/`Env`/`CellView`, `Scenario` + `parse_scenario` in `sim-data`, boundary validation helpers | **landed** (v9 — no bump, as designed) |
 | B | `sim-server` skeleton: axum, session store, REST (create from scenario, inspect, snapshot GET/POST, delete), chemistry resolution | planned |
 | C | WebSocket: command/event protocol, explicit-`dt` batch stepping, report decimation, the one-writer rule. **Carries the exit criterion.** | planned |
 | D | `sim-wasm` + the browser page: `wasm-bindgen` wrapper, chemistry TOML text handed in from JS, hand-rolled canvas plotting, zero external JS deps | planned |
@@ -421,6 +421,161 @@ there is nothing to do about it beyond knowing which command to run.
   changes — so this is a control, not an expectation. Per
   `docs/plans/pack-step-perf.md` and the memory note: report ratios against a
   same-session baseline, not absolutes; this box has missed its fast state repeatedly.
+
+---
+
+## Learned while building — slice A (wire contract)
+
+### The canary held, and it earned its keep once
+
+`SNAPSHOT_VERSION` stayed at 9 and the bincode replay test passed untouched, which is
+the check that actually matters (reading the constant proves nothing). But the slice
+did make one engine edit, and the canary is exactly what forced it to be justified
+rather than waved through.
+
+**`BmsConfig::balancing` and `BmsConfig::protection` had no `#[serde(default)]`, and
+TOML has no null.** So "a BMS that protects but never balances" — a state the engine
+supports, a state `sim-core`'s own tests construct routinely — was *unwritable as a
+scenario file*. Not awkward: impossible. Serde's derive treats a bare `Option<T>` field
+as required, and there is no TOML literal that spells `None`.
+
+The canary's rule is "the honest fixes are almost always 'put it in the adapter' or
+'add a read-only accessor'." Neither applies here, and the third option the rule
+implies — the adapter mirrors the type — is the DTO layer this plan already rejected.
+So the fix went into the engine, and it is defensible on the engine's own terms:
+`PackConfig` already marks `bms`, `aging`, `thermal`, and `scatter` as
+`#[serde(default)]` for precisely this reason. These two were the same kind of
+off-by-omission knob and were simply missed. `#[serde(default)]` affects
+deserialization only — the fields are still always written — so no layout changed and
+no bump was owed.
+
+Worth stating as a general shape, because slice D will meet it again: **an `Option`
+field on a config type that a scenario file can reach needs `#[serde(default)]`, or
+that config's `None` case does not exist in TOML.**
+
+### The float test had to be built to fail, and was checked by making it fail
+
+The plan said `float_roundtrip` "fails silently and rarely." The trap that follows from
+that, and which the plan did not spell out: a `Telemetry` round-trip assembled from
+hand-written literals (`3.3`, `298.15`, `0.5`) passes **with or without** the feature.
+Such a test looks like the regression guard the plan asked for and is worth nothing.
+
+So `wire_json.rs` takes its numbers from a stepped pack — 4S2P LFP, scatter on, the
+plan's own probe shape — because scatter is what fills the mantissas, and compares
+`f64::to_bits` across twenty consecutive steps rather than one.
+
+That it *is* discriminating was verified rather than assumed: dropping the feature from
+the workspace manifest and re-running gives
+
+```text
+out: {"v_terminal":13.160750714657267, ...}
+in:  Telemetry { v_terminal: 13.160750714657269, ... }
+```
+
+one ULP on `v_terminal`, plus `v_rc_sum` and `r0_factor` in `CellView`. Both tests fail;
+the two shape tests still pass, which is the point — nothing except a full-mantissa
+comparison sees this. Re-checked after the final seed change, since the values are
+seed-dependent and "it failed once, with a different seed" is not the claim.
+
+The cheap canary is worth knowing separately: the re-serialized JSON **text** is not a
+fixed point without the feature. That is a string comparison, no floats in sight, and
+it catches the same regression.
+
+### Validation split: the boundary checks only what nothing downstream would
+
+The plan's slice A line says "finiteness of every `f64`". Implementing that literally
+would have given one condition two error messages that drift apart, because `Pack::new`
+already rejects a zero topology, an out-of-range `initial_soc`, a non-positive
+`initial_temp_k`, a bad thermal conductance, and every out-of-range `BmsConfig` field,
+and `Pack::schedule_fault` already rejects a non-finite `at_s`, a non-positive short
+resistance, and an out-of-topology cell index.
+
+`Scenario::validate` therefore covers only the four things nothing else would:
+
+1. exactly one of `chemistry` / `chemistry_toml`;
+2. the chemistry id matches `[a-z0-9_]+` (a filesystem concern the engine has no
+   business knowing about);
+3. an inlined chemistry parses **and validates**, eagerly — so a self-contained
+   scenario is whole or rejected, never accepted here and found broken later somewhere
+   with no filename in hand;
+4. the `Scatter` sigmas are finite and `>= 0`.
+
+Number 4 is the real find. It is the one genuine gap in the engine's own checks: a NaN
+sigma is not rejected anywhere, and `(1.0 + NaN·z).max(MIN_FACTOR)` returns
+`MIN_FACTOR` — `f64::max` prefers the non-NaN operand — so every cell silently comes
+out pinned at the minimum factor and nothing says a word. The engine could grow this
+check instead; it did not, because a sigma is a *config* value and the boundary is
+where config arrives.
+
+`engine_owned_invalidity_survives_parsing_and_fails_at_build` pins the division so it
+reads as a decision: a `nan` temperature parses fine and fails at `build_pack` with a
+typed `DataError::Build`.
+
+### `deny_unknown_fields` is asymmetric, on purpose
+
+It sits on `Scenario` and `ScenarioMeta` — sim-data's own types — and is deliberately
+not retrofitted onto `PackConfig`, which is an engine type with a compatibility surface
+of its own. Consequence: `duration_s = 3600` beside `[pack]` is a parse error (good —
+the temptation to make a scenario a demand program fails loudly), while `typo_here = 1`
+*inside* `[pack]` is silently ignored. Pinned by test so finding it later reads as a
+decision rather than a bug.
+
+The related trap the plan already fixed in its own text is now structurally guarded:
+`chemistry` is declared before every table-valued field on `Scenario`, so the TOML
+serializer cannot emit it after `[meta]` — where re-parsing would read it as
+`meta.chemistry`, a *different document that still parses*. A round-trip test would not
+have caught that on its own; the field order is what makes it impossible.
+
+### `build_pack` shipped here, not in slice B
+
+`Scenario::build_pack(chem) -> Result<Pack, DataError>` — construct the pack, then
+schedule the faults in file order. Small, needed identically by `sim-server` and
+`sim-wasm`, and it is what lets the shipped fault example be *run* in slice A's tests
+rather than merely parsed. That is what the plan meant by "the format has a user before
+it has a server": `soft_short_example_runs_and_diverges` builds the file, steps it for
+20 simulated minutes, and asserts the shorted group actually drains while the offset
+sensor hides it.
+
+It also puts the fault-ordering rule in exactly one place. **File order is
+load-bearing**: the engine's queue sorts by `at_s` and breaks ties by scheduling order,
+so two faults sharing a timestamp fire top-down as written. Nothing sorts the file, and
+nothing should — the plan's instinct to require sortedness would have been a
+requirement the engine does not have.
+
+### Two shipped scenarios, and what the second one is
+
+`scenarios/cc_discharge_lfp.toml` — 1S1P, everything off, the readable one. Its comment
+block spells out that each omitted section means *off*, not *on with defaults*, which
+is the one thing about `PackConfig`'s serde defaults that will bite a scenario author.
+
+`scenarios/soft_short_under_a_lying_sensor.toml` — 4S2P LFP, thermal network, full BMS,
+aging on, two faults at the same timestamp: a soft internal short on cell (1,0) and a
++120 mV offset on that group's voltage sensor. It exercises every nested shape the
+format has (enum-as-table `[pack.thermal.Network]`, `Option` sub-tables, a
+`Vec<(u16,u16)>`, externally-tagged faults with a nested `SensorId`), and it is a real
+teaching scenario rather than a syntax exhibit: ground truth and the BMS view diverge,
+and the BMS never trips.
+
+Note what it is *not*: it does not mirror a specific phase-3 Rust test's `PackConfig`.
+The phase-3 fault tests build synthetic chemistries inline, so a file naming
+`lfp_26650_generic` could not have reproduced one of them, and claiming it did would
+have been a label the test could not cash. The equivalence assertion that does the work
+is against a fully-written-out `PackConfig` literal in the test — which is what catches
+a serde field name or enum shape that TOML accepts but that does not mean what the file
+says. A spot-check would pass with `[pack.thermal.Network]` silently falling back to
+`Isothermal`.
+
+### Where the JSON tests live, and why not in `sim-core`
+
+`crates/sim-data/tests/wire_json.rs`, with `serde_json` as a `sim-data` dev-dep. The
+types under test are `sim-core`'s, so `sim-core` was the obvious home — but the probe
+needs a real chemistry off disk to produce full-mantissa floats, and `sim-core` performs
+no file I/O. Hosting them there would have meant copying a chemistry inline (as
+`scenario_runaway.rs` has to) purely to test a serialization format.
+
+`sim-core` keeps its dev-dep comment's promise: the engine still declares no
+serialization format of its own. The adapter chooses, and here the adapter's choice is
+what is on trial.
 
 ---
 

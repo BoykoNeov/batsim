@@ -331,7 +331,13 @@ struct ParallelGroup {
 ///
 /// This is the engine's *true* per-cell state — distinct from anything the BMS can
 /// sense (the BMS sees group-level sensors only, from Phase 2 on).
-#[derive(Clone, Copy, Debug, PartialEq)]
+///
+/// Serde for the same reason as [`Telemetry`] — adapters put it on a socket — and
+/// with the same consequence: these field names are a wire contract, versioned by
+/// the adapter's API version rather than by [`SNAPSHOT_VERSION`]. Note this is a
+/// *view*, not stored state: deserializing one produces a detached value, never a
+/// handle onto a pack.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CellView {
     /// Ground-truth state of charge, in \[0, 1\].
     pub soc: f64,

@@ -47,8 +47,15 @@ pub use pack::{
 pub use runaway::CellRunaway;
 pub use thermal::ThermalConfig;
 
+use serde::{Deserialize, Serialize};
+
 /// What the outside world asks of the pack this step.
-#[derive(Clone, Copy, Debug, PartialEq)]
+///
+/// # On the wire
+/// Serde-default (externally tagged), matching every other enum the engine
+/// serializes: `{"Current": -5.0}`, `"Rest"`. See [`Telemetry`] for what that
+/// costs.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Demand {
     /// Constant current. Positive = discharge \[A\].
     Current(f64),
@@ -61,7 +68,7 @@ pub enum Demand {
 }
 
 /// Environment for this step.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Env {
     /// Ambient temperature \[K\].
     pub t_ambient: f64,
@@ -71,7 +78,19 @@ pub struct Env {
 
 /// Cheap per-step summary of pack state. Per-cell arrays are available on request
 /// via the ground-truth accessors.
-#[derive(Clone, Copy, Debug, PartialEq)]
+///
+/// # On the wire
+/// This type is serde so that adapters (`sim-server`, `sim-wasm`) can put it on a
+/// socket without mirroring forty fields into a DTO that would drift from the doc
+/// comments above — which are the actual documentation of what these numbers mean.
+/// The cost, named rather than dodged: **the field names below are a wire contract**.
+/// Renaming one is a client-visible break, and it is *not* covered by
+/// [`SNAPSHOT_VERSION`], which versions pack state and knows nothing about telemetry.
+/// Adapters carry their own API version for this.
+///
+/// [`EventFlags`] crosses as a `" | "`-joined name string (`""` for none), not a
+/// bitmask integer — see that type.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Telemetry {
     /// Terminal voltage \[V\].
     pub v_terminal: f64,
