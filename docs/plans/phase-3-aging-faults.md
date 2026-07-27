@@ -870,3 +870,41 @@ wants its own commit and its own goldens re-check.
 The benchmark's `lfp_like_chem` now carries the two new coefficients at their shipped
 values, so the gate is measured on the configuration that ships rather than optimised away
 by a zero amplitude nobody uses.
+
+### Follow-up: the vent latch was the fourth member of the `dt > 0` family, and shipped ungated
+
+Caught in review, not by a test. The reporting pass wrote `cell.runaway.vented = true`
+from end-of-step temperature with no `dt > 0` gate, so a zero-length probe on a pack
+already past `t_vent_k` flipped an irreversible bit that `snapshot()` then captured. The
+act of *looking* at a hot pack changed its state, and a trajectory would have depended on
+how often a client probed.
+
+The distinction the code crossed is one this slice's own module docs draw: plating's flag
+needs no gate **because detecting it mutates nothing**. Venting is the case where the
+observation and the state change sit in the same line, and the fix is to separate them —
+read the predicate for reporting, write the latch only when time passes. Both properties
+are keepable, and a probe still answers "yes, this pack contains a vented cell."
+
+Why neither existing test found it, which is the more useful half: the zero-length-step
+test starts at onset, thirty kelvin below vent, so the latch never fires; the isothermal
+test builds *above* vent but steps at `dt = 1.0`. Each covered one of the two conditions
+and neither covered both. `a_zero_length_step_reports_venting_without_latching_it` builds
+above vent *and* probes, and fails against the pre-fix code with "a probe step latched the
+vent bit".
+
+The general shape for slice E and beyond: every new piece of per-cell state wants the
+question "can an observation write this?" asked explicitly, because
+`snapshot.rs::zero_length_step_does_not_mutate_state` runs a pack at ordinary temperatures
+and will not ask it for you.
+
+### `MAX_RUNAWAY_SUBSTEPS` is justified per-cell, and slice E is where that could bind
+
+The cap's doc reasons about "two cells igniting in sequence". Simultaneous burns cost
+nothing extra — the rise cap uses the maximum node heating across cells, so N cells
+burning together need the same sub-step count as one. **Sequential** ignitions are what
+multiply it, and slice E's exit scenario is a multi-cell `SxP` pack at a coarse `dt` where
+several cells can ignite one after another inside a single step.
+
+It self-reports rather than degrading silently: the `debug_assert` fires, and slice E's
+tests run in debug. Recorded here so that if it does fire, the next person reads it as the
+work cap binding rather than as a physics bug.

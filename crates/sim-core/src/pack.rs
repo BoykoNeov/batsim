@@ -1336,12 +1336,17 @@ impl Pack {
             let mut sum_g_cells = 0.0;
             let mut sum_g_nominal = 0.0;
             for (k, cell) in group.cells.iter_mut().enumerate() {
-                if let Some(s) = safety {
-                    if is_vented(s, cell.model.state().temp_k) {
-                        cell.runaway.vented = true;
-                    }
+                let hot = safety.is_some_and(|s| is_vented(s, cell.model.state().temp_k));
+                // Read for reporting always; *write* only when time passed. A probe step
+                // is an observation, and latching an irreversible bit on one would let
+                // the act of looking at a hot pack change its state — the fourth member
+                // of the `dt > 0` family after the BMS sensor clock, the aging sub-clock
+                // and the fault queue. `PLATING_RISK` needs no such gate only because
+                // detecting it mutates nothing; this does.
+                if hot && sensor_tick {
+                    cell.runaway.vented = true;
                 }
-                any_vented |= cell.runaway.vented;
+                any_vented |= cell.runaway.vented || hot;
                 let (e, r) = cell_source(cell.model.state(), &self.chem, cell.eff_r0_factor());
                 // This is the *next* step's start-of-step source: nothing below
                 // mutates a cell, so the state it was computed from is the state the

@@ -560,6 +560,37 @@ fn a_zero_length_step_reports_the_reaction_without_advancing_it() {
     assert_eq!(pack.snapshot(), before, "a probe step mutated the pack");
 }
 
+/// The same contract for the vent latch specifically, which is the one place in this
+/// slice where an *observation* would otherwise write irreversible state.
+///
+/// A probe on a pack that is already past the vent threshold must report `VENTED` — it is
+/// true, and a client asking "what is the pack doing right now" deserves the answer — and
+/// must not latch it. Otherwise the act of looking at a hot pack changes what a snapshot
+/// taken afterwards contains, and the trajectory would depend on how often a client
+/// probed. The reporting-pass test above cannot catch this: it starts at onset, thirty
+/// kelvin below vent.
+#[test]
+fn a_zero_length_step_reports_venting_without_latching_it() {
+    let mut pack = Pack::new(
+        &cfg(1, VENT_K + 10.0, 0.0),
+        chem(Some(safety(P_ONSET_W)), 0.0),
+    )
+    .expect("builds");
+    let before = pack.snapshot();
+    let probe = pack.step(0.0, Demand::Rest, &env());
+    assert!(
+        probe.flags.contains(EventFlags::VENTED),
+        "a probe must still report the pack it finds: {:?}",
+        probe.flags
+    );
+    assert!(!vented(&pack, 0), "a probe step latched the vent bit");
+    assert_eq!(pack.snapshot(), before, "a probe step mutated the pack");
+
+    // And the first step that does advance time latches it for good.
+    pack.step(1.0, Demand::Rest, &env());
+    assert!(vented(&pack, 0));
+}
+
 /// Mid-burn state survives a snapshot: the unreleased half of the budget and the vent
 /// latch are both genuine state, and a client that could wash either out by saving and
 /// reloading would be able to put out a fire with a save file.
