@@ -139,6 +139,17 @@ fn substeps(params: &ThermalParams, k: f64, dt: f64) -> (u32, f64) {
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let n = if ratio >= f64::from(MAX_SUBSTEPS) {
+        // The cap binds, so the sub-step is longer than the ceiling and the
+        // integration is no longer guaranteed stable — past the bound explicit
+        // Euler oscillates rather than merely losing accuracy. `step` must not
+        // panic in release, and `EventFlags` has no bit for "your dt is absurd", so
+        // this is as loud as it can be made without inventing surface area. See the
+        // `dt` warning on `Pack::step`.
+        debug_assert!(
+            false,
+            "thermal sub-step cap of {MAX_SUBSTEPS} binds at dt = {dt} s \
+             (ceiling {dt_max} s): temperatures are not trustworthy"
+        );
         MAX_SUBSTEPS
     } else {
         // 1 < ratio < MAX_SUBSTEPS, so the ceiling fits in u32.

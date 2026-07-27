@@ -44,10 +44,14 @@ use crate::{Demand, Env, Telemetry};
 /// v3 (Phase 2, thermal): `Pack` gained `thermal: ThermalConfig` and
 /// `ChemistryParams` gained `thermal: ThermalParams` plus the optional
 /// `ocv.docv_dt_v_per_k` column, all of which sit inside the snapshot. Cell
-/// temperature was already part of `EcmState`, so no per-cell layout changed —
-/// but a v2 snapshot restored into a v3 build would silently acquire an isothermal
-/// pack, which is exactly the kind of semantic drift the version field exists to
-/// reject.
+/// temperature was already part of `EcmState`, so no *per-cell* layout changed.
+///
+/// Note what actually rejects a v2 snapshot here: the layout change, at
+/// deserialization, exactly as the v2 note above describes. The version check never
+/// sees those bytes. The bump is still correct — adapters gate on `Snapshot::version`,
+/// and a tolerant format (or a future migration path) would otherwise accept the blob
+/// and silently produce an isothermal pack — but this bump is not what makes v2
+/// unloadable, and no test could pin it as such.
 pub const SNAPSHOT_VERSION: u32 = 3;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
@@ -94,7 +98,13 @@ pub struct PackConfig {
     /// Per-cell manufacturing scatter (defaults to none).
     #[serde(default)]
     pub scatter: Scatter,
-    /// Thermal coupling (defaults to [`ThermalConfig::Isothermal`]).
+    /// Thermal coupling.
+    ///
+    /// **Omitting this from a scenario file yields an isothermal pack** — not a
+    /// thermally-coupled one with default parameters. Silence means the thermal
+    /// model is *off*. That default is deliberate (it keeps the goldens testing the
+    /// electrical model, see [`ThermalConfig`]), but it does mean a scenario author
+    /// who forgets the section gets no diagnostic.
     #[serde(default)]
     pub thermal: ThermalConfig,
 }
@@ -385,6 +395,15 @@ impl Pack {
     /// **end-of-step** state. `env` supplies the thermal sink — coolant if present,
     /// otherwise ambient — and is unused when the pack is
     /// [`ThermalConfig::Isothermal`].
+    ///
+    /// # Upper limit on `dt` with a live thermal network
+    /// Temperatures are integrated with automatic sub-stepping, so any ordinary `dt`
+    /// is safe. There is a bound, though: the sub-step count is capped, and above
+    /// roughly **1.7 hours** of `dt` for the shipped chemistries the cap binds and
+    /// the temperatures stop being trustworthy (they are not flagged — a
+    /// `debug_assert` fires in debug builds). Nothing else in the step has such a
+    /// limit; the electrical solve and the RC update are exact at any `dt`. Coarse
+    /// fast-forward will need a different thermal integrator, not a bigger cap.
     pub fn step(&mut self, dt: f64, demand: Demand, env: &Env) -> Telemetry {
         let cap_ah = self.chem.cell.capacity_ah;
         let (series, parallel) = (self.series as usize, self.parallel as usize);

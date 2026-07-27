@@ -143,6 +143,53 @@ fn snapshot_restore_replay_is_bit_identical() {
     }
 }
 
+/// A zero-length step must leave the entire engine state untouched.
+///
+/// This is a *contract*, not an accident. Every state advance scales by `dt` — the
+/// exponential RC update guards on `dt > 0`, coulomb counting multiplies by it, the
+/// thermal integrator scales its sub-step by it — so `step(0.0, …)` reports the pack
+/// solved at the current state without moving it. `properties.rs`'s energy-balance
+/// test relies on exactly that to read the start-of-step terminal voltage, which
+/// `Telemetry` otherwise does not expose.
+///
+/// It is pinned here because it is easy to break invisibly: anything added to `step`
+/// that mutates unconditionally (a sensor frame sampled at end-of-step, a balancing
+/// bleed, an aging sub-clock) would turn the probe into a real step, and the
+/// energy-balance test would keep passing while silently measuring the wrong thing.
+#[test]
+fn zero_length_step_does_not_mutate_state() {
+    // A live thermal network, so the temperature integrator is on the path too —
+    // its sub-step length is what scales by dt there.
+    let mut cfg = config();
+    cfg.thermal = ThermalConfig::Network {
+        k_neighbor_w_per_k: 1.0,
+    };
+    let mut pack = Pack::new(&cfg, rich_chem()).unwrap();
+    // Warm up first: from a fresh pack many quantities are still zero, so a
+    // mutation could hide. Mid-trajectory every RC overpotential is nonzero.
+    for step in 0..37 {
+        pack.step(0.5, demand_at(step), &env());
+    }
+
+    for demand in [
+        Demand::Current(2.0),
+        Demand::Current(-2.0),
+        Demand::Power(4.0),
+        Demand::Voltage(6.0),
+        Demand::Rest,
+    ] {
+        let before = pack.snapshot();
+        let tele = pack.step(0.0, demand, &env());
+        let after = pack.snapshot();
+        assert_eq!(before, after, "step(0.0, {demand:?}) mutated the pack");
+        // And it still reports a solved operating point rather than nothing.
+        assert!(
+            tele.v_terminal.is_finite() && tele.i_actual.is_finite(),
+            "probe step should still report a solve: {tele:?}"
+        );
+    }
+}
+
 #[test]
 fn restore_rejects_unknown_version() {
     let pack = Pack::new(&config(), rich_chem()).unwrap();
