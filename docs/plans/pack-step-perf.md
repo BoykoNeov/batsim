@@ -1,17 +1,21 @@
-# `Pack::step` performance — over budget at 100S10P
+# `Pack::step` performance — under budget at 100S10P
 
-**Status:** items 1 and 2 landed; still over budget, item 3 still deferred. All of
-Phase 2 added ~4 % to the electrical baseline, and ~5 % more with every feature
-switched on — measured, see "Phase 2 impact" below.
+**Status:** all four items landed. Items 3 and 4 took the step **−39 %** against the
+end-of-Phase-2 tree, which puts it **inside** the < 50 µs budget for the first time —
+≈ 39 µs baseline / ≈ 42 µs fully featured, scaled to the fast-state anchor. Nothing
+outstanding.
 **Baseline commit:** `5917bd9` ("Phase 1 wrap-up: criterion benchmarks for Pack::step").
-**Owner decision needed:** none outstanding. Item 3 needs a design call *if* it is ever
-picked up, and the case for deferring it got **stronger**, not weaker — see below.
+**Owner decision needed:** none. Item 3 was taken with the design call the deferral
+was waiting on — see "Items 3 and 4" below for what invariant it added and what
+guards it.
 
-## The problem
+## The problem (as it stood; now solved)
 
 `CLAUDE.md` sets a budget of **< 50 µs per `Pack::step` at 100S10P** (1000 cells) on a
 laptop, and says "it should be far below." The original benchmark measured **83.4 µs** —
-1.7× over, not a marginal miss.
+1.7× over, not a marginal miss. Four items later it is under budget; the sections below
+are in the order they were written, so read "Items 3 and 4" for the current position and
+treat everything above it as the trail that got there.
 
 Measured on the dev laptop (Windows, `release` + `lto = true, codegen-units = 1`),
 `cargo bench -p sim-core --bench pack_step`:
@@ -144,6 +148,85 @@ reading of 13.28 µs for the same case puts the real ratio at ~+4.5 %, in line w
 100S10P. This is the fourth time in this file's history that a cross-mode pairing
 produced a number that meant nothing.
 
+## Items 3 and 4, measured — **−4 % then −35 %, and the budget is met**
+
+Landed as two commits on purpose, so the two effects are separately attributed
+rather than repeating items 1–2's "measured together, split unknown" regret:
+`4a268e9` (item 4, flat scratch buffer) then `fa9ec20` (item 3, cross-step memo).
+Three arms — `580131b` (end of Phase 2), item 4, item 3 — benched from three
+worktrees, one case per arm, **arm order alternated between rounds** so the
+last-arm-runs-hottest effect cannot masquerade as a win. Eight rounds; the first
+five were discarded under the wide-CI rule (one round had item 4 measuring *above*
+the baseline). Rounds 6–8 came in at ±1.3–1.6 % on every arm:
+
+| pair | 100S10P/current | 10S10P/current |
+| ---- | --------------- | -------------- |
+| base → item 4 | −2.8 %, −3.4 %, −6.7 % | −6.8 % |
+| item 4 → item 3 | −31.3 %, −37.8 %, −39.2 % | −38.1 % |
+| base → both | −33.7 %, −39.5 %, −43.3 % | −42.5 % |
+
+Also `100S10P/full` −37.3 % and `100S10P/power` −31.2 % (item 4 → item 3, same
+invocation, so no pairing needed), and `1S1P` 215 → 158 ns.
+
+**Item 4 is worth ~4 %** — real but barely above this machine's noise floor, and
+exactly the "correspondingly smaller win" this file predicted for removing 100
+allocations rather than 2000.
+
+**Item 3 is worth ~35 %**, which is *more* than the "halves the per-cell work"
+framing predicts, since it only removes one of the two `cell_source` passes and
+leaves `exp()`, the divisions, `advance_cell` and `cell_heat_w` untouched. A
+plausible explanation — **hypothesis, nobody has profiled it** — is that
+`cell_source` is disproportionately expensive per flop: two table lookups whose
+inner data is a `Vec<Vec<f64>>` (pointer chase per row) plus a sum over the cell's
+`v_rc`, which is its own heap allocation and therefore a likely cache miss per
+cell. If that is right, the remaining lever is data layout, not arithmetic. Do not
+treat this paragraph as established.
+
+Scaling the measured ratios through this file's fast-state anchors (≈ 64 µs
+baseline / ≈ 67 µs fully featured at the end of Phase 2) puts a step at
+**≈ 39 µs baseline and ≈ 42 µs fully featured — inside the < 50 µs budget**, from
+1.28–1.34× over. That absolute is a *scaled* figure: every reading in this session
+sat in the machine's slow state (base measured 83–95 µs against its documented
+~64 µs fast-state value), so the ratios are the measured quantity, as always in
+this file.
+
+### What item 3 costs in invariants
+
+The memo (`SourceCache` in `pack.rs`) is a memo of a pure function of pack state,
+not state: entry `i` is `cell_source(cell_i.state(), chem, cell_i.r0_factor)`, and
+**empty means cold means recompute**, so every way of getting invalidation wrong in
+the conservative direction costs speed, not correctness. The other direction is a
+silent physics bug, and is guarded twice:
+
+- a `debug_assert` on the warm path compares the memo against a fresh compute, every
+  cell, every step — so every debug-mode test in the suite is a staleness check;
+- `crates/sim-core/tests/thevenin_cache.rs` runs one trajectory twice, warm and with
+  the memo dropped before *every* step, comparing `Telemetry` **and** per-cell ground
+  truth as raw bits (aggregates could cancel a single-cell divergence).
+
+Injecting a one-ULP stale entry fails both. It does **not** fail the goldens or the
+proptests, which is the entire reason that test file exists.
+
+Two consequences to know:
+
+- `SourceCache`'s `PartialEq` is deliberately always `true`. Two packs with equal
+  state are equal whether or not one has a warm memo, and a serde round-trip
+  deliberately produces a cold one, so anything else would make
+  `snapshot != roundtrip(snapshot)`. The price is that
+  `zero_length_step_does_not_mutate_state` can no longer see memo corruption; the
+  `debug_assert` is what pays for it.
+- **No `SNAPSHOT_VERSION` bump**, and that is correct rather than another missed one:
+  the field is `#[serde(skip)]`, emits no bytes, and v5 blobs are byte-unchanged. A
+  restored pack starts cold and recomputes, which is by definition what the memo
+  would have held.
+
+`Pack::set_cell_factors` is the only invalidation point outside `step` today.
+**Phase 3 must add its own**: anything that mutates a cell's state or `r0_factor`
+from outside `step` — the fault queue, `WeakCell`, a soft internal short — has to
+clear it. Aging is safe as written only if it runs *inside* `step` before the
+end-of-step reporting pass; if it ever moves to a sub-clock that mutates cells
+outside that window, it needs an invalidation too.
+
 ## Candidate fixes, cheapest first
 
 ### 1. Remove the per-call `Vec` in `r0_lookup` — *bit-identical* — **DONE**
@@ -179,7 +262,12 @@ The linear scan is replaced by `slice::partition_point`, shared by both lookups 
 - **Not separately attributed.** Items 1 and 2 were measured together; the split between
   them is unknown. If that matters later, bench them one at a time.
 
-### 3. Cache per-cell `(E, R)` across the step boundary — *structural, biggest lever*
+### 3. Cache per-cell `(E, R)` across the step boundary — **DONE, −35 %**
+
+Landed as `fa9ec20`; measurement and the invariants it added are in "Items 3 and 4"
+above. It was indeed the biggest lever, by a wide margin. The rest of this section
+is the original design note, kept because its cost analysis is what the
+implementation answers point by point.
 
 The end-of-step `cell_source` call computes exactly what the *next* step's start-of-step
 call recomputes from unchanged state. Caching `(e, r)` per cell halves the per-cell work
@@ -200,14 +288,20 @@ regardless of which micro-cost above wins.
   loop anyway — should land before anyone reopens a design that makes a cache invariant
   load-bearing across every future per-cell mutation point.
 
-### 4. Drop the per-group scratch `Vec` in `step` — *bit-identical, unmeasured*
+### 4. Drop the per-group scratch `Vec` in `step` — *bit-identical* — **DONE, −4 %**
 
-`pack.rs:364` builds `cell_src: Vec<Vec<(f64, f64)>>` fresh every step: one inner `Vec` per
-series group, so ~102 allocations per step at 100S10P. Two orders of magnitude fewer than
-the 2000 that item 1 removed, so expect a correspondingly smaller win — but it is the same
-*kind* of fix, equally bit-identical, and the obvious next thing to try below item 3. A
-flat `Vec<(f64, f64)>` indexed by a running offset, or a scratch buffer owned by `Pack` and
-cleared per step, both work. Measure before believing.
+`step` built `cell_src: Vec<Vec<(f64, f64)>>` fresh every step: one inner `Vec` per
+series group, so ~102 allocations per step at 100S10P. It is now one flat
+`Vec<(f64, f64)>` indexed `g * parallel + k` (`4a268e9`), which item 3 then promoted to
+a pack-owned buffer that allocates nothing at all on a warm step.
+
+- **Outcome: ~−4 %**, as predicted for two orders of magnitude fewer allocations than
+  item 1 removed. Barely above this machine's noise floor; it was landed *before* item 3
+  and benched separately precisely so item 3 could not absorb it uncredited.
+- Bit-identical by construction: same values, same order, same arithmetic, only the
+  storage changed.
+- `group_src` (one `Vec` of `series` entries) is still allocated per step. That is 1
+  allocation, not 102, and is not worth another commit on its own.
 
 ## Verification protocol for any of these
 
@@ -229,18 +323,20 @@ The 50 µs budget is deliberately **not** asserted in a test — a wall-clock as
 machine- and CI-dependent, and `CLAUDE.md` frames it as a budget to keep, not an exit
 criterion. Track it by running the bench, not by a gate.
 
-Current position: **≈ 64 µs baseline / ≈ 67 µs fully featured at 100S10P (fast-state
-equivalent), 1.28–1.34× over.** Items 1–2 are done, item 3 is deferred behind Phase 2
-by choice, item 4 is small and unmeasured, and Phase 2 is now measured end to end.
-Nothing here is blocking.
+Current position: **≈ 39 µs baseline / ≈ 42 µs fully featured at 100S10P (fast-state
+equivalent), ~0.8× of budget.** All four items are done and separately attributed.
+Nothing here is blocking, and nothing here is worth another pass without a profiler:
+the next honest step is to *measure* where the remaining ~39 µs goes rather than to
+guess a fifth item, since the one number in this file that came in well outside its
+prediction (item 3 at −35 %) points at data layout, which no reading here has
+actually confirmed.
 
-**Item 3's deferral should be revisited now, and the case for taking it has improved.**
-It was deferred because Phase 2 was about to add per-cell mutation points that a cached
-Thévenin would have to invalidate. Phase 2 has landed, and there is exactly one such
-point: the thermal integrator writing `temp_k` at the end of a step. That is a single,
-obvious invalidation site in `Pack::step`, not the scattered set the deferral feared.
-Phase 3 (aging, faults) will add more, so the window is now, or after Phase 3 — not in
-the middle of it.
+**The thing most likely to break next is not speed, it is item 3's invariant.** The
+memo is correct only while every mutation of a cell's state or `r0_factor` from
+outside `step` clears it. Phase 3 adds exactly the code that does that — the fault
+queue, `WeakCell`, soft internal shorts. Read "What item 3 costs in invariants" above
+before adding any of them. The `debug_assert` will catch a miss in any debug-mode
+test, which is the safety net, but it is not a substitute for knowing the rule.
 
 Two things to know before the next re-measure:
 
@@ -250,4 +346,15 @@ Two things to know before the next re-measure:
   usable pair for the thermal measurement after two full-suite rounds were unusable.
 - **The machine's state persisted across an entire session.** The bimodality is not
   per-run jitter that averages out over a few minutes; plan on reporting a *ratio* plus
-  a mode-matched anchor rather than an absolute number.
+  a mode-matched anchor rather than an absolute number. It does sometimes settle mid
+  session: the items 3–4 measurement went from unusable (±5 % CIs, arms disagreeing on
+  sign) to ±1.3 % across eight rounds without anything changing but time.
+- **Alternate the arm order between rounds.** Running base → change → change every time
+  means the last arm always runs on the hottest CPU, which is a free ~few-percent bias
+  in favour of whatever is measured last. Items 3–4 were confirmed with the changed arm
+  running both first and last.
+- **Warm the bench's clone template.** `iter_batched_ref` clones a template per
+  iteration, so a never-stepped template measures the *first* step a pack ever takes.
+  That priced item 3 at exactly zero until it was fixed — the memo is cold on step one
+  by definition. `benches/pack_step.rs`'s `warmed()` does this; if a future change makes
+  a step depend on prior steps in some other way, check that helper first.

@@ -60,23 +60,26 @@
 //! Paired same-session runs, `100S10P/current` mode-matched on both arms (see
 //! `docs/plans/pack-step-perf.md` for the full evidence):
 //!
-//! | case              | `5917bd9` | + perf items 1–2 | + all of Phase 2 |
-//! | ----------------- | --------- | ---------------- | ---------------- |
-//! | 1S1P/current      | 219 ns    | 179 ns           | —                |
-//! | 10S10P/current    | ~8.3 µs   | 6.22 µs          | +4.5 %           |
-//! | 100S10P/current   | 85.9 µs   | 61.5 µs          | ≈ 64 µs          |
-//! | 100S10P/power     | ~86 µs    | 61.8 µs          | —                |
-//! | 100S10P/full      | —         | —                | ≈ 67 µs          |
+//! | case            | `5917bd9` | + items 1–2 | + Phase 2 | + items 4, 3 |
+//! | --------------- | --------- | ----------- | --------- | ------------ |
+//! | 1S1P/current    | 219 ns    | 179 ns      | —         | −27 %        |
+//! | 10S10P/current  | ~8.3 µs   | 6.22 µs     | +4.5 %    | −42.5 %      |
+//! | 100S10P/current | 85.9 µs   | 61.5 µs     | ≈ 64 µs   | ≈ 39 µs      |
+//! | 100S10P/power   | ~86 µs    | 61.8 µs     | —         | −31 %        |
+//! | 100S10P/full    | —         | —           | ≈ 67 µs   | ≈ 42 µs      |
 //!
 //! Items 1–2 removed the scratch `Vec` in `r0_lookup` and binary-searched the
 //! interpolation breakpoints (−28.5 %). Phase 2 then added ~4 % to the baseline, and
 //! `full` — thermal network, sensors, estimator, protection and balancing all live —
-//! costs a further ~5 %. Roughly **1.34× over** the 50 µs budget fully featured.
+//! costs a further ~5 %. Item 4 (flat scratch buffer) was worth ~4 % and item 3
+//! (memoising each cell's Thévenin source across the step boundary) ~35 %, landed and
+//! benched as separate commits so the two are separately attributed. That puts the
+//! step **inside** the 50 µs budget for the first time.
 //!
-//! The last column is stated as a scaled range, not a direct reading: every Phase 2
-//! measurement session sat in the machine's slow CPU state, so the *ratios* are the
-//! measured quantity and the absolute figures come from scaling the fast-state anchor
-//! by them. See `docs/plans/pack-step-perf.md` for the raw pairs.
+//! The last two columns are scaled figures, not direct readings: every Phase 2 and
+//! items-3–4 measurement session sat in the machine's slow CPU state, so the *ratios*
+//! are the measured quantity and the absolute figures come from scaling the fast-state
+//! anchor by them. See `docs/plans/pack-step-perf.md` for the raw rounds.
 
 use std::hint::black_box;
 
