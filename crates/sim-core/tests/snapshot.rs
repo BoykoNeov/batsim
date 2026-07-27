@@ -6,8 +6,13 @@
 //! (`bincode`), not merely cloned — this catches any field that fails to survive
 //! serialization (e.g. the RNG state).
 
-use sim_core::chem::{CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair};
-use sim_core::{Demand, Env, Pack, PackConfig, RestoreError, Scatter, Telemetry, SNAPSHOT_VERSION};
+use sim_core::chem::{
+    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+};
+use sim_core::{
+    Demand, Env, Pack, PackConfig, RestoreError, Scatter, Telemetry, ThermalConfig,
+    SNAPSHOT_VERSION,
+};
 
 fn env() -> Env {
     Env {
@@ -20,6 +25,10 @@ fn env() -> Env {
 /// two RC pairs — so a broken round-trip of almost any field shows up.
 fn rich_chem() -> ChemistryParams {
     ChemistryParams {
+        thermal: ThermalParams {
+            heat_capacity_j_per_k: 95.0,
+            h_area_w_per_k: 0.35,
+        },
         meta: ChemMeta {
             id: "rich".into(),
             name: "Rich synthetic cell".into(),
@@ -35,6 +44,7 @@ fn rich_chem() -> ChemistryParams {
             t_max_k: 333.15,
         },
         ocv: OcvTable {
+            docv_dt_v_per_k: None,
             soc: vec![0.0, 0.2, 0.5, 0.8, 1.0],
             volts: vec![3.00, 3.20, 3.30, 3.40, 3.60],
         },
@@ -62,6 +72,7 @@ fn rich_chem() -> ChemistryParams {
 
 fn config() -> PackConfig {
     PackConfig {
+        thermal: ThermalConfig::Isothermal,
         series: 2,
         parallel: 2,
         initial_soc: 0.7,

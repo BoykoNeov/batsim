@@ -5,11 +5,17 @@
 //! exactly-nominal cells, the draw is deterministic per seed (a determinism-rule
 //! requirement), and the distribution is sane (mean ≈ 1, spread ≈ σ, all positive).
 
-use sim_core::chem::{CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair};
-use sim_core::{Pack, PackConfig, Scatter};
+use sim_core::chem::{
+    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+};
+use sim_core::{Pack, PackConfig, Scatter, ThermalConfig};
 
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        thermal: ThermalParams {
+            heat_capacity_j_per_k: 95.0,
+            h_area_w_per_k: 0.35,
+        },
         meta: ChemMeta {
             id: "s".into(),
             name: "Scatter test cell".into(),
@@ -25,6 +31,7 @@ fn chem() -> ChemistryParams {
             t_max_k: 333.15,
         },
         ocv: OcvTable {
+            docv_dt_v_per_k: None,
             soc: vec![0.0, 1.0],
             volts: vec![3.0, 3.5],
         },
@@ -42,6 +49,7 @@ fn chem() -> ChemistryParams {
 
 fn config(series: u16, parallel: u16, seed: u64, scatter: Scatter) -> PackConfig {
     PackConfig {
+        thermal: ThermalConfig::Isothermal,
         series,
         parallel,
         initial_soc: 0.7,

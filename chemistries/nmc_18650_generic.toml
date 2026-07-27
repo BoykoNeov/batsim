@@ -1,9 +1,9 @@
 # Generic NMC 18650 cell parameters.
 #
-# Phase 0 consumes the [meta], [cell], [ocv], [r0], and [[rc]] sections. The
-# [thermal], [aging], and [safety] sections are declared for forward-compatibility
-# and ignored by the current loader. Every physical constant carries a provenance
-# note per the project rule: no unlabeled numbers.
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], and [thermal]. The
+# [aging] and [safety] sections are declared for forward-compatibility and ignored
+# for now. Every physical constant carries a provenance note per the project rule:
+# no unlabeled numbers.
 #
 # This cell uses two RC pairs (a fast charge-transfer pair and a slow diffusion
 # pair), exercising the 2-RC model path.
@@ -52,11 +52,16 @@ c_farad = 800.0
 r_ohms  = 0.006
 c_farad = 8000.0
 
-# --- Sections below are declared for later phases and ignored in Phase 0. ---
-
 [thermal]
 heat_capacity_j_per_k = 55.0   # provenance: ~m*cp for an 18650 (~45 g, mixed materials); placeholder
+# h*A for a FULLY EXPOSED cell (as on a 1S1P pack); the engine scales it down per
+# cell by the surface fraction not blocked by neighbours.
 h_area_w_per_k        = 0.20   # provenance: natural-convection h*A placeholder for a bare cell
+
+# No docv_dt_v_per_k column, so entropic heating is disabled for this chemistry
+# (TODO: add measured dU/dT to enable the reversible heat term).
+
+# --- Sections below are declared for later phases and ignored for now. ---
 
 [aging]
 cal_pre_exp                = 2.0e4    # provenance: placeholder — order-of-magnitude only, TODO fit

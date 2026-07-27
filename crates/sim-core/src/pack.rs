@@ -23,8 +23,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::chem::ChemistryParams;
-use crate::ecm::{advance_cell, cell_source, solve_current, CellModel, EcmState};
+use crate::ecm::{
+    advance_cell, cell_heat_w, cell_source, docv_dt_lookup, solve_current, CellModel, EcmState,
+};
 use crate::flags::EventFlags;
+use crate::thermal::{advance_temperatures, ThermalConfig, ThermalStep};
 use crate::{Demand, Env, Telemetry};
 
 /// Current snapshot schema version. Bumped whenever [`Pack`]'s serialized layout
@@ -37,7 +40,15 @@ use crate::{Demand, Env, Telemetry};
 /// caught at deserialization before [`Pack::restore`]'s version check runs; the
 /// version field's job is to guard future *semantic* changes to an unchanged
 /// layout.
-pub const SNAPSHOT_VERSION: u32 = 2;
+///
+/// v3 (Phase 2, thermal): `Pack` gained `thermal: ThermalConfig` and
+/// `ChemistryParams` gained `thermal: ThermalParams` plus the optional
+/// `ocv.docv_dt_v_per_k` column, all of which sit inside the snapshot. Cell
+/// temperature was already part of `EcmState`, so no per-cell layout changed —
+/// but a v2 snapshot restored into a v3 build would silently acquire an isothermal
+/// pack, which is exactly the kind of semantic drift the version field exists to
+/// reject.
+pub const SNAPSHOT_VERSION: u32 = 3;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -66,8 +77,8 @@ impl Default for Scatter {
 
 /// Pack topology and initial conditions.
 ///
-/// This doubles as (part of) the scenario file format. BMS, aging, and thermal
-/// configuration are added in later phases.
+/// This doubles as (part of) the scenario file format. BMS and aging configuration
+/// are added in later phases.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PackConfig {
     /// Number of series elements (groups). Must be ≥ 1.
@@ -83,6 +94,9 @@ pub struct PackConfig {
     /// Per-cell manufacturing scatter (defaults to none).
     #[serde(default)]
     pub scatter: Scatter,
+    /// Thermal coupling (defaults to [`ThermalConfig::Isothermal`]).
+    #[serde(default)]
+    pub thermal: ThermalConfig,
 }
 
 /// Reasons [`Pack::new`] can fail.
@@ -102,6 +116,9 @@ pub enum BuildError {
     /// `initial_temp_k` was not positive.
     #[error("initial_temp_k must be > 0, got {0}")]
     BadInitialTemp(f64),
+    /// A [`ThermalConfig::Network`] conductance was negative or not finite.
+    #[error("thermal.k_neighbor_w_per_k must be finite and >= 0, got {0}")]
+    BadThermalConductance(f64),
     /// The chemistry itself failed validation.
     #[error("invalid chemistry: {0}")]
     Chemistry(#[from] crate::chem::ChemistryError),
@@ -203,6 +220,8 @@ pub struct Pack {
     parallel: u16,
     /// Ground-truth topology: `series` groups, each of `parallel` cells.
     groups: Vec<ParallelGroup>,
+    /// Thermal coupling (config; see [`ThermalConfig`]).
+    thermal: ThermalConfig,
     /// The single seeded RNG; its state is part of the snapshot.
     rng: ChaCha8Rng,
     /// Simulation time elapsed \[s\].
@@ -229,6 +248,12 @@ impl Pack {
         let temp_positive = config.initial_temp_k > 0.0;
         if !temp_positive {
             return Err(BuildError::BadInitialTemp(config.initial_temp_k));
+        }
+        if let ThermalConfig::Network { k_neighbor_w_per_k } = config.thermal {
+            let k_ok = k_neighbor_w_per_k >= 0.0 && k_neighbor_w_per_k.is_finite();
+            if !k_ok {
+                return Err(BuildError::BadThermalConductance(k_neighbor_w_per_k));
+            }
         }
 
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
@@ -266,6 +291,7 @@ impl Pack {
             series: config.series,
             parallel: config.parallel,
             groups,
+            thermal: config.thermal,
             rng,
             sim_time_s: 0.0,
         })
@@ -352,11 +378,16 @@ impl Pack {
 
     /// Advance the simulation by `dt` seconds under `demand`. Never panics.
     ///
-    /// `env` is accepted for API stability; the thermal coupling that consumes it
-    /// (cell temperature responding to ambient/coolant) arrives in Phase 2, so
-    /// cell temperature is currently held at its initial value.
-    pub fn step(&mut self, dt: f64, demand: Demand, _env: &Env) -> Telemetry {
+    /// Ordering within a step: the electrical solve runs off **start-of-step**
+    /// state, each cell's internal state is then advanced with the current it was
+    /// assigned, temperatures are integrated against the heat that current
+    /// generated (see [`crate::thermal`]), and all telemetry is reported from
+    /// **end-of-step** state. `env` supplies the thermal sink — coolant if present,
+    /// otherwise ambient — and is unused when the pack is
+    /// [`ThermalConfig::Isothermal`].
+    pub fn step(&mut self, dt: f64, demand: Demand, env: &Env) -> Telemetry {
         let cap_ah = self.chem.cell.capacity_ah;
+        let (series, parallel) = (self.series as usize, self.parallel as usize);
 
         // --- start-of-step: per-cell and per-group Thévenin, then pack aggregate.
         // group_src[g] = (E_g, R_g); cell_src[g][k] = (E_k, R_k).
@@ -383,7 +414,18 @@ impl Pack {
         // --- solve the single pack current (shared by every series group).
         let i_g = solve_current(demand, e_pack, r_pack);
 
-        // --- split into per-cell currents and advance each cell in place.
+        // --- split into per-cell currents, tally heat, and advance each cell.
+        // Heat is tallied in every mode (an isothermal pack still reports how much
+        // heat it makes); the per-cell array is only materialised when a live
+        // thermal network is going to consume it.
+        let thermal_live = matches!(self.thermal, ThermalConfig::Network { .. });
+        let n_cells = series * parallel;
+        let mut heat_w: Vec<f64> = if thermal_live {
+            Vec::with_capacity(n_cells)
+        } else {
+            Vec::new()
+        };
+        let mut q_gen_w = 0.0;
         let mut flags = EventFlags::empty();
         for (g, group) in self.groups.iter_mut().enumerate() {
             let (e_gv, r_gv) = group_src[g];
@@ -391,8 +433,56 @@ impl Pack {
             for (k, cell) in group.cells.iter_mut().enumerate() {
                 let (e_k, r_k) = cell_src[g][k];
                 let i_k = (e_k - v_node) / r_k;
+                // Heat from the same start-of-step state that produced `i_k`, so
+                // the energy accounting closes exactly (see `cell_heat_w`).
+                let state = cell.model.state();
+                let q = cell_heat_w(
+                    i_k,
+                    r_k,
+                    state.v_rc.iter().sum::<f64>(),
+                    state.temp_k,
+                    docv_dt_lookup(&self.chem.ocv, state.soc),
+                );
+                q_gen_w += q;
+                if thermal_live {
+                    // Series-major, parallel-minor — the index order `thermal`
+                    // expects.
+                    heat_w.push(q);
+                }
                 let eff_cap = cap_ah * cell.capacity_factor;
                 flags |= advance_cell(cell.model.state_mut(), &self.chem, i_k, dt, eff_cap);
+            }
+        }
+
+        // --- integrate temperatures against that heat.
+        if let ThermalConfig::Network { k_neighbor_w_per_k } = self.thermal {
+            let t_env = env.t_coolant.unwrap_or(env.t_ambient);
+            let mut temps: Vec<f64> = Vec::with_capacity(n_cells);
+            for group in &self.groups {
+                for cell in &group.cells {
+                    temps.push(cell.model.state().temp_k);
+                }
+            }
+            let mut scratch = Vec::with_capacity(n_cells);
+            advance_temperatures(
+                &mut temps,
+                &mut scratch,
+                &heat_w,
+                &ThermalStep {
+                    series,
+                    parallel,
+                    params: &self.chem.thermal,
+                    k_neighbor_w_per_k,
+                    t_env,
+                    dt,
+                },
+            );
+            let mut i = 0;
+            for group in &mut self.groups {
+                for cell in &mut group.cells {
+                    cell.model.state_mut().temp_k = temps[i];
+                    i += 1;
+                }
             }
         }
         self.sim_time_s += dt;
@@ -439,6 +529,7 @@ impl Pack {
             v_cell_max,
             soh_capacity: 1.0,
             soh_resistance: 1.0,
+            q_gen_w,
             flags,
         }
     }

@@ -12,8 +12,11 @@
 //! # Units
 //! SI throughout: seconds, amperes, volts, ohms, farads, joules, kelvin.
 //!
-//! This is a Phase 0 scaffold: the public API shape is sketched below; the physics
-//! bodies are filled in over the phased build plan (see `CLAUDE.md`).
+//! The public API shape is sketched below; the physics behind it is filled in over
+//! the phased build plan (see `CLAUDE.md`). Fields for a not-yet-implemented phase
+//! carry their eventual meaning and a placeholder value, so downstream clients code
+//! against a stable contract — [`Telemetry::soh_capacity`] reads `1.0` until aging
+//! lands, for instance.
 
 #![forbid(unsafe_code)]
 
@@ -21,14 +24,16 @@ pub mod chem;
 pub mod ecm;
 pub mod flags;
 pub mod pack;
+pub mod thermal;
 
-pub use chem::{ChemistryError, ChemistryParams};
+pub use chem::{ChemistryError, ChemistryParams, ThermalParams};
 pub use ecm::{CellModel, EcmState};
 pub use flags::EventFlags;
 pub use pack::{
     BuildError, CellIndexError, CellView, Pack, PackConfig, RestoreError, Scatter, Snapshot,
     SNAPSHOT_VERSION,
 };
+pub use thermal::ThermalConfig;
 
 /// What the outside world asks of the pack this step.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,6 +81,15 @@ pub struct Telemetry {
     pub soh_capacity: f64,
     /// Resistance growth factor, ≥ 1.
     pub soh_resistance: f64,
+    /// Total heat generated across every cell this step \[W\].
+    ///
+    /// Irreversible overpotential heat plus the entropic term, summed over cells
+    /// (see [`ecm::cell_heat_w`]). Reported in every thermal mode — an
+    /// [`thermal::ThermalConfig::Isothermal`] pack still says how much heat it
+    /// makes, it just does not warm up. Can be slightly negative while an
+    /// overpotential relaxes against a reversed current, or under a dominant
+    /// endothermic entropic term.
+    pub q_gen_w: f64,
     /// Events raised during this step (protection trips, clamps, safety states).
     pub flags: EventFlags,
 }

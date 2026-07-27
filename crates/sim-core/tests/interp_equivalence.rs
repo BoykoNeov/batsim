@@ -58,6 +58,7 @@ fn naive_r0_lookup(table: &R0Table, soc: f64, temp_k: f64) -> f64 {
 /// matters here, nothing in this file is a physical claim.
 fn ocv_table() -> OcvTable {
     OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![
             0.0000, 0.0025, 0.0050, 0.0075, 0.0100, 0.0125, 0.0150, 0.0175, 0.0200, 0.0300, 0.0400,
             0.0500, 0.1000, 0.1500, 0.2500, 0.3500, 0.4500, 0.5500, 0.6500, 0.7500, 0.8500, 0.9000,
@@ -214,6 +215,7 @@ fn nan_inputs_return_nan_without_panicking() {
     // Degenerate single-breakpoint tables: clamp to the only value, never index
     // past the end.
     let flat_ocv = OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.5],
         volts: vec![3.3],
     };

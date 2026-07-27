@@ -61,8 +61,10 @@ use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
-use sim_core::chem::{CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair};
-use sim_core::{Demand, Env, Pack, PackConfig, Scatter};
+use sim_core::chem::{
+    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+};
+use sim_core::{Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
 
 /// Simulation timestep \[s\] — a typical real-time client step. `dt` only enters
 /// through `exp(−dt/τ)` and the coulomb count, so its value does not change the
@@ -91,6 +93,10 @@ const SOC: f64 = 0.6;
 /// nothing in this file is a physical claim.
 fn lfp_like_chem() -> ChemistryParams {
     ChemistryParams {
+        thermal: ThermalParams {
+            heat_capacity_j_per_k: 95.0,
+            h_area_w_per_k: 0.35,
+        },
         meta: ChemMeta {
             id: "lfp_26650_generic".into(),
             name: "Generic LFP 26650".into(),
@@ -106,6 +112,7 @@ fn lfp_like_chem() -> ChemistryParams {
             t_max_k: 333.15,
         },
         ocv: OcvTable {
+            docv_dt_v_per_k: None,
             soc: vec![
                 0.0000, 0.0025, 0.0050, 0.0075, 0.0100, 0.0125, 0.0150, 0.0175, 0.0200, 0.0300,
                 0.0400, 0.0500, 0.1000, 0.1500, 0.2500, 0.3500, 0.4500, 0.5500, 0.6500, 0.7500,
@@ -139,6 +146,7 @@ fn lfp_like_chem() -> ChemistryParams {
 /// real per-cell work rather than running on identical cells.
 fn make_pack(series: u16, parallel: u16) -> Pack {
     let config = PackConfig {
+        thermal: ThermalConfig::Isothermal,
         series,
         parallel,
         initial_soc: SOC,

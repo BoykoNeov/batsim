@@ -1,8 +1,9 @@
 //! Equivalent-circuit cell model (Thevenin, 1–2 RC pairs) and its physics.
 //!
 //! The physics live in small pure free functions ([`ocv_lookup`], [`r0_lookup`],
-//! [`rc_update`], [`coulomb_step`]) so tests and property checks can exercise
-//! them directly. [`cell_step`] composes them into one cell advance.
+//! [`docv_dt_lookup`], [`rc_update`], [`coulomb_step`], [`cell_heat_w`]) so tests
+//! and property checks can exercise them directly; [`advance_cell`] composes the
+//! state-advancing ones into a single cell step.
 //!
 //! # Sign convention
 //! Positive current = **discharge** (out of the terminals). Charging is negative.
@@ -37,7 +38,9 @@ pub struct EcmState {
     pub soc: f64,
     /// RC-pair overpotentials \[V\], discharge-positive; one entry per RC pair.
     pub v_rc: Vec<f64>,
-    /// Cell temperature \[K\]. Held constant until the thermal network (Phase 2).
+    /// Cell temperature \[K\]. Advanced by [`crate::thermal`] unless the pack is
+    /// configured [`crate::ThermalConfig::Isothermal`], in which case it holds its
+    /// initial value.
     pub temp_k: f64,
 }
 
@@ -127,6 +130,46 @@ fn interp1(xs: &[f64], ys: &[f64], x: f64) -> f64 {
 #[must_use]
 pub fn ocv_lookup(table: &OcvTable, soc: f64) -> f64 {
     interp1(&table.soc, &table.volts, soc)
+}
+
+/// Entropy coefficient `∂U/∂T` \[V/K\] at the given SOC, by clamped linear
+/// interpolation — or exactly `0.0` if the chemistry supplies no
+/// [`OcvTable::docv_dt_v_per_k`] column, which disables entropic heating.
+#[must_use]
+pub fn docv_dt_lookup(table: &OcvTable, soc: f64) -> f64 {
+    match &table.docv_dt_v_per_k {
+        // Same breakpoints as `volts`, so the same bracket applies.
+        Some(ys) => interp1(&table.soc, ys, soc),
+        None => 0.0,
+    }
+}
+
+/// Heat generated inside one cell \[W\] over a step, given the current the pack
+/// solve assigned it and its start-of-step state.
+///
+/// Two terms, both from Bernardi's energy balance, with `i` discharge-positive:
+///
+/// * **Irreversible** `I·(OCV − V_terminal) = I²·R0 + I·Σ V_rc`. This is the total
+///   overpotential heat. Note the deviation from the `CLAUDE.md` sketch, which
+///   writes `I²·(R0 + Σ R_rc)`: that form is the *steady-state* special case, true
+///   only once every `V_rc` has settled to `R_rc·I`. During a transient — the
+///   entire reason RC pairs exist — the two differ, and using the state we
+///   actually carry keeps the pack energy balance exact (see the energy-balance
+///   property test) as well as being cheaper. It can go slightly **negative** when
+///   the current reverses while an overpotential is still relaxing: the RC
+///   element is returning stored energy, which is physical for a lumped model.
+/// * **Reversible (entropic)** `−I·T·∂U/∂T`. Zero unless the chemistry supplies an
+///   entropy-coefficient table. With the usual negative `∂U/∂T`, discharge heats
+///   and charge cools.
+///
+/// `r0` must be the cell's *effective* resistance (nominal × factors), and
+/// `v_rc_sum` / `temp_k` its start-of-step values — the same ones that produced
+/// `i` — so that the reported heat matches the electrical solve exactly.
+#[must_use]
+pub fn cell_heat_w(i: f64, r0: f64, v_rc_sum: f64, temp_k: f64, docv_dt_v_per_k: f64) -> f64 {
+    let q_irrev = i * (i * r0 + v_rc_sum);
+    let q_rev = -i * temp_k * docv_dt_v_per_k;
+    q_irrev + q_rev
 }
 
 /// Ohmic series resistance `R0` \[ohms\] at `(soc, temp_k)`, by clamped bilinear

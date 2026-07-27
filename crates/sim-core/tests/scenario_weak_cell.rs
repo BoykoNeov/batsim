@@ -7,8 +7,10 @@
 //! now stranded. This is a ground-truth (BMS-off) capacity limit that falls out of
 //! the series solve, not a scripted cutoff.
 
-use sim_core::chem::{CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair};
-use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter};
+use sim_core::chem::{
+    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+};
+use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
 
 const CAP_AH: f64 = 2.5;
 
@@ -21,6 +23,10 @@ fn env() -> Env {
 
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        thermal: ThermalParams {
+            heat_capacity_j_per_k: 95.0,
+            h_area_w_per_k: 0.35,
+        },
         meta: ChemMeta {
             id: "wk".into(),
             name: "Weak-cell scenario cell".into(),
@@ -38,6 +44,7 @@ fn chem() -> ChemistryParams {
         // Sloped OCV so the string is a realistic Thévenin; the capacity cap itself
         // comes from coulomb counting, not the voltage curve.
         ocv: OcvTable {
+            docv_dt_v_per_k: None,
             soc: vec![0.0, 0.1, 0.5, 0.9, 1.0],
             volts: vec![3.00, 3.20, 3.30, 3.45, 3.60],
         },
@@ -55,6 +62,7 @@ fn chem() -> ChemistryParams {
 
 fn config() -> PackConfig {
     PackConfig {
+        thermal: ThermalConfig::Isothermal,
         series: 2,
         parallel: 1,
         initial_soc: 1.0,

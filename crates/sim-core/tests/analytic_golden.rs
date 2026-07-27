@@ -14,9 +14,11 @@
 //!   (b) a single linear OCV segment additionally validates interpolation.
 //! A dt-invariance check confirms the exact update is stable/consistent at any dt.
 
-use sim_core::chem::{CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair};
+use sim_core::chem::{
+    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+};
 use sim_core::ecm::{ocv_lookup, r0_lookup};
-use sim_core::{Demand, Env, Pack, PackConfig};
+use sim_core::{Demand, Env, Pack, PackConfig, ThermalConfig};
 
 const R0: f64 = 0.02; // ohms
 const R1: f64 = 0.01; // ohms
@@ -37,6 +39,10 @@ fn env() -> Env {
 /// Build a synthetic chemistry with a caller-supplied OCV table and flat R0.
 fn synthetic_chem(ocv: OcvTable) -> ChemistryParams {
     ChemistryParams {
+        thermal: ThermalParams {
+            heat_capacity_j_per_k: 95.0,
+            h_area_w_per_k: 0.35,
+        },
         meta: ChemMeta {
             id: "synthetic".into(),
             name: "Synthetic test cell".into(),
@@ -84,6 +90,7 @@ fn synthetic_chem_2rc(ocv: OcvTable) -> ChemistryParams {
 
 fn config(initial_soc: f64) -> PackConfig {
     PackConfig {
+        thermal: ThermalConfig::Isothermal,
         series: 1,
         parallel: 1,
         initial_soc,
@@ -102,6 +109,7 @@ fn v_analytic(ocv_at_t: f64, i: f64, t: f64) -> f64 {
 fn constant_ocv_cc_discharge_matches_closed_form() {
     let v0 = 3.30;
     let chem = synthetic_chem(OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.0, 1.0],
         volts: vec![v0, v0],
     });
@@ -127,6 +135,7 @@ fn constant_ocv_cc_discharge_matches_closed_form() {
 fn linear_ocv_segment_cc_discharge_matches_closed_form() {
     // One strictly-increasing OCV segment; the run stays inside [0.2, 0.8].
     let ocv = OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.2, 0.8],
         volts: vec![3.20, 3.40],
     };
@@ -160,6 +169,7 @@ fn constant_ocv_2rc_cc_discharge_matches_closed_form() {
     //   V(t) = V0 − I·R0 − I·R1·(1 − e^(−t/τ1)) − I·R2·(1 − e^(−t/τ2)).
     let v0 = 3.30;
     let chem = synthetic_chem_2rc(OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.0, 1.0],
         volts: vec![v0, v0],
     });
@@ -184,6 +194,7 @@ fn constant_ocv_2rc_cc_discharge_matches_closed_form() {
 fn dt_invariance_to_matching_sim_time() {
     // Same trajectory sampled with dt and dt/2 must agree at equal sim-time.
     let ocv = OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.2, 0.8],
         volts: vec![3.20, 3.40],
     };
@@ -227,6 +238,7 @@ fn dt_invariance_to_matching_sim_time() {
 #[test]
 fn ocv_lookup_interpolates_and_clamps() {
     let table = OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.0, 0.5, 1.0],
         volts: vec![3.0, 3.5, 3.6],
     };
@@ -270,6 +282,7 @@ fn r0_lookup_bilinear_and_axis_orientation() {
 fn rest_holds_ocv_and_soc() {
     let v0 = 3.30;
     let chem = synthetic_chem(OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.0, 1.0],
         volts: vec![v0, v0],
     });
@@ -286,6 +299,7 @@ fn cv_demand_solves_current_from_rest() {
     // From rest, V_rc = 0, so I = (OCV − V_target) / R0.
     let v0 = 3.30;
     let chem = synthetic_chem(OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.0, 1.0],
         volts: vec![v0, v0],
     });
@@ -306,6 +320,7 @@ fn cv_demand_solves_current_from_rest() {
 fn charge_raises_soc_and_clamps_high() {
     let v0 = 3.30;
     let chem = synthetic_chem(OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.0, 1.0],
         volts: vec![v0, v0],
     });

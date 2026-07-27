@@ -1,16 +1,17 @@
-//! Phase 1 property tests: invariants that must hold across random topologies,
-//! demands, timesteps, and scatter.
+//! Property tests: invariants that must hold across random topologies, demands,
+//! timesteps, and scatter.
 //!
-//! Per the phase scope these cover charge conservation (not the heat-inclusive
-//! energy balance, which needs the Phase 2 thermal model), SOC bounds, the
-//! discharge/charge terminal-voltage sign relationship, per-cell currents summing
-//! to the group current, and snapshot round-trip equality.
+//! These cover charge conservation, the heat-inclusive energy balance, SOC bounds,
+//! the discharge/charge terminal-voltage sign relationship, per-cell currents
+//! summing to the group current, and snapshot round-trip equality.
 
 use proptest::prelude::*;
 
-use sim_core::chem::{CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair};
+use sim_core::chem::{
+    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+};
 use sim_core::ecm::ocv_lookup;
-use sim_core::{Demand, Env, Pack, PackConfig, Scatter};
+use sim_core::{Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
 
 const CAP_AH: f64 = 2.5;
 
@@ -25,6 +26,10 @@ fn env() -> Env {
 /// property. Nothing here is chemistry-specific; it just needs to be non-trivial.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        thermal: ThermalParams {
+            heat_capacity_j_per_k: 95.0,
+            h_area_w_per_k: 0.35,
+        },
         meta: ChemMeta {
             id: "p".into(),
             name: "Property test cell".into(),
@@ -40,6 +45,7 @@ fn chem() -> ChemistryParams {
             t_max_k: 333.15,
         },
         ocv: OcvTable {
+            docv_dt_v_per_k: None,
             soc: vec![0.0, 0.2, 0.5, 0.8, 1.0],
             volts: vec![3.00, 3.20, 3.30, 3.40, 3.60],
         },
@@ -55,8 +61,26 @@ fn chem() -> ChemistryParams {
     }
 }
 
+/// Constant OCV of the [`flat_chem`] cell \[V\].
+const FLAT_V0: f64 = 3.30;
+
+/// Same cell, but with OCV constant in SOC. That makes the chemical energy drawn
+/// over a run exactly `V0 · ∫I dt` with no path dependence, which is what turns the
+/// energy balance into a closed-form check rather than a numerical integration of
+/// `OCV(soc)` against the engine's own discretisation.
+fn flat_chem() -> ChemistryParams {
+    let mut c = chem();
+    c.ocv = OcvTable {
+        soc: vec![0.0, 1.0],
+        volts: vec![FLAT_V0, FLAT_V0],
+        docv_dt_v_per_k: None,
+    };
+    c
+}
+
 fn cfg(series: u16, parallel: u16, soc0: f64, seed: u64, scatter: Scatter) -> PackConfig {
     PackConfig {
+        thermal: ThermalConfig::Isothermal,
         series,
         parallel,
         initial_soc: soc0,
@@ -189,6 +213,70 @@ proptest! {
             sum += (0.5 - c.soc) * cap_as / dt; // I_k reconstructed from ΔSOC
         }
         prop_assert!((sum - tele.i_actual).abs() < 1e-6, "Σ I_k = {sum}, I_g = {}", tele.i_actual);
+    }
+
+    /// Pack energy balance: the chemical energy the cells give up equals the
+    /// electrical energy leaving the terminals plus the heat generated inside.
+    ///
+    /// With a flat OCV the chemical side is exactly `V0·S·∫I dt` (every cell sits at
+    /// `V0` regardless of SOC or scatter, and each series group's per-cell currents
+    /// sum to the pack current).
+    ///
+    /// The balance is exact — to floating-point rounding, not to a physical
+    /// tolerance — because both heat and current are evaluated from **start-of-step**
+    /// state. `Telemetry` reports the *end-of-step* voltage, so the electrical
+    /// integral is accumulated one step behind: for a constant current, step `n`'s
+    /// start-of-step node voltage is step `n−1`'s end-of-step value (same formula,
+    /// same state). Pairing them naively instead leaves an O(dt²)-per-step residual
+    /// that swamps a rounding-level tolerance.
+    ///
+    /// Exactness is what gives the test teeth: using `I²·(R0 + ΣR_rc)` (the
+    /// steady-state heat form) instead of `I²·R0 + I·ΣV_rc` misstates the heat by
+    /// double-digit percentages during an RC transient — a tolerance loose enough to
+    /// absorb the discretisation residual would be within an order of magnitude of
+    /// letting that through.
+    #[test]
+    fn electrical_and_heat_energy_balance(
+        series in 1u16..=3,
+        parallel in 1u16..=3,
+        i in -4.0f64..4.0,
+        dt in 0.01f64..0.5,
+        nsteps in 5usize..200,
+        seed in any::<u64>(),
+        cap_sigma in 0.0f64..0.08,
+        r0_sigma in 0.0f64..0.08,
+    ) {
+        let scatter = Scatter { capacity_sigma: cap_sigma, r0_sigma };
+        let mut config = cfg(series, parallel, 0.5, seed, scatter);
+        // A live thermal network, to prove the balance survives temperature moving
+        // (R0 has a single temperature breakpoint, so heating cannot feed back into
+        // the electrical solve and quietly rescue a broken balance).
+        config.thermal = ThermalConfig::Network { k_neighbor_w_per_k: 1.0 };
+        let mut pack = Pack::new(&config, flat_chem()).unwrap();
+
+        let mut chemical = 0.0;   // V0·S·∫I dt
+        let mut electrical = 0.0; // ∫V_terminal·I dt
+        let mut heat = 0.0;       // ∫Q dt
+        // The first step's start-of-step voltage, from a zero-length probe step:
+        // dt = 0 mutates nothing (the RC update, the coulomb count and the thermal
+        // integration all scale by dt), but telemetry still reports the pack solved
+        // at this state under this current.
+        let mut v_start = pack.step(0.0, Demand::Current(i), &env()).v_terminal;
+        for _ in 0..nsteps {
+            let tele = pack.step(dt, Demand::Current(i), &env());
+            prop_assert!(tele.flags.is_empty(), "unexpected clamp: {:?}", tele.flags);
+            chemical += FLAT_V0 * f64::from(series) * tele.i_actual * dt;
+            electrical += v_start * tele.i_actual * dt;
+            heat += tele.q_gen_w * dt;
+            v_start = tele.v_terminal;
+        }
+        let imbalance = chemical - electrical - heat;
+        let tol = 1e-12 * chemical.abs().max(1.0);
+        prop_assert!(
+            imbalance.abs() < tol,
+            "chemical {chemical} J vs electrical {electrical} J + heat {heat} J \
+             (imbalance {imbalance} J, tol {tol} J)"
+        );
     }
 
     /// Snapshot round-trip equality: after any warm-up, a pack snapshotted through

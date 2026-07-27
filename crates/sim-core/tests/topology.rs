@@ -8,8 +8,10 @@
 //! Cells are made asymmetric deterministically via [`Pack::set_cell_factors`] (the
 //! weak-cell seam) so the expected split is a hand-computable closed form.
 
-use sim_core::chem::{CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair};
-use sim_core::{Demand, Env, Pack, PackConfig, Scatter};
+use sim_core::chem::{
+    CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+};
+use sim_core::{Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
 
 const CAP_AH: f64 = 2.5;
 const R0: f64 = 0.02;
@@ -25,6 +27,10 @@ fn env() -> Env {
 /// everywhere, one RC pair. Flatness makes the closed-form current split exact.
 fn flat_chem(v0: f64) -> ChemistryParams {
     ChemistryParams {
+        thermal: ThermalParams {
+            heat_capacity_j_per_k: 95.0,
+            h_area_w_per_k: 0.35,
+        },
         meta: ChemMeta {
             id: "flat".into(),
             name: "Flat synthetic cell".into(),
@@ -40,6 +46,7 @@ fn flat_chem(v0: f64) -> ChemistryParams {
             t_max_k: 350.0,
         },
         ocv: OcvTable {
+            docv_dt_v_per_k: None,
             soc: vec![0.0, 1.0],
             volts: vec![v0, v0],
         },
@@ -57,6 +64,7 @@ fn flat_chem(v0: f64) -> ChemistryParams {
 
 fn config(series: u16, parallel: u16, initial_soc: f64) -> PackConfig {
     PackConfig {
+        thermal: ThermalConfig::Isothermal,
         series,
         parallel,
         initial_soc,
@@ -108,6 +116,7 @@ fn rest_circulates_current_between_mismatched_parallel_cells() {
     // Use a sloped OCV so a SOC difference produces an E difference.
     let mut chem = flat_chem(3.30);
     chem.ocv = OcvTable {
+        docv_dt_v_per_k: None,
         soc: vec![0.0, 1.0],
         volts: vec![3.0, 3.6],
     };

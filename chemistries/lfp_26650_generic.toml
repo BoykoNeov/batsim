@@ -1,10 +1,9 @@
 # Generic LFP 26650 cell parameters.
 #
-# Phase 0 consumes the [meta], [cell], [ocv], [r0], and [[rc]] sections. The
-# [thermal], [aging], and [safety] sections are declared here for
-# forward-compatibility and are ignored by the current loader (they are wired in
-# during Phases 2–3). Every physical constant carries a provenance note per the
-# project rule: no unlabeled numbers.
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], and [thermal]. The
+# [aging] and [safety] sections are declared here for forward-compatibility and are
+# ignored for now (they are wired in during Phase 3). Every physical constant
+# carries a provenance note per the project rule: no unlabeled numbers.
 
 [meta]
 id         = "lfp_26650_generic"
@@ -52,11 +51,17 @@ ohms   = [[0.055, 0.022, 0.018],
 r_ohms  = 0.010
 c_farad = 2000.0
 
-# --- Sections below are declared for later phases and ignored in Phase 0. ---
-
 [thermal]
 heat_capacity_j_per_k = 95.0   # provenance: ~m*cp for a 26650 (~85 g, mixed materials); placeholder
+# h*A for a FULLY EXPOSED cell (as on a 1S1P pack). Inside a pack the engine scales
+# this down per cell by the fraction of surface not blocked by neighbours, so a
+# core cell sheds heat only by conduction toward the edge.
 h_area_w_per_k        = 0.35   # provenance: natural-convection h*A placeholder for a bare cell
+
+# No docv_dt_v_per_k column, so entropic heating is disabled for this chemistry
+# (TODO: add measured dU/dT to enable the reversible heat term).
+
+# --- Sections below are declared for later phases and ignored for now. ---
 
 [aging]
 cal_pre_exp                = 1.0e4    # provenance: placeholder — order-of-magnitude only, TODO fit

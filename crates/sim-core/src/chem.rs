@@ -19,10 +19,17 @@ fn is_positive(x: f64) -> bool {
     x > 0.0
 }
 
+/// True iff `x` is zero or positive. NaN yields `false`, so `!is_non_negative(x)`
+/// rejects NaN as well as negative values.
+#[inline]
+fn is_non_negative(x: f64) -> bool {
+    x >= 0.0
+}
+
 /// Full parameter set for one cell chemistry.
 ///
 /// The field grouping mirrors the TOML section layout (`[meta]`, `[cell]`,
-/// `[ocv]`, `[r0]`, `[[rc]]`). Thermal, aging, and safety sections are added in
+/// `[ocv]`, `[r0]`, `[[rc]]`, `[thermal]`). Aging and safety sections are added in
 /// their respective phases (see `CLAUDE.md`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChemistryParams {
@@ -36,6 +43,8 @@ pub struct ChemistryParams {
     pub r0: R0Table,
     /// 1–2 RC (Thevenin) pairs (`[[rc]]`).
     pub rc: Vec<RcPair>,
+    /// Lumped thermal properties of one cell (`[thermal]`).
+    pub thermal: ThermalParams,
 }
 
 /// Identity and provenance metadata (`[meta]`).
@@ -79,6 +88,21 @@ pub struct OcvTable {
     pub soc: Vec<f64>,
     /// OCV at each breakpoint \[V\], monotone non-decreasing, same length as `soc`.
     pub volts: Vec<f64>,
+    /// Optional entropy coefficient `∂U/∂T` \[V/K\] at each `soc` breakpoint.
+    ///
+    /// Drives the reversible (entropic) heat term `Q_rev = −I·T·∂U/∂T` in the
+    /// thermal network — typically **negative** for Li-ion over most of the SOC
+    /// range, which makes discharge (positive `I`) exothermic and charge
+    /// endothermic. Not sign-constrained by validation: real coefficients change
+    /// sign across the SOC range, so a chemistry may legitimately supply either.
+    ///
+    /// `None` (the default, and the case for both shipped chemistries) disables
+    /// the entropic term entirely; the thermal model then carries irreversible
+    /// heat only. When present it must have the same length as `soc`. It is *not*
+    /// used to temperature-correct OCV itself — `ocv_lookup` remains a pure
+    /// function of SOC in this phase.
+    #[serde(default)]
+    pub docv_dt_v_per_k: Option<Vec<f64>>,
 }
 
 /// Ohmic series resistance `R0` over a (soc, temperature) grid (`[r0]`).
@@ -93,6 +117,26 @@ pub struct R0Table {
     pub temp_k: Vec<f64>,
     /// Resistance grid \[ohms\]: outer index = soc, inner index = temperature.
     pub ohms: Vec<Vec<f64>>,
+}
+
+/// Lumped thermal properties of a single cell (`[thermal]`).
+///
+/// These describe the cell in isolation; how cells couple to each other and how
+/// much of each cell's surface actually faces the environment inside a pack is
+/// topology, and lives in [`crate::thermal::ThermalConfig`].
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ThermalParams {
+    /// Lumped heat capacity `C_th` \[J/K\] of one cell (mass × specific heat).
+    /// Must be `> 0`.
+    pub heat_capacity_j_per_k: f64,
+    /// Convective conductance `h·A` \[W/K\] from one **fully exposed** cell to the
+    /// environment — i.e. the bare-cell value, as measured on a 1S1P pack.
+    ///
+    /// Inside a pack this is scaled down per cell by how much of its surface is
+    /// blocked by neighbours (see [`crate::thermal::exposure`]). Must be `>= 0`;
+    /// `0` means a perfectly insulated cell (adiabatic), which is a legitimate
+    /// configuration, not an error.
+    pub h_area_w_per_k: f64,
 }
 
 /// One RC (Thevenin) pair modelling a diffusion/charge-transfer overpotential.
@@ -135,6 +179,14 @@ pub enum ChemistryError {
         /// Offending value.
         value: f64,
     },
+    /// A value that must be non-negative was negative (or NaN).
+    #[error("{what} must be >= 0, got {value}")]
+    Negative {
+        /// Which quantity.
+        what: &'static str,
+        /// Offending value.
+        value: f64,
+    },
     /// A pair of limits was out of order.
     #[error("{what}")]
     BadRange {
@@ -158,9 +210,10 @@ impl ChemistryParams {
 
     /// Validate physical and structural invariants.
     ///
-    /// Checks: monotone OCV table with matching lengths; strictly ascending,
-    /// dimensionally consistent, positive `R0` grid; 1–2 positive RC pairs;
-    /// ordered, positive cell limits. Pure — no I/O.
+    /// Checks: monotone OCV table with matching lengths (including the optional
+    /// entropy-coefficient column); strictly ascending, dimensionally consistent,
+    /// positive `R0` grid; 1–2 positive RC pairs; ordered, positive cell limits;
+    /// finite, positive thermal properties. Pure — no I/O.
     ///
     /// # Errors
     /// Returns the first [`ChemistryError`] encountered.
@@ -178,6 +231,19 @@ impl ChemistryParams {
         }
         check_strictly_ascending("ocv.soc", &self.ocv.soc)?;
         check_non_decreasing("ocv.volts", &self.ocv.volts)?;
+        // The entropy coefficient is optional, but when present it shares the
+        // `soc` breakpoints, so its length is load-bearing for the lookup.
+        // Deliberately no monotonicity or sign check: ∂U/∂T legitimately changes
+        // sign across the SOC range.
+        if let Some(docv_dt) = &self.ocv.docv_dt_v_per_k {
+            if docv_dt.len() != self.ocv.soc.len() {
+                return Err(ChemistryError::LengthMismatch {
+                    table: "ocv.docv_dt_v_per_k",
+                    a: docv_dt.len(),
+                    b: self.ocv.soc.len(),
+                });
+            }
+        }
 
         // --- R0 grid ---
         if self.r0.soc.is_empty() {
@@ -262,6 +328,29 @@ impl ChemistryParams {
         if !temps_ordered {
             return Err(ChemistryError::BadRange {
                 what: "cell.t_charge_min_k must be < cell.t_max_k",
+            });
+        }
+
+        // --- Thermal ---
+        // Finiteness is checked explicitly (TOML admits `inf`/`nan` floats)
+        // because these two numbers set the thermal sub-step stability bound: an
+        // infinite conductance or heat capacity would make that bound degenerate.
+        let t = &self.thermal;
+        if !t.heat_capacity_j_per_k.is_finite() || !t.h_area_w_per_k.is_finite() {
+            return Err(ChemistryError::BadRange {
+                what: "thermal.heat_capacity_j_per_k and thermal.h_area_w_per_k must be finite",
+            });
+        }
+        if !is_positive(t.heat_capacity_j_per_k) {
+            return Err(ChemistryError::NotPositive {
+                what: "thermal.heat_capacity_j_per_k",
+                value: t.heat_capacity_j_per_k,
+            });
+        }
+        if !is_non_negative(t.h_area_w_per_k) {
+            return Err(ChemistryError::Negative {
+                what: "thermal.h_area_w_per_k",
+                value: t.h_area_w_per_k,
             });
         }
         Ok(())
