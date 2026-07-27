@@ -6,7 +6,7 @@
 //! (`bincode`), not merely cloned — this catches any field that fails to survive
 //! serialization (e.g. the RNG state).
 
-use sim_core::bms::BmsConfig;
+use sim_core::bms::{BalancingConfig, BmsConfig};
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
@@ -79,7 +79,15 @@ fn config() -> PackConfig {
         // stored, and its noise draw has already advanced the RNG — so if it were
         // ever left out of the snapshot, this test is what would notice.
         bms: Some(BmsConfig {
-            balancing: None,
+            // Balancing on, with a threshold below the resting voltage of this cell at
+            // SOC 0.7, so bleed switches are genuinely closed during these tests. The
+            // bleed enters the group solve, so it changes every per-cell current — which
+            // makes it exactly the feature the replay and zero-length-step contracts
+            // need to cover, rather than the one they skip.
+            balancing: Some(BalancingConfig {
+                bleed_r_ohms: 47.0,
+                v_threshold_v: 3.0,
+            }),
             protection: None,
             current_offset_a: 0.01,
             current_noise_sigma_a: 0.05,

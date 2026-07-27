@@ -560,9 +560,23 @@ impl Pack {
             Vec::new()
         };
         let mut q_gen_w = 0.0;
+        let mut q_balancing_w = 0.0;
+        let mut i_balancing_a = 0.0;
         for (g, group) in self.groups.iter_mut().enumerate() {
             let (e_gv, r_gv) = group_src[g];
             let v_node = e_gv - i_g * r_gv; // start-of-step shared node voltage
+                                            // Bleed current and dissipation are evaluated from this same
+                                            // start-of-step node voltage — the one that actually drove the bleed over
+                                            // the step, and the one that produced `i_k` below. Using the end-of-step
+                                            // voltage instead would leave the reported numbers O(dt) adrift from the
+                                            // energy that was really dissipated, and would stop the pack energy
+                                            // balance closing exactly (see the energy-balance property test).
+            let g_bleed = bleed_at(g);
+            if g_bleed > 0.0 {
+                i_balancing_a += v_node * g_bleed;
+                q_balancing_w += v_node * v_node * g_bleed;
+                flags |= EventFlags::BALANCING;
+            }
             for (k, cell) in group.cells.iter_mut().enumerate() {
                 let (e_k, r_k) = cell_src[g][k];
                 let i_k = (e_k - v_node) / r_k;
@@ -636,10 +650,8 @@ impl Pack {
         } else {
             Vec::new()
         };
-        let mut q_balancing_w = 0.0;
         for (g_idx, group) in self.groups.iter().enumerate() {
-            let g_bleed = bleed_at(g_idx);
-            let mut sum_g = g_bleed;
+            let mut sum_g = bleed_at(g_idx);
             let mut sum_eg = 0.0;
             for cell in &group.cells {
                 let (e, r) = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
@@ -657,12 +669,6 @@ impl Pack {
             v_terminal += v_g;
             v_cell_min = v_cell_min.min(v_g);
             v_cell_max = v_cell_max.max(v_g);
-            if g_bleed > 0.0 {
-                // V²/R, dissipated in the bleed resistor — not in the cell, so this
-                // does not feed the thermal network.
-                q_balancing_w += v_g * v_g * g_bleed;
-                flags |= EventFlags::BALANCING;
-            }
             if self.bms.is_some() {
                 v_group.push(v_g);
             }
@@ -708,6 +714,7 @@ impl Pack {
             soh_resistance: 1.0,
             q_gen_w,
             q_balancing_w,
+            i_balancing_a,
             flags,
         }
     }

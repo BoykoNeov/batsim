@@ -274,11 +274,21 @@ fn bleed_current_is_v_over_r_and_adds_to_the_group() {
         (i_cell - expected).abs() < 1e-3,
         "bleed current {i_cell} A should match V/R = {expected} A"
     );
-    // And the reported dissipation matches V²/R.
+    // And the reported dissipation matches V²/R. The tolerance is not rounding slack:
+    // `q_balancing_w` is evaluated at the *start-of-step* node voltage (the one that
+    // actually drove the bleed, which is what makes the energy balance close exactly),
+    // while `v_terminal` here is the end-of-step value. They differ by one step of
+    // voltage drift — microvolts at this bleed current, but not zero.
     let expected_w = tele.v_terminal * tele.v_terminal / R_BLEED;
     assert!(
-        (tele.q_balancing_w - expected_w).abs() < 1e-9,
+        (tele.q_balancing_w - expected_w).abs() < 1e-4,
         "{} W vs {expected_w} W",
         tele.q_balancing_w
+    );
+    // The reported bleed current is the same quantity divided by that voltage.
+    assert!(
+        (tele.i_balancing_a - expected).abs() < 1e-4,
+        "{} A vs {expected} A",
+        tele.i_balancing_a
     );
 }

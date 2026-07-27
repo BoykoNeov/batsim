@@ -100,6 +100,15 @@ pub struct Telemetry {
     /// not inside the cells, so it does not feed the thermal network. Watching it is
     /// the honest way to see what passive balancing costs.
     pub q_balancing_w: f64,
+    /// Total current drawn by the passive balancing resistors this step \[A\],
+    /// discharge-positive (it flows out of the cells).
+    ///
+    /// This current is *additional* to [`Telemetry::i_actual`], not part of it: a
+    /// bleeding group carries `i_actual + its share of this`, which is exactly how
+    /// balancing brings a high group down relative to its series neighbours. Together
+    /// with [`Telemetry::q_balancing_w`] it closes the pack energy balance, which with
+    /// balancing active has four terms rather than three.
+    pub i_balancing_a: f64,
     /// Events raised during this step (protection trips, clamps, safety states).
     pub flags: EventFlags,
 }

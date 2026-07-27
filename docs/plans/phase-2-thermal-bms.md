@@ -80,6 +80,14 @@ current, step `n`'s start-of-step node voltage *is* step `n−1`'s reported
 end-of-step value. Verified to have teeth: swapping in the steady-state heat form
 produces a 5.4 mJ imbalance against a 1 pJ tolerance.
 
+With balancing active the balance has **four** terms, and the test runs that way:
+`chemical = electrical + q_gen + q_balancing`, where the chemical side is
+`V0·(S·I + I_bleed)·dt` because bled charge leaves the cells too. Both balancing
+telemetry values are evaluated at the *start-of-step* node voltage for exactly this
+reason — taking them from the end-of-step voltage instead would leave them O(dt) adrift
+and the identity would only close approximately. A three-term version of this test
+would have looked like a physics failure the moment anyone enabled a bleed switch.
+
 ### Goldens stay isothermal, and that is not a cop-out
 
 `ThermalConfig::Isothermal` is the default. The shipped chemistries have a

@@ -7,12 +7,12 @@
 
 use proptest::prelude::*;
 
-use sim_core::bms::{BmsConfig, ProtectionConfig};
+use sim_core::bms::{BalancingConfig, BmsConfig, ProtectionConfig};
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
 use sim_core::ecm::ocv_lookup;
-use sim_core::{Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
 
 const CAP_AH: f64 = 2.5;
 
@@ -220,9 +220,15 @@ proptest! {
     /// Pack energy balance: the chemical energy the cells give up equals the
     /// electrical energy leaving the terminals plus the heat generated inside.
     ///
-    /// With a flat OCV the chemical side is exactly `V0·S·∫I dt` (every cell sits at
-    /// `V0` regardless of SOC or scatter, and each series group's per-cell currents
-    /// sum to the pack current).
+    /// With balancing active the balance has **four** terms, not three: charge bled to
+    /// a resistor leaves the cells (so it belongs on the chemical side) and its energy
+    /// lands in the resistor (so it belongs on the loss side). Balancing is switched on
+    /// here for exactly that reason — the three-term version would look like a physics
+    /// failure the moment anyone enabled a bleed switch.
+    ///
+    /// With a flat OCV the chemical side is exactly `V0·(S·I + I_bleed)·dt` (every cell
+    /// sits at `V0` regardless of SOC or scatter, and each series group's per-cell
+    /// currents sum to the pack current *plus* that group's bleed current).
     ///
     /// The balance is exact — to floating-point rounding, not to a physical
     /// tolerance — because both heat and current are evaluated from **start-of-step**
@@ -254,11 +260,26 @@ proptest! {
         // (R0 has a single temperature breakpoint, so heating cannot feed back into
         // the electrical solve and quietly rescue a broken balance).
         config.thermal = ThermalConfig::Network { k_neighbor_w_per_k: 1.0 };
+        // Balancing on, with a threshold well below the flat OCV so every group bleeds
+        // for the whole run: the bleed path is then part of what this test covers.
+        config.bms = Some(BmsConfig {
+            balancing: Some(BalancingConfig { bleed_r_ohms: 47.0, v_threshold_v: FLAT_V0 - 0.5 }),
+            protection: None, // clamping the current would end the run early
+            current_offset_a: 0.0,
+            current_noise_sigma_a: 0.0,
+            temp_probes: Vec::new(),
+            initial_soc_error: 0.0,
+            rest_current_threshold_a: 0.0,
+            rest_time_for_ocv_s: 1.0e9,
+            ocv_correction_gain: 0.0,
+            min_ocv_slope_v_per_soc: 0.0,
+        });
         let mut pack = Pack::new(&config, flat_chem()).unwrap();
 
-        let mut chemical = 0.0;   // V0·S·∫I dt
+        let mut chemical = 0.0;   // V0·(S·I + I_bleed)·dt
         let mut electrical = 0.0; // ∫V_terminal·I dt
         let mut heat = 0.0;       // ∫Q dt
+        let mut bled = 0.0;       // ∫Q_balancing dt
         // The first step's start-of-step voltage, from a zero-length probe step:
         // dt = 0 mutates nothing (the RC update, the coulomb count and the thermal
         // integration all scale by dt), but telemetry still reports the pack solved
@@ -266,18 +287,26 @@ proptest! {
         let mut v_start = pack.step(0.0, Demand::Current(i), &env()).v_terminal;
         for _ in 0..nsteps {
             let tele = pack.step(dt, Demand::Current(i), &env());
-            prop_assert!(tele.flags.is_empty(), "unexpected clamp: {:?}", tele.flags);
-            chemical += FLAT_V0 * f64::from(series) * tele.i_actual * dt;
+            // BALANCING is expected here; a SOC clamp is not — it would truncate the
+            // charge that the balance is accounting for.
+            prop_assert!(
+                !tele.flags.intersects(EventFlags::SOC_CLAMPED_HIGH | EventFlags::SOC_CLAMPED_LOW),
+                "unexpected SOC clamp: {:?}", tele.flags
+            );
+            chemical +=
+                FLAT_V0 * (f64::from(series) * tele.i_actual + tele.i_balancing_a) * dt;
             electrical += v_start * tele.i_actual * dt;
             heat += tele.q_gen_w * dt;
+            bled += tele.q_balancing_w * dt;
             v_start = tele.v_terminal;
         }
-        let imbalance = chemical - electrical - heat;
+        prop_assert!(bled > 0.0, "the bleed path should have been exercised");
+        let imbalance = chemical - electrical - heat - bled;
         let tol = 1e-12 * chemical.abs().max(1.0);
         prop_assert!(
             imbalance.abs() < tol,
             "chemical {chemical} J vs electrical {electrical} J + heat {heat} J \
-             (imbalance {imbalance} J, tol {tol} J)"
+             + bled {bled} J (imbalance {imbalance} J, tol {tol} J)"
         );
     }
 
@@ -357,7 +386,7 @@ proptest! {
             let demand = match pick {
                 0 => Demand::Current(m),
                 1 => Demand::Power(m),
-                2 => Demand::Voltage(m.abs() * 0.01),
+                2 => Demand::Voltage(m.abs() * 0.03),
                 _ => Demand::Rest,
             };
             let tele = pack.step(dt, demand, &env());
