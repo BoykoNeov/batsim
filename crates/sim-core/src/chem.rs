@@ -45,6 +45,52 @@ pub struct ChemistryParams {
     pub rc: Vec<RcPair>,
     /// Lumped thermal properties of one cell (`[thermal]`).
     pub thermal: ThermalParams,
+    /// Semi-empirical aging coefficients (`[aging]`), or `None` for a chemistry
+    /// that carries no aging data.
+    ///
+    /// `None` is not "this cell does not age" — it is "this parameter set cannot say
+    /// how". Configuring a pack with [`crate::aging::AgingConfig`] against such a
+    /// chemistry is a build error rather than a silently ageless pack, because
+    /// silence there is indistinguishable from coefficients that happen to be zero.
+    #[serde(default)]
+    pub aging: Option<AgingParams>,
+}
+
+/// Semi-empirical aging coefficients (`[aging]`).
+///
+/// These are the *chemistry's* numbers; whether aging runs at all, and how coarse
+/// its clock is, is pack configuration ([`crate::aging::AgingConfig`]). See
+/// [`crate::aging`] for what each coefficient does to the fade.
+///
+/// Every value in the shipped chemistries is a labelled placeholder. They are
+/// order-of-magnitude plausible — the LFP set gives roughly 10 % calendar fade over
+/// a year at 25 °C and 100 % SOC — but nothing here is fitted, so scenarios should
+/// assert the *shape* of a fade curve, never a number on it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AgingParams {
+    /// Arrhenius pre-exponential factor for calendar fade
+    /// \[capacity fraction per √s\]. Must be finite and `>= 0`.
+    pub cal_pre_exp: f64,
+    /// Activation energy for calendar fade \[J/mol\]. Must be finite and `>= 0`;
+    /// larger means more strongly temperature-dependent.
+    pub cal_ea_j_per_mol: f64,
+    /// Multiplicative SOC stress on calendar fade, over **uniformly spaced** SOC
+    /// breakpoints spanning \[0, 1\] (three entries = SOC 0.0 / 0.5 / 1.0). Must be
+    /// non-empty with finite, non-negative entries. See
+    /// [`crate::aging::soc_stress`].
+    pub cal_soc_stress: Vec<f64>,
+    /// Cycle fade per amp-hour of throughput at full depth
+    /// \[capacity fraction per Ah\]. Must be finite and `>= 0`.
+    pub cyc_fade_per_ah: f64,
+    /// Depth-of-discharge exponent for cycle fade, in the per-*cycle* convention
+    /// (fade of a depth-`D` cycle `∝ D^exp`). Must be finite and `>= 1`; `1` means
+    /// pure throughput counting. See [`crate::aging::cycle_increment`] for why the
+    /// per-amp-hour weight is `D^(exp−1)`.
+    pub cyc_dod_stress_exp: f64,
+    /// Resistance growth per unit of capacity lost: `soh_resistance = 1 + this ·
+    /// loss`. Must be finite and `>= 0`. Typically above 1 — resistance grows faster
+    /// than capacity fades, which is most of what an aged pack feels like.
+    pub r_growth_per_capacity_loss: f64,
 }
 
 /// Identity and provenance metadata (`[meta]`).
@@ -352,6 +398,48 @@ impl ChemistryParams {
                 what: "thermal.h_area_w_per_k",
                 value: t.h_area_w_per_k,
             });
+        }
+
+        // --- Aging (optional) ---
+        if let Some(a) = &self.aging {
+            // Finiteness is folded into each check: an infinite pre-exponential or
+            // activation energy would make the fade rate NaN/inf, and these numbers
+            // multiply into a state of health the whole solve then divides by.
+            let non_negative: [(&'static str, f64); 4] = [
+                ("aging.cal_pre_exp", a.cal_pre_exp),
+                ("aging.cal_ea_j_per_mol", a.cal_ea_j_per_mol),
+                ("aging.cyc_fade_per_ah", a.cyc_fade_per_ah),
+                (
+                    "aging.r_growth_per_capacity_loss",
+                    a.r_growth_per_capacity_loss,
+                ),
+            ];
+            for (what, value) in non_negative {
+                if !is_non_negative(value) || !value.is_finite() {
+                    return Err(ChemistryError::Negative { what, value });
+                }
+            }
+            if a.cal_soc_stress.is_empty() {
+                return Err(ChemistryError::Empty("aging.cal_soc_stress"));
+            }
+            for &value in &a.cal_soc_stress {
+                if !is_non_negative(value) || !value.is_finite() {
+                    return Err(ChemistryError::Negative {
+                        what: "aging.cal_soc_stress entry",
+                        value,
+                    });
+                }
+            }
+            // Below 1 the per-amp-hour weight `D^(exp−1)` has a negative exponent and
+            // diverges as the depth goes to zero — a micro-cycle would age the cell
+            // more than a full one. That is not a parameter choice, it is a sign
+            // error, so it is rejected rather than clamped.
+            let dod_exp_ok = a.cyc_dod_stress_exp >= 1.0 && a.cyc_dod_stress_exp.is_finite();
+            if !dod_exp_ok {
+                return Err(ChemistryError::BadRange {
+                    what: "aging.cyc_dod_stress_exp must be finite and >= 1",
+                });
+            }
         }
         Ok(())
     }

@@ -123,6 +123,7 @@ const SOC: f64 = 0.6;
 /// nothing in this file is a physical claim.
 fn lfp_like_chem() -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,
@@ -236,6 +237,7 @@ fn pack_config(
     bms: Option<BmsConfig>,
 ) -> PackConfig {
     PackConfig {
+        aging: None,
         bms,
         thermal,
         series,

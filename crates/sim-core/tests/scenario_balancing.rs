@@ -39,6 +39,7 @@ fn env() -> Env {
 /// balancer can actually see.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         meta: ChemMeta {
             id: "bal".into(),
             name: "Balancing test cell".into(),
@@ -91,6 +92,7 @@ fn bms(balancing: Option<BalancingConfig>) -> BmsConfig {
 
 fn config(balancing: Option<BalancingConfig>) -> PackConfig {
     PackConfig {
+        aging: None,
         series: 3,
         parallel: 1,
         initial_soc: 0.70,

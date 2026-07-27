@@ -65,6 +65,7 @@ fn bms() -> BmsConfig {
 
 fn config(soc0: f64) -> PackConfig {
     PackConfig {
+        aging: None,
         series: 1,
         parallel: 1,
         initial_soc: soc0,

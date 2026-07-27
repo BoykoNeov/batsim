@@ -22,6 +22,7 @@ use rand_core::SeedableRng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::aging::{Aging, AgingConfig, CellAging};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::ecm::{
@@ -68,7 +69,15 @@ use crate::{Demand, Env, Telemetry};
 /// this note is the correction rather than a silent renumbering. No v4 snapshot has
 /// ever existed outside a single test process, so nothing needs migrating — but the
 /// rule is one bump per layout-changing slice, and it was missed once.
-pub const SNAPSHOT_VERSION: u32 = 5;
+///
+/// v6 (Phase 3, aging): `Pack` gained `aging: Option<Aging>` (config plus the
+/// sub-clock accumulator), every `Cell` gained a `CellAging` block,
+/// and `ChemistryParams` gained the optional `aging` coefficients. This bump is also
+/// **semantic**, which is the case the version field exists for: `Telemetry::soc_true`
+/// now divides by capacity that folds in `soh_capacity`, so on an aged pack the same
+/// stored state reports a different SOC than a v5 build would have. Same caveat as v3
+/// about what actually rejects an older blob.
+pub const SNAPSHOT_VERSION: u32 = 6;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -97,8 +106,7 @@ impl Default for Scatter {
 
 /// Pack topology and initial conditions.
 ///
-/// This doubles as (part of) the scenario file format. Aging configuration is added
-/// in a later phase.
+/// This doubles as (part of) the scenario file format.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PackConfig {
     /// Number of series elements (groups). Must be ≥ 1.
@@ -131,6 +139,14 @@ pub struct PackConfig {
     /// teaching scenario.
     #[serde(default)]
     pub bms: Option<BmsConfig>,
+    /// Aging, or `None` for a pack that never wears out.
+    ///
+    /// `None` is the default and a supported mode — most electrical and thermal
+    /// scenarios want health held fixed. When this is `Some`, the chemistry **must**
+    /// supply an `[aging]` section or [`Pack::new`] fails: a pack configured to age
+    /// against a chemistry that cannot say how would otherwise be silently ageless.
+    #[serde(default)]
+    pub aging: Option<AgingConfig>,
 }
 
 /// Reasons [`Pack::new`] can fail.
@@ -177,6 +193,15 @@ pub enum BuildError {
         /// Pack parallel count.
         parallel: u16,
     },
+    /// [`PackConfig::aging`] was set but the chemistry has no `[aging]` section.
+    #[error("aging is configured but chemistry '{chem_id}' has no [aging] coefficients")]
+    MissingAgingParams {
+        /// Identifier of the chemistry that came up short.
+        chem_id: String,
+    },
+    /// [`AgingConfig::sub_clock_period_s`] was negative or not finite.
+    #[error("aging.sub_clock_period_s must be finite and >= 0, got {0}")]
+    BadAgingPeriod(f64),
     /// The chemistry itself failed validation.
     #[error("invalid chemistry: {0}")]
     Chemistry(#[from] crate::chem::ChemistryError),
@@ -229,7 +254,9 @@ pub struct CellIndexError {
 /// The dynamic ECM state lives in [`CellModel`]/[`EcmState`]; the two factors are
 /// fixed at construction (from [`Scatter`] or an explicit weak-cell override) and
 /// scale the cell's effective capacity and resistance. Aging's `soh_*` multipliers
-/// compose on top of these in a later phase.
+/// are their dynamic siblings and compose on top of them — see [`CellAging`], which
+/// lives here rather than in [`EcmState`] precisely so that the [`CellModel`] enum
+/// stays swappable for a porous-electrode model later.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct Cell {
     /// Dynamic equivalent-circuit state.
@@ -238,6 +265,21 @@ struct Cell {
     capacity_factor: f64,
     /// Static `R0` multiplier: effective `R0` = nominal × this. `> 0`.
     r0_factor: f64,
+    /// Health: the two `soh_*` multipliers and the accumulators behind them. Exactly
+    /// `1.0`/`1.0` and inert unless the pack has aging configured.
+    aging: CellAging,
+}
+
+impl Cell {
+    /// The resistance multiplier the electrical solve actually uses: static
+    /// manufacturing factor × aging's resistance growth.
+    ///
+    /// Every call to [`cell_source`] goes through this, including the one inside the
+    /// [`SourceCache`] staleness assert — the memo's invariant is stated in terms of
+    /// *this* product, not of `r0_factor` alone.
+    fn eff_r0_factor(&self) -> f64 {
+        self.r0_factor * self.aging.soh_resistance
+    }
 }
 
 /// A parallel group: the cells wired in parallel that share one terminal node.
@@ -263,13 +305,19 @@ pub struct CellView {
     pub capacity_factor: f64,
     /// Static `R0` multiplier applied to this cell.
     pub r0_factor: f64,
+    /// Capacity state of health in (0, 1\]: effective capacity = nominal ×
+    /// [`Self::capacity_factor`] × this. Exactly `1.0` without aging.
+    pub soh_capacity: f64,
+    /// Resistance growth factor `>= 1`: effective `R0` = nominal ×
+    /// [`Self::r0_factor`] × this. Exactly `1.0` without aging.
+    pub soh_resistance: f64,
 }
 
 /// Per-cell start-of-step Thévenin `(E, R)`, carried across the step boundary.
 ///
 /// A **memo of a pure function of pack state**, not state itself: entry `i` is
-/// exactly `cell_source(cell_i.state(), chem, cell_i.r0_factor)` in series-major /
-/// parallel-minor order. `step`'s end-of-step reporting pass computes those values
+/// exactly `cell_source(cell_i.state(), chem, cell_i.eff_r0_factor())` in
+/// series-major / parallel-minor order. `step`'s end-of-step reporting pass computes those values
 /// for every cell, and the next step's start-of-step aggregation would recompute
 /// them from unchanged state — so the reporting pass fills this and the next step
 /// reads it, halving the per-cell table lookups (perf item 3 in
@@ -277,8 +325,14 @@ pub struct CellView {
 ///
 /// Empty means cold: recompute and refill. That is always *correct*, only slower,
 /// which is what makes the invalidation rule safe to get wrong in the conservative
-/// direction. Anything that mutates cell state or `r0_factor` outside `step` must
-/// clear it (today: [`Pack::set_cell_factors`]).
+/// direction. Anything that mutates cell state or the effective `R0` factor outside
+/// `step` must clear it (today: [`Pack::set_cell_factors`]).
+///
+/// Aging mutates `soh_resistance`, which is one of that product's two halves — and
+/// needs no invalidation anyway, because the aging update is sequenced *before* the
+/// end-of-step reporting pass that fills this. The pass therefore memoises
+/// post-aging sources. Aging after the pass would poison the next step silently, and
+/// only a debug build would notice.
 ///
 /// Two deliberate impls:
 ///
@@ -333,6 +387,9 @@ pub struct Pack {
     /// The battery management system, if this pack has one. Holds the BMS's own
     /// beliefs (SOC estimate, rest timer, last sensor frame) — never ground truth.
     bms: Option<Bms>,
+    /// Aging policy plus its sub-clock accumulator, or `None` for a pack that never
+    /// wears out. The per-cell health it drives lives on each [`Cell`].
+    aging: Option<Aging>,
     /// The single seeded RNG; its state is part of the snapshot.
     rng: ChaCha8Rng,
     /// Simulation time elapsed \[s\].
@@ -372,6 +429,21 @@ impl Pack {
         if let Some(bms) = &config.bms {
             validate_bms(bms, config.series, config.parallel)?;
         }
+        if let Some(aging) = &config.aging {
+            let period_ok = aging.sub_clock_period_s.is_finite() && aging.sub_clock_period_s >= 0.0;
+            if !period_ok {
+                return Err(BuildError::BadAgingPeriod(aging.sub_clock_period_s));
+            }
+            // Refusing here is the whole point of the chemistry's `aging` being an
+            // `Option`: a pack asked to age against a parameter set with no
+            // coefficients would otherwise run forever at exactly zero fade, which
+            // looks identical to a working aging model on a very stable chemistry.
+            if chem.aging.is_none() {
+                return Err(BuildError::MissingAgingParams {
+                    chem_id: chem.meta.id.clone(),
+                });
+            }
+        }
 
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
         let n_rc = chem.n_rc();
@@ -397,6 +469,7 @@ impl Pack {
                     model,
                     capacity_factor,
                     r0_factor,
+                    aging: CellAging::new(config.initial_soc),
                 });
             }
             groups.push(ParallelGroup { cells });
@@ -422,6 +495,7 @@ impl Pack {
             groups,
             thermal: config.thermal,
             bms,
+            aging: config.aging.map(Aging::new),
             rng,
             sim_time_s: 0.0,
             // Cold: the first step computes every cell's Thévenin source and fills it.
@@ -472,7 +546,19 @@ impl Pack {
             v_rc_sum: state.v_rc.iter().sum(),
             capacity_factor: cell.capacity_factor,
             r0_factor: cell.r0_factor,
+            soh_capacity: cell.aging.soh_capacity,
+            soh_resistance: cell.aging.soh_resistance,
         })
+    }
+
+    /// The pack's aging clock, or `None` if this pack does not age.
+    ///
+    /// Exposes the sub-clock's pending interval, which is what makes a mid-period
+    /// snapshot legible: aging state is not only the per-cell health in
+    /// [`CellView`], it is also how far along the pack is towards its next update.
+    #[must_use]
+    pub fn aging(&self) -> Option<&Aging> {
+        self.aging.as_ref()
     }
 
     /// Override one cell's static manufacturing factors (capacity and `R0`
@@ -599,14 +685,15 @@ impl Pack {
                     debug_assert_eq!(
                         (cached.0.to_bits(), cached.1.to_bits()),
                         {
-                            let fresh = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
+                            let fresh =
+                                cell_source(cell.model.state(), &self.chem, cell.eff_r0_factor());
                             (fresh.0.to_bits(), fresh.1.to_bits())
                         },
                         "stale Thévenin memo at cell {g_idx}S{k}P"
                     );
                     cached
                 } else {
-                    let fresh = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
+                    let fresh = cell_source(cell.model.state(), &self.chem, cell.eff_r0_factor());
                     cell_src.push(fresh);
                     fresh
                 };
@@ -645,6 +732,11 @@ impl Pack {
         // heat it makes); the per-cell array is only materialised when a live
         // thermal network is going to consume it.
         let thermal_live = matches!(self.thermal, ThermalConfig::Network { .. });
+        // Cycle-fade bookkeeping reacts to charge *moving*, so like every other
+        // physics update it is `dt`-scaled — but the reversal detection that anchors
+        // the depth-of-discharge measurement is not, so the whole accumulation takes
+        // the explicit zero-length-step gate.
+        let aging_accumulates = self.aging.is_some() && dt > 0.0;
         let mut heat_w: Vec<f64> = if thermal_live {
             Vec::with_capacity(n_cells)
         } else {
@@ -687,8 +779,20 @@ impl Pack {
                     // expects.
                     heat_w.push(q);
                 }
+                let soc_before = state.soc;
                 let eff_cap = cap_ah * cell.capacity_factor;
-                flags |= advance_cell(cell.model.state_mut(), &self.chem, i_k, dt, eff_cap);
+                let soh_cap = cell.aging.soh_capacity;
+                flags |= advance_cell(
+                    cell.model.state_mut(),
+                    &self.chem,
+                    i_k,
+                    dt,
+                    eff_cap,
+                    soh_cap,
+                );
+                if aging_accumulates {
+                    cell.aging.accumulate(i_k, dt, soc_before);
+                }
             }
         }
 
@@ -725,6 +829,39 @@ impl Pack {
         }
         self.sim_time_s += dt;
 
+        // --- aging, on its own coarse sub-clock. Deliberately sequenced *here*:
+        // after the temperatures and SOCs it reads have settled, and before the
+        // reporting pass below — which recomputes every cell's Thévenin source and
+        // memoises it. Running aging after that pass would leave the memo describing
+        // pre-aging resistances, poisoning the next step with no invalidation point
+        // to catch it. Running it here costs nothing and needs no invalidation at all.
+        if aging_accumulates {
+            // Both `expect`s are structural, not hopeful: `aging_accumulates` implies
+            // `self.aging.is_some()`, and `Pack::new` rejects that configuration
+            // unless the chemistry supplies coefficients.
+            let elapsed = self
+                .aging
+                .as_mut()
+                .expect("aging_accumulates implies aging is configured")
+                .advance(dt);
+            if let Some(dt_age) = elapsed {
+                let params = self
+                    .chem
+                    .aging
+                    .as_ref()
+                    .expect("Pack::new rejects aging config without chemistry coefficients");
+                for group in &mut self.groups {
+                    for cell in &mut group.cells {
+                        let (temp_k, soc) = {
+                            let s = cell.model.state();
+                            (s.temp_k, s.soc)
+                        };
+                        cell.aging.tick(params, dt_age, temp_k, soc);
+                    }
+                }
+            }
+        }
+
         // --- end-of-step reporting. Recompute each group's shared node voltage
         // from end-of-step state with the same pack current, so parallel cells
         // report one consistent terminal voltage (v_cell is per group).
@@ -733,9 +870,26 @@ impl Pack {
         let mut v_cell_max = f64::NEG_INFINITY;
         let mut t_min = f64::INFINITY;
         let mut t_max = f64::NEG_INFINITY;
-        let mut rem_ah = 0.0; // Σ soc_k · eff_cap_k
+        let mut rem_ah = 0.0; // Σ soc_k · eff_cap_k  (eff_cap folds in SOH)
         let mut nom_ah = 0.0; // Σ eff_cap_k
-                              // Group voltages are gathered only when something will sense them.
+                              // Pack SOH aggregates. Both are gated on aging being live, so a pack
+                              // that cannot age pays nothing for them and reports exactly 1.0.
+                              //
+                              // Capacity: Σ(cap·factor·soh) / Σ(cap·factor) — capacity-weighted, the
+                              // same shape `soc_true` already uses, and it reads as "fraction of
+                              // nominal pack capacity still there".
+                              //
+                              // Resistance: r_pack / r_pack_nominal, the ratio of what the pack's cells
+                              // actually present to what unworn cells would. Accumulated from the same
+                              // conductances the voltage solve needs, but **excluding the bleed
+                              // conductance** — a closed balancing switch lowers the group's impedance
+                              // without any cell having got better, and it would otherwise wander into
+                              // a number that is supposed to be about health.
+        let aging_live = self.aging.is_some();
+        let mut cap_nominal_ah = 0.0; // Σ cap·factor, SOH excluded
+        let mut r_pack_cells = 0.0; // Σ_g 1/Σ_k G_k
+        let mut r_pack_nominal = 0.0; // Σ_g 1/Σ_k soh_k·G_k
+                                      // Group voltages are gathered only when something will sense them.
         let mut v_group: Vec<f64> = if self.bms.is_some() {
             Vec::with_capacity(series)
         } else {
@@ -744,8 +898,10 @@ impl Pack {
         for (g_idx, group) in self.groups.iter().enumerate() {
             let mut sum_g = bleed_at(g_idx);
             let mut sum_eg = 0.0;
+            let mut sum_g_cells = 0.0;
+            let mut sum_g_nominal = 0.0;
             for (k, cell) in group.cells.iter().enumerate() {
-                let (e, r) = cell_source(cell.model.state(), &self.chem, cell.r0_factor);
+                let (e, r) = cell_source(cell.model.state(), &self.chem, cell.eff_r0_factor());
                 // This is the *next* step's start-of-step source: nothing below
                 // mutates a cell, so the state it was computed from is the state the
                 // next step will find. Memoise it (see [`SourceCache`]).
@@ -756,9 +912,20 @@ impl Pack {
                 let s = cell.model.state();
                 t_min = t_min.min(s.temp_k);
                 t_max = t_max.max(s.temp_k);
-                let eff_cap = cap_ah * cell.capacity_factor;
+                let cap_nominal = cap_ah * cell.capacity_factor;
+                let eff_cap = cap_nominal * cell.aging.soh_capacity;
                 rem_ah += s.soc * eff_cap;
                 nom_ah += eff_cap;
+                if aging_live {
+                    cap_nominal_ah += cap_nominal;
+                    sum_g_cells += g;
+                    // 1/r_nominal = soh_resistance/r, since r already carries it.
+                    sum_g_nominal += cell.aging.soh_resistance * g;
+                }
+            }
+            if aging_live {
+                r_pack_cells += 1.0 / sum_g_cells;
+                r_pack_nominal += 1.0 / sum_g_nominal;
             }
             let v_g = (sum_eg - i_g) / sum_g; // = E_g' − I_g·R_g'
             v_terminal += v_g;
@@ -807,8 +974,18 @@ impl Pack {
             t_max,
             v_cell_min,
             v_cell_max,
-            soh_capacity: 1.0,
-            soh_resistance: 1.0,
+            // Without aging these are exactly 1.0 by construction, not by rounding:
+            // every cell's SOH is the literal 1.0 the pack was built with.
+            soh_capacity: if aging_live {
+                nom_ah / cap_nominal_ah
+            } else {
+                1.0
+            },
+            soh_resistance: if aging_live {
+                r_pack_cells / r_pack_nominal
+            } else {
+                1.0
+            },
             q_gen_w,
             q_balancing_w,
             i_balancing_a,

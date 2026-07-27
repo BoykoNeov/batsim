@@ -39,6 +39,7 @@ fn env() -> Env {
 /// Build a synthetic chemistry with a caller-supplied OCV table and flat R0.
 fn synthetic_chem(ocv: OcvTable) -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,
@@ -90,6 +91,7 @@ fn synthetic_chem_2rc(ocv: OcvTable) -> ChemistryParams {
 
 fn config(initial_soc: f64) -> PackConfig {
     PackConfig {
+        aging: None,
         bms: None,
         thermal: ThermalConfig::Isothermal,
         series: 1,

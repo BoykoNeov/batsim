@@ -36,6 +36,7 @@ fn env() -> Env {
 /// the optional entropy coefficient vary per test.
 fn chem(h_area_w_per_k: f64, docv_dt_v_per_k: Option<Vec<f64>>) -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         meta: ChemMeta {
             id: "thermal-test".into(),
             name: "Thermal test cell".into(),
@@ -73,6 +74,7 @@ fn chem(h_area_w_per_k: f64, docv_dt_v_per_k: Option<Vec<f64>>) -> ChemistryPara
 
 fn config(series: u16, parallel: u16, soc0: f64, thermal: ThermalConfig) -> PackConfig {
     PackConfig {
+        aging: None,
         bms: None,
         series,
         parallel,

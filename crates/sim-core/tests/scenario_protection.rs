@@ -63,6 +63,7 @@ fn env() -> Env {
 /// does drive the terminal voltage into `v_max` and discharging into `v_min`.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         meta: ChemMeta {
             id: "prot".into(),
             name: "Protection test cell".into(),
@@ -122,6 +123,7 @@ fn protecting_bms() -> BmsConfig {
 
 fn config(soc0: f64, temp_k: f64, bms: Option<BmsConfig>) -> PackConfig {
     PackConfig {
+        aging: None,
         series: 1,
         parallel: 1,
         initial_soc: soc0,

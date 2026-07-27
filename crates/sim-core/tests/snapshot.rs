@@ -26,6 +26,7 @@ fn env() -> Env {
 /// two RC pairs — so a broken round-trip of almost any field shows up.
 fn rich_chem() -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,
@@ -73,6 +74,7 @@ fn rich_chem() -> ChemistryParams {
 
 fn config() -> PackConfig {
     PackConfig {
+        aging: None,
         // A BMS with a *noisy* sensor, so the round-trip has to carry both the last
         // sensor frame and an RNG that is drawn from every step. The frame cannot be
         // recomputed on restore — its group voltages depend on a current that is not

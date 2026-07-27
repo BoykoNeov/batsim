@@ -1,7 +1,7 @@
 # Phase 3 — aging + faults
 
-**Status: planned.** No slice has landed. This file is written before the work so the
-decisions below are made once; append the "learned while building" material to it as
+**Status: slice A landed; B–E planned.** This file was written before the work so the
+decisions below are made once; the "learned while building" material is appended as
 each slice lands, the way `phase-2-thermal-bms.md` grew.
 
 | exit criterion (from `CLAUDE.md`) | to be met by |
@@ -13,7 +13,7 @@ each slice lands, the way `phase-2-thermal-bms.md` grew.
 
 | slice | scope | state |
 | ----- | ----- | ----- |
-| A | aging: `[aging]` into `ChemistryParams`, per-cell `soh_capacity`/`soh_resistance` + calendar accumulator on `Cell`, calendar **and** cycle fade, resistance growth, the aging sub-clock, pack-level SOH in `Telemetry` | planned |
+| A | aging: `[aging]` into `ChemistryParams`, per-cell `soh_capacity`/`soh_resistance` + calendar accumulator on `Cell`, calendar **and** cycle fade, resistance growth, the aging sub-clock, pack-level SOH in `Telemetry` | **landed** (v6) |
 | B | fault queue: timestamped injection API, `WeakCell`, `SoftInternalShort`, `ExternalShort`, `SensorStuck`/`SensorOffset` | planned |
 | C | plating: `PLATING_RISK` from cold-charge physics, accelerated fade, seeded soft-short probability | planned |
 | D | runaway: Arrhenius self-heating with a finite per-cell energy budget, `VENTED`, `THERMAL_RUNAWAY`, propagation, and the sub-step bound that makes it integrable | planned |
@@ -224,15 +224,8 @@ provenance notes ask for.
 
 ## Open questions, to answer inside the slice that hits them
 
-- **Aging sub-clock period.** `CLAUDE.md` suggests ~10 s of sim time. It must be a
-  config value, and the accumulator has to survive snapshot/restore or a snapshot taken
-  mid-period changes the trajectory. Whether a partial period is dropped or carried at
-  restore is a determinism question, not a taste question.
-- **Cycle-fade DOD accounting without rainflow.** `CLAUDE.md` explicitly rules rainflow
-  counting out for v1 in favour of throughput × stress weights. What plays the role of
-  DOD in a weighting applied per sub-clock tick — instantaneous SOC, or a running
-  min/max since the last current reversal — needs one answer, stated where the fade
-  function lives.
+- ~~**Aging sub-clock period.**~~ Answered in slice A, below.
+- ~~**Cycle-fade DOD accounting without rainflow.**~~ Answered in slice A, below.
 - **Plating's soft-short probability** draws from the pack RNG, so it must draw in a
   fixed order over cells (series-major, parallel-minor, like the scatter draws) or the
   trajectory stops being a function of the seed. It also must not draw at all when the
@@ -241,3 +234,117 @@ provenance notes ask for.
 - **Does an external short bypass the contactor?** Physically it depends on which side
   of the contactor the short sits. Pick one, document it on the fault variant, and make
   sure the BMS-off contrast scenario is not accidentally testing the other.
+
+---
+
+## Learned while building — slice A (aging)
+
+Snapshot layout v5 → **v6**. New module `sim-core/src/aging.rs`; new integration test
+`sim-core/tests/aging.rs` (17 tests). Everything the pre-work section decided held up:
+SOH on `Cell`, aging sequenced before the reporting pass, the rationalised calendar
+increment, and the pack-level SOH aggregation all shipped as written.
+
+### The two open questions, answered
+
+**Sub-clock period.** `AgingConfig { sub_clock_period_s }` on `PackConfig`, default
+10 s, validated finite and `>= 0` (zero = age every step, which the tests use). A
+partial period is **carried**, not dropped — `Aging::accum_s` is in the snapshot, and
+`snapshot_mid_period_replays_bit_identically` pins it. Dropping it would have made the
+act of taking a snapshot change the physics.
+
+The update applies the *whole* accumulated interval in **one** tick, not a loop of
+period-sized ones. That is what keeps fast-forward cheap: `dt` = 1 h ticks aging once,
+not 360 times. It costs nothing in accuracy for the calendar term, because —
+
+**the calendar integral turns out to be exact over any partition.** If `q = k·√t`
+holds, then `q + k·dt/(√(t_eq+dt)+√t_eq)` with `t_eq = (q/k)²` is exactly `k·√(t+dt)`.
+So at fixed stress the accumulated fade depends only on total elapsed time, whatever
+the step sizes. `accumulated_calendar_increments_reproduce_sqrt_t` checks this at 1 to
+100 000 steps to a relative 1e-12, and it is a genuinely strong test of the
+rationalised form: the naive difference of square roots fails it badly at fine `dt`.
+This was expected to be an approximation and is not one; only the *stress sampling*
+(`k` re-evaluated per tick) is coarse.
+
+**Cycle-fade DOD.** The depth is measured from the SOC at the **last current
+reversal**, tracked per cell as `soc_ref` + a `discharging` flag. Two fields, not a
+running min/max pair, because a half-cycle is monotone by construction — a reversal is
+what ends it. Exact-zero current is deliberately *not* a reversal, so resting mid-
+discharge does not split one deep cycle into two shallow ones.
+
+The weight is `dod^(exp − 1)`, **not** `dod^exp`. The literature parameterises cycle
+life per cycle (a depth-`D` cycle costs `∝ D^exp`) and that cycle moves `∝ D` amp-hours,
+so the cost per amp-hour carries the exponent minus one. This makes `cyc_fade_per_ah`
+mean something concrete — fade per Ah at full depth — and makes `exp = 1` degenerate
+cleanly to pure throughput counting. Validation now rejects `exp < 1`, where the
+negative exponent would make a micro-cycle age a cell *more* than a full one.
+
+Known approximation, documented on `cycle_increment`: the depth used is that of the
+half-cycle **in progress**, so amp-hours early in a deep excursion are charged at the
+shallow depth reached so far. Rainflow is what fixes this and `CLAUDE.md` rules it out
+for v1; the cheaper honest fix, if it ever matters, is to credit throughput at reversal
+rather than as it happens.
+
+### Decisions slice A had to make that the pre-work did not anticipate
+
+**Chemistry `[aging]` is `Option`, and a missing section is a build error.** Aging has
+two halves — coefficients (chemistry data) and policy (`PackConfig`) — mirroring
+`ThermalParams`/`ThermalConfig`. The alternative, defaulting absent coefficients to
+zero, was rejected: a pack configured to age but fading at exactly zero is
+indistinguishable from a working model on a very stable cell. `BuildError::
+MissingAgingParams` says so instead. This is the diagnostic that `PackConfig::thermal`'s
+doc comment wishes it had.
+
+**The `[aging]` stress table's breakpoints are implied uniform.** `cal_soc_stress =
+[1.0, 1.0, 1.4]` carries no SOC column, so `n` entries are read as sitting at
+`0, 1/(n−1), …, 1` — three entries mean 0.0 / 0.5 / 1.0, which is what the shipped
+files' comments already claimed. Stated on `soc_stress` and pinned by a test.
+
+**The NMC placeholders were rescaled.** `cal_pre_exp` and `cal_ea_j_per_mol` only mean
+anything as a *pair*, and NMC's shipped pair produced **~260 % calendar fade in a year
+at 25 °C** — a pack dead within weeks the moment aging was switched on. Lowered
+2.0e4 → 1.2e3 for ~16 % a year, a little worse than LFP, which is the right ordering.
+The provenance note records the old value and why it moved. LFP's pair was already
+plausible (~14 % a year at 25 °C and full SOC) and is untouched. General lesson for the
+remaining slices: a placeholder that has never been evaluated is not known to be
+order-of-magnitude anything, and `[safety]` has the same exposure waiting in slice D.
+
+**`Telemetry::soh_resistance` excludes the balancing bleed.** The pre-work pinned
+`r_pack / r_pack_nominal` and called it nearly free off the series aggregate. It is not
+quite: `r_pack` includes each group's bleed conductance, and a closed bleed switch
+lowers group impedance without any cell having got healthier. The aggregation therefore
+runs in the reporting pass over cell conductances only, gated on aging being live so a
+non-aging pack pays nothing and reports the literal `1.0`.
+
+### Perf: a real but unquantified regression, deferred to slice E
+
+Two extra multiplies and two predictable branches per cell per step (`eff_r0_factor()`
+is unconditional; the aging accumulation and SOH aggregation are branch-gated). Paired
+alternating runs against a `HEAD` worktree, `100S10P/full`:
+
+| pass | baseline | slice A |
+| ---- | -------- | ------- |
+| 1 | 56.6 µs | 57.0 µs |
+| 2 | 52.0 µs | 60.7 µs |
+| 3 | 49.1 µs | 52.9 µs |
+
+Directionally consistent — slice A is slower in all three — but the noise band is wider
+than the effect, so the honest reading is "single-digit percent, sign known, magnitude
+not". **The machine could not verify the 50 µs budget in either arm**: the baseline
+itself measured 49–57 µs where `docs/plans/pack-step-perf.md` recorded 39–49 µs, so this
+session's box is running ~25 % slow and no absolute conclusion can be drawn from it.
+
+Slice E owns the re-measure. If the overhead needs removing, the obvious move is to
+cache `r0_factor · soh_resistance` as a derived field on `Cell` refreshed at the aging
+tick and in `set_cell_factors` — the same invariant-with-a-`debug_assert` shape the
+Thévenin memo already uses. That is an optimisation with a correctness obligation, so
+it wants a measurement justifying it first.
+
+### Behaviour change to know about
+
+`Telemetry::soc_true` now divides by capacity that folds in `soh_capacity`, so SOC means
+*fraction of the capacity the pack has today*. A half-full pack faded 20 % reads 0.5,
+not 0.4. This matches per-cell coulomb counting, which already divided by the SOH-scaled
+capacity, and it is why v6 is a **semantic** bump and not only a layout one: the same
+stored state reports a different SOC than v5 would have. Unaged packs are unaffected
+bit-for-bit — every pre-existing test passed untouched apart from the mechanical
+`aging: None` field.

@@ -27,6 +27,7 @@ fn env() -> Env {
 /// property. Nothing here is chemistry-specific; it just needs to be non-trivial.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,
@@ -81,6 +82,7 @@ fn flat_chem() -> ChemistryParams {
 
 fn cfg(series: u16, parallel: u16, soc0: f64, seed: u64, scatter: Scatter) -> PackConfig {
     PackConfig {
+        aging: None,
         bms: None,
         thermal: ThermalConfig::Isothermal,
         series,

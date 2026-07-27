@@ -308,9 +308,9 @@ pub(crate) fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
 /// behind resistance `r = R0(soc,T)·r0_factor`, both evaluated from the cell's
 /// current (start-of-step) state.
 ///
-/// `r0_factor` folds in the cell's static manufacturing scatter / weak-cell
-/// resistance multiplier (nominal × factor; aging's `soh_resistance` multiplies in
-/// later). It is guaranteed `> 0` by the pack, so `r > 0`.
+/// `r0_factor` is the cell's **effective** resistance multiplier: its static
+/// manufacturing scatter / weak-cell factor times aging's `soh_resistance`. The pack
+/// composes the two and guarantees the product is `> 0`, so `r > 0`.
 #[must_use]
 pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f64) -> (f64, f64) {
     let r = r0_lookup(&chem.r0, state.soc, state.temp_k) * r0_factor;
@@ -322,11 +322,14 @@ pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f
 /// \[A, discharge-positive\] that the pack solve assigned it.
 ///
 /// Updates every RC overpotential (exact exponential update) and SOC (coulomb
-/// counting). `eff_capacity_ah` is the cell's *effective* capacity — nominal ×
-/// capacity_factor (× `soh_capacity` once aging lands). Returns the SOC-clamp
-/// flags from the coulomb step. Terminal voltage is *not* returned here: the pack
-/// recomputes each group's shared node voltage from the end-of-step state via
-/// [`cell_source`] so parallel cells report one consistent voltage.
+/// counting). `eff_capacity_ah` is the cell's capacity after its *static* factor
+/// (nominal × capacity_factor); `soh_capacity` is aging's dynamic multiplier on top,
+/// kept as a separate argument so that SOC keeps meaning "fraction of the capacity
+/// this cell has **today**" — an aged cell empties sooner without its SOC scale
+/// changing. Returns the SOC-clamp flags from the coulomb step. Terminal voltage is
+/// *not* returned here: the pack recomputes each group's shared node voltage from the
+/// end-of-step state via [`cell_source`] so parallel cells report one consistent
+/// voltage.
 #[must_use]
 pub(crate) fn advance_cell(
     state: &mut EcmState,
@@ -334,12 +337,13 @@ pub(crate) fn advance_cell(
     i: f64,
     dt: f64,
     eff_capacity_ah: f64,
+    soh_capacity: f64,
 ) -> EventFlags {
     for (k, v_rc) in state.v_rc.iter_mut().enumerate() {
         let pair = chem.rc[k];
         *v_rc = rc_update(*v_rc, i, pair.r_ohms, pair.c_farad, dt);
     }
-    let (soc_new, flags) = coulomb_step(state.soc, i, dt, eff_capacity_ah, 1.0);
+    let (soc_new, flags) = coulomb_step(state.soc, i, dt, eff_capacity_ah, soh_capacity);
     state.soc = soc_new;
     flags
 }

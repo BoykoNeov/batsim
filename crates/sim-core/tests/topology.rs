@@ -27,6 +27,7 @@ fn env() -> Env {
 /// everywhere, one RC pair. Flatness makes the closed-form current split exact.
 fn flat_chem(v0: f64) -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,
@@ -64,6 +65,7 @@ fn flat_chem(v0: f64) -> ChemistryParams {
 
 fn config(series: u16, parallel: u16, initial_soc: f64) -> PackConfig {
     PackConfig {
+        aging: None,
         bms: None,
         thermal: ThermalConfig::Isothermal,
         series,

@@ -1,9 +1,9 @@
 # Generic NMC 18650 cell parameters.
 #
-# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], and [thermal]. The
-# [aging] and [safety] sections are declared for forward-compatibility and ignored
-# for now. Every physical constant carries a provenance note per the project rule:
-# no unlabeled numbers.
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [thermal], and [aging].
+# The [safety] section is declared for forward-compatibility and ignored for now.
+# Every physical constant carries a provenance note per the project rule: no
+# unlabeled numbers.
 #
 # This cell uses two RC pairs (a fast charge-transfer pair and a slow diffusion
 # pair), exercising the 2-RC model path.
@@ -61,15 +61,26 @@ h_area_w_per_k        = 0.20   # provenance: natural-convection h*A placeholder 
 # No docv_dt_v_per_k column, so entropic heating is disabled for this chemistry
 # (TODO: add measured dU/dT to enable the reversible heat term).
 
-# --- Sections below are declared for later phases and ignored for now. ---
-
+# Semi-empirical aging. Calendar fade is k(T, soc)*sqrt(t) with t in SECONDS and the
+# result a capacity *fraction*; cycle fade is per Ah of throughput, weighted by the
+# depth of the excursion carrying it. All placeholders, but placeholders that have to
+# be plausible TOGETHER: cal_pre_exp and cal_ea_j_per_mol only mean anything as a
+# pair, since the pre-exponential is the Arrhenius factor's scale at the chosen
+# activation energy.
 [aging]
-cal_pre_exp                = 2.0e4    # provenance: placeholder — order-of-magnitude only, TODO fit
+# provenance: placeholder, TODO fit. Rescaled from 2.0e4 when Phase 3 wired [aging]
+# into the engine: paired with the Ea below, that value produced ~260 % calendar fade
+# in a year at 25 degC, i.e. a pack dead within weeks. Set so the pair gives roughly
+# 16 % in a year at 25 degC and full SOC — a little worse than the LFP set, which is
+# the right ordering for NMC.
+cal_pre_exp                = 1.2e3
 cal_ea_j_per_mol           = 4.5e4    # provenance: placeholder Arrhenius activation energy, TODO fit
 cal_soc_stress             = [1.0, 1.1, 1.8]  # provenance: placeholder SOC stress at soc = 0.0/0.5/1.0 (NMC worse at high SOC)
 cyc_fade_per_ah            = 3.0e-5   # provenance: placeholder cycle fade per Ah throughput, TODO fit
-cyc_dod_stress_exp         = 1.2      # provenance: placeholder DOD stress exponent
+cyc_dod_stress_exp         = 1.2      # provenance: placeholder DOD stress exponent (per-cycle convention)
 r_growth_per_capacity_loss = 1.5     # provenance: placeholder — resistance grows faster than capacity fades
+
+# --- Sections below are declared for later phases and ignored for now. ---
 
 [safety]
 t_onset_k           = 443.15   # provenance: ~170 degC exothermic onset (NMC less stable than LFP); placeholder

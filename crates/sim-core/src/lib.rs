@@ -15,11 +15,14 @@
 //! The public API shape is sketched below; the physics behind it is filled in over
 //! the phased build plan (see `CLAUDE.md`). Fields for a not-yet-implemented phase
 //! carry their eventual meaning and a placeholder value, so downstream clients code
-//! against a stable contract — [`Telemetry::soh_capacity`] reads `1.0` until aging
-//! lands, for instance.
+//! against a stable contract — [`EventFlags::VENTED`] cannot be raised until the
+//! runaway slice lands, for instance. Note that a placeholder-looking value is not
+//! always a placeholder: [`Telemetry::soh_capacity`] reads exactly `1.0` on a pack
+//! with no aging configured, and that is the real answer, not a stub.
 
 #![forbid(unsafe_code)]
 
+pub mod aging;
 pub mod bms;
 pub mod chem;
 pub mod ecm;
@@ -28,8 +31,9 @@ mod noise;
 pub mod pack;
 pub mod thermal;
 
+pub use aging::{Aging, AgingConfig};
 pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
-pub use chem::{ChemistryError, ChemistryParams, ThermalParams};
+pub use chem::{AgingParams, ChemistryError, ChemistryParams, ThermalParams};
 pub use ecm::{CellModel, EcmState};
 pub use flags::EventFlags;
 pub use pack::{
@@ -69,6 +73,13 @@ pub struct Telemetry {
     /// Actual pack current \[A\]; may differ from demand if the BMS derates or opens.
     pub i_actual: f64,
     /// Ground-truth state of charge, in \[0, 1\].
+    ///
+    /// This is the fraction of the capacity the pack has **today**, not of the
+    /// capacity it shipped with: the denominator folds in each cell's
+    /// [`Self::soh_capacity`]. A half-full pack that has faded 20 % reads `0.5`, not
+    /// `0.4`. That is the same convention per-cell coulomb counting uses, and it is
+    /// what makes a SOC readout mean "how much of the tank is left" rather than
+    /// quietly encoding the tank's age.
     pub soc_true: f64,
     /// BMS state-of-charge estimate in \[0, 1\] (None if the BMS is disabled).
     pub soc_bms: Option<f64>,
@@ -80,9 +91,14 @@ pub struct Telemetry {
     pub v_cell_min: f64,
     /// Maximum cell voltage \[V\].
     pub v_cell_max: f64,
-    /// Capacity state of health in (0, 1\].
+    /// Capacity state of health in (0, 1\]: pack capacity now over pack capacity
+    /// when new, capacity-weighted across cells. Exactly `1.0` on a pack without
+    /// aging configured.
     pub soh_capacity: f64,
-    /// Resistance growth factor, ≥ 1.
+    /// Resistance growth factor, ≥ 1: the pack's present series resistance over what
+    /// unworn cells in the same topology would present. Balancing bleed resistors are
+    /// excluded — they lower impedance without anything having got healthier. Exactly
+    /// `1.0` on a pack without aging configured.
     pub soh_resistance: f64,
     /// Total heat generated across every cell this step \[W\].
     ///

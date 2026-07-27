@@ -28,6 +28,7 @@ fn env() -> Env {
 /// an estimator — the opposite of LFP.
 fn steep_chem() -> ChemistryParams {
     ChemistryParams {
+        aging: None,
         meta: ChemMeta {
             id: "steep".into(),
             name: "Steep-OCV test cell".into(),
@@ -93,6 +94,7 @@ fn ideal_bms() -> BmsConfig {
 
 fn config(series: u16, parallel: u16, soc0: f64, bms: Option<BmsConfig>) -> PackConfig {
     PackConfig {
+        aging: None,
         series,
         parallel,
         initial_soc: soc0,
