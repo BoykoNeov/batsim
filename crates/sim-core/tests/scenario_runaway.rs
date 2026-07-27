@@ -26,10 +26,18 @@
 //!   reaction. The fixture is tuned so ohmic heating alone plateaus *above* onset (it
 //!   has to, or nothing would ever ignite) and *below* vent. That arm must never vent
 //!   any cell, which makes venting attributable to the reaction rather than to `I²R`.
-//! * **The same abuse with a BMS** — protection derates and latches the contactor open,
-//!   and the pack stays hundreds of kelvin from onset. That is the pedagogical contrast
-//!   the phase is built around, and it is also what proves the fixture is not simply
-//!   unsurvivable by construction.
+//! * **The same abuse with a BMS** — protection clamps the demand to the chemistry's
+//!   charge window and the pack never leaves room temperature, 124 K below onset. That
+//!   is the pedagogical contrast the phase is built around, and it is also what proves
+//!   the fixture is not simply unsurvivable by construction.
+//!
+//!   Worth noting what that arm does *not* do: the contactor never opens. Graduated
+//!   derating alone is sufficient — 60 A becomes 6.91 A, the pack settles 0.8 K above
+//!   ambient, and the run raises `OC`, `OV`, `SOC_CLAMPED_HIGH` and `BALANCING` but
+//!   never `CONTACTOR_OPEN`. That is the stronger result: the graduated response
+//!   handles an abusive charge without ever reaching for its last resort, and the
+//!   external-short scenario in `tests/faults.rs` remains the case where derating
+//!   discovers it can do nothing and the contactor is the only move left.
 //!
 //! # Known modelling gap this scenario drives straight into
 //!

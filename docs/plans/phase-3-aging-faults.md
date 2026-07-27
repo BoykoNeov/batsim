@@ -1075,6 +1075,15 @@ runs it. At the shipped 10 s default against a 0.1 s client `dt` that is one ste
 hundred, so ~0.5 % amortised; a client that sets `sub_clock_period_s = 0` is choosing to pay
 it every step, which is legitimate and worth knowing.
 
+The tick's +50 % has a cheap and separate candidate explanation, and it is **not** the
+`Cell`-size hypothesis below: `cycle_increment` evaluates `dod.powf(cyc_dod_stress_exp −
+1.0)` once per cell per tick, and a `powf` at ~20–50 ns across 1000 cells is 20–50 µs —
+essentially the whole 68 → 103 µs jump on its own. The exponent is a chemistry constant
+(0.1 for the shipped files), so it is hoistable or replaceable rather than inherent. Nobody
+has profiled it and the amortised cost changes no conclusion here, but a future reader
+should not conflate the two: the `Cell`-size story is about the *per-step* 7–10 %, and this
+is about the tick.
+
 **This declines the optimisation slice A sketched.** Caching `r0_factor · soh_resistance` as
 a derived field on `Cell` would remove a multiply from the non-ticking path — the path that
 already measures as free — and would add eight bytes to a `Cell` that has grown from **64 to

@@ -1,9 +1,11 @@
-# `Pack::step` performance — under budget at 100S10P
+# `Pack::step` performance — four items landed; budget now marginal
 
 **Status:** all four items landed. Items 3 and 4 took the step **−34 to −43 %** against
-the end-of-Phase-2 tree, which puts it **inside** the < 50 µs budget for the first
+the end-of-Phase-2 tree, which put it **inside** the < 50 µs budget for the first
 time — ≈ 36–42 µs baseline, ≈ 39–49 µs fully featured, scaled to the fast-state
-anchor. Ranges, not point estimates, on purpose.
+anchor. Ranges, not point estimates, on purpose. **Phase 3 has since spent part of that
+margin — see the note below; the title of this file describes where it stands now, not
+where item 4 left it.**
 **Baseline commit:** `5917bd9` ("Phase 1 wrap-up: criterion benchmarks for Pack::step").
 
 > **Superseded in part by Phase 3.** Slice E re-measured against `9da78ef`, the last
