@@ -26,6 +26,7 @@ pub mod aging;
 pub mod bms;
 pub mod chem;
 pub mod ecm;
+pub mod faults;
 pub mod flags;
 mod noise;
 pub mod pack;
@@ -35,6 +36,7 @@ pub use aging::{Aging, AgingConfig};
 pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
 pub use chem::{AgingParams, ChemistryError, ChemistryParams, ThermalParams};
 pub use ecm::{CellModel, EcmState};
+pub use faults::{Fault, FaultError, FaultState, ScheduledFault, SensorFault, SensorId};
 pub use flags::EventFlags;
 pub use pack::{
     BuildError, CellIndexError, CellView, Pack, PackConfig, RestoreError, Scatter, Snapshot,
@@ -70,7 +72,14 @@ pub struct Env {
 pub struct Telemetry {
     /// Terminal voltage \[V\].
     pub v_terminal: f64,
-    /// Actual pack current \[A\]; may differ from demand if the BMS derates or opens.
+    /// Actual pack current \[A\] leaving the cells, discharge-positive.
+    ///
+    /// This may differ from the demand for three reasons: the BMS derated it, the BMS
+    /// opened the contactor, or an injected [`faults::Fault::ExternalShort`] is
+    /// drawing current the demand never asked for. In the last case this is the
+    /// *total* — load plus short — which is what the cells actually carry and what
+    /// makes `v_terminal · i_actual` the whole electrical outflow; see
+    /// [`Self::i_external_short_a`] for the part the load did not get.
     pub i_actual: f64,
     /// Ground-truth state of charge, in \[0, 1\].
     ///
@@ -125,6 +134,23 @@ pub struct Telemetry {
     /// with [`Telemetry::q_balancing_w`] it closes the pack energy balance, which with
     /// balancing active has four terms rather than three.
     pub i_balancing_a: f64,
+    /// Total current drained by injected internal cell shorts this step \[A\],
+    /// discharge-positive, summed over every shorted cell.
+    ///
+    /// Zero unless a [`faults::Fault::SoftInternalShort`] has fired. This current
+    /// leaves the cells without crossing the pack terminals, so it belongs on the
+    /// chemical side of an energy balance; its dissipation happens *inside* the
+    /// shorted cells and is therefore already counted in [`Self::q_gen_w`] — unlike
+    /// balancing, which needs its own loss term because the resistor is outside.
+    pub i_internal_short_a: f64,
+    /// Current through an injected external short \[A\], discharge-positive.
+    ///
+    /// Zero unless a [`faults::Fault::ExternalShort`] has fired, and exactly zero
+    /// whenever the contactor is open (the short sits downstream of it). This is
+    /// *part of* [`Self::i_actual`], not additional to it: the load received
+    /// `i_actual − i_external_short_a`. The dissipation is outside the pack, so like
+    /// the load's share it is already inside `v_terminal · i_actual`.
+    pub i_external_short_a: f64,
     /// Events raised during this step (protection trips, clamps, safety states).
     pub flags: EventFlags,
 }

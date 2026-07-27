@@ -28,6 +28,7 @@ use crate::chem::ChemistryParams;
 use crate::ecm::{
     advance_cell, cell_heat_w, cell_source, docv_dt_lookup, solve_current, CellModel, EcmState,
 };
+use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
 use crate::thermal::{advance_temperatures, ThermalConfig, ThermalStep};
@@ -77,7 +78,14 @@ use crate::{Demand, Env, Telemetry};
 /// now divides by capacity that folds in `soh_capacity`, so on an aged pack the same
 /// stored state reports a different SOC than a v5 build would have. Same caveat as v3
 /// about what actually rejects an older blob.
-pub const SNAPSHOT_VERSION: u32 = 6;
+///
+/// v7 (Phase 3, faults): `Pack` gained `faults: FaultState` (the timestamped queue
+/// plus the pack-level effects — external short conductance and sensor corruptions),
+/// and every `Cell` gained `shunt_g`, the internal-short leakage conductance. Both
+/// are genuine state: the queue is what has *not* happened yet, and a fired fault's
+/// effect has no other home. Same caveat as v3 about what actually rejects an older
+/// blob.
+pub const SNAPSHOT_VERSION: u32 = 7;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -268,6 +276,15 @@ struct Cell {
     /// Health: the two `soh_*` multipliers and the accumulators behind them. Exactly
     /// `1.0`/`1.0` and inert unless the pack has aging configured.
     aging: CellAging,
+    /// Internal-short leakage conductance \[S\] across this cell's own terminals;
+    /// `0.0` on a healthy cell. Set by [`crate::faults::Fault::SoftInternalShort`].
+    ///
+    /// Stored as a conductance, not a resistance: it is added to the group's
+    /// conductance sum (exactly where the balancing bleed goes, but per cell), so the
+    /// solve never divides by it. See [`crate::faults`] for why the shunt is *not*
+    /// folded into the cell's Thévenin source.
+    #[serde(default)]
+    shunt_g: f64,
 }
 
 impl Cell {
@@ -311,6 +328,13 @@ pub struct CellView {
     /// Resistance growth factor `>= 1`: effective `R0` = nominal ×
     /// [`Self::r0_factor`] × this. Exactly `1.0` without aging.
     pub soh_resistance: f64,
+    /// Internal-short leakage conductance \[S\] across this cell's terminals; `0.0`
+    /// on a healthy cell.
+    ///
+    /// A conductance rather than a resistance because that is what is stored and what
+    /// the solve adds (parallel shorts compose by addition); the equivalent
+    /// resistance is its reciprocal.
+    pub internal_short_conductance_s: f64,
 }
 
 /// Per-cell start-of-step Thévenin `(E, R)`, carried across the step boundary.
@@ -333,6 +357,11 @@ pub struct CellView {
 /// end-of-step reporting pass that fills this. The pass therefore memoises
 /// post-aging sources. Aging after the pass would poison the next step silently, and
 /// only a debug build would notice.
+///
+/// An injected internal short is deliberately **not** part of this. It enters the
+/// solve as a conductance on the group node rather than as a transform of the cell's
+/// source (see [`crate::faults`]), so the invariant above is literally unchanged by
+/// faults and injecting a short needs no invalidation either.
 ///
 /// Two deliberate impls:
 ///
@@ -390,6 +419,11 @@ pub struct Pack {
     /// Aging policy plus its sub-clock accumulator, or `None` for a pack that never
     /// wears out. The per-cell health it drives lives on each [`Cell`].
     aging: Option<Aging>,
+    /// Injected faults: the queue of what has not fired yet, plus the pack-level
+    /// effects of what has. Per-cell effects live on the cells (see
+    /// [`crate::faults`]). Empty and free on a healthy pack.
+    #[serde(default)]
+    faults: FaultState,
     /// The single seeded RNG; its state is part of the snapshot.
     rng: ChaCha8Rng,
     /// Simulation time elapsed \[s\].
@@ -470,6 +504,7 @@ impl Pack {
                     capacity_factor,
                     r0_factor,
                     aging: CellAging::new(config.initial_soc),
+                    shunt_g: 0.0,
                 });
             }
             groups.push(ParallelGroup { cells });
@@ -496,6 +531,7 @@ impl Pack {
             thermal: config.thermal,
             bms,
             aging: config.aging.map(Aging::new),
+            faults: FaultState::default(),
             rng,
             sim_time_s: 0.0,
             // Cold: the first step computes every cell's Thévenin source and fills it.
@@ -548,6 +584,7 @@ impl Pack {
             r0_factor: cell.r0_factor,
             soh_capacity: cell.aging.soh_capacity,
             soh_resistance: cell.aging.soh_resistance,
+            internal_short_conductance_s: cell.shunt_g,
         })
     }
 
@@ -561,11 +598,194 @@ impl Pack {
         self.aging.as_ref()
     }
 
+    /// The pack's injected-fault state: what is queued, and what is in effect.
+    ///
+    /// Per-cell effects are not here — a soft internal short shows up as
+    /// [`CellView::internal_short_conductance_s`], and a weak cell as that cell's
+    /// static factors.
+    #[must_use]
+    pub fn faults(&self) -> &FaultState {
+        &self.faults
+    }
+
+    /// Queue a [`Fault`] to fire at simulation time `at_s`.
+    ///
+    /// It fires on the first step whose interval `[t, t + dt)` contains `at_s`, at the
+    /// **start** of that step, before the electrical solve — so the firing step is
+    /// also the first step to feel it. A timestamp already in the past fires on the
+    /// next stepping step rather than being dropped, and no fault fires on a
+    /// zero-length probe step. See [`crate::faults`] for the reasoning behind all
+    /// three rules.
+    ///
+    /// Faults are applied in timestamp order, ties in scheduling order, so a
+    /// trajectory is a function of the scheduling sequence alone.
+    ///
+    /// # Errors
+    /// Returns [`FaultError`] for a non-finite parameter, a non-positive short
+    /// resistance, a cell position outside the topology, or a sensor this pack does
+    /// not have (including any sensor at all, on a pack with no BMS).
+    pub fn schedule_fault(&mut self, at_s: f64, fault: Fault) -> Result<(), FaultError> {
+        if !at_s.is_finite() {
+            return Err(FaultError::NotFinite {
+                field: "at_s",
+                value: at_s,
+            });
+        }
+        self.validate_fault(&fault)?;
+        self.faults.schedule(at_s, fault);
+        Ok(())
+    }
+
+    /// Repair the pack: drop every queued fault and every pack-level effect. Returns
+    /// how many went away.
+    ///
+    /// This clears the queue, the external short, the sensor corruptions, and every
+    /// cell's internal-short conductance — the mirror of [`Pack::clear_bms_fault`] for
+    /// injected faults rather than latched protection.
+    ///
+    /// **A fired [`Fault::WeakCell`] is not undone by this.** It does not persist as a
+    /// fault: it is folded into that cell's static manufacturing factors the moment it
+    /// fires, and becomes indistinguishable from an unlucky scatter draw. Restoring
+    /// such a cell means calling [`Pack::set_cell_factors`] with the values you want.
+    pub fn clear_faults(&mut self) -> usize {
+        let mut n = self.faults.clear();
+        for group in &mut self.groups {
+            for cell in &mut group.cells {
+                if cell.shunt_g != 0.0 {
+                    cell.shunt_g = 0.0;
+                    n += 1;
+                }
+            }
+        }
+        // The shunt is not an input to the memoised Thévenin source (see
+        // [`crate::faults`]), so unlike `set_cell_factors` this needs no invalidation.
+        n
+    }
+
+    /// Check a fault's parameters against this pack before it joins the queue.
+    fn validate_fault(&self, fault: &Fault) -> Result<(), FaultError> {
+        let finite = |field, value: f64| {
+            if value.is_finite() {
+                Ok(())
+            } else {
+                Err(FaultError::NotFinite { field, value })
+            }
+        };
+        let cell_in_range = |s: u16, p: u16| {
+            if s < self.series && p < self.parallel {
+                Ok(())
+            } else {
+                Err(FaultError::BadCellIndex {
+                    s,
+                    p,
+                    series: self.series,
+                    parallel: self.parallel,
+                })
+            }
+        };
+        let resistance = |ohms: f64| {
+            if ohms.is_finite() && ohms > 0.0 {
+                Ok(())
+            } else {
+                Err(FaultError::BadResistance(ohms))
+            }
+        };
+        // A sensor fault names a sensor that has to exist: group voltages are indexed
+        // by series position, probes by their index in the BMS's probe list, and a
+        // pack with no BMS has no sensors at all to corrupt.
+        let sensor_exists = |sensor: SensorId| {
+            let ok = match sensor {
+                SensorId::GroupVoltage(g) => self.bms.is_some() && g < self.series,
+                SensorId::TempProbe(i) => self
+                    .bms
+                    .as_ref()
+                    .is_some_and(|b| (i as usize) < b.config().temp_probes.len()),
+                SensorId::PackCurrent => self.bms.is_some(),
+            };
+            if ok {
+                Ok(())
+            } else {
+                Err(FaultError::NoSuchSensor { sensor })
+            }
+        };
+
+        match *fault {
+            Fault::WeakCell {
+                s,
+                p,
+                capacity_factor,
+                r0_factor,
+            } => {
+                cell_in_range(s, p)?;
+                finite("capacity_factor", capacity_factor)?;
+                finite("r0_factor", r0_factor)
+            }
+            Fault::SoftInternalShort { s, p, ohms } => {
+                cell_in_range(s, p)?;
+                resistance(ohms)
+            }
+            Fault::ExternalShort { ohms } => resistance(ohms),
+            Fault::SensorStuck { sensor, value } => {
+                sensor_exists(sensor)?;
+                finite("value", value)
+            }
+            Fault::SensorOffset { sensor, offset } => {
+                sensor_exists(sensor)?;
+                finite("offset", offset)
+            }
+        }
+    }
+
+    /// Fire every queued fault due within this step, at start of step.
+    ///
+    /// Called only when `dt > 0` (see [`crate::faults`]). Ordering matters and is
+    /// fixed: the queue is sorted by timestamp with ties in scheduling order, and
+    /// each fault is applied in full before the next is read.
+    fn fire_due_faults(&mut self, dt: f64) {
+        let due = self.faults.take_due(self.sim_time_s + dt);
+        for scheduled in due {
+            match scheduled.fault {
+                Fault::WeakCell {
+                    s,
+                    p,
+                    capacity_factor,
+                    r0_factor,
+                } => {
+                    // Validated in range when scheduled, and topology cannot change.
+                    // `set_cell_factors` clears the Thévenin memo, which is exactly
+                    // why a `WeakCell` has to land here at start of step: applying it
+                    // after the reporting pass would throw away the memo that pass had
+                    // just filled, costing a cold step every time.
+                    let _ =
+                        self.set_cell_factors(s as usize, p as usize, capacity_factor, r0_factor);
+                }
+                Fault::SoftInternalShort { s, p, ohms } => {
+                    if let Some(cell) = self
+                        .groups
+                        .get_mut(s as usize)
+                        .and_then(|g| g.cells.get_mut(p as usize))
+                    {
+                        // Conductances add: a second short on the same cell is a
+                        // second leakage path in parallel with the first.
+                        cell.shunt_g += 1.0 / ohms;
+                    }
+                }
+                Fault::ExternalShort { ohms } => self.faults.add_external_short(ohms),
+                Fault::SensorStuck { sensor, value } => self
+                    .faults
+                    .add_sensor_fault(sensor, SensorFaultKind::Stuck(value)),
+                Fault::SensorOffset { sensor, offset } => self
+                    .faults
+                    .add_sensor_fault(sensor, SensorFaultKind::Offset(offset)),
+            }
+        }
+    }
+
     /// Override one cell's static manufacturing factors (capacity and `R0`
     /// multipliers).
     ///
-    /// This is the deterministic "weak cell" / scatter-outlier seam — the same
-    /// application point the Phase 3 `WeakCell` fault will use. Factors are clamped
+    /// This is the deterministic "weak cell" / scatter-outlier seam, and it is the
+    /// application point [`Fault::WeakCell`] uses when it fires. Factors are clamped
     /// to a positive floor to preserve the group solve's invariants. `s`/`p` are
     /// zero-based series/parallel indices.
     ///
@@ -602,8 +822,9 @@ impl Pack {
 
     /// Advance the simulation by `dt` seconds under `demand`. Never panics.
     ///
-    /// Ordering within a step: the electrical solve runs off **start-of-step**
-    /// state, each cell's internal state is then advanced with the current it was
+    /// Ordering within a step: any injected fault due this step fires first (see
+    /// [`crate::faults`]), the electrical solve then runs off **start-of-step**
+    /// state, each cell's internal state is advanced with the current it was
     /// assigned, temperatures are integrated against the heat that current
     /// generated (see [`crate::thermal`]), and all telemetry is reported from
     /// **end-of-step** state. `env` supplies the thermal sink — coolant if present,
@@ -630,6 +851,14 @@ impl Pack {
         // correction, and sampling a new one advances the RNG. So the sensor clock
         // only ticks when time actually passes.
         let sensor_tick = dt > 0.0;
+
+        // --- injected faults fire first, before anything reads pack state, so the
+        // step that fires one is also the first step to feel it. Same `dt > 0` gate
+        // and the same reason as the sensor clock above: firing a fault is a reaction
+        // to information, not to elapsed time, so it must not happen on a probe step.
+        if sensor_tick {
+            self.fire_due_faults(dt);
+        }
 
         // --- the BMS acts first, on the frame sampled at the end of the previous
         // step. It is one step behind on purpose (see `crate::bms`), and it never
@@ -670,9 +899,12 @@ impl Pack {
         }
         let mut group_src: Vec<(f64, f64)> = Vec::with_capacity(self.groups.len());
         for (g_idx, group) in self.groups.iter().enumerate() {
-            // Σ 1/R_k, plus the bleed conductance if this group is balancing. Note the
-            // bleed enters the *denominator only*: it draws current out of the node
-            // without contributing any EMF.
+            // Σ 1/R_k, plus the bleed conductance if this group is balancing, plus any
+            // cell's internal-short leakage. Note that both enter the *denominator
+            // only*: they draw current out of the node without contributing any EMF.
+            // A healthy cell's `shunt_g` is exactly `0.0`, and `g > 0` always, so
+            // `g + 0.0 == g` bit-for-bit — an unshorted pack solves exactly the
+            // arithmetic it solved before faults existed.
             let mut sum_g = bleed_at(g_idx);
             let mut sum_eg = 0.0; // Σ E_k/R_k
             for (k, cell) in group.cells.iter().enumerate() {
@@ -698,7 +930,7 @@ impl Pack {
                     fresh
                 };
                 let g = 1.0 / r;
-                sum_g += g;
+                sum_g += g + cell.shunt_g;
                 sum_eg += e * g;
             }
             group_src.push((sum_eg / sum_g, 1.0 / sum_g));
@@ -707,13 +939,29 @@ impl Pack {
         let e_pack: f64 = group_src.iter().map(|&(e, _)| e).sum();
         let r_pack: f64 = group_src.iter().map(|&(_, r)| r).sum();
 
-        // --- solve the single pack current (shared by every series group), then let
+        // --- an external short sits across the load-side terminals, downstream of the
+        // contactor (see [`crate::faults`]). It is a shunt on the pack's aggregate
+        // Thévenin, so the *load* solves against the transformed source and the short
+        // takes whatever the resulting terminal voltage gives it. Every demand variant
+        // stays closed form, and `E' − i_load·R'` is identically the terminal voltage
+        // `E_pack − i_g·R_pack` that the total current produces — the two views of the
+        // same node agree by construction, which is what keeps the energy balance
+        // exact.
+        let g_ext = self.faults.external_short_conductance_s();
+        let (e_load, r_load) = if g_ext > 0.0 {
+            let denom = 1.0 + r_pack * g_ext;
+            (e_pack / denom, r_pack / denom)
+        } else {
+            (e_pack, r_pack)
+        };
+
+        // --- solve the single load current (shared by every series group), then let
         // protection derate or interrupt it. Clamping the *solved current* rather
         // than the demand itself means every demand variant — including `Power` and
         // `Voltage` — is protected by the same code, and the solve stays closed form.
-        let i_req = solve_current(demand, e_pack, r_pack);
+        let i_req = solve_current(demand, e_load, r_load);
         let mut flags = EventFlags::empty();
-        let i_g = match (&mut self.bms, sensor_tick) {
+        let i_load = match (&mut self.bms, sensor_tick) {
             (Some(bms), true) => {
                 let pack_ah = cap_ah * f64::from(self.parallel);
                 let (i_allowed, protection_flags) =
@@ -726,6 +974,19 @@ impl Pack {
             (Some(bms), false) if bms.contactor_open() => 0.0,
             _ => i_req,
         };
+
+        // --- total pack current: what the load was allowed, plus what the short takes.
+        // Protection can derate the load but cannot derate a short, which is precisely
+        // the lesson — the only thing that stops an external short is opening the
+        // contactor, and that disconnects load and short together.
+        let mut i_external_short_a = 0.0;
+        let mut i_g = i_load;
+        if self.bms.as_ref().is_some_and(Bms::contactor_open) {
+            i_g = 0.0;
+        } else if g_ext > 0.0 {
+            i_external_short_a = (e_load - i_load * r_load) * g_ext;
+            i_g += i_external_short_a;
+        }
 
         // --- split into per-cell currents, tally heat, and advance each cell.
         // Heat is tallied in every mode (an isothermal pack still reports how much
@@ -745,6 +1006,7 @@ impl Pack {
         let mut q_gen_w = 0.0;
         let mut q_balancing_w = 0.0;
         let mut i_balancing_a = 0.0;
+        let mut i_internal_short_a = 0.0;
         for (g, group) in self.groups.iter_mut().enumerate() {
             let (e_gv, r_gv) = group_src[g];
             let v_node = e_gv - i_g * r_gv; // start-of-step shared node voltage
@@ -762,17 +1024,30 @@ impl Pack {
             }
             for (k, cell) in group.cells.iter_mut().enumerate() {
                 let (e_k, r_k) = cell_src[g * parallel + k];
+                // The cell's *internal* branch current, unchanged in form by any
+                // shunt: this is what moves charge through the electrodes, so it is
+                // what drains SOC, drives the RC pairs, and is charged for throughput.
+                // A shorted cell's terminal current is smaller by `v_node · shunt_g`
+                // — the part that never leaves the cell.
                 let i_k = (e_k - v_node) / r_k;
                 // Heat from the same start-of-step state that produced `i_k`, so
                 // the energy accounting closes exactly (see `cell_heat_w`).
                 let state = cell.model.state();
-                let q = cell_heat_w(
+                let mut q = cell_heat_w(
                     i_k,
                     r_k,
                     state.v_rc.iter().sum::<f64>(),
                     state.temp_k,
                     docv_dt_lookup(&self.chem.ocv, state.soc),
                 );
+                // An internal short dissipates inside this cell, unlike the balancing
+                // bleed (whose resistor is outside every cell and heats nothing). The
+                // branch is what keeps a healthy pack's heat bit-for-bit what it was.
+                if cell.shunt_g > 0.0 {
+                    let i_shunt = v_node * cell.shunt_g;
+                    i_internal_short_a += i_shunt;
+                    q += v_node * i_shunt;
+                }
                 q_gen_w += q;
                 if thermal_live {
                     // Series-major, parallel-minor — the index order `thermal`
@@ -910,7 +1185,11 @@ impl Pack {
                 // next step will find. Memoise it (see [`SourceCache`]).
                 cell_src[g_idx * parallel + k] = (e, r);
                 let g = 1.0 / r;
-                sum_g += g;
+                // Same membership as the start-of-step aggregation above: the shunt is
+                // part of the node's conductance, so the reported group voltage is the
+                // one the next step will solve at. `sum_g_cells` below deliberately
+                // excludes it — a shorted cell is not a healthier cell.
+                sum_g += g + cell.shunt_g;
                 sum_eg += e * g;
                 let s = cell.model.state();
                 t_min = t_min.min(s.temp_k);
@@ -962,6 +1241,11 @@ impl Pack {
                 let sim_time_s = self.sim_time_s;
                 let bms = self.bms.as_mut().expect("matched as Some just above");
                 bms.sample(v_group, temp_probe_k, i_g, sim_time_s, &mut self.rng);
+                // Injected sensor faults are the last word — applied after the
+                // sensor's own offset and noise, and after the noise draw has already
+                // happened, so a stuck sensor reads exactly its stuck value without
+                // shifting the RNG stream (see [`crate::faults`]).
+                bms.corrupt_sensors(self.faults.sensor_faults());
             }
         }
         let soc_bms = self.bms.as_ref().map(Bms::soc_estimate);
@@ -992,6 +1276,8 @@ impl Pack {
             q_gen_w,
             q_balancing_w,
             i_balancing_a,
+            i_internal_short_a,
+            i_external_short_a,
             flags,
         }
     }

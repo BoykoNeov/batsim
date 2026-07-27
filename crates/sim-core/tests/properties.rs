@@ -138,6 +138,11 @@ proptest! {
 
     /// Charge conservation on a single series string (series = 1): the integral of
     /// the pack current equals the change in stored charge, when no SOC clamp fires.
+    ///
+    /// **Fault-free by construction.** A soft internal short moves charge out of a
+    /// cell without it ever crossing the pack terminals, so `∫ i_actual dt` would
+    /// legitimately fall short of the stored-charge change; the fault-aware statement
+    /// adds `∫ i_internal_short_a dt` to the terminal integral.
     #[test]
     fn charge_conserved_without_clamp(
         parallel in 1u16..=4,
@@ -196,6 +201,12 @@ proptest! {
     /// The per-cell currents in a parallel group sum to the group (pack) current,
     /// even with scatter making the split unequal. Reconstructed from the SOC change
     /// over one step from rest, where the split is exact.
+    ///
+    /// **Fault-free by construction.** The currents reconstructed here are the cells'
+    /// *internal* branch currents, and with a shunt on any cell those sum to
+    /// `i_actual + Σ v_node·G_s` — the shunted share never reaches the terminals. No
+    /// balancing either, for the same reason (a bleed is the group-level version of
+    /// the same term).
     #[test]
     fn parallel_currents_sum_to_group_current(
         parallel in 1u16..=6,
@@ -353,6 +364,12 @@ proptest! {
     /// Power and Voltage solves whose currents are not directly specified. The window
     /// does not depend on any sensor reading, so unlike the voltage and temperature
     /// limits this one binds from the very first step, with no lag.
+    ///
+    /// **Fault-free by construction, and an external short is the counter-example on
+    /// purpose.** Protection clamps the current the *load* is allowed; a short
+    /// downstream of the contactor draws whatever the terminal voltage gives it, so
+    /// `i_actual` exceeds the window until the sag latches the contactor open. That
+    /// is the fault's whole pedagogical point, not a protection bug.
     #[test]
     fn protection_never_exceeds_the_c_rate_window(
         series in 1u16..=3,

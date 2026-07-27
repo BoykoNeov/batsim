@@ -1,6 +1,6 @@
 # Phase 3 — aging + faults
 
-**Status: slice A landed; B–E planned.** This file was written before the work so the
+**Status: slices A and B landed; C–E planned.** This file was written before the work so the
 decisions below are made once; the "learned while building" material is appended as
 each slice lands, the way `phase-2-thermal-bms.md` grew.
 
@@ -14,7 +14,7 @@ each slice lands, the way `phase-2-thermal-bms.md` grew.
 | slice | scope | state |
 | ----- | ----- | ----- |
 | A | aging: `[aging]` into `ChemistryParams`, per-cell `soh_capacity`/`soh_resistance` + calendar accumulator on `Cell`, calendar **and** cycle fade, resistance growth, the aging sub-clock, pack-level SOH in `Telemetry` | **landed** (v6) |
-| B | fault queue: timestamped injection API, `WeakCell`, `SoftInternalShort`, `ExternalShort`, `SensorStuck`/`SensorOffset` | planned |
+| B | fault queue: timestamped injection API, `WeakCell`, `SoftInternalShort`, `ExternalShort`, `SensorStuck`/`SensorOffset` | **landed** (v7) |
 | C | plating: `PLATING_RISK` from cold-charge physics, accelerated fade, seeded soft-short probability | planned |
 | D | runaway: Arrhenius self-heating with a finite per-cell energy budget, `VENTED`, `THERMAL_RUNAWAY`, propagation, and the sub-step bound that makes it integrable | planned |
 | E | wrap-up: the two exit scenarios, aging/fault property tests, perf re-measure | planned |
@@ -129,6 +129,11 @@ construction.
 
 ### The soft internal short is a Thévenin transform, and it changes the memo's invariant
 
+> **Superseded by slice B — see "Learned while building — slice B" below.** The
+> transform is correct but does not have to be applied to the cell's *source*. Adding
+> the shunt as a conductance on the group node is equivalent, and neither option below
+> was taken.
+
 An internal short is a leakage resistance `R_s` across the cell's own terminals, inside
 the cell — physically distinct from the balancing bleed, which sits across the *group*
 node and dissipates in an external resistor. Fold it in by transforming the cell's
@@ -231,9 +236,7 @@ provenance notes ask for.
   trajectory stops being a function of the seed. It also must not draw at all when the
   probability is zero, for the same reason `draw_factors` short-circuits on zero
   scatter.
-- **Does an external short bypass the contactor?** Physically it depends on which side
-  of the contactor the short sits. Pick one, document it on the fault variant, and make
-  sure the BMS-off contrast scenario is not accidentally testing the other.
+- ~~**Does an external short bypass the contactor?**~~ Answered in slice B, below.
 
 ---
 
@@ -382,3 +385,120 @@ capacity, and it is why v6 is a **semantic** bump and not only a layout one: the
 stored state reports a different SOC than v5 would have. Unaged packs are unaffected
 bit-for-bit — every pre-existing test passed untouched apart from the mechanical
 `aging: None` field.
+
+---
+
+## Learned while building — slice B (faults)
+
+Snapshot layout v6 → **v7**. New module `sim-core/src/faults.rs`; new integration test
+`sim-core/tests/faults.rs` (20 tests). `Telemetry` gained `i_internal_short_a` and
+`i_external_short_a`; `CellView` gained `internal_short_conductance_s`. The queue's
+timing contract shipped exactly as the pre-work specified — interval containment, at
+start of step, gated on `dt > 0`, past-dated faults firing late rather than being
+dropped.
+
+### The shunt is a conductance on the group node, not a transform of the cell's source
+
+The pre-work framed this as a choice between two ways of putting the transformed
+source `(E', R')` into `SourceCache`, and preferred option 1 (thread the shunt into
+`cell_source`). **Neither was taken**, and the reason is not taste.
+
+A shunt contributes conductance and **no Norton current**, so the group's node
+equation only gains a denominator term:
+
+```text
+V = (Σ E_k/R_k − I_g) / (Σ 1/R_k + Σ G_s,k + G_bleed)
+```
+
+— structurally identical to the balancing bleed, but per cell instead of per group.
+The per-cell internal current `(E_k − V)/R_k` then keeps its existing formula *and*
+its existing meaning, so the diff in the hot loop is one addition per cell.
+
+What settles it is the **heat term**. `cell_heat_w` needs the cell's own untransformed
+`R0` for `I²·R0`. Had the memo held `(E', R')`, that `R0` would have to be recovered as
+`1/R0 = 1/R' − G_s` — a subtraction of nearly-equal reciprocals precisely in the regime
+a soft short lives in (`R_s ≫ R0`). The Norton form never poses the question.
+
+Consequences, all good: `cell_source` keeps its signature, `SourceCache`'s invariant
+and its `debug_assert` are **literally unchanged**, and injecting a short needs no
+cache invalidation at all. The one obligation the pre-work correctly identified — that
+the shunt has to appear in *both* conductance sums, 200 lines apart — is real, and the
+reporting pass's `sum_g_cells` must still exclude it (a shorted cell is not a healthier
+cell, exactly the argument the bleed already needed).
+
+### The external short sits outside the contactor
+
+Answering the open question: **load side**, so opening the contactor interrupts it.
+The reasoning is that this is the placement that makes the BMS contrast an experiment
+rather than a tautology — protection derates the load, discovers that derating does
+nothing to a short, and is left with only one move. `protection_survives_an_external_short_by_latching_open`
+pins the whole trace: the sag trips under-voltage past its hard margin within two
+steps, the contactor latches, both load and short go to exactly zero, and the pack
+keeps most of its charge — while the same pack with no BMS runs to `SOC_CLAMPED_LOW`.
+The cell-side short, which no contactor can save you from, is what `SoftInternalShort`
+already models, so nothing is lost by the choice.
+
+It enters the solve as a shunt on the pack's *aggregate* Thévenin: the load solves
+against `(E', R') = (E, R)/(1 + R·G_ext)` and the short then takes `V·G_ext` at the
+terminal voltage that same solve produces. Closed form for every demand variant,
+including `Power`. The identity that matters is that `E' − i_load·R'` is exactly the
+terminal voltage `E_pack − i_g·R_pack` that the *total* current produces — the two
+views of one node agree by construction, and if they ever stopped agreeing the symptom
+would be a mystifying energy-balance residual rather than a voltage mismatch. Pinned
+directly by `external_short_conducts_at_the_solved_terminal_voltage`.
+
+`Telemetry::i_actual` is therefore now the *total* current out of the cells, load plus
+short. That keeps `v_terminal · i_actual` the whole electrical outflow, which is what
+keeps the energy balance a three-term identity.
+
+### An internal short drains the whole parallel group, not just its cell
+
+This was written as a test asserting the shorted cell drains fastest, and the test
+failed with the two SOCs **bit-identical**. The model is right and the assertion was
+wrong: the leakage path hangs off the cell's terminals, and in a parallel group those
+terminals *are* the group node, so matched neighbours feed the short equally.
+
+That is correct for an ideal group and it is the honest consequence of the pack model
+carrying no busbar or weld resistance between a cell and its node — a real group's
+shorted cell drains somewhat faster. The **heat** is never shared: it stays in the cell
+containing the leakage path. A whole group draining into one hot spot is the shape of
+the real failure, and that part the model does get. Recorded on the module and pinned
+by `soft_short_drains_the_whole_parallel_group`, because a reader who expects the
+shorted cell to empty first will otherwise read the equal SOCs as a bug.
+
+Interconnect resistance is the fix if it ever matters, and it is a *pack-model* change
+(a per-cell series resistance between cell and node), not a fault-model one.
+
+### Sensor faults are applied after the noise draw, deliberately
+
+A stuck sensor reads exactly its stuck value — the fault is applied after the BMS's own
+offset and noise, so it is the last word. But the draw still **happens**, inside
+`Bms::sample`, before the override. That is the property worth having: injecting a
+sensor fault does not shift the RNG stream, so every other draw in the trajectory stays
+aligned and a faulted run stays comparable to a clean one.
+`sensor_offset_rides_on_top_without_shifting_the_rng` pins it by asserting the faulted
+reading is bit-for-bit the clean reading plus the offset.
+
+### Deferred: the queue is API-only
+
+`CLAUDE.md` allows the queue "in config **or** via API" and slice B shipped the API
+(`Pack::schedule_fault`), plus `Pack::clear_faults` as the repair seam mirroring
+`clear_bms_fault`. A `PackConfig.faults` field belongs with the scenario file format,
+which Phase 4 owns; adding it now would have churned every test's config literal for a
+field nothing yet reads from a file. **Phase 4 should pick this up** — the validation
+(`Pack::validate_fault`) is already factored to be callable at build time.
+
+`clear_faults` cannot undo a fired `WeakCell`: that fault does not persist as a fault,
+it is folded into the cell's static factors the moment it fires and becomes
+indistinguishable from an unlucky scatter draw. Documented on the method; the way back
+is `set_cell_factors`.
+
+### A test-coverage hole slice A left, closed here
+
+`thevenin_cache.rs`'s `cell_bits` enumerates the `CellView` fields it compares
+**explicitly**, and slice A added `soh_capacity`/`soh_resistance` without adding them
+there — so the bit-exactness test had been silently covering less than it claimed while
+still passing. Both are now in it, along with the new short conductance and the two new
+`Telemetry` fields. The general lesson for slices C and D: any new `Telemetry` or
+`CellView` field must be added to `tele_bits`/`cell_bits` in the same commit, because
+nothing fails if it is not.

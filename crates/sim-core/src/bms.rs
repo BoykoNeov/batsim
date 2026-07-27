@@ -52,6 +52,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chem::ChemistryParams;
 use crate::ecm::ocv_invert;
+use crate::faults::{SensorFault, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal;
 
@@ -174,11 +175,11 @@ pub struct BmsConfig {
 
 /// Everything the BMS measured at the end of a step.
 ///
-/// Voltages and temperatures are, in this phase, *exact* readings of the true state
-/// at the probe positions — the modelled error is in the current sensor and in the
-/// spatial under-sampling of the probes. Injected sensor faults (stuck, offset)
-/// arrive in a later phase and apply here, which is why this is a distinct type
-/// rather than a handful of fields on [`Bms`].
+/// Voltages and temperatures are otherwise *exact* readings of the true state at the
+/// probe positions — the always-on error is in the current sensor and in the spatial
+/// under-sampling of the probes. Injected sensor faults ([`crate::faults::Fault::SensorStuck`],
+/// [`crate::faults::Fault::SensorOffset`]) corrupt this frame on top of that, which is
+/// why it is a distinct type rather than a handful of fields on [`Bms`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SensorFrame {
     /// Measured voltage of each parallel group \[V\], in series order. Parallel cells
@@ -504,5 +505,30 @@ impl Bms {
             i_pack_a: i_true + self.config.current_offset_a + noise,
             sampled_at_s: sim_time_s,
         };
+    }
+
+    /// Corrupt the freshly sampled frame with any active injected sensor faults.
+    ///
+    /// Called immediately after [`Self::sample`], and deliberately **after** it: an
+    /// injected fault is the last word, so a stuck sensor reads exactly its stuck
+    /// value rather than that value plus this step's noise. The noise draw still
+    /// happens (it is inside `sample`), which is the property that matters for
+    /// determinism — injecting a sensor fault does not shift the RNG stream, so every
+    /// other draw in the trajectory stays where it was.
+    ///
+    /// An out-of-range sensor index is ignored rather than panicking. Indices are
+    /// validated when the fault is scheduled, so this is the same belt-and-braces the
+    /// temperature-probe read uses: `step` must never panic.
+    pub(crate) fn corrupt_sensors(&mut self, faults: &[SensorFault]) {
+        for fault in faults {
+            let slot = match fault.sensor {
+                SensorId::GroupVoltage(g) => self.frame.v_group.get_mut(g as usize),
+                SensorId::TempProbe(i) => self.frame.temp_probe_k.get_mut(i as usize),
+                SensorId::PackCurrent => Some(&mut self.frame.i_pack_a),
+            };
+            if let Some(slot) = slot {
+                *slot = fault.corrupt(*slot);
+            }
+        }
     }
 }
