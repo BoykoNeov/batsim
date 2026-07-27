@@ -1,7 +1,8 @@
 # `Pack::step` performance — over budget at 100S10P
 
-**Status:** items 1 and 2 landed; still over budget, item 3 still deferred. Phase 2
-slice A (thermal) added ~6 % on top — measured, see "Phase 2 impact" below.
+**Status:** items 1 and 2 landed; still over budget, item 3 still deferred. All of
+Phase 2 added ~4 % to the electrical baseline, and ~5 % more with every feature
+switched on — measured, see "Phase 2 impact" below.
 **Baseline commit:** `5917bd9` ("Phase 1 wrap-up: criterion benchmarks for Pack::step").
 **Owner decision needed:** none outstanding. Item 3 needs a design call *if* it is ever
 picked up, and the case for deferring it got **stronger**, not weaker — see below.
@@ -74,6 +75,40 @@ a wrong conclusion about your own change.
 Also note `cargo bench -p sim-core -- --save-baseline x` **fails outright**
 (`Unrecognized option`): the lib's default bench harness sees the flag first. Use
 `cargo bench -p sim-core --bench pack_step -- ...`.
+
+## Phase 2 impact, end of phase — **+4 % baseline, +5 % more with everything on**
+
+Re-measured against `79e0c87` (pre-Phase-2) after all five slices landed, same
+worktree-paired protocol, three pairs:
+
+| pair | pre | post | ratio |
+| ---- | --- | ---- | ----- |
+| 1 | 99.8 µs | 101.2 µs | +1.3 % |
+| 2 | 98.0 µs | 100.3 µs | +2.3 % |
+| 3 | 94.7 µs | 103.5 µs | +9.3 % |
+
+Slow state again throughout (pre readings 94–100 µs), and the ratio spread is wide
+enough that the honest summary is **~4 %, somewhere in 1–9 %** rather than a point
+estimate. It is consistent with the slice-A measurement of ~6 %: slices B–D add
+essentially nothing to *this* benchmark, because it runs `bms: None` and `Isothermal`,
+where the only new work is an empty-`Vec` lookup and an `is_some()` per group.
+
+What a client that actually turns the features on pays is a separate question, and the
+new `100S10P/full` case answers it — thermal network, sensors, estimator, protection,
+and balancing all live. Both cases run in the same invocation, so this comparison needs
+no pairing:
+
+| round | `current` (baseline) | `full` (everything on) | ratio |
+| ----- | -------------------- | ---------------------- | ----- |
+| 1 | 105.6 µs | 112.6 µs | +6.6 % |
+| 2 | 104.9 µs | 108.9 µs | +3.8 % |
+
+So the whole Phase 2 feature set costs about **5 %** on top of the electrical solve.
+That is lower than it might look like it should be, and the reason is structural: the
+thermal integration is a handful of flops per cell with no table lookups, and every
+piece of BMS work is O(groups) or O(1), not O(cells). Scaling the fast-state anchor
+through both factors puts a fully-featured 100S10P step at roughly **67 µs, ~1.34×
+over** the 50 µs budget.
 
 ## Phase 2 impact — thermal (slice A, commit `9bc4656`): **+6 %**
 
@@ -194,14 +229,20 @@ The 50 µs budget is deliberately **not** asserted in a test — a wall-clock as
 machine- and CI-dependent, and `CLAUDE.md` frames it as a budget to keep, not an exit
 criterion. Track it by running the bench, not by a gate.
 
-Current position: **≈ 65–67 µs at 100S10P (fast-state equivalent), 1.31× over.** Items
-1–2 are done, item 3 is deferred behind Phase 2 by choice, item 4 is small and
-unmeasured, and Phase 2's thermal slice has now been measured at +6 %. Nothing here is
-blocking. The remaining Phase 2 slices (sensors, protection, balancing) all add work to
-the same per-cell loop, so the next re-measure belongs at the *end* of Phase 2, not
-between slices.
+Current position: **≈ 64 µs baseline / ≈ 67 µs fully featured at 100S10P (fast-state
+equivalent), 1.28–1.34× over.** Items 1–2 are done, item 3 is deferred behind Phase 2
+by choice, item 4 is small and unmeasured, and Phase 2 is now measured end to end.
+Nothing here is blocking.
 
-Two things to know before doing that re-measure:
+**Item 3's deferral should be revisited now, and the case for taking it has improved.**
+It was deferred because Phase 2 was about to add per-cell mutation points that a cached
+Thévenin would have to invalidate. Phase 2 has landed, and there is exactly one such
+point: the thermal integrator writing `temp_k` at the end of a step. That is a single,
+obvious invalidation site in `Pack::step`, not the scattered set the deferral feared.
+Phase 3 (aging, faults) will add more, so the window is now, or after Phase 3 — not in
+the middle of it.
+
+Two things to know before the next re-measure:
 
 - **Use worktrees, not `git checkout` round-trips**, and filter to one benchmark case so
   each arm is ~10 s. `git worktree add <tmp> <rev>` gives each revision its own target

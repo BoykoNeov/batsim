@@ -1,10 +1,12 @@
 # Phase 2 — thermal + BMS
 
-**Status:** slices A (thermal), B (sensors + estimator), C (protection) and D
-(balancing) landed. E open.
-**Exit criteria** (from `CLAUDE.md`): centre cells run measurably hotter; the LFP
-estimator-drift scenario passes; protection scenarios pass with the BMS on, and the
-same demands violate limits with it off.
+**Status: complete.** All five slices landed and all three exit criteria are met.
+
+| exit criterion (from `CLAUDE.md`) | met by |
+| --------------------------------- | ------ |
+| Centre cells run measurably hotter | `sim-core/tests/thermal.rs::center_cells_run_hotter_than_corners` — 5S5P, centre > edge > corner by > 1 K |
+| LFP estimator-drift scenario passes | `sim-data/tests/scenario_lfp_soc_drift.rs` — a 10 % error survives a 30-minute mid-plateau rest on the *shipped* LFP curve, and the same logic converges at the knee |
+| Protection passes with the BMS on, and the same demands violate limits with it off | `sim-core/tests/scenario_protection.rs` — both voltage limits, over-current, cold charge inhibit, latched over-temperature, each with the bare-pack contrast |
 
 ## Slices
 
@@ -14,7 +16,7 @@ same demands violate limits with it off.
 | B | sensor layer + SOC estimator: `BmsConfig`, sensor frame, coulomb-count estimator with drift, rest-gated OCV correction, `soc_bms` | **done** |
 | C | protection: OV/UV per group, OC (separate charge/discharge), OT/UT, charge inhibit, derate → contactor open, BMS-off contrast scenarios | **done** |
 | D | passive balancing: per-group bleed resistor above a voltage threshold | **done** |
-| E | wrap-up: scenario tests, perf re-measure | open |
+| E | wrap-up: BMS property tests, an everything-on benchmark case, perf re-measure | **done** |
 
 Each slice keeps `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` clean, and bumps
@@ -185,6 +187,25 @@ Consequences to build to, not to work around:
   `V_pred = V_meas − (I_req − I_meas)·r_est`) is recorded here only so it is not
   re-litigated from scratch: it was considered and declined in favour of the simpler
   model.
+
+## Where Phase 2 left things, for Phase 3
+
+- **Perf:** ~64 µs baseline / ~67 µs fully featured at 100S10P, against a 50 µs budget
+  (`pack-step-perf.md` has the evidence). The whole feature set cost ~5 % because the
+  thermal integration is a few flops per cell and every BMS operation is O(groups) or
+  O(1). That file now argues item 3 (caching the per-cell Thévenin) should be
+  reconsidered *before* Phase 3 rather than after: Phase 2 added exactly one per-cell
+  mutation point for a cache to invalidate, and Phase 3 will add several.
+- **Seams Phase 3 plugs into:** `SensorFrame` is where injected sensor faults
+  (stuck/offset) apply — it is a distinct type for that reason. `Pack::set_cell_factors`
+  is where `WeakCell` applies. The thermal network's `Q` term is where runaway's
+  exothermic self-heating adds in, and `thermal::exposure` already makes interior cells
+  the hot ones, which is what makes propagation-from-the-middle work.
+- **The `dt == 0` guard generalises.** Anything Phase 3 adds that reacts to
+  *information* rather than to elapsed time — a fault queue, an aging sub-clock — needs
+  the same treatment as the BMS, or the zero-length probe contract breaks silently.
+- **Known limitation, unchanged:** the thermal sub-step cap binds above `dt` ≈ 1.7 h,
+  which the aging fast-forward will exceed. Raise an integrator, not the cap.
 
 ## Slice A implementation notes
 

@@ -7,6 +7,7 @@
 
 use proptest::prelude::*;
 
+use sim_core::bms::{BmsConfig, ProtectionConfig};
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
@@ -278,6 +279,102 @@ proptest! {
             "chemical {chemical} J vs electrical {electrical} J + heat {heat} J \
              (imbalance {imbalance} J, tol {tol} J)"
         );
+    }
+
+    /// Whatever the BMS believes, it believes something *possible*: the SOC estimate
+    /// stays in [0, 1] however badly its sensors lie or however long the drift runs.
+    /// Downstream clients (a gauge, a charger policy) are entitled to that.
+    #[test]
+    fn bms_estimate_stays_in_unit_interval(
+        series in 1u16..=3,
+        parallel in 1u16..=3,
+        soc0 in 0.05f64..0.95,
+        soc_error in -1.5f64..1.5,
+        offset in -0.5f64..0.5,
+        sigma in 0.0f64..0.3,
+        currents in prop::collection::vec(-6.0f64..6.0, 1..40),
+        dt in 0.1f64..5.0,
+        seed in any::<u64>(),
+    ) {
+        let mut config = cfg(series, parallel, soc0, seed, Scatter::default());
+        config.bms = Some(BmsConfig {
+            balancing: None,
+            protection: None, // unprotected, so the pack really does run to its clamps
+            current_offset_a: offset,
+            current_noise_sigma_a: sigma,
+            temp_probes: vec![(0, 0)],
+            initial_soc_error: soc_error,
+            rest_current_threshold_a: 0.05,
+            rest_time_for_ocv_s: 60.0,
+            ocv_correction_gain: 0.5,
+            min_ocv_slope_v_per_soc: 0.05,
+        });
+        let mut pack = Pack::new(&config, chem()).unwrap();
+        for &i in &currents {
+            let tele = pack.step(dt, Demand::Current(i), &env());
+            let est = tele.soc_bms.expect("a BMS is configured");
+            prop_assert!((0.0..=1.0).contains(&est), "soc_bms {est}");
+        }
+    }
+
+    /// With protection enabled the pack never carries more current than the
+    /// chemistry's C-rate window allows — for *any* demand variant, including the
+    /// Power and Voltage solves whose currents are not directly specified. The window
+    /// does not depend on any sensor reading, so unlike the voltage and temperature
+    /// limits this one binds from the very first step, with no lag.
+    #[test]
+    fn protection_never_exceeds_the_c_rate_window(
+        series in 1u16..=3,
+        parallel in 1u16..=3,
+        soc0 in 0.1f64..0.9,
+        dt in 0.1f64..2.0,
+        seed in any::<u64>(),
+        // A mix of wildly out-of-range demands of every variant.
+        picks in prop::collection::vec(0usize..4, 1..30),
+        mags in prop::collection::vec(-500.0f64..500.0, 1..30),
+    ) {
+        let mut config = cfg(series, parallel, soc0, seed, Scatter::default());
+        config.bms = Some(BmsConfig {
+            balancing: None,
+            protection: Some(ProtectionConfig { v_hard_margin_v: 0.2, t_hard_margin_k: 10.0 }),
+            current_offset_a: 0.0,
+            current_noise_sigma_a: 0.0,
+            temp_probes: vec![(0, 0)],
+            initial_soc_error: 0.0,
+            rest_current_threshold_a: 0.01,
+            rest_time_for_ocv_s: 600.0,
+            ocv_correction_gain: 1.0,
+            min_ocv_slope_v_per_soc: 0.5,
+        });
+        let mut pack = Pack::new(&config, chem()).unwrap();
+        let pack_ah = CAP_AH * f64::from(parallel);
+        let c = chem();
+        let i_dis_max = c.cell.max_discharge_c * pack_ah;
+        let i_chg_max = c.cell.max_charge_c * pack_ah;
+
+        for (idx, &pick) in picks.iter().enumerate() {
+            let m = mags[idx % mags.len()];
+            let demand = match pick {
+                0 => Demand::Current(m),
+                1 => Demand::Power(m),
+                2 => Demand::Voltage(m.abs() * 0.01),
+                _ => Demand::Rest,
+            };
+            let tele = pack.step(dt, demand, &env());
+            prop_assert!(
+                tele.i_actual.is_finite(),
+                "current must stay finite under {demand:?}: {}", tele.i_actual
+            );
+            prop_assert!(
+                tele.i_actual <= i_dis_max + 1e-9 && tele.i_actual >= -i_chg_max - 1e-9,
+                "{demand:?} gave {} A, outside [{}, {}]",
+                tele.i_actual, -i_chg_max, i_dis_max
+            );
+            // A latched contactor means exactly zero current, not merely a small one.
+            if pack.bms().expect("bms configured").contactor_open() {
+                prop_assert_eq!(tele.i_actual, 0.0, "open contactor must carry no current");
+            }
+        }
     }
 
     /// Snapshot round-trip equality: after any warm-up, a pack snapshotted through

@@ -42,27 +42,40 @@
 //! `per_cell` — at one cell the per-step fixed overhead (the solve's scratch
 //! `Vec`s) dominates.
 //!
+//! # Configurations
+//! `current`, `power`, and the smaller topologies run with thermal and BMS **off** —
+//! the electrical baseline, and the configuration every historical number above was
+//! measured on. `full` is the same 1000-cell pack with every Phase 2 feature live.
+//! Compare like with like: a ratio taken across a configuration change is exactly the
+//! sort of measurement the warning above is about.
+//!
 //! # Last measured
 //! Paired same-session runs, `100S10P/current` mode-matched on both arms (see
 //! `docs/plans/pack-step-perf.md` for the full evidence):
 //!
-//! | case              | `5917bd9` | + perf items 1–2 | + Phase 2 thermal |
-//! | ----------------- | --------- | ---------------- | ----------------- |
-//! | 1S1P/current      | 219 ns    | 179 ns           | —                 |
-//! | 10S10P/current    | ~8.3 µs   | 6.22 µs          | +4.5 %            |
-//! | 100S10P/current   | 85.9 µs   | 61.5 µs          | ≈ 65–67 µs        |
-//! | 100S10P/power     | ~86 µs    | 61.8 µs          | —                 |
+//! | case              | `5917bd9` | + perf items 1–2 | + all of Phase 2 |
+//! | ----------------- | --------- | ---------------- | ---------------- |
+//! | 1S1P/current      | 219 ns    | 179 ns           | —                |
+//! | 10S10P/current    | ~8.3 µs   | 6.22 µs          | +4.5 %           |
+//! | 100S10P/current   | 85.9 µs   | 61.5 µs          | ≈ 64 µs          |
+//! | 100S10P/power     | ~86 µs    | 61.8 µs          | —                |
+//! | 100S10P/full      | —         | —                | ≈ 67 µs          |
 //!
 //! Items 1–2 removed the scratch `Vec` in `r0_lookup` and binary-searched the
-//! interpolation breakpoints (−28.5 %). Phase 2's thermal slice then added ~6 %,
-//! measured as a ratio because that whole session sat in the machine's slow state —
-//! hence a scaled range rather than a directly observed figure in the last column.
-//! Roughly **1.31× over** the 50 µs budget at 100S10P.
+//! interpolation breakpoints (−28.5 %). Phase 2 then added ~4 % to the baseline, and
+//! `full` — thermal network, sensors, estimator, protection and balancing all live —
+//! costs a further ~5 %. Roughly **1.34× over** the 50 µs budget fully featured.
+//!
+//! The last column is stated as a scaled range, not a direct reading: every Phase 2
+//! measurement session sat in the machine's slow CPU state, so the *ratios* are the
+//! measured quantity and the absolute figures come from scaling the fast-state anchor
+//! by them. See `docs/plans/pack-step-perf.md` for the raw pairs.
 
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
+use sim_core::bms::{BalancingConfig, BmsConfig, ProtectionConfig};
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
@@ -146,10 +159,70 @@ fn lfp_like_chem() -> ChemistryParams {
 
 /// A pack with realistic manufacturing scatter, so the parallel-group solve does
 /// real per-cell work rather than running on identical cells.
+///
+/// Thermal and BMS off: this is the *electrical* baseline, and it is the
+/// configuration every historical measurement in this file was taken on. Use
+/// [`make_full_pack`] for the everything-on cost.
 fn make_pack(series: u16, parallel: u16) -> Pack {
-    let config = PackConfig {
-        bms: None,
-        thermal: ThermalConfig::Isothermal,
+    Pack::new(
+        &pack_config(series, parallel, ThermalConfig::Isothermal, None),
+        lfp_like_chem(),
+    )
+    .expect("benchmark pack config is valid")
+}
+
+/// The same pack with every Phase 2 feature live: thermal network, sensors and SOC
+/// estimator, protection, and passive balancing. This is what a client that actually
+/// wants a simulated BMS pays.
+fn make_full_pack(series: u16, parallel: u16) -> Pack {
+    let bms = BmsConfig {
+        balancing: Some(BalancingConfig {
+            bleed_r_ohms: 33.0,
+            // Below the resting OCV at SOC 0.6, so bleed switches are actually closed
+            // during the benchmark rather than being an untaken branch.
+            v_threshold_v: 3.20,
+        }),
+        protection: Some(ProtectionConfig {
+            v_hard_margin_v: 0.2,
+            t_hard_margin_k: 10.0,
+        }),
+        current_offset_a: 0.01,
+        current_noise_sigma_a: 0.02,
+        // A handful of probes, as a real pack has — not one per cell.
+        temp_probes: vec![
+            (0, 0),
+            (series / 2, parallel / 2),
+            (series - 1, parallel - 1),
+        ],
+        initial_soc_error: 0.02,
+        rest_current_threshold_a: 0.1,
+        rest_time_for_ocv_s: 600.0,
+        ocv_correction_gain: 0.5,
+        min_ocv_slope_v_per_soc: 0.5,
+    };
+    Pack::new(
+        &pack_config(
+            series,
+            parallel,
+            ThermalConfig::Network {
+                k_neighbor_w_per_k: 1.0,
+            },
+            Some(bms),
+        ),
+        lfp_like_chem(),
+    )
+    .expect("benchmark pack config is valid")
+}
+
+fn pack_config(
+    series: u16,
+    parallel: u16,
+    thermal: ThermalConfig,
+    bms: Option<BmsConfig>,
+) -> PackConfig {
+    PackConfig {
+        bms,
+        thermal,
         series,
         parallel,
         initial_soc: SOC,
@@ -159,8 +232,7 @@ fn make_pack(series: u16, parallel: u16) -> Pack {
             capacity_sigma: 0.02,
             r0_sigma: 0.05,
         },
-    };
-    Pack::new(&config, lfp_like_chem()).expect("benchmark pack config is valid")
+    }
 }
 
 fn env() -> Env {
@@ -235,5 +307,32 @@ fn bench_large_pack(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_single_cell, bench_mid_pack, bench_large_pack);
+/// The same 1000-cell pack with every Phase 2 feature live.
+///
+/// The `current` case above is the electrical baseline and the one every historical
+/// number in the module docs was measured on; compare against it to price the thermal
+/// network, the sensor layer, protection, and balancing together. Keep them as
+/// separate cases rather than replacing the baseline — a mixed comparison across a
+/// configuration change is exactly the kind of measurement this file warns about.
+fn bench_full_pack(c: &mut Criterion) {
+    let pack = make_full_pack(100, 10);
+    let env = env();
+    let i_1c = 10.0 * CAP_AH;
+
+    c.bench_function("pack_step/100S10P/full", |b| {
+        b.iter_batched_ref(
+            || pack.clone(),
+            |p| black_box(p.step(DT, Demand::Current(i_1c), &env)),
+            BatchSize::LargeInput,
+        );
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_single_cell,
+    bench_mid_pack,
+    bench_large_pack,
+    bench_full_pack
+);
 criterion_main!(benches);
