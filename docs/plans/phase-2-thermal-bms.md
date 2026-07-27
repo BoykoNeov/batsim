@@ -1,6 +1,7 @@
 # Phase 2 — thermal + BMS
 
-**Status:** slices A (thermal network) and B (sensors + SOC estimator) landed. C–E open.
+**Status:** slices A (thermal), B (sensors + estimator) and C (protection) landed.
+D–E open.
 **Exit criteria** (from `CLAUDE.md`): centre cells run measurably hotter; the LFP
 estimator-drift scenario passes; protection scenarios pass with the BMS on, and the
 same demands violate limits with it off.
@@ -11,7 +12,7 @@ same demands violate limits with it off.
 | ----- | ----- | ----- |
 | A | thermal network: `[thermal]` chemistry section, `ThermalConfig`, per-cell lumped nodes, heat generation, grid adjacency, Euler + sub-stepping, `Env` consumed, energy-balance property test | **done** |
 | B | sensor layer + SOC estimator: `BmsConfig`, sensor frame, coulomb-count estimator with drift, rest-gated OCV correction, `soc_bms` | **done** |
-| C | protection: OV/UV per group, OC (separate charge/discharge), OT/UT, charge inhibit, derate → contactor open, BMS-off contrast scenarios | open |
+| C | protection: OV/UV per group, OC (separate charge/discharge), OT/UT, charge inhibit, derate → contactor open, BMS-off contrast scenarios | **done** |
 | D | passive balancing: per-group bleed resistor above a voltage threshold | open |
 | E | wrap-up: scenario tests, perf re-measure | open |
 
@@ -118,6 +119,28 @@ new one draws noise. All of that would happen at `dt = 0`. So `step` gates the w
 sensor path on `dt > 0`, and the snapshot test's config carries a noisy BMS to cover
 the gate. Anything added later that mutates on information rather than on `dt` —
 balancing decisions, fault injection, an aging sub-clock — needs the same treatment.
+
+### Slice C: three things the protection scenarios taught
+
+Learned while writing the tests, each of which failed first for a reason worth
+keeping:
+
+- **The overshoot's size is `|I|·(R0 + R_rc)`, not a tunable.** One step of unclamped
+  current through the pack's internal resistance — roughly 75 mV at 2.5 A on the test
+  cell. Nothing about the BMS can shrink it; only predictive clamping or a smaller
+  `dt` could. `scenario_protection.rs` derives the bound rather than hard-coding a
+  guess, so a pack with different resistance still asserts correctly.
+- **A voltage limit outside the OCV range is decorative.** If `v_max` sits above the
+  top of the OCV curve, the *rested* voltage can never reach it, so cutting the
+  current always lets charging resume and the pack creeps to full regardless. The
+  first draft of the over-voltage scenario had exactly this bug and appeared to show
+  protection failing. Both limits in the scenario chemistry now sit inside the OCV
+  range, and the comment there says why.
+- **Protection chatters, and that is correct.** The window clamp has no hysteresis, so
+  near a threshold it bang-bangs: cut, relax, dip under the limit, allow a little
+  current, repeat. The scenarios therefore assert on the *mean* current over a settled
+  window rather than on a single step. Real BMS designs add recovery hysteresis; that
+  would be a deliberate feature, not a bug fix.
 
 ### Slice B: the sensor frame must be serialized
 

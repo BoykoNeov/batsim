@@ -46,6 +46,7 @@ fn env() -> Env {
 /// something.
 fn bms() -> BmsConfig {
     BmsConfig {
+        protection: None,
         current_offset_a: 0.0,
         current_noise_sigma_a: 0.0,
         temp_probes: vec![(0, 0)],
@@ -143,6 +144,7 @@ fn lfp_estimate_drifts_in_the_plateau_and_is_corrected_only_at_the_knee() {
 fn lfp_plateau_drift_grows_without_bound() {
     let mut cfg = config(0.70);
     cfg.bms = Some(BmsConfig {
+        protection: None,
         current_offset_a: 0.02, // 20 mA, under 1 % of a C/2 current
         initial_soc_error: 0.0,
         // Generous: the sensor offset is *below* the rest threshold, so the BMS

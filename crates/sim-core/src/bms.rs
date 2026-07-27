@@ -52,11 +52,49 @@ use serde::{Deserialize, Serialize};
 
 use crate::chem::ChemistryParams;
 use crate::ecm::ocv_invert;
+use crate::flags::EventFlags;
 use crate::noise::standard_normal;
+
+/// How the BMS responds when a measurement crosses a limit.
+///
+/// The limits themselves are **not** here — they live in the chemistry
+/// ([`crate::chem::CellLimits`]), per the project rule that chemistry is data. This
+/// type holds only *policy*: how far past a limit the response escalates from
+/// derating to opening the contactor.
+///
+/// Response is graduated:
+///
+/// 1. **Derate.** A measurement at or past a chemistry limit shrinks the allowed
+///    current window in the offending direction — often to zero — while leaving the
+///    pack connected. Almost every excursion ends here: with the current clamped, the
+///    pack relaxes back inside its limits on its own.
+/// 2. **Open the contactor.** A measurement past a limit *plus* the corresponding
+///    hard margin is treated as a fault rather than an operating condition. The
+///    contactor **latches** open and stays open until
+///    [`crate::Pack::clear_bms_fault`] is called — a safety contactor that silently
+///    re-closed when a cell cooled below its threshold would be a thermostat, not a
+///    protection device.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ProtectionConfig {
+    /// How far past the chemistry's `v_max`/`v_min` \[V\] a measured group voltage
+    /// must go before the contactor latches open instead of the current being
+    /// derated. Must be finite and `>= 0`.
+    pub v_hard_margin_v: f64,
+    /// How far past the chemistry's `t_max_k` \[K\] a measured probe temperature must
+    /// go before the contactor latches open. Must be finite and `>= 0`.
+    pub t_hard_margin_k: f64,
+}
 
 /// What the BMS is allowed to know and how badly its sensors lie.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BmsConfig {
+    /// Protection policy, or `None` for a **monitor-only** BMS.
+    ///
+    /// `None` still estimates SOC and reports sensor readings, it just never clamps a
+    /// demand — the BMS watches the pack drive itself past its limits. That is a
+    /// distinct teaching case from having no BMS at all (where there is no estimate
+    /// and no instrumentation either).
+    pub protection: Option<ProtectionConfig>,
     /// Systematic error added to every pack-current reading \[A\],
     /// discharge-positive. This is the error that *integrates*: a milliamp of offset
     /// is a percent of SOC after an hour.
@@ -135,6 +173,24 @@ impl SensorFrame {
     pub fn max_probe_k(&self) -> Option<f64> {
         self.temp_probe_k.iter().copied().reduce(f64::max)
     }
+
+    /// Lowest measured probe temperature \[K\], or `None` with no probes.
+    #[must_use]
+    pub fn min_probe_k(&self) -> Option<f64> {
+        self.temp_probe_k.iter().copied().reduce(f64::min)
+    }
+
+    /// Highest measured group voltage \[V\], or `None` with no groups.
+    #[must_use]
+    pub fn max_group_v(&self) -> Option<f64> {
+        self.v_group.iter().copied().reduce(f64::max)
+    }
+
+    /// Lowest measured group voltage \[V\], or `None` with no groups.
+    #[must_use]
+    pub fn min_group_v(&self) -> Option<f64> {
+        self.v_group.iter().copied().reduce(f64::min)
+    }
 }
 
 /// The BMS's own state: its beliefs, not the pack's facts.
@@ -149,6 +205,9 @@ pub struct Bms {
     /// The most recent sensor frame — sampled at the end of the previous step, which
     /// is all the BMS gets to act on this step.
     frame: SensorFrame,
+    /// Latched hard-fault state: once the contactor opens it stays open until
+    /// [`crate::Pack::clear_bms_fault`] is called.
+    contactor_open: bool,
 }
 
 impl Bms {
@@ -179,7 +238,113 @@ impl Bms {
             rest_time_s: 0.0,
             config,
             frame,
+            contactor_open: false,
         }
+    }
+
+    /// Whether the main contactor is currently latched open by a hard fault.
+    #[must_use]
+    pub fn contactor_open(&self) -> bool {
+        self.contactor_open
+    }
+
+    /// Clear a latched hard fault, closing the contactor. Returns whether it had been
+    /// open — the operator-reset seam.
+    pub(crate) fn clear_fault(&mut self) -> bool {
+        let was_open = self.contactor_open;
+        self.contactor_open = false;
+        was_open
+    }
+
+    /// Apply protection to the current the demand solved for, returning the current
+    /// the pack will actually carry and the events raised.
+    ///
+    /// Every decision here is made from [`Self::frame`] — i.e. from measurements one
+    /// step old — so the first step of an excursion is not prevented, only the ones
+    /// after it. That is the accepted design (see the module docs); it is why the
+    /// scenario tests assert "detects, derates and settles" rather than "never
+    /// violates".
+    ///
+    /// `pack_ah` is the pack's nominal amp-hour capacity per series element
+    /// (per-cell nominal × parallel count), which sets the C-rate current limits.
+    /// Temperature protection is skipped entirely when the pack has no temperature
+    /// probes — a BMS cannot protect against a condition it cannot measure, and that
+    /// is a legitimate (if unwise) configuration.
+    pub(crate) fn apply_protection(
+        &mut self,
+        chem: &ChemistryParams,
+        i_req: f64,
+        pack_ah: f64,
+    ) -> (f64, EventFlags) {
+        let mut flags = EventFlags::empty();
+        let Some(prot) = self.config.protection else {
+            return (i_req, flags);
+        };
+        let limits = &chem.cell;
+
+        // --- hard faults: past a limit *plus* its margin is a fault, not an
+        // operating point. Latch the contactor and stop.
+        if let Some(t_hi) = self.frame.max_probe_k() {
+            if t_hi > limits.t_max_k + prot.t_hard_margin_k {
+                self.contactor_open = true;
+                flags |= EventFlags::OT;
+            }
+        }
+        if let Some(v_hi) = self.frame.max_group_v() {
+            if v_hi > limits.v_max + prot.v_hard_margin_v {
+                self.contactor_open = true;
+                flags |= EventFlags::OV;
+            }
+        }
+        if let Some(v_lo) = self.frame.min_group_v() {
+            if v_lo < limits.v_min - prot.v_hard_margin_v {
+                self.contactor_open = true;
+                flags |= EventFlags::UV;
+            }
+        }
+        if self.contactor_open {
+            return (0.0, flags | EventFlags::CONTACTOR_OPEN);
+        }
+
+        // --- soft limits: shrink the allowed current window, staying connected.
+        // Window is [−i_charge_max, i_discharge_max] with discharge positive.
+        let mut i_discharge_max = limits.max_discharge_c * pack_ah;
+        let mut i_charge_max = limits.max_charge_c * pack_ah;
+        // Over-current is judged against the raw C-rate window, before the
+        // limit-driven reductions below, so the flag names the actual cause.
+        if i_req > i_discharge_max || i_req < -i_charge_max {
+            flags |= EventFlags::OC;
+        }
+        if let Some(v_lo) = self.frame.min_group_v() {
+            if v_lo <= limits.v_min {
+                i_discharge_max = 0.0; // any further discharge digs the hole deeper
+                flags |= EventFlags::UV;
+            }
+        }
+        if let Some(v_hi) = self.frame.max_group_v() {
+            if v_hi >= limits.v_max {
+                i_charge_max = 0.0;
+                flags |= EventFlags::OV;
+            }
+        }
+        if let Some(t_hi) = self.frame.max_probe_k() {
+            if t_hi >= limits.t_max_k {
+                // Too hot for either direction: all current makes more heat.
+                i_discharge_max = 0.0;
+                i_charge_max = 0.0;
+                flags |= EventFlags::OT;
+            }
+        }
+        if let Some(t_lo) = self.frame.min_probe_k() {
+            if t_lo < limits.t_charge_min_k {
+                // Charge inhibit: plating risk, not a heat problem, so discharge
+                // stays available.
+                i_charge_max = 0.0;
+                flags |= EventFlags::UT;
+            }
+        }
+
+        (i_req.clamp(-i_charge_max, i_discharge_max), flags)
     }
 
     /// The BMS's state-of-charge estimate, in \[0, 1\]. Compare with

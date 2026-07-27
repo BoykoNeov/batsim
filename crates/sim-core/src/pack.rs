@@ -509,8 +509,25 @@ impl Pack {
         let e_pack: f64 = group_src.iter().map(|&(e, _)| e).sum();
         let r_pack: f64 = group_src.iter().map(|&(_, r)| r).sum();
 
-        // --- solve the single pack current (shared by every series group).
-        let i_g = solve_current(demand, e_pack, r_pack);
+        // --- solve the single pack current (shared by every series group), then let
+        // protection derate or interrupt it. Clamping the *solved current* rather
+        // than the demand itself means every demand variant — including `Power` and
+        // `Voltage` — is protected by the same code, and the solve stays closed form.
+        let i_req = solve_current(demand, e_pack, r_pack);
+        let mut flags = EventFlags::empty();
+        let i_g = match (&mut self.bms, sensor_tick) {
+            (Some(bms), true) => {
+                let pack_ah = cap_ah * f64::from(self.parallel);
+                let (i_allowed, protection_flags) =
+                    bms.apply_protection(&self.chem, i_req, pack_ah);
+                flags |= protection_flags;
+                i_allowed
+            }
+            // A latched contactor keeps the pack open even on a probe step, where the
+            // BMS does not otherwise run: an open contactor is a state, not an event.
+            (Some(bms), false) if bms.contactor_open() => 0.0,
+            _ => i_req,
+        };
 
         // --- split into per-cell currents, tally heat, and advance each cell.
         // Heat is tallied in every mode (an isothermal pack still reports how much
@@ -524,7 +541,6 @@ impl Pack {
             Vec::new()
         };
         let mut q_gen_w = 0.0;
-        let mut flags = EventFlags::empty();
         for (g, group) in self.groups.iter_mut().enumerate() {
             let (e_gv, r_gv) = group_src[g];
             let v_node = e_gv - i_g * r_gv; // start-of-step shared node voltage
@@ -668,6 +684,17 @@ impl Pack {
         }
     }
 
+    /// Clear a latched BMS hard fault, closing the contactor. Returns `true` if a
+    /// fault was actually cleared.
+    ///
+    /// This is the operator-reset seam. A hard fault (a measurement past a chemistry
+    /// limit *plus* its configured margin) latches the contactor open precisely so
+    /// that it does not silently re-close when the condition passes; getting the pack
+    /// back requires an explicit decision from outside the engine.
+    pub fn clear_bms_fault(&mut self) -> bool {
+        self.bms.as_mut().is_some_and(Bms::clear_fault)
+    }
+
     /// The pack's BMS, or `None` if it has none.
     ///
     /// Gives a client (or a test) the BMS's *beliefs* — its SOC estimate and the last
@@ -726,6 +753,21 @@ fn validate_bms(bms: &BmsConfig, series: u16, parallel: u16) -> Result<(), Build
                 reason,
                 value,
             });
+        }
+    }
+    if let Some(prot) = bms.protection {
+        let margins: [(&'static str, f64); 2] = [
+            ("protection.v_hard_margin_v", prot.v_hard_margin_v),
+            ("protection.t_hard_margin_k", prot.t_hard_margin_k),
+        ];
+        for (field, value) in margins {
+            if !(value.is_finite() && value >= 0.0) {
+                return Err(BuildError::BadBmsConfig {
+                    field,
+                    reason: "must be finite and >= 0",
+                    value,
+                });
+            }
         }
     }
     // `initial_soc_error` is deliberately unconstrained beyond finiteness: a BMS may

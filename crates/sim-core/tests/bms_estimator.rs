@@ -78,6 +78,7 @@ fn flat_chem() -> ChemistryParams {
 /// A BMS with perfect sensors and no correction — isolates pure coulomb counting.
 fn ideal_bms() -> BmsConfig {
     BmsConfig {
+        protection: None,
         current_offset_a: 0.0,
         current_noise_sigma_a: 0.0,
         temp_probes: Vec::new(),
@@ -196,6 +197,7 @@ fn estimator_lags_the_truth_by_exactly_one_step() {
 fn current_offset_drifts_the_estimate_and_blocks_rest_detection() {
     let offset = 0.05; // A, reads high by 50 mA
     let bms = BmsConfig {
+        protection: None,
         current_offset_a: offset,
         rest_current_threshold_a: 0.01, // below the offset: never looks rested
         ..ideal_bms()
@@ -234,6 +236,7 @@ fn current_offset_drifts_the_estimate_and_blocks_rest_detection() {
 #[test]
 fn rested_ocv_reading_corrects_a_wrong_initial_estimate() {
     let bms = BmsConfig {
+        protection: None,
         initial_soc_error: 0.25, // BMS boots believing it is much fuller than it is
         rest_time_for_ocv_s: 300.0,
         ..ideal_bms()
@@ -273,6 +276,7 @@ fn rested_ocv_reading_corrects_a_wrong_initial_estimate() {
 #[test]
 fn flat_ocv_curve_defeats_the_correction() {
     let bms = BmsConfig {
+        protection: None,
         initial_soc_error: 0.25,
         rest_time_for_ocv_s: 300.0,
         ..ideal_bms()
@@ -300,6 +304,7 @@ fn flat_ocv_curve_defeats_the_correction() {
 #[test]
 fn probes_can_miss_the_hottest_cell() {
     let bms = BmsConfig {
+        protection: None,
         // Corners only — precisely the coolest cells in a block (see tests/thermal.rs).
         temp_probes: vec![(0, 0), (0, 4), (4, 0), (4, 4)],
         ..ideal_bms()
@@ -333,6 +338,7 @@ fn probes_can_miss_the_hottest_cell() {
 #[test]
 fn sensor_noise_is_seeded_and_reproducible() {
     let bms = BmsConfig {
+        protection: None,
         current_noise_sigma_a: 0.2,
         ..ideal_bms()
     };
@@ -394,6 +400,7 @@ fn a_noiseless_bms_consumes_no_randomness() {
 #[test]
 fn invalid_bms_config_is_rejected() {
     let bad_gain = BmsConfig {
+        protection: None,
         ocv_correction_gain: 1.5,
         ..ideal_bms()
     };
@@ -401,6 +408,7 @@ fn invalid_bms_config_is_rejected() {
     assert!(format!("{err}").contains("ocv_correction_gain"), "{err}");
 
     let bad_sigma = BmsConfig {
+        protection: None,
         current_noise_sigma_a: -1.0,
         ..ideal_bms()
     };
@@ -409,6 +417,7 @@ fn invalid_bms_config_is_rejected() {
 
     // A probe pointing outside the pack names the offending index and the topology.
     let bad_probe = BmsConfig {
+        protection: None,
         temp_probes: vec![(0, 0), (0, 3)],
         ..ideal_bms()
     };
