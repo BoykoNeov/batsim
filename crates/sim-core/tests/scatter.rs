@@ -49,6 +49,7 @@ fn chem() -> ChemistryParams {
 
 fn config(series: u16, parallel: u16, seed: u64, scatter: Scatter) -> PackConfig {
     PackConfig {
+        bms: None,
         thermal: ThermalConfig::Isothermal,
         series,
         parallel,

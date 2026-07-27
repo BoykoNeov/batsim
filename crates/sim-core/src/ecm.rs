@@ -132,6 +132,44 @@ pub fn ocv_lookup(table: &OcvTable, soc: f64) -> f64 {
     interp1(&table.soc, &table.volts, soc)
 }
 
+/// Invert the OCV table: the SOC whose open-circuit voltage is `v`, together with
+/// how steep the curve is there.
+///
+/// Returns `(soc, dv_dsoc)`. The slope is the **confidence** in the answer, and
+/// callers are expected to use it: a BMS correcting its SOC estimate from a rested
+/// OCV reading learns a lot on a steep knee and almost nothing on a plateau, where a
+/// millivolt of sensor error maps to a huge SOC interval. On a perfectly flat
+/// segment the inverse does not exist at all — this returns that segment's lower
+/// breakpoint and a slope of exactly `0.0`, which a caller must read as "no
+/// information", not as an estimate. That is not a degenerate corner case: it is
+/// most of an LFP discharge curve.
+///
+/// `v` outside the table clamps to the corresponding end of the SOC range, reporting
+/// the adjacent segment's slope (so a correction at a steep end is still allowed).
+/// The table is non-decreasing in `volts` by validation, which is what makes the
+/// search well defined.
+#[must_use]
+pub fn ocv_invert(table: &OcvTable, v: f64) -> (f64, f64) {
+    let (soc, volts) = (&table.soc, &table.volts);
+    let n = volts.len();
+    debug_assert!(n > 0 && n == soc.len());
+    if n == 1 {
+        return (soc[0], 0.0);
+    }
+    // First breakpoint whose voltage reaches `v`; the clamp handles both ends and,
+    // as in `bracket`, a NaN needle (every comparison false ⇒ index 0).
+    let hi = volts.partition_point(|&x| x < v).clamp(1, n - 1);
+    let lo = hi - 1;
+    let span_v = volts[hi] - volts[lo];
+    let span_soc = soc[hi] - soc[lo]; // > 0: soc is strictly ascending by validation
+    if span_v > 0.0 {
+        let frac = ((v - volts[lo]) / span_v).clamp(0.0, 1.0);
+        (soc[lo] + frac * span_soc, span_v / span_soc)
+    } else {
+        (soc[lo], 0.0)
+    }
+}
+
 /// Entropy coefficient `∂U/∂T` \[V/K\] at the given SOC, by clamped linear
 /// interpolation — or exactly `0.0` if the chemistry supplies no
 /// [`OcvTable::docv_dt_v_per_k`] column, which disables entropic heating.

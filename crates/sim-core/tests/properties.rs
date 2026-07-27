@@ -80,6 +80,7 @@ fn flat_chem() -> ChemistryParams {
 
 fn cfg(series: u16, parallel: u16, soc0: f64, seed: u64, scatter: Scatter) -> PackConfig {
     PackConfig {
+        bms: None,
         thermal: ThermalConfig::Isothermal,
         series,
         parallel,

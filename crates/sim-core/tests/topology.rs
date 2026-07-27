@@ -64,6 +64,7 @@ fn flat_chem(v0: f64) -> ChemistryParams {
 
 fn config(series: u16, parallel: u16, initial_soc: f64) -> PackConfig {
     PackConfig {
+        bms: None,
         thermal: ThermalConfig::Isothermal,
         series,
         parallel,

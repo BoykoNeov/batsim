@@ -62,6 +62,7 @@ fn chem() -> ChemistryParams {
 
 fn config() -> PackConfig {
     PackConfig {
+        bms: None,
         thermal: ThermalConfig::Isothermal,
         series: 2,
         parallel: 1,

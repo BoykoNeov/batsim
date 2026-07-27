@@ -22,11 +22,13 @@ use rand_core::SeedableRng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::ecm::{
     advance_cell, cell_heat_w, cell_source, docv_dt_lookup, solve_current, CellModel, EcmState,
 };
 use crate::flags::EventFlags;
+use crate::noise::standard_normal_pair;
 use crate::thermal::{advance_temperatures, ThermalConfig, ThermalStep};
 use crate::{Demand, Env, Telemetry};
 
@@ -52,7 +54,14 @@ use crate::{Demand, Env, Telemetry};
 /// and a tolerant format (or a future migration path) would otherwise accept the blob
 /// and silently produce an isothermal pack — but this bump is not what makes v2
 /// unloadable, and no test could pin it as such.
-pub const SNAPSHOT_VERSION: u32 = 3;
+///
+/// v4 (Phase 2, BMS): `Pack` gained `bms: Option<Bms>`, which carries the SOC
+/// estimate, the rest timer, and the last [`crate::bms::SensorFrame`]. The frame is
+/// serialized rather than recomputed on restore, and has to be: the loaded group
+/// voltages in it depend on a current that is not stored, and its noise draw has
+/// already advanced the RNG. Same caveat as v3 about what actually rejects an older
+/// blob.
+pub const SNAPSHOT_VERSION: u32 = 4;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -81,8 +90,8 @@ impl Default for Scatter {
 
 /// Pack topology and initial conditions.
 ///
-/// This doubles as (part of) the scenario file format. BMS and aging configuration
-/// are added in later phases.
+/// This doubles as (part of) the scenario file format. Aging configuration is added
+/// in a later phase.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PackConfig {
     /// Number of series elements (groups). Must be ≥ 1.
@@ -107,6 +116,14 @@ pub struct PackConfig {
     /// who forgets the section gets no diagnostic.
     #[serde(default)]
     pub thermal: ThermalConfig,
+    /// Battery management system, or `None` for no BMS at all.
+    ///
+    /// `None` is a supported and interesting mode, not a broken pack: demands pass
+    /// through unclamped, [`Telemetry::soc_bms`] is `None`, and the failure paths a
+    /// real BMS exists to prevent become reachable. Contrasting the two is a core
+    /// teaching scenario.
+    #[serde(default)]
+    pub bms: Option<BmsConfig>,
 }
 
 /// Reasons [`Pack::new`] can fail.
@@ -129,6 +146,30 @@ pub enum BuildError {
     /// A [`ThermalConfig::Network`] conductance was negative or not finite.
     #[error("thermal.k_neighbor_w_per_k must be finite and >= 0, got {0}")]
     BadThermalConductance(f64),
+    /// A [`BmsConfig`] field was outside its allowed range.
+    #[error("bms.{field} is invalid: {reason} (got {value})")]
+    BadBmsConfig {
+        /// Offending field name.
+        field: &'static str,
+        /// What was required.
+        reason: &'static str,
+        /// Offending value.
+        value: f64,
+    },
+    /// A [`BmsConfig::temp_probes`] entry named a cell outside the topology.
+    #[error("bms.temp_probes[{index}] = {s}S{p}P is outside a {series}S{parallel}P pack")]
+    BadTempProbe {
+        /// Index into `temp_probes`.
+        index: usize,
+        /// Requested series index.
+        s: u16,
+        /// Requested parallel index.
+        p: u16,
+        /// Pack series count.
+        series: u16,
+        /// Pack parallel count.
+        parallel: u16,
+    },
     /// The chemistry itself failed validation.
     #[error("invalid chemistry: {0}")]
     Chemistry(#[from] crate::chem::ChemistryError),
@@ -232,6 +273,9 @@ pub struct Pack {
     groups: Vec<ParallelGroup>,
     /// Thermal coupling (config; see [`ThermalConfig`]).
     thermal: ThermalConfig,
+    /// The battery management system, if this pack has one. Holds the BMS's own
+    /// beliefs (SOC estimate, rest timer, last sensor frame) — never ground truth.
+    bms: Option<Bms>,
     /// The single seeded RNG; its state is part of the snapshot.
     rng: ChaCha8Rng,
     /// Simulation time elapsed \[s\].
@@ -265,6 +309,9 @@ impl Pack {
                 return Err(BuildError::BadThermalConductance(k_neighbor_w_per_k));
             }
         }
+        if let Some(bms) = &config.bms {
+            validate_bms(bms, config.series, config.parallel)?;
+        }
 
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
         let n_rc = chem.n_rc();
@@ -295,6 +342,18 @@ impl Pack {
             groups.push(ParallelGroup { cells });
         }
 
+        // Built after the scatter draws so that adding a BMS cannot shift the
+        // per-cell factors a seed produces; `Bms::new` itself draws nothing.
+        let bms = config.bms.clone().map(|bms_config| {
+            Bms::new(
+                bms_config,
+                &chem,
+                config.series,
+                config.initial_soc,
+                config.initial_temp_k,
+            )
+        });
+
         Ok(Self {
             version: SNAPSHOT_VERSION,
             chem,
@@ -302,6 +361,7 @@ impl Pack {
             parallel: config.parallel,
             groups,
             thermal: config.thermal,
+            bms,
             rng,
             sim_time_s: 0.0,
         })
@@ -407,6 +467,25 @@ impl Pack {
     pub fn step(&mut self, dt: f64, demand: Demand, env: &Env) -> Telemetry {
         let cap_ah = self.chem.cell.capacity_ah;
         let (series, parallel) = (self.series as usize, self.parallel as usize);
+
+        // A zero-length step is an observation, not a tick: it must leave the engine
+        // exactly as it found it (pinned by `snapshot.rs`, and relied on by the
+        // energy-balance property test to read the start-of-step terminal voltage).
+        // Every physics update scales by `dt` and so is self-guarding, but the BMS is
+        // not — consuming a frame resets its rest timer and can fire an OCV
+        // correction, and sampling a new one advances the RNG. So the sensor clock
+        // only ticks when time actually passes.
+        let sensor_tick = dt > 0.0;
+
+        // --- the BMS acts first, on the frame sampled at the end of the previous
+        // step. It is one step behind on purpose (see `crate::bms`), and it never
+        // sees any of the ground truth computed below.
+        if sensor_tick {
+            if let Some(bms) = &mut self.bms {
+                let pack_nominal_ah = cap_ah * f64::from(self.parallel);
+                bms.update_estimate(&self.chem, dt, pack_nominal_ah);
+            }
+        }
 
         // --- start-of-step: per-cell and per-group Thévenin, then pack aggregate.
         // group_src[g] = (E_g, R_g); cell_src[g][k] = (E_k, R_k).
@@ -516,6 +595,12 @@ impl Pack {
         let mut t_max = f64::NEG_INFINITY;
         let mut rem_ah = 0.0; // Σ soc_k · eff_cap_k
         let mut nom_ah = 0.0; // Σ eff_cap_k
+                              // Group voltages are gathered only when something will sense them.
+        let mut v_group: Vec<f64> = if self.bms.is_some() {
+            Vec::with_capacity(series)
+        } else {
+            Vec::new()
+        };
         for group in &self.groups {
             let mut sum_g = 0.0;
             let mut sum_eg = 0.0;
@@ -535,13 +620,43 @@ impl Pack {
             v_terminal += v_g;
             v_cell_min = v_cell_min.min(v_g);
             v_cell_max = v_cell_max.max(v_g);
+            if self.bms.is_some() {
+                v_group.push(v_g);
+            }
         }
+
+        // --- sample the sensors from the end-of-step state, for the *next* step to
+        // act on. This is the only place ground truth crosses into the BMS, and it
+        // crosses through the sensor error model.
+        if sensor_tick {
+            if let Some(bms) = &self.bms {
+                // Read the probes through a shared borrow: `groups` and `bms` are
+                // distinct fields, so this needs no copy of the probe list.
+                let temp_probe_k: Vec<f64> = bms
+                    .config()
+                    .temp_probes
+                    .iter()
+                    .map(|&(s, p)| {
+                        // Validated in range at construction; the fallback keeps
+                        // `step` panic-free should that ever stop holding.
+                        self.groups
+                            .get(s as usize)
+                            .and_then(|g| g.cells.get(p as usize))
+                            .map_or(f64::NAN, |c| c.model.state().temp_k)
+                    })
+                    .collect();
+                let sim_time_s = self.sim_time_s;
+                let bms = self.bms.as_mut().expect("matched as Some just above");
+                bms.sample(v_group, temp_probe_k, i_g, sim_time_s, &mut self.rng);
+            }
+        }
+        let soc_bms = self.bms.as_ref().map(Bms::soc_estimate);
 
         Telemetry {
             v_terminal,
             i_actual: i_g,
             soc_true: rem_ah / nom_ah,
-            soc_bms: None,
+            soc_bms,
             t_min,
             t_max,
             v_cell_min,
@@ -552,6 +667,89 @@ impl Pack {
             flags,
         }
     }
+
+    /// The pack's BMS, or `None` if it has none.
+    ///
+    /// Gives a client (or a test) the BMS's *beliefs* — its SOC estimate and the last
+    /// sensor frame — for side-by-side comparison against the ground truth in
+    /// [`Telemetry`] and [`Pack::cell`]. That comparison is the point.
+    #[must_use]
+    pub fn bms(&self) -> Option<&Bms> {
+        self.bms.as_ref()
+    }
+}
+
+/// Check a [`BmsConfig`]'s numeric ranges and probe positions.
+fn validate_bms(bms: &BmsConfig, series: u16, parallel: u16) -> Result<(), BuildError> {
+    let checks: [(&'static str, f64, &'static str, bool); 6] = [
+        (
+            "current_offset_a",
+            bms.current_offset_a,
+            "must be finite",
+            bms.current_offset_a.is_finite(),
+        ),
+        (
+            "current_noise_sigma_a",
+            bms.current_noise_sigma_a,
+            "must be finite and >= 0",
+            bms.current_noise_sigma_a.is_finite() && bms.current_noise_sigma_a >= 0.0,
+        ),
+        (
+            "rest_current_threshold_a",
+            bms.rest_current_threshold_a,
+            "must be finite and >= 0",
+            bms.rest_current_threshold_a.is_finite() && bms.rest_current_threshold_a >= 0.0,
+        ),
+        (
+            "rest_time_for_ocv_s",
+            bms.rest_time_for_ocv_s,
+            "must be finite and >= 0",
+            bms.rest_time_for_ocv_s.is_finite() && bms.rest_time_for_ocv_s >= 0.0,
+        ),
+        (
+            "ocv_correction_gain",
+            bms.ocv_correction_gain,
+            "must be in [0, 1]",
+            (0.0..=1.0).contains(&bms.ocv_correction_gain),
+        ),
+        (
+            "min_ocv_slope_v_per_soc",
+            bms.min_ocv_slope_v_per_soc,
+            "must be finite and >= 0",
+            bms.min_ocv_slope_v_per_soc.is_finite() && bms.min_ocv_slope_v_per_soc >= 0.0,
+        ),
+    ];
+    for (field, value, reason, ok) in checks {
+        if !ok {
+            return Err(BuildError::BadBmsConfig {
+                field,
+                reason,
+                value,
+            });
+        }
+    }
+    // `initial_soc_error` is deliberately unconstrained beyond finiteness: a BMS may
+    // legitimately boot believing something absurd, and the estimate is clamped to
+    // [0, 1] anyway.
+    if !bms.initial_soc_error.is_finite() {
+        return Err(BuildError::BadBmsConfig {
+            field: "initial_soc_error",
+            reason: "must be finite",
+            value: bms.initial_soc_error,
+        });
+    }
+    for (index, &(s, p)) in bms.temp_probes.iter().enumerate() {
+        if s >= series || p >= parallel {
+            return Err(BuildError::BadTempProbe {
+                index,
+                s,
+                p,
+                series,
+                parallel,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Lower bound on a scatter factor. A Gaussian has unbounded tails; a factor at or
@@ -577,21 +775,4 @@ fn draw_factors(rng: &mut ChaCha8Rng, scatter: &Scatter) -> (f64, f64) {
     let cap = (1.0 + scatter.capacity_sigma * z0).max(MIN_FACTOR);
     let r0 = (1.0 + scatter.r0_sigma * z1).max(MIN_FACTOR);
     (cap, r0)
-}
-
-/// A uniform `f64` in `[0, 1)` with full 53-bit mantissa resolution.
-fn next_unit(rng: &mut ChaCha8Rng) -> f64 {
-    use rand_core::RngCore;
-    // Top 53 bits of a u64 → an integer in [0, 2^53), scaled into [0, 1).
-    (rng.next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
-}
-
-/// Two independent standard normals via the Box–Muller transform.
-fn standard_normal_pair(rng: &mut ChaCha8Rng) -> (f64, f64) {
-    // Guard the radius against u1 == 0 (ln(0) = −∞); MIN_POSITIVE keeps it finite.
-    let u1 = next_unit(rng).max(f64::MIN_POSITIVE);
-    let u2 = next_unit(rng);
-    let mag = (-2.0 * u1.ln()).sqrt();
-    let angle = core::f64::consts::TAU * u2;
-    (mag * angle.cos(), mag * angle.sin())
 }

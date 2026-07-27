@@ -148,6 +148,7 @@ fn lfp_like_chem() -> ChemistryParams {
 /// real per-cell work rather than running on identical cells.
 fn make_pack(series: u16, parallel: u16) -> Pack {
     let config = PackConfig {
+        bms: None,
         thermal: ThermalConfig::Isothermal,
         series,
         parallel,

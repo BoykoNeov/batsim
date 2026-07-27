@@ -20,12 +20,15 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bms;
 pub mod chem;
 pub mod ecm;
 pub mod flags;
+mod noise;
 pub mod pack;
 pub mod thermal;
 
+pub use bms::{Bms, BmsConfig, SensorFrame};
 pub use chem::{ChemistryError, ChemistryParams, ThermalParams};
 pub use ecm::{CellModel, EcmState};
 pub use flags::EventFlags;

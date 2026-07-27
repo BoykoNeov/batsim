@@ -75,6 +75,7 @@ fn env_25c() -> Env {
 /// terminal voltage at every row (row 0 mirrors the reference's initial value).
 fn replay(chem: ChemistryParams, rows: &[Row]) -> Vec<f64> {
     let cfg = PackConfig {
+        bms: None,
         thermal: ThermalConfig::Isothermal,
         series: 1,
         parallel: 1,

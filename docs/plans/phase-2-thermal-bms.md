@@ -1,6 +1,6 @@
 # Phase 2 — thermal + BMS
 
-**Status:** slice A (thermal network) landed. B–E open.
+**Status:** slices A (thermal network) and B (sensors + SOC estimator) landed. C–E open.
 **Exit criteria** (from `CLAUDE.md`): centre cells run measurably hotter; the LFP
 estimator-drift scenario passes; protection scenarios pass with the BMS on, and the
 same demands violate limits with it off.
@@ -10,7 +10,7 @@ same demands violate limits with it off.
 | slice | scope | state |
 | ----- | ----- | ----- |
 | A | thermal network: `[thermal]` chemistry section, `ThermalConfig`, per-cell lumped nodes, heat generation, grid adjacency, Euler + sub-stepping, `Env` consumed, energy-balance property test | **done** |
-| B | sensor layer + SOC estimator: `BmsConfig`, sensor frame, coulomb-count estimator with drift, rest-gated OCV correction, `soc_bms` | open |
+| B | sensor layer + SOC estimator: `BmsConfig`, sensor frame, coulomb-count estimator with drift, rest-gated OCV correction, `soc_bms` | **done** |
 | C | protection: OV/UV per group, OC (separate charge/discharge), OT/UT, charge inhibit, derate → contactor open, BMS-off contrast scenarios | open |
 | D | passive balancing: per-group bleed resistor above a voltage threshold | open |
 | E | wrap-up: scenario tests, perf re-measure | open |
@@ -105,6 +105,20 @@ lagged sensor frame (that is the BMS control path — principle 8, sensors only)
 resistor**, not in the cell — do not add it to the cell's thermal node. The extra
 `I²R0` inside the cell falls out of the solve on its own.
 
+### Slice B: `dt == 0` must not tick the sensor clock
+
+Every physics update scales by `dt`, so a zero-length step is inherently a pure
+observation — and `snapshot.rs::zero_length_step_does_not_mutate_state` pins that,
+because `properties.rs`'s energy balance uses such a step to read the start-of-step
+terminal voltage (which `Telemetry` does not otherwise expose).
+
+The BMS broke that, because it reacts to *information* rather than to elapsed time:
+consuming a frame resets the rest timer and can fire an OCV correction, and sampling a
+new one draws noise. All of that would happen at `dt = 0`. So `step` gates the whole
+sensor path on `dt > 0`, and the snapshot test's config carries a noisy BMS to cover
+the gate. Anything added later that mutates on information rather than on `dt` —
+balancing decisions, fault injection, an aging sub-clock — needs the same treatment.
+
 ### Slice B: the sensor frame must be serialized
 
 Sensor readings lag by one step (the frame is sampled at the end of a step and
@@ -123,22 +137,27 @@ Two constraints that are easy to get wrong:
   whatever `dt` the client passes. At a coarse fast-forward `dt` protection goes
   nearly inert.
 
-## Open decision — slice C's assertion (needs an owner call)
+## Decided: protection may overshoot for one step
 
-The choice of assertion decides the design, so write the assertion first:
+**Owner decision, 2026-07-27: a single step of limit violation before the BMS reacts
+is acceptable.** No predictive clamping, and therefore no `r_est` field on
+`BmsConfig`. The BMS reacts to a sensor frame sampled one step behind, like a real
+discretely sampled system.
 
-- **"Detects, derates, settles within limits; BMS-off runs away."** One-step lag is
-  fine. Cheapest, and honest about sampling delay. But "with the BMS on, `v_max` is
-  never exceeded" is *unassertable* — the first step always overshoots.
-- **"Never violates."** Needs predictive clamping. The honest version costs one
-  config field: give the BMS an estimated internal resistance `r_est` and clamp on
-  `V_pred = V_meas − (I_req − I_meas)·r_est`. The gap between `r_est` and the true
-  `R_g` is exactly the truth-vs-estimate gap principle 8 wants exposed, so it is a
-  feature rather than overhead.
+Consequences to build to, not to work around:
 
-Recommendation: the predictive version. It costs little, it makes the stronger
-assertion available, and the estimator error it introduces is pedagogically the
-point.
+- The slice-C assertion is **"detects, derates, and settles within limits"**, plus the
+  BMS-off contrast. Do *not* write a test asserting `v_max` is never exceeded — with
+  a lagged frame the first step of an excursion always overshoots, so such a test
+  would be asserting the absence of the chosen design.
+- **How badly it overshoots scales with `dt`**, because the sample rate *is* `dt`.
+  This is an accepted property. Document it on the BMS config so a client passing a
+  coarse `dt` understands that protection weakens; `CLAUDE.md`'s
+  fixed-`dt`-accumulator design for clients already points the right way.
+- The predictive alternative (estimated internal resistance, clamp on
+  `V_pred = V_meas − (I_req − I_meas)·r_est`) is recorded here only so it is not
+  re-litigated from scratch: it was considered and declined in favour of the simpler
+  model.
 
 ## Slice A implementation notes
 

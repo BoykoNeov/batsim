@@ -90,6 +90,7 @@ fn synthetic_chem_2rc(ocv: OcvTable) -> ChemistryParams {
 
 fn config(initial_soc: f64) -> PackConfig {
     PackConfig {
+        bms: None,
         thermal: ThermalConfig::Isothermal,
         series: 1,
         parallel: 1,

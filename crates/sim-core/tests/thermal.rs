@@ -73,6 +73,7 @@ fn chem(h_area_w_per_k: f64, docv_dt_v_per_k: Option<Vec<f64>>) -> ChemistryPara
 
 fn config(series: u16, parallel: u16, soc0: f64, thermal: ThermalConfig) -> PackConfig {
     PackConfig {
+        bms: None,
         series,
         parallel,
         initial_soc: soc0,

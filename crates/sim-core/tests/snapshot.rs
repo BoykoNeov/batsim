@@ -6,6 +6,7 @@
 //! (`bincode`), not merely cloned — this catches any field that fails to survive
 //! serialization (e.g. the RNG state).
 
+use sim_core::bms::BmsConfig;
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
@@ -72,6 +73,21 @@ fn rich_chem() -> ChemistryParams {
 
 fn config() -> PackConfig {
     PackConfig {
+        // A BMS with a *noisy* sensor, so the round-trip has to carry both the last
+        // sensor frame and an RNG that is drawn from every step. The frame cannot be
+        // recomputed on restore — its group voltages depend on a current that is not
+        // stored, and its noise draw has already advanced the RNG — so if it were
+        // ever left out of the snapshot, this test is what would notice.
+        bms: Some(BmsConfig {
+            current_offset_a: 0.01,
+            current_noise_sigma_a: 0.05,
+            temp_probes: vec![(0, 0), (1, 1)],
+            initial_soc_error: 0.05,
+            rest_current_threshold_a: 0.1,
+            rest_time_for_ocv_s: 5.0, // short, so corrections actually fire mid-run
+            ocv_correction_gain: 0.5,
+            min_ocv_slope_v_per_soc: 0.1,
+        }),
         thermal: ThermalConfig::Isothermal,
         series: 2,
         parallel: 2,
@@ -153,9 +169,12 @@ fn snapshot_restore_replay_is_bit_identical() {
 /// `Telemetry` otherwise does not expose.
 ///
 /// It is pinned here because it is easy to break invisibly: anything added to `step`
-/// that mutates unconditionally (a sensor frame sampled at end-of-step, a balancing
-/// bleed, an aging sub-clock) would turn the probe into a real step, and the
+/// that mutates unconditionally would turn the probe into a real step, and the
 /// energy-balance test would keep passing while silently measuring the wrong thing.
+/// That is not hypothetical — the BMS *does* mutate on information rather than on
+/// elapsed time (consuming a frame resets its rest timer and can fire an OCV
+/// correction; sampling a new one draws noise), so `step` gates the whole sensor
+/// clock on `dt > 0`. This config has a noisy BMS specifically to cover that gate.
 #[test]
 fn zero_length_step_does_not_mutate_state() {
     // A live thermal network, so the temperature integrator is on the path too —
