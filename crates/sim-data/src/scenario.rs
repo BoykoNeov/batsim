@@ -105,17 +105,27 @@ pub struct Scenario {
 impl Scenario {
     /// Which of the two chemistry keys this scenario uses.
     ///
-    /// Total, because [`Self::validate`] has already rejected the zero- and
-    /// two-key cases. A `Scenario` you did not obtain from [`parse_scenario`] and
-    /// have since edited can violate that; call `validate` again if you did.
+    /// Total, because [`Self::validate`] has already rejected the zero- and two-key
+    /// cases. A `Scenario` built in Rust rather than obtained from [`parse_scenario`]
+    /// — which is exactly what an adapter does when it constructs a session
+    /// programmatically — can still violate that, so both degenerate cases have a
+    /// defined answer rather than a panic:
+    ///
+    /// * **both keys set** resolves to the id. Preferring the id over the inline text
+    ///   is not arbitrary: an id names something the caller wrote, so the error it
+    ///   eventually produces ("no such chemistry: …") points back at the input.
+    ///   Returning `Inline("")` here would discard a perfectly good id and fail with a
+    ///   chemistry-parse error naming nothing at all.
+    /// * **neither key set** resolves to `Inline("")`, which fails to parse. There is
+    ///   no better answer available; there is nothing to point at.
+    ///
+    /// Call [`Self::validate`] to get a message that names the actual problem.
     #[must_use]
     pub fn chemistry_source(&self) -> ChemistrySource<'_> {
         match (&self.chemistry, &self.chemistry_toml) {
-            (Some(id), None) => ChemistrySource::Id(id),
+            (Some(id), _) => ChemistrySource::Id(id),
             (None, Some(text)) => ChemistrySource::Inline(text),
-            // Unreachable for a validated scenario; `Inline("")` fails to parse, so a
-            // caller that skipped validation gets an error rather than a panic.
-            _ => ChemistrySource::Inline(""),
+            (None, None) => ChemistrySource::Inline(""),
         }
     }
 

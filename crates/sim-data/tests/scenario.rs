@@ -145,16 +145,37 @@ fn soft_short_example_runs_and_diverges() {
 
     // 20 minutes at 1 s: 10 before the fault, 10 after.
     let mut v_group_1_reported_before = 0.0;
+    let mut seen = EventFlags::empty();
+    let mut worst_v_cell = f64::INFINITY;
+    let mut worst_t_max = 0.0_f64;
     for step in 0..1200 {
         let tele = pack.step(1.0, Demand::Current(0.5), &env());
-        assert!(
-            !tele.flags.contains(EventFlags::CONTACTOR_OPEN),
-            "the BMS should never trip here — it is being lied to (step {step})"
-        );
+        seen |= tele.flags;
+        worst_v_cell = worst_v_cell.min(tele.v_cell_min);
+        worst_t_max = worst_t_max.max(tele.t_max);
         if step == 599 {
             v_group_1_reported_before = pack.bms().unwrap().sensors().v_group[1];
         }
     }
+
+    assert!(
+        !seen.contains(EventFlags::CONTACTOR_OPEN),
+        "the BMS should never trip here — it is being lied to; saw {seen:?}"
+    );
+    // And it should not be *close* to tripping, or a later edit to the example would
+    // make this test fail in a way that reads as "the file is broken" rather than
+    // "the margin got tight". Protection trips at v_min − 0.15 V = 1.85 V and at
+    // t_max + 10 K = 343.15 K; the run sits an order of magnitude away from both,
+    // because 0.5 A on a 4.6 Ah group is ~0.11 C and a 5-ohm short across 3.3 V
+    // dissipates ~2 W into a cell with 0.35 W/K of convective coupling.
+    assert!(
+        worst_v_cell > 3.0,
+        "undervoltage headroom is gone: lowest cell reached {worst_v_cell} V"
+    );
+    assert!(
+        worst_t_max < 320.0,
+        "overtemperature headroom is gone: hottest cell reached {worst_t_max} K"
+    );
 
     // Ground truth: the shorted group has lost more charge than its neighbours.
     let shorted = pack.cell(1, 0).unwrap().soc;
@@ -217,6 +238,38 @@ fn a_scenario_needs_exactly_one_chemistry_key() {
     assert!(
         matches!(parse_scenario(&both), Err(DataError::Scenario(m)) if m.contains("exactly one")),
         "setting both should be rejected"
+    );
+}
+
+/// A `Scenario` built in Rust never went through `parse_scenario`, so
+/// `chemistry_source` has to stay total on inputs `validate` would have rejected —
+/// and it has to degrade toward the input that names something.
+///
+/// An adapter constructing a session programmatically is the realistic caller here.
+/// Resolving a both-keys-set scenario to the *id* means the error it eventually
+/// raises points back at what the caller wrote; resolving it to an empty inline text
+/// would throw the id away and fail with a chemistry-parse error naming nothing.
+#[test]
+fn chemistry_source_stays_total_on_an_unvalidated_scenario() {
+    let mut s = parse_scenario(&scenario_with_chemistry(
+        "chemistry = \"lfp_26650_generic\"",
+    ))
+    .unwrap();
+
+    s.chemistry_toml = Some(LFP_TOML.to_owned());
+    assert!(s.validate().is_err(), "two keys is still invalid");
+    assert_eq!(
+        s.chemistry_source(),
+        ChemistrySource::Id("lfp_26650_generic"),
+        "a set id must not be discarded in favour of the inline text"
+    );
+
+    s.chemistry = None;
+    s.chemistry_toml = None;
+    assert!(s.validate().is_err());
+    assert!(
+        matches!(s.chemistry_source(), ChemistrySource::Inline("")),
+        "with nothing to point at, the answer is the one that fails to parse"
     );
 }
 
@@ -357,6 +410,13 @@ fn unknown_keys_are_rejected_at_the_scenario_level_only() {
 /// It also pins the key-ordering hazard structurally: `chemistry` is declared before
 /// every table-valued field, so the serializer cannot emit it after `[meta]` — which
 /// TOML would then read back as a *different* document.
+///
+/// This is **not** a float-exactness claim. `Scenario`'s `PartialEq` compares `f64`
+/// with `==`, and it is deterministic here only because every number in the shipped
+/// examples is a short decimal literal that TOML reproduces exactly. Full-mantissa
+/// values on the wire are `wire_json.rs`'s subject; a scenario example that added
+/// `initial_soc = 0.8237492847362819` would be testing something this test does not
+/// promise.
 #[test]
 fn a_scenario_round_trips_through_toml() {
     for text in [CC_DISCHARGE, SOFT_SHORT] {

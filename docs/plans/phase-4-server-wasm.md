@@ -118,6 +118,10 @@ Consequences to bake in:
 - Slice B ships the regression test: snapshot → JSON → restore → continue is bit-identical
   against an uninterrupted run. Without it, a future dependency change that drops the
   feature is invisible until someone's restored session drifts.
+  **Slice A's experience applies to it directly:** write it, then *verify it fails* by
+  removing the feature from the workspace manifest and re-running. Slice A inherits the
+  feature already on, so a snapshot test written from literals — or from a pack stepped
+  too few times — will pass for the wrong reason and guard nothing.
 - This is `sim-core`'s dev-dep comment ("the engine never depends on a concrete
   serialization format — adapters choose") coming due. The adapter is choosing, and the
   choice has a footnote. `bincode` remains the format for the in-repo replay test; JSON is
@@ -535,6 +539,13 @@ rather than merely parsed. That is what the plan meant by "the format has a user
 it has a server": `soft_short_example_runs_and_diverges` builds the file, steps it for
 20 simulated minutes, and asserts the shorted group actually drains while the offset
 sensor hides it.
+
+Its companion `chemistry_source()` has to stay total on inputs `validate` would have
+rejected, because slice B will construct `Scenario` values in Rust rather than through
+`parse_scenario`. Both degenerate cases have a defined answer, and the choice is not
+arbitrary: **both keys set resolves to the id**, so the error that eventually surfaces
+names something the caller wrote, rather than throwing the id away and failing with a
+chemistry-parse error about an empty string.
 
 It also puts the fault-ordering rule in exactly one place. **File order is
 load-bearing**: the engine's queue sorts by `at_s` and breaks ties by scheduling order,
