@@ -297,7 +297,10 @@ pub struct CellView {
 /// bump** — v5 blobs stay exactly as they were — and a restored pack starts cold
 /// and recomputes, which reproduces the trajectory bit-for-bit because a cold
 /// compute is by definition what the memo holds.
-#[derive(Clone, Default, Serialize, Deserialize)]
+/// `Default` is the one derive that matters: `#[serde(skip)]` uses it to produce the
+/// (cold, therefore correct) memo a deserialized pack starts with. The type needs no
+/// `Serialize`/`Deserialize` of its own precisely because it is never written out.
+#[derive(Clone, Default)]
 struct SourceCache(Vec<(f64, f64)>);
 
 impl PartialEq for SourceCache {

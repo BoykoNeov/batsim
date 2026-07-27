@@ -1,9 +1,9 @@
 # `Pack::step` performance — under budget at 100S10P
 
-**Status:** all four items landed. Items 3 and 4 took the step **−39 %** against the
-end-of-Phase-2 tree, which puts it **inside** the < 50 µs budget for the first time —
-≈ 39 µs baseline / ≈ 42 µs fully featured, scaled to the fast-state anchor. Nothing
-outstanding.
+**Status:** all four items landed. Items 3 and 4 took the step **−34 to −43 %** against
+the end-of-Phase-2 tree, which puts it **inside** the < 50 µs budget for the first
+time — ≈ 36–42 µs baseline, ≈ 39–49 µs fully featured, scaled to the fast-state
+anchor. Ranges, not point estimates, on purpose. Nothing outstanding.
 **Baseline commit:** `5917bd9` ("Phase 1 wrap-up: criterion benchmarks for Pack::step").
 **Owner decision needed:** none. Item 3 was taken with the design call the deferral
 was waiting on — see "Items 3 and 4" below for what invariant it added and what
@@ -165,30 +165,78 @@ the baseline). Rounds 6–8 came in at ±1.3–1.6 % on every arm:
 | item 4 → item 3 | −31.3 %, −37.8 %, −39.2 % | −38.1 % |
 | base → both | −33.7 %, −39.5 %, −43.3 % | −42.5 % |
 
-Also `100S10P/full` −37.3 % and `100S10P/power` −31.2 % (item 4 → item 3, same
-invocation, so no pairing needed), and `1S1P` 215 → 158 ns.
+Also `100S10P/power` −31.2 % (item 4 → item 3, same invocation, so no pairing needed)
+and `1S1P` 215 → 158 ns. `100S10P/full` is treated separately below — it does **not**
+get a clean ratio, and the reason is instructive.
 
 **Item 4 is worth ~4 %** — real but barely above this machine's noise floor, and
 exactly the "correspondingly smaller win" this file predicted for removing 100
 allocations rather than 2000.
 
-**Item 3 is worth ~35 %**, which is *more* than the "halves the per-cell work"
-framing predicts, since it only removes one of the two `cell_source` passes and
-leaves `exp()`, the divisions, `advance_cell` and `cell_heat_w` untouched. A
-plausible explanation — **hypothesis, nobody has profiled it** — is that
-`cell_source` is disproportionately expensive per flop: two table lookups whose
-inner data is a `Vec<Vec<f64>>` (pointer chase per row) plus a sum over the cell's
-`v_rc`, which is its own heap allocation and therefore a likely cache miss per
-cell. If that is right, the remaining lever is data layout, not arithmetic. Do not
-treat this paragraph as established.
+**Item 3 is worth ~35 %**, more than "halves the per-cell work" would suggest given
+that it removes only one of the two `cell_source` passes. The arithmetic does close,
+though, and it closes on **division latency** — which is checkable by reading
+`ecm.rs` rather than by profiling:
 
-Scaling the measured ratios through this file's fast-state anchors (≈ 64 µs
-baseline / ≈ 67 µs fully featured at the end of Phase 2) puts a step at
-**≈ 39 µs baseline and ≈ 42 µs fully featured — inside the < 50 µs budget**, from
-1.28–1.34× over. That absolute is a *scaled* figure: every reading in this session
-sat in the machine's slow state (base measured 83–95 µs against its documented
-~64 µs fast-state value), so the ratios are the measured quantity, as always in
-this file.
+- One `cell_source` performs **four** `f64` divisions: `bracket` has one
+  (`(x - xs[lo]) / span`), so `r0_lookup` — one `bracket` plus two `interp1` — is
+  three, and `ocv_lookup` is one more. They are largely dependent, and division is
+  ~15–20 cycles of latency, so ~20–27 ns/cell at 3 GHz.
+- Measured saving is `(80.43 − 48.90) / 1000` = **31.5 ns/cell** (round 8, both arms
+  in the same round). The two binary searches — 34-point OCV, 3-point `R0` — and the
+  `v_rc` sum cover the rest.
+- The residual is consistent too: 80.43 − 31.5 (removed) leaves ~49 ns/cell, of which
+  ~31.5 ns is the *surviving* `cell_source` in the reporting pass, leaving ~17 ns for
+  `exp()`, `coulomb_step`'s division, `cell_heat_w`, and a `docv_dt_lookup` that
+  short-circuits to `0.0` because the bench chemistry has no entropy table.
+
+The obvious follow-on — precomputing `1/span` at load time so the lookups multiply
+instead of divide — is **not bit-identical** (`x * (1/s)` ≠ `x / s`), so it is not a
+free fifth item; it would need the same equivalence-test treatment as items 1–2, and
+it would fail it.
+
+An earlier draft of this section blamed data layout (`Vec<Vec<f64>>` pointer chasing,
+`v_rc`'s per-cell heap allocation). That was unprofiled *and* probably wrong: the
+`R0` rows are three shared allocations that go hot after the first few cells, and
+`v_rc` is touched exactly once cold per cell in **both** arms, so it cannot account
+for a difference. Countable beats plausible.
+
+Scaling the measured ratio range through this file's fast-state anchor (≈ 64 µs
+baseline at the end of Phase 2) puts a baseline step at **≈ 36–42 µs — inside the
+< 50 µs budget**, from 1.28× over. Stated as a range on purpose: base → both
+measured −33.7 / −39.5 / −43.3 %, and a point estimate would be false precision 11 µs
+from the line. The absolute is a *scaled* figure — every reading in this session sat
+in the machine's slow state (base measured 83–95 µs against its documented ~64 µs
+fast-state value) — so the ratios are the measured quantity, as always in this file.
+
+### The fully-featured figure is weaker, and here is exactly how weak
+
+`100S10P/full` deserves its own treatment because **the percentage overhead is not
+comparable across items 3–4**: item 3 made the shared electrical work ~35 % cheaper
+while leaving the thermal integrator and every BMS path untouched, so the same
+absolute feature cost is mechanically a larger fraction of a smaller baseline. Both
+cases run in one invocation, so no pairing is needed — but one invocation is one
+sample, and the first attempt (−37.3 %, from a single pair) came from the same
+invocation whose `10S10P` reading had to be discarded as a mode artifact.
+
+Five same-invocation runs on the final tree, two discarded for wide CI:
+
+| run | `current` | `full` | Δ | ratio |
+| --- | --------- | ------ | - | ----- |
+| 1 | 55.64 µs | 59.38 µs | 3.74 µs | +6.7 % |
+| 2 | 52.06 µs | 59.30 µs | 7.24 µs | +13.9 % |
+| 4 | 64.42 µs | 74.22 µs | 9.80 µs | +15.2 % |
+
+The **absolute delta is the quantity to carry forward**, not the percentage: across
+every measurement ever taken it sits at 4.0 and 7.0 µs (Phase 2), 12.7 µs (item-4
+tree), and 3.7 / 7.2 / 9.8 µs (final tree) — one noisy quantity of **≈ 4–10 µs**, not
+a feature cost that grew. Mode-scaled onto the fast-state anchor that is ~3–7 µs, so
+a fully-featured step is **≈ 39–49 µs**.
+
+That is under budget across the whole range, but the upper end has thin margin, and
+this file should not pretend otherwise. If a tighter fully-featured number ever
+matters, it is one `cargo bench -p sim-core --bench pack_step -- "100S10P/(current|full)"`
+repeated on a quiet machine — not another code change.
 
 ### What item 3 costs in invariants
 
@@ -323,13 +371,24 @@ The 50 µs budget is deliberately **not** asserted in a test — a wall-clock as
 machine- and CI-dependent, and `CLAUDE.md` frames it as a budget to keep, not an exit
 criterion. Track it by running the bench, not by a gate.
 
-Current position: **≈ 39 µs baseline / ≈ 42 µs fully featured at 100S10P (fast-state
-equivalent), ~0.8× of budget.** All four items are done and separately attributed.
-Nothing here is blocking, and nothing here is worth another pass without a profiler:
-the next honest step is to *measure* where the remaining ~39 µs goes rather than to
-guess a fifth item, since the one number in this file that came in well outside its
-prediction (item 3 at −35 %) points at data layout, which no reading here has
-actually confirmed.
+Current position: **≈ 36–42 µs baseline / ≈ 39–49 µs fully featured at 100S10P
+(fast-state equivalent), under the 50 µs budget across the range.** All four items
+are done and separately attributed. Nothing here is blocking.
+
+Two levers are identified and *not* taken, so the next reader does not re-derive
+them:
+
+- **The remaining per-step allocations.** `group_src` always, plus `heat_w`, `temps`
+  and `scratch` (three ~8 KB `Vec`s at 1000 cells) whenever the thermal network is
+  live, plus `bleed_g` and `v_group` with a BMS. Same *kind* of fix as items 1 and 4,
+  equally bit-identical, visible by reading `step` — and aimed squarely at the
+  fully-featured case, which is the one with thin margin. Not taken because the
+  budget is met and each is worth single-digit percent at best.
+- **Multiply-by-reciprocal in the lookups**, which is where the remaining time
+  demonstrably goes (see the division count above) — but it is not bit-identical, so
+  it is a determinism trade, not a free win.
+
+Beyond those, get a profiler before guessing a fifth item.
 
 **The thing most likely to break next is not speed, it is item 3's invariant.** The
 memo is correct only while every mutation of a cell's state or `r0_factor` from
