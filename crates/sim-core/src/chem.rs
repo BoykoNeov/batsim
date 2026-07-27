@@ -81,15 +81,35 @@ pub struct ChemistryParams {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SafetyParams {
     /// Cell temperature \[K\] above which exothermic self-heating begins. Must be
-    /// finite and `> 0`, and below [`Self::t_vent_k`]. **Not yet consumed** — the
-    /// runaway slice owns it.
+    /// finite and `> 0`, and below [`Self::t_vent_k`]. See [`crate::runaway`].
     pub t_onset_k: f64,
     /// Cell temperature \[K\] at which a cell vents. Must be finite and above
-    /// [`Self::t_onset_k`]. **Not yet consumed.**
+    /// [`Self::t_onset_k`].
     pub t_vent_k: f64,
     /// Finite exothermic energy budget of one cell \[J\]. Must be finite and `>= 0`.
-    /// **Not yet consumed.**
+    ///
+    /// Divided by [`ThermalParams::heat_capacity_j_per_k`] this is the **adiabatic
+    /// temperature rise** a fully-reacted cell produces, which is the number to sanity
+    /// check the placeholder against — the two are only meaningful as a pair, the same
+    /// trap [`AgingParams::cal_pre_exp`] and [`AgingParams::cal_ea_j_per_mol`] set.
     pub runaway_energy_j: f64,
+    /// Exothermic power \[W\] of one *unreacted* cell held exactly at
+    /// [`Self::t_onset_k`]. Must be finite and `>= 0`; `0` (the default) means onset
+    /// is reported but produces no heat, so the chemistry can never run away.
+    ///
+    /// This is the amplitude of the Arrhenius term in [`crate::runaway::reaction_power`];
+    /// [`Self::runaway_ea_j_per_mol`] is its steepness. Neither means anything alone.
+    #[serde(default)]
+    pub runaway_power_w_at_onset: f64,
+    /// Activation energy \[J/mol\] of the exothermic decomposition reaction. Must be
+    /// finite and `> 0` **when [`Self::runaway_power_w_at_onset`] is positive**;
+    /// ignored (and allowed to be the `0.0` default) when it is not.
+    ///
+    /// Required to be positive with a live reaction because a zero activation energy
+    /// makes the release rate temperature-independent — a constant heater, not a
+    /// runaway. The accelerating feedback *is* the phenomenon.
+    #[serde(default)]
+    pub runaway_ea_j_per_mol: f64,
     /// Cell temperature \[K\] below which charging risks plating metallic lithium.
     /// Must be finite and `> 0`.
     ///
@@ -537,8 +557,12 @@ impl ChemistryParams {
                     value: s.t_plating_min_k,
                 });
             }
-            let non_negative: [(&'static str, f64); 4] = [
+            let non_negative: [(&'static str, f64); 5] = [
                 ("safety.runaway_energy_j", s.runaway_energy_j),
+                (
+                    "safety.runaway_power_w_at_onset",
+                    s.runaway_power_w_at_onset,
+                ),
                 ("safety.plating_c_threshold", s.plating_c_threshold),
                 ("safety.plating_fade_per_ah", s.plating_fade_per_ah),
                 (
@@ -570,6 +594,20 @@ impl ChemistryParams {
                     what:
                         "safety.plating_short_ohms (required when plating_short_hazard_per_ah > 0)",
                     value: s.plating_short_ohms,
+                });
+            }
+            // Same conditional shape, same reason: a file written before the runaway
+            // slice omits both fields and defaults them to zero, which is a valid
+            // parameter set that simply never self-heats. Once the amplitude is
+            // positive the exponent is load-bearing — see the field docs for why zero
+            // is not an acceptable value for it then.
+            if s.runaway_power_w_at_onset > 0.0
+                && (!is_positive(s.runaway_ea_j_per_mol) || !s.runaway_ea_j_per_mol.is_finite())
+            {
+                return Err(ChemistryError::NotPositive {
+                    what:
+                        "safety.runaway_ea_j_per_mol (required when runaway_power_w_at_onset > 0)",
+                    value: s.runaway_ea_j_per_mol,
                 });
             }
         }

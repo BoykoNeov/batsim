@@ -76,10 +76,17 @@ cyc_fade_per_ah            = 2.0e-5   # provenance: placeholder cycle fade per A
 cyc_dod_stress_exp         = 1.1      # provenance: placeholder DOD stress exponent (per-cycle convention)
 r_growth_per_capacity_loss = 1.5     # provenance: placeholder — resistance grows faster than capacity fades
 
-# Emergent-failure thresholds. The plating half is live; the runaway trio
-# (t_onset_k / t_vent_k / runaway_energy_j) is validated but not yet consumed — the
-# runaway slice wires it in, and should evaluate the three TOGETHER before trusting
-# them, the way the [aging] pair had to be.
+# Emergent-failure thresholds. Both halves are live.
+#
+# Runaway: above t_onset_k a cell releases runaway_power_w_at_onset watts, accelerating
+# with an Arrhenius exponent runaway_ea_j_per_mol and fading as its runaway_energy_j
+# budget burns off. Scale check on the placeholders, which only mean anything TOGETHER
+# (the failure mode the [aging] pair demonstrated in slice A):
+#   - adiabatic ceiling  = 24 kJ / 95 J/K = 253 K, so a fully-reacted cell peaks near
+#     676 K (403 degC) — hot, survivable-looking for LFP, and comfortably past the vent.
+#   - onset -> vent      = 30 K x 95 J/K = 2.85 kJ, released at 5 W rising to ~33 W
+#     across that span, so an adiabatic cell at onset vents in roughly 3 minutes.
+# Both are shape checks, not fits; sim-data pins them against a band.
 #
 # Plating: charging below t_plating_min_k above plating_c_threshold plates metallic
 # lithium. The three coefficients below say what that costs. Scale check on the
@@ -91,7 +98,9 @@ r_growth_per_capacity_loss = 1.5     # provenance: placeholder — resistance gr
 [safety]
 t_onset_k           = 423.15   # provenance: ~150 degC exothermic onset (LFP is relatively stable); placeholder
 t_vent_k            = 453.15   # provenance: ~180 degC vent placeholder
-runaway_energy_j    = 60.0e3   # provenance: placeholder per-cell exothermic budget, TODO fit
+runaway_energy_j    = 24.0e3   # provenance: placeholder per-cell exothermic budget, set for a 253 K adiabatic rise (LFP peaks far below NMC in ARC tests); was 60.0e3, which gave a 632 K rise this cell has no business reaching; TODO fit
+runaway_power_w_at_onset = 5.0     # provenance: placeholder amplitude, chosen with the Ea below for a ~3 min adiabatic onset-to-vent; TODO fit
+runaway_ea_j_per_mol     = 1.0e5   # provenance: placeholder activation energy for the decomposition exotherm, order-of-magnitude typical for Li-ion ARC fits; TODO fit
 t_plating_min_k     = 273.15   # provenance: plating risk below 0 degC
 plating_c_threshold = 0.5      # provenance: placeholder C-rate above which cold-charge plating risk flags
 plating_fade_per_ah        = 1.0e-3  # provenance: placeholder — set ~50x cyc_fade_per_ah so plated charge is decisively worse than ordinary throughput, TODO fit

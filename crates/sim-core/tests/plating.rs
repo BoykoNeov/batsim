@@ -70,7 +70,11 @@ fn safety_params(
     SafetyParams {
         t_onset_k: 423.15,
         t_vent_k: 453.15,
-        runaway_energy_j: 60.0e3,
+        runaway_energy_j: 24.0e3,
+        // Zero amplitude: these packs are nowhere near onset, and a plating test has no
+        // business being able to catch fire if one of them ever is.
+        runaway_power_w_at_onset: 0.0,
+        runaway_ea_j_per_mol: 0.0,
         t_plating_min_k: 273.15,
         plating_c_threshold: 0.5,
         plating_fade_per_ah,

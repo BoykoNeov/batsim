@@ -1,6 +1,6 @@
 # Phase 3 — aging + faults
 
-**Status: slices A, B and C landed; D–E planned.** This file was written before the work so the
+**Status: slices A, B, C and D landed; E planned.** This file was written before the work so the
 decisions below are made once; the "learned while building" material is appended as
 each slice lands, the way `phase-2-thermal-bms.md` grew.
 
@@ -16,7 +16,7 @@ each slice lands, the way `phase-2-thermal-bms.md` grew.
 | A | aging: `[aging]` into `ChemistryParams`, per-cell `soh_capacity`/`soh_resistance` + calendar accumulator on `Cell`, calendar **and** cycle fade, resistance growth, the aging sub-clock, pack-level SOH in `Telemetry` | **landed** (v6) |
 | B | fault queue: timestamped injection API, `WeakCell`, `SoftInternalShort`, `ExternalShort`, `SensorStuck`/`SensorOffset` | **landed** (v7) |
 | C | plating: `PLATING_RISK` from cold-charge physics, accelerated fade, seeded soft-short probability | **landed** (v8) |
-| D | runaway: Arrhenius self-heating with a finite per-cell energy budget, `VENTED`, `THERMAL_RUNAWAY`, propagation, and the sub-step bound that makes it integrable | planned |
+| D | runaway: Arrhenius self-heating with a finite per-cell energy budget, `VENTED`, `THERMAL_RUNAWAY`, propagation, and the sub-step bound that makes it integrable | **landed** (v9) |
 | E | wrap-up: the two exit scenarios, aging/fault property tests, perf re-measure | planned |
 
 Each slice keeps `cargo test --workspace` and
@@ -682,3 +682,191 @@ aging pair had for two phases.
 
 The benchmark's `lfp_like_chem` now carries `[safety]`, matching the shipped file, so the
 plating branch is measured rather than optimised away by a `None` nobody ships.
+
+---
+
+## Learned while building — slice D (runaway)
+
+Snapshot layout v8 → **v9**. New module `sim-core/src/runaway.rs`; new integration test
+`sim-core/tests/runaway.rs` (17 tests). `SafetyParams` gained
+`runaway_power_w_at_onset` and `runaway_ea_j_per_mol`; every `Cell` gained
+`runaway: CellRunaway`. `Telemetry` gained `q_runaway_w`, `CellView` gained
+`runaway_energy_remaining_j` and `vented` — all three added to `tele_bits`/`cell_bits`
+in the same commit, which is the trap slice B documented.
+
+### The reaction term, and the two coefficients it needed
+
+`CLAUDE.md`'s `[safety]` sketch has the runaway *thresholds* and the energy budget but
+nothing that sets a **rate**, so slice D had to invent the same way slice C did:
+
+```text
+Q_rxn(T, a) = P_onset * a * exp( -(Ea/R) * (1/T - 1/T_onset) )
+```
+
+with `a = energy_remaining / runaway_energy_j`. Both new fields default to zero and are
+documented as "onset reported but free", so a chemistry file written before this slice
+still parses and simply never burns. `runaway_ea_j_per_mol` is validated `> 0` only when
+the amplitude is positive — the same conditional shape `plating_short_ohms` uses, and for
+the same reason: a zero activation energy is a constant heater, not a runaway.
+
+The exponent is referenced to `T_onset`, not to absolute zero. That is the decision worth
+keeping: `exp(-Ea/(R*T))` alone is ~1e-13 at these temperatures, so a pre-exponential
+would have to be ~1e13 and nobody could tell a plausible value from an absurd one by
+looking. Referenced to onset, `P_onset` is *exactly* the release at onset — a number a
+reader can check against a plot, which is precisely what the `[aging]` pair could not
+offer and what let its 260 %/year sit in the tree for two phases.
+
+### The stability bound was not the binding constraint — a rise cap was
+
+The pre-work proposed extending `thermal::substeps`' ceiling with the reaction's
+derivative. That is necessary and not sufficient, and the difference is not academic:
+`0.5*C/a` bounds the *linearised* problem's oscillation and says nothing about `a` itself
+growing tenfold inside the sub-step just taken.
+
+What ships is a second, tighter bound — `h <= MAX_SUBSTEP_RISE_K*C_th / Q_total`, at 1 K.
+The Arrhenius logarithmic sensitivity `Ea/(R*T^2)` is ~0.067/K at 423 K and ~0.012/K at
+1000 K, so 1 K holds the reaction term to under ~7 % drift within any sub-step across the
+whole trajectory. Measured effect: removing it (leaving exactly the bound the pre-work
+proposed) moves the vent-to-600 K climb by **4.6 %** between `dt` = 0.25 s and `dt` = 2 s,
+against 0.9 % as shipped.
+
+The sub-step length is re-derived before *every* sub-step, so the path is a variable-step
+integrator rather than a uniform partition. It is gated on at least one cell being at or
+above onset, which is what keeps a pack that never gets hot running the original uniform
+partition **bit-for-bit** — verified by a test that runs the same pack with and without a
+reaction amplitude and compares telemetry bits, and by the whole pre-existing suite
+passing untouched.
+
+### `MAX_SUBSTEPS = 512` does not hold, and the reason is the chemistry not the `dt`
+
+The pre-work asked whether the cap survives. It does not, and the arithmetic says so
+before any code runs: a full burn moves a cell by its adiabatic rise
+`runaway_energy_j / heat_capacity_j_per_k`, and at 1 K per sub-step that is 253 sub-steps
+for LFP and 819 for NMC — **independent of `dt`**, because a runaway completes in a
+fraction of a second of simulation time and therefore lands inside a single `Pack::step`
+at any realistic client `dt`.
+
+So there are now two caps, not one raised cap. `MAX_SUBSTEPS` (512) is untouched and still
+bounds work against a pathological `dt` on the linear path; `MAX_RUNAWAY_SUBSTEPS` (2048)
+bounds the adaptive path at ~2.5x the worse chemistry's full burn. The table is in the
+const's doc comment per `CLAUDE.md`'s rule that a raised cap comes with its working.
+`a_whole_burn_fits_inside_one_coarse_step` runs an entire burn at `dt` = 60 s: the cap
+carries a `debug_assert` and tests run in debug, so a cap that bound would fail by
+panicking rather than by producing a plausible wrong number.
+
+### The two-`dt` test the pre-work required, and two ways of getting it wrong
+
+Both wrong versions were written first and both passed, which is the point of recording
+them.
+
+**Comparing vent times proves nothing.** Vent sits only 30 K above onset, where the
+release is 5–33 W and the sub-step is `dt`-limited in both arms. Two `dt` agree there
+whatever the integrator does — the vent-time comparison passes with the accuracy cap
+widened a thousandfold. The accuracy cap only starts binding once the release passes
+~50 W, i.e. *after* vent, so the leg from vent up to 600 K is the only window that can
+discriminate.
+
+**Comparing temperature at matched times is worse than useless.** In that climb the cell
+gains ~68 K/s, so a 0.2 % disagreement in *timing* — which is convergence, not failure —
+shows up as **32 K**. An exponential converts phase error into amplitude error, so
+amplitude is the wrong axis entirely. The shipped test compares the climb's elapsed
+*duration*, with the crossing times linearly interpolated inside the step that crosses so
+the coarse arm's own observation quantisation does not swamp what is being measured.
+
+### Ignition lags by one step, on purpose
+
+Whether the reaction runs during a step is decided from start-of-step temperatures, so a
+cell crossing onset *during* a step ignites at the start of the next one. The alternative
+is scanning every cell's temperature between thermal sub-steps, which every pack in the
+world would pay for so that a burning one could ignite a fraction of a step sooner. Same
+family as the BMS's one-step sensor lag and the fault queue's `dt` granularity. Recorded
+on the module with its revisit trigger: a scenario needing `dt` coarse enough that a cell
+crosses onset and reaches vent inside one step.
+
+### Venting is a state predicate, not a latched flag
+
+`flags.rs` says flags are recomputed fresh each step and are not sticky, so `VENTED` is
+re-derived every step from a per-cell `vented` bit — "this pack contains a vented cell",
+exactly as `CONTACTOR_OPEN` means "this pack's contactor is open". The bit itself is
+irreversible state. `THERMAL_RUNAWAY` comes from *inside* the integrator's gate rather
+than from a start-of-step observation elsewhere, so the first step of a runaway flags it.
+
+What v1 does **not** model is what venting *does*: a real vented cell ejects electrolyte
+and gas, loses mass and heat capacity, and stops being a battery. Here it keeps
+conducting, keeps its heat capacity, and keeps its charge. `VENTED` is an honest report of
+a temperature having been reached and nothing more.
+
+### Runaway does not ride the aging sub-clock
+
+Plating's consequences do, and cost nothing on a pack with `aging: None`. Runaway cannot
+inherit that: the phase exit criterion is "BMS off, overcharge, runaway, propagation" and
+says nothing about aging, and a client that switched aging off to hold a scenario fixed
+has not asked to be made fireproof. `CellRunaway` is therefore its own always-present
+field on `Cell`, not part of `CellAging` — and not part of `EcmState`, for the Phase-6
+reason slice A gave for SOH. `a_pack_that_cannot_age_can_still_burn` pins it.
+
+### The `[safety]` runaway trio was never evaluated, and both files moved
+
+The exposure slice A predicted was real. `sim-data`'s
+`shipped_runaway_coefficients_burn_at_a_plausible_scale` checks two shape quantities per
+chemistry, both against bands rather than fits:
+
+- **Adiabatic ceiling** `runaway_energy_j / heat_capacity_j_per_k`, banded 100–1200 K.
+- **Adiabatic onset-to-vent time**, integrated through the engine's own `reaction_power`
+  so the test cannot drift from the model, banded 1 s–1 h. This is the check with teeth,
+  because it is the only one that touches the two invented coefficients.
+
+Both shipped files failed the first check as written. LFP's 60 kJ over 95 J/K implied a
+632 K rise; NMC's 90 kJ over 55 J/K implied **1636 K**, hotter than the cell's own
+materials survive. Rescaled to 24 kJ (253 K rise, ~400 degC peak — LFP peaks far below
+NMC in ARC tests) and 45 kJ (818 K rise, ~990 degC peak, which is what ARC tests report
+for NMC 18650s). Both provenance notes record the old value and why it moved, the same
+treatment slice A gave the NMC aging pair.
+
+### Propagation, and the control that makes it a test
+
+`a_burning_cell_takes_its_neighbour_with_it` uses an injected `SoftInternalShort` to heat
+one cell of a 2S1P pack — fault injection is the only sanctioned override, and it is used
+only to *start* the fire. Everything after that cell crosses onset is physics.
+
+The control is what gives it teeth: the identical pack with the reaction amplitude set to
+zero runs the identical heater, and its neighbour never gets near onset. The fixture is
+tuned so the heater's own steady state leaves cell 0 hot and cell 1 well below onset,
+which is what makes that true. Without the control the test would pass on a pack where the
+heater alone cooked both cells, and would be evidence of nothing.
+
+### Overcharge with the BMS off already reaches vent — the energy hole is separate
+
+Slice E owns the full exit scenario, but the reachability question was answered here with
+a throwaway probe on the shipped LFP file, because the answer determines whether slice D
+also owed a cell-model change. It does not: ohmic heating alone gets there. A 1S1P at 20C
+vents, and so does a 5S5P at 8.7C per cell — an abusive fast charge, which is exactly the
+regime the scenario is about.
+
+**A real hole was found on the way, and is deliberately left open.** Charge pushed into a
+cell whose SOC is clamped at 1.0 currently vanishes: it is not stored, and it generates no
+heat beyond `I^2*R0`. That is silent energy destruction, and the honest shape is
+`OCV * (rejected charge)/dt` driven from the *rejected fraction*
+`(raw_soc - 1.0)*capacity_as/dt`, not from a boolean "clamped" — the boolean version
+passes tests and is wrong at every clamp entry. The discharge side has the mirror image:
+at `soc = 0` the cell keeps sourcing current at `OCV(0)` forever.
+
+It is not slice D's: it is a change to `coulomb_step`/`cell_heat_w`, the most
+golden-tested path in the tree, and it is a cell-model fix wearing a runaway costume. It
+wants its own commit and its own goldens re-check.
+
+### Perf: what slice D added to the hot loop, for slice E to measure
+
+- **One comparison per cell per step** (`t >= onset_k`) during the temperature-gathering
+  pass, on the live-thermal path only. That is the entire cost on a pack that is not on
+  fire: below onset the per-cell exothermic state is not even gathered, and the integrator
+  runs its original uniform partition on the original `heat_w` slice.
+- **Sixteen more bytes per `Cell`** (`CellRunaway` is an `f64` plus a `bool`, padded), on
+  top of slice B's eight and slice C's sixteen. `Cell` has now grown in four consecutive
+  slices, and slice E should look at the total rather than the increment.
+- Everything else — the per-cell reaction evaluation, the two scratch buffers, the
+  variable sub-stepping — is behind the onset gate and costs a healthy pack nothing.
+
+The benchmark's `lfp_like_chem` now carries the two new coefficients at their shipped
+values, so the gate is measured on the configuration that ships rather than optimised away
+by a zero amplitude nobody uses.

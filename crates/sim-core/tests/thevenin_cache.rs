@@ -175,6 +175,7 @@ fn tele_bits(t: &Telemetry) -> Vec<u64> {
         t.v_cell_min.to_bits(),
         t.v_cell_max.to_bits(),
         t.q_gen_w.to_bits(),
+        t.q_runaway_w.to_bits(),
         t.q_balancing_w.to_bits(),
         t.i_balancing_a.to_bits(),
         t.i_internal_short_a.to_bits(),
@@ -197,6 +198,8 @@ fn cell_bits(pack: &Pack, series: u16, parallel: u16) -> Vec<u64> {
                 v.soh_capacity.to_bits(),
                 v.soh_resistance.to_bits(),
                 v.internal_short_conductance_s.to_bits(),
+                v.runaway_energy_remaining_j.to_bits(),
+                u64::from(v.vented),
             ]);
         }
     }

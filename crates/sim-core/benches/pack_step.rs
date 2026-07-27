@@ -125,12 +125,16 @@ fn lfp_like_chem() -> ChemistryParams {
     ChemistryParams {
         aging: None,
         // Present, like the shipped file's `[safety]` section, so the benchmark pays
-        // the per-cell plating check a real pack running this chemistry pays. Setting
-        // it to `None` would measure a configuration nobody ships.
+        // the per-cell plating check *and* the per-cell onset comparison that a real
+        // pack running this chemistry pays. Setting it to `None` would measure a
+        // configuration nobody ships. The benched pack never approaches onset, which is
+        // also the case worth measuring — a pack on fire has no perf budget.
         safety: Some(SafetyParams {
             t_onset_k: 423.15,
             t_vent_k: 453.15,
-            runaway_energy_j: 60.0e3,
+            runaway_energy_j: 24.0e3,
+            runaway_power_w_at_onset: 5.0,
+            runaway_ea_j_per_mol: 1.0e5,
             t_plating_min_k: 273.15,
             plating_c_threshold: 0.5,
             plating_fade_per_ah: 1.0e-3,

@@ -253,9 +253,9 @@ fn shipped_aging_coefficients_give_a_plausible_one_year_fade() {
 ///
 /// Both bands deliberately say nothing about where in them a fitted value would land —
 /// this is a guard against an unevaluated set, not a substitute for the fit the
-/// provenance notes still ask for. The runaway trio (`t_onset_k` / `t_vent_k` /
-/// `runaway_energy_j`) has exactly the same exposure and wants the same kind of check
-/// once the slice that consumes it lands.
+/// provenance notes still ask for. See
+/// `shipped_runaway_coefficients_burn_at_a_plausible_scale` for the same treatment of
+/// the runaway half.
 #[test]
 fn shipped_plating_coefficients_give_a_plausible_cold_charge_cost() {
     for (name, text) in [
@@ -300,6 +300,80 @@ fn shipped_plating_coefficients_give_a_plausible_cold_charge_cost() {
             safety.plating_short_ohms > 100.0 * r0_mid,
             "{name}: a {} ohm short against a {r0_mid} ohm cell is not a *soft* short",
             safety.plating_short_ohms
+        );
+    }
+}
+
+/// And the same treatment for the runaway half of `[safety]`, which had the identical
+/// exposure: five numbers that each pass `validate()` alone but only mean anything as a
+/// set. Both shipped files failed one of the checks below when this test was written —
+/// `runaway_energy_j` was set with no reference to `heat_capacity_j_per_k`, so NMC's
+/// budget implied a cell reaching 1636 K above onset.
+///
+/// Two shape checks, both derived from quantities a reader can look up rather than from
+/// a fit:
+///
+/// * **Adiabatic ceiling** = `runaway_energy_j / heat_capacity_j_per_k`, the temperature
+///   rise a fully-reacted cell produces with nowhere to put the heat. Banded 100–1200 K.
+///   Below the floor the cell cannot even reach its own vent threshold and "runaway" is
+///   a misnomer; above it the cell is hotter than steel melts and the budget was written
+///   without looking at the heat capacity beside it.
+/// * **Adiabatic onset-to-vent time**, integrated through the *engine's own*
+///   [`sim_core::runaway::reaction_power`] so the test cannot drift from the model.
+///   Banded 1 s–1 h. This is the check with teeth, because it is the only one that
+///   touches `runaway_power_w_at_onset` and `runaway_ea_j_per_mol` — the two invented
+///   coefficients, which are exactly the ones nobody can eyeball.
+#[test]
+fn shipped_runaway_coefficients_burn_at_a_plausible_scale() {
+    for (name, text) in [
+        (
+            "lfp",
+            include_str!("../../../chemistries/lfp_26650_generic.toml"),
+        ),
+        (
+            "nmc",
+            include_str!("../../../chemistries/nmc_18650_generic.toml"),
+        ),
+    ] {
+        let chem = parse_chemistry(text).expect("shipped chemistry loads");
+        let safety = chem
+            .safety
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} must ship [safety] coefficients"));
+        let c_th = chem.thermal.heat_capacity_j_per_k;
+
+        let ceiling_k = safety.runaway_energy_j / c_th;
+        assert!(
+            (100.0..=1200.0).contains(&ceiling_k),
+            "{name}: a full burn raises the cell {ceiling_k:.0} K — outside the \
+             plausible 100–1200 K band, so runaway_energy_j was not set against this \
+             cell's heat_capacity_j_per_k"
+        );
+        let margin_k = safety.t_vent_k - safety.t_onset_k;
+        assert!(
+            ceiling_k > margin_k,
+            "{name}: a full burn ({ceiling_k:.0} K) cannot even span onset to vent \
+             ({margin_k:.0} K), so no cell can ever reach t_vent_k by reacting"
+        );
+
+        // Adiabatic integration from onset to vent: dT/dt = Q(T, α)/C_th with the cell
+        // isolated. Fixed 1 ms steps, far below the reaction's own timescale here, and
+        // bounded so a non-reacting set fails the band rather than hanging.
+        let mut t = safety.t_onset_k;
+        let mut energy_left = safety.runaway_energy_j;
+        let h = 1.0e-3;
+        let mut elapsed = 0.0;
+        while t < safety.t_vent_k && elapsed < 7200.0 {
+            let q = sim_core::runaway::reaction_power(safety, t, energy_left);
+            t += h * q / c_th;
+            energy_left = (energy_left - q * h).max(0.0);
+            elapsed += h;
+        }
+        assert!(
+            (1.0..=3600.0).contains(&elapsed),
+            "{name}: an adiabatic cell sitting exactly at onset vents after {elapsed:.1} s \
+             — outside the plausible 1 s–1 h band, so runaway_power_w_at_onset and \
+             runaway_ea_j_per_mol were not evaluated together"
         );
     }
 }

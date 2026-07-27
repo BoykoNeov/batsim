@@ -31,6 +31,7 @@ pub mod flags;
 mod noise;
 pub mod pack;
 pub mod plating;
+pub mod runaway;
 pub mod thermal;
 
 pub use aging::{Aging, AgingConfig};
@@ -43,6 +44,7 @@ pub use pack::{
     BuildError, CellIndexError, CellView, Pack, PackConfig, RestoreError, Scatter, Snapshot,
     SNAPSHOT_VERSION,
 };
+pub use runaway::CellRunaway;
 pub use thermal::ThermalConfig;
 
 /// What the outside world asks of the pack this step.
@@ -119,6 +121,23 @@ pub struct Telemetry {
     /// overpotential relaxes against a reversed current, or under a dominant
     /// endothermic entropic term.
     pub q_gen_w: f64,
+    /// Exothermic self-heating released across every cell this step \[W\], averaged
+    /// over the step.
+    ///
+    /// Zero unless at least one cell is above the chemistry's `t_onset_k` with budget
+    /// left, and zero in every thermal mode but
+    /// [`thermal::ThermalConfig::Network`] — the reaction is a feedback on the
+    /// temperature being solved for, and an isothermal pack has no such feedback. At
+    /// `dt = 0` this is the *instantaneous* rate rather than a mean, which is the same
+    /// number in the limit.
+    ///
+    /// Deliberately **not** folded into [`Self::q_gen_w`] and deliberately not part of
+    /// the pack's electrochemical energy balance: this heat comes from the
+    /// decomposition of the cell's own materials, a separate reservoir
+    /// (`runaway_energy_j`) that the OCV knows nothing about. Adding the two would make
+    /// the four-term balance that closes exactly stop closing, for a reason a reader
+    /// would have to dig for.
+    pub q_runaway_w: f64,
     /// Power burned in the passive balancing resistors this step \[W\].
     ///
     /// Zero unless at least one group's bleed switch is closed. This is energy

@@ -32,6 +32,7 @@ use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
 use crate::plating::plating_risk;
+use crate::runaway::{is_vented, reaction_power, CellRunaway};
 use crate::thermal::{advance_temperatures, ThermalConfig, ThermalStep};
 use crate::{Demand, Env, Telemetry};
 
@@ -93,7 +94,14 @@ use crate::{Demand, Env, Telemetry};
 /// first is fade already suffered, the second is throughput not yet charged for, and
 /// dropping either across a snapshot would let a client wash out damage by saving and
 /// reloading. Same caveat as v3 about what actually rejects an older blob.
-pub const SNAPSHOT_VERSION: u32 = 8;
+///
+/// v9 (Phase 3, runaway): `SafetyParams` gained `runaway_power_w_at_onset` and
+/// `runaway_ea_j_per_mol`, and every `Cell` gained `runaway: CellRunaway` — the
+/// unreleased half of its exothermic budget plus its vent latch. Both cell fields are
+/// genuine state and neither is recoverable from anything else: a cell that has
+/// already burned half its budget cannot burn it again, and a vented cell stays
+/// vented. Same caveat as v3 about what actually rejects an older blob.
+pub const SNAPSHOT_VERSION: u32 = 9;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -293,6 +301,11 @@ struct Cell {
     /// folded into the cell's Thévenin source.
     #[serde(default)]
     shunt_g: f64,
+    /// Exothermic budget left and vent latch. Deliberately its own field rather than
+    /// part of `aging`: a pack with `aging: None` never wears out but must still be
+    /// able to burn (see [`CellRunaway`]).
+    #[serde(default)]
+    runaway: CellRunaway,
 }
 
 impl Cell {
@@ -343,6 +356,18 @@ pub struct CellView {
     /// the solve adds (parallel shorts compose by addition); the equivalent
     /// resistance is its reciprocal.
     pub internal_short_conductance_s: f64,
+    /// Exothermic energy \[J\] this cell has not released yet.
+    ///
+    /// Starts at the chemistry's `runaway_energy_j` (`0.0` without a `[safety]`
+    /// section), falls only while the cell is above onset, and reaching `0.0` means the
+    /// cell has burned out — it can no longer self-heat, whatever its temperature.
+    pub runaway_energy_remaining_j: f64,
+    /// Whether this cell has ever reached the chemistry's vent temperature.
+    ///
+    /// Irreversible, and deliberately *only* a report: v1 does not model what venting
+    /// does to a cell (mass loss, ejected electrolyte, the end of it being a battery).
+    /// See [`crate::runaway`].
+    pub vented: bool,
 }
 
 /// Per-cell start-of-step Thévenin `(E, R)`, carried across the step boundary.
@@ -515,6 +540,7 @@ impl Pack {
                     r0_factor,
                     aging: CellAging::new(config.initial_soc),
                     shunt_g: 0.0,
+                    runaway: CellRunaway::new(chem.safety.as_ref()),
                 });
             }
             groups.push(ParallelGroup { cells });
@@ -595,6 +621,8 @@ impl Pack {
             soh_capacity: cell.aging.soh_capacity,
             soh_resistance: cell.aging.soh_resistance,
             internal_short_conductance_s: cell.shunt_g,
+            runaway_energy_remaining_j: cell.runaway.energy_remaining_j,
+            vented: cell.runaway.vented,
         })
     }
 
@@ -1108,19 +1136,48 @@ impl Pack {
         }
 
         // --- integrate temperatures against that heat.
+        //
+        // Exothermic self-heating rides this integrator rather than the per-cell heat
+        // tally above, because unlike every other heat term it is a function of the
+        // temperature being solved for: held constant across the step it would be
+        // meaningless, and the whole phenomenon is the feedback. That is also why
+        // runaway is gated on a live network — an `Isothermal` pack has no temperature
+        // dynamics for the reaction to act on, so it never reacts. Venting is the
+        // exception and is judged in the reporting pass below, because "this cell got
+        // that hot" is an observation that means the same thing in either mode.
+        let mut q_runaway_w = 0.0;
         if let ThermalConfig::Network { k_neighbor_w_per_k } = self.thermal {
             let t_env = env.t_coolant.unwrap_or(env.t_ambient);
+            let onset_k = safety.map_or(f64::INFINITY, |s| s.t_onset_k);
             let mut temps: Vec<f64> = Vec::with_capacity(n_cells);
+            // One comparison per cell is the whole cost of runaway on a pack that is
+            // not on fire: below onset nothing can react, so the per-cell exothermic
+            // state is not even gathered and the integrator takes its original path.
+            let mut any_at_onset = false;
             for group in &self.groups {
                 for cell in &group.cells {
-                    temps.push(cell.model.state().temp_k);
+                    let t = cell.model.state().temp_k;
+                    any_at_onset |= t >= onset_k;
+                    temps.push(t);
                 }
             }
+            let mut runaway: Vec<CellRunaway> = if any_at_onset {
+                let mut v = Vec::with_capacity(n_cells);
+                for group in &self.groups {
+                    for cell in &group.cells {
+                        v.push(cell.runaway);
+                    }
+                }
+                v
+            } else {
+                Vec::new()
+            };
             let mut scratch = Vec::with_capacity(n_cells);
-            advance_temperatures(
+            let report = advance_temperatures(
                 &mut temps,
                 &mut scratch,
                 &heat_w,
+                &mut runaway,
                 &ThermalStep {
                     series,
                     parallel,
@@ -1128,12 +1185,35 @@ impl Pack {
                     k_neighbor_w_per_k,
                     t_env,
                     dt,
+                    safety,
                 },
             );
+            if report.reacting {
+                flags |= EventFlags::THERMAL_RUNAWAY;
+                // Mean reaction power over the step. At `dt == 0` no time passed for
+                // anything to be released, so report the instantaneous rate the same
+                // `reaction_power` would give — one definition, evaluated at the same
+                // start-of-step temperatures the gate used, and the limit of the mean
+                // as `dt` shrinks.
+                q_runaway_w = if dt > 0.0 {
+                    report.released_j / dt
+                } else {
+                    let s = safety.expect("`reacting` implies safety is Some");
+                    temps
+                        .iter()
+                        .zip(runaway.iter())
+                        .map(|(&t, r)| reaction_power(s, t, r.energy_remaining_j))
+                        .sum()
+                };
+            }
             let mut i = 0;
+            let write_runaway = runaway.len() == n_cells;
             for group in &mut self.groups {
                 for cell in &mut group.cells {
                     cell.model.state_mut().temp_k = temps[i];
+                    if write_runaway {
+                        cell.runaway = runaway[i];
+                    }
                     i += 1;
                 }
             }
@@ -1242,12 +1322,26 @@ impl Pack {
         } else {
             Vec::new()
         };
-        for (g_idx, group) in self.groups.iter().enumerate() {
+        // Venting is judged here, from end-of-step temperatures, so it also covers an
+        // `Isothermal` pack (which never enters the integrator that latches it
+        // in-flight) and a cell built above the threshold. The per-cell bit is the
+        // state; the flag below is re-derived from it every step rather than being
+        // remembered, which is what keeps `EventFlags`'s "not sticky" contract honest —
+        // `VENTED` means "this pack contains a vented cell", exactly as
+        // `CONTACTOR_OPEN` means "this pack's contactor is open".
+        let mut any_vented = false;
+        for (g_idx, group) in self.groups.iter_mut().enumerate() {
             let mut sum_g = bleed_at(g_idx);
             let mut sum_eg = 0.0;
             let mut sum_g_cells = 0.0;
             let mut sum_g_nominal = 0.0;
-            for (k, cell) in group.cells.iter().enumerate() {
+            for (k, cell) in group.cells.iter_mut().enumerate() {
+                if let Some(s) = safety {
+                    if is_vented(s, cell.model.state().temp_k) {
+                        cell.runaway.vented = true;
+                    }
+                }
+                any_vented |= cell.runaway.vented;
                 let (e, r) = cell_source(cell.model.state(), &self.chem, cell.eff_r0_factor());
                 // This is the *next* step's start-of-step source: nothing below
                 // mutates a cell, so the state it was computed from is the state the
@@ -1317,6 +1411,9 @@ impl Pack {
                 bms.corrupt_sensors(self.faults.sensor_faults());
             }
         }
+        if any_vented {
+            flags |= EventFlags::VENTED;
+        }
         let soc_bms = self.bms.as_ref().map(Bms::soc_estimate);
         // Hand the buffer back, now holding the next step's start-of-step sources.
         self.src_cache = SourceCache(cell_src);
@@ -1343,6 +1440,7 @@ impl Pack {
                 1.0
             },
             q_gen_w,
+            q_runaway_w,
             q_balancing_w,
             i_balancing_a,
             i_internal_short_a,
