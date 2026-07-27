@@ -502,3 +502,34 @@ still passing. Both are now in it, along with the new short conductance and the 
 `Telemetry` fields. The general lesson for slices C and D: any new `Telemetry` or
 `CellView` field must be added to `tele_bits`/`cell_bits` in the same commit, because
 nothing fails if it is not.
+
+### Injected faults deliberately raise no `EventFlags`
+
+A client sees a fault only through `i_internal_short_a` / `i_external_short_a` and the
+per-cell view, never through a flag bit. That is a decision, not an omission: the flag
+set reports *physical events the pack discovered*, and an injected fault is something
+the client already knows it did. The consequences do flag — the external-short scenario
+raises `UV`, `CONTACTOR_OPEN`, `SOC_CLAMPED_LOW` on the way down, all from the ordinary
+protection path. Slice C's `PLATING_RISK` and slice D's `VENTED` /
+`THERMAL_RUNAWAY` are the opposite case (emergent, discovered by the engine) and
+should flag, so the asymmetry is the rule working, not an inconsistency.
+
+### Perf: what slice B added to the hot loop, for slice E to measure
+
+Unquantified, like slice A's, and for the same reason — the honest re-measure is slice
+E's job and this box could not verify the budget in either arm last time. What changed:
+
+- **Two additions per cell per step**, one in each aggregation loop (`sum_g += g +
+  cell.shunt_g`). Unconditional, and deliberately so: `g > 0` always, so `g + 0.0 == g`
+  bit-for-bit and a healthy pack solves exactly the arithmetic it solved before.
+- **One branch per cell** in the heat tally (`if cell.shunt_g > 0.0`), always
+  false on a healthy pack, taken instead of an unconditional multiply-add so that a
+  healthy cell's heat keeps its bits exactly.
+- **One emptiness check per step** on the queue, plus a `partition_point` only when
+  something is actually queued.
+- Eight more bytes per `Cell` (`shunt_g`), which is the one item with a plausible
+  cache-line cost at 100S10P and the only reason to expect anything measurable at all.
+
+Slice E measures A and B together against `docs/plans/pack-step-perf.md`'s recorded
+39–49 µs, with the bench traps that doc lists (paired worktrees, alternating arm order,
+warmed clone template).

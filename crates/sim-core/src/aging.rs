@@ -244,12 +244,23 @@ impl CellAging {
     /// with 5 % scatter: a ten-hour rest mid-discharge cut one cell's cycle fade by
     /// 5.8 %, for no physical reason.)
     ///
-    /// `i_pack` is exactly `0.0` under [`crate::Demand::Rest`] and under an open
-    /// contactor, so resting does not re-anchor anything — which is what the model
-    /// intends, and it needs no threshold to achieve. Discarding tiny reversals is
-    /// what rainflow counting does properly; `CLAUDE.md` rules rainflow out for v1,
-    /// and a deadband would need a magic constant with no provenance, so the honest
-    /// v1 answer is that a half-cycle boundary is a **pack-level** event.
+    /// On an unfaulted pack `i_pack` is exactly `0.0` under [`crate::Demand::Rest`] and
+    /// under an open contactor, so resting does not re-anchor anything — which is what
+    /// the model intends, and it needs no threshold to achieve. Discarding tiny
+    /// reversals is what rainflow counting does properly; `CLAUDE.md` rules rainflow
+    /// out for v1, and a deadband would need a magic constant with no provenance, so
+    /// the honest v1 answer is that a half-cycle boundary is a **pack-level** event.
+    ///
+    /// Two things injected faults do to that, both intended:
+    ///
+    /// * An [`crate::faults::Fault::ExternalShort`] makes `i_pack` nonzero under
+    ///   `Demand::Rest`, so a pack being drained by a short counts as discharging. It
+    ///   *is* discharging — real charge is leaving the cells — and the half-cycle
+    ///   anchor should follow the charge, not the demand.
+    /// * A [`crate::faults::Fault::SoftInternalShort`] drains cells without moving
+    ///   `i_pack` at all, so a self-discharging cell accrues throughput and deepens the
+    ///   half-cycle in progress without ever starting a new one. That is the same
+    ///   pack-level-boundary rule holding, not an exception to it.
     ///
     /// The cost is stated plainly: a cell being back-fed by its parallel neighbours
     /// while the pack as a whole discharges does not get a half-cycle boundary of its
