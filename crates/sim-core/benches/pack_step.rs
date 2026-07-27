@@ -43,19 +43,21 @@
 //! `Vec`s) dominates.
 //!
 //! # Last measured
-//! Paired same-session run, `100S10P/current` mode-matched on both arms (see
+//! Paired same-session runs, `100S10P/current` mode-matched on both arms (see
 //! `docs/plans/pack-step-perf.md` for the full evidence):
 //!
-//! | case              | before | after   |
-//! | ----------------- | ------ | ------- |
-//! | 1S1P/current      | 219 ns | 179 ns  |
-//! | 10S10P/current    | ~8.3 µs | 6.22 µs |
-//! | 100S10P/current   | 85.9 µs | 61.5 µs |
-//! | 100S10P/power     | ~86 µs  | 61.8 µs |
+//! | case              | `5917bd9` | + perf items 1–2 | + Phase 2 thermal |
+//! | ----------------- | --------- | ---------------- | ----------------- |
+//! | 1S1P/current      | 219 ns    | 179 ns           | —                 |
+//! | 10S10P/current    | ~8.3 µs   | 6.22 µs          | +4.5 %            |
+//! | 100S10P/current   | 85.9 µs   | 61.5 µs          | ≈ 65–67 µs        |
+//! | 100S10P/power     | ~86 µs    | 61.8 µs          | —                 |
 //!
-//! "before" is the tree at commit `5917bd9`; "after" removes the scratch `Vec` in
-//! `r0_lookup` and binary-searches the interpolation breakpoints. Still ~1.23×
-//! over the 50 µs budget at 100S10P.
+//! Items 1–2 removed the scratch `Vec` in `r0_lookup` and binary-searched the
+//! interpolation breakpoints (−28.5 %). Phase 2's thermal slice then added ~6 %,
+//! measured as a ratio because that whole session sat in the machine's slow state —
+//! hence a scaled range rather than a directly observed figure in the last column.
+//! Roughly **1.31× over** the 50 µs budget at 100S10P.
 
 use std::hint::black_box;
 

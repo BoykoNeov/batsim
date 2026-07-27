@@ -1,6 +1,7 @@
 # `Pack::step` performance — over budget at 100S10P
 
-**Status:** items 1 and 2 landed; still over budget, item 3 still deferred.
+**Status:** items 1 and 2 landed; still over budget, item 3 still deferred. Phase 2
+slice A (thermal) added ~6 % on top — measured, see "Phase 2 impact" below.
 **Baseline commit:** `5917bd9` ("Phase 1 wrap-up: criterion benchmarks for Pack::step").
 **Owner decision needed:** none outstanding. Item 3 needs a design call *if* it is ever
 picked up, and the case for deferring it got **stronger**, not weaker — see below.
@@ -73,6 +74,40 @@ a wrong conclusion about your own change.
 Also note `cargo bench -p sim-core -- --save-baseline x` **fails outright**
 (`Unrecognized option`): the lib's default bench harness sees the flag first. Use
 `cargo bench -p sim-core --bench pack_step -- ...`.
+
+## Phase 2 impact — thermal (slice A, commit `9bc4656`): **+6 %**
+
+Measured against `79e0c87` (the tree with items 1–2) using two git worktrees so
+alternating runs pay no rebuild, filtered to `100S10P/current` so each arm takes ~10 s
+and a mode flip cannot straddle a pair:
+
+| pair | pre (79e0c87) | post (thermal) | ratio | CI width |
+| ---- | ------------- | -------------- | ----- | -------- |
+| 1 | 122.9 µs | 127.9 µs | +4.0 % | wide both arms (slow mode) |
+| 2 | 84.9 µs | 89.5 µs | +5.5 % | pre ±6 % — marginal |
+| 3 | 84.9 µs | 92.6 µs | +9.1 % | ±2 % both arms — **the usable pair** |
+
+**The whole session ran in the machine's slow state.** Every `pre` reading landed at
+84.9–122.9 µs, never near the 61.5 µs of the earlier fast-state measurement, and 84.9
+matches this file's documented slow-state value of ~83 µs almost exactly. Per the
+measurement section below, the *ratio* is what survives across modes, so scaling the
+fast-state figure by it: **≈ 65–67 µs at 100S10P, about 1.31× over the 50 µs budget**
+(up from 1.23×). Do not read 92.6 µs as the headline number — it is a slow-state
+reading, comparable only to the 82.8–83.2 µs slow-state row.
+
+The cost is per-cell work in the reporting path, present in **every** mode: `q_gen_w`
+is reported even when the pack is `Isothermal` (a deliberate feature — a client can
+watch heat generation without thermal feedback), which costs a `v_rc` re-sum, an
+entropy-coefficient lookup that short-circuits to `0.0` when the chemistry has no
+table, and a handful of flops per cell. Reclaiming it would mean giving up that
+contract; at 6 % that is not worth it.
+
+**A phantom to not chase:** an early non-interleaved round showed `10S10P/current`
+going 7.98 → 13.9 µs, an apparent +74 %. That is a mode artifact — the `pre` arm
+caught the fast state and the `post` arm the slow one. A later slow-state `pre`
+reading of 13.28 µs for the same case puts the real ratio at ~+4.5 %, in line with
+100S10P. This is the fourth time in this file's history that a cross-mode pairing
+produced a number that meant nothing.
 
 ## Candidate fixes, cheapest first
 
@@ -159,7 +194,19 @@ The 50 µs budget is deliberately **not** asserted in a test — a wall-clock as
 machine- and CI-dependent, and `CLAUDE.md` frames it as a budget to keep, not an exit
 criterion. Track it by running the bench, not by a gate.
 
-Current position: **61.5 µs at 100S10P, 1.23× over.** Items 1–2 are done, item 3 is
-deferred behind Phase 2 by choice, item 4 is small and unmeasured. Nothing here is
-blocking; the sensible next move on this file is to re-measure *after* Phase 2's thermal
-work lands, because that changes the hot loop and may well reorder everything above.
+Current position: **≈ 65–67 µs at 100S10P (fast-state equivalent), 1.31× over.** Items
+1–2 are done, item 3 is deferred behind Phase 2 by choice, item 4 is small and
+unmeasured, and Phase 2's thermal slice has now been measured at +6 %. Nothing here is
+blocking. The remaining Phase 2 slices (sensors, protection, balancing) all add work to
+the same per-cell loop, so the next re-measure belongs at the *end* of Phase 2, not
+between slices.
+
+Two things to know before doing that re-measure:
+
+- **Use worktrees, not `git checkout` round-trips**, and filter to one benchmark case so
+  each arm is ~10 s. `git worktree add <tmp> <rev>` gives each revision its own target
+  dir, so alternating runs cost only the bench itself. This is what finally produced a
+  usable pair for the thermal measurement after two full-suite rounds were unusable.
+- **The machine's state persisted across an entire session.** The bimodality is not
+  per-run jitter that averages out over a few minutes; plan on reporting a *ratio* plus
+  a mode-matched anchor rather than an absolute number.
