@@ -105,6 +105,23 @@ tiles. The legend prints both ends so the scale is never guessed.
 - **No `web/pkg` commit.** It is gitignored and always has been. The bundle must be
   rebuilt to see any of this — `start-frontend.bat` does it.
 
+## What was verified end to end, and what was only verified as accepted
+
+"All five variants work" is a stronger claim than a panel that merely built its JSON
+without erroring, so the difference is recorded rather than glossed:
+
+| variant | evidence |
+| --- | --- |
+| `SoftInternalShort` | **landed** — injected 2 Ω on (3,1); the cell's detail then read `internal short 2.00 Ω`, it became the hottest tile, and `SHORT (INT)` went 0 → 2.254 A |
+| `WeakCell` | **landed** — injected 0.8 / 1.5 on (0,1); the tile read exactly `0.800` on the capacity metric and the detail `capacity ×0.8000 · R0 ×1.5000`, proving both the four-field form and the `u16` coercion on `s`/`p` |
+| `ExternalShort` | accepted, no banner; its effect is a pack-level current the grid does not localise |
+| `SensorOffset` | accepted with `PackCurrent`, the unit-variant encoding |
+| `SensorStuck` | exercised only on a BMS-less pack, where the engine **refused** it — which is what proved the refused-vs-dropped distinction below. The `GroupVoltage(u16)` newtype encoding is confirmed regardless, because the engine echoed `GroupVoltage(0)` back in its own refusal |
+
+Also verified: an out-of-topology cell (`99S0P` against a 4S2P pack) reaches the banner
+carrying the engine's own wording, and every fault operation round-trips over **both**
+the wasm and the WebSocket backend.
+
 ## Gate
 
 No test file is modified, and the out-of-tree trajectory instrument cannot move: it

@@ -179,6 +179,30 @@ estimates it), and temperature. There is a BMS on/off toggle — flipping it res
 the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
+Two panels show what an aggregate cannot:
+
+- **The pack grid** — one tile per cell, series down and parallel across, coloured by
+  a metric you pick (SOC, temperature, overpotential, SOH, the scatter factors, or
+  internal-short conductance). This is `Pack::cell()` ground truth, which the BMS is
+  never allowed to read. Hover a tile for that cell's full state; click to pin it. The
+  colour scale spans the *pack's own* min-max, so a spread of a few millivolts is
+  visible rather than flattened against a fixed axis — which is the point, since the
+  group solve splits current by state and the disagreement between cells is the
+  physics. Load the `soft_short_under_a_lying_sensor` scenario and run it: one
+  parallel group falls visibly behind the others and runs hotter, while the pack
+  aggregate and the BMS estimate both look unremarkable.
+- **Fault injection** — queue any of the five `Fault` variants against the running
+  pack: a soft internal short, an external short, a weak cell, or a stuck or offset
+  sensor. A fault fires on the next *step*, so nothing happens while the run is
+  paused. You can also drop the pending queue and clear a latched BMS trip. Injecting
+  is the same operation a scenario file's `[[faults]]` table performs, so anything
+  schedulable from a file is schedulable live.
+
+Both panels work identically whether the engine runs in the tab or behind the server
+(see [Two clients, not two layers](#two-clients-not-two-layers)) — though the grid
+reads per-cell state over REST in the server mode, because per-cell arrays are
+deliberately not telemetry and never ride a socket frame.
+
 If `/app/` 404s, the bundle is missing. The `wasm-pack` line above is a copy: the
 authoritative one is in `crates/sim-server/src/main.rs`, which also prints it as a
 startup warning and serves it in the body of `GET /` — so the person holding a
