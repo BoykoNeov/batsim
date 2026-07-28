@@ -451,6 +451,82 @@ removed the ECM-typed accessors that would have blocked it and slice D removed t
 closed-form assumption that would have broken it. That claim is the phase's real
 deliverable, and it is checkable by reading the diff of slices A and D.
 
+### Aging stays a multiplier, and the deciding constraint is a doc comment
+
+Owner's call, 2026-07-28: **aging keeps acting through `soh_capacity` / `soh_resistance`
+on an SPM cell**; it does not reduce the lithium inventory. The alternative — fade removes
+cyclable lithium and capacity falls out of the physics — is the more faithful mechanism and
+was considered on its merits, not dismissed on schedule.
+
+**What settles it is `Telemetry::soc_true`'s doc comment, fixed at v6** (`lib.rs:189`):
+`soc_true` is the fraction of the capacity the cell has **today**, so a half-full cell
+that has faded 20 % reads `0.5`, not `0.4`. The multiplier satisfies that arithmetically —
+the usable stoichiometry window is untouched, so a faded cell still reads `1.0` at full,
+and the measured amp-hours between the limits come out as nominal × `soh_capacity`. That
+is structurally the *same* statement ECM coulomb counting already makes. Losing inventory
+instead would satisfy it only by re-solving the usable window whenever inventory changes
+and caching the result — derived state inside the snapshot, which is the hazard class
+`SourceCache` already had to be reasoned about carefully. (It would be per *aging tick*,
+not per step, so the cost is small; the objection is the cached derived state, not the
+arithmetic.)
+
+The second reason is provenance. Splitting fade into LLI and LAM needs a partition
+parameter, and **Chen2020 publishes nothing of the kind** — any split would be exactly the
+unlabeled constant the provenance rule forbids, the same trap this phase already hit on
+`D_s`. The third is that `plating.rs` is physically lithium inventory loss *already* and
+folds into the same scalar `loss`, so the repo has been committed to one-scalar fade since
+Phase 3; option 2 would have modelled one mechanism two ways.
+
+**No interface work follows from this.** Slice A already routed both numbers into the
+enum: `CellModel::advance` takes `soh_capacity` and `CellModel::source` takes
+`eff_r0_factor` (which is `r0_factor · soh_resistance`, `pack.rs:316`), and the aging call
+site reads `cell.model.soc()` rather than an ECM field (`pack.rs:1124`). A thirteenth
+slice-A-style reach was looked for here and does not exist.
+
+**Call it what it is.** This is not "a slightly dishonest simplification" — it is **loss of
+active material plus charge-transfer growth**, two named degradation modes. Shrinking the
+active material *is* LAM; SEI passivation raising the charge-transfer resistance *is* real.
+What it honestly does not produce is **electrode slippage**: real cells fade mostly by LLI,
+whose signature is the two electrodes drifting out of balance so the OCV-vs-SOC *shape*
+changes, and under LAM-only an aged SPM's curve merely rescales. That is the pedagogical
+cost, it is the one sentence the docs owe the reader, and the inventory mapping should live
+in **one function** so that an LLI mode is later additive rather than surgical.
+
+Where the two multipliers land:
+
+- **`soh_capacity` → the flux-to-stoichiometry conversion**, one site, documented as LAM.
+  Same current moves stoichiometry `1/soh_capacity` faster; the window is not touched.
+- **`soh_resistance` → `contact_resistance_ohm` *and* the exchange current density**,
+  `i_0 → i_0 / soh_resistance`, on **both** electrodes. Both rather than negative-only
+  (the physical SEI story) because dividing both multiplies the linearized
+  `R_ct = RT/(F·i_0·A)` by *exactly* `soh_resistance`, which keeps the factor meaning the
+  thing `Telemetry::soh_resistance` says it means. State that linearization identity in
+  the doc comment so it reads as a modelling choice rather than a fudge.
+
+### `soh_resistance` has nowhere to land in the shipped SPM chemistry, and that is a live violation
+
+This is the finding that made the decision above concrete, and it applies **whichever way
+aging had been decided**. `chemistries/nmc_21700_lgm50.toml` sets
+
+```toml
+contact_resistance_ohm = 0        # Chen2020 "Contact resistance [Ohm]" — the set's own value, not an omission
+```
+
+so the obvious implementation — `soh_resistance` multiplies the one ohms-valued field the
+SPM has — evaluates to `1.0 × 0 = 0`. An aged SPM cell would then fade capacity with
+**zero** resistance growth, which is the thing `CLAUDE.md`'s "never model capacity fade
+without the matching resistance growth" exists to forbid, on the only SPM chemistry that
+ships.
+
+Adding a `sei_resistance_ohm` field instead would need an ohms-scale number Chen2020 does
+not publish. Routing through `i_0` needs no new constant at all, which is why it is the
+route above.
+
+**The test is built to fail, the way `check_non_increasing` was**: assert DC resistance
+growth on an aged SPM cell **against `nmc_21700_lgm50.toml` specifically**. A test written
+against a chemistry with a nonzero contact resistance passes while the shipped file is
+broken, so the chemistry choice is part of the assertion, not an incidental fixture.
+
 ---
 
 ## Slice detail
@@ -512,6 +588,12 @@ suspects for any discrepancy.
 - `spm.rs`: `Particle` (shell concentrations), backward-Euler finite-volume diffusion by
   Thomas algorithm, surface-concentration extrapolation, Butler–Volmer overpotential,
   half-cell OCP lookup, terminal voltage, mean-stoichiometry SOC readout.
+- **Aging lands as a multiplier** (decided; see "Aging stays a multiplier" above):
+  `soh_capacity` on the flux-to-stoichiometry conversion in one function, `soh_resistance`
+  on `contact_resistance_ohm` **and** dividing `i_0` on both electrodes. The second half is
+  not optional polish — the shipped chemistry has `contact_resistance_ohm = 0`, so the
+  naive implementation ships a `CLAUDE.md` violation. Its test asserts resistance growth
+  against `nmc_21700_lgm50.toml` by name.
 - `CellModel::Spm(SpmState)`, satisfying slice A's interface. During slice C the pack
   drives it through the **tangent at the previous current**, which is exact enough for a
   single cell and is what slice D generalizes.
@@ -899,6 +981,17 @@ sibling file already documents.
   therefore lands in slice C rather than B. What its *default value* should be is still
   open below.
 
+### Resolved before slice C
+
+- **Does the aging model apply unchanged to SPM?** **Yes — it stays a multiplier**, by
+  owner decision. `soh_capacity` scales the flux-to-stoichiometry conversion and
+  `soh_resistance` scales `contact_resistance_ohm` *and* divides the exchange current
+  density on both electrodes. The deciding constraint is `Telemetry::soc_true`'s v6
+  contract, not scope; the mechanism is LAM plus charge-transfer growth, and the honest
+  cost is that no electrode slippage appears. Full reasoning, and the
+  `contact_resistance_ohm = 0` violation this uncovered, in the two decision sections
+  above.
+
 ### Still open
 - **Is a mixed ECM/SPM pack supported?** Slice D decides. It is the sharpest available
   test of the tangent formulation and a genuinely interesting teaching scenario ("what
@@ -917,9 +1010,3 @@ sibling file already documents.
   shape — is the obvious middle, but an ignored test that fails when someone finally runs
   it is its own kind of trap. **Owner's call**; slice A works either way, since the
   baseline already exists out of tree.
-- **Does the aging model apply unchanged to SPM?** Calendar and cycle fade are written
-  against `soh_capacity` / `soh_resistance` multipliers on an ECM. On an SPM, capacity
-  fade physically *is* lithium inventory loss, which the model represents directly. Slice
-  C should decide whether aging keeps acting as a multiplier (simple, consistent, slightly
-  dishonest) or reduces the inventory (physical, and a bigger change than this phase
-  wants). Recommend the former for Phase 6, documented as a deliberate simplification.
