@@ -13,7 +13,9 @@ use sim_core::bms::{BalancingConfig, BmsConfig};
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
-use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{
+    CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig,
+};
 
 const CAP_AH: f64 = 2.5;
 /// Bleed threshold \[V\]. On the OCV curve below (3.20 V at SOC 0.5, rising 0.6 V per
@@ -103,6 +105,7 @@ fn config(balancing: Option<BalancingConfig>) -> PackConfig {
         scatter: Scatter::default(),
         thermal: ThermalConfig::Isothermal,
         bms: Some(bms(balancing)),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

@@ -31,6 +31,7 @@ use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
 use crate::plating::plating_risk;
 use crate::runaway::{is_vented, reaction_power, CellRunaway};
+use crate::spm;
 use crate::thermal::{advance_temperatures, ThermalConfig, ThermalStep};
 use crate::{Demand, Env, Telemetry};
 
@@ -99,7 +100,22 @@ use crate::{Demand, Env, Telemetry};
 /// genuine state and neither is recoverable from anything else: a cell that has
 /// already burned half its budget cannot burn it again, and a vented cell stays
 /// vented. Same caveat as v3 about what actually rejects an older blob.
-pub const SNAPSHOT_VERSION: u32 = 9;
+///
+/// v10 (Phase 6, the SPM cell): [`CellModel`] gained a third variant,
+/// [`CellModel::Spm`], carrying two concentration profiles, a temperature and the
+/// current its Thévenin tangent is taken at.
+///
+/// **This is the first bump whose version field does the work it was written for,
+/// and the caveat repeated at v3 through v9 does not apply to it.** Adding a
+/// variant to an externally-tagged enum does not change how the *existing* variants
+/// serialize, and the chemistry's `[spm]` section is optional, so a v9 blob is still
+/// structurally deserializable at v10 — the `snapshot.version != SNAPSHOT_VERSION`
+/// check in [`Pack::restore`] is the only thing that rejects it. Every earlier note
+/// says no test could pin that distinction; at v10 one can, and
+/// `snapshot_version.rs` ships it: the *same* blob is asserted to be rejected at
+/// `version: 9` and to restore at `version: 10`, which is what separates "the
+/// version field rejected it" from "deserialization rejected it".
+pub const SNAPSHOT_VERSION: u32 = 10;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -169,6 +185,41 @@ pub struct PackConfig {
     /// against a chemistry that cannot say how would otherwise be silently ageless.
     #[serde(default)]
     pub aging: Option<AgingConfig>,
+    /// Which cell model every cell in this pack runs (defaults to the equivalent
+    /// circuit).
+    ///
+    /// Pack-wide in Phase 6 slice C2: a pack is all-ECM or all-SPM. A *mixed* pack
+    /// is a legal and pedagogically interesting configuration — it is the sharpest
+    /// test of the tangent formulation — and it needs the nonlinear pack solve that
+    /// slice D brings, so the selector is deliberately one value rather than a
+    /// per-position table it would have to grow out of.
+    #[serde(default)]
+    pub cell_model: CellModelConfig,
+}
+
+/// Which cell model a pack's cells run.
+///
+/// The shell count lives here rather than in the chemistry because it is a
+/// **cost knob**, not a property of the material: the same chemistry is the same
+/// chemistry at 5 shells and at 40, and what changes is how finely the radial
+/// concentration gradient is resolved and how much each step costs. It is part of
+/// the snapshot layout all the same — it is the length of every concentration
+/// vector.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CellModelConfig {
+    /// Equivalent circuit, with the RC-pair count taken from the chemistry's
+    /// `[[rc]]` sections. The default, and what every scenario written before
+    /// Phase 6 gets by omitting the field.
+    #[default]
+    Ecm,
+    /// Single-particle porous-electrode model. Requires a chemistry with an `[spm]`
+    /// section; [`Pack::new`] refuses the combination otherwise rather than
+    /// silently falling back.
+    Spm {
+        /// Radial finite volumes per particle, in
+        /// \[[`crate::spm::MIN_SHELLS`], [`crate::spm::MAX_SHELLS`]\].
+        shells: usize,
+    },
 }
 
 /// Reasons [`Pack::new`] can fail.
@@ -224,6 +275,32 @@ pub enum BuildError {
     /// [`AgingConfig::sub_clock_period_s`] was negative or not finite.
     #[error("aging.sub_clock_period_s must be finite and >= 0, got {0}")]
     BadAgingPeriod(f64),
+    /// [`PackConfig::cell_model`] selected [`CellModelConfig::Spm`] but the
+    /// chemistry has no `[spm]` section.
+    ///
+    /// Names both halves on purpose: a build error that says only "invalid config"
+    /// costs whoever hits it an hour, and the fix here is either a different
+    /// chemistry or a different model, which the reader cannot choose between
+    /// without knowing which chemistry came up short.
+    #[error(
+        "cell_model is Spm but chemistry '{chem_id}' has no [spm] section \
+         (single-particle parameters: half-cell OCPs, particle geometry, transport \
+         and kinetics)"
+    )]
+    MissingSpmParams {
+        /// Identifier of the chemistry that came up short.
+        chem_id: String,
+    },
+    /// [`CellModelConfig::Spm::shells`] was outside the supported range.
+    #[error("cell_model.shells must be in [{min}, {max}], got {shells}")]
+    BadShellCount {
+        /// Requested shell count.
+        shells: usize,
+        /// Smallest supported count ([`crate::spm::MIN_SHELLS`]).
+        min: usize,
+        /// Largest supported count ([`crate::spm::MAX_SHELLS`]).
+        max: usize,
+    },
     /// The chemistry itself failed validation.
     #[error("invalid chemistry: {0}")]
     Chemistry(#[from] crate::chem::ChemistryError),
@@ -316,6 +393,24 @@ impl Cell {
     fn eff_r0_factor(&self) -> f64 {
         self.r0_factor * self.aging.soh_resistance
     }
+
+    /// The capacity \[Ah\] the electrical solve actually uses: the chemistry's
+    /// nominal × this cell's static manufacturing factor × aging's capacity fade.
+    ///
+    /// The resistance sibling of [`Self::eff_r0_factor`], and it exists for the same
+    /// reason: every call to [`CellModel::source`] goes through it, including the one
+    /// inside the [`SourceCache`] staleness assert, so the memo's invariant is
+    /// stated in terms of *this* product and there is exactly one expression to get
+    /// wrong. The equivalent circuit ignores it; a single-particle cell needs it to
+    /// turn a current into a flux.
+    ///
+    /// Note this is the **product**, unlike the pair [`CellModel::advance`] takes.
+    /// That split exists to keep `soc_true` meaning "fraction of the capacity this
+    /// cell has today"; a Thévenin source has no SOC scale to preserve, so folding
+    /// them is not a shortcut here, it is the whole of what the source needs.
+    fn eff_capacity_ah(&self, cap_ah: f64) -> f64 {
+        cap_ah * self.capacity_factor * self.aging.soh_capacity
+    }
 }
 
 /// A parallel group: the cells wired in parallel that share one terminal node.
@@ -392,8 +487,9 @@ pub struct CellView {
 /// Per-cell start-of-step Thévenin `(E, R)`, carried across the step boundary.
 ///
 /// A **memo of a pure function of pack state**, not state itself: entry `i` is
-/// exactly `cell_i.model.source(chem, cell_i.eff_r0_factor())` in
-/// series-major / parallel-minor order. `step`'s end-of-step reporting pass computes those values
+/// exactly
+/// `cell_i.model.source(chem, cell_i.eff_r0_factor(), cell_i.eff_capacity_ah(cap_ah))`
+/// in series-major / parallel-minor order. `step`'s end-of-step reporting pass computes those values
 /// for every cell, and the next step's start-of-step aggregation would recompute
 /// them from unchanged state — so the reporting pass fills this and the next step
 /// reads it, halving the per-cell table lookups (perf item 3 in
@@ -401,14 +497,28 @@ pub struct CellView {
 ///
 /// Empty means cold: recompute and refill. That is always *correct*, only slower,
 /// which is what makes the invalidation rule safe to get wrong in the conservative
-/// direction. Anything that mutates cell state or the effective `R0` factor outside
+/// direction. Anything that mutates cell state or either effective factor outside
 /// `step` must clear it (today: [`Pack::set_cell_factors`]).
 ///
-/// Aging mutates `soh_resistance`, which is one of that product's two halves — and
-/// needs no invalidation anyway, because the aging update is sequenced *before* the
-/// end-of-step reporting pass that fills this. The pass therefore memoises
-/// post-aging sources. Aging after the pass would poison the next step silently, and
-/// only a debug build would notice.
+/// # Purity survived a nonlinear model, and that was not automatic
+/// A single-particle cell's source is a **tangent**, and a tangent taken at an
+/// arbitrary iterate would not be a function of state at all — it would depend on
+/// where the solve happened to be looking, and this memo's whole contract
+/// ("bit-for-bit what a recompute would give") would collapse. It holds because the
+/// operating point the tangent is taken at, `SpmState::i_last`, is itself *state*:
+/// it is written by `advance` and it is in the snapshot. Slice D, which iterates the
+/// solve, is where that stops being free — an in-flight iterate is exactly the thing
+/// this paragraph rules out — and it owes an explicit answer (keep the memo ECM-only,
+/// or key it by the operating point) rather than letting the debug assertion below
+/// discover it as a staleness message.
+///
+/// Aging mutates **both** `soh_resistance` and `soh_capacity`, one half of each of
+/// the two products above — and neither needs invalidation, because the aging update
+/// is sequenced *before* the end-of-step reporting pass that fills this. The pass
+/// therefore memoises post-aging sources. Aging after the pass would poison the next
+/// step silently, and only a debug build would notice. `soh_capacity` joined that
+/// argument in Phase 6 slice C2 and inherits it unchanged: it is the same tick, the
+/// same ordering, and the equivalent circuit does not even read it.
 ///
 /// An internal short is deliberately **not** part of this — neither an injected one nor
 /// the one a plating cell can grow. Both enter the solve as a conductance on the group
@@ -532,6 +642,25 @@ impl Pack {
                 });
             }
         }
+        if let CellModelConfig::Spm { shells } = config.cell_model {
+            // Same refusal as aging's, for the same reason: a pack configured for
+            // porous-electrode physics against a chemistry that cannot describe an
+            // electrode has no defensible fallback. Falling back to the equivalent
+            // circuit would be worse than failing — the run would look like it
+            // worked.
+            if chem.spm.is_none() {
+                return Err(BuildError::MissingSpmParams {
+                    chem_id: chem.meta.id.clone(),
+                });
+            }
+            if !(spm::MIN_SHELLS..=spm::MAX_SHELLS).contains(&shells) {
+                return Err(BuildError::BadShellCount {
+                    shells,
+                    min: spm::MIN_SHELLS,
+                    max: spm::MAX_SHELLS,
+                });
+            }
+        }
 
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
         let n_rc = chem.n_rc();
@@ -543,7 +672,24 @@ impl Pack {
             for _ in 0..config.parallel {
                 let (capacity_factor, r0_factor) = draw_factors(&mut rng, &config.scatter);
                 cells.push(Cell {
-                    model: CellModel::new_ecm(n_rc, config.initial_soc, config.initial_temp_k),
+                    model: match config.cell_model {
+                        CellModelConfig::Ecm => {
+                            CellModel::new_ecm(n_rc, config.initial_soc, config.initial_temp_k)
+                        }
+                        // Validated just above, so the `else` arm is unreachable on a
+                        // pack that builds; it exists because `new` must not panic.
+                        CellModelConfig::Spm { shells } => match &chem.spm {
+                            Some(spm) => CellModel::new_spm(
+                                spm,
+                                shells,
+                                config.initial_soc,
+                                config.initial_temp_k,
+                            ),
+                            None => {
+                                CellModel::new_ecm(n_rc, config.initial_soc, config.initial_temp_k)
+                            }
+                        },
+                    },
                     capacity_factor,
                     r0_factor,
                     aging: CellAging::new(config.initial_soc),
@@ -642,9 +788,13 @@ impl Pack {
     pub fn cell(&self, s: usize, p: usize) -> Option<CellView> {
         let cell = self.groups.get(s)?.cells.get(p)?;
         Some(CellView {
-            soc: cell.model.soc(),
+            soc: cell.model.soc(&self.chem),
             temp_k: cell.model.temp_k(),
-            overpotential_v: cell.model.overpotential_v(),
+            overpotential_v: cell.model.overpotential_v(
+                &self.chem,
+                cell.eff_r0_factor(),
+                cell.eff_capacity_ah(self.chem.cell.capacity_ah),
+            ),
             capacity_factor: cell.capacity_factor,
             r0_factor: cell.r0_factor,
             soh_capacity: cell.aging.soh_capacity,
@@ -990,14 +1140,22 @@ impl Pack {
                     debug_assert_eq!(
                         (cached.0.to_bits(), cached.1.to_bits()),
                         {
-                            let fresh = cell.model.source(&self.chem, cell.eff_r0_factor());
+                            let fresh = cell.model.source(
+                                &self.chem,
+                                cell.eff_r0_factor(),
+                                cell.eff_capacity_ah(cap_ah),
+                            );
                             (fresh.0.to_bits(), fresh.1.to_bits())
                         },
                         "stale Thévenin memo at cell {g_idx}S{k}P"
                     );
                     cached
                 } else {
-                    let fresh = cell.model.source(&self.chem, cell.eff_r0_factor());
+                    let fresh = cell.model.source(
+                        &self.chem,
+                        cell.eff_r0_factor(),
+                        cell.eff_capacity_ah(cap_ah),
+                    );
                     cell_src.push(fresh);
                     fresh
                 };
@@ -1109,7 +1267,14 @@ impl Pack {
                 let i_k = (e_k - v_node) / r_k;
                 // Heat from the same start-of-step state that produced `i_k`, so
                 // the energy accounting closes exactly (see `cell_heat_w`).
-                let mut q = cell.model.heat_w(&self.chem, i_k, r_k);
+                let mut q = cell.model.heat_w(
+                    &self.chem,
+                    cell.eff_r0_factor(),
+                    cell.eff_capacity_ah(cap_ah),
+                    i_k,
+                    r_k,
+                    v_node,
+                );
                 // An internal short dissipates inside this cell, unlike the balancing
                 // bleed (whose resistor is outside every cell and heats nothing). The
                 // branch is what keeps a healthy pack's heat bit-for-bit what it was.
@@ -1124,7 +1289,7 @@ impl Pack {
                     // expects.
                     heat_w.push(q);
                 }
-                let soc_before = cell.model.soc();
+                let soc_before = cell.model.soc(&self.chem);
                 let temp_before = cell.model.temp_k();
                 let eff_cap = cap_ah * cell.capacity_factor;
                 let soh_cap = cell.aging.soh_capacity;
@@ -1266,7 +1431,7 @@ impl Pack {
                 // therefore the whole trajectory; see `CellAging::tick`.
                 for group in &mut self.groups {
                     for cell in &mut group.cells {
-                        let (temp_k, soc) = (cell.model.temp_k(), cell.model.soc());
+                        let (temp_k, soc) = (cell.model.temp_k(), cell.model.soc(&self.chem));
                         let shorted = cell.aging.tick(params, safety, dt_age, temp_k, soc, rng);
                         if shorted {
                             // A plating short is physically the same object an injected
@@ -1358,7 +1523,11 @@ impl Pack {
                     cell.runaway.vented = true;
                 }
                 any_vented |= cell.runaway.vented || hot;
-                let (e, r) = cell.model.source(&self.chem, cell.eff_r0_factor());
+                let (e, r) = cell.model.source(
+                    &self.chem,
+                    cell.eff_r0_factor(),
+                    cell.eff_capacity_ah(cap_ah),
+                );
                 // This is the *next* step's start-of-step source: nothing below
                 // mutates a cell, so the state it was computed from is the state the
                 // next step will find. Memoise it (see [`SourceCache`]).
@@ -1374,7 +1543,7 @@ impl Pack {
                 t_max = t_max.max(cell.model.temp_k());
                 let cap_nominal = cap_ah * cell.capacity_factor;
                 let eff_cap = cap_nominal * cell.aging.soh_capacity;
-                rem_ah += cell.model.soc() * eff_cap;
+                rem_ah += cell.model.soc(&self.chem) * eff_cap;
                 nom_ah += eff_cap;
                 if aging_live {
                     cap_nominal_ah += cap_nominal;

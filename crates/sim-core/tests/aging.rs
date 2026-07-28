@@ -18,7 +18,9 @@ use sim_core::chem::{
     AgingParams, CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
 use sim_core::pack::BuildError;
-use sim_core::{AgingConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{
+    AgingConfig, CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig,
+};
 
 const CAP_AH: f64 = 2.5;
 
@@ -96,6 +98,7 @@ fn cfg(initial_soc: f64, initial_temp_k: f64, aging: Option<AgingConfig>) -> Pac
         initial_temp_k,
         seed: 7,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

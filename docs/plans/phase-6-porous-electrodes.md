@@ -1,6 +1,6 @@
 # Phase 6 — porous electrodes (`Spm`)
 
-**Status: slices A, B and C1 landed; C2–E planned.** This file is written before the work so the decisions below are made
+**Status: slices A, B, C1 and C2 landed; D–E planned.** This file is written before the work so the decisions below are made
 once; the "learned while building" material is appended as each slice lands, the way
 `phase-2-thermal-bms.md` through `phase-5-godot.md` grew.
 
@@ -31,7 +31,7 @@ So the exit criterion below is authored here, and argued rather than asserted.
 | A | **model-agnostic cell interface.** `CellModel::state()`/`state_mut()` are *removed*; `pack.rs`'s twelve direct reaches into ECM internals go through the enum. **Zero physics change.** | **landed** (v9 — no bump, as designed) | v9 |
 | B | **`[spm]` chemistry section.** `sim-data` parses and validates half-cell OCPs, particle geometry, transport and kinetics. A new honest `nmc_21700_lgm50.toml`. **No engine physics.** (The `BuildError` moved to C with the config field that can trigger it — see below.) | **landed** (v9 — no bump, as designed) | v9 |
 | C1 | **the wire-surface rename.** `CellView::v_rc_sum` → `overpotential_v`, the two adapter API versions it owes, and the test that makes that rule enforceable. No physics, no config, no snapshot change. | **landed** (v9 — no bump; the bump follows the variant, see below) | v9 |
-| C2 | **the SPM cell.** Backward-Euler finite-volume radial diffusion, Butler–Volmer kinetics, `CellModel::Spm`, plus the `PackConfig` selector, `shells`, both `BuildError`s and the version-check test. Single cell only — the pack solve still sees a linear source. **Carries the one bump.** | planned | **v9 → v10** |
+| C2 | **the SPM cell.** Backward-Euler finite-volume radial diffusion, Butler–Volmer kinetics, `CellModel::Spm`, plus the `PackConfig` selector, `shells`, both `BuildError`s and the version-check test. Single cell only — the pack solve still sees a linear source. **Carries the one bump.** | **landed** (v10 — the one bump, as designed) | **v9 → v10** |
 | D | **the nonlinear pack solve.** Iterate the existing linear group solve on tangent Thévenins; closed form remains exactly the closed form when every cell is linear. | planned | v10 — no further bump |
 | E | **PyBaMM validation + wrap-up.** SPM goldens, tolerance built to fail, SPM's own perf budget measured, README. **Carries exit criteria 2.** | planned | v10 — no further bump |
 
@@ -1133,6 +1133,331 @@ edit to the gate.
 - **No `spm.rs` and no new variant.** `CellModel` still has exactly two arms.
 - **No `Telemetry`/`Demand`/`Env` wire pins.** See above — a stated gap, not an oversight.
 
+## Learned while building — slice C2 (the SPM cell)
+
+### The gate passed, and the byte delta was predicted exactly
+
+Written down before the run, then confirmed:
+
+```text
+telemetry (969 lines)      identical to after-c1-followup.txt
+                           identical to baseline-13d295d.txt   <- cumulative, back past slice A
+## final snapshot  x7      len +2 on every case, fnv moved on every case
+                           2284->2286  6643->6645  2402->2404  4345->4347
+                           5838->5840  2940->2942  3407->3409
+line count                 976
+```
+
+`+2` and not `+1`, and that is the whole prediction. The instrument serializes the
+snapshot as **JSON**, and the version number appears **twice** in it — `Snapshot.version`
+and the `Pack.version` it mirrors — so `9 -> 10` adds one character in two places. A
+prediction of `+1` would have been an equally confident wrong answer, and "the length
+moved, close enough" is exactly the widening slice B's notes forbid.
+
+Nothing else in the snapshot moved, for two structural reasons worth keeping: `Pack`
+stores no `PackConfig`, so the new `cell_model` field is not in the snapshot at all; and
+adding a variant to an externally-tagged enum does not change how the *existing* variants
+serialize — which is the same fact that makes the version-check test below possible.
+
+**And this slice needed no gate edit**, unlike C1. The instrument builds every case from
+scenario TOML through `parse_scenario` + `build_pack`, not from `PackConfig` literals, so
+a `#[serde(default)]` field is invisible to it. Worth knowing before reaching for the
+"editing the gate is safe when the edit changes no value" exception: the cheaper question
+is whether the gate touches the changed surface at all.
+
+### The version check finally does its job, and one assertion could not have shown it
+
+This is the first bump in the repo's history where `Pack::restore`'s version check is what
+rejects an older blob. Every note from v3 to v9 says the opposite in the same words — the
+layout changed, so deserialization refused the bytes long before the check ran. At v10 a
+v9 blob is **structurally valid**: the existing `CellModel` variants serialize unchanged
+and `[spm]` is optional, so the four-byte tag is the only thing between an old save and a
+pack whose semantics this build no longer guarantees.
+
+`crates/sim-core/tests/snapshot_version.rs` pins it, and the shape of the test is the
+point. Asserting only that a v9-tagged blob is rejected proves nothing — it is satisfied
+just as well by deserialization failing for an unrelated reason, which is precisely the
+ambiguity the older notes complain about. So both halves come from the **same bytes**,
+retagged in place, one to 9 and one to 10: one must be refused and the other must restore.
+The helper reads the tag back after patching rather than trusting the offset, because an
+assertion aimed at the wrong four bytes passes for the wrong reason.
+
+**The fixture is an all-ECM pack, deliberately.** An SPM pack's snapshot retagged to 9 is
+a v10 blob wearing a v9 label; no v9 build could have produced one, since the variant did
+not exist. An ECM pack's v10 bytes are field-for-field what v9 emitted, so retagging them
+produces the genuine article.
+
+Two smaller findings from writing it. `restore` reads the **outer** `Snapshot.version`
+only — `Pack.version` is carried and never consulted, so the pair is not belt-and-braces
+and a second test says so. And a later bump cannot inherit this test by renumbering:
+whether a v10 blob stays structurally valid under v11 is a fact about *v11's* layout
+change, so the test asserts `SNAPSHOT_VERSION == 10` up front and says why.
+
+### The interface gained arguments; the ECM arms did not gain a line
+
+Three `CellModel` methods needed something the equivalent circuit does not have, and in
+each case the answer was to **add an argument the ECM arm ignores** rather than to
+generalize the ECM expression:
+
+| method | new argument | why the ECM arm cannot just use it |
+| ------ | ------------ | ---------------------------------- |
+| `source` | `eff_capacity_ah` | a Thevenin source has no capacity in it |
+| `heat_w` | `v_terminal` | `I·(I·R0 + ΣV_rc)` and `I·(OCV − V)` agree algebraically and **not** bit-for-bit — slice A's constraint, still live |
+| `soc`, `overpotential_v` | `&ChemistryParams` (+ the two factors) | SOC is a *readout* here: the stoichiometry window is chemistry data |
+
+That last row is the one the plan did not anticipate. `soc()` looked model-neutral
+already — it returns a number in [0, 1], and slice A had congratulated itself on the pack
+reading it through a method rather than a field. But an equivalent circuit *stores* SOC
+while a single-particle cell **derives** it, and deriving it needs the electrode's usable
+window. The same applies to `overpotential_v`, which for this model is a difference of two
+OCP lookups plus two Butler–Volmer terms rather than a field sum. **General lesson: an
+accessor that returns a model-neutral number is not thereby model-neutral — check what it
+needs in order to compute it, not what it returns.**
+
+`Cell::eff_capacity_ah(cap_ah)` was added beside `eff_r0_factor()` for the reason that one
+exists: the memo's invariant has to be stated in terms of one expression, so there is
+exactly one place to get it wrong. The `SourceCache` doc paragraph that argues the
+aging-before-fill sequencing for `soh_resistance` now covers `soh_capacity` too — it
+inherits the argument unchanged (same tick, same ordering), but leaving it unstated would
+have left the second half of the product looking unexamined.
+
+### `SourceCache`'s purity survived a nonlinear model, and that was not automatic
+
+The memo's contract is "bit-for-bit what a recompute would give", which holds only for a
+*pure function of cell state*. A tangent is not obviously one — a tangent taken at an
+arbitrary iterate depends on where the solver was looking, not on the cell. It works here
+because the operating point is `SpmState::i_last`, which is **state**: written by
+`advance`, carried in the snapshot, restored with everything else.
+
+That is a slice-D warning rather than a slice-C2 result. The moment the pack iterates, the
+tangent is taken at an in-flight iterate and this argument stops holding — exactly the case
+the plan flagged, and one the debug assertion would otherwise surface as a confusing
+staleness message. The paragraph now lives in `SourceCache`'s doc comment so slice D finds
+it before the assertion does.
+
+### `i_last` is the one line that needed the `dt > 0` gate
+
+Everything else in the model is a no-op at `dt = 0` by arithmetic — every off-diagonal of
+the tridiagonal system carries a `dt` factor, exactly as the RC update and the coulomb
+count do. `self.i_last = i` is an assignment, and ungated it would have made a
+**zero-length probe step mutate the pack**. The suite primes energy balances and
+start-of-step voltages with exactly such probes, so the failure would have looked like a
+trajectory that depends on whether anyone looked at it. Fifth member of the `dt > 0`
+family, after the BMS sensor clock, the aging sub-clock, the fault queue and the vent
+latch.
+
+### Three perturbations, three tests, one each
+
+Every mechanism in the slice was broken on purpose before it was believed, and each broke
+**exactly one** test:
+
+| perturbation | test that rejected it |
+| ------------ | --------------------- |
+| drop `i_0 /= eff_r0_factor` | `aging_grows_the_dc_resistance_of_the_shipped_spm_cell` |
+| pin `kappa = 1.0` | `capacity_multipliers_scale_the_amp_hours_of_the_shipped_spm_cell` |
+| flip the positive electrode's SOC mapping | `shipped_spm_spans_the_cells_own_voltage_window` |
+
+The first is the one the phase was warned about: `nmc_21700_lgm50.toml` has
+`contact_resistance_ohm = 0`, so the naive implementation ships capacity fade with zero
+resistance growth. It is caught only because the test names *that file*. The third is worth
+noting for a different reason — flipping one electrode leaves the endpoints roughly
+plausible, and it is the **monotonicity sweep** rather than the endpoint checks that
+catches it.
+
+### Start with the cheapest test that covers the most ways to be wrong
+
+`shipped_spm_spans_the_cells_own_voltage_window` was written first and deliberately: a
+resting SPM cell at `soc = 1` must sit at the chemistry's own `v_max` and at `soc = 0` at
+its `v_min`. Passing it requires the SOC-to-stoichiometry mapping running the right way on
+**each** electrode (they run in opposite directions), both OCP tables interpolated on the
+right axis, and the terminal voltage assembled as `U_p − U_n` rather than its negation.
+Every harder assertion in the slice sits on top of those.
+
+The tolerance is derived rather than chosen: Chen2020's stoichiometry limits come from
+PyBaMM's `get_min_max_stoichiometries`, which *defines* them as the windows that put the
+cell at its published cut-offs, so agreement is expected to within the OCP tables' own
+documented interpolation error (1.90 mV and 1.88 mV). It passed at 30 mV on the first run,
+which is the strongest single piece of evidence in the slice that the extraction, the
+schema and the model all agree.
+
+### The energy test that is a tautology, and the two that are not
+
+`I·(U_eq − V)` **is** the heat term, so a step-by-step balance of chemical against
+electrical-plus-heat restates the definition and would pass on an inverted overpotential.
+Two checks that do not:
+
+* **Heat is positive in both current directions.** On discharge both factors are positive;
+  on charge both are negative; the product is positive either way *only if* the
+  overpotentials have the right sign. Flip one and charging becomes a refrigerator. This
+  is the cheap one and it is the one to keep.
+* **A closed cycle conserves energy.** `∮U_eq·dq = 0` because `U_eq` is a function of
+  state, so `∮V·I·dt + ∮Q·dt = 0` becomes a claim about the *trajectory* rather than about
+  one step's arithmetic. Residual is under 0.5 % of the energy moved, which is the
+  left-hand-rectangle discretization and not slack.
+
+The existing `electrical_and_heat_energy_balance` property test covers none of this: it is
+`flat_chem()` and ECM, and it stays that way.
+
+### Two scratch rows became one, and the ceiling is a constant because of it
+
+The Thomas solve needs a sub-diagonal, a diagonal, a super-diagonal and a right-hand side.
+Three of the four are free: the right-hand side is built in place in the concentration
+vector (it starts as `vol·c`), the super-diagonal is one multiply to recompute and the
+sweep never modifies it, and **the sub-diagonal needs no row at all — `lo[i]` and `up[i-1]`
+are the same face and therefore the same number.** What is left is the modified diagonal.
+
+So `diffuse` stands up one fixed `[f64; MAX_SHELLS]` and the step allocates nothing. The
+cost is that `MAX_SHELLS` is a constant rather than config, which is why it is a checked
+`BuildError` rather than a silent truncation. The alternative — a `Vec` per particle per
+cell per step — trades a bounded memset for an unbounded allocation on the hottest path in
+the engine.
+
+### No adapter version moves, and the rule says so in writing
+
+`API_VERSION` and `WASM_API_VERSION` both stay at 2. `API_VERSION`'s own doc: *"Adding a
+field or an error code does not bump it."* C2 adds `PackConfig::cell_model` — with a
+`#[serde(default)]`, so every existing scenario and every existing client payload keeps its
+meaning — and renames nothing on `Telemetry` or `CellView`. Same exemption slice B used for
+`"spm":null`. Recorded because C1 bumped both, and a reader could reasonably expect the
+bigger slice to bump them further.
+
+### The mechanical sweep, and the number
+
+24 exhaustive `PackConfig` literals across 23 files, not the ~23-in-22 the C1 notes
+estimated — the extra is `benches/pack_step.rs`, which is not a test and so was not in the
+count. Collapsing the diff over every touched existing file, **excluding the
+`use sim_core::{…}` blocks**:
+
+```text
+NON-IMPORT ADDED  : {'cell_model: CellModelConfig::Ecm,': 24}
+NON-IMPORT REMOVED: {}
+```
+
+That is the replacement for slice A's "no existing test modified" gate, and it is the whole
+check that the sweep changed no test's content.
+
+**The exclusion is load-bearing and C1's note did not anticipate it.** Slice B's version of
+this collapse was clean because `spm: None` needed no new import. `CellModelConfig` does,
+and adding one name to a `use` list makes rustfmt rewrap it — so a raw `git diff -U0 | sort
+| uniq -c` here shows ~40 distinct import fragments and *does* contain removals, which
+reads as a failed gate until you look. The right form of the check is therefore "every
+changed line outside the import block is the same one line, and nothing was removed", and
+it should be stated that way rather than as "zero removals" flat. Whoever runs this in
+slice D should expect the same shape.
+
+One trap worth writing down, because it cost a full revert. The obvious script — find
+`PackConfig {`, brace-match, insert before the close — silently matches
+`fn cfg(...) -> PackConfig {`, whose matching brace is the **function's**. Every insertion
+then landed outside the literal, and the compiler caught it 24 times over. The guard is one
+line (skip a match whose preceding text ends in `->`), and the lesson is that a
+brace-matcher over Rust needs to know a type name followed by `{` is not always a struct
+literal.
+
+### Measured, not assumed: the debug assertion is not a problem
+
+`pack.rs` re-evaluates `cell_source` for every cell every step in debug builds, and behind
+an SPM source that is a numerical tangent — three voltage evaluations, doubled. The plan
+asked for a measurement rather than a guess. With the assertion live, `spm_cell.rs` runs in
+**0.03 s** and `spm_pack.rs` in **0.07 s**; the `sim-core` debug suite's 2m19s is proptest,
+unchanged. No gating, no sampling, nothing to decide.
+
+### The analytic golden, and the two things it caught that nothing else could
+
+The plan asked for "analytic goldens for the cell in isolation, the way Phase 0 did for
+the ECM". The `dt`-independence half is easy to remember and the other half is easy to
+skip, so it is worth saying plainly what the other half is *for*: **`dt`-independence and
+grid convergence are both satisfied by a scheme that converges to the wrong number.** A
+wrong face conductance, a wrong shell volume or a half-shell extrapolation off by a factor
+keeps SOC exact (it is a bulk quantity the scheme conserves whatever the interior does),
+keeps the grid converging, passes the open-circuit window (evaluated at zero current,
+where there is no gradient), and passes the capacity tests. Slice E's PyBaMM goldens would
+have been the first thing to catch it — a whole slice away, where a discretisation bug
+reads as a tolerance argument.
+
+The closed form: under a constant surface flux a sphere settles into a quasi-steady
+parabolic profile `c(r) = c_mean + (j·R_p/D)·(r²/(2R_p²) − 3/10)`, so
+
+```text
+c_mean − c_surf  ->  j · R_p / (5 · D)
+```
+
+One assertion pins the face conductances, the shell volumes, the surface extrapolation
+**and** the interfacial area against something outside the scheme. It required making
+`diffuse`, `c_surface` and `mean_concentration` `pub` — which is `ecm.rs`'s own convention
+(`pub fn rc_update`, `pub fn coulomb_step`) and `CLAUDE.md`'s "prefer small pure functions
+for physics steps so property tests can hit them directly", not an exception carved for a
+test.
+
+Two practicalities worth inheriting. The profile takes ~`R_p²/D` to establish, which is
+≈1040 s on the negative electrode and ≈**6800 s** on the positive — an order of magnitude
+apart, because Chen2020's positive diffusivity is. A few-hundred-second run reads as a
+discretisation error when it is really an unconverged transient. And the flux has to be
+scaled per electrode so the particle stays inside its concentration range while the
+profile establishes.
+
+Perturbed two ways before being believed — `0.5·dr → 0.4·dr` on the extrapolation, and a
+5 % error on the face conductance — and it rejected both.
+
+### The second perturbation found a live bug: a probe step could move an SPM cell
+
+The face-conductance perturbation also failed
+`a_zero_length_step_does_not_mutate_an_spm_cell`, which made no sense — the perturbed term
+is multiplied by `dt`, so at `dt = 0` it cannot matter. It mattered because the *priming*
+steps put the cell on different concentrations, and **whether a zero-length step was the
+identity depended on which concentrations it found.**
+
+`diffuse` had no zero-`dt` guard. Every off-diagonal carries a `dt` factor, so at `dt = 0`
+the system collapses to the diagonal one — but solving it still evaluates `(c·vol)/vol`,
+and multiplying and dividing an `f64` by the same number **is not the identity**. Measured
+on realistic profiles: it lands one ULP off **1600 times in 2000**. The pack-level probe
+test had simply been lucky.
+
+Three things to keep from this:
+
+* **The fix is a `!(dt > 0.0)` early return**, which also takes non-finite `dt` (`step` may
+  not panic). The same shape `rc_update` already uses for a non-positive `tau` or `dt`.
+* **The "no-op by arithmetic" argument needs checking, not asserting.** It is true for the
+  RC update and the coulomb count — both are `x + 0·something`. It is false the moment a
+  scheme multiplies and then divides, and the SPM's does. `i_last` was gated because an
+  assignment is obviously not arithmetic; this one hid behind an argument that was almost
+  right.
+* **A one-trajectory test cannot pin a value-dependent bug.**
+  `a_zero_length_diffusion_step_is_exactly_the_identity` now sweeps 500 full-mantissa
+  profiles × four non-positive `dt` values, and it is the test that would have caught this
+  on day one.
+
+### One ULP of Faraday, and the six tolerances that could not see it
+
+Late in the slice `FARADAY_C_PER_MOL` was "tidied" from the full product to the commonly
+quoted `96485.33212331`. That is a **different `f64`** — one ULP away — and it moves every
+SPM trajectory. Every test in the slice stayed green, because all six shipped tolerances
+(30 mV, 1 %, 2 %, 0.5 %) are orders of magnitude looser.
+
+Since 2019 both `N_A` and `e` are SI *definitions*, so `F = N_A·e` is exact and there is a
+right answer: `96485.3321233100184`, whose nearest `f64` is what the original literal gave.
+The tidy-up was strictly worse. `faraday_is_the_exact_defined_product` now pins it, and the
+constant's doc says why it carries all its digits.
+
+General lesson: **a slice whose every assertion is a tolerance has no defence against a
+constant changing under it.** The defended constants are the ones asserted exactly.
+
+### What is deliberately not here
+
+- **The pack solve is still linear.** Each SPM cell reports a tangent at its previous
+  current and the existing closed-form group solve runs on it, unchanged. That is exact for
+  a current demand (the current is imposed) and an approximation for `Voltage`/`Power`.
+  Slice D iterates it.
+- **No mixed ECM/SPM packs.** `cell_model` is one value for the pack, which is why it is a
+  scalar and not a per-position table. Still open for D.
+- **No `Telemetry` or `CellView` fields.** Surface-vs-bulk stoichiometry is a real
+  pedagogical candidate and it belongs to E, with the goldens that would justify its units.
+  The C1 follow-up's `Telemetry` wire pin was cheap insurance against this slice adding
+  one; not firing is not a gap.
+- **No default shell count.** Every test states its own. Slice E's accuracy-vs-cost curve
+  picks one.
+- **No SPM perf budget.** Slice E, with `pack-step-perf.md`'s discipline.
+
+
 ## Open questions
 
 ### Resolved before slice A
@@ -1174,6 +1499,16 @@ edit to the gate.
   cost is that no electrode slippage appears. Full reasoning, and the
   `contact_resistance_ohm = 0` violation this uncovered, in the two decision sections
   above.
+
+### Resolved by slice C2
+
+- **Does adding a nonlinear model break `SourceCache`'s purity?** **No, and the reason
+  is narrow.** The tangent is a pure function of state only because its operating point,
+  `SpmState::i_last`, *is* state. Slice D's in-flight iterates are not, and that is now
+  written into `SourceCache`'s doc comment rather than left for the debug assertion to
+  discover.
+- **Is the `SourceCache` debug assertion affordable behind an SPM source?** **Yes,
+  measured.** 0.03 s and 0.07 s for the two SPM test files with it live. No gating.
 
 ### Still open
 - **Is a mixed ECM/SPM pack supported?** Slice D decides. It is the sharpest available

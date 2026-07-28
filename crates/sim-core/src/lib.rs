@@ -32,6 +32,7 @@ mod noise;
 pub mod pack;
 pub mod plating;
 pub mod runaway;
+pub mod spm;
 pub mod thermal;
 
 pub use aging::{Aging, AgingConfig};
@@ -44,10 +45,11 @@ pub use ecm::{CellModel, EcmState};
 pub use faults::{Fault, FaultError, FaultState, ScheduledFault, SensorFault, SensorId};
 pub use flags::EventFlags;
 pub use pack::{
-    BuildError, CellIndexError, CellView, Pack, PackConfig, RestoreError, Scatter, Snapshot,
-    SNAPSHOT_VERSION,
+    BuildError, CellIndexError, CellModelConfig, CellView, Pack, PackConfig, RestoreError, Scatter,
+    Snapshot, SNAPSHOT_VERSION,
 };
 pub use runaway::CellRunaway;
+pub use spm::SpmState;
 pub use thermal::ThermalConfig;
 
 use serde::{Deserialize, Serialize};

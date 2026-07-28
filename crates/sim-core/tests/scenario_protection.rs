@@ -18,7 +18,9 @@ use sim_core::bms::{BmsConfig, ProtectionConfig};
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
-use sim_core::{Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{
+    CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig,
+};
 
 const CAP_AH: f64 = 2.5;
 // Both voltage limits sit *inside* the OCV range (2.60 – 3.60 V), which matters more
@@ -134,6 +136,7 @@ fn config(soc0: f64, temp_k: f64, bms: Option<BmsConfig>) -> PackConfig {
         scatter: Scatter::default(),
         thermal: ThermalConfig::Isothermal,
         bms,
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

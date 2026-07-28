@@ -27,7 +27,8 @@ use sim_core::chem::{
 };
 use sim_core::runaway::{is_vented, reaction_power, reaction_power_slope};
 use sim_core::{
-    Demand, Env, EventFlags, Fault, Pack, PackConfig, Scatter, Telemetry, ThermalConfig,
+    CellModelConfig, Demand, Env, EventFlags, Fault, Pack, PackConfig, Scatter, Telemetry,
+    ThermalConfig,
 };
 
 /// Onset and vent, matching the shipped LFP file.
@@ -132,6 +133,7 @@ fn cfg(series: u16, initial_temp_k: f64, k_neighbor_w_per_k: f64) -> PackConfig 
         initial_temp_k,
         seed: 7,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

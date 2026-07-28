@@ -18,8 +18,8 @@ use sim_core::chem::{
 };
 use sim_core::faults::{Fault, FaultError, SensorId};
 use sim_core::{
-    BmsConfig, Demand, Env, EventFlags, Pack, PackConfig, ProtectionConfig, Scatter, Telemetry,
-    ThermalConfig,
+    BmsConfig, CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, ProtectionConfig,
+    Scatter, Telemetry, ThermalConfig,
 };
 
 const CAP_AH: f64 = 2.5;
@@ -100,6 +100,7 @@ fn cfg(series: u16, parallel: u16, initial_soc: f64) -> PackConfig {
         initial_temp_k: 298.15,
         seed: 0xF00D_BEEF,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

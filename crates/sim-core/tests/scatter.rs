@@ -8,7 +8,7 @@
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
-use sim_core::{Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{CellModelConfig, Pack, PackConfig, Scatter, ThermalConfig};
 
 fn chem() -> ChemistryParams {
     ChemistryParams {
@@ -61,6 +61,7 @@ fn config(series: u16, parallel: u16, seed: u64, scatter: Scatter) -> PackConfig
         initial_temp_k: 298.15,
         seed,
         scatter,
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

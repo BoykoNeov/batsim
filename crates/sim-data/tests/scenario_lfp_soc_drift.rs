@@ -26,7 +26,9 @@
 //! in the chemistry data.
 
 use sim_core::bms::BmsConfig;
-use sim_core::{ChemistryParams, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{
+    CellModelConfig, ChemistryParams, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig,
+};
 
 fn lfp_chem() -> ChemistryParams {
     let text = include_str!("../../../chemistries/lfp_26650_generic.toml");
@@ -74,6 +76,7 @@ fn config(soc0: f64) -> PackConfig {
         scatter: Scatter::default(),
         thermal: ThermalConfig::Isothermal,
         bms: Some(bms()),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

@@ -54,8 +54,8 @@ use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, SafetyParams, ThermalParams,
 };
 use sim_core::{
-    BalancingConfig, BmsConfig, Demand, Env, EventFlags, Pack, PackConfig, ProtectionConfig,
-    Scatter, ThermalConfig,
+    BalancingConfig, BmsConfig, CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig,
+    ProtectionConfig, Scatter, ThermalConfig,
 };
 
 /// Pack topology: 9 cells, so exactly one — `(1, 1)` — has four neighbours and
@@ -178,6 +178,7 @@ fn config(bms: Option<BmsConfig>) -> PackConfig {
         initial_temp_k: AMBIENT_K,
         seed: 0xB00,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

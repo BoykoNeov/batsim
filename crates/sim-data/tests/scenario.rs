@@ -2,8 +2,8 @@
 //! end-to-end demonstration that a file can stand in for a pack built in Rust.
 
 use sim_core::{
-    AgingConfig, BalancingConfig, BmsConfig, Demand, Env, EventFlags, Fault, PackConfig,
-    ProtectionConfig, Scatter, ScheduledFault, SensorId, ThermalConfig,
+    AgingConfig, BalancingConfig, BmsConfig, CellModelConfig, Demand, Env, EventFlags, Fault,
+    PackConfig, ProtectionConfig, Scatter, ScheduledFault, SensorId, ThermalConfig,
 };
 use sim_data::{parse_chemistry, parse_scenario, ChemistrySource, DataError, Scenario};
 
@@ -50,6 +50,7 @@ fn cc_discharge_example_parses() {
             thermal: ThermalConfig::Isothermal,
             bms: None,
             aging: None,
+            cell_model: CellModelConfig::Ecm,
         },
         "every omitted section must mean 'off', not 'on with defaults'"
     );
@@ -103,6 +104,7 @@ fn soft_short_example_matches_a_hand_built_config() {
                 ocv_correction_gain: 0.1,
                 min_ocv_slope_v_per_soc: 0.15,
             }),
+            cell_model: CellModelConfig::Ecm,
         }
     );
 

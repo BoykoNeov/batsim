@@ -13,7 +13,8 @@
 
 use serde_json::json;
 use sim_core::{
-    CellView, Demand, Env, EventFlags, Pack, PackConfig, Scatter, Telemetry, ThermalConfig,
+    CellModelConfig, CellView, Demand, Env, EventFlags, Pack, PackConfig, Scatter, Telemetry,
+    ThermalConfig,
 };
 use sim_data::parse_chemistry;
 
@@ -41,6 +42,7 @@ fn stepped_pack(steps: usize) -> Pack {
         },
         bms: None,
         aging: None,
+        cell_model: CellModelConfig::Ecm,
     };
     let mut pack = Pack::new(&config, chem).expect("4S2P LFP pack");
     let env = Env {

@@ -26,8 +26,8 @@ use sim_core::chem::{
 };
 use sim_core::plating::{plating_fade_increment, plating_risk, short_probability};
 use sim_core::{
-    AgingConfig, BmsConfig, Demand, Env, EventFlags, Fault, Pack, PackConfig, ProtectionConfig,
-    Scatter, ThermalConfig,
+    AgingConfig, BmsConfig, CellModelConfig, Demand, Env, EventFlags, Fault, Pack, PackConfig,
+    ProtectionConfig, Scatter, ThermalConfig,
 };
 
 const CAP_AH: f64 = 2.5;
@@ -141,6 +141,7 @@ fn cfg(
         initial_temp_k,
         seed: 11,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

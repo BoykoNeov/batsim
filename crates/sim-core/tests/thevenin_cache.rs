@@ -21,8 +21,8 @@ use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
 use sim_core::{
-    BalancingConfig, BmsConfig, Demand, Env, Pack, PackConfig, ProtectionConfig, Scatter,
-    Telemetry, ThermalConfig,
+    BalancingConfig, BmsConfig, CellModelConfig, Demand, Env, Pack, PackConfig, ProtectionConfig,
+    Scatter, Telemetry, ThermalConfig,
 };
 
 fn env() -> Env {
@@ -124,6 +124,7 @@ fn config() -> PackConfig {
             capacity_sigma: 0.03,
             r0_sigma: 0.05,
         },
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

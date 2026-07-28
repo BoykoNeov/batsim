@@ -27,7 +27,9 @@
 //! a targeted check that batsim matches the DFN's *relaxed* voltage at every rest
 //! end, which isolates the OCV table and SOC tracking from the kinetic gap.
 
-use sim_core::{ChemistryParams, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{
+    CellModelConfig, ChemistryParams, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig,
+};
 
 /// One reference sample.
 struct Row {
@@ -84,6 +86,7 @@ fn replay(chem: ChemistryParams, rows: &[Row]) -> Vec<f64> {
         initial_temp_k: 298.15,
         seed: 0,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     };
     let mut pack = Pack::new(&cfg, chem).expect("pack builds");
     let env = env_25c();

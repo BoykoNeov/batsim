@@ -11,7 +11,7 @@
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
-use sim_core::{Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
 
 const CAP_AH: f64 = 2.5;
 const R0: f64 = 0.02;
@@ -76,6 +76,7 @@ fn config(series: u16, parallel: u16, initial_soc: f64) -> PackConfig {
         initial_temp_k: 298.15,
         seed: 0,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

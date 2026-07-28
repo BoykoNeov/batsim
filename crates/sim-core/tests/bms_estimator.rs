@@ -11,7 +11,7 @@ use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
 use sim_core::ecm::ocv_invert;
-use sim_core::{Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
 
 const CAP_AH: f64 = 2.5;
 const T_ENV: f64 = 298.15;
@@ -105,6 +105,7 @@ fn config(series: u16, parallel: u16, soc0: f64, bms: Option<BmsConfig>) -> Pack
         scatter: Scatter::default(),
         thermal: ThermalConfig::Isothermal,
         bms,
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

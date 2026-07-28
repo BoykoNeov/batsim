@@ -26,8 +26,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::chem::{ChemistryParams, OcvTable, R0Table};
+use crate::chem::{ChemistryParams, OcvTable, R0Table, SpmParams};
 use crate::flags::EventFlags;
+use crate::spm::{self, SpmState};
 use crate::Demand;
 
 /// Per-cell equivalent-circuit state. Opaque to the pack layer; the enclosing
@@ -46,9 +47,10 @@ pub struct EcmState {
 
 /// Cell-model slot. Enum dispatch (not trait objects) keeps state serde-friendly.
 ///
-/// Both current variants share [`EcmState`]; the variant records the RC-pair
-/// count. Porous-electrode models (`Spm`/`Dfn`) are added in a later phase without
-/// touching the pack layer.
+/// The two equivalent-circuit variants share [`EcmState`]; the variant records the
+/// RC-pair count. [`CellModel::Spm`] is the first porous-electrode model, added in
+/// Phase 6 without touching the pack layer — which was the claim slice A's accessor
+/// removal existed to make checkable, and this variant is what cashes it.
 ///
 /// # This enum is the whole boundary
 /// `CLAUDE.md` requires that nothing outside this enum assume ECM-only internals.
@@ -62,13 +64,18 @@ pub struct EcmState {
 /// heat is `I·(OCV − V)` in principle and `I·(I·R0 + Σ V_rc)` in this code, and
 /// while those agree algebraically they do **not** agree bit-for-bit, so
 /// generalizing the formula rather than relocating it would move every ECM
-/// trajectory in the repo. See `docs/plans/phase-6-porous-electrodes.md`.
+/// trajectory in the repo. That constraint outlived slice A: the arguments the
+/// `Spm` arm needed — the effective capacity, and the terminal voltage the solve
+/// produced — were **added** to these signatures rather than the ECM arms being
+/// rewritten to use them. See `docs/plans/phase-6-porous-electrodes.md`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CellModel {
     /// Single RC pair.
     Ecm1Rc(EcmState),
     /// Two RC pairs.
     Ecm2Rc(EcmState),
+    /// Single-particle porous-electrode model. See [`crate::spm`].
+    Spm(SpmState),
 }
 
 impl CellModel {
@@ -91,16 +98,39 @@ impl CellModel {
         }
     }
 
+    /// A fresh single-particle cell with `shells` finite volumes per particle, at
+    /// rest and uniform. See [`SpmState::new`].
+    ///
+    /// `spm` is the chemistry's `[spm]` block; [`crate::Pack::new`] refuses to
+    /// select this model against a chemistry that has none, so there is no arm here
+    /// for a missing section.
+    pub(crate) fn new_spm(spm: &SpmParams, shells: usize, soc: f64, temp_k: f64) -> Self {
+        CellModel::Spm(SpmState::new(spm, shells, soc, temp_k))
+    }
+
+    /// The chemistry's `[spm]` block, for the arms that need it.
+    ///
+    /// A missing section cannot happen on a built pack — [`crate::Pack::new`]
+    /// rejects the combination — but `step` may not panic, so the fallback is a
+    /// value rather than an `expect`. It is unreachable by construction and the
+    /// tests that prove the build error say so.
+    fn spm_params(chem: &ChemistryParams) -> Option<&SpmParams> {
+        chem.spm.as_ref()
+    }
+
     /// Ground-truth state of charge, in \[0, 1\].
     ///
     /// For an equivalent circuit this is the coulomb-counted state variable
-    /// itself. A porous-electrode model has no such variable and must *derive*
-    /// this from its lithium inventory — which is why the pack reads it through a
-    /// method rather than a field.
+    /// itself. A porous-electrode model has no such variable and *derives* it from
+    /// the lithium actually in its particles — which is why the pack reads it
+    /// through a method rather than a field, and why the method needs the
+    /// chemistry: the mapping from stoichiometry to SOC is the electrode's usable
+    /// window, and that is chemistry data.
     #[must_use]
-    pub fn soc(&self) -> f64 {
+    pub fn soc(&self, chem: &ChemistryParams) -> f64 {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc,
+            CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| spm::soc(s, spm)),
         }
     }
 
@@ -109,6 +139,7 @@ impl CellModel {
     pub fn temp_k(&self) -> f64 {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.temp_k,
+            CellModel::Spm(s) => s.temp_k,
         }
     }
 
@@ -119,19 +150,30 @@ impl CellModel {
     pub(crate) fn set_temp_k(&mut self, temp_k: f64) {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.temp_k = temp_k,
+            CellModel::Spm(s) => s.temp_k = temp_k,
         }
     }
 
     /// Total overpotential \[V\] across the cell's internal dynamics,
-    /// discharge-positive — everything between `OCV(soc)` and the terminal that is
-    /// *not* the instantaneous ohmic drop.
+    /// discharge-positive — everything between the cell's equilibrium voltage and
+    /// the terminal that is *not* the instantaneous ohmic drop.
     ///
-    /// For an ECM that is `Σ V_rc`. The name is model-neutral on purpose: it is
-    /// the quantity [`crate::CellView`] reports, and every cell model has one.
+    /// For an ECM that is `Σ V_rc`; for a single-particle cell it is the
+    /// concentration and Butler–Volmer overpotentials together. The name is
+    /// model-neutral on purpose: it is the quantity [`crate::CellView`] reports, and
+    /// every cell model has one.
     #[must_use]
-    pub fn overpotential_v(&self) -> f64 {
+    pub fn overpotential_v(
+        &self,
+        chem: &ChemistryParams,
+        eff_r0_factor: f64,
+        eff_capacity_ah: f64,
+    ) -> f64 {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.v_rc.iter().sum(),
+            CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
+                spm::overpotential_v(s, spm, eff_r0_factor, eff_capacity_ah)
+            }),
         }
     }
 
@@ -143,18 +185,48 @@ impl CellModel {
     /// iterates — but the ECM arm must keep answering with `cell_source`'s own
     /// expression rather than being reconstructed from an evaluated voltage, or
     /// the closed-form path stops being bit-identical to itself.
+    ///
+    /// `eff_r0_factor` is the cell's static resistance multiplier × aging's
+    /// `soh_resistance`; `eff_capacity_ah` is its nominal capacity × its static
+    /// capacity multiplier × aging's `soh_capacity`. The equivalent circuit ignores
+    /// the second — its source has no capacity in it — and a porous-electrode cell
+    /// needs it, because the flux a current produces depends on how much active
+    /// material the cell is configured to hold.
     #[must_use]
-    pub(crate) fn source(&self, chem: &ChemistryParams, r0_factor: f64) -> (f64, f64) {
+    pub(crate) fn source(
+        &self,
+        chem: &ChemistryParams,
+        eff_r0_factor: f64,
+        eff_capacity_ah: f64,
+    ) -> (f64, f64) {
         match self {
-            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_source(s, chem, r0_factor),
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_source(s, chem, eff_r0_factor),
+            CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
+                spm::source(s, spm, eff_r0_factor, eff_capacity_ah)
+            }),
         }
     }
 
     /// Heat generated inside this cell \[W\] at current `i`
     /// \[A, discharge-positive\] and effective resistance `r` \[ohms\], from its
     /// start-of-step state. See [`cell_heat_w`].
+    ///
+    /// `v_terminal` is the node voltage the pack's solve settled on for this cell.
+    /// The equivalent circuit does not read it: its heat is
+    /// `I·(I·R0 + Σ V_rc)`, which is `I·(OCV − V)` algebraically and **not**
+    /// bit-for-bit, so passing the general form through the ECM arm would move
+    /// every trajectory in the repo. A model with neither an `R0` nor an RC pair has
+    /// only the general form available, and this argument is how it gets it.
     #[must_use]
-    pub(crate) fn heat_w(&self, chem: &ChemistryParams, i: f64, r: f64) -> f64 {
+    pub(crate) fn heat_w(
+        &self,
+        chem: &ChemistryParams,
+        eff_r0_factor: f64,
+        eff_capacity_ah: f64,
+        i: f64,
+        r: f64,
+        v_terminal: f64,
+    ) -> f64 {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_heat_w(
                 i,
@@ -163,6 +235,9 @@ impl CellModel {
                 s.temp_k,
                 docv_dt_lookup(&chem.ocv, s.soc),
             ),
+            CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
+                spm::heat_w(s, spm, eff_r0_factor, eff_capacity_ah, i, v_terminal)
+            }),
         }
     }
 
@@ -181,6 +256,13 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
                 advance_cell(s, chem, i, dt, eff_capacity_ah, soh_capacity)
             }
+            // The two multipliers arrive here split, because `soc_true`'s contract
+            // makes the split meaningful to the equivalent circuit. A single-particle
+            // cell wants only their product: it has no SOC scale to preserve, just an
+            // amount of lithium the geometry has to be reconciled against.
+            CellModel::Spm(s) => chem.spm.as_ref().map_or(EventFlags::empty(), |spm| {
+                spm::advance(s, spm, i, dt, eff_capacity_ah * soh_capacity)
+            }),
         }
     }
 }
@@ -232,7 +314,7 @@ fn lerp_at(ys: &[f64], (lo, hi, frac): (usize, usize, f64)) -> f64 {
 /// Linear-interpolate `ys` at `x` over ascending breakpoints `xs`, clamped at the
 /// ends. `xs` must be non-empty and the same length as `ys`.
 #[must_use]
-fn interp1(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+pub(crate) fn interp1(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     debug_assert!(!xs.is_empty() && xs.len() == ys.len());
     lerp_at(ys, bracket(xs, x))
 }

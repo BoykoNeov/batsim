@@ -18,7 +18,7 @@ use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
 use sim_core::ecm::{ocv_lookup, r0_lookup};
-use sim_core::{Demand, Env, Pack, PackConfig, ThermalConfig};
+use sim_core::{CellModelConfig, Demand, Env, Pack, PackConfig, ThermalConfig};
 
 const R0: f64 = 0.02; // ohms
 const R1: f64 = 0.01; // ohms
@@ -102,6 +102,7 @@ fn config(initial_soc: f64) -> PackConfig {
         initial_temp_k: 298.15,
         seed: 0,
         scatter: sim_core::Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

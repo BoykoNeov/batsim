@@ -14,7 +14,8 @@ use sim_core::chem::{
 };
 use sim_core::ecm::ocv_lookup;
 use sim_core::{
-    AgingConfig, Demand, Env, EventFlags, Fault, Pack, PackConfig, Scatter, ThermalConfig,
+    AgingConfig, CellModelConfig, Demand, Env, EventFlags, Fault, Pack, PackConfig, Scatter,
+    ThermalConfig,
 };
 
 const CAP_AH: f64 = 2.5;
@@ -151,6 +152,7 @@ fn cfg(series: u16, parallel: u16, soc0: f64, seed: u64, scatter: Scatter) -> Pa
         initial_temp_k: 298.15,
         seed,
         scatter,
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

@@ -41,7 +41,9 @@
 use sim_core::chem::{
     AgingParams, CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
-use sim_core::{AgingConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{
+    AgingConfig, CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig,
+};
 
 /// Cell capacity \[Ah\], from the shipped LFP file.
 const CAP_AH: f64 = 2.303451;
@@ -152,6 +154,7 @@ fn config(temp_k: f64, initial_soc: f64) -> PackConfig {
         initial_temp_k: temp_k,
         seed: 0xA6E,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

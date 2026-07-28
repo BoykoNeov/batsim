@@ -9,7 +9,7 @@
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
-use sim_core::{Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig};
 
 /// A cell with `n_rc` RC pairs, so both `CellModel` arms are exercised. Nothing
 /// here is physical; the OCV slope only has to be monotone and the RC pairs only
@@ -74,6 +74,7 @@ fn cfg() -> PackConfig {
         initial_temp_k: 298.15,
         seed: 3,
         scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
     }
 }
 

@@ -112,7 +112,9 @@ use sim_core::chem::{
     AgingParams, CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, SafetyParams,
     ThermalParams,
 };
-use sim_core::{AgingConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig};
+use sim_core::{
+    AgingConfig, CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig,
+};
 
 /// Simulation timestep \[s\] — a typical real-time client step. `dt` only enters
 /// through `exp(−dt/τ)` and the coulomb count, so its value does not change the
@@ -302,6 +304,7 @@ fn pack_config(
             capacity_sigma: 0.02,
             r0_sigma: 0.05,
         },
+        cell_model: CellModelConfig::Ecm,
     }
 }
 
