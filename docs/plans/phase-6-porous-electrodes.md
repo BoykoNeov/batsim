@@ -503,6 +503,24 @@ Where the two multipliers land:
   thing `Telemetry::soh_resistance` says it means. State that linearization identity in
   the doc comment so it reads as a modelling choice rather than a fudge.
 
+**Neither multiplier arrives alone, and reading the two bullets above literally would
+break manufacturing scatter.** The SOH factors reach the cell model *fused* with the
+static per-cell ones:
+
+- `advance(…, eff_capacity_ah, soh_capacity)` is handed `eff_capacity_ah = cap_ah ·
+  capacity_factor` (`pack.rs:1126`), and ECM divides by the product `3600 ·
+  eff_capacity_ah · soh_capacity`. So the SPM conversion must scale by **that same
+  effective capacity**, not by the particles' geometric mole count. Take the geometry as
+  the base and `Scatter { capacity_sigma }` and `Fault::WeakCell { capacity_factor }`
+  become no-ops on SPM packs — which would quietly retire the Phase 1 weak-cell exit
+  criterion there rather than fail a test.
+- `source(&chem, r0_factor)` is handed `eff_r0_factor = r0_factor · soh_resistance`
+  (`pack.rs:316`) and *cannot separate them*. So `i_0` is divided by **the product**. That
+  is also the right physics: a scatter-weak cell should push back harder, exactly as
+  `r0_factor` already makes it do on an ECM. Dividing by `soh_resistance` alone would need
+  a second parameter plumbed through the enum — which is what would actually cost the "no
+  interface work follows" claim above.
+
 ### `soh_resistance` has nowhere to land in the shipped SPM chemistry, and that is a live violation
 
 This is the finding that made the decision above concrete, and it applies **whichever way
@@ -526,6 +544,15 @@ route above.
 growth on an aged SPM cell **against `nmc_21700_lgm50.toml` specifically**. A test written
 against a chemistry with a nonzero contact resistance passes while the shipped file is
 broken, so the chemistry choice is part of the assertion, not an incidental fixture.
+
+Its capacity-side sibling — measured amp-hours between the limits come out as nominal ×
+`capacity_factor` × `soh_capacity` — **must use the quasi-static protocol**, not a plain
+CC discharge. The equality is exact only at equilibrium: under load the surface
+concentration runs ahead of the bulk, the voltage cut-off arrives before the window is
+traversed, and the shortfall is real physics. This is the same "stated tolerance and a
+rest-to-equilibrium in the assertion" the charge-conservation row of the `soc_true` table
+above already calls for. A test that discharges hard and asserts an exact ratio will be
+flaky in a way that reads like a diffusion bug.
 
 ---
 
@@ -1001,12 +1028,5 @@ sibling file already documents.
 - **What is the default shell count `N`?** Slice E's accuracy-vs-cost curve should decide
   it, not taste. The spike ran N = 10 at 0.215 µs; N = 5 is 2.2× cheaper and N = 20 is
   2.2× dearer, so the curve is close to linear and the decision is about accuracy alone.
-- **Should the trajectory baseline become a committed, platform-gated regression test?**
-  It caught a one-ULP change in all seven cases, which is a stronger guarantee than
-  anything currently in the suite, and it would keep guarding the ECM floor long after
-  Phase 6. Against: `CLAUDE.md` refuses to promise cross-platform bit-exactness, so the
-  fixture is valid only on the machine that generated it, and a test that fails on a fresh
-  clone is worse than no test. A `#[ignore]`d test naming its platform — the `godot_gate`
-  shape — is the obvious middle, but an ignored test that fails when someone finally runs
-  it is its own kind of trap. **Owner's call**; slice A works either way, since the
-  baseline already exists out of tree.
+(The trajectory-baseline question that used to sit here was answered before slice A —
+see "Resolved before slice A" above. It stays out of tree.)
