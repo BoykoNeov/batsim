@@ -49,6 +49,7 @@ Everything in this section is measured on this box, not inferred.
 | question | answer |
 | -------- | ------ |
 | Can `diffsol`'s solver state be extracted, serialized and restored **bit-identically** through its public API? | **No.** See below. This is decisive. |
+| Does the repo already have a cross-build bit-exact ECM anchor for slice A's gate to compare against? | **No** — and it cannot be created after the refactor. See "The baseline slice A's gate needs did not exist" below; it has now been captured. |
 | Is `diffsol` deterministic in place (same problem, same build, twice)? | **Yes** — the uninterrupted run is bit-identical to itself. The failure is specific to restore. |
 | What does `diffsol` cost as a dependency? | **137 crates, 40.8 s cold build.** `sim-core`'s dependency list is `serde`, `rand_chacha`, `bitflags`, `thiserror`. |
 | Does a fixed-step backward-Euler SPM converge at coarse `dt`? | **Yes, unconditionally.** 1 A for 1 h at `dt` = 1 s / 60 s / 3600 s gives `x_neg` = 0.738403 in all three; terminal voltage differs by 8e-4 V between the extremes. |
@@ -118,6 +119,69 @@ The spike's own ECM stand-in is **not** quoted as a ratio here, because it is a 
 arithmetic sketch rather than this repo's `Pack::step`, and a ratio against it would
 flatter the SPM. The honest comparison is in "SPM gets its own budget" below.
 
+### The baseline slice A's gate needs did not exist, and it has been captured
+
+Exit criterion 1 says every ECM trajectory is bit-identical before and after the phase.
+Checking that requires a **cross-build** anchor, and the repo has none. Every `to_bits`
+comparison under `crates/*/tests` is between two runs of *one build*:
+
+- `faults.rs`'s `tele_bits` says so in its own doc comment — "for the replay comparisons".
+- `snapshot.rs` compares a restored stream against a continued one.
+- `godot_gate.rs` compares two legs of the **same engine** — an in-process `Pack::step` run
+  against the same engine driven through a Godot process. It is a consistency check on one
+  build, so it moves with a refactor exactly as the others do. (An earlier draft of this
+  plan claimed it "would catch a change the in-process goldens somehow shared". That is
+  backwards, and it is corrected here rather than quietly deleted.)
+
+The only cross-build anchors are the analytic goldens (`1e-9`) and the PyBaMM CSVs
+(per-scenario tolerances). A reassociated floating-point expression hides under both. So a
+refactor could move every trajectory by an ULP and the entire suite would stay green.
+
+The baseline is therefore captured **before slice A's first edit**, at commit `13d295d`,
+by a standalone crate at `M:\claud_projects\temp\phase6-baseline` that depends on
+`sim-core`/`sim-data` by path and reads the repo's own chemistries and scenarios (a copy
+would drift). It dumps every reported `f64` as raw bits — 17 telemetry fields plus 10
+per-cell fields for every cell — over a seven-leg schedule crossing both current signs,
+all four `Demand` variants and seven `dt`s, for seven pack configurations. Plus an FNV
+hash of the final snapshot JSON per case, which carries the RNG word position and every
+field telemetry does not report.
+
+It was **built to fail** before it was trusted, the same discipline Phase 4 and Phase 5
+applied to their gates. A deliberate one-ULP perturbation of `cell_source`'s `e`:
+
+```text
+cc_discharge_lfp                          130 / 130 sampled lines differ
+soft_short_under_a_lying_sensor           130 / 130 sampled lines differ
+nmc_1s1p_2rc_isothermal                   127 / 130 sampled lines differ
+lfp_2s3p_scatter_thermal_nobms            130 / 130 sampled lines differ
+nmc_3s2p_everything                       130 / 130 sampled lines differ
+lfp_2s1p_cold_plating_extshort            117 / 130 sampled lines differ
+lfp_2s2p_hot_runaway_nobms                129 / 130 sampled lines differ
+```
+
+Every case detects it, and six of seven snapshot hashes move. The perturbation was
+reverted and the baseline reproduces bit-for-bit.
+
+Building it found what a coverage claim always finds when checked: **three paths were dead
+columns** in the first capture. Balancing never fired (the realistic 4.05 V threshold is
+never reached by this schedule), `PLATING_RISK` never fired (the charge leg was exactly
+0.5 C and the comparison is strict — and separately, a cold *initial temperature* is not a
+cold soak, because a live thermal network warms the pack toward `Env::t_ambient` before
+the charge leg arrives), and `VENTED` never fired (a 420 K start runs away but does not
+reach the 453.15 K vent inside the schedule). All three are now exercised. A column that
+is always zero pins nothing about the code that fills it.
+
+Still not exercised, and stated rather than left to be discovered: `OV`, `UV`, `OT`, `UT`,
+`CONTACTOR_OPEN` and `SOC_CLAMPED_HIGH`. Over-current derating *is* covered, so the
+protection path is not dark, but the escalation to an open contactor is. Slice A should
+either extend the matrix or accept the gap explicitly.
+
+**It is deliberately not committed as a repo test.** `CLAUDE.md` promises same-binary
+determinism and explicitly refuses to promise cross-platform bit-exactness (libm
+differences), so a committed bit fixture would be a test that fails for anyone who clones
+on another OS — actively worse than no test. Whether a platform-gated version is worth
+having permanently is an open question below.
+
 ---
 
 ## Decisions already made (do not re-derive)
@@ -175,6 +239,17 @@ The good news, verified rather than assumed: **no adapter crate reaches in.**
 view — is the boundary, and it holds a `v_rc_sum` scalar rather than ECM state. So the
 violation is confined to one file plus two `pub` signatures, which is what makes slice A
 tractable.
+
+**`CellView::v_rc_sum` is the one place the boundary still leaks, and it needs a decision
+rather than a default.** It is a `pub` field, ECM-shaped by name and by doc comment
+("Sum of the cell's RC-pair overpotentials \[V\]"), and every adapter can read it. An SPM
+cell has no RC pairs, so the lazy answer is `0.0` — and a loaded SPM cell reporting `0.0 V`
+of overpotential is the same class of lie as Phase 5's unprimed `0.0 V` terminal reading:
+a plotting client cannot distinguish it from a real measurement of a cell with no
+polarization. The honest options are to generalize the field (total overpotential, which
+*is* well-defined for both models and is what the name should have been), or to make it
+`Option<f64>`, or to keep it and add a model tag so a client knows what it is looking at.
+Slice A decides; what it may not do is ship `0.0`.
 
 Slice A's gate is **not** "the tests pass". It is Phase 5 slice A's stronger claim, about
 the diff and about the trajectories: no existing test is *modified*, and every golden is
@@ -246,6 +321,24 @@ Two properties make this the right shape rather than merely a convenient one:
   per cell for `V_k(i) = V_node`) is a nested iteration whose cost is the product of two
   loop counts times the cell count. Tangent linearization keeps one loop.
 
+**The accessor slice A designs decides whether this claim can hold**, and getting it wrong
+there surfaces two slices later as unexplained golden drift. "The tangent is exact for a
+linear cell" is true algebraically and false bit-for-bit if the generic path *reconstructs*
+the source as `(V(i*) + i*·r, r)`: for an ECM cell that expands to `(e − i*·r) + i*·r`,
+which is not bit-identically `e` for any `i* ≠ 0`. So the interface must let `Ecm1Rc` /
+`Ecm2Rc` answer with `cell_source`'s **existing expression, unchanged** — "my tangent is
+exact, here it is" — rather than routing every model through evaluate-and-differentiate.
+Slice A owns that constraint even though slice D is what cashes it.
+
+**`SourceCache`'s invariant, not just its cost.** The memo's stated contract is
+"bit-for-bit what a recompute would give", and it holds because the ECM source is a *pure
+function of cell state*. A tangent taken at iterate `i*` is not — it depends on the
+iterate. Worse, the end-of-step reporting pass at `pack.rs:1378` warms the cache from
+end-of-step state, which for a nonlinear cell begs the question "tangent at what current?".
+Slice D needs an explicit answer (keep the cache ECM-only, or key it by the operating
+point), and slice C must not leave it implicit — the debug assertion would fire, and it
+would fire as a confusing staleness message rather than as the design question it actually is.
+
 Guards, per `CLAUDE.md`: iteration cap, bisection fallback, and the convergence tolerance
 lives in **config** so it is snapshotted and cannot silently differ between two runs of
 the same scenario. The spike measured 3 Newton iterations mean *and* worst at 1e-9 V on a
@@ -269,6 +362,18 @@ chemistry has no `[spm]`. Optional is what keeps slice B off the version counter
 The provenance rule applies with full force and is *easier* to satisfy here than for the
 ECM tables: SPM parameters are **extracted** from a PyBaMM parameter set rather than
 fitted to its output, so every number has a literal citation.
+
+**One thing that list is missing on purpose, and slice B must decide rather than default:
+temperature.** As written above, `[spm]` carries diffusivities and rate constants as
+*constants*. But Phase 2 shipped a thermal network, and a cell whose transport and kinetics
+ignore its own temperature would sit in that network reporting a temperature that changes
+nothing — an SPM that is *less* temperature-aware than the ECM it replaces, whose `R0`
+table is already a function of `(soc, T)`. That reads as a broken Phase 2 deliverable, not
+as a Phase 6 simplification. So `[spm]` needs Arrhenius activation energies for `D_s` and
+`k_r` (the standard `exp(−Ea/R·(1/T − 1/T_ref))` form PyBaMM parameter sets already
+supply), and per-electrode entropy coefficients if the entropic heat term is to keep
+working. Slice B either ships them or states in the file that this SPM is isothermal-only —
+and the second is a defensible choice only if it is *written down*.
 
 ### The SPM chemistry is NMC, and that resolves the NMC identity debt honestly
 
@@ -363,15 +468,20 @@ Touches `sim-core` only. **Zero physics change**, and the gate is built around t
 - `EcmState` construction at `pack.rs:532–541` moves behind a constructor on the enum.
 - Both accessors stop being `pub`, or stop being ECM-typed. A `#[doc(hidden)]` escape
   hatch is not acceptable — that is the violation with a fig leaf.
+- Decide `CellView::v_rc_sum`'s fate (see above). Not `0.0`.
 - **Gate, in this order:**
   1. `git diff --name-only | grep -i test` → nothing modified (added is fine).
-  2. Every golden and every scenario trajectory **bit-identical**, compared on
-     `f64::to_bits`, not on a tolerance. A tolerance-based comparison cannot distinguish
-     "refactor preserved behaviour" from "refactor moved it slightly".
+  2. **The captured baseline diffs empty.** `cd M:\claud_projects\temp\phase6-baseline &&
+     cargo run --release -q > after.txt && diff baseline-13d295d.txt after.txt`. This is
+     the cross-build anchor, it was built to fail, and it is the only check in the repo or
+     out of it that can distinguish "refactor preserved behaviour" from "refactor moved
+     every trajectory by an ULP".
   3. `SNAPSHOT_VERSION` still 9.
   4. `cargo test --workspace` and clippy clean, including the `sim-godot` gate under
-     `--ignored` (it asserts bit-identity against a Godot process and is the one test that
-     would catch a change the in-process goldens somehow shared).
+     `--ignored`. Note what that gate does and does not prove: it compares two legs of the
+     same engine, so it confirms the Godot boundary still carries bits faithfully, and it
+     moves with a refactor exactly as the in-process tests do. Step 2 is the one that
+     carries the claim.
 
 ### B — the `[spm]` chemistry section
 
@@ -479,6 +589,15 @@ Touches `sim-core`'s `pack.rs`.
 - **What is the default shell count `N`?** Slice E's accuracy-vs-cost curve should decide
   it, not taste. The spike ran N = 10 at 0.215 µs; N = 5 is 2.2× cheaper and N = 20 is
   2.2× dearer, so the curve is close to linear and the decision is about accuracy alone.
+- **Should the trajectory baseline become a committed, platform-gated regression test?**
+  It caught a one-ULP change in all seven cases, which is a stronger guarantee than
+  anything currently in the suite, and it would keep guarding the ECM floor long after
+  Phase 6. Against: `CLAUDE.md` refuses to promise cross-platform bit-exactness, so the
+  fixture is valid only on the machine that generated it, and a test that fails on a fresh
+  clone is worse than no test. A `#[ignore]`d test naming its platform — the `godot_gate`
+  shape — is the obvious middle, but an ignored test that fails when someone finally runs
+  it is its own kind of trap. **Owner's call**; slice A works either way, since the
+  baseline already exists out of tree.
 - **Does the aging model apply unchanged to SPM?** Calendar and cycle fade are written
   against `soh_capacity` / `soh_resistance` multipliers on an ECM. On an SPM, capacity
   fade physically *is* lithium inventory loss, which the model represents directly. Slice
