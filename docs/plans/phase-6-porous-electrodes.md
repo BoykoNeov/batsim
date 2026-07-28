@@ -574,13 +574,23 @@ Touches `sim-core`'s `pack.rs`.
 
 ## Open questions
 
-- **Does `nmc_18650_generic.toml`'s TODO get struck or redirected?** Its provenance line
-  promises a future fit "against PyBaMM Chen2020/OKane2022". Slice B's argument is that
-  Chen2020 *cannot* honestly fit an 18650, which makes half that TODO unachievable as
-  written. Options: redirect it to an 18650-class NMC parameter set (e.g. an NMC532/622
-  parameterization), strike it and label the file permanently a hand-fit teaching
-  placeholder, or retire the file once a real NMC exists. **Owner's call**; nothing in
-  Phase 6 is blocked either way, because slice B adds a file rather than editing this one.
+### Resolved before slice A
+
+- **Does `nmc_18650_generic.toml`'s TODO get struck or redirected?** **Redirected**, by
+  owner decision. The file stays, with its hand-fit placeholder values and its two
+  `sim-data` tests untouched; its provenance line is rewritten to name an **18650-class**
+  NMC parameter set (e.g. an NMC532/622 parameterization) instead of Chen2020, which it can
+  never honestly fit. Retiring the file was considered and declined — it would touch tests
+  during a phase whose first slice's gate is "no existing test modified".
+- **Should the trajectory baseline become a committed regression test?** **No**, by owner
+  decision — it stays out of tree at `M:\claud_projects\temp\phase6-baseline`. The
+  cross-platform argument decided it: `CLAUDE.md` refuses to promise bit-exactness across
+  libm implementations, so a committed fixture is valid only on the machine that generated
+  it, and an `#[ignore]`d version merely defers the failure to whoever first runs it.
+  **Consequence to respect: the baseline is unrecoverable once slice A lands.** It is a
+  one-shot instrument, not a repo asset.
+
+### Still open
 - **Is a mixed ECM/SPM pack supported?** Slice D decides. It is the sharpest available
   test of the tangent formulation and a genuinely interesting teaching scenario ("what
   does the cheap model get wrong?"), but it also doubles the configuration surface and
