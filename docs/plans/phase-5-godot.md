@@ -1,6 +1,7 @@
 # Phase 5 — Godot adapter
 
-**Status: in progress. Slices A, B and C have landed; D and E are planned.** This file is written before the work so the
+**Status: in progress. Slices A–D have landed and the phase's exit criterion is met; E is
+planned.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` through `phase-4-server-wasm.md` grew.
 
@@ -14,9 +15,9 @@ accumulator in `_physics_process`, signals) and stops. The exit criterion below 
 therefore authored here rather than inherited, and the choice is argued rather than
 asserted.
 
-| exit criterion (authored here) | to be met by |
-| ------------------------------ | ------------ |
-| A scenario driven through the `BatteryPack` node inside a running Godot process produces a **bit-identical** trajectory to the same scenario driven by `Pack::step` in process | `sim-godot/tests/godot_gate.rs` — a Rust test that builds the cdylib, runs `godot --headless` over a GDScript driver, and compares `f64::to_bits` of every reported field |
+| exit criterion (authored here) | met by |
+| ------------------------------ | ------ |
+| A scenario driven through the `BatteryPack` node inside a running Godot process produces a **bit-identical** trajectory to the same scenario driven by `Pack::step` in process | `sim-godot/tests/godot_gate.rs` — a Rust test that runs `godot --headless` over a GDScript driver and compares `f64::to_bits` of every reported field. **Passing** on both shipped scenarios, including one with a BMS, injected faults and a live RNG. Run with `cargo test -p sim-godot -- --ignored`. |
 
 ## Slices
 
@@ -25,7 +26,7 @@ asserted.
 | A | the shared boundary rule: `Demand::check_finite` / `Env::check_finite` land in `sim-core`; `sim-server` and `sim-wasm` migrate onto them; the sim-wasm "third client" comment is amended to name a criterion instead of a count | **landed** (v9 — no bump, as designed) |
 | B | `crates/sim-godot`: crate skeleton, `godot` pinned to `api-4-7`, workspace membership, and `driver.rs` — the entire pure layer (accumulator, flag edge detector, scenario→pack, batch stepping, caps), host-tested | **landed** (v9 — no bump, as designed) |
 | C | the node surface: exported properties, `#[func]` methods, signals, `_physics_process` wiring, `.gdextension`, demo project skeleton | **landed** (v9 — no bump, as designed) |
-| D | the exit gate: GDScript driver emitting bit patterns, the Rust integration test that compares them, the `--import` bootstrap. **Carries the exit criterion.** | **planned** |
+| D | the exit gate: GDScript driver emitting bit patterns, the Rust integration test that compares them, the `--import` bootstrap. **Carries the exit criterion.** | **landed** (v9 — no bump, as designed) |
 | E | wrap-up: a watchable demo scene, README status and run instructions, adapter overhead measured separately from `Pack::step` | **planned** |
 
 Each slice keeps `cargo test --workspace` and
@@ -795,6 +796,116 @@ The same choice `sim-wasm` made for JS, for a different but equally forcing reas
 - **No `Telemetry` → `Dictionary` method.** The open question below is now half-answered —
   the typed getters were enough for everything slice C and the smoke script needed — but
   the demo scene is the first real consumer, so the decision waits for it.
+
+## Learned while building — slice D (the exit gate)
+
+### The criterion is met, on two scenarios rather than one
+
+```text
+test the_node_and_the_engine_agree_bit_for_bit ... ok
+test the_node_and_the_engine_agree_on_a_scenario_with_faults_and_an_rng ... ok
+```
+
+The second was worth adding rather than assumed redundant. `cc_discharge_lfp.toml` is a
+1S1P isothermal cell with no BMS, no aging and no faults — a trajectory where the engine
+has almost no state beyond one cell's SOC and RC voltages. `soft_short_under_a_lying_sensor.toml`
+has a BMS, injected faults, a sensor that lies, and **a live RNG**. Only the second one can
+catch a restore that lost the RNG's position, which is exactly the failure Phase 4's
+`float_roundtrip` finding was about.
+
+The schedule crosses both signs of current, a rest leg, a `Power` demand (which runs the
+Newton solve rather than the closed form), four different `dt`s, and **two**
+snapshot→String→restore round trips — the second after the trajectory has been perturbed
+in both directions, where the state that would expose a lossy encode is richest.
+
+### The gate was built to fail, and this is what its failure says
+
+A gate nobody has seen fail is a gate nobody should trust. Perturbing the in-process leg by
+one ULP:
+
+```text
+sample 0, field v_terminal: in-process 3.60000000000000053 (0x400cccccccccccce)
+                         != Godot      3.60000000000000009 (0x400ccccccccccccd)
+
+sample 0, field v_terminal: in-process 13.25280000000000236 (0x402a816f0068db8d)
+                         != Godot      13.25280000000000058 (0x402a816f0068db8c)
+```
+
+It names the sample, names the field, and prints both bit patterns. The two different Godot
+values are themselves worth noting — 3.6 V for the single LFP cell, 13.25 V for the 4S
+fault pack — because they prove both legs really ran their own scenario rather than the
+comparison passing on some shared default.
+
+Three smaller guards run in the **default** gate, so the comparison logic cannot rot even
+where the Godot-driven part is skipped: the one-ULP detector above, a check that comparing
+two empty runs is an *error* rather than a vacuous pass, and a byte-order pin that decodes
+Godot's own hex for `0.7995885912375074` and asserts it comes back equal.
+
+### The hang was mine, and its symptom impersonated the failure the timeout was written for
+
+This is the slice's real lesson. The first run of the gate did this, on both tests:
+
+```text
+the Godot leg did not exit within 120s; a GDScript runtime error abandons
+_initialize without reaching quit() and hangs headless
+```
+
+That message is wrong, and it was wrong in the most expensive possible way: it named a real
+failure mode, measured in the spike, that the code was genuinely guarding against. It sent
+the investigation straight at `gate.gd` — which turned out to run perfectly standalone,
+full schedule, exit 0, every time.
+
+The bug was in the harness. It spawned Godot with `Stdio::piped()` and then polled
+`try_wait()` in a loop **without ever draining the pipes**. Once the child fills the pipe
+buffer it blocks on write, so it never exits, so the poll never sees it exit. A deadlock
+that presents as a hang, wearing the label of a different hang.
+
+Two things follow, and the second is the more general one:
+
+- The fix is to give the child **files instead of pipes**. A file has no buffer to fill, the
+  timeout still works, and the output is still there to read after exit.
+- **A diagnostic that names a specific cause is a hypothesis, not a finding.** The timeout
+  message was written before the code it guards existed, and it asserted a cause it could
+  not actually distinguish. It now says the process did not exit and leaves the cause open.
+
+### Running `cargo` from inside `cargo test` was a bad idea and an unnecessary one
+
+The first version called `cargo build -p sim-godot` from inside the test so the cdylib would
+be fresh. The run visibly blocked:
+
+```text
+Blocking waiting for file lock on package cache
+Blocking waiting for file lock on artifact directory
+```
+
+It contends for cargo's own locks with the `cargo test` that spawned it. It is also a
+surprising side effect for a test to have — a test that builds things can mask exactly the
+staleness it was meant to prevent.
+
+And it was never needed: this crate's `crate-type` is `["cdylib", "rlib"]`, so
+`cargo test -p sim-godot` already builds the cdylib while building the test's dependencies.
+The gate now checks the artifact exists and says which command to run if it does not.
+
+### One schedule, written by Rust and read by GDScript
+
+The two legs must run the *same* experiment, and the obvious way to arrange that — write it
+out twice, once in each language — is exactly how they drift. The schedule is a Rust value,
+serialized to JSON, and `gate.gd` reads it. Editing the experiment is a one-place edit.
+
+Every `dt` and demand magnitude in it is **exactly representable in binary** — halves,
+quarters, eighths, small integers. That is deliberate: the schedule crosses as JSON, and a
+`0.1` would be a place for the two legs to disagree for a reason that has nothing to do with
+the boundary under test. The gate would still have passed with `0.1` on this engine, but it
+would have been passing for a reason nobody had checked.
+
+### What is deliberately not here
+
+- **No accumulator in the gate.** By design, and `godot/smoke.gd` covers it instead —
+  see slice C. Asserting bit-identity on a path whose step count depends on frame timing
+  would produce a test that fails on a loaded machine and looks like a physics bug.
+- **No CI wiring.** The gate needs a Godot binary; putting that in a CI path is a decision
+  about infrastructure this repo does not yet have, and `--ignored` keeps it one command
+  away in the meantime.
 
 ## Open questions
 
