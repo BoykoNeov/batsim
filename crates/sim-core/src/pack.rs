@@ -25,9 +25,7 @@ use thiserror::Error;
 use crate::aging::{Aging, AgingConfig, CellAging};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
-use crate::ecm::{
-    advance_cell, cell_heat_w, cell_source, docv_dt_lookup, solve_current, CellModel, EcmState,
-};
+use crate::ecm::{solve_current, CellModel};
 use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
@@ -344,6 +342,18 @@ pub struct CellView {
     /// Cell temperature \[K\].
     pub temp_k: f64,
     /// Sum of the cell's RC-pair overpotentials \[V\], discharge-positive.
+    ///
+    /// Filled from [`crate::CellModel::overpotential_v`], which is model-neutral:
+    /// it is the total polarization between `OCV(soc)` and the terminal that is not
+    /// the instantaneous ohmic drop, and every cell model has one.
+    ///
+    /// **The name is not.** It says "RC pairs", which a porous-electrode cell does
+    /// not have, and reporting `0.0` there would be indistinguishable to a plotting
+    /// client from a real measurement of an unpolarized cell. Renaming it to
+    /// `overpotential_v` is owed — but the field is a **wire contract** (see above),
+    /// so the rename belongs in the slice that bumps the adapters' API version
+    /// alongside a model that needs it, not in a refactor whose whole claim is that
+    /// it changed nothing. See `docs/plans/phase-6-porous-electrodes.md`, slice C.
     pub v_rc_sum: f64,
     /// Static capacity multiplier applied to this cell.
     pub capacity_factor: f64,
@@ -379,7 +389,7 @@ pub struct CellView {
 /// Per-cell start-of-step Thévenin `(E, R)`, carried across the step boundary.
 ///
 /// A **memo of a pure function of pack state**, not state itself: entry `i` is
-/// exactly `cell_source(cell_i.state(), chem, cell_i.eff_r0_factor())` in
+/// exactly `cell_i.model.source(chem, cell_i.eff_r0_factor())` in
 /// series-major / parallel-minor order. `step`'s end-of-step reporting pass computes those values
 /// for every cell, and the next step's start-of-step aggregation would recompute
 /// them from unchanged state — so the reporting pass fills this and the next step
@@ -529,19 +539,8 @@ impl Pack {
             let mut cells = Vec::with_capacity(config.parallel as usize);
             for _ in 0..config.parallel {
                 let (capacity_factor, r0_factor) = draw_factors(&mut rng, &config.scatter);
-                let state = EcmState {
-                    soc: config.initial_soc,
-                    v_rc: vec![0.0; n_rc],
-                    temp_k: config.initial_temp_k,
-                };
-                // validate() guarantees 1 or 2 RC pairs.
-                let model = if n_rc == 1 {
-                    CellModel::Ecm1Rc(state)
-                } else {
-                    CellModel::Ecm2Rc(state)
-                };
                 cells.push(Cell {
-                    model,
+                    model: CellModel::new_ecm(n_rc, config.initial_soc, config.initial_temp_k),
                     capacity_factor,
                     r0_factor,
                     aging: CellAging::new(config.initial_soc),
@@ -639,11 +638,10 @@ impl Pack {
     #[must_use]
     pub fn cell(&self, s: usize, p: usize) -> Option<CellView> {
         let cell = self.groups.get(s)?.cells.get(p)?;
-        let state = cell.model.state();
         Some(CellView {
-            soc: state.soc,
-            temp_k: state.temp_k,
-            v_rc_sum: state.v_rc.iter().sum(),
+            soc: cell.model.soc(),
+            temp_k: cell.model.temp_k(),
+            v_rc_sum: cell.model.overpotential_v(),
             capacity_factor: cell.capacity_factor,
             r0_factor: cell.r0_factor,
             soh_capacity: cell.aging.soh_capacity,
@@ -989,15 +987,14 @@ impl Pack {
                     debug_assert_eq!(
                         (cached.0.to_bits(), cached.1.to_bits()),
                         {
-                            let fresh =
-                                cell_source(cell.model.state(), &self.chem, cell.eff_r0_factor());
+                            let fresh = cell.model.source(&self.chem, cell.eff_r0_factor());
                             (fresh.0.to_bits(), fresh.1.to_bits())
                         },
                         "stale Thévenin memo at cell {g_idx}S{k}P"
                     );
                     cached
                 } else {
-                    let fresh = cell_source(cell.model.state(), &self.chem, cell.eff_r0_factor());
+                    let fresh = cell.model.source(&self.chem, cell.eff_r0_factor());
                     cell_src.push(fresh);
                     fresh
                 };
@@ -1109,14 +1106,7 @@ impl Pack {
                 let i_k = (e_k - v_node) / r_k;
                 // Heat from the same start-of-step state that produced `i_k`, so
                 // the energy accounting closes exactly (see `cell_heat_w`).
-                let state = cell.model.state();
-                let mut q = cell_heat_w(
-                    i_k,
-                    r_k,
-                    state.v_rc.iter().sum::<f64>(),
-                    state.temp_k,
-                    docv_dt_lookup(&self.chem.ocv, state.soc),
-                );
+                let mut q = cell.model.heat_w(&self.chem, i_k, r_k);
                 // An internal short dissipates inside this cell, unlike the balancing
                 // bleed (whose resistor is outside every cell and heats nothing). The
                 // branch is what keeps a healthy pack's heat bit-for-bit what it was.
@@ -1131,8 +1121,8 @@ impl Pack {
                     // expects.
                     heat_w.push(q);
                 }
-                let soc_before = state.soc;
-                let temp_before = state.temp_k;
+                let soc_before = cell.model.soc();
+                let temp_before = cell.model.temp_k();
                 let eff_cap = cap_ah * cell.capacity_factor;
                 let soh_cap = cell.aging.soh_capacity;
                 // Plating: cold, charging, and above the C-rate threshold, judged from
@@ -1146,14 +1136,7 @@ impl Pack {
                 if plating {
                     flags |= EventFlags::PLATING_RISK;
                 }
-                flags |= advance_cell(
-                    cell.model.state_mut(),
-                    &self.chem,
-                    i_k,
-                    dt,
-                    eff_cap,
-                    soh_cap,
-                );
+                flags |= cell.model.advance(&self.chem, i_k, dt, eff_cap, soh_cap);
                 if aging_accumulates {
                     // Throughput from the cell's own current, half-cycle direction
                     // from the pack's — see `CellAging::accumulate` for why the two
@@ -1184,7 +1167,7 @@ impl Pack {
             let mut any_at_onset = false;
             for group in &self.groups {
                 for cell in &group.cells {
-                    let t = cell.model.state().temp_k;
+                    let t = cell.model.temp_k();
                     any_at_onset |= t >= onset_k;
                     temps.push(t);
                 }
@@ -1238,7 +1221,7 @@ impl Pack {
             let write_runaway = runaway.len() == n_cells;
             for group in &mut self.groups {
                 for cell in &mut group.cells {
-                    cell.model.state_mut().temp_k = temps[i];
+                    cell.model.set_temp_k(temps[i]);
                     if write_runaway {
                         cell.runaway = runaway[i];
                     }
@@ -1280,10 +1263,7 @@ impl Pack {
                 // therefore the whole trajectory; see `CellAging::tick`.
                 for group in &mut self.groups {
                     for cell in &mut group.cells {
-                        let (temp_k, soc) = {
-                            let s = cell.model.state();
-                            (s.temp_k, s.soc)
-                        };
+                        let (temp_k, soc) = (cell.model.temp_k(), cell.model.soc());
                         let shorted = cell.aging.tick(params, safety, dt_age, temp_k, soc, rng);
                         if shorted {
                             // A plating short is physically the same object an injected
@@ -1364,7 +1344,7 @@ impl Pack {
             let mut sum_g_cells = 0.0;
             let mut sum_g_nominal = 0.0;
             for (k, cell) in group.cells.iter_mut().enumerate() {
-                let hot = safety.is_some_and(|s| is_vented(s, cell.model.state().temp_k));
+                let hot = safety.is_some_and(|s| is_vented(s, cell.model.temp_k()));
                 // Read for reporting always; *write* only when time passed. A probe step
                 // is an observation, and latching an irreversible bit on one would let
                 // the act of looking at a hot pack change its state — the fourth member
@@ -1375,7 +1355,7 @@ impl Pack {
                     cell.runaway.vented = true;
                 }
                 any_vented |= cell.runaway.vented || hot;
-                let (e, r) = cell_source(cell.model.state(), &self.chem, cell.eff_r0_factor());
+                let (e, r) = cell.model.source(&self.chem, cell.eff_r0_factor());
                 // This is the *next* step's start-of-step source: nothing below
                 // mutates a cell, so the state it was computed from is the state the
                 // next step will find. Memoise it (see [`SourceCache`]).
@@ -1387,12 +1367,11 @@ impl Pack {
                 // excludes it — a shorted cell is not a healthier cell.
                 sum_g += g + cell.shunt_g;
                 sum_eg += e * g;
-                let s = cell.model.state();
-                t_min = t_min.min(s.temp_k);
-                t_max = t_max.max(s.temp_k);
+                t_min = t_min.min(cell.model.temp_k());
+                t_max = t_max.max(cell.model.temp_k());
                 let cap_nominal = cap_ah * cell.capacity_factor;
                 let eff_cap = cap_nominal * cell.aging.soh_capacity;
-                rem_ah += s.soc * eff_cap;
+                rem_ah += cell.model.soc() * eff_cap;
                 nom_ah += eff_cap;
                 if aging_live {
                     cap_nominal_ah += cap_nominal;
@@ -1431,7 +1410,7 @@ impl Pack {
                         self.groups
                             .get(s as usize)
                             .and_then(|g| g.cells.get(p as usize))
-                            .map_or(f64::NAN, |c| c.model.state().temp_k)
+                            .map_or(f64::NAN, |c| c.model.temp_k())
                     })
                     .collect();
                 let sim_time_s = self.sim_time_s;

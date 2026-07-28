@@ -49,6 +49,20 @@ pub struct EcmState {
 /// Both current variants share [`EcmState`]; the variant records the RC-pair
 /// count. Porous-electrode models (`Spm`/`Dfn`) are added in a later phase without
 /// touching the pack layer.
+///
+/// # This enum is the whole boundary
+/// `CLAUDE.md` requires that nothing outside this enum assume ECM-only internals.
+/// That is enforced by shape rather than by convention: there is **no accessor
+/// returning [`EcmState`]**, so the pack layer physically cannot read `v_rc` or
+/// write `soc`. Everything it needs is one of the methods below, and adding a
+/// non-ECM variant means adding arms to them and nothing else.
+///
+/// Each method's ECM arm is deliberately the *original expression, moved* rather
+/// than re-derived. `heat_w` is the one where that matters most: the irreversible
+/// heat is `I·(OCV − V)` in principle and `I·(I·R0 + Σ V_rc)` in this code, and
+/// while those agree algebraically they do **not** agree bit-for-bit, so
+/// generalizing the formula rather than relocating it would move every ECM
+/// trajectory in the repo. See `docs/plans/phase-6-porous-electrodes.md`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CellModel {
     /// Single RC pair.
@@ -58,18 +72,115 @@ pub enum CellModel {
 }
 
 impl CellModel {
-    /// Shared read access to the underlying ECM state.
-    #[must_use]
-    pub fn state(&self) -> &EcmState {
-        match self {
-            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s,
+    /// A fresh equivalent-circuit cell with `n_rc` RC pairs (1 or 2), at rest.
+    ///
+    /// Every overpotential starts at zero: a cell that has never carried current
+    /// has no polarization to relax.
+    pub(crate) fn new_ecm(n_rc: usize, soc: f64, temp_k: f64) -> Self {
+        let state = EcmState {
+            soc,
+            v_rc: vec![0.0; n_rc],
+            temp_k,
+        };
+        // `ChemistryParams::validate` guarantees 1 or 2 RC pairs, so the `else`
+        // arm is `n_rc == 2` and not a silent default.
+        if n_rc == 1 {
+            CellModel::Ecm1Rc(state)
+        } else {
+            CellModel::Ecm2Rc(state)
         }
     }
 
-    /// Shared mutable access to the underlying ECM state.
-    pub fn state_mut(&mut self) -> &mut EcmState {
+    /// Ground-truth state of charge, in \[0, 1\].
+    ///
+    /// For an equivalent circuit this is the coulomb-counted state variable
+    /// itself. A porous-electrode model has no such variable and must *derive*
+    /// this from its lithium inventory — which is why the pack reads it through a
+    /// method rather than a field.
+    #[must_use]
+    pub fn soc(&self) -> f64 {
         match self {
-            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s,
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc,
+        }
+    }
+
+    /// Cell temperature \[K\].
+    #[must_use]
+    pub fn temp_k(&self) -> f64 {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.temp_k,
+        }
+    }
+
+    /// Overwrite the cell temperature \[K\].
+    ///
+    /// Temperature is owned by [`crate::thermal`], not by the cell model — every
+    /// model carries it and none of them integrate it.
+    pub(crate) fn set_temp_k(&mut self, temp_k: f64) {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.temp_k = temp_k,
+        }
+    }
+
+    /// Total overpotential \[V\] across the cell's internal dynamics,
+    /// discharge-positive — everything between `OCV(soc)` and the terminal that is
+    /// *not* the instantaneous ohmic drop.
+    ///
+    /// For an ECM that is `Σ V_rc`. The name is model-neutral on purpose: it is
+    /// the quantity [`crate::CellView`] reports, and every cell model has one.
+    #[must_use]
+    pub fn overpotential_v(&self) -> f64 {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.v_rc.iter().sum(),
+        }
+    }
+
+    /// This cell's Thévenin source `(E, R)` for the pack's linear solve, from its
+    /// start-of-step state. See [`cell_source`].
+    ///
+    /// For a linear model this is exact and the pack's closed-form solve is
+    /// exact with it. A nonlinear model returns a **tangent** here, and the pack
+    /// iterates — but the ECM arm must keep answering with `cell_source`'s own
+    /// expression rather than being reconstructed from an evaluated voltage, or
+    /// the closed-form path stops being bit-identical to itself.
+    #[must_use]
+    pub(crate) fn source(&self, chem: &ChemistryParams, r0_factor: f64) -> (f64, f64) {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_source(s, chem, r0_factor),
+        }
+    }
+
+    /// Heat generated inside this cell \[W\] at current `i`
+    /// \[A, discharge-positive\] and effective resistance `r` \[ohms\], from its
+    /// start-of-step state. See [`cell_heat_w`].
+    #[must_use]
+    pub(crate) fn heat_w(&self, chem: &ChemistryParams, i: f64, r: f64) -> f64 {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_heat_w(
+                i,
+                r,
+                s.v_rc.iter().sum::<f64>(),
+                s.temp_k,
+                docv_dt_lookup(&chem.ocv, s.soc),
+            ),
+        }
+    }
+
+    /// Advance this cell's internal state by `dt` seconds under the current the
+    /// pack solve assigned it. See [`advance_cell`].
+    #[must_use]
+    pub(crate) fn advance(
+        &mut self,
+        chem: &ChemistryParams,
+        i: f64,
+        dt: f64,
+        eff_capacity_ah: f64,
+        soh_capacity: f64,
+    ) -> EventFlags {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
+                advance_cell(s, chem, i, dt, eff_capacity_ah, soh_capacity)
+            }
         }
     }
 }

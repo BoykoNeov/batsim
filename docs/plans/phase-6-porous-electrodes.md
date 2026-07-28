@@ -1,6 +1,6 @@
 # Phase 6 — porous electrodes (`Spm`)
 
-**Status: planned.** This file is written before the work so the decisions below are made
+**Status: slice A landed; B–E planned.** This file is written before the work so the decisions below are made
 once; the "learned while building" material is appended as each slice lands, the way
 `phase-2-thermal-bms.md` through `phase-5-godot.md` grew.
 
@@ -28,7 +28,7 @@ So the exit criterion below is authored here, and argued rather than asserted.
 
 | slice | scope | state | version |
 | ----- | ----- | ----- | ------- |
-| A | **model-agnostic cell interface.** `CellModel::state()`/`state_mut()` stop returning `&EcmState`; `pack.rs`'s eleven direct reaches into ECM internals go through the enum. **Zero physics change.** | planned | v9 — no bump, and a bump here means the refactor changed something |
+| A | **model-agnostic cell interface.** `CellModel::state()`/`state_mut()` are *removed*; `pack.rs`'s twelve direct reaches into ECM internals go through the enum. **Zero physics change.** | **landed** (v9 — no bump, as designed) | v9 |
 | B | **`[spm]` chemistry section.** `sim-data` parses and validates half-cell OCPs, particle geometry, transport and kinetics; `BuildError` when a config asks for `Spm` and the chemistry has none. A new honest `nmc_21700_lgm50.toml`. **No engine physics.** | planned | v9 — the section is `Option`al and defaulted |
 | C | **the SPM cell.** Backward-Euler finite-volume radial diffusion, Butler–Volmer kinetics, `CellModel::Spm`. Single cell only — the pack solve still sees a linear source. **Carries the one bump.** | planned | **v9 → v10** |
 | D | **the nonlinear pack solve.** Iterate the existing linear group solve on tangent Thévenins; closed form remains exactly the closed form when every cell is linear. | planned | v10 — no further bump |
@@ -571,6 +571,92 @@ Touches `sim-core`'s `pack.rs`.
   paid once by whoever regenerates them and never by the Rust test run.
 
 ---
+
+## Learned while building — slice A (the model-agnostic cell interface)
+
+### The gate passed on all four legs
+
+```text
+1. git diff --name-only | grep -i test   ->  NONE — no existing test modified
+2. baseline diff                         ->  bit-identical, all 976 lines
+3. SNAPSHOT_VERSION                      ->  still 9
+4. cargo test --workspace                ->  45 suites ok; clippy -D warnings clean;
+                                             sim-godot gate (--ignored) 2 passed
+```
+
+The whole change is 150 insertions and 60 deletions across two files, and `pack.rs`
+**shrank** by 27 lines — the interface is not a layer over the old code, it is the old
+code with its reaches consolidated.
+
+### There were twelve reaches, not eleven, and the compiler found the twelfth
+
+The plan enumerated the ECM-internal reaches by `grep` and counted eleven. The twelfth was
+`pack.rs:1415` — the BMS temperature-probe read, `.map_or(f64::NAN, |c| c.model.state().temp_k)`,
+inside a closure several lines into a `map` chain, which the eyeballed grep skimmed past.
+
+Worth recording not as an error but as a method note: **removing the accessor is what found
+it.** Had slice A added model-agnostic methods *beside* `state()` and migrated call sites
+by hand, the twelfth reach would have compiled, kept working, and silently blocked the SPM
+variant two slices later. Deleting the old accessor turned an audit into a compiler error.
+That is the argument for the "no `#[doc(hidden)]` escape hatch" line in the slice spec.
+
+### The `v_rc_sum` rename was planned for this slice and moved out of it, on the gate's own logic
+
+The plan assigned `CellView::v_rc_sum` to slice A: the name says "RC pairs", an SPM has
+none, and `0.0` would be the same lie as Phase 5's unprimed `0.0 V`. The rename was written
+and then reverted, for a reason that only appears once you try it:
+
+`CellView` is **serialized directly** by `sim-server` (`cells: Vec<CellView>`) and
+`sim-wasm`, so the field name is a wire contract — `pack.rs` says so itself, "versioned by
+the adapter's API version rather than by `SNAPSHOT_VERSION`". Renaming it forces edits to
+`crates/sim-core/tests/thevenin_cache.rs` and `crates/sim-data/tests/wire_json.rs`, which
+**violates slice A's own first gate**: no existing test modified. And that gate is not
+bureaucracy — it is the check that distinguishes a behaviour-preserving refactor from one
+that quietly moved something a test was updated to accommodate.
+
+So the field keeps its name and gains a doc comment that says exactly what it is, what is
+wrong with the name, and which slice owes the fix. The rename belongs in **slice C**, which
+bumps `SNAPSHOT_VERSION` anyway, ships the model that needs it, and can bump the adapters'
+API version in the same breath. Deferring it costs nothing; doing it here would have cost
+the gate.
+
+### The bit-identity constraint is real, and hand-picked values said it was not
+
+The plan asserts that slice D's fast path stays bit-identical only if the ECM arm answers
+with `cell_source`'s existing expression, because reconstructing `(V(i*) + i*·r, r)` gives
+`(e − i*·r) + i*·r`, which is not `e`. A test was written to pin that. **The first three
+operating points chosen to demonstrate it all round-tripped exactly**, and the test failed
+on its own guard clause — which is the only reason the anecdote did not get committed as
+proof.
+
+Measured over 200 000 random pack-plausible `(e, r, i)` triples:
+
+```text
+lossy 6349/200000 = 3.17%
+  e=3.4986638372623546  r=0.048379784312453225  i=-8.122808264515303   delta=4.441e-16
+```
+
+**3.2 % is the worst possible rate.** Rare enough that a spot check round-trips and reads
+as evidence the concern was imaginary; common enough that a 1000-cell pack hits it on ~30
+cells every step. The test now uses triples found by search rather than by taste, plus a
+deterministic 65 536-point sweep so the *rate* is pinned rather than the anecdote, and it
+records the one point where the identity genuinely holds — `i* = 0`, which is a cold pack's
+first iterate and therefore exactly what a lazy test would probe.
+
+The general lesson is the one Phase 5 slice D reached from the other direction: a plausible
+claim about floating point is a hypothesis. This one happened to be true, and the check that
+established it also established that the obvious way to demonstrate it does not work.
+
+### What is deliberately not here
+
+- **No `spm.rs`, no new variant, no chemistry change.** Slice A adds no physics and no
+  configuration; `CellModel` still has exactly two arms.
+- **No `SourceCache` change.** The tangent-vs-pure-function problem the plan raises is real
+  but it is not reachable yet — with only linear models the memo's contract still holds
+  exactly. Slice D owns it.
+- **No inline unit tests.** `sim-core` has none anywhere, so `CellModel::source` and
+  `heat_w` (both `pub(crate)`) are covered through the trajectory gate and the public
+  surface rather than by introducing a testing convention the crate does not use.
 
 ## Open questions
 
