@@ -603,7 +603,9 @@ pub(crate) fn heat_w(
 /// # Purity
 /// A pure function of cell state and the two scale factors — `i_last` is *state*,
 /// which is what lets [`crate::pack`]'s `SourceCache` memoise this the same way it
-/// memoises the equivalent circuit's exact source.
+/// memoises the equivalent circuit's exact source. [`source_at`] is the same
+/// function with the operating point supplied instead, and it is deliberately
+/// **not** memoisable for exactly that reason.
 #[must_use]
 pub(crate) fn source(
     s: &SpmState,
@@ -611,8 +613,29 @@ pub(crate) fn source(
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
 ) -> (f64, f64) {
+    source_at(s, spm, eff_r0_factor, eff_capacity_ah, s.i_last)
+}
+
+/// [`source`], but tangent to `V(i)` at the caller's operating point `i` rather
+/// than at [`SpmState::i_last`].
+///
+/// This is what the pack's nonlinear solve iterates on: each pass re-takes every
+/// cell's tangent at the current the previous pass assigned it, and the fixed point
+/// — tangent taken at the current it predicts — is the nonlinear solution. See
+/// `Pack::step`.
+///
+/// **Not a pure function of state**, and that is the whole difference from
+/// [`source`]: `i` is an in-flight iterate, which is precisely what `SourceCache`'s
+/// invariant rules out. Nothing computed here may be written into that memo.
+#[must_use]
+pub(crate) fn source_at(
+    s: &SpmState,
+    spm: &SpmParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    i: f64,
+) -> (f64, f64) {
     let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
-    let i = s.i_last;
     let h = 1.0e-6 * eff_capacity_ah;
     let r = -(voltage(&w, s, i + h) - voltage(&w, s, i - h)) / (2.0 * h);
     // `V` is strictly decreasing in `i`, so `r > 0` on any state the model can
@@ -627,6 +650,25 @@ pub(crate) fn source(
         R_FLOOR_OHMS
     };
     (voltage(&w, s, i) + i * r, r)
+}
+
+/// Terminal voltage \[V\] this cell would actually hold at current `i`
+/// \[A, discharge-positive\], from its start-of-step state.
+///
+/// The nonlinear counterpart of the tangent [`source_at`] returns: `source_at`
+/// answers "what straight line touches the curve here", this answers "where is the
+/// curve". The pack's solve needs both — the line to aggregate, and the curve to
+/// measure how far the aggregate's answer has drifted from it.
+#[must_use]
+pub(crate) fn terminal_v(
+    s: &SpmState,
+    spm: &SpmParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    i: f64,
+) -> f64 {
+    let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    voltage(&w, s, i)
 }
 
 /// Advance both particles by `dt` seconds under the current `i` the pack solve

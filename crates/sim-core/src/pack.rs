@@ -117,6 +117,38 @@ use crate::{Demand, Env, Telemetry};
 /// version field rejected it" from "deserialization rejected it".
 pub const SNAPSHOT_VERSION: u32 = 10;
 
+/// Convergence tolerance \[V\] for the pack's nonlinear current solve.
+///
+/// A pass is converged when every cell's true terminal voltage at the current it was
+/// just assigned agrees with the node voltage the solve settled on, to within this.
+///
+/// **Provenance:** the Phase 6 spike measured a safeguarded solve against exactly this
+/// tolerance and reached it in 3 iterations, mean *and* worst, over a 600-step CV hold
+/// (`docs/plans/phase-6-porous-electrodes.md`). Tight is the cheap direction here: the
+/// residual is the same quantity `spm::heat_w` is handed as `v_terminal`, so the
+/// pack's energy balance closes only to about `Σ|i_k|·this·dt`, and loosening it
+/// loosens that.
+///
+/// # Why a constant and not config
+/// The plan asked for this in `PackConfig`, reasoning that a snapshotted value cannot
+/// silently differ between two runs of one scenario. A constant cannot differ *at
+/// all*, which serves that reason strictly better, and it costs no snapshot layout
+/// change — slice D is budgeted at no [`SNAPSHOT_VERSION`] bump, and `faults` is the
+/// precedent that `#[serde(default)]` does not buy an exemption (it took the v7 bump).
+/// Nothing in `scenarios/` or either adapter's setup surface wants to vary it. If some
+/// future model needs a looser one, this becomes a config field then, at the cost of
+/// the bump it actually requires.
+pub const SOLVE_TOL_V: f64 = 1.0e-9;
+
+/// Iteration cap for the pack's nonlinear current solve.
+///
+/// Reaching it raises [`EventFlags::SOLVE_UNCONVERGED`] and the step proceeds on the
+/// last iterate — `step` reports, it does not fail. Set well above the spike's
+/// measured worst case of 3 so that hitting it means something has genuinely gone
+/// wrong (a demand at the max-power knee, a pathological state) rather than that a
+/// hard step needed one pass more than usual.
+pub const SOLVE_ITER_CAP: u32 = 32;
+
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
 ///
@@ -188,11 +220,18 @@ pub struct PackConfig {
     /// Which cell model every cell in this pack runs (defaults to the equivalent
     /// circuit).
     ///
-    /// Pack-wide in Phase 6 slice C2: a pack is all-ECM or all-SPM. A *mixed* pack
-    /// is a legal and pedagogically interesting configuration — it is the sharpest
-    /// test of the tangent formulation — and it needs the nonlinear pack solve that
-    /// slice D brings, so the selector is deliberately one value rather than a
-    /// per-position table it would have to grow out of.
+    /// Pack-wide: a pack is all-ECM or all-SPM.
+    ///
+    /// # Mixed packs
+    /// Slice C2 wrote that a mixed pack "needs the nonlinear pack solve slice D
+    /// brings". Slice D shipped that solve, and the answer turned out to be neither
+    /// "supported" nor "a `BuildError`": **a mixed pack is unrepresentable**, because
+    /// this is one value for the whole pack and there is nothing for a build check to
+    /// reject. The solve itself is already mixed-ready — it iterates per *cell*
+    /// tangents and `CellModel::is_linear` is asked per cell — so what is missing is
+    /// only the config surface, and adding a per-position table was outside slice D's
+    /// scope. Whoever adds it inherits a solve that needs no change and one debug
+    /// assertion in `step` that will have to be deleted rather than satisfied.
     #[serde(default)]
     pub cell_model: CellModelConfig,
 }
@@ -506,11 +545,18 @@ pub struct CellView {
 /// where the solve happened to be looking, and this memo's whole contract
 /// ("bit-for-bit what a recompute would give") would collapse. It holds because the
 /// operating point the tangent is taken at, `SpmState::i_last`, is itself *state*:
-/// it is written by `advance` and it is in the snapshot. Slice D, which iterates the
-/// solve, is where that stops being free — an in-flight iterate is exactly the thing
-/// this paragraph rules out — and it owes an explicit answer (keep the memo ECM-only,
-/// or key it by the operating point) rather than letting the debug assertion below
-/// discover it as a staleness message.
+/// it is written by `advance` and it is in the snapshot.
+///
+/// **Slice D's answer, since it iterates the solve: the memo stays exactly this — the
+/// tangent at `i_last` — and in-flight iterates are never written into it.** Not
+/// "ECM-only" and not "keyed by the operating point": there is only ever one operating
+/// point worth memoising, because only the first pass of a step reads this and the
+/// first pass is by definition the one taken at start-of-step state. Passes two
+/// onwards iterate in a scratch buffer `step` owns, allocated only when the pack has a
+/// nonlinear cell. That is a *structural* guarantee rather than a sequencing one — it
+/// does not depend on the end-of-step reporting pass running to overwrite scribbles,
+/// which would have made the invariant conditional on every early-exit path in `step`.
+/// The debug assertion below therefore still means what it has always meant.
 ///
 /// Aging mutates **both** `soh_resistance` and `soh_capacity`, one half of each of
 /// the two products above — and neither needs invalidation, because the aging update
@@ -1120,103 +1166,261 @@ impl Pack {
             cell_src.clear();
             cell_src.reserve(n_cells);
         }
+        // --- does this pack need the nonlinear solve at all?
+        //
+        // The whole iteration below branches on this one boolean and on nothing else.
+        // A pack is homogeneous by construction — every cell is built from the single
+        // `PackConfig::cell_model` — so the first cell answers for all of them, and the
+        // sweep that would confirm it costs a traversal the linear path should not pay.
+        // Debug builds pay it, on the `SourceCache` staleness assert's precedent: if a
+        // future slice ever gives the config a per-position table, this fires rather
+        // than quietly solving half a pack with the wrong method. An empty pack cannot
+        // be built, and answering "linear" for one keeps `step`'s no-panic promise.
+        let nonlinear = self
+            .groups
+            .first()
+            .and_then(|g| g.cells.first())
+            .is_some_and(|c| !c.model.is_linear());
+        debug_assert!(
+            self.groups
+                .iter()
+                .flat_map(|g| g.cells.iter())
+                // i.e. every cell agrees with the first one about being linear.
+                .all(|c| c.model.is_linear() != nonlinear),
+            "mixed linear/nonlinear pack: `cell_model` is pack-wide, so this cannot \
+             come from config"
+        );
+        // An external short is a shunt on the pack's aggregate Thévenin (see below).
+        // Read once: it is a pure function of fault state, which no pass mutates.
+        let g_ext = self.faults.external_short_conductance_s();
+
         let mut group_src: Vec<(f64, f64)> = Vec::with_capacity(self.groups.len());
-        for (g_idx, group) in self.groups.iter().enumerate() {
-            // Σ 1/R_k, plus the bleed conductance if this group is balancing, plus any
-            // cell's internal-short leakage. Note that both enter the *denominator
-            // only*: they draw current out of the node without contributing any EMF.
-            // A healthy cell's `shunt_g` is exactly `0.0`, and `g > 0` always, so
-            // `g + 0.0 == g` bit-for-bit — an unshorted pack solves exactly the
-            // arithmetic it solved before faults existed.
-            let mut sum_g = bleed_at(g_idx);
-            let mut sum_eg = 0.0; // Σ E_k/R_k
-            for (k, cell) in group.cells.iter().enumerate() {
-                let (e, r) = if warm {
-                    let cached = cell_src[g_idx * parallel + k];
-                    // The memo must be bit-for-bit what a recompute would give. In
-                    // debug builds it is checked, every cell, every step — which makes
-                    // every test in the suite a staleness check, and is the guard that
-                    // pays for `SourceCache`'s always-equal `PartialEq`.
-                    debug_assert_eq!(
-                        (cached.0.to_bits(), cached.1.to_bits()),
-                        {
-                            let fresh = cell.model.source(
-                                &self.chem,
-                                cell.eff_r0_factor(),
-                                cell.eff_capacity_ah(cap_ah),
-                            );
-                            (fresh.0.to_bits(), fresh.1.to_bits())
-                        },
-                        "stale Thévenin memo at cell {g_idx}S{k}P"
-                    );
-                    cached
-                } else {
-                    let fresh = cell.model.source(
+        // Scratch for the nonlinear iteration: the tangents pass *n+1* aggregates from,
+        // and the currents pass *n* assigned. Both stay empty — and therefore
+        // unallocated — on a linear pack, and neither is ever written into `cell_src`:
+        // an in-flight iterate is exactly what [`SourceCache`]'s invariant excludes.
+        let mut tangent: Vec<(f64, f64)> = Vec::new();
+        let mut i_cell: Vec<f64> = Vec::new();
+        let mut flags = EventFlags::empty();
+        let mut solve_iterations: u32 = 0;
+
+        // --- the pack current solve.
+        //
+        // One pass is the closed form Phase 1 shipped: per-cell Thévenin, parallel and
+        // series aggregation, the external-short transform, the demand solve, and
+        // protection. On a linear pack that pass is the exact answer and the loop
+        // exits, having done bit-for-bit the arithmetic it did before this slice.
+        //
+        // A nonlinear cell's source is only a *tangent*, true where it was taken, so
+        // each further pass re-takes every tangent at the current the previous pass
+        // assigned and solves again. The fixed point — every tangent taken at the
+        // current it predicts — is the nonlinear solution, and it is reached in a
+        // single loop rather than a nested one because the linearization moves the
+        // whole pack at once. Note protection sits *inside* the loop deliberately: a
+        // derated or interrupted current is a different operating point, and the
+        // tangents have to be taken where the cells actually end up. That includes an
+        // open contactor, which is not a shortcut out — at `i_g = 0` an imbalanced
+        // group still redistributes internally, and those cell currents are nonzero.
+        let (i_g, i_external_short_a, prot_flags) = loop {
+            group_src.clear();
+            for (g_idx, group) in self.groups.iter().enumerate() {
+                // Σ 1/R_k, plus the bleed conductance if this group is balancing, plus any
+                // cell's internal-short leakage. Note that both enter the *denominator
+                // only*: they draw current out of the node without contributing any EMF.
+                // A healthy cell's `shunt_g` is exactly `0.0`, and `g > 0` always, so
+                // `g + 0.0 == g` bit-for-bit — an unshorted pack solves exactly the
+                // arithmetic it solved before faults existed.
+                let mut sum_g = bleed_at(g_idx);
+                let mut sum_eg = 0.0; // Σ E_k/R_k
+                for (k, cell) in group.cells.iter().enumerate() {
+                    let (e, r) = if solve_iterations > 0 {
+                        // Pass two onwards: the tangents re-taken at the end of the
+                        // previous pass. Never the memo — see [`SourceCache`].
+                        tangent[g_idx * parallel + k]
+                    } else if warm {
+                        let cached = cell_src[g_idx * parallel + k];
+                        // The memo must be bit-for-bit what a recompute would give. In
+                        // debug builds it is checked, every cell, every step — which makes
+                        // every test in the suite a staleness check, and is the guard that
+                        // pays for `SourceCache`'s always-equal `PartialEq`.
+                        debug_assert_eq!(
+                            (cached.0.to_bits(), cached.1.to_bits()),
+                            {
+                                let fresh = cell.model.source(
+                                    &self.chem,
+                                    cell.eff_r0_factor(),
+                                    cell.eff_capacity_ah(cap_ah),
+                                );
+                                (fresh.0.to_bits(), fresh.1.to_bits())
+                            },
+                            "stale Thévenin memo at cell {g_idx}S{k}P"
+                        );
+                        cached
+                    } else {
+                        let fresh = cell.model.source(
+                            &self.chem,
+                            cell.eff_r0_factor(),
+                            cell.eff_capacity_ah(cap_ah),
+                        );
+                        cell_src.push(fresh);
+                        fresh
+                    };
+                    let g = 1.0 / r;
+                    sum_g += g + cell.shunt_g;
+                    sum_eg += e * g;
+                }
+                group_src.push((sum_eg / sum_g, 1.0 / sum_g));
+            }
+            // Series aggregate: same current through every group; voltages add.
+            let e_pack: f64 = group_src.iter().map(|&(e, _)| e).sum();
+            let r_pack: f64 = group_src.iter().map(|&(_, r)| r).sum();
+
+            // --- an external short sits across the load-side terminals, downstream of the
+            // contactor (see [`crate::faults`]). It is a shunt on the pack's aggregate
+            // Thévenin, so the *load* solves against the transformed source and the short
+            // takes whatever the resulting terminal voltage gives it. Every demand variant
+            // stays closed form, and `E' − i_load·R'` is identically the terminal voltage
+            // `E_pack − i_g·R_pack` that the total current produces — the two views of the
+            // same node agree by construction, which is what keeps the energy balance
+            // exact.
+            let (e_load, r_load) = if g_ext > 0.0 {
+                let denom = 1.0 + r_pack * g_ext;
+                (e_pack / denom, r_pack / denom)
+            } else {
+                (e_pack, r_pack)
+            };
+
+            // --- solve the single load current (shared by every series group), then let
+            // protection derate or interrupt it. Clamping the *solved current* rather
+            // than the demand itself means every demand variant — including `Power` and
+            // `Voltage` — is protected by the same code, and the solve stays closed form.
+            let i_req = solve_current(demand, e_load, r_load);
+            // Protection's verdict belongs to *this* pass and is carried out of the
+            // loop by whichever pass breaks — deliberately a fresh binding rather than
+            // an accumulator, because a transient `OC` on an intermediate iterate that
+            // the converged current does not exceed would otherwise stick, and the step
+            // would report an over-current that never happened. Latching is unaffected:
+            // `apply_protection`'s hard trips read the sensor frame, not the iterate, so
+            // they answer the same on every pass.
+            let mut prot_flags = EventFlags::empty();
+            let i_load = match (&mut self.bms, sensor_tick) {
+                (Some(bms), true) => {
+                    let pack_ah = cap_ah * f64::from(self.parallel);
+                    let (i_allowed, protection_flags) =
+                        bms.apply_protection(&self.chem, i_req, pack_ah);
+                    prot_flags = protection_flags;
+                    i_allowed
+                }
+                // A latched contactor keeps the pack open even on a probe step, where the
+                // BMS does not otherwise run: an open contactor is a state, not an event.
+                (Some(bms), false) if bms.contactor_open() => 0.0,
+                _ => i_req,
+            };
+
+            // --- total pack current: what the load was allowed, plus what the short takes.
+            // Protection can derate the load but cannot derate a short, which is precisely
+            // the lesson — the only thing that stops an external short is opening the
+            // contactor, and that disconnects load and short together.
+            let mut i_external_short_a = 0.0;
+            let mut i_g = i_load;
+            if self.bms.as_ref().is_some_and(Bms::contactor_open) {
+                i_g = 0.0;
+            } else if g_ext > 0.0 {
+                i_external_short_a = (e_load - i_load * r_load) * g_ext;
+                i_g += i_external_short_a;
+            }
+            solve_iterations += 1;
+            if !nonlinear {
+                break (i_g, i_external_short_a, prot_flags);
+            }
+
+            // --- how far is this pass's answer from the physics it linearized?
+            //
+            // The solve hands every cell a current; the cell's *true* curve says what
+            // voltage it would hold there. Where those disagree, the group node voltage
+            // is a linear extrapolation of a curve, and the gap is exactly the error.
+            // At the fixed point each tangent is taken where it is evaluated and the
+            // gap closes to nothing.
+            let src: &[(f64, f64)] = if solve_iterations == 1 {
+                &cell_src
+            } else {
+                &tangent
+            };
+            i_cell.clear();
+            let mut residual_v = 0.0_f64;
+            for (g_idx, group) in self.groups.iter().enumerate() {
+                let (e_gv, r_gv) = group_src[g_idx];
+                let v_node = e_gv - i_g * r_gv;
+                for (k, cell) in group.cells.iter().enumerate() {
+                    let (e_k, r_k) = src[g_idx * parallel + k];
+                    let i_k = (e_k - v_node) / r_k;
+                    let gap = (cell.model.terminal_v_at(
                         &self.chem,
                         cell.eff_r0_factor(),
                         cell.eff_capacity_ah(cap_ah),
-                    );
-                    cell_src.push(fresh);
-                    fresh
-                };
-                let g = 1.0 / r;
-                sum_g += g + cell.shunt_g;
-                sum_eg += e * g;
+                        i_k,
+                    ) - v_node)
+                        .abs();
+                    // The NaN arm is not defensive noise: `f64::max` *discards* a NaN
+                    // in favour of the other operand, so a pack driven somewhere
+                    // pathological would report a converged solve over a state that
+                    // has none. Letting NaN win instead runs the solve to its cap and
+                    // raises `SOLVE_UNCONVERGED`, which is the true statement.
+                    if gap > residual_v || gap.is_nan() {
+                        residual_v = gap;
+                    }
+                    i_cell.push(i_k);
+                }
             }
-            group_src.push((sum_eg / sum_g, 1.0 / sum_g));
-        }
-        // Series aggregate: same current through every group; voltages add.
-        let e_pack: f64 = group_src.iter().map(|&(e, _)| e).sum();
-        let r_pack: f64 = group_src.iter().map(|&(_, r)| r).sum();
+            if residual_v <= SOLVE_TOL_V {
+                break (i_g, i_external_short_a, prot_flags);
+            }
+            if solve_iterations >= SOLVE_ITER_CAP {
+                flags |= EventFlags::SOLVE_UNCONVERGED;
+                break (i_g, i_external_short_a, prot_flags);
+            }
 
-        // --- an external short sits across the load-side terminals, downstream of the
-        // contactor (see [`crate::faults`]). It is a shunt on the pack's aggregate
-        // Thévenin, so the *load* solves against the transformed source and the short
-        // takes whatever the resulting terminal voltage gives it. Every demand variant
-        // stays closed form, and `E' − i_load·R'` is identically the terminal voltage
-        // `E_pack − i_g·R_pack` that the total current produces — the two views of the
-        // same node agree by construction, which is what keeps the energy balance
-        // exact.
-        let g_ext = self.faults.external_short_conductance_s();
-        let (e_load, r_load) = if g_ext > 0.0 {
-            let denom = 1.0 + r_pack * g_ext;
-            (e_pack / denom, r_pack / denom)
+            // Re-take every tangent where this pass put the cell.
+            tangent.clear();
+            for (idx, cell) in self.groups.iter().flat_map(|g| g.cells.iter()).enumerate() {
+                tangent.push(cell.model.source_at(
+                    &self.chem,
+                    cell.eff_r0_factor(),
+                    cell.eff_capacity_ah(cap_ah),
+                    i_cell[idx],
+                ));
+            }
+        };
+        flags |= prot_flags;
+        // The sources the *converged* pass aggregated from — the ones the per-cell
+        // split below has to agree with, or the group node voltage and the cell
+        // currents would come from different linearizations.
+        let solved_src: &[(f64, f64)] = if solve_iterations > 1 {
+            &tangent
         } else {
-            (e_pack, r_pack)
+            &cell_src
         };
-
-        // --- solve the single load current (shared by every series group), then let
-        // protection derate or interrupt it. Clamping the *solved current* rather
-        // than the demand itself means every demand variant — including `Power` and
-        // `Voltage` — is protected by the same code, and the solve stays closed form.
-        let i_req = solve_current(demand, e_load, r_load);
-        let mut flags = EventFlags::empty();
-        let i_load = match (&mut self.bms, sensor_tick) {
-            (Some(bms), true) => {
-                let pack_ah = cap_ah * f64::from(self.parallel);
-                let (i_allowed, protection_flags) =
-                    bms.apply_protection(&self.chem, i_req, pack_ah);
-                flags |= protection_flags;
-                i_allowed
-            }
-            // A latched contactor keeps the pack open even on a probe step, where the
-            // BMS does not otherwise run: an open contactor is a state, not an event.
-            (Some(bms), false) if bms.contactor_open() => 0.0,
-            _ => i_req,
+        // The end-of-step reporting pass recomputes every source from the state it
+        // leaves behind, and normally that is the right thing: after a real step a
+        // nonlinear cell's `i_last` *is* the current it was just assigned, so the
+        // recomputed tangent is taken exactly where the solve put it.
+        //
+        // A probe step is the exception. `spm::advance` deliberately does not write
+        // `i_last` when no time passes, so the recompute would take every tangent
+        // where the cell *was* — handing back precisely the stale extrapolation this
+        // iteration exists to remove, and making a `dt = 0` voltage read (which is how
+        // this repo reads an instantaneous voltage, see the energy-balance property
+        // test) blind to the whole slice. So on that one path the pass reports from the
+        // converged sources instead. The copy is what lets it, since the pass writes
+        // `cell_src` as it goes; it is allocated on no other path, and a linear pack —
+        // whose source is the same line at every current — never takes this branch at
+        // all.
+        let report_src: Vec<(f64, f64)> = if nonlinear && !sensor_tick {
+            solved_src.to_vec()
+        } else {
+            Vec::new()
         };
-
-        // --- total pack current: what the load was allowed, plus what the short takes.
-        // Protection can derate the load but cannot derate a short, which is precisely
-        // the lesson — the only thing that stops an external short is opening the
-        // contactor, and that disconnects load and short together.
-        let mut i_external_short_a = 0.0;
-        let mut i_g = i_load;
-        if self.bms.as_ref().is_some_and(Bms::contactor_open) {
-            i_g = 0.0;
-        } else if g_ext > 0.0 {
-            i_external_short_a = (e_load - i_load * r_load) * g_ext;
-            i_g += i_external_short_a;
-        }
+        let report_from_solve = !report_src.is_empty();
 
         // --- split into per-cell currents, tally heat, and advance each cell.
         // Heat is tallied in every mode (an isothermal pack still reports how much
@@ -1258,7 +1462,7 @@ impl Pack {
                 flags |= EventFlags::BALANCING;
             }
             for (k, cell) in group.cells.iter_mut().enumerate() {
-                let (e_k, r_k) = cell_src[g * parallel + k];
+                let (e_k, r_k) = solved_src[g * parallel + k];
                 // The cell's *internal* branch current, unchanged in form by any
                 // shunt: this is what moves charge through the electrodes, so it is
                 // what drains SOC, drives the RC pairs, and is charged for throughput.
@@ -1530,8 +1734,16 @@ impl Pack {
                 );
                 // This is the *next* step's start-of-step source: nothing below
                 // mutates a cell, so the state it was computed from is the state the
-                // next step will find. Memoise it (see [`SourceCache`]).
+                // next step will find. Memoise it (see [`SourceCache`]) — the memo
+                // always holds this value, never the reported one below.
                 cell_src[g_idx * parallel + k] = (e, r);
+                // See `report_src`: identical to `(e, r)` on every path but a probe
+                // step over a nonlinear pack.
+                let (e, r) = if report_from_solve {
+                    report_src[g_idx * parallel + k]
+                } else {
+                    (e, r)
+                };
                 let g = 1.0 / r;
                 // Same membership as the start-of-step aggregation above: the shunt is
                 // part of the node's conductance, so the reported group voltage is the
@@ -1629,6 +1841,7 @@ impl Pack {
             i_balancing_a,
             i_internal_short_a,
             i_external_short_a,
+            solve_iterations,
             flags,
         }
     }

@@ -207,6 +207,79 @@ impl CellModel {
         }
     }
 
+    /// [`Self::source`], but tangent at the caller's operating point `i`
+    /// \[A, discharge-positive\] rather than at the model's own.
+    ///
+    /// The equivalent circuit **ignores `i` entirely**, and that is the point rather
+    /// than an omission: a linear cell's Thévenin source is the same line at every
+    /// current, so the tangent at any operating point is `cell_source`'s existing
+    /// expression, byte for byte. That is what makes the pack's nonlinear iteration
+    /// collapse to today's closed form on an all-equivalent-circuit pack — see
+    /// [`Self::is_linear`], which is the flag the pack actually branches on.
+    ///
+    /// Not memoisable: `i` is an in-flight iterate, not state. See
+    /// [`crate::spm::source_at`].
+    #[must_use]
+    pub(crate) fn source_at(
+        &self,
+        chem: &ChemistryParams,
+        eff_r0_factor: f64,
+        eff_capacity_ah: f64,
+        i: f64,
+    ) -> (f64, f64) {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_source(s, chem, eff_r0_factor),
+            CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
+                spm::source_at(s, spm, eff_r0_factor, eff_capacity_ah, i)
+            }),
+        }
+    }
+
+    /// Terminal voltage \[V\] this cell holds at current `i`
+    /// \[A, discharge-positive\], from its start-of-step state.
+    ///
+    /// Slice A's design listed this among the quantities `pack.rs` needs and slice A
+    /// did not ship it, because nothing needed it while every cell was linear: for an
+    /// equivalent circuit it is exactly `E − i·R` off [`Self::source`], which the
+    /// pack already had. A nonlinear cell is where the two part company, and the gap
+    /// between them *is* the residual the pack's iteration drives to zero.
+    #[must_use]
+    pub(crate) fn terminal_v_at(
+        &self,
+        chem: &ChemistryParams,
+        eff_r0_factor: f64,
+        eff_capacity_ah: f64,
+        i: f64,
+    ) -> f64 {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
+                let (e, r) = cell_source(s, chem, eff_r0_factor);
+                e - i * r
+            }
+            CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
+                spm::terminal_v(s, spm, eff_r0_factor, eff_capacity_ah, i)
+            }),
+        }
+    }
+
+    /// Whether this cell's terminal voltage is a straight line in its current over
+    /// the step — so that [`Self::source`] is *exact* rather than a tangent.
+    ///
+    /// The pack branches on this and on nothing else. When every cell answers `true`
+    /// the aggregated Thévenin is exact too, the closed-form solve is the whole
+    /// answer, and the iteration exits on its first pass having done literally the
+    /// arithmetic Phase 1 did. Deciding that structurally rather than by measuring a
+    /// residual is deliberate: `E − ((E − V)/R)·R` is not bit-identically `V`, so a
+    /// tolerance-gated exit would leave the equivalent circuit's bit-identity resting
+    /// on the tolerance instead of on the algebra.
+    #[must_use]
+    pub(crate) fn is_linear(&self) -> bool {
+        match self {
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) => true,
+            CellModel::Spm(_) => false,
+        }
+    }
+
     /// Heat generated inside this cell \[W\] at current `i`
     /// \[A, discharge-positive\] and effective resistance `r` \[ohms\], from its
     /// start-of-step state. See [`cell_heat_w`].

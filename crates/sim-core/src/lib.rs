@@ -275,6 +275,21 @@ pub struct Telemetry {
     /// `i_actual − i_external_short_a`. The dissipation is outside the pack, so like
     /// the load's share it is already inside `v_terminal · i_actual`.
     pub i_external_short_a: f64,
+    /// How many passes the pack's current solve took this step.
+    ///
+    /// **Exactly `1` on any pack whose cells are all linear**, which is every pack
+    /// built before Phase 6 slice C2 and every `CellModelConfig::Ecm` pack after it:
+    /// the aggregated Thévenin is exact, so one closed-form pass *is* the answer.
+    /// Greater than one only for a model whose voltage curves within the step, where
+    /// each pass re-takes every cell's tangent at the current the previous pass
+    /// assigned it.
+    ///
+    /// Reported rather than kept internal because it is the honest cost signal for a
+    /// nonlinear cell model — a step that took six passes cost six pack solves — and
+    /// because "did the fast path survive" is otherwise unobservable from outside.
+    /// Reaching [`pack::SOLVE_ITER_CAP`] with [`EventFlags::SOLVE_UNCONVERGED`] set
+    /// means the tolerance was *not* met.
+    pub solve_iterations: u32,
     /// Events raised during this step (protection trips, clamps, safety states).
     pub flags: EventFlags,
 }

@@ -32,7 +32,7 @@ So the exit criterion below is authored here, and argued rather than asserted.
 | B | **`[spm]` chemistry section.** `sim-data` parses and validates half-cell OCPs, particle geometry, transport and kinetics. A new honest `nmc_21700_lgm50.toml`. **No engine physics.** (The `BuildError` moved to C with the config field that can trigger it — see below.) | **landed** (v9 — no bump, as designed) | v9 |
 | C1 | **the wire-surface rename.** `CellView::v_rc_sum` → `overpotential_v`, the two adapter API versions it owes, and the test that makes that rule enforceable. No physics, no config, no snapshot change. | **landed** (v9 — no bump; the bump follows the variant, see below) | v9 |
 | C2 | **the SPM cell.** Backward-Euler finite-volume radial diffusion, Butler–Volmer kinetics, `CellModel::Spm`, plus the `PackConfig` selector, `shells`, both `BuildError`s and the version-check test. Single cell only — the pack solve still sees a linear source. **Carries the one bump.** | **landed** (v10 — the one bump, as designed) | **v9 → v10** |
-| D | **the nonlinear pack solve.** Iterate the existing linear group solve on tangent Thévenins; closed form remains exactly the closed form when every cell is linear. | planned | v10 — no further bump |
+| D | **the nonlinear pack solve.** Iterate the existing linear group solve on tangent Thévenins; closed form remains exactly the closed form when every cell is linear. | **landed** (v10 — no bump, as budgeted) | v10 |
 | E | **PyBaMM validation + wrap-up.** SPM goldens, tolerance built to fail, SPM's own perf budget measured, README. **Carries exit criteria 2.** | planned | v10 — no further bump |
 
 Each slice keeps `cargo test --workspace` and
@@ -1464,6 +1464,194 @@ constant changing under it.** The defended constants are the ones asserted exact
   picks one.
 - **No SPM perf budget.** Slice E, with `pack-step-perf.md`'s discipline.
 
+---
+
+## Learned while building — slice D (the nonlinear pack solve)
+
+### The gate passed on all four legs, and the prediction was written first
+
+```text
+1. git diff --name-only | grep -i test   ->  NONE modified; two files ADDED
+2. baseline diff vs after-sliceC2.txt    ->  EMPTY, all 976 lines
+   telemetry-only vs baseline-13d295d    ->  clean (the cumulative form of EC 1)
+3. SNAPSHOT_VERSION                      ->  still 10, as budgeted
+4. cargo test --workspace                ->  51 suites ok; clippy -D warnings clean;
+                                             sim-godot gate (--ignored) 2 passed
+```
+
+`prediction-d.txt` was written before the run and claimed the *stronger* thing than
+C2's: not "+2 lines per snapshot" but **empty**, telemetry and snapshot both. It
+landed. The one place it could have been wrong for a boring reason was the added
+`Telemetry::solve_iterations` field — and the instrument enumerates its 17 telemetry
+fields by name rather than serializing the struct, so an 18th is invisible to it. That
+is worth knowing about the instrument before the next slice adds a field.
+
+### The tolerance is a `const`, and the plan's own reason is why
+
+The slice spec asked for the convergence tolerance in `PackConfig` "and therefore in
+the snapshot", and that collides head-on with this slice's no-bump budget. The no-bump
+line wins, and not merely because it is stated twice: the plan's *reason* for wanting
+config — "so it cannot silently differ between two runs of the same scenario" — is
+served strictly better by a constant, which cannot differ at all.
+
+The tempting escape is `#[serde(default)]` on a new `Pack` field, and the repo already
+refutes it: **`faults: FaultState` is `#[serde(default)]` and still took the v7 bump.**
+A default does not make a layout change into a non-change; it makes an *old blob*
+readable. Against that, a `PackConfig` field would also have cost the 24-literal
+mechanical sweep for a value nothing in `scenarios/` or either adapter's setup surface
+wants to vary. `SOLVE_TOL_V = 1e-9` and `SOLVE_ITER_CAP = 32` live in `pack.rs` with
+the spike measurement as provenance; the day a model needs a looser one, it becomes
+config then and pays the bump it actually requires.
+
+### The fast path exits structurally, because a residual cannot do it
+
+`CellModel::is_linear()` is the whole branch, and the loop breaks on it *before*
+evaluating any residual. The alternative — let the residual notice that an equivalent
+circuit converged — is wrong for a reason that only shows up in bits:
+`E − ((E − V)/R)·R` is **not** bit-identically `V`. A tolerance-gated exit would leave
+the ECM path's bit-identity resting on the tolerance rather than on the algebra, which
+is the exact failure the slice spec names ("only the tolerance is hiding it").
+
+The homogeneity that makes one cell answer for all of them is real —
+`PackConfig::cell_model` is pack-wide — so release builds check `groups[0].cells[0]`
+and debug builds sweep the rest, on the `SourceCache` staleness assert's precedent.
+
+### Protection belongs *inside* the loop, and its flags must not accumulate
+
+A derated or interrupted current is a different operating point, so the tangents have
+to be re-taken where the cells actually end up; that puts `apply_protection` inside the
+iteration. Two things make it safe, and both were checked rather than assumed:
+
+- **Its hard trips read `self.frame`, not `i_req`.** The latch is therefore
+  iterate-independent and answers the same on every pass, so repeated calls cannot
+  latch a contactor that one pass would not have.
+- **Only `OC` and the clamp move with the iterate**, which is why the verdict is a
+  fresh binding carried out by whichever pass breaks, never `flags |= …` inside the
+  loop. The natural edit is the accumulating one and it would make a transient `OC` on
+  an intermediate iterate stick — an over-current the step never actually had.
+
+An open contactor is deliberately **not** a shortcut out of the loop: at `i_g = 0` an
+imbalanced group still redistributes internally, and those cell currents are nonzero.
+
+### `SourceCache`'s answer is "neither of the two options the plan offered"
+
+The plan asked slice D to choose between keeping the memo ECM-only and keying it by the
+operating point. The answer is **neither**: the memo stays exactly what it was — the
+tangent at `i_last` — because only the *first* pass of a step ever reads it, and the
+first pass is by definition the one taken at start-of-step state. Passes two onwards
+iterate in a scratch `Vec` that `step` owns.
+
+That distinction is not stylistic. Iterating in place inside `cell_src` and relying on
+the end-of-step reporting pass to overwrite the scribbles would have made the memo's
+invariant conditional on that pass running — on every path, including probe steps and
+early exits. A separate buffer makes it structural, and the buffer is unallocated on a
+linear pack.
+
+### The bug: a probe step reported the stale tangent, and only a new test could see it
+
+`spm::advance` deliberately does not write `i_last` when no time passes (slice C2's own
+line: "a zero-length probe step mutates nothing"). The end-of-step reporting pass
+recomputes every source from end-of-step state — which on a probe step is start-of-step
+state — and so took every tangent **where the cell was, not where the solve had just
+put it**, handing back precisely the extrapolation the iteration exists to remove.
+
+The size of it: a rest-to-2C probe on the shipped LG M50 cell reported **3.4336 V**
+against a true **3.5565 V**. 123 mV, on a cell whose whole window is about 1.7 V.
+
+Three things make this worth writing down rather than just fixing.
+
+1. **It survived every existing test.** `dt = 0` is how this repo reads an
+   instantaneous voltage — the energy-balance property test does exactly that — so the
+   most common way of asking a pack for its voltage was the one path blind to the whole
+   slice.
+2. **The general lesson, and it is the sibling of C2's.** C2 learned that "no-op by
+   arithmetic" is false the moment a scheme multiplies and divides. D's version:
+   **a quantity recomputed from unchanged state is not thereby unchanged, if what it is
+   a function of includes an operating point the step just moved.** "Nothing mutated,
+   so the recompute is the same" is true of the *state* and false of the tangent.
+3. The fix is confined to the one path (`nonlinear && !sensor_tick`) and copies the
+   converged sources; a linear pack never takes the branch, which is why the baseline
+   still diffs empty with the fix in.
+
+### Iteration counts, measured on a pack rather than inherited from the spike
+
+The spike measured 3 passes mean and worst for **one cell** on a CV hold. On a pack,
+across a schedule of both signs, rests, a reversal, two CV holds, three power demands
+including one at the max-power knee, a probe at a never-held current, and a 600 s
+coarse step:
+
+```text
+              1S1P        4S3P (scattered)
+CC legs        2            3
+Rest           2            3
+CV holds       4            4
+Power legs     3–4          3–4
+probe step     2            3
+600 s step     1            2
+worst          4            4
+```
+
+Three readings. **The worst case is 4, against a cap of 32** — the same league as the
+spike, so the cap is a genuine backstop rather than a working limit. **A settled
+constant-current step costs 1 pass**: with the tangent already taken at the demanded
+current, the first pass *is* the fixed point. And **`Power` at the knee did not
+oscillate**, which was the one place it could have: `solve_current`'s quadratic selects
+a root through `disc <= 0` and that branch can flip between passes as the aggregate
+moves. It converged in 4, so no damping was added — the guard the plan calls a
+"bisection fallback" is `CLAUDE.md`'s guidance for the *scalar* `Power` solve and does
+not transfer to a vector fixed point over per-cell operating points; cap plus a flag is
+what that needs, and `EventFlags::SOLVE_UNCONVERGED` is it.
+
+### Mixed packs are unrepresentable, which the plan did not offer as an option
+
+The spec said to decide "supported, or a `BuildError`". Neither: `PackConfig::cell_model`
+is one value for the whole pack, so there is **no configuration for a build check to
+reject**. The solve is already mixed-ready — it asks `is_linear` per cell and iterates
+per-cell tangents — so what is missing is only config surface, and adding a per-position
+table was outside this slice. Recorded in `CellModelConfig`'s doc, along with the note
+that whoever adds it inherits a solve needing no change and one debug assertion to
+delete.
+
+### What the new tests do and do not catch, stated rather than implied
+
+Two files, both new. `sim-core/tests/nonlinear_solve_fast_path.rs` asserts
+`solve_iterations == 1` for an all-ECM pack across every demand variant against
+protection, balancing, both short types, scatter, a probe step and a latched-open
+contactor. `sim-data/tests/nonlinear_solve.rs` carries the nonlinear half against the
+*shipped* parameter set — deliberately not `sim-core`'s fixture, whose decimated OCP
+tables make the voltage curve more piecewise-linear and would flatter a tangent
+iteration.
+
+The honest accounting, from actually running the perturbation (`is_linear` forced to
+answer `true` for `Spm`, the smallest change that leaves the homogeneity assertion
+satisfied):
+
+| test | catches the iteration being removed? |
+| ---- | ------------------------------------ |
+| current-jump vs settled voltage | **yes** — 1.229e-1 V against a 1e-5 V tolerance |
+| schedule converges | **yes**, but only via the added `worst > 1` line |
+| Kirchhoff across a parallel group | **no** |
+| snapshot round-trip | **yes**, via the `any(n > 1)` line |
+
+The Kirchhoff row is the one worth keeping in mind: currents summing is a property of
+the *split*, and the split adds up against whatever linearization built it, converged
+or not. It guards the aggregation this slice restructured, not the convergence it
+added. Two of the four tests needed an explicit "and something actually iterated" line
+before they discriminated at all — a test that passes both with and without the feature
+is measuring the scaffolding.
+
+### Deliberately not done
+
+- **No damping and no `SOLVE_UNCONVERGED` in any shipped scenario.** The cap was never
+  reached on a schedule built to reach it. Adding damping against a hazard that did not
+  materialise would be untested code on the hot path.
+- **No per-cell current accessor.** The Kirchhoff test reads currents out of the charge
+  that moved, which routes through `spm::advance`'s own mapping and is the stronger
+  check; an accessor would have been public API added for a test's convenience.
+- **No perf number.** The claim here is structural — one predicted branch and no new
+  allocation on the linear path. Slice E measures, with `pack-step-perf.md`'s
+  discipline.
+
 
 ## Open questions
 
@@ -1517,12 +1705,22 @@ constant changing under it.** The defended constants are the ones asserted exact
 - **Is the `SourceCache` debug assertion affordable behind an SPM source?** **Yes,
   measured.** 0.03 s and 0.07 s for the two SPM test files with it live. No gating.
 
+### Resolved by slice D
+
+- **Is a mixed ECM/SPM pack supported?** **Neither answer the question offered: it is
+  unrepresentable.** `PackConfig::cell_model` is one value for the whole pack, so there
+  is no configuration for a `BuildError` to reject. The solve is already mixed-ready —
+  per-cell `is_linear`, per-cell tangents — and only the config surface is missing.
+  Whoever adds it still owes the `Telemetry::soc_true` question this entry raised.
+- **Where does the convergence tolerance live?** **A `const`, not config** — the plan
+  asked for config and the no-bump budget forbids it, and the plan's own stated reason
+  is better served by a value that cannot vary at all. See the slice-D notes.
+- **Does the tangent iteration need a bisection fallback?** **No — that was a misread of
+  `CLAUDE.md`**, whose bisection guard is for the *scalar* `Power` solve. A vector fixed
+  point over per-cell operating points needs a cap and a flag, which is what shipped.
+  Measured worst case is 4 passes against a cap of 32, including at the max-power knee.
+
 ### Still open
-- **Is a mixed ECM/SPM pack supported?** Slice D decides. It is the sharpest available
-  test of the tangent formulation and a genuinely interesting teaching scenario ("what
-  does the cheap model get wrong?"), but it also doubles the configuration surface and
-  raises a real question about what `Telemetry::soc_true` means when averaged across two
-  models that compute it differently.
 - **What is the default shell count `N`?** Slice E's accuracy-vs-cost curve should decide
   it, not taste. The spike ran N = 10 at 0.215 µs; N = 5 is 2.2× cheaper and N = 20 is
   2.2× dearer, so the curve is close to linear and the decision is about accuracy alone.

@@ -40,5 +40,15 @@ bitflags! {
         const VENTED           = 1 << 10;
         /// Thermal runaway is in progress on at least one cell.
         const THERMAL_RUNAWAY  = 1 << 11;
+        /// The pack's nonlinear current solve hit its iteration cap without
+        /// reaching its voltage tolerance; the step used the last iterate.
+        ///
+        /// Only reachable with a nonlinear cell model — an all-equivalent-circuit
+        /// pack is solved exactly on the first pass and can never raise this. It is
+        /// a *numerical* event rather than a physical one, and it is a flag rather
+        /// than an `Err` for the same reason every other event here is: `step` does
+        /// not fail, it reports. A client seeing this should treat the step's
+        /// voltages as approximate, not the pack as broken.
+        const SOLVE_UNCONVERGED = 1 << 12;
     }
 }
