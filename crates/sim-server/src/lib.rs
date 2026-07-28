@@ -11,20 +11,23 @@
 //! versions the engine's saved pack layout. They are independent, and both are
 //! reported at `GET /`.
 //!
-//! # What is not here yet
-//! Stepping. Advancing the simulation arrives with the WebSocket protocol in slice C,
-//! where `dt` is explicit in every command, batches are stepped in one message, and a
-//! session has one writer. None of that fits a stateless REST call, so rather than
-//! ship a `POST /step` that would have to be deprecated, this slice ships sessions
-//! that can be created, inspected, saved, restored, and destroyed.
+//! # Where stepping lives
+//! Not on the REST surface. Advancing the simulation is [`protocol`] over a WebSocket
+//! at `GET /sessions/{id}/ws`, because that is where `dt` can be explicit in every
+//! command, a run of ten thousand steps can be one message, and a session can have one
+//! writer. None of those survive a stateless request/response cycle, so there is
+//! deliberately no `POST /step`.
 
 #![forbid(unsafe_code)]
 
 pub mod error;
+pub mod protocol;
 pub mod routes;
 pub mod session;
+pub mod ws;
 
 pub use error::{ApiError, ErrorCode};
+pub use protocol::{Command, Event, Frame, Limits, PackFacts, Role, StepCommand};
 pub use session::{AppState, Session, SessionId};
 
 use axum::Router;

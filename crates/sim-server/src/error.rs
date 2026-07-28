@@ -15,14 +15,17 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 /// Machine-readable failure kinds.
 ///
 /// Serialized in `snake_case`. Adding a variant is backwards-compatible; renaming one
 /// is a client-visible break and bumps [`crate::API_VERSION`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+/// `Deserialize` is here for clients, not for the server: nothing on this side ever
+/// parses a code, but the WebSocket tests parse the events they receive, and a client
+/// that has to match on strings by hand is a client that finds a rename at runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     /// The request body was not valid UTF-8, or not valid TOML/JSON for its
@@ -47,6 +50,29 @@ pub enum ErrorCode {
     TopologyMismatch,
     /// The request body's `Content-Type` is one this endpoint does not accept.
     UnsupportedMediaType,
+    /// A WebSocket message was not a [`crate::protocol::Command`] — not text, not
+    /// JSON, or JSON naming no command this server knows.
+    InvalidCommand,
+    /// A command carried a number outside what the boundary accepts: non-finite, a
+    /// negative `dt`, a zero `n_steps`. Distinct from the two cap codes below, which
+    /// are server *policy* rather than a nonsensical value.
+    OutOfRange,
+    /// `n_steps` exceeds [`crate::protocol::Limits::max_steps_per_command`]. Fix by
+    /// splitting the run across messages; the trajectory is unaffected.
+    TooManySteps,
+    /// The batch would produce more frames than
+    /// [`crate::protocol::Limits::max_frames_per_reply`]. Fix by raising
+    /// `report_every_n_steps`; the trajectory is unaffected.
+    TooManyFrames,
+    /// A read-only observer sent a command that would move the pack. See
+    /// [`crate::protocol::Role`].
+    NotWriter,
+    /// `Pack::schedule_fault` refused the fault — a non-finite time, a non-positive
+    /// short resistance, or a cell index outside the pack.
+    FaultRejected,
+    /// The server failed on its own account rather than the client's. In practice:
+    /// the batch-stepping task did not come back.
+    Internal,
 }
 
 /// A failure on its way to a client: an HTTP status, a stable [`ErrorCode`], and a
@@ -80,6 +106,23 @@ impl ApiError {
             ErrorCode::NoSuchSession,
             format!("no session {id}"),
         )
+    }
+
+    /// An error that will leave over a WebSocket rather than as an HTTP response.
+    ///
+    /// The status is still carried — [`Self::status`] stays meaningful, and a few of
+    /// these do reach HTTP by way of the upgrade handshake — but on the socket only
+    /// the code and the message are sent. `BAD_REQUEST` is the honest default: every
+    /// use of this is the client having asked for something the server will not do.
+    pub fn ws(code: ErrorCode, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, code, message)
+    }
+
+    /// The message, for the WebSocket layer, which sends it as a field rather than as
+    /// a response body.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
     }
 
     /// The code, for tests and for the WebSocket layer that reuses this vocabulary.

@@ -11,7 +11,11 @@ rust-version.workspace = true
 [dependencies]
 sim-core = { path = "../sim-core" }
 sim-data = { path = "../sim-data" }
-axum = "0.8"
+# `ws` is slice C's whole transport. It is not on by default and it pulls
+# `tokio-tungstenite` in transitively — which is where the dev-dep client's version
+# has to come from, since a mismatched client compiles fine and then fails at
+# handshake time.
+axum = { version = "0.8", features = ["ws"] }
 # `sync` for the session mutexes, `net` + `rt-multi-thread` to actually serve, and
 # `macros` for `#[tokio::main]`. No `time` — nothing here reads a clock, and the one
 # place a clock could creep into physics (a `dt` derived from message arrival) is
@@ -23,6 +27,10 @@ serde = { workspace = true }
 # the workspace dependency, and `tests/snapshot_json.rs` for the guard.
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# An observer's socket has to be read and written at the same time (it is pushed
+# telemetry while still being watched for a close), which needs `StreamExt::split`.
+# The writer's socket deliberately does not — see `ws::writer_loop`.
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Binaries may use anyhow (CLAUDE.md); the library half returns typed errors.
@@ -34,3 +42,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-uti
 # dependency and no port. The one test that does bind a socket writes its request by
 # hand — see `tests/rest.rs::the_binary_path_actually_serves`.
 tower = { version = "0.5", features = ["util"] }
+# The WebSocket tests need a real client. The version is **not** free: it must be the
+# one `axum`'s own `ws` feature pulls in (check `Cargo.lock` after changing axum), or
+# the two speak different protocol crates — which compiles cleanly and then fails at
+# handshake time. No TLS features: every test connects to `ws://127.0.0.1`.
+tokio-tungstenite = "0.29"

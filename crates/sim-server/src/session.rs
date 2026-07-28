@@ -7,11 +7,12 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
-use sim_core::{ChemistryParams, Pack, Telemetry};
+use sim_core::{ChemistryParams, Env, Pack, Telemetry};
 use sim_data::{load_chemistry_file, parse_chemistry, ChemistrySource, DataError, Scenario};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 
 use crate::error::{ApiError, ErrorCode};
+use crate::protocol::Limits;
 
 /// Handle to one session.
 ///
@@ -50,10 +51,63 @@ pub struct Session {
     ///
     /// `None` rather than a synthesised frame. The engine's zero-length-step contract
     /// would let this be filled by stepping `dt = 0`, and that is deliberately not
-    /// done here: a stepping *protocol* is slice C's to design, and a session that has
-    /// not been stepped honestly has no telemetry.
+    /// done here: a session that has not been stepped honestly has no telemetry.
     pub latest: Option<Telemetry>,
+    /// The environment any [`crate::protocol::StepCommand`] that omits its own will
+    /// use.
+    ///
+    /// Session state, not pack state, so a restore leaves it alone — a snapshot
+    /// describes a pack, and the room it sits in is the client's business. Seeded from
+    /// the scenario's `initial_temp_k` with no coolant, which is the only starting
+    /// value the scenario format offers; a client that cares sends `SetEnv` or puts an
+    /// `env` on its first step.
+    pub env: Env,
+    /// Whether a socket currently holds this session's writer slot.
+    ///
+    /// See [`crate::protocol::Role`]. Freed when the writer's socket task returns,
+    /// which covers a client disconnect, a protocol error, and a close frame.
+    pub has_writer: bool,
+    /// Set by [`AppState::remove_session`].
+    ///
+    /// A `DELETE` only unregisters the session; any socket attached to it still holds
+    /// an `Arc` and would otherwise keep stepping a pack no one can reach. Every
+    /// command checks this and closes instead.
+    pub deleted: bool,
+    /// Fan-out to read-only observers, carrying already-serialized event text.
+    ///
+    /// Serialized once and shared, because every observer receives the identical
+    /// bytes. Deliberately *not* used for the writer's own batch replies: those are
+    /// written straight to its socket, so TCP backpressure — not a dropped frame —
+    /// is what happens when a writer reads slowly. A batch's frames are the
+    /// experiment's record; an observer's are a view.
+    pub observers: broadcast::Sender<Arc<str>>,
 }
+
+impl Session {
+    /// Publish an event to the observers, if any are listening.
+    ///
+    /// Failure means "nobody is subscribed", which is the normal case and not an
+    /// error. Serialization failure is logged rather than propagated: an event that
+    /// cannot be encoded is a bug on this side, and it must not take down the writer's
+    /// command that produced it.
+    pub fn publish(&self, event: &crate::protocol::Event) {
+        match serde_json::to_string(event) {
+            Ok(text) => {
+                let _ = self.observers.send(Arc::from(text.as_str()));
+            }
+            Err(e) => tracing::error!(%e, "an event could not be serialized for observers"),
+        }
+    }
+}
+
+/// How many events an observer may fall behind before the server starts discarding
+/// them for it.
+///
+/// Small on purpose. A lagging observer is told how many it lost
+/// ([`crate::protocol::Event::Dropped`]), so a deep buffer would only delay that
+/// admission while spending memory per observer; the honest gap is more useful to a
+/// plot than a late, smooth line.
+const OBSERVER_BACKLOG: usize = 256;
 
 /// The registry's interior. Separate from [`AppState`] so the id counter and the map
 /// are guarded by one lock and an id cannot be handed out twice.
@@ -76,15 +130,31 @@ struct Registry {
 pub struct AppState {
     registry: Arc<Mutex<Registry>>,
     chem_dir: Arc<PathBuf>,
+    limits: Limits,
 }
 
 impl AppState {
-    /// A registry with no sessions, resolving chemistry ids against `chem_dir`.
+    /// A registry with no sessions, resolving chemistry ids against `chem_dir`, with
+    /// the default per-message [`Limits`].
     #[must_use]
     pub fn new(chem_dir: impl Into<PathBuf>) -> Self {
         Self {
             registry: Arc::new(Mutex::new(Registry::default())),
             chem_dir: Arc::new(chem_dir.into()),
+            limits: Limits::default(),
+        }
+    }
+
+    /// The same, with the stepping caps set explicitly.
+    ///
+    /// Exists for the tests that have to *reach* a cap: the defaults are chosen so
+    /// that no reasonable client hits them, which makes them expensive to exercise
+    /// honestly. A test that lowers the cap tests the same code.
+    #[must_use]
+    pub fn with_limits(chem_dir: impl Into<PathBuf>, limits: Limits) -> Self {
+        Self {
+            limits,
+            ..Self::new(chem_dir)
         }
     }
 
@@ -92,6 +162,12 @@ impl AppState {
     #[must_use]
     pub fn chem_dir(&self) -> &Path {
         &self.chem_dir
+    }
+
+    /// The per-message stepping caps this server enforces.
+    #[must_use]
+    pub fn limits(&self) -> Limits {
+        self.limits
     }
 
     /// Resolve a scenario's chemistry, build its pack, and register the session.
@@ -130,6 +206,15 @@ impl AppState {
             )
         })?;
 
+        // The standing environment starts at the only ambient the scenario format
+        // offers. `initial_temp_k` is the cells' starting temperature rather than the
+        // room's, so this is a defensible default and not a derivation — a client that
+        // cares says so with `SetEnv` or an `env` on its first step.
+        let env = Env {
+            t_ambient: scenario.pack.initial_temp_k,
+            t_coolant: None,
+        };
+
         let mut registry = self.registry.lock().await;
         let id = SessionId(registry.next_id);
         registry.next_id += 1;
@@ -138,6 +223,10 @@ impl AppState {
             scenario,
             pack,
             latest: None,
+            env,
+            has_writer: false,
+            deleted: false,
+            observers: broadcast::channel(OBSERVER_BACKLOG).0,
         }));
         registry.sessions.insert(id, Arc::clone(&session));
         Ok((id, session))
@@ -174,8 +263,23 @@ impl AppState {
     }
 
     /// Remove a session. Returns whether there was one to remove.
+    ///
+    /// Unregistering is not enough on its own: a socket attached to this session holds
+    /// its own `Arc` and would go on stepping a pack that no REST route can reach. So
+    /// the session is also *flagged*, and every WebSocket command checks the flag.
+    ///
+    /// The two locks are taken in the order [`AppState`] states — registry first,
+    /// released before the session lock — which matters here more than anywhere else,
+    /// because the session lock may be held by a batch for as long as a million steps.
     pub async fn remove_session(&self, id: SessionId) -> bool {
-        self.registry.lock().await.sessions.remove(&id).is_some()
+        let removed = self.registry.lock().await.sessions.remove(&id);
+        match removed {
+            Some(session) => {
+                session.lock().await.deleted = true;
+                true
+            }
+            None => false,
+        }
     }
 
     /// How many sessions are live.

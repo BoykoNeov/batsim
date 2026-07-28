@@ -6,8 +6,9 @@
 //! and the one-writer rule live, and none of those survive contact with a stateless
 //! request/response cycle.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
+use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
@@ -15,6 +16,7 @@ use sim_core::{CellView, Pack, Snapshot, Telemetry, SNAPSHOT_VERSION};
 use sim_data::{parse_scenario, Scenario};
 
 use crate::error::{ApiError, ErrorCode};
+use crate::protocol::{Limits, PackFacts};
 use crate::session::{check_restore_fits, AppState, Session, SessionId};
 use crate::API_VERSION;
 
@@ -29,6 +31,7 @@ pub fn router(state: AppState) -> Router {
             "/sessions/{id}/snapshot",
             get(get_snapshot).post(restore_snapshot),
         )
+        .route("/sessions/{id}/ws", get(attach_socket))
         .with_state(state)
 }
 
@@ -53,6 +56,9 @@ struct ApiRoot {
     sessions: usize,
     /// Directory chemistry ids are resolved against, as given on the command line.
     chem_dir: String,
+    /// The per-message stepping caps the WebSocket enforces. Reported here as well as
+    /// in the hello frame so a client can size its batches before it connects.
+    limits: Limits,
 }
 
 async fn api_root(State(state): State<AppState>) -> Json<ApiRoot> {
@@ -63,31 +69,26 @@ async fn api_root(State(state): State<AppState>) -> Json<ApiRoot> {
                engine's saved pack layout. They move independently.",
         sessions: state.session_count().await,
         chem_dir: state.chem_dir().display().to_string(),
+        limits: state.limits(),
     })
 }
 
-/// Live facts read from the pack itself.
+/// `GET /sessions/{id}/ws` — upgrade to the stepping protocol.
 ///
-/// Deliberately not read from the scenario the session was created from: a restore can
-/// replace the pack, and then the scenario is provenance rather than description.
-#[derive(Debug, Serialize)]
-struct PackFacts {
-    /// Series elements.
-    series: u16,
-    /// Parallel cells per group.
-    parallel: u16,
-    /// Simulation time elapsed \[s\].
-    sim_time_s: f64,
-}
-
-impl PackFacts {
-    fn of(pack: &Pack) -> Self {
-        Self {
-            series: pack.series(),
-            parallel: pack.parallel(),
-            sim_time_s: pack.sim_time_s(),
-        }
-    }
+/// The session is looked up *before* the upgrade so a bad id is an ordinary 404 with
+/// this server's error shape, rather than a socket that opens and immediately closes
+/// with no explanation a client can read.
+///
+/// Role assignment happens after the upgrade, in [`crate::ws::handle`], and is reported
+/// in the hello frame: the first socket to attach writes, later ones observe.
+async fn attach_socket(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    upgrade: WebSocketUpgrade,
+) -> Result<Response, ApiError> {
+    let session = state.session(SessionId(id)).await?;
+    let limits = state.limits();
+    Ok(upgrade.on_upgrade(move |socket| crate::ws::handle(socket, session, limits)))
 }
 
 /// `POST /sessions` response.

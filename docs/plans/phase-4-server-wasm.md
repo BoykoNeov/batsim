@@ -1,6 +1,6 @@
 # Phase 4 — headless server + browser demo
 
-**Status: slices A and B landed.** This file is written before the work so the
+**Status: slices A, B and C landed — the phase's exit criterion is met.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` and `phase-3-aging-faults.md` grew.
 
@@ -18,7 +18,7 @@ purposes. That framing is load-bearing: see "The `SNAPSHOT_VERSION` canary".
 | ----- | ----- | ----- |
 | A | wire contract, no new crates: serde on `Telemetry`/`Demand`/`Env`/`CellView`, `Scenario` + `parse_scenario` in `sim-data`, boundary validation helpers | **landed** (v9 — no bump, as designed) |
 | B | `sim-server` skeleton: axum, session store, REST (create from scenario, inspect, snapshot GET/POST, delete), chemistry resolution | **landed** (v9 — no bump, as designed) |
-| C | WebSocket: command/event protocol, explicit-`dt` batch stepping, report decimation, the one-writer rule. **Carries the exit criterion.** | planned |
+| C | WebSocket: command/event protocol, explicit-`dt` batch stepping, report decimation, the one-writer rule. **Carries the exit criterion.** | **landed** (v9 — no bump, and no engine edit at all) |
 | D | `sim-wasm` + the browser page: `wasm-bindgen` wrapper, chemistry TOML text handed in from JS, hand-rolled canvas plotting, zero external JS deps | planned |
 | E | wrap-up: README status and run instructions, the example external script, a transport latency measurement, `sim-core` perf re-measure | planned |
 
@@ -764,6 +764,216 @@ real. `--data-binary` rather than `-d` remains the right advice for a separate r
 A 4S2P snapshot is **5658 bytes** of JSON, which confirms the "~5 KB" figure the open
 question below was written against — so the extrapolation to ~600 KB at 100S10P, and
 the answer to it, stand as written.
+
+---
+
+## Learned while building — slice C (WebSocket)
+
+### The canary held, and this time it cost nothing
+
+`SNAPSHOT_VERSION` stayed at 9, `sim-core`'s bincode replay test passed untouched, and
+— unlike slices A and B, which each needed one engine edit — **slice C changed no engine
+file at all**. `git diff --stat -- crates/sim-core crates/sim-data` is empty.
+
+That is the canary's premise coming out ahead rather than merely surviving: the entire
+stepping protocol is a skin over `step`, `schedule_fault`, `clear_faults`,
+`clear_bms_fault`, `snapshot` and `restore`, plus two pieces of state the engine has no
+business owning (the standing environment, and whether the session still exists). The
+accessors slice B bought (`series`, `parallel`) were the last thing the adapter needed.
+
+### The protocol's encoding is forced by a `u128`, not chosen for consistency
+
+The plan said engine enums stay externally tagged for consistency and gave the demo page
+"a three-line helper". The right shape for `Command` and `Event` looked like an open
+question — internally tagged (`{"cmd": "step", …}`) is what a JavaScript client wants.
+
+It is not an option. Serde's internally tagged deserializer buffers the whole value into
+its private `Content` type first, and `Content` has no `u128`. A `Snapshot` has one:
+`ChaCha8Rng`'s `word_pos`. Measured on this repo's own snapshot:
+
+```text
+direct                     round-trips exactly
+externally tagged          round-trips exactly
+adjacently tagged          round-trips exactly
+via serde_json::Value      round-trips exactly
+internally tagged          FAILS: u128 is not supported
+#[serde(flatten)]          FAILS: u128 is not supported
+```
+
+Two things worth carrying forward:
+
+- **The failure is a runtime error on a program that compiles perfectly**, and it only
+  fires on the one command that carries a snapshot. A protocol that tagged internally
+  would have passed every `Ping`/`Step` test and broken on `Restore`. Pinned by
+  `command_and_event_wire_spellings_are_pinned`, which asserts the failure *and* the
+  `u128` in its message — so if a future serde lifts the restriction, the test failing is
+  the signal that the constraint is gone.
+- **The same trap bans `#[serde(flatten)]`**, which is why `Frame` nests its telemetry in
+  a field rather than flattening it. `Telemetry` alone would survive flattening; making
+  it the house style would break the first time someone flattened something with a
+  snapshot inside.
+
+The *precision* fear that started this probe turned out to be unfounded — `float_roundtrip`
+does reach `deserialize_any`, so `serde_json::Value` round-trips exactly. The hazard is
+availability, not accuracy. Worth stating because the opposite is widely assumed.
+
+### JSON cannot express a non-finite number, so half the boundary rule is unreachable
+
+The plan's validation section reads as though `NaN` arrives over the wire: "every `f64`
+in a `Demand`, an `Env`, or a scenario must be finite. Reject the message with a
+structured error." A client cannot send one. Measured, three different refusals with one
+outcome:
+
+```text
+{"dt":NaN,…}    -> expected value              (no JSON literal for NaN)
+{"dt":1e400,…}  -> number out of range         (the parser refuses to overflow)
+{"dt":null,…}   -> invalid type: null          (what serde_json writes for f64::NAN)
+```
+
+So over this socket a non-finite value is an `invalid_command` from serde, raised
+*before* `StepCommand::validate` is ever called, and the plan's implied `out_of_range` for
+it never happens. The first draft of the test asserted `out_of_range` and failed, which is
+how this was found.
+
+The checks stay, and this is the part worth being careful about, because "unreachable"
+usually means "delete it": `StepCommand` is a Rust type as much as a wire type. **Slice D's
+wasm client will construct one in Rust and call `validate` on it with no JSON parser in
+between**, and a binary framing would carry `NaN` happily. So the tests split in two —
+`json_refuses_a_non_finite_number_before_validation_can_see_it` pins what the socket
+actually does, and `validate_rejects_every_non_finite_field` calls the checks the way
+slice D will. Reachable range violations (a negative `dt`, `n_steps = 0`, `k = 0`, both
+caps) are tested over the socket, because those *are* reachable.
+
+### A zero-length step's frame is not a copy of the previous frame
+
+`dt = 0` is in the protocol so a client can read telemetry without advancing. The obvious
+test — "the frame equals the last one" — fails, on `q_gen_w`, and the reason is a
+property of the engine that no adapter document had written down: **telemetry is computed
+from start-of-step state**. Step 5's frame reports the heat implied by the state at the
+*start* of step 5; a zero-length step afterwards reports the heat implied by the state at
+the *end* of it. Same pack, one step apart in what the number describes.
+
+That is exactly what makes `dt = 0` useful — it answers "what is the pack doing now",
+which is a different question from "what was it doing during the last step". So the test
+asserts what is actually claimed: two consecutive zero-length steps are bit-identical to
+each other (nothing mutated), the clock did not move, and the *state* fields match the
+previous frame while the rates need not.
+
+### `SetEnv` only means something if the session has a standing environment
+
+The plan lists both `Step { …, env }` and `SetEnv` without saying how they relate; taken
+literally they are redundant. Resolved: the session holds a standing `Env`, seeded from
+the scenario's `initial_temp_k` with no coolant; `SetEnv` replaces it; a `Step`'s `env` is
+`Option` and **overrides for that batch only, without persisting**. A command's effect is
+scoped to the command unless the command is `SetEnv`.
+
+The standing environment is session state, not pack state, so a restore leaves it alone —
+a snapshot describes a pack, and the room it sits in is the client's business.
+
+Testing it needed a scenario the plan would not have picked. `cc_discharge_lfp.toml` is
+isothermal (no `[pack.thermal]` section means the thermal model is *off*, not on with
+defaults), so its cells sit at `initial_temp_k` whatever the ambient and every assertion
+about the environment would have been vacuously true. The test uses the thermally-coupled
+scenario, clears its faults so the only thing moving temperature is the room, and rests
+6000 s per leg against a ~270 s time constant. **A configuration knob can only be tested
+on a configuration that reads it** — obvious once written, and the failing first draft is
+what wrote it.
+
+### Two loops, because the backpressure rules should be structural
+
+A writer's socket is strictly request/response; an observer's is pushed events while
+still being watched for a close. Rather than one loop with bookkeeping, they are two
+functions, and the plan's two rules then fall out of the shape instead of being enforced:
+
+- The writer's frames go straight down its socket, so a writer that reads slowly gets TCP
+  backpressure and a slow batch — never a hole. A batch's reports are the experiment's
+  record.
+- An observer reads from a 256-deep `broadcast`; falling behind yields `RecvError::Lagged(n)`
+  which becomes `Dropped { count: n }`. One slow observer cannot freeze the session.
+
+**Commands are never reordered because the writer's socket is not read during a batch.**
+That looks like an omission in the code and is the mechanism: further commands sit in the
+kernel's receive buffer and arrive in order. It carries a comment, because "we
+deliberately do not read here" reads as a bug.
+
+The `Dropped` path was the one thing in this slice with no test in the plan's list, and
+it is now `an_observer_that_falls_behind_is_told_how_much_it_lost`. Forcing genuine lag
+needs more bytes than the socket buffers absorb, so it floods a full-cap 10 000-frame
+batch at an observer that is not reading. Measured, and repeatably: **706 delivered, 9294
+dropped** — an enormous margin, not a marginal trigger. The assertion stays one-sided
+(`dropped > 0`, and `seen + dropped == n`) because how many the buffers swallow first is
+a property of the operating system.
+
+### `spawn_blocking`, decided by the test harness rather than by the runtime
+
+A million steps is tens of seconds of CPU on a tokio worker. `block_in_place` is the
+tidier call and would keep the session guard in scope — but it *panics on a
+current-thread runtime*, which is what plain `#[tokio::test]` gives you. Choosing it
+would have silently obliged every test in this crate to carry `flavor = "multi_thread"`
+forever, and the failure for anyone who forgot would be a panic in unrelated code. So:
+`spawn_blocking` with a `'static` `Arc<Mutex<Session>>` and `blocking_lock` *inside* the
+closure, and a typed `internal` error if the task does not come back.
+
+Frames are collected under the lock and sent after it is released. That is what makes the
+frame cap do two jobs — it bounds the reply *and* it bounds server memory — which the
+plan only wrote down the first half of.
+
+### `DELETE` needed a flag, not just an unregistration
+
+Slice B's `remove_session` drops the session from the registry. With a socket attached
+that is not enough: the socket holds its own `Arc` and would go on stepping a pack no
+route can reach. So a removed session is also flagged, every command checks the flag, and
+`a_deleted_session_stops_accepting_commands` pins it. The two locks are taken in the order
+`AppState` already states — registry first, released before the session lock — which
+matters more here than anywhere else, because a batch may hold the session lock for a
+million steps.
+
+### What the exit gate's failure actually looks like
+
+Removing `float_roundtrip` from the workspace manifest fails both tests in
+`e2e_experiment.rs`, and it fails at **step 5** — with no snapshot anywhere near it:
+
+```text
+step 5 (t = 9 s) differs between the in-process run and the WebSocket run
+  in process:    v_terminal: 13.109000724359921
+  over the wire: 13.10900072435992
+```
+
+That is the plan's "this is not a snapshot-only concern" confirmed rather than repeated.
+The one-ULP hit is in the *test client's* parse of a telemetry frame; the plan named the
+test client as a consumer of the feature and it was right to.
+
+`ws.rs` still passes without the feature, and the reason is worth knowing: every
+comparison in it is wire-to-wire (observer against writer, decimated against
+undecimated), so both sides are mis-rounded identically. **Only a test that crosses the
+boundary can see this.** A future slice that adds "more transport tests" is not adding
+coverage of it.
+
+### Resolved while building
+
+- **The WebSocket client dependency is not free to pick.** `tokio-tungstenite` must be
+  the version `axum`'s `ws` feature pulls in transitively (0.29 for axum 0.8.9); a
+  mismatch compiles cleanly and fails at handshake time. Stated in the manifest next to
+  the dev-dep so a future axum bump knows to check.
+- **`futures-util` became a real dependency, not just a dev one.** Splitting an
+  observer's socket needs `StreamExt::split`. The writer's socket deliberately is not
+  split, which is the same asymmetry as above.
+- **The test client is hand-written**, including ~40 lines of HTTP. `tests/rest.rs` drives
+  the router through `tower::ServiceExt::oneshot`, which is right for testing handlers
+  and wrong for a criterion that says *external script*: the claim is only true if the
+  bytes go through a socket. `Connection: close` makes read-to-EOF an unambiguous end of
+  response, so no length or chunk parsing is needed.
+
+### What is deliberately not here
+
+- **No promotion of observers.** When a writer disconnects the slot is freed and the
+  *next* socket to attach takes it; existing observers stay observers. A role is announced
+  once in the hello frame, and a client told it is read-only should not silently acquire
+  the ability to move the pack.
+- **No `Ping` token or correlation id.** `BatchComplete` is the barrier a client waits on,
+  so `Ping` has no work to do beyond liveness.
+- **No snapshot compression.** A 4S2P snapshot is ~5 KB; the open question below stands
+  as written.
 
 ---
 
