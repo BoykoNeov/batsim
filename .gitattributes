@@ -1,0 +1,4 @@
+# A .bat is parsed by cmd.exe, which has historically mis-parsed
+# parenthesized blocks in an LF-only file. The failure branches of
+# start-frontend.bat live in exactly such blocks.
+*.bat text eol=crlf
