@@ -1,0 +1,36 @@
+[package]
+name = "sim-server"
+version = "0.0.0"
+description = "Headless HTTP adapter over sim-core: sessions, scenario setup, snapshots."
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sim-core = { path = "../sim-core" }
+sim-data = { path = "../sim-data" }
+axum = "0.8"
+# `sync` for the session mutexes, `net` + `rt-multi-thread` to actually serve, and
+# `macros` for `#[tokio::main]`. No `time` — nothing here reads a clock, and the one
+# place a clock could creep into physics (a `dt` derived from message arrival) is
+# banned by CLAUDE.md.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"] }
+serde = { workspace = true }
+# `float_roundtrip` comes from the workspace entry and is load-bearing here: this is
+# the crate that puts engine floats on a wire and reads them back. See the comment on
+# the workspace dependency, and `tests/snapshot_json.rs` for the guard.
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Binaries may use anyhow (CLAUDE.md); the library half returns typed errors.
+anyhow = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util"] }
+# `ServiceExt::oneshot` drives the router directly, so the REST tests need no client
+# dependency and no port. The one test that does bind a socket writes its request by
+# hand — see `tests/rest.rs::the_binary_path_actually_serves`.
+tower = { version = "0.5", features = ["util"] }

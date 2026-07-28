@@ -587,6 +587,28 @@ impl Pack {
         self.sim_time_s
     }
 
+    /// Number of series elements (groups).
+    ///
+    /// Together with [`Self::parallel`] this is the topology a caller needs in order
+    /// to iterate [`Self::cell`] — an adapter serving a per-cell view has to know how
+    /// far to count, and reading it back off the [`PackConfig`] it was built from
+    /// stops being correct the moment a [`Snapshot`] from elsewhere is restored into
+    /// the same slot. Read-only and derived from state that already exists, so no
+    /// layout changed and no [`SNAPSHOT_VERSION`] bump is owed.
+    ///
+    /// Both numbers were already public, incidentally: [`CellIndexError`] reports
+    /// them. They were merely unreachable without provoking an error first.
+    #[must_use]
+    pub fn series(&self) -> u16 {
+        self.series
+    }
+
+    /// Number of parallel cells per group. See [`Self::series`].
+    #[must_use]
+    pub fn parallel(&self) -> u16 {
+        self.parallel
+    }
+
     /// Capture the entire engine state as a versioned, serializable [`Snapshot`].
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {

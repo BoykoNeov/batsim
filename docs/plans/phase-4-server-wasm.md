@@ -1,6 +1,6 @@
 # Phase 4 — headless server + browser demo
 
-**Status: slice A landed.** This file is written before the work so the
+**Status: slices A and B landed.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` and `phase-3-aging-faults.md` grew.
 
@@ -17,7 +17,7 @@ purposes. That framing is load-bearing: see "The `SNAPSHOT_VERSION` canary".
 | slice | scope | state |
 | ----- | ----- | ----- |
 | A | wire contract, no new crates: serde on `Telemetry`/`Demand`/`Env`/`CellView`, `Scenario` + `parse_scenario` in `sim-data`, boundary validation helpers | **landed** (v9 — no bump, as designed) |
-| B | `sim-server` skeleton: axum, session store, REST (create from scenario, inspect, snapshot GET/POST, delete), chemistry resolution | planned |
+| B | `sim-server` skeleton: axum, session store, REST (create from scenario, inspect, snapshot GET/POST, delete), chemistry resolution | **landed** (v9 — no bump, as designed) |
 | C | WebSocket: command/event protocol, explicit-`dt` batch stepping, report decimation, the one-writer rule. **Carries the exit criterion.** | planned |
 | D | `sim-wasm` + the browser page: `wasm-bindgen` wrapper, chemistry TOML text handed in from JS, hand-rolled canvas plotting, zero external JS deps | planned |
 | E | wrap-up: README status and run instructions, the example external script, a transport latency measurement, `sim-core` perf re-measure | planned |
@@ -590,14 +590,164 @@ what is on trial.
 
 ---
 
+## Learned while building — slice B (`sim-server` skeleton)
+
+### The canary held, and it bought two accessors
+
+`SNAPSHOT_VERSION` stayed at 9 and `sim-core`'s bincode replay test passed untouched.
+The slice made one engine edit: `Pack::series()` and `Pack::parallel()`.
+
+The canary's rule offers "add a read-only accessor" as an honest fix, and this is that
+case, but the interesting part is *what forced it*. The obvious implementation of
+`GET /sessions/{id}/cells` reads the topology off the `PackConfig` the session was
+built from — no engine change needed. That is wrong the instant a snapshot is restored
+into the session, because the pack can then be a different shape than the config that
+describes it. The endpoint would keep answering, with the wrong number of cells.
+
+So the accessors are not a convenience; they are what makes "read every live fact from
+the pack, never from the stored scenario" implementable. Both numbers were already
+public API, incidentally — `CellIndexError` reports them — merely unreachable without
+provoking an error first.
+
+### Open question resolved: shared map, and it is two levels deep
+
+`BTreeMap<SessionId, Arc<Mutex<Session>>>` behind a registry `Mutex`, with a stated
+lock order (registry → clone the `Arc`s → release → session). Not a task per session:
+slice B has no streaming, so a task and a channel would be machinery with nothing to
+carry yet, and slice C can convert the value type without touching a handler.
+
+The *two-level* shape was worth building now rather than later, and not for the reason
+that usually justifies it. Slice C's stepping commands hold a session's lock for the
+duration of a batch — up to a million steps by the configured cap. A single mutex over
+the whole map would freeze every other session and every REST request for that entire
+time. That is a liveness property of "many sessions, one writer each", not a
+micro-optimisation, and it costs one `Arc`.
+
+Related and deferred, stated so it is not rediscovered as a mystery: a long batch is
+CPU-bound work on a tokio worker thread. Slice C has to decide between `spawn_blocking`
+and a dedicated thread per session. Nothing in slice B blocks long enough to care.
+
+### What a restore *means*, and the check that is deliberately incomplete
+
+`POST /sessions/{id}/snapshot` replaces the pack **in place** — same id, same session,
+so anything watching it keeps watching it. A topology mismatch is a 409 rather than a
+silent swap, because the overwhelmingly likely cause is the wrong snapshot file.
+
+The check is knowingly partial, and this is the part worth writing down. A snapshot
+carries its own `ChemistryParams`, so a 4S2P LFP session restored from a 4S2P **NMC**
+snapshot passes the topology check and leaves the session's stored `Scenario` naming a
+chemistry the pack no longer runs. Closing that would mean exposing the engine's
+chemistry for comparison — engine surface added purely to serve an adapter, which is
+exactly what the canary says to stop and question.
+
+The design that makes the gap cheap is the one the accessors above exist for: every
+live fact (`series`, `parallel`, `sim_time_s`, the cell array) is read from the pack,
+and the stored `Scenario` is labelled **provenance** in its own doc comment and in the
+JSON field's meaning. So the residual cost of the gap is one misleading provenance
+field, not an endpoint that lies.
+
+`latest_telemetry` is cleared by a restore for the same reason, and is `null` on a
+session that has never stepped. The engine's zero-length-step contract would have let
+the server synthesise a frame with `dt = 0`; it deliberately does not. A stepping
+protocol is slice C's to design, and a session that has not stepped honestly has no
+telemetry.
+
+### The float guard was built to fail, and this is what its failure looks like
+
+Removing `float_roundtrip` from the workspace manifest fails all three tests in
+`crates/sim-server/tests/snapshot_json.rs`. The corruption is in the snapshot's
+*static* per-cell values:
+
+```text
+capacity_factor: 0.9720750261294301  ->  0.97207502612943
+r0_factor:       0.9869400641202459  ->  0.986940064120246
+v_rc:           [0.014494128773812195] -> [0.014494128773812197]
+```
+
+and it surfaces on the **very first resumed step**, not after a long drift:
+
+```text
+step 300 (t = 450 s) diverged after the restore at step 300
+  uninterrupted: soh_resistance: 1.0007013776964933, q_gen_w: 0.5173449041614148
+  resumed:       soh_resistance: 1.0007013776964935, q_gen_w: 0.5173449041614212
+```
+
+That immediacy is worth knowing: the mis-rounded values are the factors every step
+multiplies through, so there is no incubation period. A test that only compared the
+*endpoint* of the two runs would still have caught this one — but the same is not true
+of a one-ULP hit on a slowly-integrating accumulator, which is why the assertion is
+per-step.
+
+The new guard slice A did not have: `longest_digit_run(snapshot_json) >= 15`. The
+failure mode of this whole test is silence — a probe that drifts toward round numbers
+keeps passing while testing nothing — so the probe asserts its own inputs are
+full-mantissa. `fresh_pack` likewise asserts the scenario it loads still has scatter
+and a non-zero `current_noise_sigma_a`, since either could be edited out of the
+scenario file by someone with an unrelated goal.
+
+That noise sigma is what makes the test cover RNG continuity: the BMS draws from the
+pack RNG once per step and its estimate depends on the draw, so a restore that lost RNG
+state would diverge in `soc_bms`. And the scenario's faults are timestamped 600 s
+against a split at 450 s, so the not-yet-fired queue has to survive the round trip too —
+asserted directly (`i_internal_short_a` is zero at step 399 and non-zero at step 400),
+because a restored pack that silently dropped its queue would otherwise make the
+comparison prove less than it looks.
+
+### Validation is centralised because one of the two entry paths does not do it
+
+`parse_scenario` validates; `serde_json::from_str::<Scenario>` does not. Since
+`POST /sessions` accepts both encodings, putting validation in the parse fork would
+have been two call sites with one of them easy to forget — and forgetting it on the
+JSON path bypasses the `[a-z0-9_]+` charset check, which is the only thing standing
+between a request body and a path walk out of the chemistry directory.
+
+So the fork returns an unvalidated `Scenario` and `AppState::create_session` validates
+unconditionally, before anything touches the filesystem.
+`the_json_path_still_validates_the_chemistry_id` posts `chemistry =
+"../../../etc/passwd"` as JSON and expects a 400. This is also why slice A's note that
+`chemistry_source()` stays total on unvalidated input matters in practice: it is
+documented not to have vetted anything, so the sequence is always validate-then-resolve.
+
+### The papercut that only running it could find
+
+The handler's doc comment originally promised that
+`curl --data-binary @scenarios/cc_discharge_lfp.toml` worked with no ceremony, reasoning
+that `--data-binary` sends no `Content-Type`. It does not: curl labels it
+`application/x-www-form-urlencoded`, the same as `-d`. The single invocation the
+documentation promised was the single invocation that returned 415.
+
+Found by starting the binary and running the documented command, which took two
+minutes. The fix accepts that type as TOML — nobody chooses it deliberately for a
+scenario file — while `application/xml` still gets its 415, so the code path stays
+real. `--data-binary` rather than `-d` remains the right advice for a separate reason:
+`-d @file` strips newlines, which mangles TOML.
+
+### What is deliberately not here
+
+- **No stepping endpoint.** Advancing the simulation needs explicit `dt`, batching, and
+  the one-writer rule; none of those survive a stateless request/response cycle. Better
+  no endpoint than a `POST /step` that slice C would have to deprecate.
+- **No `tower-http`.** The plan listed it under slice B for static files, but the page
+  it would serve does not exist until slice D, and a `ServeDir` over a nonexistent
+  directory is a dependency doing nothing. It arrives with its user.
+- **No `clap`.** Two flags parsed from `std::env::args`.
+
+### Measured
+
+A 4S2P snapshot is **5658 bytes** of JSON, which confirms the "~5 KB" figure the open
+question below was written against — so the extrapolation to ~600 KB at 100S10P, and
+the answer to it, stand as written.
+
+---
+
 ## Open questions (decide when the slice lands, not now)
 
-- **Session task vs shared map.** Both satisfy the fixed contract above. A task per session
-  makes the one-writer rule structural and backpressure natural; a map is less machinery.
-  Pick at slice B with the code in front of you.
-- **Snapshot body size.** A 4S2P snapshot is ~5 KB of JSON. 100S10P will be ~600 KB, which
-  is fine for REST and poor for a WebSocket frame. If it bites, the answer is
-  `Content-Encoding` on the REST route, not a new binary format on the socket.
+- ~~**Session task vs shared map.**~~ Resolved in slice B: shared map, two levels of
+  locking. See "Open question resolved" above.
+- **Snapshot body size.** A 4S2P snapshot is ~5 KB of JSON (measured: 5658 bytes).
+  100S10P will be ~600 KB, which is fine for REST and poor for a WebSocket frame. If it
+  bites, the answer is `Content-Encoding` on the REST route, not a new binary format on
+  the socket.
 - **Whether the browser page needs the server at all after slice D.** It does not, for
   physics — it embeds the engine. Keep the socket path in the page anyway, behind a toggle,
   so the server protocol has a live client and does not rot.

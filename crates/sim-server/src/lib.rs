@@ -1,0 +1,60 @@
+//! `sim-server` — a headless HTTP adapter over `sim-core`.
+//!
+//! One of several clients of the engine, not a layer above it. The engine is pure and
+//! knows nothing about this crate; everything here is transport, session bookkeeping,
+//! and the validation that a pure engine deliberately does not do (see
+//! [`session::AppState::create_session`]).
+//!
+//! # Two version numbers
+//! [`API_VERSION`] versions *this* contract — route shapes, error codes, and the JSON
+//! field names of the engine types that cross the wire. [`sim_core::SNAPSHOT_VERSION`]
+//! versions the engine's saved pack layout. They are independent, and both are
+//! reported at `GET /`.
+//!
+//! # What is not here yet
+//! Stepping. Advancing the simulation arrives with the WebSocket protocol in slice C,
+//! where `dt` is explicit in every command, batches are stepped in one message, and a
+//! session has one writer. None of that fits a stateless REST call, so rather than
+//! ship a `POST /step` that would have to be deprecated, this slice ships sessions
+//! that can be created, inspected, saved, restored, and destroyed.
+
+#![forbid(unsafe_code)]
+
+pub mod error;
+pub mod routes;
+pub mod session;
+
+pub use error::{ApiError, ErrorCode};
+pub use session::{AppState, Session, SessionId};
+
+use axum::Router;
+use tokio::net::TcpListener;
+
+/// Version of the HTTP/WebSocket contract this binary speaks.
+///
+/// Bumped when a client would break: a renamed route, a renamed [`ErrorCode`], or a
+/// renamed field on one of the engine types that crosses the wire (`Telemetry`,
+/// `CellView`, `Demand`, `Env`). Adding a field or an error code does not bump it.
+///
+/// Explicitly **not** [`sim_core::SNAPSHOT_VERSION`], which versions the engine's pack
+/// state and knows nothing about JSON field names. Two numbers, two jobs.
+pub const API_VERSION: u32 = 1;
+
+/// Build the application router over a session registry.
+///
+/// Exposed so tests can drive the routes directly through `tower::ServiceExt::oneshot`
+/// without binding a port.
+pub fn app(state: AppState) -> Router {
+    routes::router(state)
+}
+
+/// Serve until the process is killed.
+///
+/// Takes an already-bound listener so a caller (or a test) can bind port 0 and learn
+/// the real address before serving starts.
+///
+/// # Errors
+/// Whatever the underlying accept loop fails with.
+pub async fn serve(listener: TcpListener, state: AppState) -> std::io::Result<()> {
+    axum::serve(listener, app(state)).await
+}
