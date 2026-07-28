@@ -7,6 +7,11 @@
 # visible in the repo's own file rather than only in generated output.)
 /web/pkg
 
+# What examples/experiment.mjs writes, when it is run from the workspace root (which
+# is what the README tells people to do). Results, not source.
+/experiment.csv
+/experiment-snapshot.json
+
 # Backup / editor files
 **/*.rs.bk
 *.pdb

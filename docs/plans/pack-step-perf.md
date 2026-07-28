@@ -18,6 +18,16 @@ where item 4 left it.**
 > while building — slice E". The methodology sections below still stand and are still
 > the ones to follow — slice E discarded a round on exactly the transition they warn
 > about.
+>
+> **Phase 4 moved it by nothing, measured.** Its slice E re-measured against `a5ce7cf`
+> (the last pre-Phase-4 commit) and found `100S10P/current` at +0.9 / +0.9 / −1.6 %
+> across three alternating mode-matched pairs, and `100S10P/full` at −0.6 / +2.8 /
+> +1.5 %. Both straddle zero, which is what the diff predicts: Phase 4's entire
+> `sim-core` change is four serde derives, two `#[serde(default)]` attributes,
+> doc comments, and the `series()` / `parallel()` accessors — nothing inside `step`'s
+> call graph. That leg also produced the new benching hazard below (build storms), and
+> it again could **not** claim an absolute; see `docs/plans/phase-4-server-wasm.md`
+> under "Learned while building — slice E".
 **Owner decision needed:** none. Item 3 was taken with the design call the deferral
 was waiting on — see "Items 3 and 4" below for what invariant it added and what
 guards it.
@@ -88,6 +98,16 @@ bench, `git stash pop`, bench), repeat until two rounds agree, and **discard any
 where either arm's confidence interval is wide** — a wide CI is the signature of a machine
 in transition, not of sampling error. Wall-clock cost is a few minutes; the alternative is
 a wrong conclusion about your own change.
+
+**Do not bench in the minutes after a large build.** Phase 4 slice E watched the same
+tree read 45.8 → 82.3 → 62.7 → 49.6 µs on `100S10P/current` — a 1.8× spread, wider than
+anything else in this file — starting immediately after `wasm-pack build` plus two
+`cargo build --release` runs wrote several thousand files, with `MsMpEng` (Windows
+Defender) at the top of the CPU table for the duration. It settled on its own within a
+few minutes. This is the first time the bimodality has had an identifiable trigger
+rather than being weather, and it is the cheapest one to avoid: build first, then wait,
+then bench. The wide-CI rule catches it either way, at the cost of three discarded
+rounds.
 
 Also note `cargo bench -p sim-core -- --save-baseline x` **fails outright**
 (`Unrecognized option`): the lib's default bench harness sees the flag first. Use

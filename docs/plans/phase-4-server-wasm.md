@@ -1,7 +1,7 @@
 # Phase 4 — headless server + browser demo
 
-**Status: slices A, B, C and D landed — the phase's exit criterion is met; slice E (wrap-up) is
-what remains.** This file is written before the work so the
+**Status: complete. All five slices landed and the phase's exit criterion is met.**
+This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` and `phase-3-aging-faults.md` grew.
 
@@ -21,7 +21,7 @@ purposes. That framing is load-bearing: see "The `SNAPSHOT_VERSION` canary".
 | B | `sim-server` skeleton: axum, session store, REST (create from scenario, inspect, snapshot GET/POST, delete), chemistry resolution | **landed** (v9 — no bump, as designed) |
 | C | WebSocket: command/event protocol, explicit-`dt` batch stepping, report decimation, the one-writer rule. **Carries the exit criterion.** | **landed** (v9 — no bump, and no engine edit at all) |
 | D | `sim-wasm` + the browser page: `wasm-bindgen` wrapper, chemistry TOML text handed in from JS, hand-rolled canvas plotting, zero external JS deps. Also — not in this line when it was written — `tower-http` and the static routes in `sim-server`, and the socket toggle | **landed** (v9 — no bump, and no engine edit at all) |
-| E | wrap-up: README status and run instructions, the example external script, a transport latency measurement, `sim-core` perf re-measure | planned |
+| E | wrap-up: README status and run instructions, the example external script, a transport latency measurement, `sim-core` perf re-measure | **landed** (v9 — no bump, and no engine edit at all) |
 
 Each slice keeps `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` clean. Unlike phases 2 and 3,
@@ -1224,6 +1224,223 @@ changed for this.
   frame is a footgun with no user.
 - **No README changes.** Slice E owns the README, the example script, and the latency
   measurement.
+
+---
+
+## Learned while building — slice E (wrap-up)
+
+### The canary held, and slice E cost nothing either
+
+`SNAPSHOT_VERSION` stayed at 9, `sim-core`'s bincode replay test passed untouched, and
+`git diff --stat -- crates/sim-core crates/sim-data` is empty for this slice. Three of
+the phase's five slices needed no engine edit at all, and the two that did (slice A's
+`#[serde(default)]` pair, slice B's two accessors) are both on the canary's own list of
+honest fixes. The premise held for the whole phase.
+
+### "Nothing changed on the step path" is a claim about a diff — read the diff
+
+The plan's slice-E line says the perf re-measure is "a control, not an expectation"
+because "nothing on the step path changes". That was written before any code existed,
+and by the time slice E ran it was an *assumption about a diff nobody had read*.
+`git diff a5ce7cf..HEAD -- crates/sim-core` is 61 insertions across three files —
+enough that the sentence deserved checking rather than quoting.
+
+It holds, and reading it is what lets the number mean something. Every line is one of:
+four `#[derive(Serialize, Deserialize)]` additions (`Demand`, `Env`, `Telemetry`,
+`CellView`), two `#[serde(default)]` attributes on `BmsConfig` (deserialization-only),
+doc comments, and `Pack::series()` / `Pack::parallel()`. Nothing inside `step`'s call
+graph; nothing that runs per cell or per step. So the benchmark is a control with a
+structural argument behind it, rather than a number hoping to confirm a guess.
+
+Worth carrying forward as a shape: **a claim that a change "cannot have affected X" is a
+claim about a diff, and it is cheap to verify and expensive to be wrong about.**
+
+### The measurement, and why it carries no absolute
+
+Paired worktrees against `a5ce7cf` (the last pre-Phase-4 commit), filtered to one case
+per arm, arm order alternated between rounds, wide-CI rounds discarded — the protocol
+`pack-step-perf.md` prescribes.
+
+| case | pairs (post vs pre) | reading |
+| ---- | ------------------- | ------- |
+| `100S10P/current` | +0.9 %, +0.9 %, −1.6 % | straddles zero |
+| `100S10P/full` | −0.6 %, +2.8 %, +1.5 % (one round discarded, post CI ±2.7 %) | inside the noise band |
+
+**No measurable change**, which is what the structural argument predicts and what a
+control is for. The `full` band is wider than `current`'s (±3 % against ±1.5 %) and
+there is no mechanism that would move one and not the other, so the spread is the box
+rather than the code.
+
+**No absolute claim, and this is the fourth consecutive session in which that is true.**
+The memory note's rule is to claim an absolute only if the *baseline* arm first
+reproduces its recorded number. It did not: settled, the pre-Phase-4 arm measured
+49.6–50.1 µs on `100S10P/current` where this repo's records put the post-Phase-3 tree at
+≈ 38.5–46.2 µs. So the budget is neither confirmed nor refuted here, and slice E does
+not pretend otherwise.
+
+### The bimodality was watched flipping, and this time the trigger is identifiable
+
+Same tree, same case, one session: `100S10P/current` on the **pre** arm read
+**45.8 → 82.3 → 62.7 → 49.6 µs**. A 1.8× spread with no code change, which is wider than
+anything this doc has previously recorded and would have been reported as a dramatic
+regression by any cross-round pairing.
+
+What is new is that the flip has a cause this time rather than being weather. The bad
+readings started immediately after `wasm-pack build` plus two `cargo build --release`
+runs wrote several thousand files, and `MsMpEng` — Windows Defender — was top of the CPU
+table by a wide margin while they lasted. It settled on its own within a few minutes.
+
+So `pack-step-perf.md`'s advice ("run both revisions back to back", "discard a wide-CI
+round") gains a third item: **do not bench in the minutes after a large build.** The
+paired protocol survives it — every pair here was taken back to back and the ratios
+agree — but three rounds were spent discovering that, and the wide-CI rule is what
+caught them.
+
+### The latency measurement says something sharper than the plan predicted
+
+The plan expected "the transport to dominate at small `n` and to vanish at large `n` —
+which is the numeric argument for batch stepping". That is half right, and the missing
+half is the more useful one. There are **two** costs and only one of them amortises:
+
+| pack | 10 000 steps | in process | ws, every step | ws, final step only |
+| ---- | ------------ | ---------- | -------------- | ------------------- |
+| 1S1P | | ~0.84 ms | ~75 ms (≈90×) | ~1.0 ms (≈1.2×) |
+| 100S10P | | ~275 ms | ~390 ms (≈1.4×) | ~281 ms (≈1.02×) |
+
+- **A round trip is ~35–110 µs** and amortises exactly as predicted: it is the entire
+  cost of a one-step batch and is invisible by `n = 1000`. That is the argument for
+  `(dt, n_steps)` in one message.
+- **A reported frame is ~7–11 µs** to encode, send and decode, and that cost is *per
+  frame*. With `report_every_n_steps = 1` there is one frame per step, so it never
+  amortises: `ws (all)` sits ~90× above the engine at 1S1P and stays there however large
+  the batch gets.
+
+So the measured argument is for **decimation** at least as much as for batching. The
+plan justified decimation on volume — "gigabytes of JSON for a plot with a few hundred
+visible pixels" — and it is also a throughput requirement, which is a different and
+stronger claim. `report_every_n_steps` is the knob, and it should be sized to the
+resolution a client will plot rather than to the step count.
+
+The two topologies are the framing worth keeping: at 1S1P a telemetry frame costs ~40×
+the step that produced it; at 100S10P it is a few percent of it. **The transport's share
+is a property of the pack size, not of the protocol** — so "what does the socket cost"
+has no single answer and this example prints both.
+
+### Why the measurement is an example, and what that made available
+
+Not a test: a wall-clock assertion fails on a loaded machine and passes on a quiet one,
+and this session's own Defender episode is the demonstration. Not a criterion bench
+either: the quantity of interest is a *ratio between two transports of the same work*,
+which survives the bimodality, whereas criterion's absolutes do not. As a
+`crates/sim-server/examples/` binary it is inside `cargo clippy --workspace
+--all-targets -- -D warnings`, so it compiles on every gate and cannot rot, while
+`cargo test` never runs it.
+
+Two consequences of that placement, one limiting and one enabling:
+
+- **`tests/common/mod.rs` is inside the tests target and is not reachable from
+  `examples/`.** The example writes its own client. It does get `[dev-dependencies]`
+  though, so `tokio-tungstenite` is the same pinned version the tests use and there is
+  no third WebSocket client in the repo.
+- **`AppState::create_session` is public**, so the session is created in process and
+  only the *stepping* crosses the socket. That removed the ~40 lines of hand-written
+  HTTP the tests need — and it is also more honest, since session creation is not the
+  thing being measured.
+
+### The script is `.mjs`, and that was a dependency decision rather than a taste one
+
+The plan said "`examples/experiment.py` (or `.mjs`)". Python's standard library has no
+WebSocket client, so Python meant either a `pip install websockets` line in the
+instructions or hand-rolling RFC 6455 — masking, extended payload-length encoding,
+continuation frames, the close handshake. That is ~80 lines of transport plumbing
+wrapping ~40 lines of experiment, in a deliverable whose stated bar is "in a form a
+person can actually copy", and a 10 000-frame batch reply is precisely the traffic that
+finds a subtle framing bug.
+
+Node 22+ ships `WebSocket` and `fetch` as globals, so the script has **no dependencies
+and no framing code at all** and reads as the experiment it is. Verified before
+committing to it, because the whole argument collapses if it is false:
+`node -e "console.log(typeof WebSocket, typeof fetch)"` → `function function`.
+
+`tools/reference/` is Python because PyBaMM is Python; nothing here pulls the same way.
+
+It is also deliberately **a script and not a second exit gate**. `e2e_experiment.rs`
+owns bit-identity; a script asserting it would be a test nobody runs. This one prints a
+summary, writes a CSV, and exits non-zero on a protocol `Error` event — and says
+"is the server running? start it with: cargo run -p sim-server" rather than showing a
+stack trace about `ECONNREFUSED`.
+
+### Running the script found three things reading it could not
+
+Slice B and slice D both recorded that starting the thing and using it finds what no
+amount of reasoning does. Three more:
+
+1. **The zero-length read was not zero-length.** `readWithoutAdvancing` went through the
+   shared `step()` helper, which hardcoded `dt: DT_S` — so "read telemetry without
+   advancing" advanced by half a second. The frame it returned was entirely plausible;
+   the only symptom was leg boundaries printing `600.5`, `1801` and `3601` where round
+   numbers were expected. That is an argument for the protocol decision that every frame
+   carries `sim_time_s`: the clock was the only witness, and a client that had
+   integrated `dt` itself would have agreed with the bug.
+2. **The post-restore read does not belong in the CSV.** It shares its timestamp with the
+   last frame of the previous leg and is taken at `Rest`, so writing both drew a voltage
+   spike at the restore where the pack had merely stopped being asked for current. It is
+   printed instead — which is where it is more interesting, because the size of that
+   step *is* the I·R drop the load was costing.
+3. **"first seen at t = 610 s" for a fault timestamped 600 s.** Not a bug: at
+   `report_every_n_steps = 20` and `dt = 0.5` the first reported sample after the fault
+   lands up to 10 s late. Relabelled "first *reported* at", with the resolution spelled
+   out beside it. Decimation costs resolution, never accuracy — and a summary that says
+   "seen" invites the reader to conclude the engine is late.
+
+### The split moved so the fault fires after the restore
+
+The first draft split the run at exactly t = 600 s, which is the instant the scenario's
+faults fire — so the snapshot was taken on the same step as the fault and the resumed
+half proved nothing about the queue. Moving the split to t = 300 s puts the fault inside
+the resumed leg, which is the reasoning `e2e_experiment.rs` already documents for its
+own split: a restored pack that had silently dropped its pending faults would otherwise
+produce a run that looks fine and is much duller than it claims to be.
+
+### The README is the fourth copy of the `wasm-pack` line, and that is fine
+
+`main.rs`'s `USAGE`, the startup warning when `web/pkg` is missing, `GET /`'s
+`web_note`, and now the README. Kept byte-identical, with the README naming `main.rs` as
+the authority.
+
+This is the same shape as slice D's "third copy of the caps" and it is resolved the
+opposite way on purpose. The caps are **values a client computes with**, so a stale copy
+silently produces wrong behaviour and they needed a single authority reported at
+runtime. This is **a sentence a person types**, and each copy exists for a reader who
+cannot see the others: someone running `--help`, someone reading a terminal warning,
+someone holding a browser at `GET /`, and someone reading the repo. Duplication whose
+failure mode is "slightly out of date prose" is not the same problem as duplication
+whose failure mode is a rejected batch.
+
+### What running the README found
+
+Every command in it was executed rather than reasoned about: `cargo run -p sim-server`,
+the `curl --data-binary` POST, `/app/` (200), `wasm-pack build crates/sim-wasm --target
+web --out-dir ../../web/pkg`, and `node examples/experiment.mjs` with no arguments from
+the workspace root. All work.
+
+The last one surfaced something only the documented invocation would: the script writes
+`experiment.csv` and `experiment-snapshot.json` into whatever directory it runs from,
+and the README tells people to run it from the repo root. Both are now in `.gitignore` —
+results, not source.
+
+### What is deliberately not here
+
+- **No latency assertion anywhere.** The number lives in a README sentence and an example
+  binary, not in a gate. Same reasoning `pack-step-perf.md` gives for the 50 µs budget:
+  a wall-clock assertion is machine-dependent, and this file has just spent three
+  benchmark rounds demonstrating why.
+- **No `sim-protocol` crate.** Slice D set the trigger at a *third* client of
+  `Limits`/`StepCommand`/`Frame`; the example binary is not one — it depends on
+  `sim-server` directly and uses the originals.
+- **No CI configuration.** The gates are two commands and they are in the README; wiring
+  them to a runner is not this phase's work and would be the first thing in this repo
+  that assumes a particular hosting service.
 
 ---
 
