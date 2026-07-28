@@ -1415,6 +1415,24 @@ impl Pack {
         // `cell_src` as it goes; it is allocated on no other path, and a linear pack —
         // whose source is the same line at every current — never takes this branch at
         // all.
+        //
+        // # What else this moves, since "the reported voltage" understates it
+        // The substituted `(e, r)` feeds the whole of that loop body, not just `v_g`.
+        // Two consequences worth naming rather than leaving to be discovered:
+        //
+        // * **`soh_resistance`.** The `aging_live` accumulators divide the same
+        //   conductance, so an aging SPM pack reports a marginally different resistance
+        //   ratio on a probe step than on a real step at the same current. That is
+        //   defensible — a porous-electrode cell's `r` is a *differential* resistance
+        //   and is operating-point dependent by construction, so there is no
+        //   demand-free answer to report — but it does mean the number moves with the
+        //   probe's demand. An equivalent-circuit pack, whose `r` is a table lookup,
+        //   is unaffected on every path.
+        // * **The BMS sees none of it**, and not by luck: this branch requires
+        //   `!sensor_tick`, and `bms.sample` below is gated on `sensor_tick`. The
+        //   group voltages a probe step assembles are reported and discarded, never
+        //   sensed, so no estimator or protection decision is ever taken against a
+        //   voltage the next real step would not also produce.
         let report_src: Vec<(f64, f64)> = if nonlinear && !sensor_tick {
             solved_src.to_vec()
         } else {

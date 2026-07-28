@@ -334,3 +334,50 @@ fn the_solve_converges_across_a_full_schedule() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// The cap, the flag, and the NaN policy — the branches nothing else reaches
+// ---------------------------------------------------------------------------
+
+/// A non-finite demand runs the solve to its cap, says so, and does not panic.
+///
+/// # Why this test exists at all
+/// Everything above converges, which means `SOLVE_ITER_CAP`, the
+/// [`EventFlags::SOLVE_UNCONVERGED`] flag and the deliberately NaN-preferring residual
+/// comparison are three pieces of code with a paragraph of justification each and zero
+/// executions behind them. That is the same gap two tests in this file had to have an
+/// explicit "and something actually iterated" line added to close, and it would be odd
+/// to close it there and leave it open here.
+///
+/// The path, and it is worth tracing because it is the one place the solve can spin:
+/// `solve_current` returns NaN, so the node voltage is NaN, so every residual is NaN.
+/// `f64::max` would have *discarded* those in favour of `0.0` and reported a converged
+/// solve over a state that has none — which is exactly why the comparison is written
+/// to let NaN win. It does, the residual never falls under the tolerance, the cap
+/// stops it, and the flag says what happened.
+///
+/// `CLAUDE.md`'s rule is that `step` never panics and reports physical events through
+/// flags. A demand of NaN is not a physical event, but the rule is about the *exit
+/// path*, and this is the one demand that can reach a bounded loop.
+#[test]
+fn a_non_finite_demand_hits_the_cap_and_reports_it_without_panicking() {
+    let mut p = pack(1, 1, Scatter::default());
+    let tele = p.step(1.0, Demand::Current(f64::NAN), &env());
+
+    assert!(
+        tele.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+        "the solve cannot have converged on a NaN demand, so the flag is the only \
+         honest report; flags were {:?}",
+        tele.flags
+    );
+    assert_eq!(
+        tele.solve_iterations,
+        sim_core::pack::SOLVE_ITER_CAP,
+        "a non-converging solve should stop at the cap and nowhere else"
+    );
+    assert!(
+        tele.v_terminal.is_nan(),
+        "a NaN demand should propagate to the reported voltage rather than being \
+         quietly cleaned up into a plausible number"
+    );
+}

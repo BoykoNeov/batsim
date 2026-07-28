@@ -1571,7 +1571,14 @@ Three things make this worth writing down rather than just fixing.
    so the recompute is the same" is true of the *state* and false of the tangent.
 3. The fix is confined to the one path (`nonlinear && !sensor_tick`) and copies the
    converged sources; a linear pack never takes the branch, which is why the baseline
-   still diffs empty with the fix in.
+   still diffs empty with the fix in. It reaches further than "the reported voltage",
+   though: the substituted source feeds the whole loop body, so an *aging* SPM pack
+   reports a marginally different `soh_resistance` on a probe step than on a real step
+   at the same current. That is defensible — an SPM `r` is a differential resistance
+   and has no demand-free value — but it is documented rather than left to be found.
+   The BMS is unaffected for a structural reason: the branch requires `!sensor_tick`
+   and `bms.sample` is gated on `sensor_tick`, so a probe step's group voltages are
+   reported and discarded, never sensed.
 
 ### Iteration counts, measured on a pack rather than inherited from the spike
 
@@ -1632,6 +1639,7 @@ satisfied):
 | schedule converges | **yes**, but only via the added `worst > 1` line |
 | Kirchhoff across a parallel group | **no** |
 | snapshot round-trip | **yes**, via the `any(n > 1)` line |
+| NaN demand hits the cap | **n/a** — it tests the branches convergence never reaches |
 
 The Kirchhoff row is the one worth keeping in mind: currents summing is a property of
 the *split*, and the split adds up against whatever linearization built it, converged
@@ -1642,14 +1650,22 @@ is measuring the scaffolding.
 
 ### Deliberately not done
 
-- **No damping and no `SOLVE_UNCONVERGED` in any shipped scenario.** The cap was never
-  reached on a schedule built to reach it. Adding damping against a hazard that did not
-  materialise would be untested code on the hot path.
+- **No damping.** The cap was never reached on a schedule built to reach it, including
+  at the max-power knee. Adding damping against a hazard that did not materialise would
+  be untested code on the hot path. The cap itself, the flag and the NaN-preferring
+  residual comparison *are* tested — `a_non_finite_demand_hits_the_cap_and_reports_it_without_panicking`
+  drives `Demand::Current(f64::NAN)` through all three, which was the last piece of
+  slice-D code carrying a paragraph of justification and no executions.
+- **No `web/pkg` rebuild.** Checked rather than assumed: `web/pkg` is gitignored
+  (`.gitignore:8`), so no slice has ever committed a wasm bundle and D ships no stale
+  one. The local build artifact *is* stale after this slice — rebuild before demoing the
+  browser page, exactly as Phase 4 slice D's note says.
 - **No per-cell current accessor.** The Kirchhoff test reads currents out of the charge
   that moved, which routes through `spm::advance`'s own mapping and is the stronger
   check; an accessor would have been public API added for a test's convenience.
-- **No perf number.** The claim here is structural — one predicted branch and no new
-  allocation on the linear path. Slice E measures, with `pack-step-perf.md`'s
+- **No perf number.** The claim here is structural — two predicted branches (one in the
+  solve aggregation, one in the reporting pass) and no new allocation on the linear
+  path. Slice E measures, with `pack-step-perf.md`'s
   discipline.
 
 
