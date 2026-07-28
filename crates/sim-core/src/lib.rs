@@ -76,6 +76,86 @@ pub struct Env {
     pub t_coolant: Option<f64>,
 }
 
+/// A `f64` handed to the engine was `NaN` or infinite.
+///
+/// Same shape as [`FaultError::NotFinite`], which is the older instance of the same idea;
+/// this one covers the two *step arguments* rather than a fault's parameters.
+#[derive(Clone, Copy, Debug, PartialEq, thiserror::Error)]
+#[error("{field} must be finite, got {value}")]
+pub struct NonFinite {
+    /// Which field, named the way a caller of the public API would name it. `'static`
+    /// because every one of these is one of this crate's own fields, never user text.
+    pub field: &'static str,
+    /// The offending value.
+    pub value: f64,
+}
+
+impl Demand {
+    /// Reject a demand carrying a non-finite number.
+    ///
+    /// # Why this is on the engine's own type, and not in each adapter
+    /// The engine is deliberately permissive — [`Pack::step`] never returns `Err` and
+    /// never panics, so a `NaN` demand would propagate into the trajectory and surface
+    /// as quiet garbage rather than as a complaint. Rejecting it is therefore an
+    /// *adapter's* job. But it is the same rejection in every adapter, for one reason:
+    ///
+    /// > a `f64` that reached the boundary without passing through a JSON parser may be
+    /// > non-finite.
+    ///
+    /// That is a fact about `Demand`, not about any protocol, which is why the check
+    /// lives here rather than in a shared adapter crate. `sim-server` maps the error to
+    /// `ErrorCode::OutOfRange`, `sim-wasm` and `sim-godot` to their own out-of-range
+    /// arms; each keeps its own error taxonomy and none of them re-implements the rule.
+    ///
+    /// Note where this is and is not reachable. Over `sim-server`'s socket it is dead
+    /// code — JSON has no literal for `NaN`, so serde refuses the message first (see
+    /// `sim-server/tests/ws.rs`). Across the wasm boundary and across GDScript's `#[func]`
+    /// boundary there is no parser at all, and `Number.NaN` / `NAN` arrive intact. It is
+    /// live code for two of the three clients.
+    ///
+    /// # Errors
+    /// [`NonFinite`] naming the variant's field. [`Demand::Rest`] carries no number and
+    /// is always accepted.
+    pub fn check_finite(self) -> Result<(), NonFinite> {
+        let (field, value) = match self {
+            Self::Current(a) => ("the demand's current [A]", a),
+            Self::Power(w) => ("the demand's power [W]", w),
+            Self::Voltage(v) => ("the demand's voltage [V]", v),
+            Self::Rest => return Ok(()),
+        };
+        if value.is_finite() {
+            Ok(())
+        } else {
+            Err(NonFinite { field, value })
+        }
+    }
+}
+
+impl Env {
+    /// Reject an environment carrying a non-finite temperature.
+    ///
+    /// See [`Demand::check_finite`] for why this lives on the engine's type.
+    ///
+    /// # Errors
+    /// [`NonFinite`] naming the offending field. A `t_coolant` of `None` is not a
+    /// non-finite value — it means "no coolant" — and is accepted.
+    pub fn check_finite(self) -> Result<(), NonFinite> {
+        if !self.t_ambient.is_finite() {
+            return Err(NonFinite {
+                field: "env.t_ambient [K]",
+                value: self.t_ambient,
+            });
+        }
+        match self.t_coolant {
+            Some(t) if !t.is_finite() => Err(NonFinite {
+                field: "env.t_coolant [K]",
+                value: t,
+            }),
+            _ => Ok(()),
+        }
+    }
+}
+
 /// Cheap per-step summary of pack state. Per-cell arrays are available on request
 /// via the ground-truth accessors.
 ///

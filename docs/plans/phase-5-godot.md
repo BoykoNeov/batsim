@@ -1,6 +1,6 @@
 # Phase 5 — Godot adapter
 
-**Status: planned. No slice has landed.** This file is written before the work so the
+**Status: in progress. Slice A has landed; B–E are planned.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` through `phase-4-server-wasm.md` grew.
 
@@ -22,7 +22,7 @@ asserted.
 
 | slice | scope | state |
 | ----- | ----- | ----- |
-| A | the shared boundary rule: `Demand::check_finite` / `Env::check_finite` land in `sim-core`; `sim-server` and `sim-wasm` migrate onto them; the sim-wasm "third client" comment is amended to name a criterion instead of a count | **planned** |
+| A | the shared boundary rule: `Demand::check_finite` / `Env::check_finite` land in `sim-core`; `sim-server` and `sim-wasm` migrate onto them; the sim-wasm "third client" comment is amended to name a criterion instead of a count | **landed** (v9 — no bump, as designed) |
 | B | `crates/sim-godot`: crate skeleton, `godot` pinned to `api-4-7`, workspace membership, and `driver.rs` — the entire pure layer (accumulator, flag edge detector, scenario→pack, batch stepping, caps), host-tested | **planned** |
 | C | the node surface: exported properties, `#[func]` methods, signals, `_physics_process` wiring, `.gdextension`, demo project skeleton | **planned** |
 | D | the exit gate: GDScript driver emitting bit patterns, the Rust integration test that compares them, the `--import` bootstrap. **Carries the exit criterion.** | **planned** |
@@ -428,6 +428,95 @@ assertion had to change, the migration changed behaviour and is wrong.
   engine's.
 
 ---
+
+## Learned while building — slice A (the shared boundary rule)
+
+### The canary held, and this was the slice that could have broken it
+
+Phase 5's canary says a `SNAPSHOT_VERSION` bump means an adapter has leaked into the
+engine. Slice A is the only slice in the phase that edits `sim-core` at all, so it was the
+one place the rule was under real load rather than being trivially satisfied.
+
+It held: `SNAPSHOT_VERSION` is still 9. What went in was one error struct and two inherent
+methods; no serialized struct gained a field. The plan predicted the reason — `Demand` and
+`Env` are step *arguments*, and neither appears in a `Snapshot` — and that prediction is
+what made the edit safe to make in the engine rather than in three adapters.
+
+### "No existing test was modified" is a stronger gate than "the tests pass"
+
+The slice's exit criterion was deliberately not *`cargo test --workspace` is green*. A
+behaviour-preserving refactor can be green while having quietly changed something a test
+was updated to accommodate, and the update is invisible in a summary line.
+
+So the gate was a claim about the **diff**, checkable mechanically:
+
+```text
+$ git diff --name-only | grep -i test
+NONE — no existing test modified
+```
+
+The only change under any `tests/` tree is one new file. That proves behaviour was
+preserved rather than merely that nothing obviously broke. It is the same instinct as slice
+E of Phase 4 — "'nothing changed on the step path' is a claim about a diff, read the diff"
+— applied a slice earlier, and it is cheap enough to be worth making a habit.
+
+### The message texts *did* change, and that was checked before it was relied on
+
+Consolidating the checks changes what a user reads:
+
+```text
+before (sim-server):  t_ambient must be finite, got NaN
+before (sim-wasm):    t_ambient must be finite, got NaN
+after  (all three):   env.t_ambient [K] must be finite, got NaN
+before (demand):      the demand carries a non-finite value (NaN)
+after  (demand):      the demand's current [A] must be finite, got NaN
+```
+
+That is only safe if nothing asserts on the text. It was checked rather than assumed —
+`sim-server/tests/ws.rs` asserts `error.code() == ErrorCode::OutOfRange`, and
+`sim-wasm/tests/engine.rs` asserts `matches!(err, EngineError::OutOfRange(_))`. Both are
+assertions about the *taxonomy*, which is the part that is a contract, and neither touches
+the string. `ErrorCode::OutOfRange` is a wire contract and did not move.
+
+The new text is also better in a way the repo already had a rule for: `CLAUDE.md` requires
+units on every numeric field, and the old messages carried none. `env.t_ambient [K]` and
+`the demand's current [A]` do. The old demand message did not even name *which* field was
+bad, because the copied version threw the variant away before formatting.
+
+### The `t_coolant` arm was built to fail, and it failed alone
+
+The plan claimed `t_coolant` is the arm a hand-written check misses, "because it is the
+only one behind an `Option`". That is an assertion about the test suite as much as about
+the code, so it was verified the way Phase 4 verified its float guard — by breaking the
+thing on purpose:
+
+```text
+$ # Env::check_finite's t_coolant match replaced with `Ok(())`
+$ cargo test -p sim-core --test boundary
+---- an_env_rejects_a_non_finite_coolant_behind_the_option stdout ----
+panicked at crates\sim-core\tests\boundary.rs:95:10:
+t_coolant = Some(NaN) was accepted: ()
+
+test result: FAILED. 8 passed; 1 failed
+```
+
+**8 passed, 1 failed** is the part worth recording. It says the coverage is not
+accidental — no other test in the file incidentally exercises that arm, so if that one test
+had not been written, the whole suite would have gone green on a check that silently
+accepted `Some(NaN)`. That is precisely the hole the three hand-copied versions were at
+risk of, and it is now closed in one place instead of three.
+
+### What is deliberately not here
+
+- **No `sim-protocol` crate.** The argument is in "The third-client question" above and the
+  amended comment now lives in `sim-wasm/src/engine.rs`. `Limits`, `StepCommand`, and
+  `Frame` were not touched.
+- **No `dt` check.** `dt` is not a field of `Demand` or `Env` — it is a separate argument
+  to `step`, and its rule is different (finite **and** `>= 0`, where a demand may legitimately
+  be negative). Each adapter still owns that one, and correctly so: `sim-godot` will want
+  `dt > 0` rather than `>= 0`, because a zero-length step in a `_physics_process` loop is a
+  frame that did nothing rather than a deliberate telemetry read.
+- **No `godot` dependency anywhere yet.** Slice A adds no crate; that is slice B.
 
 ## Open questions (decide when the slice lands, not now)
 

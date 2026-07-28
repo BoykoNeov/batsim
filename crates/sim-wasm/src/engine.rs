@@ -10,27 +10,47 @@
 //! `?` and a string conversion.
 //!
 //! # Where the duplication is, and why it is deliberate
-//! The caps and finiteness checks below mirror `sim_server::protocol`. They are copied
-//! rather than shared because the alternative is depending on `sim-server` — which
-//! would pull `axum` and `tokio` into a crate whose whole point is to run in a browser.
-//! The copy is small (two constants and four `is_finite` calls) and the shapes it
-//! guards are pinned by tests on both sides.
+//! The caps below mirror `sim_server::protocol`. They are copied rather than shared
+//! because the alternative is depending on `sim-server` — which would pull `axum` and
+//! `tokio` into a crate whose whole point is to run in a browser. The copy is small (two
+//! constants) and the shapes it guards are pinned by tests on both sides.
 //!
-//! The duplication is not free and the failure mode is drift, so: **if a third client
-//! ever needs these, the fix is to lift `Limits`/`StepCommand`/`Frame` into a
-//! `sim-protocol` crate**, not to add a third copy. Two clients did not justify the
-//! churn to slice C's work; three would.
+//! An earlier version of this comment promised that **a third client would trigger a
+//! `sim-protocol` lift** of `Limits`/`StepCommand`/`Frame`. Phase 5 produced that third
+//! client — `sim-godot` — and the promise turned out to name the wrong trigger, so it is
+//! recorded here rather than quietly dropped. `sim-godot` wants none of those shapes:
+//! it has no wire, so no `StepCommand` (GDScript calls a `#[func]` with typed arguments —
+//! there is no message to parse or to `deny_unknown_fields` on); it exposes properties and
+//! emits signals rather than returning a batch of samples, so no `Frame`; and it reports
+//! only the latest state, so no decimation and no `frame_count`. Even the caps do not
+//! unify: all three clients bound steps per call, but the server bounds a lock hold time,
+//! this crate bounds main-thread occupancy in a tab, and `sim-godot` bounds a frame
+//! budget. Three constants with three rationales are not one constant.
 //!
-//! # The check that only exists here
+//! So the rule is now a criterion rather than a count: **lift when a client needs the
+//! wire *shapes*, not when the third client arrives.** See
+//! `docs/plans/phase-5-godot.md`.
+//!
+//! What genuinely did recur — the finiteness checks — moved to where the rule actually
+//! lives, which is `sim-core` itself; see below.
+//!
+//! # The check that only exists here — and where it went
 //! Over the server's socket a non-finite number is unreachable — JSON has no literal
 //! for `NaN` and `serde_json` refuses `1e400`, so the parser rejects it before
 //! validation runs. Across the wasm boundary there is no parser: JS hands `dt` to this
 //! crate as a raw `f64`, and `Number.NaN` arrives intact. `sim_server::protocol`'s
 //! `validate_rejects_every_non_finite_field` was written for exactly this caller.
+//!
+//! GDScript is a third boundary with no parser, which made this the same rule in three
+//! places. It is now `sim_core::Demand::check_finite` and `sim_core::Env::check_finite` —
+//! a statement about what the engine's own types accept, not about any protocol, so it
+//! needed no new crate. [`check_demand`] and [`check_env`] below are the mapping into
+//! [`EngineError`], and that mapping is all that is left here.
 
 use serde::Serialize;
 use sim_core::{
-    CellView, ChemistryParams, Demand, Env, Fault, Pack, Snapshot, Telemetry, SNAPSHOT_VERSION,
+    CellView, ChemistryParams, Demand, Env, Fault, NonFinite, Pack, Snapshot, Telemetry,
+    SNAPSHOT_VERSION,
 };
 use sim_data::{parse_chemistry, parse_scenario, ChemistrySource, DataError, Scenario};
 
@@ -547,36 +567,21 @@ fn build(
 }
 
 /// Every `f64` a demand can carry must be finite.
+///
+/// The rule is `sim-core`'s — see [`Demand::check_finite`]. This is the mapping into this
+/// crate's error type, which is the only part that is this crate's business.
 fn check_demand(demand: Demand) -> Result<(), EngineError> {
-    let value = match demand {
-        Demand::Current(a) => a,
-        Demand::Power(w) => w,
-        Demand::Voltage(v) => v,
-        Demand::Rest => return Ok(()),
-    };
-    if value.is_finite() {
-        Ok(())
-    } else {
-        Err(EngineError::OutOfRange(format!(
-            "the demand carries a non-finite value ({value})"
-        )))
-    }
+    demand.check_finite().map_err(non_finite)
 }
 
 /// Every `f64` an environment can carry must be finite.
 fn check_env(env: Env) -> Result<(), EngineError> {
-    if !env.t_ambient.is_finite() {
-        return Err(EngineError::OutOfRange(format!(
-            "t_ambient must be finite, got {}",
-            env.t_ambient
-        )));
-    }
-    match env.t_coolant {
-        Some(t) if !t.is_finite() => Err(EngineError::OutOfRange(format!(
-            "t_coolant must be finite when present, got {t}"
-        ))),
-        _ => Ok(()),
-    }
+    env.check_finite().map_err(non_finite)
+}
+
+/// The one place a [`NonFinite`] becomes an [`EngineError`].
+fn non_finite(error: NonFinite) -> EngineError {
+    EngineError::OutOfRange(error.to_string())
 }
 
 /// The JSON-string surface, kept beside the typed one so [`crate::Sim`] is a pure

@@ -43,7 +43,7 @@
 //! [`StepCommand::validate`] is where the real boundary is.
 
 use serde::{Deserialize, Serialize};
-use sim_core::{Demand, Env, Fault, Pack, Snapshot, Telemetry};
+use sim_core::{Demand, Env, Fault, NonFinite, Pack, Snapshot, Telemetry};
 
 use crate::error::{ApiError, ErrorCode};
 
@@ -190,21 +190,13 @@ impl StepCommand {
 }
 
 /// Every `f64` a demand can carry must be finite.
+///
+/// The rule itself is `sim-core`'s — see [`Demand::check_finite`] for why it lives on the
+/// engine's type rather than here or in a shared adapter crate. This function is the
+/// mapping into *this* protocol's error taxonomy, and that mapping is the only part that
+/// is the server's business.
 fn check_demand(demand: Demand) -> Result<(), ApiError> {
-    let value = match demand {
-        Demand::Current(a) => a,
-        Demand::Power(w) => w,
-        Demand::Voltage(v) => v,
-        Demand::Rest => return Ok(()),
-    };
-    if value.is_finite() {
-        Ok(())
-    } else {
-        Err(ApiError::ws(
-            ErrorCode::OutOfRange,
-            format!("the demand carries a non-finite value ({value})"),
-        ))
-    }
+    demand.check_finite().map_err(non_finite)
 }
 
 /// Every `f64` an environment can carry must be finite.
@@ -212,19 +204,16 @@ fn check_demand(demand: Demand) -> Result<(), ApiError> {
 /// # Errors
 /// [`ErrorCode::OutOfRange`] naming the offending field.
 pub(crate) fn check_env(env: Env) -> Result<(), ApiError> {
-    if !env.t_ambient.is_finite() {
-        return Err(ApiError::ws(
-            ErrorCode::OutOfRange,
-            format!("t_ambient must be finite, got {}", env.t_ambient),
-        ));
-    }
-    match env.t_coolant {
-        Some(t) if !t.is_finite() => Err(ApiError::ws(
-            ErrorCode::OutOfRange,
-            format!("t_coolant must be finite when present, got {t}"),
-        )),
-        _ => Ok(()),
-    }
+    env.check_finite().map_err(non_finite)
+}
+
+/// The one place a [`NonFinite`] becomes a protocol error.
+///
+/// `ErrorCode::OutOfRange` is a **wire contract** and does not change; the message text
+/// is not, and now comes from the engine so all three clients say the same thing about
+/// the same field.
+fn non_finite(error: NonFinite) -> ApiError {
+    ApiError::ws(ErrorCode::OutOfRange, error.to_string())
 }
 
 /// What a client may send.
