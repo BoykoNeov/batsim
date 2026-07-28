@@ -1,6 +1,6 @@
 # Phase 6 — porous electrodes (`Spm`)
 
-**Status: slice A landed; B–E planned.** This file is written before the work so the decisions below are made
+**Status: slices A, B and C1 landed; C2–E planned.** This file is written before the work so the decisions below are made
 once; the "learned while building" material is appended as each slice lands, the way
 `phase-2-thermal-bms.md` through `phase-5-godot.md` grew.
 
@@ -30,7 +30,8 @@ So the exit criterion below is authored here, and argued rather than asserted.
 | ----- | ----- | ----- | ------- |
 | A | **model-agnostic cell interface.** `CellModel::state()`/`state_mut()` are *removed*; `pack.rs`'s twelve direct reaches into ECM internals go through the enum. **Zero physics change.** | **landed** (v9 — no bump, as designed) | v9 |
 | B | **`[spm]` chemistry section.** `sim-data` parses and validates half-cell OCPs, particle geometry, transport and kinetics. A new honest `nmc_21700_lgm50.toml`. **No engine physics.** (The `BuildError` moved to C with the config field that can trigger it — see below.) | **landed** (v9 — no bump, as designed) | v9 |
-| C | **the SPM cell.** Backward-Euler finite-volume radial diffusion, Butler–Volmer kinetics, `CellModel::Spm`. Single cell only — the pack solve still sees a linear source. **Carries the one bump.** | planned | **v9 → v10** |
+| C1 | **the wire-surface rename.** `CellView::v_rc_sum` → `overpotential_v`, the two adapter API versions it owes, and the test that makes that rule enforceable. No physics, no config, no snapshot change. | **landed** (v9 — no bump; the bump follows the variant, see below) | v9 |
+| C2 | **the SPM cell.** Backward-Euler finite-volume radial diffusion, Butler–Volmer kinetics, `CellModel::Spm`, plus the `PackConfig` selector, `shells`, both `BuildError`s and the version-check test. Single cell only — the pack solve still sees a linear source. **Carries the one bump.** | planned | **v9 → v10** |
 | D | **the nonlinear pack solve.** Iterate the existing linear group solve on tangent Thévenins; closed form remains exactly the closed form when every cell is linear. | planned | v10 — no further bump |
 | E | **PyBaMM validation + wrap-up.** SPM goldens, tolerance built to fail, SPM's own perf budget measured, README. **Carries exit criteria 2.** | planned | v10 — no further bump |
 
@@ -633,14 +634,18 @@ suspects for any discrepancy.
   and a `BuildError` range check on `shells`. Adding the field edits ~23 exhaustive
   struct literals across 22 existing test files — mechanically, but it is the bulk of
   this slice's diff, so budget for it.
-- **Also inherited, from slice A:** `CellView::v_rc_sum`'s rename. This slice bumps
-  `SNAPSHOT_VERSION` and can bump `sim-server`'s `API_VERSION` in the same breath — and
-  that rename *does* owe an `API_VERSION` bump, since renaming a field on a wire type is
-  exactly what that constant's doc says bumps it.
-- **This slice is now carrying four things** (the SPM cell, the version bump and its
-  test, the selector, the rename). **Split it when starting.** A natural seam: C1 = the
-  selector + the rename + the version bump (config and wire surface, no physics), C2 =
-  `spm.rs` and the variant (physics only, against a surface that already exists).
+- **Also inherited, from slice A:** `CellView::v_rc_sum`'s rename — **done in C1.** It
+  owed an `API_VERSION` bump, since renaming a field on a wire type is exactly what that
+  constant's doc says bumps it, and it also owed `sim_wasm::WASM_API_VERSION`, which this
+  plan failed to name (see the C1 notes). Both are 2. It did **not** owe a
+  `SNAPSHOT_VERSION` bump: `CellView` is a view, not stored state.
+- **This slice was carrying four things** (the SPM cell, the version bump and its test,
+  the selector, the rename) and **has been split**. The seam suggested here — C1 = the
+  selector + the rename + the version bump — was **not** the one used: it would have
+  landed the selector a slice before `spm.rs`, forcing the `SpmNotImplemented` placeholder
+  that slice B's deferral existed to avoid. See the slice-C1 notes below. What actually
+  shipped: **C1** = the rename + the two adapter API versions (v9, no bump); **C2** =
+  everything else, including the selector, which ships with the model it selects.
 - **`SNAPSHOT_VERSION` 9 → 10**, with the doc-comment note in house style.
 - **The version-check test** described above: construct a v9-shaped snapshot that is
   structurally valid under v10 and assert `restore` rejects it with
@@ -976,6 +981,143 @@ sibling file already documents.
 - **`nmc_18650_generic.toml` keeps its values and its two `sim-data` tests.** Only its
   provenance line changed, per the owner decision; no test asserts on that string
   (checked).
+
+## Learned while building — slice C1 (the wire-surface rename)
+
+### The seam moved, and the plan had already written the argument against its own suggestion
+
+This file proposed splitting C as *"C1 = the selector + the rename + the version bump
+(config and wire surface, no physics), C2 = `spm.rs` and the variant"*. That seam is
+wrong, and the refutation is one section earlier in this same document — slice B's note
+on why the selector was deferred out of B at all:
+
+> so the success path is a real model rather than a temporary `SpmNotImplemented`
+> placeholder deleted one slice later
+
+Landing `CellModelConfig::Spm { shells }` in a C1 that has no `spm.rs` puts the selector
+**one slice before anything can build what it selects**, which forces exactly that
+placeholder — the thing the deferral existed to avoid. The plan moved the churn out of B
+for a reason and then proposed a seam that reintroduced it.
+
+The seam actually used, which also makes each version constant bump where its **own**
+contract breaks:
+
+- **C1** — the `CellView` rename and the two adapter API versions. Pure wire surface.
+- **C2** — the selector, `shells`, both `BuildError`s, `SNAPSHOT_VERSION` 9 → 10, the
+  version-check test, `spm.rs` and the variant. The ~23-literal churn sits beside the
+  physics, separated from it by the `git diff -U0 | sort | uniq -c` gate slice B
+  established, which is what that gate is for.
+
+### `SNAPSHOT_VERSION` does not move here, and the check was structural rather than aesthetic
+
+The tempting reading is "a rename is cosmetic, so no bump". That is the right answer for
+the wrong reason, and two facts were verified rather than assumed:
+
+- **`Pack` stores no `PackConfig`** — its fields are `version, chem, series, parallel,
+  groups, thermal, bms, aging, faults, rng, sim_time_s, src_cache(skip)`. So neither this
+  slice's rename nor C2's selector enters a snapshot.
+- **`CellModel::new_ecm` has exactly one call site**, `pack.rs:543`, inside `Pack::new`.
+  Nothing builds a fresh cell afterwards — no fault-injection path, no `set_cell_factors`
+  path — so the pack never has to *remember* the selector in order to construct cells
+  later. Had either been false, the selector would have been snapshot state and the bump
+  would have travelled with it.
+
+`CellView` is a view, not stored state, which `pack.rs` already says about itself. The
+one bump therefore still belongs to C2, with the variant that actually changes the layout.
+
+### There is a third version constant, and this file named two
+
+The plan says slice C owes `sim_server::API_VERSION`. It also owes
+**`sim_wasm::WASM_API_VERSION`**, which this document never mentions.
+`sim-wasm`'s `Cells { cells: Vec<CellView> }` (`engine.rs:136`) puts `CellView` across the
+browser boundary *verbatim*, and that constant's own rule is "the JSON field names of the
+engine types that cross this boundary". Both went 1 → 2.
+
+Missing it would have shipped a `pkg/` whose field name changed under an unchanged
+version number — precisely the failure its doc comment advertises catching ("a page that
+loads a `pkg/` built from a different revision than the server it also talks to can
+notice"). Three constants with three jobs only works if all three are actually checked;
+the gate checks `SNAPSHOT_VERSION` and would have caught neither of the other two.
+
+For the record on the one that did *not* move: `API_VERSION` stood at 1 through all five
+Phase 4 slices, all five Phase 5 slices, and Phase 6 slice B's added `"spm":null` (which
+the rule exempts — adding a field breaks no client). This is the first time it has fired.
+
+### The rule was aspirational for `CellView`, and the perturbation proves how much
+
+`sim-server`'s `error_codes_have_pinned_wire_spellings` exists to make "a rename bumps
+`API_VERSION`" enforceable for `ErrorCode`. **Nothing did that job for `CellView`** —
+`wire_json.rs`'s `cell_view_bits` and `thevenin_cache.rs`'s `cell_bits` read the *Rust
+struct*, so a rename flows through them silently, and `rest.rs` only indexes
+`cells["cells"]`.
+
+Measured, not argued. Adding `#[serde(rename = "v_rc_sum")]` to the renamed field — one
+attribute, changing only the wire name, simulating exactly "someone renamed a wire field
+and forgot the bump" — fails **exactly one test in the entire workspace**, and it is the
+one this slice added:
+
+```text
+test cell_view_fields_have_pinned_wire_spellings ... FAILED
+test result: FAILED. 4 passed; 1 failed
+(workspace-wide: 1 failing suite, 0 others affected)
+```
+
+Before this slice that perturbation was **fully green**. The bit-exactness tests, the
+JSON round-trip test, the REST and WebSocket suites and the Godot gate are all blind to
+it by construction, because every one of them reads the field through Rust.
+
+The test asserts each key is **present**, deliberately not that the key set is exact,
+because the rule it enforces says *"Adding a field or an error code does not bump it"* —
+an exact-set assertion would fail on C2's additions and would be a stricter test of the
+wrong thing. It also asserts `v_rc_sum` does not come back.
+
+Stated rather than left to be discovered: `Telemetry`, `Demand` and `Env` are named by
+the same rule and remain **unpinned**. This slice renamed a `CellView` field, so
+`CellView` is what it owes; the other three are a known gap.
+
+### The gate, and the reference point that is no longer the baseline file
+
+```text
+1. baseline diff            ->  BYTE-IDENTICAL, all 976 lines, vs the post-slice-B
+                                capture — 7/7 snapshot hashes unchanged, not merely
+                                accounted for
+   (vs the pre-slice-A file ->  969/969 telemetry lines still bit-identical, and the
+                                only differences are slice B's already-documented
+                                +11 / +434 byte hash deltas)
+2. SNAPSHOT_VERSION         ->  still 9
+3. API_VERSION / WASM_API_VERSION -> 1 -> 2, both
+4. cargo test --workspace   ->  all suites ok; clippy -D warnings and fmt clean;
+                                sim-godot gate (--ignored) 2 passed
+5. web/pkg rebuilt          ->  bundle now carries `overpotential_v`, no `v_rc_sum`
+```
+
+Two things worth recording about leg 1. First, **the prediction was written before the
+run and its reference point was wrong**: it said "byte-identical to
+`baseline-13d295d.txt`", which cannot be true because slice B moved all seven hashes on
+purpose. The correct anchor after B is `after-sliceB-final.txt`. The substantive claim —
+*nothing moves in C1* — held exactly; the file to diff against did not. Worth noting
+because a one-shot instrument accumulates reference points, and quoting the original file
+name out of habit turns a passing gate into a confusing failure.
+
+Second, **this slice had to edit the instrument that gates it**. `phase6-baseline`'s
+`main.rs:107` reads `c.v_rc_sum.to_bits()` and would not compile otherwise — normally the
+thing you must not do. It is safe here for a checkable reason rather than an asserted one:
+the edit renames the field read and changes no value, so the *correct* outcome is
+byte-identical output. A mis-edit (a different field, a dropped column) would have shown
+up as a non-empty diff or a line count off 976. The gate's own output is the check on the
+edit to the gate.
+
+### What is deliberately not here
+
+- **No `PackConfig` field, no `CellModelConfig`, no `BuildError`s** — moved to C2 with
+  the model they select, per the seam argument above.
+- **No `SNAPSHOT_VERSION` bump and no version-check test.** The test needs a v10 to
+  reject a v9 *against*, and it needs its other half — asserting the same blob with
+  `version: 10` restores successfully — or it cannot distinguish "the version field
+  rejected it" from "deserialization rejected it", which is the caveat every prior bump's
+  doc note records. Both land in C2.
+- **No `spm.rs` and no new variant.** `CellModel` still has exactly two arms.
+- **No `Telemetry`/`Demand`/`Env` wire pins.** See above — a stated gap, not an oversight.
 
 ## Open questions
 

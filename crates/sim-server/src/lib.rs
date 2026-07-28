@@ -41,7 +41,15 @@ use tokio::net::TcpListener;
 ///
 /// Explicitly **not** [`sim_core::SNAPSHOT_VERSION`], which versions the engine's pack
 /// state and knows nothing about JSON field names. Two numbers, two jobs.
-pub const API_VERSION: u32 = 1;
+///
+/// v2 (Phase 6, slice C1): `CellView`'s `v_rc_sum` became `overpotential_v`. That is
+/// the first case this constant's own rule names — a renamed field on an engine type
+/// that crosses the wire — and the first time it has fired: v1 stood through all five
+/// Phase 4 slices and all five Phase 5 ones, including Phase 6 slice B's added
+/// `"spm":null`, which the rule exempts because an added field breaks no client.
+/// [`sim_core::SNAPSHOT_VERSION`] deliberately does **not** move with it: `CellView` is
+/// a view, not stored state, so no saved pack changed shape.
+pub const API_VERSION: u32 = 2;
 
 /// Build the application router over a session registry.
 ///

@@ -85,7 +85,7 @@ fn cell_view_bits(c: &CellView) -> Vec<u64> {
     vec![
         c.soc.to_bits(),
         c.temp_k.to_bits(),
-        c.v_rc_sum.to_bits(),
+        c.overpotential_v.to_bits(),
         c.capacity_factor.to_bits(),
         c.r0_factor.to_bits(),
         c.soh_capacity.to_bits(),
@@ -232,4 +232,57 @@ fn event_flags_cross_as_a_joined_name_string() {
         let back: EventFlags = serde_json::from_str(&text).unwrap();
         assert_eq!(flags, back, "flags {flags:?} did not survive {text}");
     }
+}
+
+/// Every `CellView` field's spelling on the wire, pinned to its Rust name.
+///
+/// This is the mirror of `sim-server`'s `error_codes_have_pinned_wire_spellings`, and
+/// it exists because the same rule was aspirational here. `sim_server::API_VERSION`'s
+/// doc says a renamed field on `CellView` bumps it — but nothing checked. The bit
+/// comparisons above read the *Rust struct* (`cell_view_bits`), and `rest.rs` only
+/// indexes `cells["cells"]`, so renaming a field flowed through the entire suite
+/// green. Slice C1 renamed one (`v_rc_sum` -> `overpotential_v`) and had to bump two
+/// API versions by hand; the next such rename fails here first.
+///
+/// It asserts each key is **present**, not that the key set is exact, because that is
+/// what the rule actually says: *"Adding a field or an error code does not bump it."*
+/// An exact-set assertion would fail on a field addition that is explicitly allowed —
+/// it would be a stricter test of the wrong thing.
+///
+/// Deliberately not covered, and stated rather than left to be discovered: `Telemetry`,
+/// `Demand` and `Env` are named by the same rule and are still unpinned. This slice
+/// renamed a `CellView` field, so `CellView` is what it owes.
+#[test]
+fn cell_view_fields_have_pinned_wire_spellings() {
+    let pack = stepped_pack(20);
+    let view = pack.cell(0, 0).expect("a 4S2P pack has a cell 0S0P");
+    let json = serde_json::to_value(view).expect("CellView serializes");
+    let object = json.as_object().expect("CellView crosses as a JSON object");
+
+    for key in [
+        "soc",
+        "temp_k",
+        "overpotential_v",
+        "capacity_factor",
+        "r0_factor",
+        "soh_capacity",
+        "soh_resistance",
+        "internal_short_conductance_s",
+        "runaway_energy_remaining_j",
+        "vented",
+    ] {
+        assert!(
+            object.contains_key(key),
+            "CellView lost or renamed the wire field `{key}` — that breaks every \
+             client parsing it, so it bumps sim_server::API_VERSION and \
+             sim_wasm::WASM_API_VERSION. Present keys: {:?}",
+            object.keys().collect::<Vec<_>>()
+        );
+    }
+
+    assert!(
+        !object.contains_key("v_rc_sum"),
+        "`v_rc_sum` is the pre-C1 name for `overpotential_v` and must not come back: \
+         it named an ECM internal that a porous-electrode cell does not have"
+    );
 }

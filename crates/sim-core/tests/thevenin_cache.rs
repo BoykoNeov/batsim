@@ -193,7 +193,7 @@ fn cell_bits(pack: &Pack, series: u16, parallel: u16) -> Vec<u64> {
             out.extend([
                 v.soc.to_bits(),
                 v.temp_k.to_bits(),
-                v.v_rc_sum.to_bits(),
+                v.overpotential_v.to_bits(),
                 v.capacity_factor.to_bits(),
                 v.r0_factor.to_bits(),
                 v.soh_capacity.to_bits(),

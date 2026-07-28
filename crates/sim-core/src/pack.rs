@@ -341,20 +341,23 @@ pub struct CellView {
     pub soc: f64,
     /// Cell temperature \[K\].
     pub temp_k: f64,
-    /// Sum of the cell's RC-pair overpotentials \[V\], discharge-positive.
+    /// Total overpotential \[V\] across the cell's internal dynamics,
+    /// discharge-positive: everything between `OCV(soc)` and the terminal that is
+    /// **not** the instantaneous ohmic drop.
     ///
-    /// Filled from [`crate::CellModel::overpotential_v`], which is model-neutral:
-    /// it is the total polarization between `OCV(soc)` and the terminal that is not
-    /// the instantaneous ohmic drop, and every cell model has one.
+    /// Filled from [`crate::CellModel::overpotential_v`], and model-neutral in both
+    /// name and value — for an equivalent circuit it is `Σ V_rc`, for a
+    /// porous-electrode cell it is the sum of the kinetic and concentration
+    /// overpotentials. Every cell model has one.
     ///
-    /// **The name is not.** It says "RC pairs", which a porous-electrode cell does
-    /// not have, and reporting `0.0` there would be indistinguishable to a plotting
-    /// client from a real measurement of an unpolarized cell. Renaming it to
-    /// `overpotential_v` is owed — but the field is a **wire contract** (see above),
-    /// so the rename belongs in the slice that bumps the adapters' API version
-    /// alongside a model that needs it, not in a refactor whose whole claim is that
-    /// it changed nothing. See `docs/plans/phase-6-porous-electrodes.md`, slice C.
-    pub v_rc_sum: f64,
+    /// Was `v_rc_sum` through v9. That name named an ECM internal an SPM cell does
+    /// not have, and the only value such a cell could have reported under it is
+    /// `0.0` — indistinguishable, to a plotting client, from a real measurement of
+    /// an unpolarized cell. The rename waited for this slice because the field is a
+    /// **wire contract** (see above) and renaming it is exactly what the adapters'
+    /// API versions are bumped for: `sim_server::API_VERSION` and
+    /// `sim_wasm::WASM_API_VERSION` both went 1 → 2 with it.
+    pub overpotential_v: f64,
     /// Static capacity multiplier applied to this cell.
     pub capacity_factor: f64,
     /// Static `R0` multiplier applied to this cell.
@@ -641,7 +644,7 @@ impl Pack {
         Some(CellView {
             soc: cell.model.soc(),
             temp_k: cell.model.temp_k(),
-            v_rc_sum: cell.model.overpotential_v(),
+            overpotential_v: cell.model.overpotential_v(),
             capacity_factor: cell.capacity_factor,
             r0_factor: cell.r0_factor,
             soh_capacity: cell.aging.soh_capacity,

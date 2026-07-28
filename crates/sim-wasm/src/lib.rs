@@ -61,7 +61,13 @@ use wasm_bindgen::prelude::*;
 /// pack layout) and `sim_server::API_VERSION` (which versions the HTTP/WebSocket
 /// contract). Three numbers with three jobs; a page that loads a `pkg/` built from a
 /// different revision than the server it also talks to can notice.
-pub const WASM_API_VERSION: u32 = 1;
+///
+/// v2 (Phase 6, slice C1): `CellView`'s `v_rc_sum` became `overpotential_v`. That type
+/// crosses this boundary verbatim inside [`Cells`], so the rename lands in the JSON a
+/// page parses and this constant is owed for the same reason `sim_server::API_VERSION`
+/// is — which is the whole point of there being three of these rather than one shared
+/// number. `sim_core::SNAPSHOT_VERSION` stays at 9: no saved pack changed shape.
+pub const WASM_API_VERSION: u32 = 2;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///

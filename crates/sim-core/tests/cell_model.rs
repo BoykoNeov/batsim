@@ -77,16 +77,20 @@ fn cfg() -> PackConfig {
     }
 }
 
-/// `CellView::v_rc_sum` is filled from `CellModel::overpotential_v`, which is the
-/// model-neutral reading. It must be zero at rest, grow under load with the right
-/// sign, and relax back — on **both** ECM arms, since `Ecm1Rc` and `Ecm2Rc` are
-/// separate match arms in every method the refactor introduced.
+/// `CellView::overpotential_v` reports the model-neutral polarization reading, and it
+/// must be zero at rest, grow under load with the right sign, and relax back — on
+/// **both** ECM arms, since `Ecm1Rc` and `Ecm2Rc` are separate match arms in every
+/// method the refactor introduced.
+///
+/// The assertions are about the *value*, so they held unchanged when the field was
+/// renamed from `v_rc_sum` in slice C1: the name was an ECM internal, the number never
+/// was.
 #[test]
 fn overpotential_reads_through_the_model_neutral_accessor_on_both_arms() {
     for (label, chem) in [("1 RC pair", chem(1)), ("2 RC pairs", chem(2))] {
         let mut pack = Pack::new(&cfg(), chem).expect("pack builds");
 
-        let at_rest = pack.cell(0, 0).expect("cell exists").v_rc_sum;
+        let at_rest = pack.cell(0, 0).expect("cell exists").overpotential_v;
         assert_eq!(
             at_rest, 0.0,
             "{label}: a cell that has never carried current has no polarization, got {at_rest}"
@@ -95,7 +99,7 @@ fn overpotential_reads_through_the_model_neutral_accessor_on_both_arms() {
         for _ in 0..60 {
             pack.step(1.0, Demand::Current(2.0), &env());
         }
-        let loaded = pack.cell(0, 0).expect("cell exists").v_rc_sum;
+        let loaded = pack.cell(0, 0).expect("cell exists").overpotential_v;
         assert!(
             loaded > 0.0,
             "{label}: discharging is positive current, so the overpotential must be \
@@ -108,7 +112,7 @@ fn overpotential_reads_through_the_model_neutral_accessor_on_both_arms() {
         for _ in 0..600 {
             pack.step(1.0, Demand::Rest, &env());
         }
-        let relaxed = pack.cell(0, 0).expect("cell exists").v_rc_sum;
+        let relaxed = pack.cell(0, 0).expect("cell exists").overpotential_v;
         assert!(
             relaxed < loaded && relaxed >= 0.0,
             "{label}: at rest the overpotential must decay toward zero, went \
