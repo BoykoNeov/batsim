@@ -315,7 +315,8 @@ fn an_out_of_range_shell_count_is_a_build_error() {
         let mut config = cfg(0.5);
         config.cell_model = CellModelConfig::Spm { shells };
         let err = Pack::new(&config, parse_chemistry(LGM50).expect("LG M50 parses"))
-            .expect_err("{shells} shells is out of range and must not build");
+            .err()
+            .unwrap_or_else(|| panic!("{shells} shells is out of range and must not build"));
         assert!(
             err.to_string().contains("shells"),
             "the error should name the offending field, got: {err}"

@@ -692,6 +692,13 @@ Touches `sim-core`'s `pack.rs`.
   — a wrong diffusivity, a dropped overpotential term — and confirm the tolerance rejects
   it. Phase 4 and Phase 5 both did this and both found something; a tolerance nobody has
   seen reject anything is a number, not a test.
+- **And the perturbations must include a ULP-level one**, which slice C2 learned the
+  expensive way. The ECM path has a cross-build bit anchor (the out-of-tree baseline); the
+  **SPM path has none** — `an_spm_pack_survives_a_snapshot_bit_identically` compares two
+  runs of *one* build, which is exactly the gap the baseline exists to fill for ECM. So
+  every SPM assertion in the repo is a tolerance, and C2 lost two rounds to changes no
+  tolerance could see (a one-ULP constant, and a `(c·vol)/vol` round trip). A tolerance
+  that rejects a dropped overpotential but not a changed constant leaves that hole open.
 - SPM's own perf budget, measured with `docs/plans/pack-step-perf.md`'s discipline
   (ratios against a same-session baseline, alternating arm order, warm template, never
   after a build storm), plus the accuracy-vs-`N` curve.
