@@ -29,7 +29,7 @@ Key invariants:
 
 ## Status
 
-Phases 0–5 are complete. Each phase's exit criterion is a committed test rather than a
+Phases 0–6 are complete. Each phase's exit criterion is a committed test rather than a
 judgement call, so the right-hand column is the thing to run if you doubt a row.
 
 | phase | what landed | exit criterion pinned by |
@@ -40,7 +40,7 @@ judgement call, so the right-hand column is the thing to run if you doubt a row.
 | 3 | calendar + cycle aging, fault queue, plating flag, thermal runaway and propagation | `sim-core/tests/scenario_aging.rs`, `scenario_runaway.rs` |
 | 4 | `sim-server` (REST + WebSocket), `sim-wasm`, the browser demo, the example script | `sim-server/tests/e2e_experiment.rs` |
 | 5 | `sim-godot` — a `BatteryPack` GDExtension node, exported properties, fixed-`dt` accumulator, signals, and a Godot demo scene | `sim-godot/tests/godot_gate.rs` (needs Godot — see below) |
-| 6 | porous-electrode cell models (`Spm`/`Dfn`) | next |
+| 6 | the `Spm` porous-electrode cell model — radial solid diffusion, Butler–Volmer kinetics, a nonlinear pack solve, and an extracted LG M50 parameter set | `sim-data/tests/spm_golden.rs`, `spm_exact_bits.rs`, `sim-core/tests/spm_cell.rs` |
 
 Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
 LG M50 21700. Every constant in them carries a provenance note, **including the ones
@@ -51,9 +51,47 @@ that every number is fitted.
 The LG M50 file is the first with an `[spm]` section, and the first whose two halves have
 genuinely different provenance: its porous-electrode parameters are **extracted** verbatim
 from PyBaMM's Chen2020 set (so each has a literal citation), while its equivalent-circuit
-resistances remain labelled placeholders. Nothing consumes `[spm]` yet — the model that
-reads it lands later in Phase 6. The NMC 18650 set is hand-fit to datasheet curves and has
-no PyBaMM source; see its provenance line for why it cannot honestly acquire one.
+resistances remain labelled placeholders. Reading a voltage out of one half is reading
+Chen2020; out of the other, a placeholder — and running the *same* cell through both
+models is the comparison Phase 6 exists for. The NMC 18650 set is hand-fit to datasheet
+curves and has no PyBaMM source; see its provenance line for why it cannot honestly
+acquire one.
+
+## Two cell models
+
+`PackConfig::cell_model` selects between them, and both are the same public API — a pack,
+a `step(dt, demand, env)`, one `Telemetry`.
+
+- **`Ecm`** — a 1- or 2-RC Thévenin equivalent circuit, exact-exponential RC update,
+  coulomb-counted SOC. Cheap (≈0.05 µs per cell per step), stable at any `dt`, and the
+  model every chemistry here can run.
+- **`Spm`** — one spherical particle per electrode, radial solid diffusion by backward
+  Euler on a finite-volume grid, Butler–Volmer kinetics, and SOC read off the lithium
+  inventory rather than counted. It reproduces what an equivalent circuit structurally
+  cannot: the surface concentration running ahead of the bulk, and with it the
+  end-of-discharge collapse and the relaxation after a load step. It costs ≈1.3 µs per
+  cell per step at the recommended 20 shells — **≈26× the ECM**, measured on the same
+  chemistry at the same topology. `docs/plans/phase-6-porous-electrodes.md` has the
+  numbers and the accuracy-vs-shell-count curve behind that 20.
+
+Against a grid- and time-converged PyBaMM SPM on the same parameter set, batsim's SPM
+tracks terminal voltage to **2–7 mV over a whole discharge**, cut-off knee included —
+no SOC window, unlike the Phase 1 ECM-vs-DFN goldens, which need one because the models
+genuinely differ.
+
+**`[spm]` is NMC-only on purpose.** LFP keeps its ECM path and its existing goldens and
+gets no `[spm]` section: lithium iron phosphate intercalates through a moving phase
+boundary, which is what produces the flat plateau this repo teaches with, and a
+single-particle model with Fickian diffusion is the wrong physics for it. It could be
+made to *fit*; shipping that as "porous-electrode physics for LFP" is the kind of
+unlabelled claim the provenance rule exists to prevent.
+
+**`diffsol` was evaluated for the stiff solve and declined**, because its solver state
+cannot be extracted and restored bit-identically through its public API — which fails
+the "everything is snapshotable" principle outright — and because a fixed-step method
+whose entire state *is* the concentration vector passes that test trivially. The
+measurement, and what it would take to revisit for a future `Dfn`, are in
+[`docs/plans/phase-6-porous-electrodes.md`](docs/plans/phase-6-porous-electrodes.md).
 
 Design notes for each phase, including what was measured and what was deliberately
 *not* built, are under [`docs/plans/`](docs/plans).

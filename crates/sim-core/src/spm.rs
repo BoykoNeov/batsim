@@ -77,6 +77,38 @@ pub const MAX_SHELLS: usize = 64;
 /// model would be the kind of quiet lie the `Spm` variant is meant to end.
 pub const MIN_SHELLS: usize = 2;
 
+/// The shell count to reach for when nothing about the scenario argues otherwise.
+///
+/// # Measured, not chosen
+/// Slice E ran batsim against a grid- and time-converged PyBaMM SPM on the shipped
+/// LG M50 parameter set (`crates/sim-data/tests/spm_golden.rs`) and swept `N`. Worst
+/// terminal-voltage disagreement over a whole trajectory, in mV:
+///
+/// | scenario | N=5 | N=10 | **N=20** | N=40 |
+/// | -------- | --- | ---- | -------- | ---- |
+/// | C/5 CC   | 4.0 | 2.4  | **2.6**  | 3.4  |
+/// | 1C CC    | 53.1| 24.1 | **6.7**  | 5.0  |
+/// | GITT     | 30.6| 10.0 | **1.9**  | 3.0  |
+///
+/// The curve has a **floor at 2–3 mV**, and the floor is not the grid: it is the
+/// chemistry's own OCP tables, whose piecewise-linear interpolation error the file
+/// documents as 1.90 mV (graphite) and 1.88 mV (NMC). Past `N ≈ 20` a finer grid
+/// resolves a radial profile more accurately and then reads it off a table that has
+/// not improved, so the total does not fall — and can drift slightly up, as it does
+/// at N=40. Below 20 the radial gradient is genuinely under-resolved and the 1C
+/// column shows it.
+///
+/// Cost is linear in `N` (the diffusion solve is one Thomas sweep per particle), so
+/// the spike's 0.0966 / 0.2151 / 0.4739 µs at N = 5 / 10 / 20 says a step costs what
+/// its accuracy costs and nothing more. 20 is where the two curves cross.
+///
+/// This is a **recommendation, not a default that anything applies silently.**
+/// `CellModelConfig::Spm { shells }` still requires the number, because a
+/// discretisation knob that fills itself in is one a caller never has to think
+/// about — and `MIN_SHELLS`/`MAX_SHELLS` bracket what it may be, not what it should
+/// be.
+pub const DEFAULT_SHELLS: usize = 20;
+
 /// Per-cell single-particle-model state: two concentration profiles, a
 /// temperature, and the current the tangent is taken at.
 ///

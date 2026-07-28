@@ -1,6 +1,6 @@
 # Phase 6 — porous electrodes (`Spm`)
 
-**Status: slices A, B, C1 and C2 landed; D–E planned.** This file is written before the work so the decisions below are made
+**Status: complete — slices A, B, C1, C2, D and E all landed.** This file is written before the work so the decisions below are made
 once; the "learned while building" material is appended as each slice lands, the way
 `phase-2-thermal-bms.md` through `phase-5-godot.md` grew.
 
@@ -21,7 +21,7 @@ So the exit criterion below is authored here, and argued rather than asserted.
 | exit criterion (authored here) | met by |
 | ------------------------------ | ------ |
 | **1. The floor did not move.** Every ECM trajectory the repo already asserts is **bit-identical** before and after the phase — analytic goldens, the LFP PyBaMM goldens, the property tests, the snapshot-replay regression, and the `sim-godot` gate. | slice A carries it and every later slice re-checks it. This is `CLAUDE.md`'s "nothing may assume ECM-only internals" clause made *mechanical*: the accessors change shape, so if a trajectory moves, the refactor changed physics. |
-| **2. The door opened.** A pack configured with `CellModel::Spm` runs, and its trajectory matches a committed **PyBaMM SPM golden** within a documented per-scenario tolerance — with the tolerance **built to fail** before it is trusted. | slice E. |
+| **2. The door opened.** A pack configured with `CellModel::Spm` runs, and its trajectory matches a committed **PyBaMM SPM golden** within a documented per-scenario tolerance — with the tolerance **built to fail** before it is trusted. | **met by slice E**: three scenarios, worst 2.6 / 6.7 / 1.9 mV against a converged reference, over the **whole** trajectory rather than inside an SOC window. Built to fail against five perturbations; the one that got through is recorded below rather than papered over. |
 | **3. The new state is snapshotable.** Snapshot at t/2 → restore → continue is bit-identical for an SPM pack, exactly as it already is for an ECM pack. | slice C ships it; slice D re-checks it through the nonlinear solve. **This is the leg `diffsol` failed** — see the spike — and it is why the integrator is owned rather than imported. |
 
 ## Slices
@@ -33,7 +33,7 @@ So the exit criterion below is authored here, and argued rather than asserted.
 | C1 | **the wire-surface rename.** `CellView::v_rc_sum` → `overpotential_v`, the two adapter API versions it owes, and the test that makes that rule enforceable. No physics, no config, no snapshot change. | **landed** (v9 — no bump; the bump follows the variant, see below) | v9 |
 | C2 | **the SPM cell.** Backward-Euler finite-volume radial diffusion, Butler–Volmer kinetics, `CellModel::Spm`, plus the `PackConfig` selector, `shells`, both `BuildError`s and the version-check test. Single cell only — the pack solve still sees a linear source. **Carries the one bump.** | **landed** (v10 — the one bump, as designed) | **v9 → v10** |
 | D | **the nonlinear pack solve.** Iterate the existing linear group solve on tangent Thévenins; closed form remains exactly the closed form when every cell is linear. | **landed** (v10 — no bump, as budgeted) | v10 |
-| E | **PyBaMM validation + wrap-up.** SPM goldens, tolerance built to fail, SPM's own perf budget measured, README. **Carries exit criteria 2.** | planned | v10 — no further bump |
+| E | **PyBaMM validation + wrap-up.** SPM goldens, tolerance built to fail, SPM's own perf budget measured, README. **Carries exit criteria 2.** | **landed** (v10 — no bump, as budgeted) | v10 |
 
 Each slice keeps `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` clean.
@@ -1669,6 +1669,253 @@ is measuring the scaffolding.
   discipline.
 
 
+---
+
+## Learned while building — slice E (PyBaMM validation and wrap-up)
+
+### The gate passed on four legs, and the prediction was written first
+
+```text
+1. git diff --name-only | grep -i test   ->  NONE modified; three files ADDED
+                                             (spm_golden.rs, spm_exact_bits.rs,
+                                              benches/spm_pack_step.rs)
+2. baseline diff vs after-sliceD.txt     ->  EMPTY, all 976 lines
+3. SNAPSHOT_VERSION 10, API_VERSION 2, WASM_API_VERSION 2  ->  none move
+4. cargo test --workspace                ->  53 suites ok; clippy -D warnings and
+                                             fmt clean; sim-godot gate 2 passed
+```
+
+`prediction-e.txt` was written before the run and claimed empty on leg 2 — including
+the reasoning that the instrument's seven cases never touch `nmc_21700_lgm50`, so
+even a text edit to that file would have moved nothing. It landed.
+
+### The `κ` check came first, and it is the check this slice would have been built on top of
+
+Before a single tolerance was chosen: batsim's SPM scales flux-to-stoichiometry by
+`Working::kappa` = geometric capacity ÷ configured capacity, and **PyBaMM's SPM has
+no such factor**. If the two capacities disagreed, every trajectory would diverge as
+a *time-axis stretch* — which at 1C looks exactly like a diffusion bug and which a
+generous tolerance absorbs in silence.
+
+```text
+batsim capacity_ah (config)          = 5.153198000
+batsim geometric capacity, negative  = 5.153198326
+batsim geometric capacity, positive  = 5.153198326   <- bit-identical to the negative
+pybamm q_use = q_n*(xmax-xmin)       = 5.153198326   <- and to PyBaMM's
+kappa                                = 1.000000063
+```
+
+The 6.3e-8 is the six-decimal rounding of `capacity_ah` in the TOML and nothing else.
+It is not cosmetic: it is exactly the residual that
+`the_spm_soc_readout_tracks_the_references_coulomb_count` measures as 4.4e-7 of SOC
+drift over a full discharge, so the same number appears twice and is explained in
+both places. **Do this measurement before choosing a tolerance, not after failing
+one.**
+
+### The golden was a straight line, and only an N-independent error revealed it
+
+The first SPM goldens disagreed with batsim by **346 mV** at low SOC on the C/5
+scenario, against ~1 mV mid-range. Every instinct said diffusion bug. The clue that
+said otherwise: the error **did not move with shell count** — 346.2 mV at N=5,
+346.7 mV at N=40. A discretisation error that is independent of the discretisation is
+not a discretisation error.
+
+The cause was in the generator, and it had been there since Phase 1 in latent form.
+`sim.solve(t_eval=[t0, t1])` asks for an *interval*, and the returned solution carries
+the **solver's own steps**. An adaptive integrator takes enormous steps where the
+solution is smooth, and `np.interp` onto the uniform CSV grid then draws a straight
+**chord** across each one. On this run the chord spanned 8_700 s of a 17_850 s
+discharge — the committed CSV fell linearly from soc 0.107 to the cut-off because it
+*was* a straight line.
+
+Three things worth keeping:
+
+* **The fix costs accuracy nothing.** `t_interp` (and, for the experiment-driven pulse
+  scenario, a per-step output `period`) asks the solver to evaluate its own
+  interpolant at given times. The integration is unchanged; only the sampling is.
+* **Phase 1's LFP goldens are not wrong, and were not touched.** Their DFN ran on the
+  default CasADi solver, whose returned grid is dense enough that the chords are
+  short. `Reference.dense_output` defaults to `False` so that path is bit-for-bit what
+  it was — verified by **regenerating the LFP CSVs and getting `git status` clean**,
+  which also confirms the pinned `pybamm==26.6.2.0` reproduces Phase 1's committed
+  files four phases later.
+* **The chase went through three wrong suspects first** — a stoichiometry-dependent
+  diffusivity (checked: Chen2020's are plain floats), an OCP table mismatch (checked:
+  the tables track the functions to under 1 mV), and PyBaMM reporting an OCP
+  inconsistent with its own surface stoichiometry (which was *my* `np.interp` landing
+  inside the very gap that turned out to be the bug). The instrument that finally
+  settled it was reading the raw radial profile, and the analytic quasi-steady gap
+  `j·R_p/(5·D)` agreeing with it to three figures.
+
+### The tolerances need no SOC window, and that is the finding
+
+Every Phase 1 golden is confined to an SOC window because a 1-RC ECM cannot follow a
+DFN through the end-of-discharge knee. **These are not.** Worst error over the
+*whole* trajectory, cut-off included, at the documented default of 20 shells:
+
+```text
+C/5 CC discharge     2.6 mV        tolerance  5 mV
+1C  CC discharge     6.7 mV        tolerance 12 mV   (worst is the FIRST step)
+GITT C/2 + rests     1.9 mV        tolerance  5 mV
+  at relaxed rest ends   0.3 mV    tolerance  2 mV
+SOC readout drift    4.4e-7        tolerance 5e-6
+```
+
+The residual is not the grid — it is the chemistry's own OCP tables, whose
+interpolation error the file documents as 1.90 mV and 1.88 mV. That is why refining
+past N=20 does not help and can drift slightly *up*: a finer grid resolves the radial
+profile better and then reads it off a table that has not improved.
+
+### The shell count, decided by the curve
+
+Worst voltage error vs the converged reference, in mV:
+
+| scenario | N=5 | N=10 | **N=20** | N=40 |
+| -------- | --- | ---- | -------- | ---- |
+| C/5 CC   | 4.0 | 2.4  | **2.6**  | 3.4  |
+| 1C CC    | 53.1| 24.1 | **6.7**  | 5.0  |
+| GITT     | 30.6| 10.0 | **1.9**  | 3.0  |
+
+And the cost, measured on one cell in the same session: **591 ns at N=5, 990 ns at
+N=20, 1621 ns at N=40** — linear, 29.4 ns per shell over a 444 ns fixed cost, which
+is the tangent's voltage evaluations. Accuracy stops improving at 20 and cost never
+stops rising, so `spm::DEFAULT_SHELLS = 20`.
+
+It is deliberately a **`const` and a recommendation, not a serde default**:
+`CellModelConfig::Spm { shells }` still requires the number. A discretisation knob
+that fills itself in is one a caller never has to think about, and this one is part of
+the snapshot layout.
+
+### Built to fail: five perturbations, and the one that got through
+
+| perturbation | `spm_golden.rs` | `spm_exact_bits.rs` |
+| ------------ | --------------- | ------------------- |
+| negative `D_s` +5 % (chemistry) | **2 fail** (both CC) | **FNV parameter pin fails** |
+| `overpotential()` returns 0 | **4 fail** | pass |
+| `c_surface` half-shell 0.5 → 0.4 | **2 fail** | **helper pin fails** |
+| `DEFAULT_SHELLS` 20 → 5 | **4 fail** | pass |
+| **`FARADAY_C_PER_MOL` +1 ULP** | **all 6 pass** | **all 3 pass** |
+
+The last row is the honest part. A one-ULP change to Faraday moves every SPM
+trajectory and **passes every tolerance and every new exact-bit pin in this slice.**
+The geometry pin was written expecting to catch it and does not, for a reason worth
+recording: `(Δx · c_max · V · F)/3600` **absorbs** the perturbation — the product
+rounds to the same `f64`, verified independently in Python. A relative change of one
+ULP in a multiplicand does not have to survive the multiplication.
+
+What does catch it, in three layers, none of which is sufficient alone:
+
+1. **The literal itself** — `faraday_is_the_exact_defined_product`, which slice C2
+   already shipped after being bitten. That is the only in-repo test that sees this.
+2. **Chemistry digits** — slice E's FNV pin over all 158 `f64`s in the `[spm]`
+   section, proven by the `D_s` row above.
+3. **Trajectories** — the out-of-tree instrument, extended below. This is the general
+   answer; the other two are point defences on the two places a constant lives.
+
+### The SPM path now has a cross-build bit anchor, and it was built to fail
+
+`M:\claud_projects\temp\phase6-baseline` gained two **appended** SPM cases: a 1S1P LG
+M50 pack at 20 shells, and a 2S2P pack with scatter, a live thermal network and aging
+at 12 shells — the second reaching `kappa ≠ 1`, the Arrhenius kinetics correction, the
+`i_0` division and slice D's tangent iteration over cells that disagree.
+
+```text
+first 976 lines vs after-sliceD.txt   ->  BYTE-IDENTICAL (the seven ECM cases)
+total                                 ->  1254 lines, 9 cases
+
+Faraday +1 ULP:
+  the seven ECM cases                    0 / 130 lines differ   (each)
+  lgm50_1s1p_spm                        64 / 130 lines differ
+  lgm50_2s2p_spm_scatter_thermal_aging 120 / 130 lines differ
+reverted                              ->  reproduces byte-for-byte
+```
+
+Two caveats stated rather than left to be assumed. This anchor is **additive and
+valid from slice E forward** — it is not a recovery of a pre-slice-A capture, and it
+cannot validate slice E itself, which changed no SPM physics. And it stays out of
+tree for the same reason the ECM one does: `CLAUDE.md` refuses to promise
+cross-platform bit-exactness, and the SPM path runs through `exp` and `asinh`, so a
+committed fixture would fail for anyone cloning on another OS.
+
+The committed half is `spm_exact_bits.rs`, and its scope is chosen by that same rule:
+**only pure IEEE-754 arithmetic** — no transcendental anywhere in it — so pinning it
+promises nothing `CLAUDE.md` declines to promise. Python reproduces every one of its
+bit patterns from the TOML, which is the cheapest possible confirmation that the
+claim "this is platform-independent arithmetic" is true rather than hoped.
+
+### The perturbation harness ate uncommitted work, and the lesson is one line
+
+The first built-to-fail script reverted each perturbation with
+`git checkout -- crates/sim-core/src/spm.rs`. That file also held this slice's
+uncommitted `DEFAULT_SHELLS` addition, which the first revert silently destroyed. It
+was noticed because a later `grep` counted zero.
+
+**A perturbation harness must restore from a copy it made itself, never from git**,
+because the whole point of such a harness is that it runs on a tree with uncommitted
+work in exactly the files it is perturbing. The rewritten version snapshots to a
+backup directory first. Cheap to fix, and it is the kind of thing that costs an hour
+when the destroyed edit was subtler than a `const`.
+
+Two smaller harness notes from the same script: `cargo test` needs `--no-fail-fast`
+or the first failing binary hides the second's verdict, and slicing a text file in
+Python needs `'rb'` — a `'w'` round trip on Windows turns every `\r\n` into `\r\r\n`
+and makes an identical file diff as entirely different.
+
+### SPM gets its own budget, and it is 26× the ECM rather than the predicted 5×
+
+All arms in one invocation on the **same shipped chemistry file**, differing only in
+`PackConfig::cell_model`, so the ratio is a statement about the model:
+
+```text
+                    ECM        SPM (N=20)     ratio
+1S1P              207 ns        1.09 µs        5.3x
+10S10P           10.8 µs         124 µs       11.5x
+100S10P          50.6 µs        1.31 ms       25.8x
+```
+
+Per cell that is **≈1.3 µs against ≈0.05 µs**. The ratio grows with pack size only
+because the ECM's fixed per-step overhead amortises away, leaving per-cell work to
+dominate; the SPM's per-cell cost is nearly flat from 1 cell to 1000.
+
+**The plan predicted "roughly 5×" and that was optimistic by a factor of five.** The
+estimate came from the spike's 0.215 µs per SPM cell-step at N=10 against the engine's
+0.045 µs per ECM cell-step, and it under-counted three things the spike did not have:
+the shell count is 20 rather than 10, slice D's tangent iteration re-evaluates every
+cell's source on every pass, and each tangent is three voltage evaluations. The plan's
+own hedge — "before the nonlinear solve's repeated voltage evaluations" — was pointing
+straight at it.
+
+So the budget, stated at a topology and shell count as the plan requires: **1S1P ≈ 1 µs,
+10S10P ≈ 124 µs, 100S10P ≈ 1.3 ms, all at N = 20** on this box in its slow state.
+A 1000-cell SPM pack is not a real-time configuration and this file says so rather than
+implying otherwise; 10S10P at N=20 has ample headroom at 60 Hz, and that is the honest
+shape of the trade.
+
+**The ECM budget is re-verified unchanged** — the perf half of exit criterion 1.
+`100S10P/current` measured **54.8 µs** and `full` **61.3 µs**, against the 51–55 µs
+this box recorded for the same case in its slow state after Phase 3. Nothing moved,
+which is what the structural claim predicted: slice D added two predicted branches and
+no allocation on the linear path, and slice E added no engine code at all.
+
+### What is deliberately not here
+
+- **No `Telemetry` field.** Surface-vs-bulk stoichiometry remains a real pedagogical
+  candidate and remains unshipped. It would be an added field (so no `API_VERSION`
+  bump by the rule) but it is **invisible to the baseline instrument**, which
+  enumerates its 17 telemetry fields by name — slice D recorded that, and slice E is
+  validation rather than surface work.
+- **No serde default for `shells`.** See above: `DEFAULT_SHELLS` is a documented
+  recommendation, and adding a default would have made a snapshot-layout knob
+  fill itself in silently.
+- **No retro-edit of the existing tests' local `SHELLS`.** C2 deliberately had every
+  test state its own, and changing them would have traded a real gate leg ("no
+  existing test modified") for cosmetic consistency.
+- **No `[spm]` section for LFP.** The scope decision from the top of this file stands,
+  now stated in the README: LFP is a two-phase material and a single-particle model
+  with Fickian diffusion is the wrong physics for it.
+- **No committed full-trajectory bit fixture.** Out of tree, per the owner decision
+  recorded under "Resolved before slice A", and now for the SPM path too.
+
 ## Open questions
 
 ### Resolved before slice A
@@ -1736,9 +1983,29 @@ is measuring the scaffolding.
   point over per-cell operating points needs a cap and a flag, which is what shipped.
   Measured worst case is 4 passes against a cap of 32, including at the max-power knee.
 
+### Resolved by slice E
+
+- **What is the default shell count `N`?** **20**, and the curve decided it rather
+  than taste. Accuracy stops improving there (the residual becomes the OCP tables'
+  own 1.9 mV interpolation error, not the grid) while cost keeps rising linearly at
+  29.4 ns per shell. It ships as `spm::DEFAULT_SHELLS`, a documented recommendation
+  rather than a serde default — see the slice-E notes for why a snapshot-layout knob
+  should not fill itself in.
+
 ### Still open
-- **What is the default shell count `N`?** Slice E's accuracy-vs-cost curve should decide
-  it, not taste. The spike ran N = 10 at 0.215 µs; N = 5 is 2.2× cheaper and N = 20 is
-  2.2× dearer, so the curve is close to linear and the decision is about accuracy alone.
+
+- **The SPM path's ULP defence is three point checks and an out-of-tree instrument,
+  not one mechanism.** A one-ULP `FARADAY_C_PER_MOL` passes all six golden tolerances
+  *and* all three of slice E's exact-bit pins, because the derived-geometry product
+  absorbs it; only the pin on the literal catches it in-repo. If a future slice adds a
+  physical constant to `spm.rs`, it inherits that hole and owes its own exact pin —
+  there is nothing structural that will notice.
+- **A 1000-cell SPM pack costs ≈1.3 ms per step**, 26× the ECM at the same topology.
+  Nothing is wrong with it, and no optimisation was attempted here; if a client ever
+  wants a large SPM pack in real time, the first thing to price is that slice D's
+  iteration re-evaluates every cell's tangent on every pass, and the measured worst
+  case was 4 passes.
+
 (The trajectory-baseline question that used to sit here was answered before slice A —
-see "Resolved before slice A" above. It stays out of tree.)
+see "Resolved before slice A" above. It stays out of tree, and slice E extended it
+with SPM cases on the same terms.)

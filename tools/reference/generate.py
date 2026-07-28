@@ -1,4 +1,4 @@
-"""Generate batsim's committed golden-reference CSVs from PyBaMM DFN runs.
+"""Generate batsim's committed golden-reference CSVs from PyBaMM runs.
 
     python tools/reference/generate.py            # all chemistries + scenarios
     python tools/reference/generate.py lfp_26650_generic
@@ -6,11 +6,24 @@
 Writes one CSV per (chemistry, scenario) under `tests/golden/<chem_id>/`. Each
 CSV carries a comment header recording the PyBaMM version, parameter set, and
 scenario so a committed golden is reproducible against a known reference. The
-Rust integration tests (crates/sim-data/tests/pybamm_golden.rs) replay the
-`current_a` column through `sim-core` and compare `voltage_v` within a
+Rust integration tests (crates/sim-data/tests/pybamm_golden.rs and spm_golden.rs)
+replay the `current_a` column through `sim-core` and compare `voltage_v` within a
 per-scenario, documented tolerance.
 
 Columns: time_s, current_a (discharge-positive), voltage_v, soc.
+
+Which reference model generates which golden is a per-scenario choice, because
+batsim has two cell models:
+
+  * the **LFP** scenarios are DFN references for batsim's ECM — a cross-model
+    comparison whose irreducible gap the Rust test documents at length;
+  * the **LG M50** `spm_*` scenarios are SPM references for batsim's SPM — the
+    same model form on the same parameter set, so the comparison is of two
+    implementations rather than of two models, and the tolerance is an order of
+    magnitude tighter;
+  * `dfn_cc_1c_25c.csv` is the *same* scenario as `spm_cc_1c_25c.csv` run as a
+    DFN, so the SPM-vs-DFN gap can be shown as the physics result it is. Nothing
+    asserts batsim against it — see `spm_golden.rs`.
 
 Not shipped; requires PyBaMM (see requirements.txt). Never on the Rust/CI path.
 """
@@ -22,33 +35,83 @@ from pathlib import Path
 
 import numpy as np
 
-from common import PARAM_SETS, T_REF_K, fit_chemistry, run_cc_discharge, run_pulse_relax
+from common import (
+    DFN_CONVERGED,
+    DFN_DEFAULT,
+    PARAM_SETS,
+    SPM_CONVERGED,
+    T_REF_K,
+    fit_chemistry,
+    run_cc_discharge,
+    run_pulse_relax,
+)
 
 # Repo root = two levels up from this file (tools/reference/generate.py).
 GOLDEN_DIR = Path(__file__).resolve().parents[2] / "tests" / "golden"
 
-# (filename, human description, generator, kwargs). The generator returns
-# (time_s, current_a, voltage_v, soc).
-SCENARIOS = [
-    (
-        "cc_c20_25c.csv",
-        "C/20 constant-current discharge from full, isothermal 25 degC",
-        run_cc_discharge,
-        {"c_rate": 1.0 / 20.0, "dt_s": 30.0},
-    ),
-    (
-        "cc_1c_25c.csv",
-        "1C constant-current discharge from full, isothermal 25 degC",
-        run_cc_discharge,
-        {"c_rate": 1.0, "dt_s": 5.0},
-    ),
-    (
-        "pulse_relax_25c.csv",
-        "GITT-like C/2 discharge pulses with 20-min rests, isothermal 25 degC",
-        run_pulse_relax,
-        {"c_rate": 0.5, "dt_s": 10.0},
-    ),
-]
+# chemistry id -> [(filename, human description, generator, reference, kwargs)].
+# The generator returns (time_s, current_a, voltage_v, soc).
+#
+# Per-chemistry rather than one shared list, which it was through Phase 1: the two
+# chemistries validate different cell models against different references, and a
+# shared list would have meant generating SPM goldens for a chemistry with no [spm]
+# section (LFP is ECM-only, deliberately — see the README's scope note).
+SCENARIOS = {
+    "lfp_26650_generic": [
+        (
+            "cc_c20_25c.csv",
+            "C/20 constant-current discharge from full, isothermal 25 degC",
+            run_cc_discharge,
+            DFN_DEFAULT,
+            {"c_rate": 1.0 / 20.0, "dt_s": 30.0},
+        ),
+        (
+            "cc_1c_25c.csv",
+            "1C constant-current discharge from full, isothermal 25 degC",
+            run_cc_discharge,
+            DFN_DEFAULT,
+            {"c_rate": 1.0, "dt_s": 5.0},
+        ),
+        (
+            "pulse_relax_25c.csv",
+            "GITT-like C/2 discharge pulses with 20-min rests, isothermal 25 degC",
+            run_pulse_relax,
+            DFN_DEFAULT,
+            {"c_rate": 0.5, "dt_s": 10.0},
+        ),
+    ],
+    "nmc_21700_lgm50": [
+        (
+            "spm_cc_c5_25c.csv",
+            "C/5 constant-current discharge from full, isothermal 25 degC",
+            run_cc_discharge,
+            SPM_CONVERGED,
+            {"c_rate": 0.2, "dt_s": 30.0},
+        ),
+        (
+            "spm_cc_1c_25c.csv",
+            "1C constant-current discharge from full, isothermal 25 degC",
+            run_cc_discharge,
+            SPM_CONVERGED,
+            {"c_rate": 1.0, "dt_s": 5.0},
+        ),
+        (
+            "spm_pulse_relax_25c.csv",
+            "GITT-like C/2 discharge pulses with 20-min rests, isothermal 25 degC",
+            run_pulse_relax,
+            SPM_CONVERGED,
+            {"c_rate": 0.5, "dt_s": 10.0},
+        ),
+        (
+            "dfn_cc_1c_25c.csv",
+            "1C constant-current discharge from full, isothermal 25 degC "
+            "(DFN, for the SPM-vs-DFN physics gap — not a batsim assertion)",
+            run_cc_discharge,
+            DFN_CONVERGED,
+            {"c_rate": 1.0, "dt_s": 5.0},
+        ),
+    ],
+}
 
 
 def write_csv(path: Path, header_lines: list[str], t, i, v, soc) -> None:
@@ -66,13 +129,27 @@ def generate_for(chem_id: str) -> None:
     print(f"{chem_id}: {fit.param_set} (pybamm {fit.pybamm_version}), "
           f"Q_use={fit.capacity_ah:.6f} A.h, "
           f"OCV table lin-err={fit.max_lin_err_v * 1e3:.2f} mV")
-    for fname, desc, gen, kwargs in SCENARIOS:
-        t, i, v, soc = gen(chem_id, fit, **kwargs)
+    for fname, desc, gen, ref, kwargs in SCENARIOS[chem_id]:
+        t, i, v, soc = gen(chem_id, fit, ref=ref, **kwargs)
         header = [
             f"batsim golden reference - {chem_id} - {fname}",
             f"scenario: {desc}",
-            f"source: PyBaMM {fit.param_set} DFN (isothermal {T_REF_K:.2f} K), "
+            f"source: PyBaMM {fit.param_set} {ref.kind} (isothermal {T_REF_K:.2f} K), "
             f"pybamm {fit.pybamm_version}",
+        ]
+        # Only emitted when a scenario overrides PyBaMM's defaults, so a golden
+        # generated on them keeps the exact header Phase 1 committed.
+        if ref.r_pts is not None:
+            header.append(
+                f"particle grid: r_n = r_p = {ref.r_pts} points "
+                "(converged; see common.Reference for the measurement)"
+            )
+        if ref.rtol is not None:
+            header.append(
+                f"solver: IDAKLU, rtol = {ref.rtol:g}, atol = {ref.atol:g} "
+                "(PyBaMM's default 1e-6 moves the knee by tens of mV)"
+            )
+        header += [
             f"capacity_ah (usable, stoichiometry window) = {fit.capacity_ah:.6f}",
             "sign: positive current = discharge (batsim convention)",
             "generated by tools/reference/generate.py - do not edit by hand",
@@ -85,11 +162,11 @@ def generate_for(chem_id: str) -> None:
 
 def main(argv: list[str]) -> int:
     if len(argv) == 1:
-        targets = list(PARAM_SETS)
+        targets = list(SCENARIOS)
     else:
         targets = argv[1:]
         for t in targets:
-            if t not in PARAM_SETS:
+            if t not in SCENARIOS or t not in PARAM_SETS:
                 print(f"unknown chemistry: {t}", file=sys.stderr)
                 return 2
     for chem_id in targets:

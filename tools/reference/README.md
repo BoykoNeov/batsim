@@ -16,6 +16,13 @@ uv venv --python 3.11 .venv
 uv pip install -r tools/reference/requirements.txt
 ```
 
+The venv location is yours to choose and **nothing in the repo depends on it** — the
+scripts import only PyBaMM and read the repo by relative path, so an environment kept
+entirely outside the tree works and keeps `git status` clean (`.venv` is not
+gitignored). The pin is load-bearing rather than decorative: regenerating the LFP
+goldens with `pybamm==26.6.2.0` reproduces the committed CSVs **byte-for-byte**, which
+is how a refactor of this pipeline is shown not to have moved a Phase 1 reference.
+
 ## What it does
 
 The engine's v1 cell is an equivalent-circuit model (ECM), while PyBaMM's DFN is
@@ -55,16 +62,51 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
      near zero stoichiometry, where 81 uniform points left 43.9 mV of error; 45 adaptive
      ones give 1.9 mV.
 
-3. **`generate.py`** — runs isothermal (25 °C) DFN scenarios and writes one CSV
-   per scenario under `tests/golden/<chem_id>/`:
+3. **`generate.py`** — runs isothermal (25 °C) scenarios and writes one CSV per
+   scenario under `tests/golden/<chem_id>/`. Which reference model runs is a
+   per-scenario choice, because batsim has two cell models:
+
+   *`lfp_26650_generic`* — DFN references for batsim's **ECM**:
    - `cc_c20_25c.csv` — C/20 constant-current discharge (low-rate, tight);
    - `cc_1c_25c.csv` — 1C constant-current discharge (rate effects, looser);
    - `pulse_relax_25c.csv` — GITT-like C/2 pulses with rests.
+
+   *`nmc_21700_lgm50`* — SPM references for batsim's **SPM**, plus one DFN:
+   - `spm_cc_c5_25c.csv`, `spm_cc_1c_25c.csv`, `spm_pulse_relax_25c.csv`;
+   - `dfn_cc_1c_25c.csv` — the *same* scenario as `spm_cc_1c_25c.csv` run as a DFN.
+     Nothing asserts batsim against it; it is committed so the SPM-vs-DFN gap
+     (≈71 mV at 1C) is visible as the physics result it is.
 
    ```bash
    python tools/reference/generate.py               # all chemistries
    python tools/reference/generate.py lfp_26650_generic
    ```
+
+   Prefer the **target-scoped** form. A bare run regenerates every chemistry,
+   including the committed LFP goldens that four phases of ECM tests are toleranced
+   against, and a golden that drifts under you is a bad afternoon. After any run,
+   `git status tests/golden/` should show only what you meant to move.
+
+   ### Two things about the reference that are not obvious and cost 346 mV to find
+
+   `common.Reference` carries a model kind, a particle-grid size, solver tolerances
+   and a `dense_output` flag. The Phase 1 goldens use `DFN_DEFAULT`, which is
+   PyBaMM's own defaults for all four and is therefore bit-for-bit the Phase 1
+   pipeline; the Phase 6 goldens use converged settings. The two reasons:
+
+   - **Solver tolerance, not grid, dominates near the cut-off.** Between PyBaMM's
+     default `1e-6` and `1e-10` the terminal voltage moves by 18–75 mV at the knee,
+     and *non-monotonically in the particle grid* — a finer grid at loose tolerance
+     was sometimes further from the converged answer than a coarser one. A golden
+     carrying that would tolerance batsim against solver noise.
+   - **`t_eval=[t0, t1]` returns the solver's own steps, not a dense trajectory.**
+     Resampling those onto a uniform grid draws a straight *chord* across each step,
+     and an adaptive integrator's steps get very long where the solution is smooth.
+     The first SPM golden fell **linearly** from soc 0.107 to the cut-off for exactly
+     this reason — a 346 mV artifact that looked like a converged disagreement,
+     because it did not move with anything on batsim's side. `t_interp` (and, for the
+     experiment-driven pulse scenario, a per-step output `period`) fixes it and
+     changes the integration not at all.
 
 `common.py` holds the shared extraction/simulation helpers and the
 `batsim chemistry id → PyBaMM parameter set` map.
@@ -97,3 +139,11 @@ loads the fitted chemistry, replays each CSV's `current_a` profile through
 tolerance — tight across the mid-SOC plateau (and at fully-relaxed rest points),
 looser where the ECM cannot follow the DFN (the end-of-discharge concentration
 knee and fast kinetic transients). See that file's header for the rationale.
+
+[`spm_golden.rs`](../../crates/sim-data/tests/spm_golden.rs) does the same for the
+SPM references, and needs no SOC window at all: both sides are the same model form on
+the same parameter set, so the comparison holds to 2–7 mV across the whole
+trajectory. Its companion
+[`spm_exact_bits.rs`](../../crates/sim-data/tests/spm_exact_bits.rs) pins the shipped
+`[spm]` numbers and the pure-arithmetic derived geometry to exact bits, because a
+tolerance cannot see a constant change by one ULP — and one did, during Phase 6.

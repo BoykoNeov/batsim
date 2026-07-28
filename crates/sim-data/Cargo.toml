@@ -20,3 +20,15 @@ thiserror = { workspace = true }
 # sim-core hosts these because the probe needs a real chemistry off disk to produce
 # full-mantissa floats, and reading files is exactly what this crate is for.
 serde_json = { workspace = true }
+# The SPM-vs-ECM step benchmark (see benches/spm_pack_step.rs). It lives here
+# rather than beside sim-core's `pack_step` bench for one reason: it prices the
+# *shipped* LG M50 chemistry, whose `[spm]` section is 130 numbers and two OCP
+# tables. sim-core cannot read a file, so a bench there would have to hand-copy all
+# of it — and a hand-copied parameter set is a benchmark of a typo waiting to
+# happen. Same flags as sim-core's entry, for the same reasons.
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+
+# Criterion supplies its own harness, so libtest's must be off.
+[[bench]]
+name = "spm_pack_step"
+harness = false
