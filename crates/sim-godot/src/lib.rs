@@ -68,16 +68,45 @@ pub struct BatteryPack {
     /// bargain `sim-wasm` struck with `JsError`, minus the exception.
     last_error: String,
 
-    /// Scenario TOML. Set it in the inspector, or hand text to
-    /// [`Self::load_scenario`] — this crate takes **text, not paths**, because a
-    /// `res://` path is not a filesystem path once a game is exported into a `.pck`.
+    /// Scenario TOML — the full description of a pack, its faults, its BMS and its
+    /// thermal model.
+    ///
+    /// **Leave this empty to configure the pack from [`Self::series`],
+    /// [`Self::parallel`] and friends instead.** When it is non-empty it *wins*, and the
+    /// topology exports below are ignored; see [`Self::load_from_exports`] for why the
+    /// precedence runs that way rather than the other.
+    ///
+    /// Set it in the inspector, or hand text to [`Self::load_scenario`] — this crate takes
+    /// **text, not paths**, because a `res://` path is not a filesystem path once a game is
+    /// exported into a `.pck`.
     #[export]
     #[var(hint = MULTILINE_TEXT)]
     scenario_toml: GString,
-    /// Chemistry TOML. Leave empty when the scenario inlines its chemistry.
+    /// Chemistry TOML. Required for the topology path; for the scenario path, needed only
+    /// when the scenario names a chemistry id rather than inlining one.
     #[export]
     #[var(hint = MULTILINE_TEXT)]
     chemistry_toml: GString,
+
+    /// Series elements. Used only when [`Self::scenario_toml`] is empty.
+    #[export]
+    series: i64,
+    /// Parallel cells per group. Used only when [`Self::scenario_toml`] is empty.
+    #[export]
+    parallel: i64,
+    /// Initial state of charge for every cell, in \[0, 1\]. Topology path only.
+    #[export]
+    initial_soc: f64,
+    /// Initial temperature for every cell \[K\]. Topology path only.
+    #[export]
+    initial_temp_k: f64,
+    /// Seed for the simulation RNG, part of the snapshot. Topology path only.
+    ///
+    /// Two nodes with the same seed and the same demands run identical trajectories; that
+    /// is the determinism guarantee, and it is why the seed is configuration rather than
+    /// something the adapter picks.
+    #[export]
+    seed: i64,
 
     /// The physics timestep \[s\]. **The only thing that sets a step's size.**
     ///
@@ -174,6 +203,14 @@ impl INode for BatteryPack {
             last_error: String::new(),
             scenario_toml: GString::new(),
             chemistry_toml: GString::new(),
+            // A single cell, full, at room temperature — the degenerate pack `CLAUDE.md`
+            // principle 2 calls the first-class case, so the out-of-the-box node is a
+            // valid one rather than something that must be configured before it works.
+            series: 1,
+            parallel: 1,
+            initial_soc: 1.0,
+            initial_temp_k: 298.15,
+            seed: 1,
             // 50 Hz — a round number near Godot's 60 Hz default physics tick, so the
             // out-of-the-box accumulator carries a small remainder rather than none.
             // Anything is legal; this one is only a starting point.
@@ -558,14 +595,110 @@ impl BatteryPack {
         }
     }
 
-    /// Build the pack from the exported [`Self::scenario_toml`] / [`Self::chemistry_toml`]
-    /// properties, so a scene can be configured entirely in the inspector.
+    /// Build the pack from the exported properties, so a scene can be configured entirely
+    /// in the inspector.
     ///
-    /// Equivalent to calling [`Self::load_scenario`] with those two values.
+    /// # Two paths, and which one wins
+    /// - [`Self::scenario_toml`] **non-empty** → that scenario is used, and
+    ///   [`Self::series`], [`Self::parallel`], [`Self::initial_soc`],
+    ///   [`Self::initial_temp_k`] and [`Self::seed`] are **ignored**.
+    /// - [`Self::scenario_toml`] **empty** → a scenario is synthesized from those
+    ///   properties with [`Self::chemistry_toml`] inlined.
+    ///
+    /// The precedence runs this way because a scenario says strictly more than the
+    /// topology exports can: faults, a BMS, thermal coupling, aging, scatter. Letting the
+    /// exports override part of an authored scenario would produce a pack that matches
+    /// neither description, and letting them merge would mean deciding what an unset
+    /// export means — a question with no good answer, since `0` and `1` are both plausible
+    /// values rather than "unset".
+    ///
+    /// So they do not merge, and the ignored fields are ignored *loudly*: check
+    /// [`Self::uses_topology`] to see which path ran.
     #[func]
     fn load_from_exports(&mut self) -> bool {
-        let (scenario, chemistry) = (self.scenario_toml.clone(), self.chemistry_toml.clone());
+        let chemistry = self.chemistry_toml.to_string();
+        if self.uses_topology() {
+            let Ok(series) = u16::try_from(self.series) else {
+                let error = DriverError::OutOfRange(format!(
+                    "series must be between 1 and {}, got {}",
+                    u16::MAX,
+                    self.series
+                ));
+                return self.fail(&error);
+            };
+            let Ok(parallel) = u16::try_from(self.parallel) else {
+                let error = DriverError::OutOfRange(format!(
+                    "parallel must be between 1 and {}, got {}",
+                    u16::MAX,
+                    self.parallel
+                ));
+                return self.fail(&error);
+            };
+            let topology = driver::Topology {
+                series,
+                parallel,
+                initial_soc: self.initial_soc,
+                initial_temp_k: self.initial_temp_k,
+                // Godot has no unsigned integer; a negative seed is a typo rather than a
+                // value, and silently reinterpreting its bits would give a trajectory
+                // nobody asked for.
+                seed: match u64::try_from(self.seed) {
+                    Ok(seed) => seed,
+                    Err(_) => {
+                        let error = DriverError::OutOfRange(format!(
+                            "seed must be >= 0, got {}",
+                            self.seed
+                        ));
+                        return self.fail(&error);
+                    }
+                },
+            };
+            return match driver::PackDriver::from_topology(&topology, &chemistry) {
+                Ok(driver) => {
+                    self.driver = Some(driver);
+                    self.last_error = String::new();
+                    self.last_announced_soc = f64::NAN;
+                    true
+                }
+                Err(error) => self.fail(&error),
+            };
+        }
+
+        let scenario = self.scenario_toml.clone();
+        let chemistry = self.chemistry_toml.clone();
         self.load_scenario(scenario, chemistry)
+    }
+
+    /// Whether [`Self::load_from_exports`] would synthesize a scenario from the topology
+    /// properties (`true`) or use [`Self::scenario_toml`] (`false`).
+    ///
+    /// A scene should surface this rather than leaving a user to wonder why the
+    /// `series` they typed had no effect.
+    #[func]
+    fn uses_topology(&self) -> bool {
+        self.scenario_toml.to_string().trim().is_empty()
+    }
+
+    /// The scenario [`Self::load_from_exports`] would actually build from, whichever path
+    /// applies — the synthesized text when the topology path is in use.
+    ///
+    /// Exposed because "what did my inspector settings actually mean" is otherwise
+    /// unanswerable, and because a synthesized scenario is a perfectly good starting point
+    /// for an authored one: paste it into [`Self::scenario_toml`] and add a `[pack.bms]`.
+    #[func]
+    fn effective_scenario_toml(&self) -> GString {
+        if self.uses_topology() {
+            let topology = driver::Topology {
+                series: u16::try_from(self.series).unwrap_or(u16::MAX),
+                parallel: u16::try_from(self.parallel).unwrap_or(u16::MAX),
+                initial_soc: self.initial_soc,
+                initial_temp_k: self.initial_temp_k,
+                seed: u64::try_from(self.seed).unwrap_or(0),
+            };
+            GString::from(&topology.to_scenario_toml(&self.chemistry_toml.to_string()))
+        } else {
+            self.scenario_toml.clone()
+        }
     }
 
     /// Rebuild the pack from its scenario, with or without the BMS.
@@ -623,17 +756,23 @@ impl BatteryPack {
             .map_or(0, |d| i64::from(d.facts().sensor_faults_dropped))
     }
 
-    /// Series elements, or 0 with no scenario loaded.
+    /// Series elements of the **live pack**, or 0 with no scenario loaded.
+    ///
+    /// Deliberately not named `series`: that is the exported *configuration* property, and
+    /// the two are different facts. The export says what to build on the topology path and
+    /// is ignored entirely on the scenario path; this reports what actually got built,
+    /// read off the pack, and stays true across a restart and a restore.
     #[func]
-    fn series(&self) -> i64 {
+    fn pack_series(&self) -> i64 {
         self.driver
             .as_ref()
             .map_or(0, |d| i64::from(d.facts().series))
     }
 
-    /// Parallel cells per group, or 0 with no scenario loaded.
+    /// Parallel cells per group of the **live pack**, or 0 with no scenario loaded.
+    /// See [`Self::pack_series`] for why this is not named `parallel`.
     #[func]
-    fn parallel(&self) -> i64 {
+    fn pack_parallel(&self) -> i64 {
         self.driver
             .as_ref()
             .map_or(0, |d| i64::from(d.facts().parallel))

@@ -169,6 +169,23 @@ godot --headless --path godot --import    # one-time, per clone: .godot/ is giti
 godot --path godot                        # watch it run
 ```
 
+There are two ways to configure the node, and it says which one it used
+(`uses_topology()`):
+
+- **Topology properties** — set `series`, `parallel`, `initial_soc`, `initial_temp_k` and
+  `seed` in the inspector, paste a chemistry into `chemistry_toml`, and leave
+  `scenario_toml` empty. The node synthesizes a scenario from them. Omitted means *off*:
+  no scatter, no thermal coupling, no BMS, no aging, no faults.
+- **A scenario** — put TOML in `scenario_toml` and it **wins**, with the topology
+  properties ignored. A scenario says strictly more than they can (faults, a BMS, thermal
+  coupling, aging, scatter), so the two do not merge; `effective_scenario_toml()` returns
+  whichever one is actually in force, and a synthesized one is a fine starting point for an
+  authored one.
+
+Either way the node takes **text, not paths** — `res://` resolves inside a `.pck` once a
+game is exported, so a path-taking node would work in the editor and fail in a shipped
+build.
+
 The demo discharges a single LFP cell at 1 C and shows live telemetry beside the signals
 the node emits. It runs at `speed = 180`, so an hour of battery life takes about twenty
 seconds — and `speed` is the knob that does that, **not** `fixed_dt`. Raising `fixed_dt`

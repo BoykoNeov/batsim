@@ -11,7 +11,9 @@
 //! their behaviour is pinned here.
 
 use sim_core::{Demand, Env, EventFlags};
-use sim_godot::driver::{Accumulator, Backlog, DriverError, Edges, FlagEdges, PackDriver};
+use sim_godot::driver::{
+    Accumulator, Backlog, DriverError, Edges, FlagEdges, PackDriver, Topology,
+};
 
 const SCENARIO: &str = "../../scenarios/cc_discharge_lfp.toml";
 const SHORT_SCENARIO: &str = "../../scenarios/soft_short_under_a_lying_sensor.toml";
@@ -616,6 +618,171 @@ fn turning_the_bms_off_drops_the_sensor_faults_and_counts_them() {
     driver.restart(true).expect("rebuild with the BMS");
     assert!(driver.facts().has_bms);
     assert_eq!(driver.facts().sensor_faults_dropped, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Topology — the inspector-configured path
+// ---------------------------------------------------------------------------
+
+/// A pack built from topology properties must be **identical** to one built from an
+/// equivalent authored scenario. This is the property that makes the second path safe:
+/// it is not a second engine configuration, only a second way of writing the first.
+#[test]
+fn the_topology_path_and_an_authored_scenario_agree_bit_for_bit() {
+    let chem = std::fs::read_to_string("../../chemistries/lfp_26650_generic.toml").expect("chem");
+
+    let topology = Topology {
+        series: 4,
+        parallel: 2,
+        initial_soc: 0.8,
+        initial_temp_k: 298.15,
+        seed: 7,
+    };
+    let mut from_topology = PackDriver::from_topology(&topology, &chem).expect("topology builds");
+
+    // The same pack, written by hand the way a scenario author would.
+    let authored = format!(
+        "chemistry_toml = \"\"\"\n{chem}\"\"\"\n\n\
+         [meta]\nname = \"hand-written 4S2P\"\n\n\
+         [pack]\nseries = 4\nparallel = 2\ninitial_soc = 0.8\n\
+         initial_temp_k = 298.15\nseed = 7\n"
+    );
+    let mut from_scenario = PackDriver::new(&authored, None).expect("scenario builds");
+
+    assert_eq!(from_topology.facts().series, 4);
+    assert_eq!(from_topology.facts().parallel, 2);
+
+    from_topology
+        .step_batch(0.5, 200, Demand::Current(3.0))
+        .expect("a");
+    from_scenario
+        .step_batch(0.5, 200, Demand::Current(3.0))
+        .expect("b");
+    assert_eq!(
+        from_topology.latest().v_terminal.to_bits(),
+        from_scenario.latest().v_terminal.to_bits(),
+        "the synthesized scenario produced different physics from the authored one"
+    );
+    assert_eq!(
+        from_topology.latest().soc_true.to_bits(),
+        from_scenario.latest().soc_true.to_bits()
+    );
+}
+
+/// The synthesized text must reproduce its own configuration exactly. `{}` on an `f64` is
+/// not round-trip safe and `{:?}` is; a SOC that came back a ULP off would be invisible
+/// until something compared bits.
+#[test]
+fn a_synthesized_scenario_round_trips_its_own_floats() {
+    let chem = std::fs::read_to_string("../../chemistries/lfp_26650_generic.toml").expect("chem");
+    // A value with no short decimal representation, which is where `{}` would lose.
+    let soc = 0.123_456_789_012_345_67;
+    let topology = Topology {
+        series: 1,
+        parallel: 1,
+        initial_soc: soc,
+        initial_temp_k: 297.593_726_194_3,
+        seed: 0,
+    };
+    let parsed = sim_data::parse_scenario(&topology.to_scenario_toml(&chem)).expect("parses");
+    assert_eq!(
+        parsed.pack.initial_soc.to_bits(),
+        soc.to_bits(),
+        "initial_soc did not survive being written and re-parsed"
+    );
+    assert_eq!(
+        parsed.pack.initial_temp_k.to_bits(),
+        topology.initial_temp_k.to_bits()
+    );
+    assert_eq!(parsed.pack.seed, 0);
+}
+
+/// Every omitted section means *off*, not *default-on*. A synthesized pack has no BMS, no
+/// aging, no scatter and no thermal coupling — the same rule `PackConfig` already applies,
+/// and worth pinning so a later edit cannot quietly turn one on for inspector users only.
+#[test]
+fn a_synthesized_scenario_turns_nothing_on_implicitly() {
+    let chem = std::fs::read_to_string("../../chemistries/lfp_26650_generic.toml").expect("chem");
+    let topology = Topology {
+        series: 2,
+        parallel: 1,
+        initial_soc: 1.0,
+        initial_temp_k: 298.15,
+        seed: 1,
+    };
+    let parsed = sim_data::parse_scenario(&topology.to_scenario_toml(&chem)).expect("parses");
+    assert!(parsed.pack.bms.is_none(), "a synthesized pack grew a BMS");
+    assert!(parsed.pack.aging.is_none(), "a synthesized pack grew aging");
+    assert!(parsed.faults.is_empty(), "a synthesized pack grew faults");
+
+    let driver = PackDriver::from_topology(&topology, &chem).expect("builds");
+    assert!(!driver.facts().has_bms);
+    assert!(!driver.facts().scenario_has_bms);
+}
+
+/// The topology path inlines its chemistry, so the synthesized scenario is self-contained
+/// and needs no second argument — which is what lets `from_topology` pass `None`.
+#[test]
+fn a_synthesized_scenario_is_self_contained() {
+    let chem = std::fs::read_to_string("../../chemistries/lfp_26650_generic.toml").expect("chem");
+    let topology = Topology {
+        series: 1,
+        parallel: 1,
+        initial_soc: 1.0,
+        initial_temp_k: 298.15,
+        seed: 1,
+    };
+    assert_eq!(
+        PackDriver::chemistry_id_of(&topology.to_scenario_toml(&chem)).expect("parses"),
+        None,
+        "the synthesized scenario named a chemistry id instead of inlining one"
+    );
+}
+
+/// A topology `PackConfig` would reject must fail with the engine's own message rather
+/// than being silently corrected — the synthesized path gets the same validation an
+/// authored one does, because it *is* the authored path.
+#[test]
+fn an_invalid_topology_fails_with_the_engines_own_validation() {
+    let chem = std::fs::read_to_string("../../chemistries/lfp_26650_generic.toml").expect("chem");
+    let bad = Topology {
+        series: 0,
+        parallel: 1,
+        initial_soc: 1.0,
+        initial_temp_k: 298.15,
+        seed: 1,
+    };
+    assert!(
+        PackDriver::from_topology(&bad, &chem).is_err(),
+        "a 0S pack was accepted"
+    );
+
+    let out_of_range = Topology {
+        initial_soc: 1.5,
+        series: 1,
+        ..bad
+    };
+    assert!(
+        PackDriver::from_topology(&out_of_range, &chem).is_err(),
+        "an initial_soc of 1.5 was accepted"
+    );
+}
+
+/// A chemistry that does not end in a newline must still produce parseable TOML — the
+/// closing `"""` has to land on its own line either way.
+#[test]
+fn a_chemistry_without_a_trailing_newline_still_synthesizes() {
+    let chem = std::fs::read_to_string("../../chemistries/lfp_26650_generic.toml").expect("chem");
+    let topology = Topology {
+        series: 1,
+        parallel: 1,
+        initial_soc: 1.0,
+        initial_temp_k: 298.15,
+        seed: 1,
+    };
+    let trimmed = chem.trim_end();
+    assert!(!trimmed.ends_with('\n'));
+    PackDriver::from_topology(&topology, trimmed).expect("builds without a trailing newline");
 }
 
 #[test]

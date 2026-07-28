@@ -93,6 +93,40 @@ func _initialize() -> void:
 
 	pack.free()
 
+	# --- the topology path: a pack configured entirely in the inspector -----------------
+	# `scenario_toml` left empty, so the node synthesizes a scenario from the exported
+	# topology properties. This is the CLAUDE.md deliverable line "exported
+	# chemistry/topology properties", and nothing else here exercises it.
+	var inspector := BatteryPack.new()
+	inspector.chemistry_toml = chem
+	inspector.series = 4
+	inspector.parallel = 2
+	inspector.initial_soc = 0.75
+	inspector.initial_temp_k = 298.15
+	inspector.seed = 7
+	if not inspector.uses_topology():
+		_fail("an empty scenario_toml did not select the topology path")
+	if not inspector.load_from_exports():
+		_fail("load_from_exports (topology path) failed: %s" % inspector.last_error())
+	else:
+		if inspector.pack_series() != 4 or inspector.pack_parallel() != 2:
+			_fail("inspector topology gave %dS%dP, expected 4S2P"
+				% [inspector.pack_series(), inspector.pack_parallel()])
+		if absf(inspector.soc_true() - 0.75) > 1e-9:
+			_fail("inspector initial_soc gave %f, expected 0.75" % inspector.soc_true())
+		# A synthesized pack turns nothing on implicitly.
+		if inspector.has_bms():
+			_fail("a synthesized pack grew a BMS")
+	# And a non-empty scenario_toml wins, so the topology numbers above are ignored.
+	inspector.scenario_toml = scenario
+	if inspector.uses_topology():
+		_fail("a non-empty scenario_toml did not take precedence")
+	if not inspector.load_from_exports():
+		_fail("load_from_exports (scenario path) failed: %s" % inspector.last_error())
+	elif inspector.pack_series() != 1:
+		_fail("the scenario should have won, but the pack is %dS" % inspector.pack_series())
+	inspector.free()
+
 	# --- the accumulator, driven by real physics frames ---------------------------------
 	# Everything above could have been done without Godot running. This part cannot: it
 	# checks that `_physics_process` actually reaches the accumulator, which no Rust test

@@ -370,6 +370,95 @@ impl From<NonFinite> for DriverError {
     }
 }
 
+/// A pack described by topology alone, for a node configured entirely in the inspector.
+///
+/// # Why this produces *text* rather than a `PackConfig`
+/// It would be simpler to build a `PackConfig` here and hand it to `Pack::new`. It would
+/// also give this crate a **second construction path**, and the exit gate's whole claim
+/// rests on there being one: both its legs go through [`PackDriver::new`], so the only
+/// difference between them is the GDScript boundary. A second path could diverge on
+/// scatter seeding or on a defaulted field and fail the gate for a reason unrelated to
+/// what the gate tests.
+///
+/// So this synthesizes scenario TOML and feeds it to the same constructor. The
+/// inspector path and the authored-scenario path are then the same path, and
+/// `parse_scenario`'s validation applies to both — which is also why the fields below are
+/// only lightly checked here: a bad `initial_soc` is rejected downstream with the message
+/// a scenario author would get.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Topology {
+    /// Series elements. At least 1.
+    pub series: u16,
+    /// Parallel cells per group. At least 1.
+    pub parallel: u16,
+    /// Initial state of charge for every cell, in \[0, 1\].
+    pub initial_soc: f64,
+    /// Initial temperature for every cell \[K\].
+    pub initial_temp_k: f64,
+    /// Seed for the simulation RNG. Part of the snapshot.
+    pub seed: u64,
+}
+
+impl Topology {
+    /// Render this topology as a self-contained scenario, with the chemistry inlined.
+    ///
+    /// The chemistry is **inlined rather than referenced by id** so the result needs no
+    /// second argument and no file lookup — a node configured in the inspector already has
+    /// the chemistry text in a property beside the topology.
+    ///
+    /// Every omitted section means *off*, not *default-on*: no `[pack.scatter]` is
+    /// identical cells, no `[pack.thermal]` is isothermal, no `[pack.bms]` is no
+    /// protection at all, no `[pack.aging]` is a pack that never wears out. That is
+    /// `PackConfig`'s own rule and this does not reinterpret it — a node that wants any of
+    /// those needs an authored scenario, which is what [`PackDriver::new`] takes.
+    #[must_use]
+    pub fn to_scenario_toml(&self, chemistry_toml: &str) -> String {
+        // `chemistry_toml` goes in a multi-line basic string. TOML's `"""` form still
+        // honours backslash escapes, so a chemistry containing one would be corrupted —
+        // in practice these files are numbers, tables and `#` comments. The guard is the
+        // parse: a mangled chemistry fails `parse_chemistry` loudly rather than silently
+        // producing different physics.
+        format!(
+            "# Synthesized from a BatteryPack node's exported topology properties.\n\
+             # Not a file anyone authored — see sim_godot::driver::Topology.\n\
+             chemistry_toml = \"\"\"\n{}\"\"\"\n\n\
+             [meta]\n\
+             name = \"{}S{}P from a BatteryPack node\"\n\
+             description = \"Synthesized from exported topology properties. Omitted \
+             sections mean off: no scatter, no thermal coupling, no BMS, no aging, no \
+             faults.\"\n\n\
+             [pack]\n\
+             series = {}\n\
+             parallel = {}\n\
+             initial_soc = {:?}\n\
+             initial_temp_k = {:?}\n\
+             seed = {}\n",
+            // A trailing newline keeps the closing delimiter on its own line whether or
+            // not the chemistry file ended with one.
+            if chemistry_toml.ends_with('\n') {
+                chemistry_toml.to_owned()
+            } else {
+                format!("{chemistry_toml}\n")
+            },
+            // `[meta].name` is required by `Scenario` — it is human-facing labelling the
+            // engine never reads, but the format does not make it optional, and a
+            // synthesized scenario has to be a *valid* scenario or the "one construction
+            // path" claim is worthless.
+            self.series,
+            self.parallel,
+            self.series,
+            self.parallel,
+            // `{:?}` on an `f64` is round-trip exact, `{}` is not. A `0.1` written as
+            // `0.1` and re-parsed is the same value, but a computed SOC would not be —
+            // and a scenario that does not reproduce its own configuration is the kind of
+            // bug that only shows up in a bit-identical comparison.
+            self.initial_soc,
+            self.initial_temp_k,
+            self.seed
+        )
+    }
+}
+
 /// A scenario, its chemistry, the pack the two of them built, and everything a node needs
 /// to drive it.
 #[derive(Debug)]
@@ -460,6 +549,20 @@ impl PackDriver {
             edges,
             accumulator: Accumulator::default(),
         })
+    }
+
+    /// Build a pack from an inspector-configured topology and a chemistry.
+    ///
+    /// Convenience over [`Self::new`] and [`Topology::to_scenario_toml`] — deliberately
+    /// not a separate construction path; see [`Topology`] for why that matters to the exit
+    /// gate.
+    ///
+    /// # Errors
+    /// [`DriverError::Data`] if the chemistry does not parse, or if the topology is one
+    /// `PackConfig` rejects (a zero dimension, an out-of-range SOC). The message is the
+    /// one a scenario author would get, because it comes from the same validation.
+    pub fn from_topology(topology: &Topology, chemistry_toml: &str) -> Result<Self, DriverError> {
+        Self::new(&topology.to_scenario_toml(chemistry_toml), None)
     }
 
     /// Which chemistry a scenario needs, so a game can read it before constructing.

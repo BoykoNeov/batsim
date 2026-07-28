@@ -84,7 +84,7 @@ func _process(_delta: float) -> void:
 		"flags         %8s" % ("--" if _pack.flags_text().is_empty() else _pack.flags_text()),
 		"",
 		"topology      %dS%dP     BMS: %s" % [
-			_pack.series(), _pack.parallel(), "yes" if _pack.has_bms() else "no"],
+			_pack.pack_series(), _pack.pack_parallel(), "yes" if _pack.has_bms() else "no"],
 		"carried       %8.4f s (accumulator remainder)" % _pack.pending_s(),
 	])
 

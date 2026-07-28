@@ -654,7 +654,8 @@ way out to a GDScript console and names both what was wrong and what was expecte
   slice C. The load test above ran through the throwaway spike project outside the repo
   tree, deliberately, so slice B commits no Godot project files.
 - **No exported properties.** The `#[func]` surface here is what slice B needed to prove
-  the path end to end; slice C is where the node gets an editor-facing shape.
+  the path end to end; slice C is where the node gets an editor-facing shape, and slice E's
+  follow-up is where topology joins it.
 - **No `Advance` consumption in the shell.** `BatteryPack::advance` already scopes its
   borrow so the edges can be emitted after it ends — the structure is in place, the
   emission is slice C.
@@ -984,6 +985,47 @@ number the test chose, so `speed = 2.0` can be asserted to yield **exactly** twi
 steps and exactly twice the simulated time. And the property that makes the knob safe to
 expose at all now has a test: a 1 s run at 100× is bit-identical to a hundred 1 s runs at
 1×, so `speed` is a presentation knob rather than a physics one.
+
+### The deliverable line said "topology properties" and only chemistry was one
+
+`CLAUDE.md`'s Phase 5 line asks for "exported **chemistry/topology** properties".
+`chemistry_toml` was an export; topology was read-only, and the only way to configure a
+pack was pasting scenario TOML into a multiline field. That does not block the exit
+criterion — which was authored here, since `CLAUDE.md` gave none — but it is an unmet line
+in the deliverable list, and it was silent rather than decided. Raised, and the owner chose
+the inspector reading.
+
+So `series`, `parallel`, `initial_soc`, `initial_temp_k` and `seed` are exports, and a node
+with an empty `scenario_toml` synthesizes a scenario from them.
+
+**It synthesizes TOML rather than building a `PackConfig`,** and that is the whole design.
+Handing a `PackConfig` to `Pack::new` would be simpler and would give this crate a *second
+construction path* — and the exit gate's claim rests on there being one, since both its
+legs go through `PackDriver::new`. A second path could diverge on scatter seeding or a
+defaulted field and fail the gate for a reason unrelated to the boundary. Synthesizing text
+means the inspector path and the authored path are literally the same path, and
+`parse_scenario`'s validation applies to both. A test asserts a 4S2P pack built either way
+produces bit-identical telemetry over 200 steps.
+
+Three things fell out of writing it:
+
+- **`{:?}` on an `f64`, not `{}`.** Only the former round-trips. A scenario that cannot
+  reproduce its own configuration is a bug that shows up nowhere except in a bit-identical
+  comparison, which is exactly the kind this repo makes.
+- **`[meta]` is required.** Found by running it: `Scenario` does not default that field, so
+  the first synthesized scenario failed to parse. Worth having failed — "synthesize a valid
+  scenario" is the claim, and a synthesized scenario that only *nearly* parses would have
+  made the shared-path argument worthless.
+- **Precedence had to be decided, not defaulted.** A scenario wins, and the topology
+  exports are then ignored entirely. They do not merge, because merging would mean deciding
+  what an "unset" export means — and `0` and `1` are both plausible values, not absences.
+  `uses_topology()` reports which path is live so a scene can say why the `series` someone
+  typed had no effect.
+
+The naming collision this created is worth recording: exported `series` (configuration —
+what to build) and `series()` (ground truth — what *was* built) are different facts, and
+one of them is ignored on the scenario path. The accessors are now `pack_series()` /
+`pack_parallel()`.
 
 ### The demo bundles its data, and the copy is drift-proof rather than forbidden
 
