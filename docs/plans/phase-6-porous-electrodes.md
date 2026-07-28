@@ -487,12 +487,14 @@ Touches `sim-core` only. **Zero physics change**, and the gate is built around t
 
 Touches `sim-data` and `sim-core`'s `ChemistryParams`; **no engine physics**.
 
-- `[spm]` schema and validation: half-cell OCP tables monotone in stoichiometry, particle
-  radii / diffusivities / rate constants / concentrations positive, stoichiometry limits
-  ordered and inside [0, 1], shell count within a sane range.
-- `BuildError` when a `PackConfig` selects `Spm` and the chemistry has no `[spm]`. Tested,
-  and tested for the *message* naming both the chemistry and the missing section — a
-  `BuildError` that says only "invalid config" costs whoever hits it an hour.
+- `[spm]` schema and validation: half-cell OCP tables monotone in stoichiometry (**non-
+  increasing** — see the slice-B notes), particle radii / diffusivities / rate constants /
+  concentrations positive, stoichiometry limits ordered and inside [0, 1].
+- ~~Shell count within a sane range~~ and ~~a `BuildError` when a `PackConfig` selects
+  `Spm` and the chemistry has no `[spm]`~~ — **both moved to slice C**, because both need
+  a `PackConfig` field that does not exist yet and cannot be added cheaply. See "The
+  `BuildError` moved to slice C" in the slice-B notes for the argument, and slice C's
+  bullets for where they landed.
 - `chemistries/nmc_21700_lgm50.toml`, extracted from Chen2020, every number with a literal
   provenance citation.
 - `tools/reference/` gains an extraction script (`extract_spm.py`, alongside the existing
@@ -513,6 +515,23 @@ suspects for any discrepancy.
 - `CellModel::Spm(SpmState)`, satisfying slice A's interface. During slice C the pack
   drives it through the **tangent at the previous current**, which is exact enough for a
   single cell and is what slice D generalizes.
+- **Inherited from slice B** (see its notes for why they moved): the `PackConfig`
+  cell-model selector — `#[serde(default)] cell_model: CellModelConfig`, defaulting to
+  `Ecm`, with `Spm { shells }` carrying the shell count `N` as pack config rather than
+  chemistry data; the `BuildError` when that selector asks for `Spm` against a chemistry
+  with no `[spm]`, **tested for the message** naming both the chemistry and the missing
+  section (a `BuildError` that says only "invalid config" costs whoever hits it an hour);
+  and a `BuildError` range check on `shells`. Adding the field edits ~23 exhaustive
+  struct literals across 22 existing test files — mechanically, but it is the bulk of
+  this slice's diff, so budget for it.
+- **Also inherited, from slice A:** `CellView::v_rc_sum`'s rename. This slice bumps
+  `SNAPSHOT_VERSION` and can bump `sim-server`'s `API_VERSION` in the same breath — and
+  that rename *does* owe an `API_VERSION` bump, since renaming a field on a wire type is
+  exactly what that constant's doc says bumps it.
+- **This slice is now carrying four things** (the SPM cell, the version bump and its
+  test, the selector, the rename). **Split it when starting.** A natural seam: C1 = the
+  selector + the rename + the version bump (config and wire surface, no physics), C2 =
+  `spm.rs` and the variant (physics only, against a surface that already exists).
 - **`SNAPSHOT_VERSION` 9 → 10**, with the doc-comment note in house style.
 - **The version-check test** described above: construct a v9-shaped snapshot that is
   structurally valid under v10 and assert `restore` rejects it with
@@ -689,6 +708,24 @@ changes without either one touching a trajectory, and it demonstrates the proper
 baseline exists for: a snapshot hash is sensitive to things telemetry cannot see. **Do
 not "fix" a moved snapshot hash by widening the check** — account for it in bytes, as
 here, or find the physics that moved.
+
+### `sim-server`'s `API_VERSION` does not move, and that is a decision rather than an omission
+
+The gate checks `SNAPSHOT_VERSION`, but this slice also changed the **JSON every
+snapshot endpoint serves** — `,"spm":null` now appears inside the `chem` object, which
+the baseline measured to the byte. There is a second version constant for exactly that
+surface (`sim_server::API_VERSION`, currently 1), and it was worth asking whether it was
+owed. It is not, on the constant's own written rule:
+
+> Bumped when a client would break: a renamed route, a renamed `ErrorCode`, or a renamed
+> field on one of the engine types that crosses the wire. **Adding a field or an error
+> code does not bump it.**
+
+An added field with a `null` default breaks no serde consumer and no JavaScript client.
+So: no bump, by the rule rather than by convenience. Noted here because "the gate did not
+check it" and "the gate did not need to check it" look identical in a green run, and the
+next slice does **not** get the same answer — `CellView::v_rc_sum`'s rename is a renamed
+field on a wire type, which is the first case the rule names.
 
 ### The `BuildError` moved to slice C, because `PackConfig` cannot take a field cheaply
 

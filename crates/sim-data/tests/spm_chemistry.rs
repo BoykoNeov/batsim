@@ -401,6 +401,15 @@ fn a_non_ascending_ocp_stoich_axis_is_rejected() {
     );
 }
 
+/// An empty OCP table has its own arm, and it needs its own test: the "spans the
+/// operating window" check below indexes `stoich[0]`, so without this guard an empty
+/// table would panic rather than be rejected — and `validate` is on the no-panic path.
+#[test]
+fn an_empty_ocp_table_is_rejected() {
+    let err = reject(&good_spm("stoich = []\nvolts  = []"));
+    assert_eq!(err, ChemistryError::Empty("spm.negative.ocp.stoich"));
+}
+
 #[test]
 fn a_length_mismatched_ocp_table_is_rejected() {
     let err = reject(&good_spm("stoich = [0.0, 0.5, 1.0]\nvolts  = [1.5, 0.1]"));

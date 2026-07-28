@@ -279,17 +279,21 @@ pub struct ElectrodeParams {
     /// because asymmetric sets exist and the model should not have to be edited to
     /// read one.
     pub charge_transfer_alpha: f64,
-    /// Stoichiometry at the cell's lower voltage cut-off, in \[0, 1\]. Must be
-    /// finite.
+    /// Lower end of this electrode's usable stoichiometry window, in \[0, 1\]. Must
+    /// be finite.
     ///
-    /// Note "min"/"max" are ordered by *stoichiometry*, not by state of charge: the
-    /// negative electrode fills as the cell charges while the positive empties, so
-    /// [`Self::stoich_max`] is a full cell at the negative electrode and an empty one
-    /// at the positive. Together the two pairs are what map a lithium inventory onto
-    /// [`crate::Telemetry::soc_true`].
+    /// **Ordered by stoichiometry, not by state of charge**, and the two are not the
+    /// same direction on both electrodes: charging fills the negative electrode while
+    /// it empties the positive. So this is the *discharged* cell at the negative
+    /// electrode and the *charged* cell at the positive — and reading it as "the
+    /// cell's lower voltage cut-off" is right for one electrode and exactly backwards
+    /// for the other. Together the two pairs are what map a lithium inventory onto
+    /// [`crate::Telemetry::soc_true`], which is why the direction has to be stated
+    /// rather than inferred.
     pub stoich_min: f64,
-    /// Stoichiometry at the cell's upper voltage cut-off, in \[0, 1\]. Must be finite
-    /// and `> stoich_min`.
+    /// Upper end of this electrode's usable stoichiometry window, in \[0, 1\]. Must be
+    /// finite and `> stoich_min`. See [`Self::stoich_min`] for why this is not
+    /// "the charged cell" on both electrodes.
     pub stoich_max: f64,
     /// Entropy coefficient `∂U/∂T` \[V/K\] of this electrode's open-circuit
     /// potential. Must be finite; `0` (the default) disables this electrode's
