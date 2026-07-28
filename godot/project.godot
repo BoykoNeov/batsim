@@ -1,0 +1,28 @@
+; batsim's Godot demo project.
+;
+; Deliberately minimal: this exists to exercise and demonstrate the `BatteryPack` node,
+; not to be a game. It lives at the repo root beside `web/`, which is the precedent
+; Phase 4 set for a client that is not a Rust crate.
+;
+; One-time bootstrap on a fresh clone (`.godot/` is gitignored):
+;
+;   cargo build -p sim-godot
+;   godot --headless --path godot --import
+;
+; A rebuilt cdylib needs no re-import — only the first run on a fresh tree does.
+
+config_version=5
+
+[application]
+
+config/name="batsim"
+config/description="Battery pack simulator — sim-core driven from Godot."
+config/features=PackedStringArray("4.7")
+; `run/main_scene` is set when the demo scene lands (slice E). Naming a scene that does
+; not exist yet would make every headless run print a load error.
+
+[debug]
+
+; Headless runs are scripted and asserted from Rust; Godot's own stdout noise is not part
+; of the contract.
+settings/stdout/verbose_stdout=false

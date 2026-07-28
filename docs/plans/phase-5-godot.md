@@ -1,6 +1,6 @@
 # Phase 5 — Godot adapter
 
-**Status: in progress. Slices A and B have landed; C–E are planned.** This file is written before the work so the
+**Status: in progress. Slices A, B and C have landed; D and E are planned.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` through `phase-4-server-wasm.md` grew.
 
@@ -24,7 +24,7 @@ asserted.
 | ----- | ----- | ----- |
 | A | the shared boundary rule: `Demand::check_finite` / `Env::check_finite` land in `sim-core`; `sim-server` and `sim-wasm` migrate onto them; the sim-wasm "third client" comment is amended to name a criterion instead of a count | **landed** (v9 — no bump, as designed) |
 | B | `crates/sim-godot`: crate skeleton, `godot` pinned to `api-4-7`, workspace membership, and `driver.rs` — the entire pure layer (accumulator, flag edge detector, scenario→pack, batch stepping, caps), host-tested | **landed** (v9 — no bump, as designed) |
-| C | the node surface: exported properties, `#[func]` methods, signals, `_physics_process` wiring, `.gdextension`, demo project skeleton | **planned** |
+| C | the node surface: exported properties, `#[func]` methods, signals, `_physics_process` wiring, `.gdextension`, demo project skeleton | **landed** (v9 — no bump, as designed) |
 | D | the exit gate: GDScript driver emitting bit patterns, the Rust integration test that compares them, the `--import` bootstrap. **Carries the exit criterion.** | **planned** |
 | E | wrap-up: a watchable demo scene, README status and run instructions, adapter overhead measured separately from `Pack::step` | **planned** |
 
@@ -659,22 +659,166 @@ way out to a GDScript console and names both what was wrong and what was expecte
   borrow so the edges can be emitted after it ends — the structure is in place, the
   emission is slice C.
 
-## Open questions (decide when the slice lands, not now)
+## Learned while building — slice C (the node surface)
 
-- **Backlog policy when `max_steps_per_frame` binds.** Drop the excess (sim time dilates,
-  the game stays responsive) or repay it over subsequent frames (sim time stays true, a
-  stall can cascade)? Default probably "drop, and say so via `falling_behind`", but this
-  should be an exported enum so a game can choose. Decide in slice C with the signal in
-  front of you.
-- **`soc_signal_epsilon` default.** Wants to be large enough that a 60 Hz real-time run
-  does not emit every frame, small enough that a discharge looks continuous. Pick it from a
-  measured run, not from taste.
+### The canary held, and slice C also cost `sim-core` nothing
+
+Still v9. Slice C added twelve exported properties, nine signals, thirty-odd `#[func]`s
+and a whole Godot project without touching the engine once — which is what the canary is
+for. The one thing that *would* have tripped it, storing the previous flag mask so edges
+survive a restore, was refused on exactly those grounds; see below.
+
+### The accumulator would have shipped with no evidence it was connected
+
+This is the slice's most useful finding and it came from asking what the exit gate cannot
+see. Slice D drives `step_batch`, because that is the only path whose trajectory is
+reproducible enough to assert bit-identity on. The accumulator is therefore **invisible to
+the exit criterion** — and it is the deliverable `CLAUDE.md` actually names for Phase 5.
+
+Left alone, it would have had thorough unit tests on its arithmetic in
+`crates/sim-godot/tests/driver.rs` and zero evidence that `_physics_process` reaches it.
+So `godot/smoke.gd` runs 30 real physics frames and checks that simulated time advanced by
+a **whole number of `fixed_dt` steps**, that the carried remainder is under one step, and
+that `soc_changed` actually fired.
+
+Note what it deliberately does *not* assert: an exact step count. That depends on frame
+timing, which is precisely why the gate does not drive this path — asserting it would
+produce a test that fails on a loaded machine while looking like a physics bug.
+
+The check was built to fail before it was trusted. Setting `auto_step = false` — the
+one-line version of "the accumulator is not wired up" — produces:
+
+```text
+SMOKE FAIL: after 30 physics frames the accumulator advanced nothing
+SMOKE FAIL: 30 physics frames of 2 A discharge emitted no soc_changed
+EXIT=1
+```
+
+Both assertions fire, and the exit code is 1. Without that check the same breakage exits 0.
+
+### Signals: three rules, each of which prevents a specific uselessness
+
+- **Rising edges only**, because `EventFlags` is recomputed every step. A signal on "flag
+  is set" fires for the entire duration of a condition — 60 Hz of `protection_tripped`
+  while a cell sits over-voltage. Only transitions are reported.
+- **Coalesced per batch**, because a `step_batch(10_000)` fast-forward emitting per step
+  would push thousands of signals into a game's main loop. The cost is that ordering
+  within a batch is lost; a flag that rose *and* fell inside one batch reports both, which
+  is a less complete story than ordering but a much more complete one than silence.
+- **`soc_changed` needs an epsilon**, because SOC changes every single step. Default
+  0.001 — 0.1 % of full charge, which at 1 C is a signal roughly every 3.6 s of simulated
+  time instead of every frame.
+
+`PROTECTION` deliberately excludes `SOC_CLAMPED_HIGH`/`SOC_CLAMPED_LOW`: those mean the
+engine truncated an over-charge attempt, which is a modelling clamp rather than a
+protection device acting. They still reach a listener through `flags_changed`, which is
+why that general signal exists at all — no flag the engine can raise should be unreachable
+just because it did not earn a named signal.
+
+### The edge detector's state is adapter state, and a restore re-announces
+
+Storing `prev_flags` on `Pack` would make edges survive a snapshot. It would also change
+the serialized layout and bump `SNAPSHOT_VERSION` for a purely presentational need — the
+exact leak the canary exists to catch.
+
+So the previous mask lives on the node, and the documented consequence is that
+[`restore_json`] and `restart` reset it: **conditions already active in a snapshot are
+announced again on the next step.** A game hears "protection tripped" for a trip that
+happened before the save. That is the failure a listener can cope with; the alternative is
+engine pollution. Written down here rather than discovered by whoever first loads a save.
+
+`last_announced_soc` is reset alongside it, for a sharper reason: a restored pack's SOC has
+nothing to do with the old one's, so an epsilon gate still measuring against the previous
+run's reading would either fire spuriously or stay silent through a large real change.
+
+### The borrow discipline had to be structural, and it is invisible until it is not
+
+A GDScript handler on `protection_tripped` may call straight back into the node. If that
+happens while a `&mut` borrow of the driver is live, `godot-cell` panics **at runtime**
+with nothing at compile time to catch it — and only once a scene actually connects a
+handler, which is a slice later than the code that causes it.
+
+Every mutating method therefore has the same shape, and it is worth reading as one:
+
+```rust
+let outcome = {
+    let Some(driver) = self.driver.as_mut() else { … };
+    driver.step_batch(dt, n_steps, demand)
+};                      // <- the borrow ends here, and only here
+match outcome {
+    Ok(advance) => { …; self.announce(advance); true }   // safe to re-enter
+    Err(error)  => self.fail(&error),
+}
+```
+
+`Advance` is `Copy`, which is what lets the block return owned data rather than something
+still borrowing the driver. That is not an accident of the type — it is why it is `Copy`.
+
+### `NAN` as the "no coolant" sentinel, and why it cannot collide
+
+GDScript has no `Option`, so `set_env(t_ambient, t_coolant)` needs some way to say "no
+coolant" — which is *not* the same as a coolant at 0 K. A second boolean argument is easy
+to pass wrong.
+
+`NAN` works as a sentinel precisely because slice A made it illegal everywhere else:
+`Env::check_finite` rejects a non-finite `t_coolant`, so the sentinel can never collide
+with a value someone meant. A sentinel that is a legal value would be a bug; this one is
+unreachable by construction.
+
+### `res://` is not a filesystem path, and that decided the whole loading API
+
+The node takes scenario and chemistry **text**, never paths. `res://` resolves inside a
+`.pck` once a game is exported, so a node that took a path would work in the editor and
+fail in a shipped build — the worst possible split, because it passes every test anyone
+runs during development.
+
+GDScript reads the files with `FileAccess.get_file_as_string()` and hands over strings.
+The same choice `sim-wasm` made for JS, for a different but equally forcing reason.
+
+### Two gdext papercuts, and one Godot project fact
+
+- `emit` takes a `GString` argument **by reference** (`AsArg`), not by value; the
+  `i64` arguments beside it are by value. The error is a `ByValue`/`ByRef` type mismatch
+  several macro layers deep and does not name the fix.
+- Exported enums work through `#[derive(GodotConvert, Var, Export)]` with
+  `#[godot(via = GString)]`, which is what makes `backlog_policy` a readable dropdown in
+  the inspector rather than an integer nobody can interpret.
+- `project.godot` deliberately does **not** set `run/main_scene` yet. Naming a scene that
+  does not exist would make every headless run print a load error, and the demo scene is
+  slice E.
+
+### What is deliberately not here
+
+- **No demo scene**, and therefore no `run/main_scene`. Slice E.
+- **No exit gate.** `smoke.gd` is not it and says so in its own header: it asks "is this
+  wired up", not "is the trajectory bit-identical". Slice D.
+- **No `Telemetry` → `Dictionary` method.** The open question below is now half-answered —
+  the typed getters were enough for everything slice C and the smoke script needed — but
+  the demo scene is the first real consumer, so the decision waits for it.
+
+## Open questions
+
+### Resolved in slice C
+
+- **Backlog policy when `max_steps_per_frame` binds.** Resolved as planned: an exported
+  `BacklogPolicy` enum, defaulting to `Drop`. A game should stay responsive and pay for a
+  stall in simulated seconds rather than in a cascade of capped frames. `Repay` is one
+  inspector click away for anything that needs sim time to track wall time. The part that
+  is *not* configurable is the announcement — `falling_behind` fires under **both**
+  policies, because silent dilation is the failure mode that reads as a physics bug.
+- **`soc_signal_epsilon` default.** `0.001`, i.e. 0.1 % of full charge. At a 1 C rate that
+  is a signal roughly every 3.6 s of simulated time rather than every frame; the smoke
+  script confirms a 2 A discharge emits within 30 physics frames at a tiny epsilon, so the
+  gate is doing work rather than being inert.
+- **Whether `restore_json` should refuse a topology mismatch.** Yes, and the Godot wrinkle
+  turned out to strengthen the case rather than complicate it: the node's `series()` /
+  `parallel()` accessors would otherwise describe a pack it no longer holds. Same rule as
+  `sim-wasm`, tested in `tests/driver.rs`.
+
+### Still open
+
 - **Does the node need a `Telemetry`→`Dictionary` conversion, or are typed getters enough?**
   A `Dictionary` is one allocation per read and forty string keys; typed getters are forty
-  `#[func]`s. Likely both — a `read_telemetry()` `Dictionary` for scripts and getters for
-  the handful a game polls every frame. Confirm against the demo scene in slice E, which is
-  the only real consumer.
-- **Whether `restore_json` should refuse a topology mismatch** the way `sim-wasm` does.
-  Almost certainly yes and for the identical reason, but the Godot case has an extra wrinkle
-  — a node's exported properties would then describe a pack it no longer holds. Decide in
-  slice C.
+  `#[func]`s. Slice C shipped getters for the fields a game polls every frame and needed
+  nothing more, but the demo scene in slice E is the first real consumer and is the honest
+  place to decide. Likely both, with the `Dictionary` for scripts.

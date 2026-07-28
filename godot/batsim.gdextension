@@ -1,0 +1,26 @@
+; How Godot finds the Rust extension.
+;
+; `compatibility_minimum` must match the `api-4-*` feature `crates/sim-godot/Cargo.toml`
+; pins — 4.7. An extension built against a newer API than the running engine cannot load,
+; which is why the pin and this number are one decision rather than two.
+;
+; The library paths point into `/target`, which is gitignored. That is not a build
+; artifact living in the repo tree: **this file is source that references one**. The
+; artifact itself is never committed. Build it with `cargo build -p sim-godot`
+; (or `--release` for the release rows).
+;
+; All six platform/profile rows are listed even though CI only exercises one, because a
+; half-filled table is a trap for whoever first opens this on another OS.
+
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = true
+
+[libraries]
+windows.debug.x86_64 = "res://../target/debug/sim_godot.dll"
+windows.release.x86_64 = "res://../target/release/sim_godot.dll"
+linux.debug.x86_64 = "res://../target/debug/libsim_godot.so"
+linux.release.x86_64 = "res://../target/release/libsim_godot.so"
+macos.debug = "res://../target/debug/libsim_godot.dylib"
+macos.release = "res://../target/release/libsim_godot.dylib"
