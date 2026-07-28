@@ -29,22 +29,26 @@ Key invariants:
 
 ## Status
 
-Phases 0–4 are complete. Each phase's exit criterion is a committed test, not a
-judgement call.
+Phases 0–4 are complete. Each phase's exit criterion is a committed test rather than a
+judgement call, so the right-hand column is the thing to run if you doubt a row.
 
-| phase | what landed | state |
-| ----- | ----------- | ----- |
-| 0 | workspace, `sim-core` types, TOML chemistries, 1RC/2RC ECM cell, exact RC update | done |
-| 1 | series/parallel packs, closed-form group solve, seeded scatter, snapshots, PyBaMM goldens | done |
-| 2 | thermal network, sensor layer, SOC estimator, protection, passive balancing | done |
-| 3 | calendar + cycle aging, fault queue, plating flag, thermal runaway and propagation | done |
-| 4 | `sim-server` (REST + WebSocket), `sim-wasm`, the browser demo, the example script | done |
+| phase | what landed | exit criterion pinned by |
+| ----- | ----------- | ------------------------ |
+| 0 | workspace, `sim-core` types, TOML chemistries, 1RC/2RC ECM cell, exact RC update | `sim-core/tests/analytic_golden.rs` |
+| 1 | series/parallel packs, closed-form group solve, seeded scatter, snapshots, PyBaMM goldens | `sim-core/tests/scenario_weak_cell.rs`, `snapshot.rs`, `sim-data/tests/pybamm_golden.rs` |
+| 2 | thermal network, sensor layer, SOC estimator, protection, passive balancing | `sim-core/tests/thermal.rs`, `scenario_protection.rs`, `sim-data/tests/scenario_lfp_soc_drift.rs` |
+| 3 | calendar + cycle aging, fault queue, plating flag, thermal runaway and propagation | `sim-core/tests/scenario_aging.rs`, `scenario_runaway.rs` |
+| 4 | `sim-server` (REST + WebSocket), `sim-wasm`, the browser demo, the example script | `sim-server/tests/e2e_experiment.rs` |
 | 5 | `sim-godot` — a `BatteryPack` GDExtension node | next |
 
-Two LFP/NMC chemistries ship under [`chemistries/`](chemistries); every constant in
-them carries a provenance note. Design notes for each phase, including what was
-measured and what was deliberately *not* built, are under
-[`docs/plans/`](docs/plans).
+Two chemistries ship under [`chemistries/`](chemistries) — LFP 26650 and NMC 18650.
+Every constant in them carries a provenance note, **including the ones whose note says
+they are order-of-magnitude placeholders awaiting a fit**; that is the project rule
+(placeholders are acceptable, unlabeled numbers are not) rather than a claim that every
+number is fitted. The NMC set is the one with fitting still to do.
+
+Design notes for each phase, including what was measured and what was deliberately
+*not* built, are under [`docs/plans/`](docs/plans).
 
 ## Workspace layout
 

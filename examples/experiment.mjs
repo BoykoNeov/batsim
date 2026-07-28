@@ -367,6 +367,14 @@ function toCsv(rows) {
 /** `"OV | UV"` -> `["OV", "UV"]`; `""` -> `[]`, which is the case worth getting right. */
 const parseFlags = (flags) => (flags === "" ? [] : flags.split(" | "));
 
+/**
+ * `soc_bms` is `null` when the scenario builds no BMS — a supported, deliberately
+ * interesting configuration, not an error. Worth a named predicate rather than an
+ * inline `!= null`, because arithmetic on it fails *quietly*: `(null * 100).toFixed(1)`
+ * is `"0.0"`, which renders "there is no estimate" as "the estimate is zero".
+ */
+const hasBms = (frame) => frame.telemetry.soc_bms !== null;
+
 const degC = (kelvin) => (kelvin - 273.15).toFixed(2);
 const pct = (fraction) => (fraction * 100).toFixed(1);
 
@@ -440,8 +448,10 @@ async function main() {
     rows.push({ frame: initial, leg: 0 });
     console.log(
       `\nt = 0 s           ${initial.telemetry.v_terminal.toFixed(3)} V, ` +
-        `SOC ${pct(initial.telemetry.soc_true)} % true / ` +
-        `${pct(initial.telemetry.soc_bms)} % as the BMS estimates it`,
+        `SOC ${pct(initial.telemetry.soc_true)} % true` +
+        (hasBms(initial)
+          ? ` / ${pct(initial.telemetry.soc_bms)} % as the BMS estimates it`
+          : ` (no BMS in this scenario, so there is no estimate to differ from it)`),
     );
 
     // ---- leg 1: healthy --------------------------------------------------------
@@ -502,7 +512,7 @@ async function main() {
     const socs = cells.cells.map((c) => c.soc);
     console.log(
       `\ncell SOC spread   ${pct(Math.min(...socs))} % .. ${pct(Math.max(...socs))} % ` +
-        `across ${cells.cells.length} cells`,
+        `across ${cells.cells.length} cell${cells.cells.length === 1 ? "" : "s"}`,
     );
   } finally {
     session?.close();
@@ -516,33 +526,56 @@ async function main() {
   // ---- the summary -----------------------------------------------------------
   await writeFile(args.out, toCsv(rows));
 
-  const last = rows.at(-1).frame.telemetry;
+  const lastRow = rows.at(-1);
+  const last = lastRow.frame.telemetry;
   const flagsSeen = new Set(rows.flatMap(({ frame }) => parseFlags(frame.telemetry.flags)));
   const shorted = rows.filter(({ frame }) => frame.telemetry.i_internal_short_a > 0);
 
-  console.log(`
---- after ${rows.at(-1).frame.sim_time_s} s of simulation -------------------------------
-  terminal voltage   ${last.v_terminal.toFixed(3)} V
-  cell voltages      ${last.v_cell_min.toFixed(4)} .. ${last.v_cell_max.toFixed(4)} V  ` +
-    `(spread ${((last.v_cell_max - last.v_cell_min) * 1000).toFixed(1)} mV)
-  SOC, ground truth  ${pct(last.soc_true)} %
-  SOC, BMS estimate  ${pct(last.soc_bms)} %   <- the gap is the lesson
-  temperature        ${degC(last.t_min)} .. ${degC(last.t_max)} degC
-  internal short     ${last.i_internal_short_a.toFixed(3)} A, first *reported* at ` +
-    `t = ${shorted.length ? shorted[0].frame.sim_time_s : "never"} s
-                     (it fires at 600 s; every ${REPORT_EVERY}th step is reported, so the
-                      sample lands up to ${REPORT_EVERY * DT_S} s late — decimation costs
-                      resolution, never accuracy)
-  flags raised       ${flagsSeen.size ? [...flagsSeen].join(", ") : "none, the whole way"}
+  // Built line by line rather than as one template, because every scenario-specific
+  // claim below has to be able to *not* be made. `--scenario` is a documented flag and
+  // the other shipped scenario has no BMS and no faults, so a summary that narrated the
+  // default one unconditionally reported "SOC, BMS estimate 0.0 %" for a pack with no
+  // BMS at all — printing `pct(null)` as a number, and inverting the one invariant this
+  // whole project exists to show.
+  const lines = [
+    `--- after ${lastRow.frame.sim_time_s} s of simulation -------------------------------`,
+    `  terminal voltage   ${last.v_terminal.toFixed(3)} V`,
+    `  cell voltages      ${last.v_cell_min.toFixed(4)} .. ${last.v_cell_max.toFixed(4)} V  ` +
+      `(spread ${((last.v_cell_max - last.v_cell_min) * 1000).toFixed(1)} mV)`,
+    `  SOC, ground truth  ${pct(last.soc_true)} %`,
+    hasBms(lastRow.frame)
+      ? `  SOC, BMS estimate  ${pct(last.soc_bms)} %   <- the gap is the lesson`
+      : `  SOC, BMS estimate  none — this scenario builds no BMS, so there is no
+                     estimate and no instrumentation to be wrong`,
+    `  temperature        ${degC(last.t_min)} .. ${degC(last.t_max)} degC`,
+  ];
 
-  ${rows.length} rows -> ${args.out}
-`);
+  if (shorted.length) {
+    lines.push(
+      `  internal short     ${last.i_internal_short_a.toFixed(3)} A, first *reported* at ` +
+        `t = ${shorted[0].frame.sim_time_s} s`,
+      `                     (every ${REPORT_EVERY}th step is reported, so the sample lands`,
+      `                      up to ${REPORT_EVERY * DT_S} s after the fault actually fired —`,
+      `                      decimation costs resolution, never accuracy)`,
+    );
+  } else {
+    lines.push(`  internal short     none drawing in this run`);
+  }
 
-  if (flagsSeen.size === 0) {
+  lines.push(
+    `  flags raised       ${flagsSeen.size ? [...flagsSeen].join(", ") : "none, the whole way"}`,
+    ``,
+    `  ${rows.length} rows -> ${args.out}`,
+  );
+  console.log(`\n${lines.join("\n")}\n`);
+
+  // Gated on the fault having actually drawn current, not merely on the absence of
+  // flags: "no flags" is unremarkable in a run where nothing went wrong.
+  if (shorted.length && flagsSeen.size === 0) {
     console.log(
-      `The BMS never raised a flag. It was reading a sensor that had been offset by\n` +
-        `exactly enough to hide the fault — which is the scenario's whole point, and\n` +
-        `why "no flags" is not the same as "no problem".\n`,
+      `A cell was leaking for most of that run and the BMS never raised a flag. It was\n` +
+        `reading a sensor that had been offset by exactly enough to hide the fault —\n` +
+        `which is the scenario's whole point, and why "no flags" is not "no problem".\n`,
     );
   }
 }

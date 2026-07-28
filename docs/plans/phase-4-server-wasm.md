@@ -1393,6 +1393,34 @@ amount of reasoning does. Three more:
    out beside it. Decimation costs resolution, never accuracy — and a summary that says
    "seen" invites the reader to conclude the engine is late.
 
+### The second shipped scenario broke the script, and it is the same shape as slice B's
+
+Slice B recorded: *"shipped example files decide what gets tested, and two examples that
+agree on a choice leave the other branch invisible."* That was about `chemistry_toml`
+never being exercised because both scenarios name a chemistry id. It happened again here
+in the other direction — the script was only ever run against the scenario it was written
+for, and `--scenario` is a flag its own `USAGE` advertises:
+
+```text
+node examples/experiment.mjs --scenario cc_discharge_lfp.toml
+  SOC, ground truth  0.0 %
+  SOC, BMS estimate  0.0 %   <- the gap is the lesson
+```
+
+`cc_discharge_lfp.toml` builds **no BMS**, so `soc_bms` is `null` — and
+`(null * 100).toFixed(1)` is `"0.0"`. JavaScript's numeric coercion turned "there is no
+estimate" into "the estimate is zero", silently, in the artifact whose entire purpose is
+to show that ground truth and the BMS view are different things. Two more claims went the
+same way: a decimation note explaining when a fault "fires at 600 s" printed for a
+scenario with no faults, and the closing paragraph about a lying sensor fired on
+`flags.size === 0`, which is a property of any uneventful run.
+
+The CSV had been right all along (`f.telemetry.soc_bms ?? ""`), which is the detail worth
+keeping: **the same value was handled correctly where it was serialized and wrongly where
+it was narrated.** Prose has no type checker. Every scenario-specific claim is now gated —
+on `soc_bms !== null` behind a named `hasBms` predicate, and on the short having actually
+drawn current — and both shipped scenarios are run before the script is called done.
+
 ### The split moved so the fault fires after the restore
 
 The first draft split the run at exactly t = 600 s, which is the instant the scenario's
@@ -1448,10 +1476,14 @@ results, not source.
 
 - ~~**Session task vs shared map.**~~ Resolved in slice B: shared map, two levels of
   locking. See "Open question resolved" above.
-- **Snapshot body size.** A 4S2P snapshot is ~5 KB of JSON (measured: 5658 bytes).
-  100S10P will be ~600 KB, which is fine for REST and poor for a WebSocket frame. If it
-  bites, the answer is `Content-Encoding` on the REST route, not a new binary format on
-  the socket.
+- **Snapshot body size — the one question that outlived the phase, deliberately.** A
+  4S2P snapshot is ~5 KB of JSON (measured: 5658 bytes; 6621 bytes for the scenario the
+  example script runs). 100S10P will be ~600 KB, which is fine for REST and poor for a
+  WebSocket frame. Nothing in Phase 4 built a pack large enough to feel it, so there was
+  never a slice in which to decide — and inventing a compression scheme for a cost
+  nobody has paid would be the opposite of what the rest of this file does. It carries
+  forward unchanged: **if it bites, the answer is `Content-Encoding` on the REST route,
+  not a new binary format on the socket.**
 - ~~**Whether the browser page needs the server at all after slice D.**~~ Resolved in
   slice D, and the answer is *both halves are true*. It does not need it for physics — it
   embeds the engine, and the socket toggle is off by default. But it needs the server to
