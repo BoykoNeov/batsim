@@ -158,6 +158,77 @@ async fn a_json_scenario_becomes_the_same_session_as_its_toml() {
     );
 }
 
+/// A scenario that inlines its chemistry needs no `chemistries/` tree at all — the
+/// property that makes this server deployable without shipping one.
+///
+/// Both shipped scenarios name a chemistry *id*, so before this test the inline path
+/// had no coverage in this crate at all, and it is the harder of the two: the
+/// chemistry TOML is an arbitrary multi-line string that has to survive being embedded
+/// in a scenario, stored, re-serialised as a JSON string by `GET /sessions/{id}`, and
+/// parsed back. Newlines and quotes are exactly what that round trip mishandles.
+///
+/// `chem_dir` deliberately points at a directory that does not exist: if resolution
+/// ever silently fell back to the filesystem, this would fail rather than pass for the
+/// wrong reason.
+#[tokio::test]
+async fn a_scenario_can_inline_its_chemistry_and_survive_the_round_trip() {
+    const LFP: &str = include_str!("../../../chemistries/lfp_26650_generic.toml");
+
+    let state = AppState::new("no/such/directory");
+
+    // A TOML *literal* string: no escape processing, so the chemistry's own quotes and
+    // backslashes pass through untouched. TOML drops the newline right after the
+    // opening delimiter, so the embedded text is byte-for-byte the file.
+    let scenario_toml = format!(
+        "chemistry_toml = '''\n{LFP}'''\n\n{}",
+        CC_DISCHARGE
+            .lines()
+            .filter(|l| !l.starts_with("chemistry ="))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    let (status, body) = send(
+        &state,
+        post("/sessions", Some("application/toml"), &scenario_toml),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let id = json_of(&body)["id"].as_u64().expect("an id");
+
+    let (status, body) = send(&state, get(&format!("/sessions/{id}"))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let detail = json_of(&body);
+
+    assert_eq!(
+        detail["scenario"]["chemistry_toml"].as_str(),
+        Some(LFP),
+        "the inlined chemistry did not survive being serialised as a JSON string"
+    );
+    assert!(
+        detail["scenario"]["chemistry"].is_null(),
+        "an inlined scenario has no chemistry id"
+    );
+
+    // And the round-tripped scenario still builds the same pack, which is the claim
+    // that matters: re-parsing the echoed value is not a formality.
+    let echoed: sim_data::Scenario =
+        serde_json::from_value(detail["scenario"].clone()).expect("a Scenario");
+    echoed
+        .validate()
+        .expect("the echoed scenario is still valid");
+    let (status, body) = send(
+        &state,
+        post(
+            "/sessions",
+            Some("application/json"),
+            &serde_json::to_string(&echoed).unwrap(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+}
+
 /// The one that matters for safety: `serde_json::from_str` does **not** call
 /// `Scenario::validate`, so the JSON path has to reach validation some other way. If
 /// it does not, the `[a-z0-9_]+` charset check on a chemistry id is bypassed and a
@@ -471,6 +542,36 @@ async fn every_session_route_404s_on_an_unknown_id() {
         let (status, body) = send(&state, get(path)).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{path}: {body}");
         assert_eq!(error_code(&body), "no_such_session", "{path}");
+    }
+}
+
+/// Every `ErrorCode`'s spelling on the wire, pinned to its Rust name.
+///
+/// The variant names are `snake_case`d by a serde attribute, so a rename changes the
+/// string a client matches on without changing anything that reads oddly at a call
+/// site — every other assertion in this file would keep passing. `ErrorCode`'s doc
+/// comment says a rename bumps `API_VERSION`; this is what makes that enforceable
+/// rather than aspirational, and it is the same vocabulary slice C's WebSocket `Error`
+/// event will carry.
+#[test]
+fn error_codes_have_pinned_wire_spellings() {
+    use sim_server::ErrorCode;
+
+    for (code, spelling) in [
+        (ErrorCode::MalformedBody, "malformed_body"),
+        (ErrorCode::InvalidScenario, "invalid_scenario"),
+        (ErrorCode::UnknownChemistry, "unknown_chemistry"),
+        (ErrorCode::UnbuildablePack, "unbuildable_pack"),
+        (ErrorCode::NoSuchSession, "no_such_session"),
+        (ErrorCode::BadSnapshot, "bad_snapshot"),
+        (ErrorCode::TopologyMismatch, "topology_mismatch"),
+        (ErrorCode::UnsupportedMediaType, "unsupported_media_type"),
+    ] {
+        assert_eq!(
+            serde_json::to_value(code).unwrap(),
+            json!(spelling),
+            "{code:?} changed its spelling on the wire"
+        );
     }
 }
 

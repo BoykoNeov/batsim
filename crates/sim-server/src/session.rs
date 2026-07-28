@@ -102,7 +102,17 @@ impl AppState {
     /// *before* anything touches the filesystem, because that validation is what
     /// enforces the `[a-z0-9_]+` charset on a chemistry id and is therefore the only
     /// thing between a request body and a path walk out of `chem_dir`.
-    pub async fn create_session(&self, scenario: Scenario) -> Result<SessionId, ApiError> {
+    ///
+    /// Returns the new session **alongside its id** rather than the id alone. Handing
+    /// back only an id would oblige the caller to look the session straight back up,
+    /// and that lookup can legitimately fail — the registry lock is released in
+    /// between — so a `POST /sessions` that had just succeeded could answer 404. A
+    /// race nothing in this slice can actually lose is still a race the type system
+    /// should not describe.
+    pub async fn create_session(
+        &self,
+        scenario: Scenario,
+    ) -> Result<(SessionId, Arc<Mutex<Session>>), ApiError> {
         // Always validate first, even for a `Scenario` that arrived as JSON rather
         // than through `parse_scenario`. `serde_json::from_str` does not call
         // `validate`, and `Scenario::chemistry_source` is documented to stay total on
@@ -123,16 +133,14 @@ impl AppState {
         let mut registry = self.registry.lock().await;
         let id = SessionId(registry.next_id);
         registry.next_id += 1;
-        registry.sessions.insert(
+        let session = Arc::new(Mutex::new(Session {
             id,
-            Arc::new(Mutex::new(Session {
-                id,
-                scenario,
-                pack,
-                latest: None,
-            })),
-        );
-        Ok(id)
+            scenario,
+            pack,
+            latest: None,
+        }));
+        registry.sessions.insert(id, Arc::clone(&session));
+        Ok((id, session))
     }
 
     /// The session with this id, or a 404-shaped error.

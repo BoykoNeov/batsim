@@ -598,16 +598,19 @@ what is on trial.
 The slice made one engine edit: `Pack::series()` and `Pack::parallel()`.
 
 The canary's rule offers "add a read-only accessor" as an honest fix, and this is that
-case, but the interesting part is *what forced it*. The obvious implementation of
-`GET /sessions/{id}/cells` reads the topology off the `PackConfig` the session was
-built from — no engine change needed. That is wrong the instant a snapshot is restored
-into the session, because the pack can then be a different shape than the config that
-describes it. The endpoint would keep answering, with the wrong number of cells.
+case. The justification wants stating carefully, though, because the tempting version
+of it does not survive contact with the rest of the slice: *"reading topology off the
+stored `PackConfig` goes stale the moment a snapshot is restored"* is true in the
+abstract and defused in practice by this slice's own topology check on restore. The two
+arguments partly cancel, and a note that leans on the cancelled one will mislead
+whoever reads it next.
 
-So the accessors are not a convenience; they are what makes "read every live fact from
-the pack, never from the stored scenario" implementable. Both numbers were already
-public API, incidentally — `CellIndexError` reports them — merely unreachable without
-provoking an error first.
+What actually forces the accessors is smaller and holds: **the topology check itself
+needs `restored.series()`**, which exists nowhere else — a `Snapshot`'s inner pack is
+private. Having paid for that, reading the live topology from the pack everywhere is
+single-source-of-truth rather than a second mechanism. Both numbers were already public
+API, incidentally — `CellIndexError` reports them — merely unreachable without provoking
+an error first.
 
 ### Open question resolved: shared map, and it is two levels deep
 
@@ -645,6 +648,30 @@ live fact (`series`, `parallel`, `sim_time_s`, the cell array) is read from the 
 and the stored `Scenario` is labelled **provenance** in its own doc comment and in the
 JSON field's meaning. So the residual cost of the gap is one misleading provenance
 field, not an endpoint that lies.
+
+Two more things a review caught that the slice would otherwise have shipped without,
+both worth recording as shapes rather than as incidents:
+
+- **The inline-chemistry path had no coverage at all.** Both shipped scenarios name a
+  chemistry *id*, so nothing exercised `chemistry_toml` — and it is the harder path,
+  because an arbitrary multi-line TOML document has to survive being re-serialised as a
+  JSON *string* by `GET /sessions/{id}` and parsed back. It does, and
+  `a_scenario_can_inline_its_chemistry_and_survive_the_round_trip` now says so with
+  `chem_dir` pointed at a directory that does not exist, so a silent fallback to the
+  filesystem would fail it rather than hide in it. The general shape: **shipped example
+  files decide what gets tested**, and two examples that agree on a choice leave the
+  other branch invisible.
+- **`create_session` returns the session, not just its id.** The handler used to look
+  the session straight back up, and the registry lock is released in between — so a
+  `POST /sessions` that had just succeeded could answer 404. Nothing in this slice can
+  actually lose that race; the point is that a race the type system describes will
+  eventually be lost by slice C, which does have concurrent deletes.
+
+`ErrorCode`'s wire spellings are now pinned variant-by-variant
+(`error_codes_have_pinned_wire_spellings`). The variant names are `snake_case`d by a
+serde attribute, so a rename moves the string a client matches on while every
+assertion written against the Rust name keeps passing. Slice C's `Error` event reuses
+this vocabulary, which is what makes it worth a test rather than a doc comment.
 
 `latest_telemetry` is cleared by a restore for the same reason, and is `null` on a
 session that has never stepped. The engine's zero-length-step contract would have let

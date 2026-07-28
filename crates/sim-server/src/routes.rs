@@ -177,9 +177,9 @@ async fn create_session(
     body: String,
 ) -> Result<(StatusCode, Json<SessionCreated>), ApiError> {
     let scenario = parse_body_as_scenario(&headers, &body)?;
-    let id = state.create_session(scenario).await?;
-
-    let session = state.session(id).await?;
+    // The session comes back with the id, so this handler never looks up something it
+    // just created — see `AppState::create_session`.
+    let (id, session) = state.create_session(scenario).await?;
     let session = session.lock().await;
     tracing::info!(%id, name = %session.scenario.meta.name, "session created");
 
