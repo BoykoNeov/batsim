@@ -1,6 +1,12 @@
 # Rust build output
 /target
 
+# The wasm bundle is a build artifact, not source: `wasm-pack build crates/sim-wasm
+# --target web --out-dir ../../web/pkg` regenerates it, and the README says so.
+# (wasm-pack also drops its own `pkg/.gitignore`; this entry is here so the rule is
+# visible in the repo's own file rather than only in generated output.)
+/web/pkg
+
 # Backup / editor files
 **/*.rs.bk
 *.pdb

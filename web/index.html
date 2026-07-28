@@ -1,0 +1,207 @@
+<!doctype html>
+<!--
+  batsim — the browser pedagogy client.
+
+  This page runs the simulation *in the tab*: `sim-wasm` is the same `sim-core` the
+  server and the tests use, compiled to WebAssembly. Moving a control changes the next
+  physics step with no network in between. The server-over-WebSocket mode in the
+  sidebar drives the identical engine through `sim-server` instead, so the two paths
+  can be compared — and so the protocol keeps a live client.
+
+  Zero dependencies on purpose. No CDN, no charting library, no build step for the JS.
+  The plotting is a few hundred lines of canvas in app.js. A student should be able to
+  read the whole client.
+
+  It needs a wasm bundle that is not committed:
+      wasm-pack build crates/sim-wasm --target web --out-dir ../../web/pkg
+  and a server to load it from (a wasm module cannot be fetched from file://):
+      cargo run -p sim-server      ->  http://127.0.0.1:8080/app/
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>batsim — battery pack simulator</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1c1f26;
+    --line: #2b303b;
+    --ink: #e6e9ef;
+    --dim: #939bab;
+    --accent: #5ac8fa;
+    --warn: #ffb454;
+    --bad: #ff6b6b;
+    --ok: #7ddc7d;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: 100%;
+  }
+  #sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    padding: 14px;
+    overflow-y: auto;
+  }
+  #main { padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+
+  h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .04em; }
+  h1 small { color: var(--dim); font-weight: normal; letter-spacing: 0; }
+  h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--dim); margin: 18px 0 6px; border-bottom: 1px solid var(--line);
+    padding-bottom: 4px;
+  }
+  label { display: block; margin: 8px 0 2px; color: var(--dim); font-size: 11px; }
+  select, input[type=number], input[type=text], button, textarea {
+    width: 100%; background: #10131a; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px;
+    font: inherit;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 6px; }
+  .row > * { flex: 1; }
+  .check { display: flex; align-items: center; gap: 7px; margin: 9px 0; color: var(--ink); }
+  .check input { width: auto; accent-color: var(--accent); }
+
+  #banner {
+    display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 4px;
+    border: 1px solid var(--bad); background: #2a1a1c; color: #ffd7d7;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  #banner.show { display: block; }
+  #banner.info { border-color: var(--warn); background: #2a2318; color: #ffe6c2; }
+
+  .readouts {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px;
+  }
+  .readout {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 7px 9px;
+  }
+  .readout .k { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
+  .readout .v { font-size: 16px; }
+  .readout .v.none { color: var(--dim); font-size: 13px; font-style: italic; }
+
+  #flags { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; }
+  .flag {
+    padding: 2px 7px; border-radius: 3px; font-size: 11px;
+    background: #3a2e18; color: var(--warn); border: 1px solid #6a5424;
+  }
+  .flag.severe { background: #3a1c1c; color: var(--bad); border-color: #6f2b2b; }
+  .flag.none { background: transparent; border-color: var(--line); color: var(--dim); }
+
+  canvas { display: block; width: 100%; background: var(--panel);
+           border: 1px solid var(--line); border-radius: 4px; }
+  .note { color: var(--dim); font-size: 11px; margin-top: 6px; }
+  code { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>batsim <small id="versions"></small></h1>
+  <div class="note">The engine runs in this tab. Everything below feeds the next step.</div>
+
+  <h2>Scenario</h2>
+  <select id="scenario">
+    <option value="cc_discharge_lfp.toml">cc_discharge_lfp — 1S1P, nothing on</option>
+    <option value="soft_short_under_a_lying_sensor.toml" selected>soft_short_under_a_lying_sensor — 4S2P, BMS, faults</option>
+  </select>
+  <div class="row" style="margin-top:8px">
+    <button id="load">Load</button>
+    <button id="reset">Restart</button>
+  </div>
+  <div class="note" id="scenario-note"></div>
+
+  <h2>Demand</h2>
+  <select id="demand-mode">
+    <option value="Rest">Rest — open circuit</option>
+    <option value="Current" selected>Current [A] — positive discharges</option>
+    <option value="Power">Power [W] — positive discharges</option>
+    <option value="Voltage">Voltage [V] — hold terminal</option>
+  </select>
+  <label for="demand-value">value</label>
+  <input type="number" id="demand-value" value="2" step="0.1">
+
+  <h2>Environment</h2>
+  <label for="ambient">ambient <span id="ambient-label">25.0 °C</span></label>
+  <input type="range" id="ambient" min="-30" max="60" step="0.5" value="25">
+
+  <h2>Run</h2>
+  <label for="dt">timestep dt [s] — fixed, never the frame rate</label>
+  <input type="number" id="dt" value="0.5" min="0.001" step="0.1">
+  <label for="speed">speed <span id="speed-label">10×</span> real time</label>
+  <input type="range" id="speed" min="0" max="4" step="0.02" value="1">
+  <div class="row" style="margin-top:8px">
+    <button id="run">Run</button>
+    <button id="stepone">Step 1</button>
+  </div>
+
+  <h2>Pack</h2>
+  <div class="check">
+    <input type="checkbox" id="bms" checked>
+    <label for="bms" style="margin:0">BMS enabled</label>
+  </div>
+  <div class="note" id="bms-note"></div>
+
+  <h2>Snapshot</h2>
+  <div class="row">
+    <button id="save">Save</button>
+    <button id="restore">Restore</button>
+  </div>
+  <input type="file" id="restore-file" accept=".json" hidden>
+  <div class="note">Exact: the wasm build carries serde_json's
+    <code>float_roundtrip</code>, so a saved run resumes bit-identically.</div>
+
+  <h2>Transport</h2>
+  <div class="check">
+    <input type="checkbox" id="use-socket">
+    <label for="use-socket" style="margin:0">step over the server's WebSocket</label>
+  </div>
+  <div class="note" id="socket-note">Off: the engine runs here, in this tab. On: the
+    same scenario is driven through <code>sim-server</code> — same engine, one socket
+    round trip per animation frame.</div>
+</div>
+
+<div id="main">
+  <div id="banner"></div>
+
+  <div class="readouts" id="readouts"></div>
+
+  <div>
+    <div id="flags"></div>
+  </div>
+
+  <!--
+    Pack terminal voltage and cell voltage get separate panels on purpose. A 4S pack
+    sits near 13 V while its cells sit near 3.3 V, and one shared axis squashes both
+    into flat lines at opposite edges — the cell spread, which is where the imbalance
+    physics shows, becomes invisible at exactly the moment it matters.
+  -->
+  <canvas id="plot-v" height="150"></canvas>
+  <canvas id="plot-cv" height="150"></canvas>
+  <canvas id="plot-i" height="150"></canvas>
+  <canvas id="plot-soc" height="150"></canvas>
+  <canvas id="plot-t" height="150"></canvas>
+
+  <div class="note">
+    Ground truth is what the engine knows; <code>soc_bms</code> is what the BMS
+    estimates from its own imperfect sensors. The gap between them is a feature to
+    look at, not a bug.
+  </div>
+</div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

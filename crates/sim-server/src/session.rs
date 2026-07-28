@@ -130,7 +130,37 @@ struct Registry {
 pub struct AppState {
     registry: Arc<Mutex<Registry>>,
     chem_dir: Arc<PathBuf>,
+    static_dirs: Arc<StaticDirs>,
     limits: Limits,
+}
+
+/// The two directories this server hands out verbatim, beside the chemistry directory
+/// it already had.
+///
+/// All three exist for one client: the browser page has no filesystem, so every piece
+/// of TOML it feeds to `sim-wasm` — the scenario and the chemistry — has to arrive over
+/// HTTP. That is the same "JS fetches the text" resolution
+/// `docs/plans/phase-4-server-wasm.md` settled on for `sim-wasm`, seen from the serving
+/// end.
+///
+/// A missing directory is **not** an error. On a fresh clone `web/pkg/` does not exist
+/// until someone runs `wasm-pack`, and a server that refused to start over it would
+/// make the REST and WebSocket surfaces hostage to a build step they do not use.
+#[derive(Clone, Debug)]
+pub struct StaticDirs {
+    /// The demo page and, under `pkg/`, the wasm bundle. Served at `/app`.
+    pub web: PathBuf,
+    /// Scenario TOML the page offers in its picker. Served at `/scenarios`.
+    pub scenarios: PathBuf,
+}
+
+impl Default for StaticDirs {
+    fn default() -> Self {
+        Self {
+            web: PathBuf::from("web"),
+            scenarios: PathBuf::from("scenarios"),
+        }
+    }
 }
 
 impl AppState {
@@ -141,7 +171,21 @@ impl AppState {
         Self {
             registry: Arc::new(Mutex::new(Registry::default())),
             chem_dir: Arc::new(chem_dir.into()),
+            static_dirs: Arc::new(StaticDirs::default()),
             limits: Limits::default(),
+        }
+    }
+
+    /// The same, with the static directories set explicitly.
+    ///
+    /// Consuming rather than a setter so the binary can compose it onto
+    /// [`Self::new`] in one expression, and so no existing caller — every test in this
+    /// crate — has to learn about directories it does not serve from.
+    #[must_use]
+    pub fn with_static_dirs(self, dirs: StaticDirs) -> Self {
+        Self {
+            static_dirs: Arc::new(dirs),
+            ..self
         }
     }
 
@@ -162,6 +206,12 @@ impl AppState {
     #[must_use]
     pub fn chem_dir(&self) -> &Path {
         &self.chem_dir
+    }
+
+    /// The directories served as static files.
+    #[must_use]
+    pub fn static_dirs(&self) -> &StaticDirs {
+        &self.static_dirs
     }
 
     /// The per-message stepping caps this server enforces.

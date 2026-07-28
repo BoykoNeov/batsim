@@ -5,15 +5,24 @@
 //! the WebSocket protocol's job (slice C), because stepping is where `dt`, batching
 //! and the one-writer rule live, and none of those survive contact with a stateless
 //! request/response cycle.
+//!
+//! # The static routes are not decoration
+//! `/app`, `/chemistries` and `/scenarios` exist because the browser page has no
+//! filesystem. It fetches scenario TOML and chemistry TOML as **text** and hands them
+//! to `sim-wasm`, which is the resolution `docs/plans/phase-4-server-wasm.md` chose for
+//! that adapter; and a wasm module cannot be loaded from `file://` at all. So the page
+//! is a client of these three routes even though it runs the engine itself and never
+//! touches the session API.
 
 use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::Response;
+use axum::response::{Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
 use sim_core::{CellView, Pack, Snapshot, Telemetry, SNAPSHOT_VERSION};
 use sim_data::{parse_scenario, Scenario};
+use tower_http::services::ServeDir;
 
 use crate::error::{ApiError, ErrorCode};
 use crate::protocol::{Limits, PackFacts};
@@ -22,6 +31,7 @@ use crate::API_VERSION;
 
 /// Every route this server serves.
 pub fn router(state: AppState) -> Router {
+    let dirs = state.static_dirs().clone();
     Router::new()
         .route("/", get(api_root))
         .route("/sessions", post(create_session).get(list_sessions))
@@ -32,6 +42,19 @@ pub fn router(state: AppState) -> Router {
             get(get_snapshot).post(restore_snapshot),
         )
         .route("/sessions/{id}/ws", get(attach_socket))
+        // `/app` with no trailing slash is a separate route rather than something
+        // `ServeDir` sorts out: under `nest_service` the inner path for `/app` is the
+        // empty string, which is not a directory and not a file, so it 404s. Every
+        // *relative* URL in the page (`./app.js`, `./pkg/…`) also resolves against the
+        // wrong base without the slash, so this redirect is load-bearing twice over.
+        .route("/app", get(|| async { Redirect::permanent("/app/") }))
+        .nest_service("/app/", ServeDir::new(&dirs.web))
+        // The page fetches chemistry and scenario TOML as text — it has no filesystem,
+        // and `sim-wasm` takes both as strings for exactly that reason. `ServeDir`
+        // resolves `..` before touching the disk, so these expose the two directories
+        // and nothing above them.
+        .nest_service("/chemistries", ServeDir::new(state.chem_dir()))
+        .nest_service("/scenarios", ServeDir::new(&dirs.scenarios))
         .with_state(state)
 }
 
@@ -55,13 +78,23 @@ struct ApiRoot {
     /// Live session count.
     sessions: usize,
     /// Directory chemistry ids are resolved against, as given on the command line.
+    /// Also served verbatim at `/chemistries`, because the browser page has no
+    /// filesystem and fetches parameter sets as text.
     chem_dir: String,
+    /// Directory scenario TOML is served from, at `/scenarios`.
+    scenario_dir: String,
+    /// Where the browser demo lives. It may 404 — see [`ApiRoot::web_note`].
+    app: &'static str,
+    /// Why `/app` can 404 on a working server, said in-band because the person who
+    /// hits it is holding a browser, not this source file.
+    web_note: &'static str,
     /// The per-message stepping caps the WebSocket enforces. Reported here as well as
     /// in the hello frame so a client can size its batches before it connects.
     limits: Limits,
 }
 
 async fn api_root(State(state): State<AppState>) -> Json<ApiRoot> {
+    let dirs = state.static_dirs();
     Json(ApiRoot {
         api_version: API_VERSION,
         snapshot_version: SNAPSHOT_VERSION,
@@ -69,6 +102,11 @@ async fn api_root(State(state): State<AppState>) -> Json<ApiRoot> {
                engine's saved pack layout. They move independently.",
         sessions: state.session_count().await,
         chem_dir: state.chem_dir().display().to_string(),
+        scenario_dir: dirs.scenarios.display().to_string(),
+        app: "/app/",
+        web_note: "the demo page needs a wasm bundle that is not committed; if /app/ \
+                   is blank or 404s, run: wasm-pack build crates/sim-wasm --target web \
+                   --out-dir ../../web/pkg",
         limits: state.limits(),
     })
 }

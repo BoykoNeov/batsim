@@ -28,7 +28,7 @@ pub mod ws;
 
 pub use error::{ApiError, ErrorCode};
 pub use protocol::{Command, Event, Frame, Limits, PackFacts, Role, StepCommand};
-pub use session::{AppState, Session, SessionId};
+pub use session::{AppState, Session, SessionId, StaticDirs};
 
 use axum::Router;
 use tokio::net::TcpListener;

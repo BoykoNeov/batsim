@@ -31,6 +31,12 @@ thiserror = { workspace = true }
 # telemetry while still being watched for a close), which needs `StreamExt::split`.
 # The writer's socket deliberately does not — see `ws::writer_loop`.
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+# Slice B listed this and then refused it, because "a `ServeDir` over a nonexistent
+# directory is a dependency doing nothing". Slice D is the user it was waiting for: a
+# wasm module cannot be loaded from `file://` (CORS), so the demo page needs *a*
+# server, and making it this one means `cargo run -p sim-server` plus a browser is the
+# whole setup. `fs` only — no compression, no tracing layer, no cors.
+tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Binaries may use anyhow (CLAUDE.md); the library half returns typed errors.

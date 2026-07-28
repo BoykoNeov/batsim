@@ -4,10 +4,16 @@ members = [
     "crates/sim-core",
     "crates/sim-data",
     "crates/sim-server",
+    # A normal workspace member, not an excluded one: `wasm-bindgen`-dependent crates
+    # build for the host target fine, so `sim-wasm` stays inside `cargo test
+    # --workspace` and `clippy --all-targets` and cannot rot. What is *not* in the
+    # gates is `wasm-pack build` — that needs a toolchain the Rust test run has no
+    # business invoking, and its output is an uncommitted build artifact.
+    "crates/sim-wasm",
 ]
 
-# The remaining adapter crates (sim-wasm, sim-godot, sim-py) are added in their
-# respective phases — see CLAUDE.md "Phased build plan".
+# The remaining adapter crates (sim-godot, sim-py) are added in their respective
+# phases — see CLAUDE.md "Phased build plan".
 
 [workspace.package]
 edition = "2021"

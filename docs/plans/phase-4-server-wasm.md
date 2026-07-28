@@ -1,6 +1,7 @@
 # Phase 4 — headless server + browser demo
 
-**Status: slices A, B and C landed — the phase's exit criterion is met.** This file is written before the work so the
+**Status: slices A, B, C and D landed — the phase's exit criterion is met; slice E (wrap-up) is
+what remains.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` and `phase-3-aging-faults.md` grew.
 
@@ -19,7 +20,7 @@ purposes. That framing is load-bearing: see "The `SNAPSHOT_VERSION` canary".
 | A | wire contract, no new crates: serde on `Telemetry`/`Demand`/`Env`/`CellView`, `Scenario` + `parse_scenario` in `sim-data`, boundary validation helpers | **landed** (v9 — no bump, as designed) |
 | B | `sim-server` skeleton: axum, session store, REST (create from scenario, inspect, snapshot GET/POST, delete), chemistry resolution | **landed** (v9 — no bump, as designed) |
 | C | WebSocket: command/event protocol, explicit-`dt` batch stepping, report decimation, the one-writer rule. **Carries the exit criterion.** | **landed** (v9 — no bump, and no engine edit at all) |
-| D | `sim-wasm` + the browser page: `wasm-bindgen` wrapper, chemistry TOML text handed in from JS, hand-rolled canvas plotting, zero external JS deps | planned |
+| D | `sim-wasm` + the browser page: `wasm-bindgen` wrapper, chemistry TOML text handed in from JS, hand-rolled canvas plotting, zero external JS deps. Also — not in this line when it was written — `tower-http` and the static routes in `sim-server`, and the socket toggle | **landed** (v9 — no bump, and no engine edit at all) |
 | E | wrap-up: README status and run instructions, the example external script, a transport latency measurement, `sim-core` perf re-measure | planned |
 
 Each slice keeps `cargo test --workspace` and
@@ -977,6 +978,232 @@ coverage of it.
 
 ---
 
+## Learned while building — slice D (`sim-wasm` + browser page)
+
+### The canary held, and this time it cost nothing either
+
+`SNAPSHOT_VERSION` stayed at 9 and `sim-core`'s bincode replay test passed untouched.
+Like slice C, **slice D changed no engine file at all** — `git diff --stat -- crates/sim-core`
+is empty. `sim-data` is untouched too. Everything the browser needs was already public:
+`parse_scenario`, `parse_chemistry`, `Scenario::build_pack`, and the accessors slice B
+bought.
+
+The one edit outside the new crate is in `sim-server`, and it is the one slice B
+deferred on purpose: `tower-http` and three `ServeDir` routes. Slice B's note said "it
+arrives with its user", and this is the user.
+
+### The slice was four deliverables, not two, and the third is the one that hides
+
+The plan's slice-D line names the wasm wrapper and the page. Two more are real work and
+are only findable by reading the *notes* around the slice list:
+
+- **`tower-http` + the static routes in `sim-server`.** A `sim-server` edit inside a
+  slice titled `sim-wasm`, which is exactly why it is easy to drop — and without it the
+  page cannot load at all, because a wasm module cannot be fetched from `file://`.
+- **The socket toggle in the page.** It sits under "Open questions" phrased as a
+  question and is actually a decision: *"Keep the socket path in the page anyway, behind
+  a toggle, so the server protocol has a live client and does not rot."*
+
+Worth stating as a shape: **when a plan's prose and its slice table disagree about
+scope, the prose wins** — it is where the reasoning was written down.
+
+There is a third route the plan did not anticipate at all. `/chemistries` and
+`/scenarios` are served as static text because the plan's own resolution for `sim-wasm`
+("there is no filesystem; JS fetches the TOML and passes the *text*") has a serving end
+that nobody wrote down. `--web-dir` and `--scenario-dir` join `--chem-dir`; all three
+default to the repo layout, so `cargo run -p sim-server` from the workspace root is
+still the whole setup.
+
+### `SimEngine` is separate from `Sim` because the gates run on the host
+
+`sim-wasm` stays inside `cargo test --workspace` and `clippy --all-targets`, which means
+it is compiled **for the host target**. On the host a `JsError` is a stub for a browser
+type that does not exist. A test that went through the `#[wasm_bindgen]` façade would be
+testing the stub.
+
+So every decision lives in `engine::SimEngine` — typed errors, `Result` everywhere, no
+JS type in any signature — and `Sim` is sixteen methods of `?`. All sixteen tests are on
+`SimEngine`. That split is what makes "this crate is in the gates" mean something rather
+than merely compile.
+
+Two `wasm-bindgen` facts found by hitting them:
+
+- **`#[wasm_bindgen]` refuses to export a `const`** (it is only meaningful there for a
+  `typescript_custom_section`). `WASM_API_VERSION` stays Rust-side with a
+  `wasm_api_version()` accessor.
+- **`wasm-bindgen` already provides `impl<E: Error> From<E> for JsError`**, which is
+  `JsError::new(&e.to_string())`. Writing that impl by hand is a coherence error, not an
+  improvement — and the blanket one is what makes a browser console show `EngineError`'s
+  own words.
+
+### The duplication is deliberate, and named so it cannot drift quietly
+
+The caps (`MAX_STEPS_PER_CALL`, `MAX_FRAMES_PER_CALL`), the finiteness checks, and
+`Frame`'s shape mirror `sim_server::protocol`. Sharing them would mean depending on
+`sim-server`, which drags `axum` and `tokio` into a crate whose whole point is running in
+a browser. So they are copied, with the module doc saying where the original is and what
+to do if it happens again: **a third client is the trigger to lift
+`Limits`/`StepCommand`/`Frame` into a `sim-protocol` crate**, not to add a third copy.
+
+`Frame` being field-identical is not incidental — it is why the page plots frames from
+the embedded engine and frames from the socket with the same code, and therefore why the
+two paths cannot quietly disagree about what a sample is.
+
+### Slice C predicted this caller exactly, and it was right
+
+Slice C found that a non-finite number is unreachable over the socket — JSON has no
+literal for `NaN`, `serde_json` refuses `1e400` — and kept `validate_rejects_every_non_finite_field`
+anyway, on the grounds that "slice D's wasm client will construct one in Rust and call
+`validate` on it with no JSON parser in between".
+
+That is this crate. `dt` and the step counts cross the wasm boundary as raw numbers, and
+`Number.NaN` needs no literal to exist. `a_non_finite_dt_reaches_validation_because_nothing_parses_it`
+is the test that a socket cannot write.
+
+### The float guard fails on the first resumed step, again
+
+Dropping `float_roundtrip` from the workspace manifest fails
+`a_snapshot_through_json_resumes_bit_identically`, at **step 1** after the restore, on
+`v_cell_max`:
+
+```text
+step 1 (t = 451.5 s) diverged after the restore
+  left:  …4614572410408579126…
+  right: …4614572410408579127…
+```
+
+Same immediacy slice B measured, for the same reason: the mis-rounded values are the
+per-cell factors every step multiplies through, so there is no incubation period. The
+test carries slice B's `longest_digit_run(json) >= 15` self-check, because the failure
+mode of a round-trip test is silence.
+
+### The BMS toggle is a comparison of two runs, and it found a hole
+
+A page control that says "BMS enabled" invites the reading "flip it mid-run". There is no
+honest way to grow a BMS onto a pack that has been running without one, so `restart`
+**rebuilds from the scenario** and the run returns to t = 0. The doc comment says why
+rather than apologising: contrasting protected and unprotected is a comparison of two
+runs, which is what makes it a teaching case.
+
+Then the first run of the test failed, and this is the find:
+
+```text
+rebuild without the BMS: Data(Fault(NoSuchSensor { sensor: GroupVoltage(1) }))
+```
+
+**`scenarios/soft_short_under_a_lying_sensor.toml` fault-injects a sensor, and sensors
+belong to the BMS.** Remove the BMS and the scenario's own second fault has nothing to
+land on. Three options, and the middle one is right:
+
+- *fail* — makes the toggle unusable on precisely the scenario it exists to illuminate;
+- *drop the sensor faults and count them* — `PackFacts::sensor_faults_dropped`, surfaced
+  by the page as "1 sensor fault(s) dropped: no BMS to sense them";
+- *drop them silently* — lets a student compare two runs that differ in more ways than
+  the label claims.
+
+The filter applies **only** when a BMS is being removed. A scenario that ships no BMS and
+a sensor fault is an authoring error and still fails loudly at construction
+(`a_sensor_fault_with_no_bms_to_sense_is_an_authoring_error`).
+
+The contrast test itself needed the same kind of correction. The obvious assertion —
+"protected stays under `v_max`, unprotected sails past it" — is wrong twice. Protected
+peaks at **3.6604 V against a 3.65 V limit**, because protection acts on a reading taken
+at the start of a step and may overshoot by one step (a phase-2 decision, owned); and
+unprotected only reaches 3.6789 V, because SOC clamps at 1.0 and the OCV table tops out
+there, so an unprotected overcharge parks at `OCV(1) + I·R` rather than climbing.
+Asserting a dramatic overshoot would have been asserting physics v1 does not model. The
+discriminator that actually holds is **whether the pack got what it was asked for**:
+unprotected, the demand passes through bit-identically on every step; protected, the BMS
+takes it to zero.
+
+The toggle is disabled in socket mode, with the reason on screen. The server builds the
+pack the scenario asked for, and a page that rewrote someone's TOML to fake a variant
+would be inventing a scenario the user never wrote.
+
+### What running it found that reading it could not
+
+Slice B's lesson was that starting the binary and running the documented command takes
+two minutes and finds what no amount of reasoning does. Slice D is the same story four
+more times. All four were found by loading the page in a browser and watching it.
+
+1. **The page loaded into a row of dashes and stayed there** until Run was pressed — and
+   worse, it did the same *after a successful restore*, which is the one impression a
+   restore must not give. The fix is the engine feature that already existed for it: a
+   zero-length step. `dt = 0, n_steps = 1` reads telemetry without advancing, which the
+   plan's validation section explicitly allowed "because the browser page wants it on
+   connect". The page was not using it. It now reads on load, after a restart, and after
+   a restore.
+2. **Pack terminal voltage and cell voltage cannot share an axis.** A 4S pack sits near
+   13 V while its cells sit near 3.3 V; one auto-scaled axis flattens both against
+   opposite edges and the cell *spread* — where the imbalance physics is — disappears at
+   the moment it matters. Two panels.
+3. **The legend ran off the right edge of the canvas**, and a canvas has no scrollbar to
+   reveal what fell off it. Measure the legend and right-align it against the plot edge,
+   clamped to the plot area so a long title cannot push it out.
+4. **Fixed 2-decimal y labels repeat themselves** on a cell-voltage panel spanning 12 mV:
+   two ticks 5 mV apart both render `3.23`. Decimals now come from the tick step. And a
+   single sample has no time span, so ticking it anyway printed `0s` six times — a
+   degenerate axis draws one label.
+
+What the page shows when it does work is the scenario's whole point, visible without
+reading a number: the pack terminal curve **steps down at t = 600 s** where the short
+fires, the cell-voltage minimum peels away from the maximum from that instant, the
+internal-short trace steps from 0 to 0.65 A, one cell runs ~2 °C hotter than the rest,
+and the BMS estimate stays cheerfully above ground truth the whole way — 26.4 % true
+against 33.0 % estimated by t = 75 min, with **no flags raised at any point**.
+
+### Verifying in a browser needed a throwaway harness, and that is worth knowing
+
+The automation window is occluded, so `document.visibilityState` is `hidden` and Chrome
+**parks `requestAnimationFrame`**. The run loop is a rAF accumulator, so nothing steps.
+
+Re-importing `app.js` under a fresh URL with a shimmed rAF *works* but leaves two live
+module instances fighting over the same canvases — and the second instance appends its
+own readout tiles, so the DOM lies about which numbers are current. Ten minutes went into
+diagnosing a symptom that was entirely an artifact of the workaround. The clean approach
+is a temporary `web/_probe.html` that installs the shim in a `<script>` **before**
+`app.js` runs, and is deleted afterwards.
+
+Not a page bug, and no code changed for it: a backgrounded tab pausing the simulation is
+correct, and the accumulator's 0.25 s clamp means returning to the tab does not
+fast-forward. But it is the kind of thing that costs an hour if it is rediscovered from
+scratch.
+
+### Resolved while building
+
+- **The chemistry fetch is a two-step dance, and Rust owns the first step.**
+  `chemistry_id_of(scenario_toml)` parses the scenario and tells JS which file to fetch
+  (or `undefined` for an inlined one), so no TOML parsing exists in the page at all. The
+  id is already charset-checked by `parse_scenario`, which is what makes interpolating it
+  into a URL safe without escaping.
+- **`/app` needs its own redirect to `/app/`.** Under `nest_service` the inner path for
+  `/app` is the empty string — neither file nor directory — so it 404s; and every
+  relative URL in the page resolves against the wrong base without the slash. Load-bearing
+  twice, pinned by test.
+- **A missing `web/pkg` must not take the API with it.** The bundle is a build artifact
+  and is not committed, so a fresh clone is the default state. `/app/` 404s, everything
+  else works, the binary warns at startup with the command to run, and `GET /` carries the
+  same command in-band — the person who hits it is holding a browser, not this file.
+- **The socket backend queues commands rather than rejecting concurrent ones.** Dragging
+  the ambient slider during a batch would otherwise race the outstanding `Step`. The
+  server's rule is that commands are never dropped and never reordered; the client should
+  not be the thing that breaks it.
+- **A `Float64Array` fast path was not built**, per the plan. Nothing measured says the
+  JSON crossing costs anything at a few hundred plotted pixels, and the plan says not to
+  pre-optimize the boundary.
+
+### What is deliberately not here
+
+- **No `console_error_panic_hook`.** A dependency for debugging convenience, on a crate
+  whose whole public surface returns `Result`.
+- **No per-batch `env` override on the wasm surface**, unlike the server's `Step`. A page
+  owns its environment as a control; an override it would have to re-send every animation
+  frame is a footgun with no user.
+- **No README changes.** Slice E owns the README, the example script, and the latency
+  measurement.
+
+---
+
 ## Open questions (decide when the slice lands, not now)
 
 - ~~**Session task vs shared map.**~~ Resolved in slice B: shared map, two levels of
@@ -985,6 +1212,10 @@ coverage of it.
   100S10P will be ~600 KB, which is fine for REST and poor for a WebSocket frame. If it
   bites, the answer is `Content-Encoding` on the REST route, not a new binary format on
   the socket.
-- **Whether the browser page needs the server at all after slice D.** It does not, for
-  physics — it embeds the engine. Keep the socket path in the page anyway, behind a toggle,
-  so the server protocol has a live client and does not rot.
+- ~~**Whether the browser page needs the server at all after slice D.**~~ Resolved in
+  slice D, and the answer is *both halves are true*. It does not need it for physics — it
+  embeds the engine, and the socket toggle is off by default. But it needs the server to
+  exist at all: a wasm module cannot be fetched from `file://`, and the page has no
+  filesystem, so the scenario and chemistry TOML it hands to `sim-wasm` arrive over HTTP.
+  The socket path is kept behind the toggle as planned, and it exercises the whole
+  protocol — session create, hello, `Step`, `SetEnv`, `Snapshot`, `Restore`, delete.
