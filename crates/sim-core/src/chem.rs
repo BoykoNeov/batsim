@@ -53,6 +53,23 @@ pub struct ChemistryParams {
     /// silence there is indistinguishable from coefficients that happen to be zero.
     #[serde(default)]
     pub aging: Option<AgingParams>,
+    /// Single-particle-model parameters (`[spm]`), or `None` for a chemistry that
+    /// only describes an equivalent circuit.
+    ///
+    /// `None` is the common case and costs nothing: the ECM sections above fully
+    /// describe a cell, and every chemistry shipped before Phase 6 has no `[spm]`
+    /// block. Like [`Self::aging`] and unlike [`Self::safety`], the absence is
+    /// **diagnosable** — a [`crate::PackConfig`] that selects a porous-electrode
+    /// model against a chemistry that cannot parameterize one is a build error, not
+    /// a silent fallback to the equivalent circuit. That check belongs with the
+    /// config field that can request the model, which this slice does not add; see
+    /// `docs/plans/phase-6-porous-electrodes.md`.
+    ///
+    /// A chemistry may carry **both** an ECM description and this one. That is the
+    /// point rather than a redundancy: running the same cell through both models and
+    /// watching where the cheap one goes wrong is the pedagogy this phase exists for.
+    #[serde(default)]
+    pub spm: Option<SpmParams>,
     /// Emergent-failure thresholds (`[safety]`), or `None` for a chemistry that
     /// carries no safety data.
     ///
@@ -149,6 +166,162 @@ pub struct SafetyParams {
     /// draining and heating the cell over hours rather than instantly.
     #[serde(default)]
     pub plating_short_ohms: f64,
+}
+
+/// Single-particle-model parameters (`[spm]`).
+///
+/// Everything a porous-electrode cell needs that an equivalent circuit does not: two
+/// half-cell electrodes, the geometry that turns a current into a flux at a particle
+/// surface, and the electrolyte concentration the kinetics see.
+///
+/// # Why these are extracted rather than fitted
+/// The ECM tables above are *fitted* to a reference model's output, which is why they
+/// carry an interpolation error and a tolerance. These are **read out of a published
+/// parameter set** — particle radii, diffusivities and volume fractions are the cell's
+/// physical identity, so each one has a literal citation instead of an
+/// order-of-magnitude apology. See `tools/reference/extract_spm.py`, which emits this
+/// whole block, and `CLAUDE.md`'s provenance rule.
+///
+/// # What is deliberately absent
+/// No electrolyte transport, no potential distribution through the electrode
+/// thickness. That is the single-particle approximation: one representative particle
+/// per electrode, a uniform reaction rate across it, and an electrolyte held at
+/// [`Self::c_e_mol_per_m3`]. A model that relaxes those is `Dfn`, which needs its own
+/// parameters and its own section.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SpmParams {
+    /// Reference temperature \[K\] for the Arrhenius corrections in
+    /// [`ElectrodeParams::reaction_ea_j_per_mol`] and
+    /// [`ElectrodeParams::diffusivity_ea_j_per_mol`]. Must be finite and `> 0`.
+    ///
+    /// This is the temperature the transport and kinetic values were *measured* at,
+    /// so the correction is exactly `1.0` there by construction.
+    pub t_ref_k: f64,
+    /// Electrolyte lithium concentration \[mol/m³\], held constant. Must be finite
+    /// and `> 0`.
+    ///
+    /// Constant because that *is* the single-particle approximation — the model has
+    /// no electrolyte transport to make it vary. It is not ignorable: it enters the
+    /// exchange-current density, so it sets how hard the kinetics push back.
+    pub c_e_mol_per_m3: f64,
+    /// Geometric electrode plate area \[m²\], shared by both electrodes. Must be
+    /// finite and `> 0`.
+    ///
+    /// Together with each electrode's thickness, volume fraction and particle radius
+    /// this gives the interfacial area the reaction current spreads over. Stored as
+    /// the geometry rather than as a precomputed area per volume so the numbers stay
+    /// the ones a parameter set actually publishes.
+    pub electrode_area_m2: f64,
+    /// Lumped ohmic resistance \[ohms\] outside the two electrode reactions —
+    /// current collectors, tabs, and contact. Must be finite and `>= 0`; `0` (the
+    /// default) means the model carries no series resistance at all.
+    ///
+    /// The single-particle model has no other ohmic term, so this is the only place a
+    /// terminal voltage loses volts to something that is not electrode kinetics or
+    /// diffusion. Its ECM sibling is the whole [`R0Table`].
+    #[serde(default)]
+    pub contact_resistance_ohm: f64,
+    /// The negative electrode (graphite in every set shipped here).
+    pub negative: ElectrodeParams,
+    /// The positive electrode.
+    pub positive: ElectrodeParams,
+}
+
+/// One half-cell electrode of a [`SpmParams`] (`[spm.negative]` / `[spm.positive]`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ElectrodeParams {
+    /// Representative particle radius \[m\]. Must be finite and `> 0`.
+    pub particle_radius_m: f64,
+    /// Solid-phase lithium diffusivity \[m²/s\] at [`SpmParams::t_ref_k`]. Must be
+    /// finite and `> 0`.
+    pub diffusivity_m2_per_s: f64,
+    /// Maximum lithium concentration in the solid \[mol/m³\] — the concentration at
+    /// stoichiometry 1. Must be finite and `> 0`.
+    pub c_max_mol_per_m3: f64,
+    /// Volume fraction of the electrode that is active material, in (0, 1\]. The
+    /// remainder is binder, conductive additive and pore space.
+    pub active_volume_fraction: f64,
+    /// Electrode coating thickness \[m\]. Must be finite and `> 0`.
+    pub thickness_m: f64,
+    /// Butler–Volmer reaction-rate coefficient
+    /// \[(A·m⁻²)·(m³·mol⁻¹)^1.5\] at [`SpmParams::t_ref_k`]. Must be finite and
+    /// `> 0`.
+    ///
+    /// Named `m_ref` rather than something unit-bearing because that is what the
+    /// literature and the parameter sets call it, and a traceable name is worth more
+    /// here than a conforming one — the compound unit does not fit in an identifier.
+    /// It is the amplitude of `i_0 = m_ref · c_e^0.5 · c_surf^0.5 · (c_max −
+    /// c_surf)^0.5`, so the exponents are baked into its units.
+    pub m_ref: f64,
+    /// Arrhenius activation energy \[J/mol\] for [`Self::m_ref`]. Must be finite and
+    /// `>= 0`; `0` (the default) means the kinetics are temperature-independent.
+    ///
+    /// Applied as `exp(Ea/R · (1/t_ref − 1/T))`, so a positive value makes a cold
+    /// cell's kinetics slower — which is most of why a cold cell is a worse battery.
+    #[serde(default)]
+    pub reaction_ea_j_per_mol: f64,
+    /// Arrhenius activation energy \[J/mol\] for [`Self::diffusivity_m2_per_s`],
+    /// same form as [`Self::reaction_ea_j_per_mol`]. Must be finite and `>= 0`; `0`
+    /// (the default) means diffusion is temperature-independent.
+    ///
+    /// Defaulting to zero is load-bearing rather than lazy. Chen2020 — the set the
+    /// shipped SPM chemistry is extracted from — fits solid diffusivity as a
+    /// *constant* at 298.15 K and publishes no activation energy for it, while it
+    /// does publish one for the kinetics. Filling this with a plausible number would
+    /// be precisely the unlabeled constant `CLAUDE.md` forbids, so the field exists,
+    /// the chemistry omits it, and the omission is documented in the file.
+    #[serde(default)]
+    pub diffusivity_ea_j_per_mol: f64,
+    /// Butler–Volmer charge-transfer coefficient, in (0, 1). Must be finite.
+    ///
+    /// `0.5` — symmetric kinetics — in every parameter set shipped here, which
+    /// collapses the Butler–Volmer equation to a `sinh`. It is a parameter anyway
+    /// because asymmetric sets exist and the model should not have to be edited to
+    /// read one.
+    pub charge_transfer_alpha: f64,
+    /// Stoichiometry at the cell's lower voltage cut-off, in \[0, 1\]. Must be
+    /// finite.
+    ///
+    /// Note "min"/"max" are ordered by *stoichiometry*, not by state of charge: the
+    /// negative electrode fills as the cell charges while the positive empties, so
+    /// [`Self::stoich_max`] is a full cell at the negative electrode and an empty one
+    /// at the positive. Together the two pairs are what map a lithium inventory onto
+    /// [`crate::Telemetry::soc_true`].
+    pub stoich_min: f64,
+    /// Stoichiometry at the cell's upper voltage cut-off, in \[0, 1\]. Must be finite
+    /// and `> stoich_min`.
+    pub stoich_max: f64,
+    /// Entropy coefficient `∂U/∂T` \[V/K\] of this electrode's open-circuit
+    /// potential. Must be finite; `0` (the default) disables this electrode's
+    /// contribution to reversible heat.
+    ///
+    /// The half-cell sibling of [`OcvTable::docv_dt_v_per_k`], and a scalar rather
+    /// than a table because the parameter sets publish it that way. Not
+    /// sign-constrained, for the same reason as its full-cell counterpart.
+    #[serde(default)]
+    pub docp_dt_v_per_k: f64,
+    /// Open-circuit potential of this electrode against lithium metal
+    /// (`[spm.*.ocp]`).
+    pub ocp: OcpTable,
+}
+
+/// Half-cell open-circuit potential as a function of stoichiometry (`[spm.*.ocp]`).
+///
+/// # This table runs downhill, and that is not a typo
+/// [`OcvTable`] is monotone **non-decreasing**: a fuller cell has a higher voltage.
+/// A half-cell OCP is monotone **non-increasing** in its own stoichiometry — adding
+/// lithium to either electrode *lowers* that electrode's potential against lithium
+/// metal. The full-cell voltage `U_p(y) − U_n(x)` still rises with state of charge
+/// because charging moves the two electrodes in opposite directions: `x` up, `y`
+/// down. So validating this table with [`OcvTable`]'s rule would reject a correct
+/// extraction, which is why the check is a separate one.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OcpTable {
+    /// Stoichiometry breakpoints, strictly ascending, in \[0, 1\].
+    pub stoich: Vec<f64>,
+    /// Potential at each breakpoint \[V\], monotone **non-increasing**, same length
+    /// as `stoich`.
+    pub volts: Vec<f64>,
 }
 
 /// Semi-empirical aging coefficients (`[aging]`).
@@ -611,8 +784,188 @@ impl ChemistryParams {
                 });
             }
         }
+
+        // --- Single-particle model (optional) ---
+        if let Some(spm) = &self.spm {
+            check_spm(spm)?;
+        }
         Ok(())
     }
+}
+
+/// Validate a `[spm]` block. Split out of [`ChemistryParams::validate`] because it
+/// checks two structurally identical electrodes and would otherwise be written twice.
+fn check_spm(spm: &SpmParams) -> Result<(), ChemistryError> {
+    let positive: [(&'static str, f64); 3] = [
+        ("spm.t_ref_k", spm.t_ref_k),
+        ("spm.c_e_mol_per_m3", spm.c_e_mol_per_m3),
+        ("spm.electrode_area_m2", spm.electrode_area_m2),
+    ];
+    for (what, value) in positive {
+        if !is_positive(value) || !value.is_finite() {
+            return Err(ChemistryError::NotPositive { what, value });
+        }
+    }
+    if !is_non_negative(spm.contact_resistance_ohm) || !spm.contact_resistance_ohm.is_finite() {
+        return Err(ChemistryError::Negative {
+            what: "spm.contact_resistance_ohm",
+            value: spm.contact_resistance_ohm,
+        });
+    }
+    check_electrode("spm.negative", &spm.negative)?;
+    check_electrode("spm.positive", &spm.positive)?;
+    Ok(())
+}
+
+/// Validate one `[spm.*]` electrode. `side` prefixes every error so a failure names
+/// which electrode it came from — the two blocks are identical in shape, so an error
+/// that said only "particle_radius_m" would send the reader to the wrong one.
+fn check_electrode(side: &'static str, e: &ElectrodeParams) -> Result<(), ChemistryError> {
+    // The `&'static str` error fields cannot carry a formatted prefix, so each
+    // electrode gets its own table of names. Two arrays of literals is duller than
+    // building the strings, and it keeps `ChemistryError` allocation-free.
+    let names: [&'static str; 4] = if side == "spm.negative" {
+        [
+            "spm.negative.particle_radius_m",
+            "spm.negative.diffusivity_m2_per_s",
+            "spm.negative.c_max_mol_per_m3",
+            "spm.negative.thickness_m",
+        ]
+    } else {
+        [
+            "spm.positive.particle_radius_m",
+            "spm.positive.diffusivity_m2_per_s",
+            "spm.positive.c_max_mol_per_m3",
+            "spm.positive.thickness_m",
+        ]
+    };
+    let values = [
+        e.particle_radius_m,
+        e.diffusivity_m2_per_s,
+        e.c_max_mol_per_m3,
+        e.thickness_m,
+    ];
+    for (what, value) in names.into_iter().zip(values) {
+        if !is_positive(value) || !value.is_finite() {
+            return Err(ChemistryError::NotPositive { what, value });
+        }
+    }
+    // `m_ref` is the amplitude of the exchange-current density. Zero is rejected
+    // rather than treated as "inert" (the convention the optional `[safety]` fields
+    // use) because it is not an opt-out: a cell with no reaction rate has infinite
+    // kinetic overpotential at any current at all, which is a divide-by-zero dressed
+    // as a parameter choice.
+    let m_ref_name = if side == "spm.negative" {
+        "spm.negative.m_ref"
+    } else {
+        "spm.positive.m_ref"
+    };
+    if !is_positive(e.m_ref) || !e.m_ref.is_finite() {
+        return Err(ChemistryError::NotPositive {
+            what: m_ref_name,
+            value: e.m_ref,
+        });
+    }
+    let ea_ok = |x: f64| is_non_negative(x) && x.is_finite();
+    if !ea_ok(e.reaction_ea_j_per_mol) || !ea_ok(e.diffusivity_ea_j_per_mol) {
+        return Err(ChemistryError::BadRange {
+            what: if side == "spm.negative" {
+                "spm.negative activation energies must be finite and >= 0"
+            } else {
+                "spm.positive activation energies must be finite and >= 0"
+            },
+        });
+    }
+    let frac_ok = e.active_volume_fraction > 0.0 && e.active_volume_fraction <= 1.0;
+    if !frac_ok {
+        return Err(ChemistryError::BadRange {
+            what: if side == "spm.negative" {
+                "spm.negative.active_volume_fraction must be in (0, 1]"
+            } else {
+                "spm.positive.active_volume_fraction must be in (0, 1]"
+            },
+        });
+    }
+    // Open interval at both ends: `alpha` and `1 − alpha` are both exponents in the
+    // Butler-Volmer equation, so either endpoint kills one of the two branches.
+    let alpha_ok = e.charge_transfer_alpha > 0.0 && e.charge_transfer_alpha < 1.0;
+    if !alpha_ok {
+        return Err(ChemistryError::BadRange {
+            what: if side == "spm.negative" {
+                "spm.negative.charge_transfer_alpha must be in (0, 1)"
+            } else {
+                "spm.positive.charge_transfer_alpha must be in (0, 1)"
+            },
+        });
+    }
+    if !e.docp_dt_v_per_k.is_finite() {
+        return Err(ChemistryError::BadRange {
+            what: if side == "spm.negative" {
+                "spm.negative.docp_dt_v_per_k must be finite"
+            } else {
+                "spm.positive.docp_dt_v_per_k must be finite"
+            },
+        });
+    }
+    let limits_ok = (0.0..=1.0).contains(&e.stoich_min)
+        && (0.0..=1.0).contains(&e.stoich_max)
+        && e.stoich_min < e.stoich_max;
+    if !limits_ok {
+        return Err(ChemistryError::BadRange {
+            what: if side == "spm.negative" {
+                "spm.negative stoichiometry limits must satisfy 0 <= stoich_min < stoich_max <= 1"
+            } else {
+                "spm.positive stoichiometry limits must satisfy 0 <= stoich_min < stoich_max <= 1"
+            },
+        });
+    }
+
+    // --- OCP table ---
+    let ocp_axis = if side == "spm.negative" {
+        "spm.negative.ocp.stoich"
+    } else {
+        "spm.positive.ocp.stoich"
+    };
+    let ocp_volts = if side == "spm.negative" {
+        "spm.negative.ocp.volts"
+    } else {
+        "spm.positive.ocp.volts"
+    };
+    if e.ocp.stoich.is_empty() {
+        return Err(ChemistryError::Empty(ocp_axis));
+    }
+    if e.ocp.stoich.len() != e.ocp.volts.len() {
+        return Err(ChemistryError::LengthMismatch {
+            table: if side == "spm.negative" {
+                "spm.negative.ocp"
+            } else {
+                "spm.positive.ocp"
+            },
+            a: e.ocp.stoich.len(),
+            b: e.ocp.volts.len(),
+        });
+    }
+    check_strictly_ascending(ocp_axis, &e.ocp.stoich)?;
+    // Non-*increasing*, the opposite of `[ocv]`. See [`OcpTable`] for why.
+    check_non_increasing(ocp_volts, &e.ocp.volts)?;
+    // The table must cover the window the cell actually operates over, or lookups at
+    // the ends clamp to a flat potential and the model quietly loses its end-of-charge
+    // and end-of-discharge behaviour — the two places it is most interesting. A
+    // surface stoichiometry can run past the *bulk* limits under load, so a real
+    // extraction leaves margin either side; this only insists the limits themselves
+    // are inside.
+    let covers =
+        e.ocp.stoich[0] <= e.stoich_min && e.ocp.stoich[e.ocp.stoich.len() - 1] >= e.stoich_max;
+    if !covers {
+        return Err(ChemistryError::BadRange {
+            what: if side == "spm.negative" {
+                "spm.negative.ocp.stoich must span [stoich_min, stoich_max]"
+            } else {
+                "spm.positive.ocp.stoich must span [stoich_min, stoich_max]"
+            },
+        });
+    }
+    Ok(())
 }
 
 fn check_strictly_ascending(what: &'static str, xs: &[f64]) -> Result<(), ChemistryError> {
@@ -622,6 +975,26 @@ fn check_strictly_ascending(what: &'static str, xs: &[f64]) -> Result<(), Chemis
             return Err(ChemistryError::NotMonotone {
                 what,
                 strict: true,
+                index: i,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The mirror of [`check_non_decreasing`], for half-cell OCP tables.
+///
+/// Not a generalization with a direction flag: two five-line functions read better
+/// than one with a boolean argument at every call site, and the name is what tells a
+/// reader that `[spm.*.ocp]` genuinely runs the other way from `[ocv]` rather than
+/// having been validated by accident. See [`OcpTable`].
+fn check_non_increasing(what: &'static str, xs: &[f64]) -> Result<(), ChemistryError> {
+    for i in 1..xs.len() {
+        let increases = xs[i] > xs[i - 1];
+        if increases {
+            return Err(ChemistryError::NotMonotone {
+                what,
+                strict: false,
                 index: i,
             });
         }

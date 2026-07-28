@@ -30,6 +30,7 @@ fn steep_chem() -> ChemistryParams {
     ChemistryParams {
         aging: None,
         safety: None,
+        spm: None,
         meta: ChemMeta {
             id: "steep".into(),
             name: "Steep-OCV test cell".into(),

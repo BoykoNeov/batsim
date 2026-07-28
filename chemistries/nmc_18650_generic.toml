@@ -11,7 +11,7 @@
 [meta]
 id         = "nmc_18650_generic"
 name       = "Generic NMC 18650"
-provenance = "OCV/R0 shape hand-fit to typical NMC 18650 datasheets; RC and remaining values are order-of-magnitude placeholders (TODO: fit against PyBaMM Chen2020/OKane2022)."
+provenance = "OCV/R0 shape hand-fit to typical NMC 18650 datasheets; RC and remaining values are order-of-magnitude placeholders. This file has NO PyBaMM source and cannot honestly acquire one: PyBaMM ships no 18650-class NMC parameter set (Chen2020, OKane2022 and ORegan2022 all parameterize the LG M50 21700; Mohtat2020 and Xu2019 are NMC532 pouch cells), so the earlier 'TODO: fit against Chen2020/OKane2022' would have changed the cell's identity rather than fitted it. TODO: fit against a measured 18650-class NMC dataset. For an extracted 21700 with a [spm] section, see nmc_21700_lgm50.toml."
 
 [cell]
 capacity_ah     = 3.0      # provenance: nominal for a high-capacity NMC 18650 (datasheet class)

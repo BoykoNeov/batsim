@@ -83,6 +83,7 @@ fn lfp(cyc_fade_per_ah: f64) -> ChemistryParams {
     ChemistryParams {
         aging: Some(lfp_aging(cyc_fade_per_ah)),
         safety: None,
+        spm: None,
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,

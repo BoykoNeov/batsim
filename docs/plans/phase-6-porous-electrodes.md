@@ -29,7 +29,7 @@ So the exit criterion below is authored here, and argued rather than asserted.
 | slice | scope | state | version |
 | ----- | ----- | ----- | ------- |
 | A | **model-agnostic cell interface.** `CellModel::state()`/`state_mut()` are *removed*; `pack.rs`'s twelve direct reaches into ECM internals go through the enum. **Zero physics change.** | **landed** (v9 — no bump, as designed) | v9 |
-| B | **`[spm]` chemistry section.** `sim-data` parses and validates half-cell OCPs, particle geometry, transport and kinetics; `BuildError` when a config asks for `Spm` and the chemistry has none. A new honest `nmc_21700_lgm50.toml`. **No engine physics.** | planned | v9 — the section is `Option`al and defaulted |
+| B | **`[spm]` chemistry section.** `sim-data` parses and validates half-cell OCPs, particle geometry, transport and kinetics. A new honest `nmc_21700_lgm50.toml`. **No engine physics.** (The `BuildError` moved to C with the config field that can trigger it — see below.) | **landed** (v9 — no bump, as designed) | v9 |
 | C | **the SPM cell.** Backward-Euler finite-volume radial diffusion, Butler–Volmer kinetics, `CellModel::Spm`. Single cell only — the pack solve still sees a linear source. **Carries the one bump.** | planned | **v9 → v10** |
 | D | **the nonlinear pack solve.** Iterate the existing linear group solve on tangent Thévenins; closed form remains exactly the closed form when every cell is linear. | planned | v10 — no further bump |
 | E | **PyBaMM validation + wrap-up.** SPM goldens, tolerance built to fail, SPM's own perf budget measured, README. **Carries exit criteria 2.** | planned | v10 — no further bump |
@@ -658,6 +658,179 @@ established it also established that the obvious way to demonstrate it does not 
   `heat_w` (both `pub(crate)`) are covered through the trajectory gate and the public
   surface rather than by introducing a testing convention the crate does not use.
 
+## Learned while building — slice B (the `[spm]` chemistry section)
+
+### The gate passed, and the one column that moved was predicted in writing first
+
+```text
+1. existing tests changed   ->  19 files, 19 insertions, 0 deletions, all the identical
+                                line `spm: None,` — no assertion, scenario or tolerance
+2. baseline diff            ->  969/969 telemetry lines bit-identical; 7/7 snapshot
+                                hashes moved, by exactly the predicted bytes
+3. SNAPSHOT_VERSION         ->  still 9
+4. cargo test --workspace   ->  46 suites ok (45 + the new one); clippy -D warnings and
+                                fmt clean; sim-godot gate (--ignored) 2 passed
+```
+
+Leg 2 is the one worth recording, because the prediction was written down *before* the
+run and was then half wrong in an informative way. The prediction: `spm: Option<SpmParams>`
+adds one key to the single `chem` object in each snapshot, `sim-core` has no
+`skip_serializing_if` anywhere (checked, not assumed — so `Option`s emit explicit nulls,
+exactly as `aging`/`safety` already do), therefore every case grows by exactly **11**
+bytes (`,"spm":null`) and every hash moves while every telemetry bit holds.
+
+Five of seven grew by exactly 11. Two grew by **434**, and they were precisely the two
+NMC cases — because this slice also rewrote `nmc_18650_generic.toml`'s provenance line,
+which is `ChemMeta` data and therefore *inside the snapshot*. 161 chars became 584:
+423 + 11 = 434, to the byte.
+
+That is the instrument doing its job twice over. It separated two independent text-level
+changes without either one touching a trajectory, and it demonstrates the property the
+baseline exists for: a snapshot hash is sensitive to things telemetry cannot see. **Do
+not "fix" a moved snapshot hash by widening the check** — account for it in bytes, as
+here, or find the physics that moved.
+
+### The `BuildError` moved to slice C, because `PackConfig` cannot take a field cheaply
+
+The plan promised slice B a tested `BuildError` for "config selects `Spm`, chemistry has
+no `[spm]`", with a message naming both. It is **not here**, and the reason is a fact
+about the repo rather than a judgement call: `PackConfig` is constructed by **~23
+exhaustive struct literals across 22 existing test files**, none of which use
+`..Default::default()`. Rust has no defaulted struct fields, so adding a selector field
+edits all of them — and `#[serde(default)]` does not help, since it governs
+deserialization, not construction.
+
+That cost is unavoidable whenever the selector lands. The question is only which slice
+absorbs it, and slice C is the answer on three counts: it is **already** the
+test-touching slice (the plan moved `CellView::v_rc_sum`'s rename there for exactly this
+reason), it ships the variant the selector selects — so the success path is a real model
+rather than a temporary `SpmNotImplemented` placeholder deleted one slice later — and it
+bumps `SNAPSHOT_VERSION` anyway. Landing the selector in B would have put the churn in
+the slice that ships no physics, *and* still required the placeholder.
+
+**Shell count `N` follows the selector**, for the same reason it belongs there at all: it
+is a discretization knob, not a property of the chemistry, and the repo's precedent is
+unambiguous (`aging.sub_clock_period_s` is pack config; physical parameters are chemistry
+TOML). So it lives in `CellModelConfig::Spm { shells }` and its range check is a
+`BuildError`, not a `ChemistryError`. Slice B's "shell count within a sane range"
+validation bullet is therefore **dropped rather than relocated**, and `[spm]` is left as
+purely physical parameters — cleaner than the plan's version.
+
+### `ChemistryParams` had the identical hazard, and there it was unavoidable
+
+Worth stating plainly, because it is the counterexample that shows the deferral above was
+a choice and not a rule: `ChemistryParams` is constructed by exhaustive literals in the
+same way, so adding `spm` to it broke 19 existing test/bench files. That churn could not
+be deferred — the section **is** the slice. So slice B does not inherit slice A's "no
+existing test modified" gate; it cannot. The gate that carries the same meaning, and the
+one used above, is *no existing test's **content** changes*: 19 identical mechanical
+insertions, zero deletions, verified by `git diff -U0 | sort | uniq -c` collapsing to a
+single line. Phase 3 set the precedent when `[safety]` was added the same way.
+
+### Chen2020 publishes no activation energy for `D_s`, and the plan assumed it did
+
+The plan's `[spm]` section asserts that Arrhenius activation energies for `D_s` and `k_r`
+are available because "PyBaMM parameter sets already supply" them. Checked against the
+actual key list, that is **false for Chen2020**: its only `activation energy` key is for
+SEI growth, and it is `0.0`.
+
+The real picture, which is better than the plan feared and worse than it assumed:
+
+* **Kinetics are temperature-aware and citable.** `E_r` = 35 000 J/mol (graphite) and
+  17 800 J/mol (NMC) exist — as *literals inside the exchange-current-density function
+  bodies*, where no `ParameterValues` lookup reaches. `extract_spm.py` parses them out of
+  the source text rather than transcribing them, so a parameter-set upgrade that changes
+  either one raises instead of leaving the TOML quietly stale.
+* **Solid diffusion is not.** Chen2020 fits `D_s` as a constant at 298.15 K and publishes
+  no activation energy at all. So the schema carries `diffusivity_ea_j_per_mol` as an
+  optional field defaulting to zero, the chemistry **omits** it, and the omission is
+  documented in both the field's doc comment and the TOML. Inventing a plausible number
+  here is exactly what the provenance rule exists to stop; the plan explicitly permitted
+  a written isothermal declaration, and this is the narrower, more honest version of it —
+  half the transport is temperature-aware, and the file says which half.
+
+The general lesson repeats slice A's: a plausible claim about a dependency is a
+hypothesis. `grep` the key list before designing a schema around what it "surely" has.
+
+### Half-cell OCPs run downhill, and the check was built to fail
+
+`[ocv]` is monotone **non-decreasing**; `[spm.*.ocp]` is monotone **non-increasing**,
+because lithiating an electrode lowers its potential against lithium metal. The full-cell
+voltage still rises with SOC — charging drives `x` up and `y` down at once — so the two
+rules coexist in one file and look identical from a distance. Validating the OCP tables
+with `OcvTable`'s rule would reject a *correct* extraction.
+
+So `check_non_increasing` is a separate function beside `check_non_decreasing` rather
+than one function with a direction flag: the name is what tells the next reader the
+inversion is deliberate. Verified by perturbation, in the discipline Phases 4 and 5 used
+on their gates — swapping the call to `check_non_decreasing` fails **9 of 21** tests,
+including the shipped chemistry failing to load at all. The check has teeth.
+
+### The OCP grid is adaptive because a uniform one was measurably bad
+
+The first extraction used 81 uniform points per electrode and reported **43.9 mV** of
+worst-case interpolation error on graphite — all of it in the low-stoichiometry corner
+where the OCP rises steeply, while the rest of the table sat under a millivolt. Greedy
+bisection refinement to a stated 2 mV tolerance gives **45 points at 1.90 mV** (graphite)
+and **20 points at 1.88 mV** (NMC): better accuracy, half the table.
+
+The point is not the tuning, it is that the tool now states a *tolerance it met* rather
+than a point count someone guessed. `fit_chemistry`'s `[ocv]` grid is deliberately **not**
+given the same treatment — it is hand-tuned to LFP's knees and the committed LFP goldens
+depend on it, so retuning it would move a golden to improve a table that has none. That
+is also why this file's `[ocv]` carries a 13.9 mV fit error with a written explanation
+rather than a fix: the shared grid samples the mid-range coarsely, which is exactly where
+NMC is steepest.
+
+### `PARAM_SETS` mapped a chemistry to a set it was never fitted to
+
+`common.py` mapped `nmc_18650_generic -> Chen2020`, and the map's contract is "the set
+this chemistry is fitted against". Nothing was fitted: that file's values are hand-fit to
+datasheet curves, and Chen2020 is a 21700. The entry made the file's provenance false the
+moment anyone ran `fit_ocv.py` against it — which is the collision that would have
+outlived this phase, since the owner's decision rewrites that provenance line.
+
+Resolved by **removing** the entry, not repointing it, and PyBaMM's own catalogue is why:
+there is no 18650-class NMC set to repoint to. Chen2020, OKane2022 and ORegan2022 all
+parameterize the LG M50 21700; Mohtat2020 and Xu2019 are NMC532 pouch cells. So the
+honest state of that file is "has no PyBaMM source and cannot acquire one without
+changing its identity", which is now what both the map's comment and the file's
+provenance line say. Nothing depended on the entry — the committed goldens are LFP-only.
+
+Note the knock-on the plan flagged: adding `nmc_21700_lgm50` changes `generate.py`'s
+default target list. No CSVs were generated for it; SPM goldens are slice E's.
+
+### The thermal section is derived, not guessed — and it is a labelled lower bound
+
+Both `[thermal]` values come out of Chen2020's own keys rather than being
+order-of-magnitude placeholders like their siblings:
+
+* `h_area_w_per_k` = 0.0531, exactly `"Total heat transfer coefficient"` (10.0) ×
+  `"Cell cooling surface area"` (0.00531). That area is the bare 21×70 mm cylinder's
+  (`π·d·h + 2·π·r²`), i.e. already the fully-exposed value the engine wants.
+* `heat_capacity_j_per_k` = 36.451, summed over the five sandwich domains as
+  `area × thickness × density × cp`.
+
+The second is **knowingly a lower bound** and says so in the file: it masses 55.8 g of
+jelly roll where a real LG M50 is nearer 68–70 g, because Chen2020 gives no mass for the
+electrolyte, the can or the header. A cell with too little heat capacity heats too fast,
+so the error points toward alarming rather than reassuring — the safe direction for a
+teaching model, but still an error, and a labelled `TODO` rather than a silent one. It
+also propagates: `runaway_energy_j` was set *from* this heat capacity to hit a plausible
+adiabatic rise, which is why this larger cell carries a smaller exotherm budget than the
+18650 file's. The pair is what is calibrated, never either number alone — the trap the
+sibling file already documents.
+
+### What is deliberately not here
+
+- **No engine physics, no `spm.rs`, no new `CellModel` variant.** `[spm]` is parsed and
+  validated and nothing reads it. That is the slice.
+- **No `PackConfig` field and no `BuildError`** — deferred to C with its reasons above.
+- **No SPM goldens and no `generate.py` scenarios.** Slice E.
+- **`nmc_18650_generic.toml` keeps its values and its two `sim-data` tests.** Only its
+  provenance line changed, per the owner decision; no test asserts on that string
+  (checked).
+
 ## Open questions
 
 ### Resolved before slice A
@@ -675,6 +848,19 @@ established it also established that the obvious way to demonstrate it does not 
   it, and an `#[ignore]`d version merely defers the failure to whoever first runs it.
   **Consequence to respect: the baseline is unrecoverable once slice A lands.** It is a
   one-shot instrument, not a repo asset.
+
+### Resolved by slice B
+
+- **Does `[spm]` carry Arrhenius activation energies, or is this SPM isothermal-only?**
+  **Half and half, and the file says which half.** Chen2020 publishes an activation
+  energy for the kinetics (inside its exchange-current-density functions) and none at all
+  for solid diffusivity. Both schema fields exist and default to zero; the chemistry
+  fills `reaction_ea_j_per_mol` and omits `diffusivity_ea_j_per_mol`, with the reason
+  written into the TOML and the field doc. See the slice-B notes above.
+- **Where does shell count `N` live?** **`PackConfig`, with the model selector**, not
+  `[spm]` — it is a discretization knob, and the repo puts those in pack config. It
+  therefore lands in slice C rather than B. What its *default value* should be is still
+  open below.
 
 ### Still open
 - **Is a mixed ECM/SPM pack supported?** Slice D decides. It is the sharpest available

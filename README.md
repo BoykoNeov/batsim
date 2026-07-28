@@ -42,11 +42,18 @@ judgement call, so the right-hand column is the thing to run if you doubt a row.
 | 5 | `sim-godot` — a `BatteryPack` GDExtension node, exported properties, fixed-`dt` accumulator, signals, and a Godot demo scene | `sim-godot/tests/godot_gate.rs` (needs Godot — see below) |
 | 6 | porous-electrode cell models (`Spm`/`Dfn`) | next |
 
-Two chemistries ship under [`chemistries/`](chemistries) — LFP 26650 and NMC 18650.
-Every constant in them carries a provenance note, **including the ones whose note says
-they are order-of-magnitude placeholders awaiting a fit**; that is the project rule
-(placeholders are acceptable, unlabeled numbers are not) rather than a claim that every
-number is fitted. The NMC set is the one with fitting still to do.
+Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
+LG M50 21700. Every constant in them carries a provenance note, **including the ones
+whose note says they are order-of-magnitude placeholders awaiting a fit**; that is the
+project rule (placeholders are acceptable, unlabeled numbers are not) rather than a claim
+that every number is fitted.
+
+The LG M50 file is the first with an `[spm]` section, and the first whose two halves have
+genuinely different provenance: its porous-electrode parameters are **extracted** verbatim
+from PyBaMM's Chen2020 set (so each has a literal citation), while its equivalent-circuit
+resistances remain labelled placeholders. Nothing consumes `[spm]` yet — the model that
+reads it lands later in Phase 6. The NMC 18650 set is hand-fit to datasheet curves and has
+no PyBaMM source; see its provenance line for why it cannot honestly acquire one.
 
 Design notes for each phase, including what was measured and what was deliberately
 *not* built, are under [`docs/plans/`](docs/plans).

@@ -32,9 +32,20 @@ warnings.filterwarnings("ignore")
 
 # batsim chemistry id -> the PyBaMM parameter set it is fitted against.
 # Adding a chemistry here is all that is needed to fit/generate for it.
+#
+# `nmc_18650_generic` is deliberately ABSENT. It used to map to Chen2020, which was
+# never true: Chen2020 parameterizes the LG M50, a 21700 / 5 A.h cell, while that
+# file declares an 18650 / 3.0 A.h identity and its values are hand-fit to datasheet
+# curves. The map's contract is "the set this chemistry is fitted against", so an
+# entry that no fit ever used made the file's provenance false the moment anyone ran
+# fit_ocv.py against it. PyBaMM ships no 18650-class NMC set at all (Chen2020,
+# OKane2022 and ORegan2022 are all LG M50 21700; Mohtat2020 and Xu2019 are NMC532
+# pouch cells), so the honest resolution is that this chemistry has no PyBaMM source
+# — see chemistries/nmc_18650_generic.toml's provenance line, and
+# docs/plans/phase-6-porous-electrodes.md for the decision.
 PARAM_SETS = {
     "lfp_26650_generic": "Prada2013",
-    "nmc_18650_generic": "Chen2020",
+    "nmc_21700_lgm50": "Chen2020",
 }
 
 # Isothermal reference temperature for every scenario [K] (25 degC). batsim holds

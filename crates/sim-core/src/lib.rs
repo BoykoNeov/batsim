@@ -36,7 +36,10 @@ pub mod thermal;
 
 pub use aging::{Aging, AgingConfig};
 pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
-pub use chem::{AgingParams, ChemistryError, ChemistryParams, SafetyParams, ThermalParams};
+pub use chem::{
+    AgingParams, ChemistryError, ChemistryParams, ElectrodeParams, OcpTable, SafetyParams,
+    SpmParams, ThermalParams,
+};
 pub use ecm::{CellModel, EcmState};
 pub use faults::{Fault, FaultError, FaultState, ScheduledFault, SensorFault, SensorId};
 pub use flags::EventFlags;

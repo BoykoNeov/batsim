@@ -33,7 +33,29 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
    python tools/reference/fit_ocv.py lfp_26650_generic
    ```
 
-2. **`generate.py`** — runs isothermal (25 °C) DFN scenarios and writes one CSV
+2. **`extract_spm.py`** — prints a TOML-ready `[spm]` block: half-cell OCP tables,
+   particle geometry, transport, kinetics and stoichiometry limits. Paste it into the
+   matching `chemistries/*.toml`.
+
+   ```bash
+   python tools/reference/extract_spm.py nmc_21700_lgm50
+   ```
+
+   A different verb from `fit_ocv.py` on purpose. The ECM tables are **fitted** to a
+   reference model's output; SPM parameters are **extracted** from the parameter set
+   directly, so every number has a literal citation rather than a tolerance. Two
+   wrinkles worth knowing:
+
+   - the kinetic rate coefficient `m_ref` and its activation energy `E_r` are *not*
+     parameter-set keys — they are literals inside the exchange-current-density
+     function bodies, and the script parses them out of the source so a set upgrade
+     raises instead of leaving a stale TOML;
+   - the OCP grid is refined adaptively to a stated tolerance (2 mV by default, passable
+     as a second argument) rather than laid down uniformly. Graphite's OCP rises steeply
+     near zero stoichiometry, where 81 uniform points left 43.9 mV of error; 45 adaptive
+     ones give 1.9 mV.
+
+3. **`generate.py`** — runs isothermal (25 °C) DFN scenarios and writes one CSV
    per scenario under `tests/golden/<chem_id>/`:
    - `cc_c20_25c.csv` — C/20 constant-current discharge (low-rate, tight);
    - `cc_1c_25c.csv` — 1C constant-current discharge (rate effects, looser);
@@ -46,6 +68,15 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
 
 `common.py` holds the shared extraction/simulation helpers and the
 `batsim chemistry id → PyBaMM parameter set` map.
+
+The map means "the set this chemistry is *fitted against*", so a chemistry with no
+PyBaMM source is deliberately absent from it rather than pointed at the nearest cell.
+`nmc_18650_generic` is the case in point: it was mapped to Chen2020, which is a 21700 /
+5 A.h LG M50, and PyBaMM ships no 18650-class NMC set to repoint it at (Chen2020,
+OKane2022 and ORegan2022 are all LG M50; Mohtat2020 and Xu2019 are NMC532 pouch cells).
+Running `fit_ocv.py` against it would have changed the cell's identity rather than fitted
+it, so the entry is gone and the file's provenance says so. See
+`chemistries/nmc_21700_lgm50.toml` for the honestly-labelled 21700.
 
 ## Conventions
 

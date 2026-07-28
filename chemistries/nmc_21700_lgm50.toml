@@ -1,0 +1,209 @@
+# LG M50 21700 NMC811 / graphite cell — the first chemistry with a [spm] section.
+#
+# This file exists because `nmc_18650_generic.toml` could not honestly grow one. That
+# file declares an 18650 / 3.0 A.h identity with hand-fit datasheet values, while the
+# PyBaMM set it was once mapped to (Chen2020) parameterizes the LG M50: a 21700 / 5 A.h
+# cell. For an ECM fit that mismatch is a capacity rescale one could argue about. For a
+# single-particle model it is not arguable — particle radii, electrode thicknesses and
+# interfacial areas ARE the cell's physical identity, and there is no honest way to put
+# Chen2020's geometry in a file labelled 18650. So the debt is discharged by adding a
+# truthful file rather than by renaming an untruthful one. See
+# docs/plans/phase-6-porous-electrodes.md.
+#
+# ## The two halves of this file have very different provenance, and it matters
+#
+# * The **[spm] section is extracted**: every value is a key of the Chen2020 parameter
+#   set, a literal inside one of its functions, or a stated product of two keys.
+#   Nothing in it is fitted, and `tools/reference/extract_spm.py` regenerates it.
+# * The **ECM sections are mixed**: [ocv] and capacity_ah are fitted from the same
+#   parameter set (tools/reference/fit_ocv.py), [thermal] is derived from its keys, and
+#   [r0] / [[rc]] / [aging] / [safety] are labelled placeholders, exactly as in the
+#   other shipped chemistries.
+#
+# Reading a terminal voltage out of the ECM half of this file is therefore reading a
+# placeholder resistance; reading one out of the SPM half is reading Chen2020. A cell
+# may carry both descriptions — running the same cell through both models is the
+# pedagogy Phase 6 exists for — but the two are not equally trustworthy and this
+# comment is where that is written down.
+
+[meta]
+id         = "nmc_21700_lgm50"
+name       = "LG M50 21700 (NMC811/graphite)"
+provenance = "SPM parameters extracted verbatim from PyBaMM's Chen2020 parameter set (Chang-Hui Chen et al., 'Development of Experimental Techniques for Parameterization of Multi-scale Lithium-ion Battery Models', J. Electrochem. Soc. 167 (2020) 080534) by tools/reference/extract_spm.py; [ocv] and capacity fitted from the same set by tools/reference/fit_ocv.py; [thermal] derived from its keys; [r0]/[[rc]]/[aging]/[safety] are labelled placeholders."
+
+[cell]
+# provenance: usable capacity between the Chen2020 stoichiometry limits, as reported by
+# tools/reference/fit_ocv.py. Not the 5.0 A.h "Nominal cell capacity [A.h]" key: that is
+# the label on the cell, while this is what the parameter set's own stoichiometry window
+# actually holds. Using the fitted figure is what makes batsim's SOC track PyBaMM's.
+capacity_ah     = 5.153198
+v_max           = 4.20     # provenance: Chen2020 "Upper voltage cut-off [V]"
+v_min           = 2.50     # provenance: Chen2020 "Lower voltage cut-off [V]"
+max_charge_c    = 0.5      # provenance: placeholder for a 21700 energy cell (~0.3-0.7C standard charge); TODO cite a datasheet
+max_discharge_c = 1.5      # provenance: placeholder continuous discharge rating for a 21700 energy cell; TODO cite a datasheet
+t_charge_min_k  = 273.15   # provenance: charge inhibit below 0 degC (Li plating guard), same convention as the other shipped chemistries
+t_max_k         = 333.15   # provenance: 60 degC operating ceiling, datasheet class placeholder
+
+# --- fitted from PyBaMM Chen2020 (pybamm 26.6.2.0) by tools/reference/fit_ocv.py ---
+# Thermodynamic cell OCV U_p(y(soc)) - U_n(x(soc)) over the usable stoichiometry window.
+# Max piecewise-linear interpolation error of this table = 13.91 mV, which is large next
+# to the LFP table's and is a known limitation rather than a mystery: fit_chemistry's SOC
+# grid is hand-tuned for LFP's sharp knees and a flat plateau, so it samples the middle
+# coarsely — exactly where NMC is steepest. The grid is deliberately NOT retuned here,
+# because it is shared with the LFP chemistry whose committed goldens depend on it.
+# TODO: give the grid a per-chemistry shape if this file ever carries ECM goldens.
+[ocv]
+soc   = [0.0000, 0.0025, 0.0050, 0.0075, 0.0100, 0.0125, 0.0150, 0.0175, 0.0200, 0.0300, 0.0400, 0.0500, 0.1000, 0.1500, 0.2500, 0.3500, 0.4500, 0.5500, 0.6500, 0.7500, 0.8500, 0.9000, 0.9500, 0.9600, 0.9700, 0.9800, 0.9825, 0.9850, 0.9875, 0.9900, 0.9925, 0.9950, 0.9975, 1.0000]
+volts = [2.5000, 2.5598, 2.6146, 2.6651, 2.7114, 2.7540, 2.7932, 2.8293, 2.8625, 2.9712, 3.0504, 3.1094, 3.2959, 3.4339, 3.5286, 3.6290, 3.7054, 3.7983, 3.8896, 3.9943, 4.0809, 4.0967, 4.1236, 4.1351, 4.1488, 4.1645, 4.1687, 4.1729, 4.1773, 4.1817, 4.1862, 4.1907, 4.1954, 4.2000]
+
+# Ohmic resistance R0[soc][temp_k], ohms. Bilinear interpolation, clamped.
+# provenance: order-of-magnitude placeholder — a large-format 21700 runs a lower R0 than
+# the 18650 set in the sibling file, rising at low temperature and near the SOC extremes
+# (TODO: fit). Chen2020 supplies no ECM resistance; its own "Contact resistance [Ohm]" is
+# 0 and appears in [spm] below, where it belongs.
+[r0]
+soc    = [0.0, 0.5, 1.0]
+temp_k = [263.15, 298.15, 318.15]
+ohms   = [[0.062, 0.028, 0.023],
+          [0.055, 0.025, 0.020],
+          [0.058, 0.026, 0.021]]
+
+# Fast charge-transfer RC pair. tau = 0.010 * 900 = 9 s.
+# provenance: order-of-magnitude placeholder (TODO: fit from GITT/pulse data).
+[[rc]]
+r_ohms  = 0.010
+c_farad = 900.0
+
+# Slow diffusion RC pair. tau = 0.008 * 9000 = 72 s.
+# provenance: order-of-magnitude placeholder (TODO: fit from GITT/pulse data).
+[[rc]]
+r_ohms  = 0.008
+c_farad = 9000.0
+
+# Both values DERIVED from Chen2020 keys rather than guessed — see the arithmetic below.
+[thermal]
+# provenance: sum over Chen2020's five sandwich domains of (electrode area x thickness x
+# density x specific heat capacity), with area = 0.065 m x 1.58 m = 0.1027 m2:
+#   neg. current collector 4.251 + neg. electrode 10.149 + separator 0.342
+#   + pos. electrode 17.729 + pos. current collector 3.980  =  36.451 J/K
+# This is a LOWER BOUND on the real cell, and knowingly so: the sum masses 55.8 g of
+# jelly roll while an LG M50 weighs closer to 68-70 g, because Chen2020 gives no mass for
+# the electrolyte, the can or the header. A cell with too little heat capacity heats too
+# fast, so this errs toward alarming rather than reassuring — the safe direction for a
+# teaching model, but still an error. TODO: add the missing masses from a datasheet.
+heat_capacity_j_per_k = 36.451
+# provenance: Chen2020 "Total heat transfer coefficient [W.m-2.K-1]" (10.0) x "Cell
+# cooling surface area [m2]" (0.00531) = 0.0531 W/K. The area is the bare cylinder's
+# (pi*d*h + 2*pi*r^2 for a 21 x 70 mm can), so this is already the fully-exposed value
+# the engine expects and scales down per cell by neighbour occlusion.
+h_area_w_per_k        = 0.0531
+
+# No docv_dt_v_per_k column: Chen2020's entropic-change keys are both literally 0.0 (see
+# docp_dt_v_per_k in [spm] below), so this chemistry generates no reversible heat in
+# either model. That is the parameter set's own value, not a missing measurement.
+
+# Semi-empirical aging. All placeholders, scaled from nmc_18650_generic.toml — the same
+# NMC class, a different format — with the one rescale that capacity forces.
+[aging]
+# provenance: placeholder, carried over unchanged from the 18650 NMC set. Calendar fade
+# is a capacity *fraction* per sqrt(second), so it does not scale with cell size; the pair
+# below gives roughly 16 % in a year at 25 degC and full SOC. cal_pre_exp and
+# cal_ea_j_per_mol only mean anything TOGETHER. TODO fit.
+cal_pre_exp                = 1.2e3
+cal_ea_j_per_mol           = 4.5e4    # provenance: placeholder Arrhenius activation energy, TODO fit
+cal_soc_stress             = [1.0, 1.1, 1.8]  # provenance: placeholder SOC stress at soc = 0.0/0.5/1.0 (NMC worse at high SOC)
+# provenance: placeholder, RESCALED from the 18650 file's 3.0e-5 by the capacity ratio
+# 3.0 / 5.153198 = 0.582. Cycle fade is charged per amp-hour of throughput, so leaving the
+# per-Ah figure alone would age this cell 1.7x faster per full cycle purely for being
+# bigger. The per-cycle fade is what is held constant here. TODO fit.
+cyc_fade_per_ah            = 1.75e-5
+cyc_dod_stress_exp         = 1.2      # provenance: placeholder DOD stress exponent (per-cycle convention)
+r_growth_per_capacity_loss = 1.5      # provenance: placeholder — resistance grows faster than capacity fades
+
+# Emergent-failure thresholds. Placeholders, but placeholders whose SCALE is checked,
+# because these numbers are only meaningful in pairs (the trap the sibling NMC file
+# documents at length).
+#
+#   - adiabatic ceiling = 29.8 kJ / 36.451 J/K = 818 K rise, so a fully-reacted cell
+#     peaks near 1261 K (988 degC), the ~1000 degC ARC tests report for NMC cells. Note
+#     this budget is SMALLER than the 18650 file's 45 kJ despite the cell being larger:
+#     both scale with the [thermal] heat capacity above, which is a lower bound. The pair
+#     is what is calibrated, not either number alone.
+#   - onset -> vent = 30 K x 36.451 J/K = 1.09 kJ, released at 8 W rising to ~45 W across
+#     that span, so an adiabatic cell at onset vents in roughly a minute.
+#
+# Plating placeholders are scaled from the 18650 NMC file the same way [aging] was, so
+# one full cold charge above the threshold costs a comparable fraction of capacity and
+# carries a comparable (~0.6 %) chance of leaving a soft short at this cell's 5.15 A.h.
+[safety]
+t_onset_k           = 443.15   # provenance: ~170 degC exothermic onset (NMC class); placeholder
+t_vent_k            = 473.15   # provenance: ~200 degC vent placeholder
+runaway_energy_j    = 29.8e3   # provenance: placeholder set for an 818 K adiabatic rise on this cell's derived heat capacity; TODO fit
+runaway_power_w_at_onset = 8.0 # provenance: placeholder amplitude, as the 18650 set; with the Ea below gives a ~1 min adiabatic onset-to-vent; TODO fit
+runaway_ea_j_per_mol     = 1.0e5 # provenance: placeholder activation energy for the decomposition exotherm, order-of-magnitude typical for Li-ion ARC fits; TODO fit
+t_plating_min_k     = 273.15   # provenance: plating risk below 0 degC
+plating_c_threshold = 0.4      # provenance: placeholder C-rate above which cold-charge plating risk flags
+plating_fade_per_ah        = 8.75e-4 # provenance: placeholder, held at ~50x cyc_fade_per_ah as in the 18650 set, TODO fit
+plating_short_hazard_per_ah = 1.2e-3 # provenance: placeholder Poisson hazard per Ah plated, rescaled by capacity to keep ~0.6 % per full cold charge, TODO fit
+plating_short_ohms         = 25.0    # provenance: placeholder soft short, ~1000x this cell's R0; TODO fit
+
+# --- extracted from PyBaMM Chen2020 (pybamm 26.6.2.0) by tools/reference/extract_spm.py ---
+# Every value below is a key of the Chen2020 parameter set, a literal inside one of its
+# functions, or a stated product of two keys. Nothing here is fitted or invented.
+#
+# ## One field is deliberately absent, in both electrodes: diffusivity_ea_j_per_mol
+#
+# Chen2020 fits solid-phase diffusivity as a CONSTANT at 298.15 K and publishes no
+# activation energy for it, while it does publish one for the kinetics (E_r, inside the
+# exchange-current-density functions, extracted below). So this cell's kinetics respond to
+# temperature and its solid diffusion does not. That is a real limitation of the parameter
+# set, and it is left visible rather than papered over with a plausible number, which is
+# what the provenance rule forbids. The schema field exists and defaults to zero
+# (= temperature-independent); a parameter set that publishes one will fill it.
+# TODO: source an activation energy for D_s from a set that measures it.
+[spm]
+t_ref_k                = 298.15   # Chen2020 "Reference temperature [K]"
+c_e_mol_per_m3         = 1000     # Chen2020 "Initial concentration in electrolyte [mol.m-3]"; constant, per the single-particle approximation
+electrode_area_m2      = 0.1027   # = "Electrode height [m]" 0.065 x "Electrode width [m]" 1.58
+contact_resistance_ohm = 0        # Chen2020 "Contact resistance [Ohm]" — the set's own value, not an omission
+
+[spm.negative]
+particle_radius_m       = 5.86e-06   # Chen2020 "Negative particle radius [m]"
+diffusivity_m2_per_s    = 3.3e-14    # Chen2020 "Negative particle diffusivity [m2.s-1]", constant at t_ref_k
+c_max_mol_per_m3        = 33133      # Chen2020 "Maximum concentration in negative electrode [mol.m-3]"
+active_volume_fraction  = 0.75       # Chen2020 "Negative electrode active material volume fraction"
+thickness_m             = 8.52e-05   # Chen2020 "Negative electrode thickness [m]"
+m_ref                   = 6.48e-07   # literal inside graphite_LGM50_electrolyte_exchange_current_density_Chen2020
+reaction_ea_j_per_mol   = 35000      # E_r, literal inside the same function
+charge_transfer_alpha   = 0.5        # Chen2020 "Negative electrode charge transfer coefficient"
+stoich_min              = 0.02634579027064577  # pybamm.lithium_ion.get_min_max_stoichiometries
+stoich_max              = 0.910618046652409    # ditto
+docp_dt_v_per_k         = 0          # Chen2020 "Negative electrode OCP entropic change [V.K-1]" — literally zero
+# OCP table over [0.0000, 0.9606]: 45 adaptively-placed points, margin 0.05 either side of
+# the usable window (a particle's SURFACE stoichiometry runs past its bulk limits under
+# load, and a table that stopped at the limits would flatten the OCP exactly there).
+# max piecewise-linear interpolation error of this table = 1.90 mV.
+# Monotone NON-INCREASING: lithiating an electrode lowers its potential against Li metal.
+[spm.negative.ocp]
+stoich = [0.000000, 0.001921, 0.003842, 0.005764, 0.008165, 0.010086, 0.012488, 0.014409, 0.016811, 0.019212, 0.021614, 0.024015, 0.026897, 0.029779, 0.032661, 0.035543, 0.038905, 0.041787, 0.044669, 0.048031, 0.051393, 0.054755, 0.058598, 0.066283, 0.073968, 0.082613, 0.120077, 0.131605, 0.141211, 0.150817, 0.160904, 0.182037, 0.240155, 0.313161, 0.360232, 0.405381, 0.480309, 0.562442, 0.582615, 0.600386, 0.627284, 0.646976, 0.720464, 0.840541, 0.960618]
+volts  = [2.383542, 2.239361, 2.105678, 1.981729, 1.839406, 1.734843, 1.614777, 1.526564, 1.425269, 1.333101, 1.249234, 1.172918, 1.090348, 1.016606, 0.950740, 0.891900, 0.831122, 0.785002, 0.743763, 0.701109, 0.663619, 0.630624, 0.597669, 0.544080, 0.502793, 0.466069, 0.339172, 0.301626, 0.275332, 0.255382, 0.240870, 0.224442, 0.200475, 0.155705, 0.139904, 0.134918, 0.133212, 0.130928, 0.126620, 0.118532, 0.102776, 0.095991, 0.092070, 0.092020, 0.092020]
+
+[spm.positive]
+particle_radius_m       = 5.22e-06   # Chen2020 "Positive particle radius [m]"
+diffusivity_m2_per_s    = 4e-15      # Chen2020 "Positive particle diffusivity [m2.s-1]", constant at t_ref_k
+c_max_mol_per_m3        = 63104      # Chen2020 "Maximum concentration in positive electrode [mol.m-3]"
+active_volume_fraction  = 0.665      # Chen2020 "Positive electrode active material volume fraction"
+thickness_m             = 7.56e-05   # Chen2020 "Positive electrode thickness [m]"
+m_ref                   = 3.42e-06   # literal inside nmc_LGM50_electrolyte_exchange_current_density_Chen2020
+reaction_ea_j_per_mol   = 17800      # E_r, literal inside the same function
+charge_transfer_alpha   = 0.5        # Chen2020 "Positive electrode charge transfer coefficient"
+stoich_min              = 0.2638452245913301   # pybamm.lithium_ion.get_min_max_stoichiometries
+stoich_max              = 0.853974674630047    # ditto
+docp_dt_v_per_k         = 0          # Chen2020 "Positive electrode OCP entropic change [V.K-1]" — literally zero
+# OCP table over [0.2138, 0.9040]: 20 adaptively-placed points, same margin rule as above.
+# max piecewise-linear interpolation error of this table = 1.88 mV.
+# Monotone NON-INCREASING, for the same reason — note the cell voltage still RISES with
+# state of charge, because charging drives x up and y down at once.
+[spm.positive.ocp]
+stoich = [0.213845, 0.235239, 0.277682, 0.289069, 0.300111, 0.312879, 0.339104, 0.351871, 0.367054, 0.386378, 0.428821, 0.472644, 0.517157, 0.558910, 0.580304, 0.599283, 0.645176, 0.731442, 0.817708, 0.903975]
+volts  = [4.439085, 4.382325, 4.250906, 4.223702, 4.205249, 4.193330, 4.182349, 4.173384, 4.156102, 4.126908, 4.060738, 4.005020, 3.949186, 3.884181, 3.850953, 3.825361, 3.777287, 3.704691, 3.634779, 3.564985]

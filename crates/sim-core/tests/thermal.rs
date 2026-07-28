@@ -38,6 +38,7 @@ fn chem(h_area_w_per_k: f64, docv_dt_v_per_k: Option<Vec<f64>>) -> ChemistryPara
     ChemistryParams {
         aging: None,
         safety: None,
+        spm: None,
         meta: ChemMeta {
             id: "thermal-test".into(),
             name: "Thermal test cell".into(),

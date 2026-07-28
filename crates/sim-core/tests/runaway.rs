@@ -83,6 +83,7 @@ fn chem(safety: Option<SafetyParams>, h_area_w_per_k: f64) -> ChemistryParams {
     ChemistryParams {
         aging: None,
         safety,
+        spm: None,
         meta: ChemMeta {
             id: "runaway_test".into(),
             name: "Runaway test cell".into(),

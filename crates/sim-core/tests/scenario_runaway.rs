@@ -99,6 +99,7 @@ fn env() -> Env {
 fn lfp(runaway_power_w_at_onset: f64) -> ChemistryParams {
     ChemistryParams {
         aging: None,
+        spm: None,
         safety: Some(SafetyParams {
             t_onset_k: ONSET_K,
             t_vent_k: VENT_K,
