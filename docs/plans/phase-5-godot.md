@@ -1,0 +1,450 @@
+# Phase 5 — Godot adapter
+
+**Status: planned. No slice has landed.** This file is written before the work so the
+decisions below are made once; the "learned while building" material is appended as each
+slice lands, the way `phase-2-thermal-bms.md` through `phase-4-server-wasm.md` grew.
+
+Like Phase 4, Phase 5 adds **no physics**. Everything below is embedding, lifecycle, and
+presentation over an engine that is already finished for this phase's purposes. That
+framing is load-bearing: see "The `SNAPSHOT_VERSION` canary, again".
+
+Unlike every previous phase, `CLAUDE.md` gives Phase 5 **no `Exit:` line** — it names the
+deliverables (`BatteryPack` node, exported chemistry/topology properties, fixed-dt
+accumulator in `_physics_process`, signals) and stops. The exit criterion below is
+therefore authored here rather than inherited, and the choice is argued rather than
+asserted.
+
+| exit criterion (authored here) | to be met by |
+| ------------------------------ | ------------ |
+| A scenario driven through the `BatteryPack` node inside a running Godot process produces a **bit-identical** trajectory to the same scenario driven by `Pack::step` in process | `sim-godot/tests/godot_gate.rs` — a Rust test that builds the cdylib, runs `godot --headless` over a GDScript driver, and compares `f64::to_bits` of every reported field |
+
+## Slices
+
+| slice | scope | state |
+| ----- | ----- | ----- |
+| A | the shared boundary rule: `Demand::check_finite` / `Env::check_finite` land in `sim-core`; `sim-server` and `sim-wasm` migrate onto them; the sim-wasm "third client" comment is amended to name a criterion instead of a count | **planned** |
+| B | `crates/sim-godot`: crate skeleton, `godot` pinned to `api-4-7`, workspace membership, and `driver.rs` — the entire pure layer (accumulator, flag edge detector, scenario→pack, batch stepping, caps), host-tested | **planned** |
+| C | the node surface: exported properties, `#[func]` methods, signals, `_physics_process` wiring, `.gdextension`, demo project skeleton | **planned** |
+| D | the exit gate: GDScript driver emitting bit patterns, the Rust integration test that compares them, the `--import` bootstrap. **Carries the exit criterion.** | **planned** |
+| E | wrap-up: a watchable demo scene, README status and run instructions, adapter overhead measured separately from `Pack::step` | **planned** |
+
+Each slice keeps `cargo test --workspace` and
+`cargo clippy --workspace --all-targets -- -D warnings` clean. As in Phase 4, **no slice
+should bump `SNAPSHOT_VERSION`** — a deliberate tripwire, not an observation.
+
+---
+
+## The spike, and what it settled
+
+A throwaway crate (`godot 0.5.4`, `features = ["api-4-7"]`, one `#[derive(GodotClass)]`
+node, one pure module, host tests) was built and run against the installed
+Godot 4.7 **before this document was written**, because most of the decisions below turn
+on facts that cannot be reasoned out. Everything in this section is measured on this box,
+not inferred.
+
+| question | answer |
+| -------- | ------ |
+| Does a gdext crate host-test with no Godot process running? | **Yes.** `cargo test` compiles and runs, provided no test touches a `godot` type. |
+| Does the build need a Godot binary? | **No**, with `api-4-7`. The bindings are generated from JSON bundled in `godot-codegen`. Only `api-custom` shells out to a `godot4` binary — do not use it. |
+| Is `clippy --all-targets -- -D warnings` clean over gdext's generated code? | **Yes**, with no `allow`s in the spike. |
+| What does it cost the gate? | **~1m45s once** to compile `godot-codegen`/`godot-core`/`godot`, then free. Warm re-clippy: 0.05 s. Touch-one-file re-clippy: 0.16 s. |
+| Does the extension load headless? | **Yes** — `Initialize godot-rust (API v4.7.stable.official, runtime v4.7.stable.official, safeguards strict)`. |
+| Is a one-time bootstrap needed? | **Yes.** On a tree with no `.godot/`, `godot --headless --path . --script x.gd` fails with `Identifier "BatteryPack" not declared`. `godot --headless --path . --import` writes `.godot/extension_list.cfg` and fixes it. |
+| Does a *rebuilt* cdylib need a re-import? | **No.** Verified by changing a `#[func]`'s return value, `cargo build`, and re-running the same script — the new value came back. Import is a per-clone bootstrap, not a per-build step. |
+| `Engine.physics_ticks_per_second` / `max_physics_steps_per_frame` / `time_scale` | **60 / 8 / 1.0** on 4.7 defaults. All three move `delta`; see the accumulator section. |
+| Does `#[signal]` register introspectably? | **Yes** — `ClassDB.class_get_signal_list` returns the signal with typed args. |
+
+Two findings were sharp enough that they change the design, and they get their own
+sections: **GDScript cannot print a float without losing bits**, and **a failing
+`assert()` hangs a headless run**.
+
+---
+
+## Decisions already made (do not re-derive)
+
+### The `SNAPSHOT_VERSION` canary, again
+
+Phase 4 inverted the phases 2–3 rule: *if a slice needs a bump, an adapter has leaked into
+the engine.* It held for all five Phase 4 slices. It carries over unchanged.
+
+Nothing a game engine needs should change what a pack *is*. If a slice reaches for a bump,
+stop and re-read the slice — the honest fixes are "put it in the adapter" or "add a
+read-only accessor", not "add a field to `Pack`".
+
+Slice A is the one place this needs care, because it *does* touch `sim-core`. It adds two
+inherent methods and an error type; it adds no field to any serialized struct. `Demand` and
+`Env` are step arguments, not pack state — neither appears in a `Snapshot`. The canary
+should therefore hold through slice A too, and if it does not, slice A is wrong.
+
+### The third-client question, and why the answer is four checks in `sim-core`
+
+`crates/sim-wasm/src/engine.rs` says, verbatim:
+
+> **if a third client ever needs these, the fix is to lift `Limits`/`StepCommand`/`Frame`
+> into a `sim-protocol` crate**, not to add a third copy. Two clients did not justify the
+> churn to slice C's work; three would.
+
+`sim-godot` is that third client, and the commitment has to be met or amended — leaving it
+to read as silently violated is the one outcome that is not acceptable. The resolution
+here is to **amend it, and to fix the part of it that was actually right**.
+
+The argument for amending: Godot is not the client that comment anticipated.
+
+- **No `StepCommand`.** That type exists because a command arrives as JSON over a socket
+  and must be parsed and rejected as a unit. GDScript calls a `#[func]` with typed
+  arguments. There is no message, so there is nothing to parse and nothing to deny unknown
+  fields on. Its `#[serde(default = "one")]` and `deny_unknown_fields` are *wire-contract
+  decisions belonging to the server*; moving them to a shared crate would make one client's
+  policy look like a workspace rule.
+- **No `Frame`.** `Frame` exists because a batch reply is an array of samples handed to a
+  plotting client. The Godot node exposes the current reading as properties and announces
+  changes as signals — the idiom the engine's users expect, and the one `CLAUDE.md` names.
+  There is no frame array, so there is no frame shape.
+- **No decimation, so no `frame_count`.** Decimation exists to keep a reply from becoming a
+  million samples. The node reports the *latest* state, once per batch. `k` has no meaning
+  where the sample count is always one.
+- **The caps do not unify either.** All three clients cap steps per call, but for three
+  different reasons: the server bounds how long a session lock is held, `sim-wasm` bounds
+  main-thread occupancy in a tab, `sim-godot` bounds a frame budget. Three similar
+  constants with three rationales are not one shared constant, and collapsing them would
+  put a number in a shared crate that no client could then justify changing.
+
+What *is* genuinely one rule, in all three clients and for one reason: **a `f64` that
+reached the boundary without passing through a JSON parser may be non-finite, and the
+engine's own types should say so.** `sim-wasm` documented this precisely — over the
+server's socket the check is unreachable, because JSON has no literal for `NaN`; across the
+wasm boundary JS hands over a raw `f64` and `Number.NaN` arrives intact. GDScript hands
+over a raw `f64` too, and `NAN` and `INF` are both spellable in it.
+
+So slice A puts the checks where the rule actually lives:
+
+```rust
+// sim-core
+impl Demand { pub fn check_finite(self) -> Result<(), NonFinite>; }
+impl Env    { pub fn check_finite(self) -> Result<(), NonFinite>; }
+```
+
+This is a statement about what the engine's own types accept, not about any protocol, so it
+does not violate the purity rule — no I/O, no state, no dependency. `sim-server` maps
+`NonFinite` into `ApiError { code: OutOfRange }`, `sim-wasm` into
+`EngineError::OutOfRange`, `sim-godot` into its own error. Their *messages* stop being
+three hand-copied strings that can drift, which was the only real defect in the status quo.
+
+The sim-wasm comment then gets rewritten to name a **criterion instead of a count**:
+lift when a client needs the *shapes*, not when the third client arrives. That is a better
+artifact than the original, and it is honest about what happened rather than quietly
+deleted.
+
+`Limits`, `StepCommand`, and `Frame` stay exactly where they are, with two consumers each.
+
+### Two entry points, and an honest determinism claim for each
+
+Phase 4's exit gate could assert bit-identical because both legs were driven by explicit
+step counts. **The `_physics_process` path cannot make that claim**, and inheriting Phase
+4's phrasing would be a lie:
+
+> **True:** same scenario + same seed + same *total step count* + same demand sequence ⇒
+> bit-identical trajectory.
+> **False:** same scenario, run twice in a real Godot window for the same wall-clock
+> duration ⇒ bit-identical trajectory.
+
+The second is false because the number of steps consumed depends on how many frames the
+machine delivered and how much time each carried. That is not a defect — it is what
+`CLAUDE.md` principle 3 asks for. The frame rate does not define the *timestep*; it defines
+only *how many* fixed timesteps get consumed. Each step is still exactly `fixed_dt`.
+
+The consequence for the crate's shape, and it is not cosmetic: **the node needs an explicit
+`step_batch(n_steps)` alongside the accumulator, and the exit gate drives the explicit
+path.** A gate driven through `_physics_process` would be asserting bit-identity on a
+quantity that legitimately varies, and would flake on a loaded machine while looking like a
+physics bug. Slice C ships both; slice D uses only the explicit one.
+
+### The accumulator, and the three Godot knobs that move `delta`
+
+`_physics_process(delta)` on Godot 4.7 defaults to a fixed 1/60 s, so it is tempting to
+step once per call and skip the accumulator entirely. Three measured facts say no:
+
+- `Engine.physics_ticks_per_second` (default **60**) is settable by the game, so `delta`
+  is not a constant this crate may assume.
+- `Engine.time_scale` (default **1.0**) scales `delta`. A slow-motion or fast-forward game
+  would otherwise silently change the physics timestep — precisely the thing `CLAUDE.md`
+  forbids.
+- `Engine.max_physics_steps_per_frame` (default **8**) means Godot itself will *drop*
+  physics ticks under load rather than let them pile up.
+
+So the node owns a `pending_s` remainder, adds `delta`, consumes `floor(pending_s /
+fixed_dt)` whole steps, and carries what is left. `fixed_dt` is an exported property and is
+the *only* thing that sets a step's size.
+
+The accumulator needs its own cap — `max_steps_per_frame`, exported — for the same reason
+Godot has one: without it, a single long frame (a level load, a breakpoint) hands the node
+a huge `delta` and the pack does thousands of steps inside one frame, which stalls the game
+and looks like a hang. With it, sim time falls behind wall time under sustained load.
+
+**That must be visible, not silent.** Sim time quietly dilating is indistinguishable from a
+physics bug to whoever is looking at the plot. The node emits a `falling_behind` signal
+carrying the backlog in seconds when the cap binds, and clamps `pending_s` so the backlog
+cannot grow without bound. Whether to *drop* the backlog or *repay* it is a policy the game
+should choose; the exported knob and the default are an open question below.
+
+### The exit gate: bit patterns, because GDScript cannot print a float
+
+Measured in the spike, on a value taken from this repo's own `float_roundtrip` finding:
+
+```text
+x                    = 0.7995885912375074      (the f64 the engine produced)
+str(x)               = 0.79958859123751        (what GDScript prints — 14 sig figs)
+float(str(x)) == x   = false                   <-- bits lost
+PackedFloat64Array([x]).to_byte_array().hex_encode()
+                     = 74d533d03a96e93f
+hex_decode().to_float64_array()[0] == x
+                     = true                    <-- exact
+```
+
+This is the same class of failure as Phase 4's `serde_json` `float_roundtrip` finding, and
+it would defeat the gate in the same silent way: a decimal-text handoff makes the
+comparison pass on values that differ, or fail on values that do not, with no signal about
+which. **The GDScript leg writes `PackedFloat64Array(...).to_byte_array().hex_encode()`;
+the Rust leg compares `f64::to_bits`.** No decimal float crosses that boundary in either
+direction.
+
+Note the ordering trap this also avoids: `hex_encode` is little-endian byte order of the
+IEEE-754 bits, so the Rust side must decode accordingly rather than parse the hex as one
+big-endian `u64`. The gate's own round-trip test pins that.
+
+### A failing `assert()` hangs a headless run — so the gate is a Rust test, not a script
+
+The spike ran four failure modes through `godot --headless --script`:
+
+| failure | exit code |
+| ------- | --------- |
+| `quit(1)` | **1** |
+| script parse error | **1** |
+| missing script | **1** |
+| **failing `assert()`** | **hangs** (killed at 60 s) |
+| **runtime script error** (`null.method()`) | **hangs** (killed at 180 s) |
+
+The last two are the dangerous ones: `_initialize` is abandoned mid-function, `quit()` is
+never reached, and the headless `SceneTree` runs forever. In an unattended gate that is not
+a failure, it is a stall.
+
+Three rules fall out, and slice D is built on them:
+
+1. **No `assert()` in the GDScript leg.** Every path reaches an explicit `quit(code)`.
+2. **The gate is a Rust `#[test]`**, which shells out to Godot with a timeout, checks the
+   exit code, and does the comparison in Rust where `f64::to_bits` and real assertion
+   semantics live. GDScript's job is reduced to *emit numbers on stdout and quit* — the
+   least it can be trusted with.
+3. **A timeout is mandatory even so**, because rule 1 cannot cover a runtime error in code
+   that has not been written yet.
+
+### The gate cannot live in `cargo test --workspace`, and that is the `wasm-pack` shape
+
+The root `Cargo.toml` already carries this exact carve-out, and the plan reuses its
+framing rather than inventing new language:
+
+> What is *not* in the gates is `wasm-pack build` — that needs a toolchain the Rust test
+> run has no business invoking, and its output is an uncommitted build artifact.
+
+Substitute "a Godot 4.7 binary and a built cdylib" for "wasm-pack" and the sentence is
+unchanged. So:
+
+- `crates/sim-godot` **is** a workspace member. Its pure `driver.rs` is compiled and
+  host-tested by `cargo test --workspace`, and clippied by the normal gate. The spike
+  proves this costs ~1m45s once and nothing thereafter. It cannot rot.
+- `tests/godot_gate.rs` is `#[ignore]`d with a reason string naming what it needs. It is
+  still *compiled* by the default gate — so it cannot rot either — and runs under
+  `cargo test -p sim-godot -- --ignored`. The README and this plan carry that command.
+
+### Signals are edge-triggered, coalesced per batch, and hold their previous state in the adapter
+
+`EventFlags` is a bitmask that is recomputed every step. Emitting a signal whenever a flag
+is *set* would emit at 60 Hz for the entire duration of a condition — a signal storm that
+makes the feature useless. Rules:
+
+- **Rising edges only.** `protection_tripped` fires on the step where the flag goes
+  0→1, not on every step it is 1. A falling-edge signal (`protection_cleared`) is cheap
+  once the previous mask is already held, and is worth having for the same reason.
+- **Previous flags are adapter state, not engine state.** Putting a `prev_flags` field on
+  `Pack` would change the snapshot layout and trip the canary for a purely presentational
+  need. It lives on the node. A consequence to accept and document: a snapshot restore
+  does not restore the edge detector, so the first step after a restore can re-announce a
+  condition that was already active. The alternative is engine pollution; this is the right
+  trade and it is written down rather than discovered.
+- **Coalesce per batch, never per step.** A `step_batch(10_000)` fast-forward that emitted
+  per step would emit thousands of signals into a game's main loop. The batch ORs the
+  transitions it saw and emits once at the end — the same reasoning as Phase 4's
+  decimation, which the plan there called a throughput requirement rather than an
+  optimization. Cost: within one batch, the *ordering* of two different events is lost.
+  That is acceptable for a fast-forward and wrong for real-time, and real-time batches are
+  a handful of steps, so it is acceptable there too.
+- **`soc_changed` needs an exported epsilon.** SOC changes every step, so an unconditioned
+  signal is a per-frame signal. It fires when `|soc − last_announced| >= soc_signal_epsilon`,
+  default to be chosen in slice C.
+- **`EventFlags` crosses as an `i64` bitmask, plus a human-readable `String`.** Not the
+  bitflags type — that is not a Godot type and cannot be. Note this deliberately differs
+  from the socket, where `EventFlags` crosses as a `" | "`-joined name string; a game
+  wants to mask-test cheaply, a browser wanted to print. Both are provided so neither
+  client has to parse the other's choice.
+
+### The node takes scenario *text*, not a path
+
+`sim-core` does no file I/O and `sim-data`'s `load_chemistry_file` does. Neither is what a
+Godot node should call: `res://` paths are not filesystem paths once a game is exported
+into a `.pck`, so a node that took a path would work in the editor and fail in a shipped
+build — the worst possible split.
+
+The node takes scenario TOML and chemistry TOML as **strings**, exactly as `sim-wasm` takes
+them from JS. GDScript reads them with `FileAccess.get_file_as_string("res://...")`, which
+works identically in the editor and in an export. `SimEngine::chemistry_id_of` already
+exists for the "which chemistry do I need to load first" step and the same helper is
+exposed here.
+
+### Where the demo project lives, and the `res://../target` tension
+
+The Godot project needs `project.godot`, a `.gdextension`, and scripts committed to the
+repo. The `.gdextension` must point at the built cdylib, which lives in `/target` — and
+`CLAUDE.md` says the repo tree must never hold build artifacts.
+
+There is no conflict, but it deserves one explicit sentence because it looks like one: the
+`.gdextension` is **source that references a path inside `/target`**, not an artifact
+itself. `/target` is already gitignored. What must be *added* to `.gitignore` is Godot's
+own editor cache:
+
+```
+# Godot's editor/import cache for the demo project. Regenerated by
+# `godot --headless --path godot --import`; see docs/plans/phase-5-godot.md.
+/godot/.godot
+```
+
+Decided: the project lives at **`godot/`** at the repo root, sibling to `web/` — which is
+the precedent Phase 4 set for a client that is not a Rust crate. `.uid` files that Godot
+generates beside scripts *are* committed; they are stable identifiers, not cache.
+
+The `.gdextension` lists all six platform/profile paths (win/linux/mac × debug/release)
+even though only one is exercised here, because a half-filled table is a trap for whoever
+first runs this on another OS.
+
+### Compile-time cost, stated once
+
+Adding `godot` to the workspace adds **~1m45s to a cold build** (`godot-codegen` →
+`godot-core` → `godot`), measured on this box. Warm builds are unaffected: 0.05 s for a
+no-op clippy, 0.16 s after touching a file in the crate.
+
+That is a real cost and it is paid by everyone who clones the repo, including someone who
+only cares about `sim-core`. It is accepted for the same reason `sim-wasm`'s membership was
+accepted: a crate outside the gates is a crate that rots, and this one embeds an engine
+whose determinism guarantees are the product. The alternative — excluding it — trades a
+one-time two minutes for a permanently unverified adapter.
+
+`api-4-7` is **pinned**, not left to the default feature level. Two reasons: the default
+tracks whatever gdext considers current, so a `cargo update` could silently change which
+Godot versions the built extension will load into; and `compatibility_minimum` in the
+`.gdextension` must match what the crate was built against, which is only knowable if it
+is pinned.
+
+---
+
+## Slice detail
+
+### A — the shared boundary rule
+
+Touches `sim-core`, `sim-server`, `sim-wasm`; adds no crate and no `godot` dependency.
+
+- `sim-core`: `NonFinite` error (which field, what value), `Demand::check_finite`,
+  `Env::check_finite`. Unit tests covering every arm, including `Env::t_coolant: Some(NaN)`,
+  which is the arm most likely to be missed.
+- `sim-server`: `protocol::check_demand` / `check_env` become thin maps into `ApiError`.
+  **The existing `ErrorCode::OutOfRange` wire behaviour must not change** — the message text
+  may change, the code may not. `validate_rejects_every_non_finite_field` is the regression
+  gate and passes untouched.
+- `sim-wasm`: same, into `EngineError::OutOfRange`.
+- `sim-wasm/src/engine.rs`'s module comment is rewritten per the section above.
+
+Exit: `cargo test --workspace` passes with no test *modified* — only added. If an existing
+assertion had to change, the migration changed behaviour and is wrong.
+
+### B — `sim-godot` and its pure driver
+
+- Crate skeleton, `crate-type = ["cdylib", "rlib"]` (the `rlib` is what makes `driver`
+  reachable from `tests/`, exactly as `sim-wasm`'s manifest explains), `godot` pinned to
+  `api-4-7`, added to the workspace members list with a comment saying why it is in and
+  what is out.
+- `driver.rs`: the whole pure layer, **no `godot` type in any signature**, mirroring the
+  `SimEngine`/`Sim` split and for the identical reason — the gates run on the host, where a
+  `godot` type is either absent or a stub.
+  - `Accumulator { pending_s }` with `take(delta, fixed_dt, max) -> u32`.
+  - `FlagEdges { prev }` producing rising/falling masks.
+  - `PackDriver`: scenario text → pack, `step_batch`, latest telemetry, snapshot/restore
+    strings, `schedule_fault`, `restart(bms)`, cells.
+  - `MAX_STEPS_PER_CALL` with a comment stating its *Godot-specific* rationale (frame
+    budget), not a cross-reference to the other two clients' constants.
+- Host tests for every one of the above. The accumulator's remainder-carry and cap, and
+  the edge detector's rising/falling/no-change cases, are pure arithmetic and should be
+  tested hard here because slice D cannot see inside them.
+
+### C — the node surface
+
+- `#[derive(GodotClass)] BatteryPack`, `base=Node`. The shell forwards; it decides nothing.
+- Exported properties: `scenario_toml`, `chemistry_toml`, `fixed_dt`, `max_steps_per_frame`,
+  `soc_signal_epsilon`, `auto_step` (whether `_physics_process` runs at all), `bms_enabled`.
+- `#[func]`s: `step_batch`, `set_demand`, `read_telemetry`, `snapshot_json`,
+  `restore_json`, `schedule_fault_json`, `clear_faults`, `clear_bms_fault`, `restart`,
+  `cells_json`, `chemistry_id_of`.
+- Signals: `protection_tripped`, `protection_cleared`, `thermal_runaway_started`,
+  `vented`, `contactor_opened`, `soc_changed`, `falling_behind`. Payloads are `i64` /
+  `float` / `String` only.
+- `_physics_process` wiring per the accumulator section, gated on `auto_step`.
+- `godot/` project skeleton + `.gdextension` + `.gitignore` entry.
+- Exit: a hand-run headless smoke script instantiates the node, sets a scenario, steps, and
+  prints telemetry. Not the gate — the gate is slice D — but the first proof the surface
+  is callable from GDScript at all.
+
+### D — the exit gate (carries the exit criterion)
+
+- `godot/gate.gd`: builds a pack from a committed scenario, runs a fixed step schedule
+  through `step_batch`, prints one hex line per reported field, `quit(0)`. No `assert`.
+- `crates/sim-godot/tests/godot_gate.rs`, `#[ignore]`d with a reason naming its two
+  requirements: runs `cargo build -p sim-godot`, bootstraps with `--import` if `.godot/` is
+  absent, runs `godot --headless --path godot --script gate.gd` under a timeout, parses the
+  hex, and compares against an in-process `Pack::step` run field by field on `to_bits`.
+- The gate must be **built to fail** before it is trusted — the discipline Phase 4 applied
+  to its float test twice. Perturb one field by one ULP in the Rust leg and confirm the
+  comparison reports it, naming the field and the step.
+- A separate small test pins the hex encoding's byte order, so a silent endianness change
+  cannot make the gate compare zeros to zeros.
+
+### E — wrap-up
+
+- A demo scene: the pack running under the accumulator with signals wired to visible
+  output, so the phase's deliverable is *watchable* and not only assertable.
+- README: status table row, the `--import` bootstrap, the two run commands (demo, gate),
+  and the pinned-`api-4-7` note.
+- **Adapter overhead measured, and attributed correctly.** Phase 5 adds no physics, so
+  `Pack::step` must not move; memory says it sits at ~42–54 µs against a <50 µs budget with
+  a box that has missed its fast state four sessions running, so the measurement is
+  reported as a **ratio against a same-session baseline**, never as an absolute, and the
+  node's per-step overhead is reported as its own number rather than folded into the
+  engine's.
+
+---
+
+## Open questions (decide when the slice lands, not now)
+
+- **Backlog policy when `max_steps_per_frame` binds.** Drop the excess (sim time dilates,
+  the game stays responsive) or repay it over subsequent frames (sim time stays true, a
+  stall can cascade)? Default probably "drop, and say so via `falling_behind`", but this
+  should be an exported enum so a game can choose. Decide in slice C with the signal in
+  front of you.
+- **`soc_signal_epsilon` default.** Wants to be large enough that a 60 Hz real-time run
+  does not emit every frame, small enough that a discharge looks continuous. Pick it from a
+  measured run, not from taste.
+- **Does the node need a `Telemetry`→`Dictionary` conversion, or are typed getters enough?**
+  A `Dictionary` is one allocation per read and forty string keys; typed getters are forty
+  `#[func]`s. Likely both — a `read_telemetry()` `Dictionary` for scripts and getters for
+  the handful a game polls every frame. Confirm against the demo scene in slice E, which is
+  the only real consumer.
+- **Whether `restore_json` should refuse a topology mismatch** the way `sim-wasm` does.
+  Almost certainly yes and for the identical reason, but the Godot case has an extra wrinkle
+  — a node's exported properties would then describe a pack it no longer holds. Decide in
+  slice C.
