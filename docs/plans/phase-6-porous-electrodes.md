@@ -1071,9 +1071,23 @@ because the rule it enforces says *"Adding a field or an error code does not bum
 an exact-set assertion would fail on C2's additions and would be a stricter test of the
 wrong thing. It also asserts `v_rc_sum` does not come back.
 
-Stated rather than left to be discovered: `Telemetry`, `Demand` and `Env` are named by
-the same rule and remain **unpinned**. This slice renamed a `CellView` field, so
-`CellView` is what it owes; the other three are a known gap.
+**`Telemetry` was pinned too, in a C1 follow-up, and the asymmetry is why.** The first
+pass stopped at `CellView` on the reasoning "this slice renamed a `CellView` field, so
+`CellView` is what it owes". That is defensible for the *slice* and wrong for the *phase*:
+C1 renames nothing else, but **C2 adds to `Telemetry`** (an SPM cell's readouts), and a
+rename during that work would go out under an unchanged API version with a green suite —
+the exact failure this slice just proved was live. Pinning the type nobody is about to
+touch while leaving unpinned the one about to be edited is the worse of the two orders.
+
+The same perturbation settles it: `#[serde(rename = "soc")]` on `Telemetry::soc_true`
+fails **exactly one suite workspace-wide**, the new test. The REST and WebSocket suites,
+which serve `Telemetry` over an actual socket, do not notice.
+
+`Demand` and `Env` are left unpinned deliberately and are a genuinely smaller risk: both
+are already pinned as *literal JSON shapes* by
+`demand_and_env_have_the_documented_json_shapes`, which asserts `{"Current": -5.0}` and
+`{"t_ambient": …, "t_coolant": null}` exactly, so a rename there already fails. The rule's
+four types are therefore all covered — two by presence pins, two by shape pins.
 
 ### The gate, and the reference point that is no longer the baseline file
 

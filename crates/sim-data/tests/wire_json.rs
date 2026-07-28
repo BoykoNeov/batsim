@@ -286,3 +286,58 @@ fn cell_view_fields_have_pinned_wire_spellings() {
          it named an ECM internal that a porous-electrode cell does not have"
     );
 }
+
+/// Every `Telemetry` field's spelling on the wire, pinned to its Rust name.
+///
+/// The sibling of the `CellView` pin above, and it exists for a sharper reason than
+/// symmetry. `sim_server::API_VERSION`'s rule names four engine types — `Telemetry`,
+/// `CellView`, `Demand`, `Env` — and slice C1 pinned only the one it renamed. That left
+/// `Telemetry` the *asymmetric* risk: it is the type the next slices add fields to (an
+/// SPM cell's readouts), and every existing check reads it through the Rust struct
+/// (`tele_bits` here, `cell_bits` in `thevenin_cache.rs`), so a rename during that work
+/// would go out under an unchanged API version with a green suite.
+///
+/// Same presence-not-exact-set rule as the `CellView` pin, and for the same reason:
+/// *"Adding a field or an error code does not bump it."* A new field is expected and
+/// must not fail here; a renamed one must.
+#[test]
+fn telemetry_fields_have_pinned_wire_spellings() {
+    let mut pack = stepped_pack(20);
+    let env = Env {
+        t_ambient: 298.15,
+        t_coolant: None,
+    };
+    let telemetry = pack.step(0.37, Demand::Current(3.1), &env);
+    let json = serde_json::to_value(telemetry).expect("Telemetry serializes");
+    let object = json
+        .as_object()
+        .expect("Telemetry crosses as a JSON object");
+
+    for key in [
+        "v_terminal",
+        "i_actual",
+        "soc_true",
+        "soc_bms",
+        "t_min",
+        "t_max",
+        "v_cell_min",
+        "v_cell_max",
+        "soh_capacity",
+        "soh_resistance",
+        "q_gen_w",
+        "q_runaway_w",
+        "q_balancing_w",
+        "i_balancing_a",
+        "i_internal_short_a",
+        "i_external_short_a",
+        "flags",
+    ] {
+        assert!(
+            object.contains_key(key),
+            "Telemetry lost or renamed the wire field `{key}` — that breaks every client \
+             parsing it, so it bumps sim_server::API_VERSION and \
+             sim_wasm::WASM_API_VERSION. Present keys: {:?}",
+            object.keys().collect::<Vec<_>>()
+        );
+    }
+}
