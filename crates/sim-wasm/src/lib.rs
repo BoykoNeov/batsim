@@ -74,6 +74,24 @@ pub fn wasm_api_version() -> u32 {
     WASM_API_VERSION
 }
 
+/// [`MAX_STEPS_PER_CALL`], reachable from JS.
+///
+/// Exported so a page can size its batches from the engine's own numbers rather than
+/// restating them. `sim-server` reports the equivalent caps in its hello frame for the
+/// same reason; between the two there is no reason for a client to hardcode either.
+#[wasm_bindgen]
+#[must_use]
+pub fn max_steps_per_call() -> u32 {
+    MAX_STEPS_PER_CALL
+}
+
+/// [`MAX_FRAMES_PER_CALL`], reachable from JS. See [`max_steps_per_call`].
+#[wasm_bindgen]
+#[must_use]
+pub fn max_frames_per_call() -> u32 {
+    MAX_FRAMES_PER_CALL
+}
+
 /// The engine's snapshot layout version this module produces and consumes.
 ///
 /// Re-exported as a function because a page that offers snapshot download needs to

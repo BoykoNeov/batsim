@@ -1191,6 +1191,29 @@ scratch.
 - **A `Float64Array` fast path was not built**, per the plan. Nothing measured says the
   JSON crossing costs anything at a few hundred plotted pixels, and the plan says not to
   pre-optimize the boundary.
+- **The caps are not restated in JavaScript, and the hello frame finally has a reader.**
+  The first draft of the page hardcoded `1_000_000` and `10_000` — a *third* copy of two
+  numbers already duplicated between `sim-server` and `sim-wasm`, and the only copy with
+  neither a compiler nor a test behind it. Worse, it was wrong for the socket path:
+  `sim-server`'s limits are configurable (`AppState::with_limits`), so a server started
+  with a lower cap would reject batches the page believed were fine, while the page's own
+  "this is a bug in the decimation" guard checked the wrong number and never fired. Each
+  backend now reports `limits()` from its own authority — the wasm module from exported
+  accessors, the socket from `hello.limits`. That field's doc comment says it exists "so
+  a client can size its batches instead of discovering them by being rejected"; until
+  this it had no client doing so.
+
+### A zero-length step is still a step, and that is the honest answer
+
+Reading on load means a socket session shows `stepped: true` and a non-null
+`latest_telemetry` before anyone has pressed Run, which looks like it contradicts slice
+B's "a session that has not stepped honestly has no telemetry."
+
+It does not, and the distinction is worth keeping straight: slice B's rule is that the
+**server** will not synthesise a frame it was not asked for. A page sending
+`{dt: 0, n_steps: 1}` *asked*. The session really has been stepped — by zero seconds, on
+purpose, using a contract the engine pins — and reporting that is accurate. Nothing
+changed for this.
 
 ### What is deliberately not here
 

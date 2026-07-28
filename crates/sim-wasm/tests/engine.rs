@@ -478,7 +478,14 @@ fn restoring_a_differently_shaped_pack_is_refused() {
 /// pretending a BMS can be grown onto a pack mid-run.
 #[test]
 fn the_bms_toggle_is_the_difference_between_protected_and_not() {
-    const V_MAX: f64 = 3.65; // chemistries/lfp_26650_generic.toml, [cell] v_max
+    // Read off the parsed chemistry rather than written as a literal. A hardcoded 3.65
+    // would keep passing against the wrong threshold the day someone refits
+    // `chemistries/lfp_26650_generic.toml`, and the repo's rule is that a physical
+    // constant is never restated without provenance — the file *is* the provenance.
+    let v_max = sim_data::parse_chemistry(LFP_TOML)
+        .expect("the shipped chemistry parses")
+        .cell
+        .v_max;
     let charge = Demand::Current(-5.0); // negative = charge
 
     let mut protected = scattered();
@@ -563,19 +570,20 @@ fn the_bms_toggle_is_the_difference_between_protected_and_not() {
         peak(&with_bms)
     );
     assert!(
-        peak(&without_bms) > V_MAX,
-        "unprotected, the same charge should push past {V_MAX} V; peaked at {}",
+        peak(&without_bms) > v_max,
+        "unprotected, the same charge should push past {v_max} V; peaked at {}",
         peak(&without_bms)
     );
-    // The protected peak is *just over* `v_max` — 3.6604 V against 3.65 V — and that is
-    // a known, owned behaviour, not a leak: protection acts on the reading it took at
-    // the start of a step, so it can overshoot a limit by one step. Pinning the
-    // overshoot rather than asserting `< V_MAX` keeps this test honest about what the
-    // engine promises.
+    // The protected peak is *just over* `v_max` — measured 3.6604 V against 3.65 V — and
+    // that is a known, owned behaviour rather than a leak: protection acts on the
+    // reading it took at the start of a step, so it can overshoot a limit by one step.
+    // Pinning the overshoot rather than asserting `< v_max` keeps this test honest about
+    // what the engine promises. The 50 mV margin is a **generous round number, not a
+    // derived bound** — the actual overshoot here is about 10 mV and scales with `dt`.
     assert!(
-        peak(&with_bms) < V_MAX + 0.05,
+        peak(&with_bms) < v_max + 0.05,
         "protection should hold cell voltage to within one step's overshoot of \
-         {V_MAX} V, peaked at {}",
+         {v_max} V, peaked at {}",
         peak(&with_bms)
     );
 

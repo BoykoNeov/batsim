@@ -107,6 +107,11 @@ class WasmBackend {
     return JSON.parse(this.sim.facts());
   }
 
+  /** The engine's own per-call caps, read from the module rather than restated here. */
+  limits() {
+    return { maxSteps: wasm.max_steps_per_call(), maxFrames: wasm.max_frames_per_call() };
+  }
+
   setEnv(tAmbientK) {
     this.sim.set_env(tAmbientK, undefined);
   }
@@ -268,6 +273,21 @@ class SocketBackend {
 
   facts() {
     return this.factsCache;
+  }
+
+  /**
+   * The caps *this server* enforces, from the hello frame.
+   *
+   * Not the wasm module's constants, even though the defaults are the same numbers:
+   * `sim-server`'s limits are configurable, so a server started with a lower cap would
+   * reject batches a page sized against a hardcoded default — which is the exact
+   * failure the hello frame reports `limits` to prevent.
+   */
+  limits() {
+    return {
+      maxSteps: this.hello.limits.max_steps_per_command,
+      maxFrames: this.hello.limits.max_frames_per_reply,
+    };
   }
 
   setEnv(tAmbientK) {
@@ -655,21 +675,20 @@ function stepsForFrame(nowMs, dt, speed) {
   return n;
 }
 
-/** The frame cap the engine enforces, mirrored so we decimate instead of being refused. */
-const MAX_FRAMES_PER_CALL = 10_000;
-const MAX_STEPS_PER_CALL = 1_000_000;
-
 async function advance(nSteps) {
   const dt = Math.max(1e-6, Number($("dt").value) || 0.5);
   const mode = $("demand-mode").value;
   const demand = demandJson(mode, Number($("demand-value").value) || 0);
 
-  const steps = Math.min(nSteps, MAX_STEPS_PER_CALL);
+  // Whichever backend is loaded reports its own caps — the wasm module from its
+  // constants, the server from its hello frame. Nothing here restates them.
+  const { maxSteps, maxFrames } = state.backend.limits();
+  const steps = Math.min(nSteps, maxSteps);
   // At high speed multipliers a frame can be thousands of steps. Decimating keeps the
   // reply small; it drops *reports*, never steps, so the trajectory is untouched. 300
   // frames is already more than a plot this size can resolve.
-  const reportEvery = Math.max(1, Math.ceil(steps / 300));
-  if (Math.ceil(steps / reportEvery) > MAX_FRAMES_PER_CALL) {
+  const reportEvery = Math.max(1, Math.ceil(steps / 300), Math.ceil(steps / maxFrames));
+  if (Math.ceil(steps / reportEvery) > maxFrames) {
     throw new Error("frame cap exceeded — this is a bug in the page's decimation");
   }
 
