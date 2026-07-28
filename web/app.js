@@ -17,6 +17,13 @@
 //    `parseFlags`.
 //  * `soc_bms` is `null` when there is no BMS. That is "no estimate exists", which is a
 //    different fact from "the estimate is zero", and the readout renders it as absent.
+//  * A **unit** variant crosses as a bare string, not an object — `"Rest"`, `"Pong"`,
+//    `"PackCurrent"`, `"ClearFaults"`. Anything that destructures an incoming event or
+//    builds an outgoing enum has to handle both shapes.
+//  * Per-cell state is **not** telemetry and never arrives on a frame. It is
+//    `Sim::cells()` in the tab and `GET /sessions/{id}/cells` over the network — one
+//    shape, `{series, parallel, cells}`, series-major — and the page samples it on a
+//    timer rather than per step.
 
 // ---------------------------------------------------------------------------
 // Boot
@@ -124,6 +131,23 @@ class WasmBackend {
     this.sim.restart(bmsEnabled);
   }
 
+  /** Ground truth for every cell: `{series, parallel, cells}`, series-major. */
+  cells() {
+    return JSON.parse(this.sim.cells());
+  }
+
+  scheduleFault(atS, fault) {
+    this.sim.schedule_fault(atS, JSON.stringify(fault));
+  }
+
+  clearFaults() {
+    return this.sim.clear_faults();
+  }
+
+  clearBmsFault() {
+    return this.sim.clear_bms_fault();
+  }
+
   snapshot() {
     return this.sim.snapshot();
   }
@@ -213,7 +237,13 @@ class SocketBackend {
   }
 
   #onEvent(event) {
-    const [tag, body] = Object.entries(event)[0];
+    // A unit variant crosses as a bare string (`"Pong"`), not an object — externally
+    // tagged serde has no field to hang on it. Destructuring `Object.entries` on a
+    // string yields `["0", "P"]`, so without this fork the `Pong` arm below is
+    // unreachable and a liveness reply would land in `default` as an unrecognised
+    // event. The page never sends `Ping` — only an observer may — so this has never
+    // fired, but the arm was written to handle something it could not have received.
+    const [tag, body] = typeof event === "string" ? [event, null] : Object.entries(event)[0];
     switch (tag) {
       case "Telemetry":
         this.frames.push(body);
@@ -231,10 +261,15 @@ class SocketBackend {
         break;
       case "EnvSet":
       case "Pong":
+        this.#resolve(null);
+        break;
+      // These three carry their outcome — `count`, `cleared`, `at_s` — and the panel
+      // reports it. Resolving `null` here would make "cleared 3 faults" and "there
+      // were none" the same visible result.
       case "FaultsCleared":
       case "FaultScheduled":
       case "BmsFaultCleared":
-        this.#resolve(null);
+        this.#resolve(body);
         break;
       case "Dropped":
         // A writer never sees this — its batch replies are the experiment's record.
@@ -317,6 +352,33 @@ class SocketBackend {
     throw new Error(
       "a socket session restarts by being replaced, not rebuilt — reload the scenario",
     );
+  }
+
+  /**
+   * Ground truth for every cell, over REST rather than the socket.
+   *
+   * The WebSocket protocol has no per-cell command by design — a `Frame` carries
+   * `Telemetry`, and per-cell arrays are the thing telemetry deliberately is not. So
+   * this reads the session's REST view instead, which returns the identical
+   * `{series, parallel, cells}` shape the wasm backend serialises. It costs a request,
+   * which is why the grid samples on a timer rather than every animation frame.
+   */
+  async cells() {
+    const res = await fetch(`/sessions/${this.sessionId}/cells`);
+    if (!res.ok) throw new Error(`GET /sessions/${this.sessionId}/cells -> ${res.status}`);
+    return res.json();
+  }
+
+  async scheduleFault(atS, fault) {
+    await this.#send({ ScheduleFault: { at_s: atS, fault } });
+  }
+
+  async clearFaults() {
+    return (await this.#send("ClearFaults")).count;
+  }
+
+  async clearBmsFault() {
+    return (await this.#send("ClearBmsFault")).cleared;
   }
 
   snapshot() {
@@ -639,6 +701,342 @@ function renderFlags(telemetry) {
 }
 
 // ---------------------------------------------------------------------------
+// The pack grid — one tile per cell, ground truth
+// ---------------------------------------------------------------------------
+
+/**
+ * What a tile can show.
+ *
+ * Every entry is a field of `sim_core::CellView`. Two fields it does **not** have,
+ * and the reason each is absent rather than forgotten:
+ *
+ *  * **per-cell voltage** — never computed per cell outside the solve;
+ *  * **per-cell current** — Phase 6 slice D declined the accessor on purpose.
+ *
+ * So "which cell is taking the most load right now" is not on this menu. The SOC
+ * spread is the same story integrated, which is why `soc` is the default.
+ */
+const METRICS = {
+  soc: { ramp: "accent", get: (c) => c.soc * 100, dp: 2, unit: "%" },
+  temp_k: { ramp: "warm", get: (c) => toC(c.temp_k), dp: 2, unit: "°C" },
+  overpotential_v: { ramp: "accent", get: (c) => c.overpotential_v * 1000, dp: 1, unit: "mV" },
+  soh_capacity: { ramp: "accent", get: (c) => c.soh_capacity * 100, dp: 3, unit: "%" },
+  soh_resistance: { ramp: "warm", get: (c) => c.soh_resistance, dp: 4, unit: "×" },
+  capacity_factor: { ramp: "accent", get: (c) => c.capacity_factor, dp: 3, unit: "×" },
+  r0_factor: { ramp: "accent", get: (c) => c.r0_factor, dp: 3, unit: "×" },
+  internal_short_conductance_s: {
+    ramp: "warm",
+    get: (c) => c.internal_short_conductance_s,
+    dp: 4,
+    unit: "S",
+  },
+};
+
+/**
+ * Sequential encodings: **one hue each, never a rainbow across a single scale.**
+ *
+ * The endpoints run dark → bright because the surface is dark; the light-mode
+ * convention (light → dark) inverts here or the low end would glow. Two scales with
+ * different hues is not a rainbow — a rainbow is several hues *within* one scale, and
+ * that is what makes a heat map unreadable at the middle.
+ */
+const RAMPS = {
+  accent: { lo: [24, 32, 41], hi: [90, 200, 250] },
+  warm: { lo: [38, 27, 22], hi: [255, 138, 76] },
+};
+
+/**
+ * Past this point on the ramp the tile is bright enough that light text on it fails
+ * contrast, so the ink flips to the page's darkest surface. Colour alone never carries
+ * a value here — the number is printed on every tile — but it still has to be legible.
+ */
+const INK_FLIP = 0.55;
+
+function rampCss(name, t) {
+  const { lo, hi } = RAMPS[name];
+  const u = Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0;
+  const ch = (i) => Math.round(lo[i] + (hi[i] - lo[i]) * u);
+  return { bg: `rgb(${ch(0)},${ch(1)},${ch(2)})`, ink: u > INK_FLIP ? "#10131a" : "#e6e9ef" };
+}
+
+/** Tiles are built once per topology and repainted in place — a 100S10P pack is 1000
+ *  nodes, and rebuilding those every animation frame is a stutter with no upside. */
+const grid = { tiles: [], series: 0, parallel: 0, pinned: null, hovered: null, dirty: true };
+
+function buildGrid(series, parallel) {
+  const host = $("pack-grid");
+  host.replaceChildren();
+  host.style.gridTemplateColumns = `repeat(${parallel}, 84px)`;
+  grid.tiles = [];
+  grid.series = series;
+  grid.parallel = parallel;
+  grid.pinned = null;
+  grid.hovered = null;
+
+  // Series-major, parallel-minor — the order `cells[]` already arrives in, so tile n
+  // is cells[n] and there is no index arithmetic to get wrong.
+  for (let s = 0; s < series; s += 1) {
+    for (let p = 0; p < parallel; p += 1) {
+      const i = s * parallel + p;
+      const el = document.createElement("div");
+      el.className = "celltile";
+      el.innerHTML = `<div class="idx"></div><div class="val"></div>`;
+      el.querySelector(".idx").textContent = `${s},${p}`;
+      el.onmouseenter = () => {
+        grid.hovered = i;
+        renderCellDetail();
+      };
+      el.onmouseleave = () => {
+        if (grid.hovered === i) grid.hovered = null;
+        renderCellDetail();
+      };
+      el.onclick = () => {
+        grid.pinned = grid.pinned === i ? null : i;
+        grid.dirty = true;
+        paintGrid();
+      };
+      host.appendChild(el);
+      grid.tiles.push({ el, val: el.querySelector(".val") });
+    }
+  }
+}
+
+function paintGrid() {
+  // `draw()` runs every animation frame; the cells are sampled four times a second.
+  // Without this guard a 100S10P pack would take a thousand style writes sixty times
+  // a second to redraw values that had not moved.
+  if (!grid.dirty) return;
+  grid.dirty = false;
+
+  const data = state.cells;
+  if (!data) {
+    if (grid.tiles.length > 0) buildGrid(0, 0);
+    $("pack-lo").textContent = "—";
+    $("pack-hi").textContent = "—";
+    $("pack-ramp").style.background = "transparent";
+    renderCellDetail();
+    return;
+  }
+  if (data.series !== grid.series || data.parallel !== grid.parallel) {
+    buildGrid(data.series, data.parallel);
+  }
+
+  const m = METRICS[$("pack-metric").value];
+  const values = data.cells.map(m.get);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  if (!Number.isFinite(lo)) [lo, hi] = [0, 0];
+  // The pack's own range, not a fixed domain: the spread between cells is the thing
+  // worth seeing, and a [0, 100] SOC axis renders a 3 mV imbalance as identical tiles.
+  const span = hi - lo;
+
+  for (let i = 0; i < grid.tiles.length; i += 1) {
+    const tile = grid.tiles[i];
+    const cell = data.cells[i];
+    const v = values[i];
+    // A pack with no spread gets the middle of the ramp rather than the bottom: every
+    // tile dark would read as "no data" when it means "every cell agrees".
+    const { bg, ink } = rampCss(m.ramp, span > 0 ? (v - lo) / span : 0.5);
+    tile.el.style.background = bg;
+    tile.el.style.color = ink;
+    tile.val.textContent = Number.isFinite(v) ? v.toFixed(m.dp) : "—";
+    tile.el.classList.toggle("short", cell.internal_short_conductance_s > 0);
+    tile.el.classList.toggle("vented", cell.vented);
+    tile.el.classList.toggle("pinned", grid.pinned === i);
+  }
+
+  const fmt = (v) => `${v.toFixed(m.dp)} ${m.unit}`;
+  $("pack-lo").textContent = fmt(lo);
+  $("pack-hi").textContent = fmt(hi);
+  const a = rampCss(m.ramp, 0).bg;
+  const b = rampCss(m.ramp, 1).bg;
+  $("pack-ramp").style.background = `linear-gradient(to right, ${a}, ${b})`;
+  renderCellDetail();
+}
+
+/** Every field of one cell's `CellView`, for the hovered tile or the pinned one. */
+function renderCellDetail() {
+  const host = $("pack-detail");
+  if (state.cellsError) {
+    host.textContent = `could not read the cells: ${state.cellsError}`;
+    return;
+  }
+  const data = state.cells;
+  const i = grid.hovered ?? grid.pinned;
+  if (!data || i === null || i === undefined || !data.cells[i]) {
+    host.textContent = data
+      ? "hover a cell for its full ground-truth state; click to pin it."
+      : "no cells read yet.";
+    return;
+  }
+  const c = data.cells[i];
+  const s = Math.floor(i / data.parallel);
+  const p = i % data.parallel;
+  const parts = [
+    `cell (${s},${p})`,
+    `soc ${(c.soc * 100).toFixed(3)} %`,
+    `T ${toC(c.temp_k).toFixed(3)} °C`,
+    `overpotential ${(c.overpotential_v * 1000).toFixed(2)} mV`,
+    `capacity ×${c.capacity_factor.toFixed(4)}`,
+    `R0 ×${c.r0_factor.toFixed(4)}`,
+    `soh cap ${(c.soh_capacity * 100).toFixed(3)} %`,
+    `soh res ×${c.soh_resistance.toFixed(4)}`,
+  ];
+  if (c.internal_short_conductance_s > 0) {
+    parts.push(`internal short ${(1 / c.internal_short_conductance_s).toFixed(2)} Ω`);
+  }
+  if (c.runaway_energy_remaining_j > 0) {
+    parts.push(`exotherm left ${(c.runaway_energy_remaining_j / 1000).toFixed(2)} kJ`);
+  }
+  if (c.vented) parts.push("VENTED");
+  host.textContent = `${parts.join("  ·  ")}${grid.pinned === i ? "  (pinned)" : ""}`;
+}
+
+/**
+ * Sample the cells, at most every `CELLS_PERIOD_MS`.
+ *
+ * Throttled because one backend pays a REST round trip for this and the other
+ * serialises every cell to JSON — neither is worth doing sixty times a second to
+ * repaint tiles a person reads a few times a second.
+ *
+ * A failure here writes to the detail line, not the banner: this runs on a timer, and
+ * a background poll that hijacks the page's error banner would bury whatever the run
+ * itself was trying to report.
+ */
+const CELLS_PERIOD_MS = 250;
+
+async function refreshCells(force = false) {
+  if (!state.backend || state.cellsBusy) return;
+  const now = performance.now();
+  if (!force && now - state.cellsAtMs < CELLS_PERIOD_MS) return;
+  state.cellsBusy = true;
+  state.cellsAtMs = now;
+  try {
+    state.cells = await Promise.resolve(state.backend.cells());
+    state.cellsError = null;
+  } catch (e) {
+    state.cells = null;
+    state.cellsError = String(e.message ?? e);
+  } finally {
+    state.cellsBusy = false;
+    grid.dirty = true;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fault injection
+// ---------------------------------------------------------------------------
+
+/**
+ * The five `sim_core::Fault` variants as forms.
+ *
+ * `int: true` marks a topology or sensor index — the engine's fields are `u16`, and a
+ * number input will happily hand back `1.5`, which serde rejects with a message about
+ * the wire format rather than about the pack.
+ */
+const FAULT_FORMS = {
+  SoftInternalShort: [
+    { k: "s", label: "series index", value: 0, step: 1, min: 0, int: true },
+    { k: "p", label: "parallel index", value: 0, step: 1, min: 0, int: true },
+    { k: "ohms", label: "leak [Ω] — lower drains faster", value: 5, step: 0.5, wide: true },
+  ],
+  ExternalShort: [
+    { k: "ohms", label: "short [Ω] across the terminals", value: 0.5, step: 0.1, wide: true },
+  ],
+  WeakCell: [
+    { k: "s", label: "series index", value: 0, step: 1, min: 0, int: true },
+    { k: "p", label: "parallel index", value: 0, step: 1, min: 0, int: true },
+    // "replaces" is not a hint, it is the semantics: `Fault::WeakCell`'s doc says the
+    // new factors replace the cell's scatter draw rather than multiplying onto it.
+    { k: "capacity_factor", label: "capacity × (replaces)", value: 0.8, step: 0.05 },
+    { k: "r0_factor", label: "R0 × (replaces)", value: 1.5, step: 0.1 },
+  ],
+  SensorStuck: [
+    { k: "sensor", label: "sensor", kind: "sensor", wide: true },
+    { k: "value", label: "frozen reading [V / K / A]", value: 3.3, step: 0.05, wide: true },
+  ],
+  SensorOffset: [
+    { k: "sensor", label: "sensor", kind: "sensor", wide: true },
+    { k: "offset", label: "added to every reading [V / K / A]", value: 0.12, step: 0.01, wide: true },
+  ],
+};
+
+const SENSOR_KINDS = [
+  ["GroupVoltage", "group voltage — index is the series position"],
+  ["TempProbe", "temp probe — index into the BMS's probe list"],
+  ["PackCurrent", "pack current — the one sensor, no index"],
+];
+
+function buildFaultForm() {
+  const host = $("fault-fields");
+  host.replaceChildren();
+  for (const f of FAULT_FORMS[$("fault-kind").value]) {
+    const wrap = document.createElement("div");
+    if (f.wide || f.kind === "sensor") wrap.className = "wide";
+    const label = document.createElement("label");
+    label.textContent = f.label;
+    wrap.appendChild(label);
+
+    if (f.kind === "sensor") {
+      const sel = document.createElement("select");
+      sel.id = "fault-sensor-kind";
+      for (const [value, text] of SENSOR_KINDS) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = text;
+        sel.appendChild(opt);
+      }
+      const idx = document.createElement("input");
+      idx.type = "number";
+      idx.id = "fault-sensor-idx";
+      idx.value = "0";
+      idx.min = "0";
+      idx.step = "1";
+      idx.style.marginTop = "4px";
+      // `PackCurrent` is a unit variant: there is no index to ask for, so asking would
+      // invite a number the encoding has nowhere to put.
+      sel.onchange = () => {
+        idx.style.display = sel.value === "PackCurrent" ? "none" : "";
+      };
+      wrap.appendChild(sel);
+      wrap.appendChild(idx);
+    } else {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.id = `fault-f-${f.k}`;
+      input.value = String(f.value);
+      input.step = String(f.step ?? 1);
+      if (f.min !== undefined) input.min = String(f.min);
+      wrap.appendChild(input);
+    }
+    host.appendChild(wrap);
+  }
+}
+
+/** The externally-tagged `Fault` the form currently describes. */
+function currentFault() {
+  const kind = $("fault-kind").value;
+  const body = {};
+  for (const f of FAULT_FORMS[kind]) {
+    if (f.kind === "sensor") {
+      const sensorKind = $("fault-sensor-kind").value;
+      const i = Math.max(0, Math.round(Number($("fault-sensor-idx").value) || 0));
+      // A unit variant crosses as a bare string; the other two are newtypes.
+      body.sensor = sensorKind === "PackCurrent" ? "PackCurrent" : { [sensorKind]: i };
+    } else {
+      const raw = Number($(`fault-f-${f.k}`).value);
+      body[f.k] = f.int ? Math.max(0, Math.round(raw || 0)) : raw;
+    }
+  }
+  return { [kind]: body };
+}
+
+// ---------------------------------------------------------------------------
 // The run loop
 // ---------------------------------------------------------------------------
 
@@ -651,6 +1049,10 @@ const state = {
   lastWallMs: null,
   latest: null,
   facts: null,
+  cells: null,
+  cellsBusy: false,
+  cellsAtMs: 0,
+  cellsError: null,
 };
 
 /**
@@ -723,6 +1125,9 @@ async function readNow() {
     state.latest = frames[frames.length - 1].telemetry;
     state.facts = state.backend.facts();
   }
+  // Forced past the throttle: this runs after a load, a restart and a restore, and each
+  // of those can change the topology the grid is built for.
+  await refreshCells(true);
   // Paint now rather than waiting for the next animation frame. Usually that is 16 ms
   // and nobody notices — but a backgrounded tab has no animation frames at all, and a
   // page that loads into a row of dashes and stays there looks broken rather than
@@ -762,11 +1167,18 @@ function draw() {
 
   renderReadouts(state.latest, state.facts ?? { sim_time_s: 0 });
   renderFlags(state.latest);
+  paintGrid();
 }
 
 async function frame(nowMs) {
   requestAnimationFrame(frame);
   if (!state.backend) return;
+
+  // Deliberately not awaited: the grid is a view, and making the physics frame wait on
+  // a REST round trip would let the socket backend's latency set the step rate — the
+  // one thing `CLAUDE.md` says a client must never do. It self-throttles and
+  // self-guards against overlap.
+  refreshCells();
 
   if (state.running && !state.busy) {
     const dt = Math.max(1e-6, Number($("dt").value) || 0.5);
@@ -807,6 +1219,13 @@ async function loadScenario() {
     state.backend = null;
   }
   resetHistory();
+  // The next scenario may be a different topology, so the grid is rebuilt rather than
+  // repainted — and a pin is an index into a pack that no longer exists.
+  state.cells = null;
+  state.cellsError = null;
+  grid.pinned = null;
+  grid.hovered = null;
+  grid.dirty = true;
   clearBanner();
 
   try {
@@ -842,6 +1261,10 @@ function afterFactsChange(label) {
     : f.scenario_has_bms === false
       ? "this scenario ships no BMS, so there is nothing to switch back on"
       : "toggling rebuilds the pack from the scenario — the run restarts at t = 0";
+
+  // Whether a sensor fault is even injectable is a property of the pack that just
+  // loaded, so the hint is re-evaluated here rather than only when the variant changes.
+  sensorHint();
 }
 
 function applyEnv() {
@@ -911,6 +1334,98 @@ $("stepone").onclick = async () => {
 };
 
 $("ambient").oninput = applyEnv;
+
+$("pack-metric").onchange = () => {
+  grid.dirty = true;
+  paintGrid();
+};
+
+// ---------------------------------------------------------------------------
+// Fault controls
+// ---------------------------------------------------------------------------
+
+$("fault-kind").onchange = () => {
+  buildFaultForm();
+  sensorHint();
+};
+buildFaultForm();
+
+function faultNote(text) {
+  $("fault-note").textContent = text;
+}
+
+/**
+ * Warn before the engine has to.
+ *
+ * A pack built without a BMS has no sensors — not "sensors nobody reads", none — so
+ * `schedule_fault` **refuses** a sensor fault outright ("fault targets GroupVoltage(0),
+ * which this pack has no such sensor for"). It does not silently drop it. That is a
+ * different mechanism from `facts.sensor_faults_dropped`, which counts faults a
+ * *scenario file* declared against a pack whose BMS was switched off at build time.
+ * Getting the two confused produces a panel that promises a fault will be dropped and
+ * then shows an error instead.
+ */
+function sensorHint() {
+  const isSensor = $("fault-kind").value.startsWith("Sensor");
+  faultNote(
+    isSensor && state.facts?.has_bms === false
+      ? "This pack has no BMS, so it has no sensors and the engine will refuse a sensor fault. Switch the BMS on, or pick a fault that acts on the cells."
+      : "",
+  );
+}
+
+$("fault-inject").onclick = async () => {
+  if (!state.backend) return;
+  try {
+    const delay = Math.max(0, Number($("fault-delay").value) || 0);
+    const atS = (state.facts?.sim_time_s ?? 0) + delay;
+    await Promise.resolve(state.backend.scheduleFault(atS, currentFault()));
+
+    // "Queued", never "applied". `FaultQueue::take_due` fires on `at_s < t_end`, so a
+    // fault dated now waits for the next *real* step — and `readNow`'s zero-length read
+    // deliberately does not provide one, because a read must not mutate the pack.
+    faultNote(
+      `queued at t = ${fmtTime(atS)}. It fires on the next step, so nothing changes while the run is paused.`,
+    );
+    clearBanner();
+  } catch (e) {
+    // A rejection here is the engine refusing the fault — an out-of-topology cell, a
+    // non-positive resistance, a sensor this pack does not have — and that belongs in
+    // the banner, where the message can be read in full.
+    showBanner(String(e.message ?? e));
+    sensorHint();
+  }
+};
+
+$("fault-clear").onclick = async () => {
+  if (!state.backend) return;
+  try {
+    const count = await Promise.resolve(state.backend.clearFaults());
+    faultNote(
+      count === 0
+        ? "nothing was queued."
+        : `dropped ${count} queued fault(s). Faults that already fired stay in effect — clearing the queue is not a repair.`,
+    );
+    clearBanner();
+  } catch (e) {
+    showBanner(String(e.message ?? e));
+  }
+};
+
+$("fault-clear-bms").onclick = async () => {
+  if (!state.backend) return;
+  try {
+    const cleared = await Promise.resolve(state.backend.clearBmsFault());
+    faultNote(
+      cleared
+        ? "latched BMS fault cleared; the contactor closes again if the pack is fit for it."
+        : "there was no latched BMS fault to clear.",
+    );
+    clearBanner();
+  } catch (e) {
+    showBanner(String(e.message ?? e));
+  }
+};
 
 $("speed").oninput = () => {
   const speed = 10 ** Number($("speed").value);

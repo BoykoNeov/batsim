@@ -105,6 +105,52 @@
            border: 1px solid var(--line); border-radius: 4px; }
   .note { color: var(--dim); font-size: 11px; margin-top: 6px; }
   code { color: var(--accent); }
+
+  /*
+    The pack, as a pack. One tile per cell, series down / parallel across, which is
+    the same series-major order `Sim::cells()` hands back — so tile n is cells[n] and
+    there is no index arithmetic to get wrong.
+  */
+  #pack {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 4px; padding: 10px 12px;
+  }
+  #pack-head {
+    display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px;
+  }
+  #pack-head .t { font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+                  color: var(--dim); }
+  #pack-head select { width: auto; flex: 0 0 auto; margin-left: auto; }
+  /*
+    Fixed-width tiles rather than fractions of the panel: a 1S1P pack would otherwise
+    render one cell the width of the screen, and a 100S10P pack would need its own
+    scrollbar anyway. Both scroll inside the box instead of resizing the page.
+  */
+  #pack-grid {
+    display: grid; gap: 3px; justify-content: start;
+    overflow: auto; max-height: 340px;
+  }
+  .celltile {
+    border: 1px solid var(--line); border-radius: 3px;
+    padding: 5px 4px; text-align: center; cursor: pointer;
+    min-width: 0; overflow: hidden;
+  }
+  .celltile .idx { font-size: 9px; opacity: .65; letter-spacing: .04em; }
+  .celltile .val { font-size: 12px; }
+  /* Ground truth about a cell that colour cannot carry, so it gets a glyph. */
+  .celltile.short { border-color: var(--warn); }
+  .celltile.vented { border-color: var(--bad); border-width: 2px; padding: 4px 3px; }
+  .celltile.pinned { outline: 2px solid var(--ink); outline-offset: -2px; }
+  #pack-legend {
+    display: flex; align-items: center; gap: 8px; margin-top: 9px;
+    color: var(--dim); font-size: 10px;
+  }
+  #pack-ramp { flex: 1; height: 7px; border-radius: 2px; }
+  #pack-detail { margin-top: 8px; min-height: 30px; }
+
+  /* The fault panel's per-variant fields, which are rebuilt when the variant changes. */
+  #fault-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px; }
+  #fault-fields .wide { grid-column: 1 / -1; }
 </style>
 </head>
 <body>
@@ -155,6 +201,30 @@
   </div>
   <div class="note" id="bms-note"></div>
 
+  <!--
+    Fault injection. Every variant here is `sim_core::Fault`, spelled externally
+    tagged exactly as the engine spells it — the panel builds the same JSON the
+    scenario files carry in their `[[faults]]` tables, so anything injectable from a
+    file is injectable live.
+  -->
+  <h2>Faults</h2>
+  <select id="fault-kind">
+    <option value="SoftInternalShort">SoftInternalShort — a leak inside one cell</option>
+    <option value="ExternalShort">ExternalShort — across the pack terminals</option>
+    <option value="WeakCell">WeakCell — replace one cell's factors</option>
+    <option value="SensorStuck">SensorStuck — freeze one reading</option>
+    <option value="SensorOffset">SensorOffset — bias one reading</option>
+  </select>
+  <div id="fault-fields"></div>
+  <label for="fault-delay">fires after [s] of simulation time</label>
+  <input type="number" id="fault-delay" value="0" min="0" step="1">
+  <div class="row" style="margin-top:8px">
+    <button id="fault-inject">Inject</button>
+    <button id="fault-clear">Clear queued</button>
+  </div>
+  <button id="fault-clear-bms" style="margin-top:6px">Clear latched BMS fault</button>
+  <div class="note" id="fault-note"></div>
+
   <h2>Snapshot</h2>
   <div class="row">
     <button id="save">Save</button>
@@ -181,6 +251,38 @@
 
   <div>
     <div id="flags"></div>
+  </div>
+
+  <!--
+    The pack, drawn as a pack. Every plot above and below this is an aggregate or a
+    min/max envelope, and a 4S2P pack has eight cells whose disagreement *is* the
+    physics — the group solve splits current by state, so a low-resistance or
+    high-SOC cell takes more load. That is invisible in an envelope and obvious here.
+
+    Ground truth, not the BMS's view: this is `Pack::cell()`, which the BMS is never
+    allowed to read.
+  -->
+  <div id="pack">
+    <div id="pack-head">
+      <span class="t">pack — ground truth, one tile per cell</span>
+      <select id="pack-metric">
+        <option value="soc">state of charge [%]</option>
+        <option value="temp_k">temperature [°C]</option>
+        <option value="overpotential_v">overpotential [mV]</option>
+        <option value="soh_capacity">SOH capacity [%]</option>
+        <option value="soh_resistance">SOH resistance [×]</option>
+        <option value="capacity_factor">capacity factor [×]</option>
+        <option value="r0_factor">R0 factor [×]</option>
+        <option value="internal_short_conductance_s">internal short [S]</option>
+      </select>
+    </div>
+    <div id="pack-grid"></div>
+    <div id="pack-legend">
+      <span id="pack-lo">—</span>
+      <div id="pack-ramp"></div>
+      <span id="pack-hi">—</span>
+    </div>
+    <div class="note" id="pack-detail"></div>
   </div>
 
   <!--
