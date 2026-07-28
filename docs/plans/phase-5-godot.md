@@ -1,6 +1,6 @@
 # Phase 5 — Godot adapter
 
-**Status: in progress. Slice A has landed; B–E are planned.** This file is written before the work so the
+**Status: in progress. Slices A and B have landed; C–E are planned.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` through `phase-4-server-wasm.md` grew.
 
@@ -23,7 +23,7 @@ asserted.
 | slice | scope | state |
 | ----- | ----- | ----- |
 | A | the shared boundary rule: `Demand::check_finite` / `Env::check_finite` land in `sim-core`; `sim-server` and `sim-wasm` migrate onto them; the sim-wasm "third client" comment is amended to name a criterion instead of a count | **landed** (v9 — no bump, as designed) |
-| B | `crates/sim-godot`: crate skeleton, `godot` pinned to `api-4-7`, workspace membership, and `driver.rs` — the entire pure layer (accumulator, flag edge detector, scenario→pack, batch stepping, caps), host-tested | **planned** |
+| B | `crates/sim-godot`: crate skeleton, `godot` pinned to `api-4-7`, workspace membership, and `driver.rs` — the entire pure layer (accumulator, flag edge detector, scenario→pack, batch stepping, caps), host-tested | **landed** (v9 — no bump, as designed) |
 | C | the node surface: exported properties, `#[func]` methods, signals, `_physics_process` wiring, `.gdextension`, demo project skeleton | **planned** |
 | D | the exit gate: GDScript driver emitting bit patterns, the Rust integration test that compares them, the `--import` bootstrap. **Carries the exit criterion.** | **planned** |
 | E | wrap-up: a watchable demo scene, README status and run instructions, adapter overhead measured separately from `Pack::step` | **planned** |
@@ -517,6 +517,147 @@ risk of, and it is now closed in one place instead of three.
   `dt > 0` rather than `>= 0`, because a zero-length step in a `_physics_process` loop is a
   frame that did nothing rather than a deliberate telemetry read.
 - **No `godot` dependency anywhere yet.** Slice A adds no crate; that is slice B.
+
+## Learned while building — slice B (`sim-godot` and its pure driver)
+
+### The canary held, and slice B cost `sim-core` nothing at all
+
+`SNAPSHOT_VERSION` is still 9. Slice B added a crate, a `godot` dependency, an
+accumulator, an edge detector and a driver, and touched `sim-core` **zero times**. That is
+the canary working as designed rather than merely not firing: the one thing the adapter
+wanted from the engine that it did not already have — the finiteness rule — was taken in
+slice A, deliberately and in isolation.
+
+### The plan predicted a first reading was needed; a real Godot process showed what the alternative looks like
+
+The plan argued that a node's readings are *properties*, that a property has no spelling
+for "no reading yet", and that a default `0.0` would be drawn by a plot as a real
+measurement of an empty pack. So [`PackDriver::new`] takes one zero-length step.
+
+Driven from GDScript, that is the difference between these two:
+
+```text
+primed v_terminal -> 3.6          # LFP OCV at SOC 1.0, straight off the chemistry table
+primed sim_time_s -> 0.0          # and the clock has not moved
+```
+
+`3.6` is the last entry of `lfp_26650_generic.toml`'s `[ocv] volts` table. It is a
+measurement of the pack, at t = 0, before anything ran. Without priming it would have been
+`0.0` V — indistinguishable, to a plotting client, from a pack that had been shorted.
+
+### The priming claim was checked rather than argued, and the check is the snapshot
+
+"A zero-length step is free" is exactly the kind of claim that is true until it is not, so
+it is a test rather than a sentence. The test compares **snapshots**, not telemetry, and
+that choice is the whole point: a snapshot carries the RNG's word position, so a
+byte-identical snapshot proves the zero-length step drew nothing. It runs on
+`soft_short_under_a_lying_sensor.toml` — a fixture with faults *and* a noisy sensor —
+precisely so there is an RNG in play to draw from.
+
+```text
+200 steps, preceded by a dt = 0 step   ->  snapshot JSON
+200 steps, not preceded by one         ->  snapshot JSON
+identical: true
+```
+
+If a zero-length step ever stops being free, that test fails and the constructor has to
+change rather than the doc comment.
+
+### Slice A's move worked twice, which is the argument that it was the right move
+
+Slice A put the finiteness rule on `Demand`/`Env` because it was a statement about those
+types rather than about a protocol. Slice B hit the identical shape a second time and
+applied the identical fix: `sim-wasm`'s private `build` — "build this scenario with or
+without its BMS, and count the sensor faults that had nowhere to land" — is a statement
+about a `Scenario`, so it is now `sim_data::Scenario::build_pack_with_bms` and `sim-wasm`
+calls it.
+
+That is the criterion from the amended comment doing real work. Neither move needed a
+`sim-protocol` crate, because neither was about a wire.
+
+### A hand-written test fixture tested the wrong failure, and the first run caught it
+
+`a_restore_refuses_a_differently_shaped_pack` needs a 9S3P pack to restore into a 1S1P
+node. The first version hand-wrote the `[pack]` table:
+
+```text
+a 9S3P pack builds: Data(Toml(TomlError { message: "missing field `seed`", ... }))
+```
+
+`PackConfig` requires `seed`, so the fixture never built a pack at all. Had the assertion
+been `is_err()` rather than a match on `TopologyMismatch`, this test would have **passed
+while proving nothing** — a parse failure wearing a topology check's name.
+
+The fix is a rule worth keeping: derive fixtures from the committed scenario files by
+transformation rather than writing new ones by hand. The test now reshapes
+`cc_discharge_lfp.toml` and asserts the reshape actually happened, so a future required
+field on `PackConfig` cannot quietly turn it back into a parse test.
+
+### The accumulator's real property is conservation, not "steps == round(delta/dt)"
+
+The interesting test is not that 0.025 s of a 0.01 s step gives 2. It is that over 700
+uneven frames, **everything fed in is either consumed or still pending** — nothing
+evaporates — and the pending remainder never exceeds one step. That is what makes sim time
+track wall time, and it is the property a naive `round(delta / dt)` fails while passing
+every single-frame test.
+
+Two smaller decisions the tests pin:
+
+- **A hostile `delta` cannot poison the accumulator.** A `NaN` frame delta contributes
+  nothing rather than being added; otherwise one bad frame makes `pending_s` `NaN` forever
+  and every subsequent frame does nothing, which presents as a hung simulation rather than
+  as a dropped frame. Godot should never produce one — this is cheap insurance against the
+  failure being unrecoverable rather than transient.
+- **The two caps are genuinely different knobs**, and there is a test that says so.
+  `MAX_STEPS_PER_CALL` refuses an absurd explicit batch; `max_steps_per_frame` is an
+  *argument*, small on purpose, and a capped frame is a normal event that reports itself.
+  Collapsing them would either make fast-forward impossible or let one long frame stall a
+  game.
+
+### Two gdext papercuts, neither interesting but both costing a compile
+
+- `bitflags` types do not implement `Default`, so `#[derive(Default)]` on anything holding
+  an `EventFlags` fails. Both defaults are hand-written, which is arguably better: "no
+  edges" has to mean *empty*, and that is now stated rather than derived.
+- `GString: From<&String>` and `From<&str>` exist; `From<String>` does not. Every
+  conversion takes a reference.
+
+### What running it found that reading it could not
+
+The shell was driven from a real headless Godot process before this slice was committed,
+because a slice that ships fourteen `#[func]`s and never loads once is claiming something
+unverified. Everything worked first time, which is worth recording as much as a failure
+would be:
+
+```text
+chemistry_id_of -> lfp_26650_generic
+load_scenario -> true
+primed v_terminal -> 3.6         sim_time_s -> 0.0
+step_batch(1.0, 100, 2A) -> true
+after sim_time_s -> 100.0        v_terminal -> 3.27904127761807   soc_true -> 0.97588159871621
+v_bits -> 5ad44cfe793b0a40
+bad demand -> false  err='demand is not one of {"Current": A}, … : unknown variant `current`,
+                          expected one of `Current`, `Power`, `Voltage`, `Rest` at line 1 column 10'
+```
+
+Three things that had been assertions in a plan document became observations here: the
+extension registers and its `#[func]`s are callable; the priming reading is a real
+measurement; and **the bit-exact interchange slice D depends on works on a value produced
+by this crate**, not only on a constant typed into a spike.
+
+The error message is worth its line too — the engine's own serde error survives the whole
+way out to a GDScript console and names both what was wrong and what was expected.
+
+### What is deliberately not here
+
+- **No `godot/` project, no `.gdextension`, no signals, no `_physics_process`.** All
+  slice C. The load test above ran through the throwaway spike project outside the repo
+  tree, deliberately, so slice B commits no Godot project files.
+- **No exported properties.** The `#[func]` surface here is what slice B needed to prove
+  the path end to end; slice C is where the node gets an editor-facing shape.
+- **No `Advance` consumption in the shell.** `BatteryPack::advance` already scopes its
+  borrow so the edges can be emitted after it ends — the structure is in place, the
+  emission is slice C.
 
 ## Open questions (decide when the slice lands, not now)
 

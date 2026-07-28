@@ -1,0 +1,47 @@
+[package]
+name = "sim-godot"
+version = "0.0.0"
+description = "gdext GDExtension exposing sim-core as a Godot `BatteryPack` node."
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# `cdylib` is what Godot loads through `godot/batsim.gdextension`; `rlib` is what makes
+# `driver` reachable from `tests/`, which is where every assertion in this crate lives.
+# The `rlib` is also what lets the exit gate's in-process leg call `PackDriver::new`
+# directly — so the gate's two legs share one scenario->pack path and the only difference
+# between them is the GDScript boundary itself. Dropping it would cost both.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sim-core = { path = "../sim-core" }
+sim-data = { path = "../sim-data" }
+serde = { workspace = true }
+# `{ workspace = true }` is load-bearing, not tidiness: the workspace entry carries
+# `float_roundtrip`, and writing `serde_json = "1"` here would compile perfectly while
+# silently dropping it. This crate hands snapshot JSON to GDScript and takes it back, so
+# it is squarely a consumer. See the comment on the workspace dependency.
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# The only engine-facing dependency, and the only thing in this crate that `driver.rs`
+# may not touch.
+#
+# `api-4-7` is **pinned rather than left to the default feature level**, for two reasons
+# that are not the same reason. Reproducibility: the default tracks whatever gdext
+# considers current, so a `cargo update` could silently change which Godot versions the
+# built extension loads into. And correctness: `compatibility_minimum` in the
+# `.gdextension` has to match what the crate was built against, which is only knowable if
+# it is pinned.
+#
+# The support consequence, stated rather than discovered: **this extension requires Godot
+# 4.7 or newer.** It will refuse to load in 4.6 and earlier. Lowering that is a deliberate
+# decision to make here, not a default to drift into.
+#
+# Note `api-custom` is the feature that would need a `godot4` binary on PATH at build
+# time. This one does not — the bindings are generated from JSON bundled in
+# `godot-codegen`, which is why `cargo test --workspace` needs no Godot installed.
+godot = { version = "0.5.4", features = ["api-4-7"] }

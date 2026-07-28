@@ -30,7 +30,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sim_core::{ChemistryParams, Pack, PackConfig, ScheduledFault};
+use sim_core::{ChemistryParams, Fault, Pack, PackConfig, ScheduledFault};
 
 use crate::{parse_chemistry, DataError};
 
@@ -208,6 +208,68 @@ impl Scenario {
             pack.schedule_fault(scheduled.at_s, scheduled.fault)?;
         }
         Ok(pack)
+    }
+
+    /// Build this scenario's pack **with or without** its BMS, reporting how many of the
+    /// scenario's faults had to be dropped for want of a sensor to aim them at.
+    ///
+    /// `with_bms = true` is exactly [`Self::build_pack`] with a `0` beside it. The
+    /// interesting case is `false`, and running the same scenario with and without
+    /// protection is a core teaching comparison rather than an error mode — `CLAUDE.md`
+    /// principle 7 says "BMS off" is a supported, interesting mode.
+    ///
+    /// # Sensor faults have nowhere to land without a BMS
+    /// Found by running it, not by reasoning about it: removing the BMS from
+    /// `scenarios/soft_short_under_a_lying_sensor.toml` makes its own
+    /// `SensorOffset { GroupVoltage(1) }` unschedulable — `Pack::schedule_fault` returns
+    /// `NoSuchSensor`, because sensors *belong to* the BMS. The whole sensor layer is the
+    /// BMS's instrumentation; with no BMS there is no instrument to lie.
+    ///
+    /// So this drops the scenario's sensor faults rather than failing, and **counts
+    /// them**, so a client can say which of the scenario's misfortunes it is no longer
+    /// reproducing. Failing instead would make a BMS toggle unusable on exactly the
+    /// scenario it exists to illuminate; dropping them silently would let a student
+    /// compare two runs that differ in more ways than the label claims.
+    ///
+    /// A scenario that ships **no** BMS and a sensor fault is a different thing — an
+    /// authoring error — and is left to fail loudly. Only the removal of a BMS the
+    /// scenario actually configured triggers the filter.
+    ///
+    /// # Why this is here and not in each adapter
+    /// It was `sim-wasm`'s private `build` first. `sim-godot` needs the identical
+    /// behaviour for the identical reason, and "build this scenario without its BMS" is a
+    /// statement about a [`Scenario`] rather than about any adapter — the same argument
+    /// that put `Demand::check_finite` on the engine's own type in slice A. See
+    /// `docs/plans/phase-5-godot.md`.
+    ///
+    /// # Errors
+    /// Everything [`Self::build_pack`] can fail with.
+    pub fn build_pack_with_bms(
+        &self,
+        chem: ChemistryParams,
+        with_bms: bool,
+    ) -> Result<(Pack, u32), DataError> {
+        if with_bms || self.pack.bms.is_none() {
+            // As authored. A sensor fault on a scenario that never had a BMS is an
+            // authoring error and belongs in the caller's face, not in a filter.
+            return Ok((self.build_pack(chem)?, 0));
+        }
+
+        // Clone and edit the clone, so the caller's scenario keeps saying what the file
+        // said — that is what makes "did the scenario configure a BMS at all?" still
+        // answerable after a toggle.
+        let mut without = self.clone();
+        without.pack.bms = None;
+        let before = without.faults.len();
+        without.faults.retain(|scheduled| {
+            !matches!(
+                scheduled.fault,
+                Fault::SensorStuck { .. } | Fault::SensorOffset { .. }
+            )
+        });
+        // Truncation is unreachable: a `Vec` this long would not have been parsed.
+        let dropped = u32::try_from(before - without.faults.len()).unwrap_or(u32::MAX);
+        Ok((without.build_pack(chem)?, dropped))
     }
 }
 

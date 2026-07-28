@@ -10,10 +10,30 @@ members = [
     # gates is `wasm-pack build` — that needs a toolchain the Rust test run has no
     # business invoking, and its output is an uncommitted build artifact.
     "crates/sim-wasm",
+    # In for the same reason `sim-wasm` is, and the reasoning transferred only after it
+    # was measured rather than assumed: a gdext crate compiles and host-tests for the
+    # host target with **no Godot process running and no Godot binary at build time**
+    # (with `api-4-7`; `api-custom` would need one). So `crates/sim-godot/src/driver.rs`
+    # — which is the whole of this adapter's behaviour, with no `godot` type in any
+    # signature — stays inside `cargo test --workspace` and `clippy --all-targets` and
+    # cannot rot.
+    #
+    # The cost is honest and one-time: ~1m45s of cold build for `godot-codegen` ->
+    # `godot-core` -> `godot`, then nothing (0.05 s for a warm no-op clippy). Everyone
+    # who clones the repo pays it, including someone who only cares about `sim-core`.
+    # Accepted, because a crate outside the gates is a crate that rots.
+    #
+    # What is *not* in the gates is the Godot-driven exit gate in
+    # `crates/sim-godot/tests/` — that needs a built cdylib and a Godot 4.7 binary, which
+    # the Rust test run has no business requiring. It is `#[ignore]`d, so it is still
+    # compiled by the default gate and cannot rot either; run it with
+    # `cargo test -p sim-godot -- --ignored`. Same shape as the `wasm-pack` carve-out
+    # above.
+    "crates/sim-godot",
 ]
 
-# The remaining adapter crates (sim-godot, sim-py) are added in their respective
-# phases — see CLAUDE.md "Phased build plan".
+# The remaining adapter crate (sim-py) is added in its respective phase — see
+# CLAUDE.md "Phased build plan".
 
 [workspace.package]
 edition = "2021"

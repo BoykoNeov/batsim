@@ -537,33 +537,16 @@ impl SimEngine {
 /// Build a pack from a scenario, optionally without its BMS, reporting how many of the
 /// scenario's faults had to be dropped for want of a sensor to aim them at.
 ///
-/// The removal branch clones and edits the clone rather than mutating in place, so the
-/// stored scenario keeps saying what the file said. See [`SimEngine::restart`] for why
-/// sensor faults are filtered rather than allowed to fail the build, and why that only
-/// applies when a BMS is being *removed*.
+/// This was this crate's own logic until Phase 5 needed the identical behaviour in
+/// `sim-godot`; it now lives on [`Scenario`] itself, where the statement it makes belongs.
+/// See [`Scenario::build_pack_with_bms`] for the reasoning that used to be here, and
+/// [`SimEngine::restart`] for what it means to a caller.
 fn build(
     scenario: &Scenario,
     chem: ChemistryParams,
     bms_enabled: bool,
 ) -> Result<(Pack, u32), DataError> {
-    if bms_enabled || scenario.pack.bms.is_none() {
-        // As authored. A sensor fault on a scenario that never had a BMS is an
-        // authoring error and belongs in the caller's face, not in a filter.
-        return Ok((scenario.build_pack(chem)?, 0));
-    }
-
-    let mut without = scenario.clone();
-    without.pack.bms = None;
-    let before = without.faults.len();
-    without.faults.retain(|scheduled| {
-        !matches!(
-            scheduled.fault,
-            Fault::SensorStuck { .. } | Fault::SensorOffset { .. }
-        )
-    });
-    // Truncation is unreachable: a `Vec` this long would not have been parsed.
-    let dropped = u32::try_from(before - without.faults.len()).unwrap_or(u32::MAX);
-    Ok((without.build_pack(chem)?, dropped))
+    scenario.build_pack_with_bms(chem, bms_enabled)
 }
 
 /// Every `f64` a demand can carry must be finite.
