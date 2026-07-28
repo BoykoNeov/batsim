@@ -1,0 +1,41 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://demo.gd" id="1_demo"]
+
+[node name="Demo" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_demo")
+
+[node name="Pack" type="BatteryPack" parent="."]
+
+[node name="Title" type="Label" parent="."]
+offset_left = 24.0
+offset_top = 16.0
+offset_right = 800.0
+offset_bottom = 40.0
+text = "batsim — sim-core driven from Godot"
+
+[node name="Readout" type="Label" parent="."]
+offset_left = 24.0
+offset_top = 56.0
+offset_right = 520.0
+offset_bottom = 320.0
+text = "loading…"
+
+[node name="EventsTitle" type="Label" parent="."]
+offset_left = 540.0
+offset_top = 56.0
+offset_right = 900.0
+offset_bottom = 80.0
+text = "events (signals)"
+
+[node name="EventLog" type="Label" parent="."]
+offset_left = 540.0
+offset_top = 84.0
+offset_right = 900.0
+offset_bottom = 320.0

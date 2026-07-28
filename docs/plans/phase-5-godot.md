@@ -1,7 +1,6 @@
 # Phase 5 — Godot adapter
 
-**Status: in progress. Slices A–D have landed and the phase's exit criterion is met; E is
-planned.** This file is written before the work so the
+**Status: complete. All five slices landed and the phase's exit criterion is met.** This file is written before the work so the
 decisions below are made once; the "learned while building" material is appended as each
 slice lands, the way `phase-2-thermal-bms.md` through `phase-4-server-wasm.md` grew.
 
@@ -27,7 +26,7 @@ asserted.
 | B | `crates/sim-godot`: crate skeleton, `godot` pinned to `api-4-7`, workspace membership, and `driver.rs` — the entire pure layer (accumulator, flag edge detector, scenario→pack, batch stepping, caps), host-tested | **landed** (v9 — no bump, as designed) |
 | C | the node surface: exported properties, `#[func]` methods, signals, `_physics_process` wiring, `.gdextension`, demo project skeleton | **landed** (v9 — no bump, as designed) |
 | D | the exit gate: GDScript driver emitting bit patterns, the Rust integration test that compares them, the `--import` bootstrap. **Carries the exit criterion.** | **landed** (v9 — no bump, as designed) |
-| E | wrap-up: a watchable demo scene, README status and run instructions, adapter overhead measured separately from `Pack::step` | **planned** |
+| E | wrap-up: a watchable demo scene, README status and run instructions, adapter overhead measured separately from `Pack::step` | **landed** (v9 — no bump, as designed) |
 
 Each slice keeps `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` clean. As in Phase 4, **no slice
@@ -907,6 +906,135 @@ would have been passing for a reason nobody had checked.
   about infrastructure this repo does not yet have, and `--ignored` keeps it one command
   away in the meantime.
 
+## Learned while building — slice E (wrap-up)
+
+### The canary held for all five slices
+
+`SNAPSHOT_VERSION` is 9, the number it was when Phase 5 started. Five slices, a new crate,
+a Godot project, and one `sim-core` edit that was deliberately confined to slice A and
+deliberately added no serialized field. The Phase 4 inversion — *a bump means an adapter
+has leaked into the engine* — has now held across two consecutive adapter phases.
+
+### The demo caught a claim in its own comment that was backwards
+
+The demo was written with `fixed_dt = 2.0` and a comment saying it ran "at 100x so a full
+discharge is watchable". A headless probe printed the readout after 150 frames:
+
+```text
+sim time           2.0 s          <- after ~2.5 s of wall time
+carried         0.4833 s (accumulator remainder)
+```
+
+One times, not a hundred. **`fixed_dt` does not change speed, and the reason is the
+accumulator working correctly**: raising it makes each step cover more simulated time *and*
+makes the accumulator take proportionally fewer of them, so the pack still advances one
+simulated second per wall second. Only the granularity changes.
+
+Speed is a multiplier on the *time fed in*, which the node did not have. It does now —
+`speed`, an exported property, defaulting to 1.0 and scaling `delta` before it reaches the
+accumulator, never touching `dt`. Every step is still exactly `fixed_dt`, so a fast-forward
+stays bit-identical to a real-time run of the same step count. Phase 4's browser client
+already had the same knob for the same reason; the node was the outlier.
+
+Worth recording as a process point too: this was found by *running the thing and reading
+the output*, not by reviewing the code. The comment was confident, plausible, and wrong,
+and no test would have caught it because nothing was broken — only mis-described.
+
+The smoke check now pins it, with an assertion built to discriminate rather than merely to
+pass. It runs at `speed = 10`, where 30 physics frames (~0.5 s of wall time) must yield
+more than 1 s of simulated time — impossible at speed 1. Disabling the multiplier gives:
+
+```text
+SMOKE FAIL: 30 frames at speed 10 gave only 0.480000 s of simulated time —
+            `speed` is not scaling the time fed to the accumulator
+```
+
+`0.48` is exactly the speed-1 answer, which is what makes the failure legible.
+
+### The demo bundles its data, and the copy is drift-proof rather than forbidden
+
+`res://` does not escape the project directory — and should not, because that is precisely
+what a shipped `.pck` looks like. A demo that reached up into `scenarios/` would demonstrate
+a pattern that breaks on export, which is the failure the text-not-paths API exists to
+avoid. (The attempt to check whether `res://../` works produced, fittingly, a headless hang
+— the same GDScript-error failure mode slice D is built around.)
+
+So the demo bundles copies under `godot/assets/`. Duplicated physical data would normally
+be exactly the wrong thing here — `CLAUDE.md`'s provenance rule means a stale chemistry copy
+is an unlabelled second set of constants pretending to be the first. The resolution is to
+make drift loud rather than to forbid the copy: `crates/sim-godot/tests/demo_assets.rs`
+compares bytes, runs in the ordinary `cargo test --workspace`, needs no Godot, and names the
+`cp` command that fixes it.
+
+It has a second test that is easy to omit and worth keeping: it asserts `demo.gd` actually
+*mentions* each guarded path. Without it, renaming an asset in the script would leave the
+first test guarding a file nobody reads — green, while the demo is broken.
+
+### Measured: the GDScript boundary, and what it settles
+
+Per-call costs, 1S1P LFP, this box, this session. **Ratios and relative costs only** — the
+absolute figures are not comparable to the `<50 µs` budget, which is for a 100S10P pack:
+
+| call | cost |
+| ---- | ---- |
+| empty GDScript loop iteration | 0.006 µs |
+| a `#[func]` getter (`soc_true()`) | **0.31 µs** |
+| `step_batch(n = 1)` | 3.45 µs |
+| `step_batch(n = 100)`, per step | 1.53 µs |
+| → boundary + demand JSON parse, per call | **≈ 1.9 µs** |
+
+Two things follow.
+
+**The last open question is answered with data rather than taste.** A `Dictionary`
+conversion was left open pending "the first real consumer". At 0.31 µs a getter, a game
+polling forty of them every frame spends ~12 µs — under 0.1 % of a 16.6 ms frame. Typed
+getters are not a performance problem, so a `Dictionary` would be for *ergonomics* only.
+The demo scene reads eleven of them per frame and wanted nothing more, so it is not built.
+
+**The per-call boundary cost is real but structurally amortised.** ≈1.9 µs per `#[func]`
+call, of which the demand's JSON parse is part — and `_physics_process` re-parses
+`demand_json` every frame. At 60 Hz that is ~0.01 % of the frame budget, so it is left
+alone deliberately rather than overlooked. The shape is the same one Phase 4 found on the
+socket ("a telemetry frame costs ~7–11 µs and never amortises"): the fixed cost is per
+*call*, so batching is what pays for it.
+
+### Measured: the driver's own overhead is below the noise floor
+
+Release build, 1S1P, 400 000 steps, five alternating reps, best-of, warmed first — the
+bench discipline this repo already writes down for a box that has been missing its fast
+state:
+
+```text
+raw Pack::step         : 0.1296 µs/step
+PackDriver::step_batch : 0.1135 µs/step
+ratio driver/raw       : 0.88
+```
+
+The honest reading of a ratio below 1 is **not** that the adapter made the engine faster.
+It is that the driver's per-step work — one `EventFlags` AND-NOT pair and one struct
+store — is smaller than this measurement can resolve. The number is reported as "not
+measurable above noise", not as a speedup, and the *absolute* µs figures are recorded only
+to show the two arms were measured the same way.
+
+`Pack::step` itself was not touched by any slice in this phase, which is the claim that
+actually mattered; the diff is the evidence, and the canary agrees.
+
+### What is deliberately not here
+
+- **No CI wiring for the Godot gate.** It needs a Godot binary on `PATH`; making that a CI
+  requirement is an infrastructure decision this repo has not made yet. `--ignored` keeps
+  it one command away.
+- **No `Telemetry` → `Dictionary`.** See the measurement above — it would be ergonomics,
+  and no consumer has asked.
+- **No export presets.** Shipping an actual game binary is not Phase 5's job; the demo runs
+  from the project directory.
+- **No second demo scene** for the BMS-off comparison. The node supports it (`restart(false)`
+  plus `sensor_faults_dropped`), the driver tests cover it, and the browser client is the
+  pedagogy surface. A Godot scene for it would be a teaching artefact rather than an
+  adapter one.
+
+---
+
 ## Open questions
 
 ### Resolved in slice C
@@ -926,10 +1054,18 @@ would have been passing for a reason nobody had checked.
   `parallel()` accessors would otherwise describe a pack it no longer holds. Same rule as
   `sim-wasm`, tested in `tests/driver.rs`.
 
+### Resolved in slice E
+
+- **Does the node need a `Telemetry`→`Dictionary` conversion?** No — and the answer is a
+  measurement rather than a preference. A `#[func]` getter costs **0.31 µs** across the
+  GDScript boundary, so a game polling forty of them every frame spends ~12 µs, under 0.1 %
+  of a 16.6 ms frame. Typed getters are not a performance problem, which means a
+  `Dictionary` would buy ergonomics only. The demo scene — the first real consumer, which is
+  where this was always going to be decided — reads eleven per frame and wanted nothing
+  more. Not built.
+
 ### Still open
 
-- **Does the node need a `Telemetry`→`Dictionary` conversion, or are typed getters enough?**
-  A `Dictionary` is one allocation per read and forty string keys; typed getters are forty
-  `#[func]`s. Slice C shipped getters for the fields a game polls every frame and needed
-  nothing more, but the demo scene in slice E is the first real consumer and is the honest
-  place to decide. Likely both, with the `Dictionary` for scripts.
+- **Nothing.** Every question this plan opened has been resolved in the slice that met it.
+  What Phase 5 deliberately did *not* build is listed per slice under "What is deliberately
+  not here", and is scope rather than uncertainty.

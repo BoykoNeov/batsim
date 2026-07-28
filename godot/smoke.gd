@@ -104,6 +104,11 @@ func _initialize() -> void:
 	_pack.max_steps_per_frame = 64
 	_pack.soc_signal_epsilon = 1e-9  # fire readily, so absence of the signal means absence
 	_pack.demand_json = '{"Current": 2.0}'
+	# 30 physics frames is about 0.5 s of wall time, so at speed 1.0 the pack could not
+	# possibly pass ~0.5 s of simulated time. Asking for 10x makes the check below
+	# *discriminating*: a `speed` that was ignored, or applied to `dt` instead of to the
+	# time fed in, both fail it.
+	_pack.speed = 10.0
 	if not _pack.load_from_exports():
 		_fail("load_from_exports failed: %s" % _pack.last_error())
 		_finish()
@@ -121,19 +126,23 @@ func _physics_process(delta: float) -> bool:
 		return false
 
 	var elapsed: float = _pack.sim_time_s()
-	# 30 frames at the default 60 Hz tick is ~0.5 s of wall time, consumed in 0.02 s
-	# steps. The exact count depends on frame timing — which is precisely why the exit
-	# gate does not drive this path — so the assertion is that time advanced by a whole
-	# number of steps and stayed in a sane band, not that it hit an exact value.
+	# 30 frames at the default 60 Hz tick is ~0.5 s of wall time, scaled by speed = 10 and
+	# consumed in 0.02 s steps — so roughly 5 s of simulated time. The exact count depends
+	# on frame timing, which is precisely why the exit gate does not drive this path, so
+	# the assertions are a whole number of steps and a sane band rather than an exact value.
 	if elapsed <= 0.0:
 		_fail("after %d physics frames the accumulator advanced nothing" % _frames)
 	else:
 		var steps: float = elapsed / 0.02
 		if absf(steps - roundf(steps)) > 1e-6:
 			_fail("sim_time_s = %.17f is not a whole number of 0.02 s steps" % elapsed)
-		if elapsed > 5.0:
-			_fail("30 frames consumed %f s of simulated time — the cap is not binding"
-				% elapsed)
+		# Below 1 s means speed was ignored: ~0.5 s of wall time is all that elapsed.
+		if elapsed < 1.0:
+			_fail("30 frames at speed 10 gave only %f s of simulated time — `speed` is \
+not scaling the time fed to the accumulator" % elapsed)
+		if elapsed > 30.0:
+			_fail("30 frames consumed %f s of simulated time — far more than speed 10 \
+explains" % elapsed)
 	if _pack.pending_s() >= 0.02:
 		_fail("the accumulator is carrying %f s, more than a whole step"
 			% _pack.pending_s())

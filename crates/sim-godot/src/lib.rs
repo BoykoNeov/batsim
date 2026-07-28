@@ -100,6 +100,24 @@ pub struct BatteryPack {
     /// should not start simulating because it was instantiated.
     #[export]
     auto_step: bool,
+    /// Simulated seconds per wall-clock second. 1.0 is real time; 60.0 runs a minute of
+    /// battery life per second.
+    ///
+    /// # This is the knob that changes speed, and `fixed_dt` is not
+    /// Worth stating because it is easy to get backwards, and this demo's own comment had
+    /// it backwards before a headless probe caught it. Raising [`Self::fixed_dt`] makes
+    /// each step cover more simulated time *and* makes the accumulator take proportionally
+    /// fewer of them, so the pack still advances one simulated second per wall second —
+    /// only the granularity changes. Speed is a multiplier on the wall-clock time fed in,
+    /// which is this.
+    ///
+    /// It scales *how much time is fed to the accumulator*, never `dt`. Every step is
+    /// still exactly `fixed_dt`, so a fast-forward is bit-identical to a real-time run of
+    /// the same step count — the property `CLAUDE.md` principle 3 exists to protect.
+    ///
+    /// `0.0` is legal and means paused. Negative is not: the engine does not run backwards.
+    #[export]
+    speed: f64,
     /// What to do with time the per-frame cap would not let us consume. See
     /// [`BacklogPolicy`].
     #[export]
@@ -163,6 +181,7 @@ impl INode for BatteryPack {
             // 3.6 s of simulated time rather than every frame.
             soc_signal_epsilon: 0.001,
             auto_step: false,
+            speed: 1.0,
             backlog_policy: BacklogPolicy::Drop,
             demand_json: GString::from("\"Rest\""),
             last_announced_soc: f64::NAN,
@@ -191,12 +210,20 @@ impl INode for BatteryPack {
         let fixed_dt = self.fixed_dt;
         let max_steps = u32::try_from(self.max_steps_per_frame).unwrap_or(u32::MAX);
         let backlog = self.backlog_policy.into();
+        // Scaling the *time fed in*, never `dt`. A negative or non-finite speed would
+        // otherwise reach the accumulator, which absorbs it silently — better to treat it
+        // as paused than to have the node quietly stop for an unexplained reason.
+        let scaled = if self.speed.is_finite() && self.speed > 0.0 {
+            delta * self.speed
+        } else {
+            0.0
+        };
 
         let outcome = {
             let Some(driver) = self.driver.as_mut() else {
                 return;
             };
-            driver.advance_real_time(delta, fixed_dt, max_steps, demand, backlog)
+            driver.advance_real_time(scaled, fixed_dt, max_steps, demand, backlog)
         };
         match outcome {
             Ok(advance) => self.announce(advance),

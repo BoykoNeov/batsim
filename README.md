@@ -29,7 +29,7 @@ Key invariants:
 
 ## Status
 
-Phases 0–4 are complete. Each phase's exit criterion is a committed test rather than a
+Phases 0–5 are complete. Each phase's exit criterion is a committed test rather than a
 judgement call, so the right-hand column is the thing to run if you doubt a row.
 
 | phase | what landed | exit criterion pinned by |
@@ -39,7 +39,8 @@ judgement call, so the right-hand column is the thing to run if you doubt a row.
 | 2 | thermal network, sensor layer, SOC estimator, protection, passive balancing | `sim-core/tests/thermal.rs`, `scenario_protection.rs`, `sim-data/tests/scenario_lfp_soc_drift.rs` |
 | 3 | calendar + cycle aging, fault queue, plating flag, thermal runaway and propagation | `sim-core/tests/scenario_aging.rs`, `scenario_runaway.rs` |
 | 4 | `sim-server` (REST + WebSocket), `sim-wasm`, the browser demo, the example script | `sim-server/tests/e2e_experiment.rs` |
-| 5 | `sim-godot` — a `BatteryPack` GDExtension node | next |
+| 5 | `sim-godot` — a `BatteryPack` GDExtension node, exported properties, fixed-`dt` accumulator, signals, and a Godot demo scene | `sim-godot/tests/godot_gate.rs` (needs Godot — see below) |
+| 6 | porous-electrode cell models (`Spm`/`Dfn`) | next |
 
 Two chemistries ship under [`chemistries/`](chemistries) — LFP 26650 and NMC 18650.
 Every constant in them carries a provenance note, **including the ones whose note says
@@ -60,10 +61,12 @@ batsim/
 │   ├── sim-core/         # pure engine: types, models, solver, snapshots
 │   ├── sim-data/         # TOML chemistry + scenario loading and validation
 │   ├── sim-server/       # axum: REST for setup/snapshots, WebSocket for stepping
-│   └── sim-wasm/         # wasm-bindgen build of the engine, for the browser
+│   ├── sim-wasm/         # wasm-bindgen build of the engine, for the browser
+│   └── sim-godot/        # gdext: the BatteryPack node, for Godot 4.7+
 ├── chemistries/          # *.toml parameter sets (LFP, NMC)
 ├── scenarios/            # *.toml scenarios: a pack, a chemistry, and its faults
 ├── web/                  # the browser demo: one HTML file, one JS file, no deps
+├── godot/                # the Godot demo project: demo scene, smoke check, exit gate
 ├── examples/             # experiment.mjs — drive the server from outside
 ├── docs/plans/           # per-phase design notes and measurements
 ├── tools/reference/      # Python + PyBaMM scripts that generate golden CSVs
@@ -85,6 +88,13 @@ cargo fmt --all
 `cargo test -p sim-core` is the fast inner loop for physics work and is the command
 to reach for while iterating: `axum` and `tokio` make the full workspace run
 noticeably slower, and they touch nothing the engine does.
+
+Two things are deliberately **outside** those commands, because each needs a toolchain
+the Rust test run has no business requiring. Both are still compiled by the ordinary
+gate, so neither can rot:
+
+- `wasm-pack build` for the browser demo (see [The browser demo](#the-browser-demo)).
+- Phase 5's exit gate, which needs a Godot 4.7 binary (see [The Godot demo](#the-godot-demo)).
 
 ## Run it
 
@@ -147,6 +157,48 @@ been offset just enough to hide it, moves the pack into a cold room, and writes
 
 The script is also the readable description of the protocol: about sixty lines of it
 are the experiment and the rest is commentary on why the wire looks the way it does.
+
+### The Godot demo
+
+Needs **Godot 4.7 or newer** on `PATH`. The `godot` crate pins `api-4-7`, and an
+extension cannot load into an engine older than the API it was built against.
+
+```bash
+cargo build -p sim-godot
+godot --headless --path godot --import    # one-time, per clone: .godot/ is gitignored
+godot --path godot                        # watch it run
+```
+
+The demo discharges a single LFP cell at 1 C and shows live telemetry beside the signals
+the node emits. It runs at `speed = 180`, so an hour of battery life takes about twenty
+seconds — and `speed` is the knob that does that, **not** `fixed_dt`. Raising `fixed_dt`
+makes each step cover more simulated time *and* makes the accumulator take proportionally
+fewer of them, so the pack still advances one simulated second per wall second; only the
+granularity changes. Every step is exactly `fixed_dt` either way, which is what keeps a
+fast-forward bit-identical to a real-time run of the same step count.
+
+Two checks live in the same project, and only the first needs Godot:
+
+```bash
+cargo test -p sim-godot                    # the pure driver: accumulator, edges, stepping
+cargo test -p sim-godot -- --ignored       # the exit gate, in a real Godot process
+godot --headless --path godot --script smoke.gd -- "$PWD"
+```
+
+The **exit gate** runs one scenario twice — once through the node inside a running Godot
+process, once through `Pack::step` in this process — and asserts the two telemetry streams
+are bit-identical, comparing `f64::to_bits` rather than `==`. It is `#[ignore]`d because it
+needs a Godot binary, not because it is optional; it is still compiled by the ordinary
+`cargo test --workspace`, so it cannot rot.
+
+Numbers cross that boundary as the little-endian bytes of the `f64`, hex-encoded, because
+GDScript cannot print a float without losing bits: `str(0.7995885912375074)` gives
+`0.79958859123751`, which does not parse back equal.
+
+The **smoke check** answers a narrower question the gate structurally cannot: *is the
+accumulator wired up?* The gate drives the explicit `step_batch` path, since that is the
+only path whose step count is reproducible enough to assert bit-identity on — so
+`_physics_process` needs its own check, and that is what `smoke.gd` is.
 
 ## Two clients, not two layers
 

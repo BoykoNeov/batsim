@@ -1,0 +1,37 @@
+# The smallest scenario that is still a scenario: one LFP cell, full, at room
+# temperature, with nothing to protect it and nothing wrong with it.
+#
+# A scenario is an *initial condition*, not a demand program — it says what pack
+# exists and what is queued against it, never what to do with it. Discharging this
+# one at 1 A is the client's business. See crates/sim-data/src/scenario.rs.
+
+# `chemistry` is a top-level key, so it must sit ABOVE the first [table] header or
+# TOML reads it as `meta.chemistry`. The id is resolved by whoever loads the file:
+# sim-server maps it to <chem-dir>/lfp_26650_generic.toml. Use `chemistry_toml`
+# instead to inline the parameter set and make the file self-contained.
+chemistry = "lfp_26650_generic"
+
+[meta]
+name = "CC discharge, single LFP cell"
+description = """
+A 1S1P pack at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no faults. \
+Every model beyond the equivalent circuit is off, so a constant-current discharge \
+here is the ECM's own voltage curve with nothing layered on top."""
+
+# Exactly sim_core::PackConfig, serde as it already is — the format cannot drift
+# from the engine because it *is* the engine's type.
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+# Unused here (no scatter, no aging, no plating), but the seed is part of the
+# snapshot and every scenario names it rather than inheriting a default.
+seed = 1
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; demands pass through unclamped
+#   [pack.aging]    -> the pack never wears out
+#   [[faults]]      -> nothing scheduled

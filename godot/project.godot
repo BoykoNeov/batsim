@@ -18,8 +18,7 @@ config_version=5
 config/name="batsim"
 config/description="Battery pack simulator — sim-core driven from Godot."
 config/features=PackedStringArray("4.7")
-; `run/main_scene` is set when the demo scene lands (slice E). Naming a scene that does
-; not exist yet would make every headless run print a load error.
+run/main_scene="res://demo.tscn"
 
 [debug]
 
