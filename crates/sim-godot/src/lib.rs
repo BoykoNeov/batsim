@@ -115,7 +115,11 @@ pub struct BatteryPack {
     /// still exactly `fixed_dt`, so a fast-forward is bit-identical to a real-time run of
     /// the same step count — the property `CLAUDE.md` principle 3 exists to protect.
     ///
-    /// `0.0` is legal and means paused. Negative is not: the engine does not run backwards.
+    /// `0.0` is legal and means paused. **Negative and non-finite are rejected**, not
+    /// clamped: the engine does not run backwards, and silently treating that as a pause
+    /// would leave a scene stopped with nothing reported. A rejected value stops
+    /// [`Self::auto_step`] and lands in [`Self::last_error`], the same way a malformed
+    /// [`Self::demand_json`] does.
     #[export]
     speed: f64,
     /// What to do with time the per-frame cap would not let us consume. See
@@ -210,20 +214,13 @@ impl INode for BatteryPack {
         let fixed_dt = self.fixed_dt;
         let max_steps = u32::try_from(self.max_steps_per_frame).unwrap_or(u32::MAX);
         let backlog = self.backlog_policy.into();
-        // Scaling the *time fed in*, never `dt`. A negative or non-finite speed would
-        // otherwise reach the accumulator, which absorbs it silently — better to treat it
-        // as paused than to have the node quietly stop for an unexplained reason.
-        let scaled = if self.speed.is_finite() && self.speed > 0.0 {
-            delta * self.speed
-        } else {
-            0.0
-        };
+        let speed = self.speed;
 
         let outcome = {
             let Some(driver) = self.driver.as_mut() else {
                 return;
             };
-            driver.advance_real_time(scaled, fixed_dt, max_steps, demand, backlog)
+            driver.advance_real_time(delta, fixed_dt, speed, max_steps, demand, backlog)
         };
         match outcome {
             Ok(advance) => self.announce(advance),

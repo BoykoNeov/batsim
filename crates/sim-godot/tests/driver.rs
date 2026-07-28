@@ -298,7 +298,7 @@ fn the_real_time_path_matches_the_explicit_path_step_for_step() {
     // Feed lumpy frames until exactly 40 steps have been consumed.
     while taken < 40 {
         let advance = real_time
-            .advance_real_time(0.4, fixed_dt, 8, demand, Backlog::Repay)
+            .advance_real_time(0.4, fixed_dt, 1.0, 8, demand, Backlog::Repay)
             .expect("tick");
         taken += advance.steps;
     }
@@ -320,7 +320,7 @@ fn a_real_time_tick_too_short_for_a_step_changes_nothing() {
     let mut driver = driver_for(SCENARIO);
     let before = driver.latest();
     let advance = driver
-        .advance_real_time(0.001, 1.0, 8, Demand::Rest, Backlog::Drop)
+        .advance_real_time(0.001, 1.0, 1.0, 8, Demand::Rest, Backlog::Drop)
         .expect("tick");
     assert_eq!(advance.steps, 0);
     assert_eq!(driver.sim_time_s(), 0.0);
@@ -330,6 +330,100 @@ fn a_real_time_tick_too_short_for_a_step_changes_nothing() {
         before.v_terminal.to_bits()
     );
     assert!(advance.edges.is_empty());
+}
+
+/// `speed` scales the wall-clock time fed in, so doubling it must double the steps taken
+/// from an identical `delta_s` — **exactly**, not approximately.
+///
+/// This lives here rather than only in `godot/smoke.gd` because the smoke check runs on
+/// real physics frames and can therefore only assert a band. The multiplier is arithmetic
+/// and deserves an exact assertion, which is only available where the frame delta is a
+/// number this test chose.
+#[test]
+fn speed_scales_the_time_fed_in_and_nothing_else() {
+    let (fixed_dt, delta) = (0.01, 1.0);
+    let mut real_time = driver_for(SCENARIO);
+    let mut double = driver_for(SCENARIO);
+
+    let a = real_time
+        .advance_real_time(delta, fixed_dt, 1.0, 10_000, Demand::Rest, Backlog::Drop)
+        .expect("tick");
+    let b = double
+        .advance_real_time(delta, fixed_dt, 2.0, 10_000, Demand::Rest, Backlog::Drop)
+        .expect("tick");
+
+    assert_eq!(
+        a.steps, 100,
+        "1 s at dt = 0.01 and speed 1 should be 100 steps"
+    );
+    assert_eq!(b.steps, 2 * a.steps, "speed 2.0 did not double the steps");
+    // And `dt` itself is untouched: twice the steps means exactly twice the sim time.
+    assert_eq!(
+        double.sim_time_s().to_bits(),
+        (2.0 * real_time.sim_time_s()).to_bits(),
+        "speed changed the timestep rather than the time fed in"
+    );
+}
+
+/// A fast-forward must be bit-identical to a real-time run of the same step count. This is
+/// the property that makes `speed` safe to expose at all — if it perturbed the trajectory
+/// it would be a physics knob wearing a presentation knob's name.
+#[test]
+fn a_fast_forward_is_bit_identical_to_real_time_at_equal_step_counts() {
+    let fixed_dt = 0.01;
+    let demand = Demand::Current(2.0);
+
+    // 1 s of wall time at 100x.
+    let mut fast = driver_for(SCENARIO);
+    fast.advance_real_time(1.0, fixed_dt, 100.0, 100_000, demand, Backlog::Drop)
+        .expect("fast");
+
+    // 100 s of wall time at 1x, fed in one-second frames.
+    let mut slow = driver_for(SCENARIO);
+    for _ in 0..100 {
+        slow.advance_real_time(1.0, fixed_dt, 1.0, 100_000, demand, Backlog::Drop)
+            .expect("slow");
+    }
+
+    assert_eq!(fast.sim_time_s().to_bits(), slow.sim_time_s().to_bits());
+    assert_eq!(
+        fast.latest().v_terminal.to_bits(),
+        slow.latest().v_terminal.to_bits(),
+        "a fast-forward diverged from real time at an equal step count"
+    );
+    assert_eq!(
+        fast.latest().soc_true.to_bits(),
+        slow.latest().soc_true.to_bits()
+    );
+}
+
+/// Zero is a pause and is legal; negative and non-finite are refused rather than clamped.
+///
+/// Clamping a negative speed to "paused" would leave a scene stopped with nothing
+/// reported, which is the failure a configured value should never produce silently — as
+/// distinct from a hostile *frame delta*, which the accumulator absorbs because it comes
+/// from the engine rather than from a person.
+#[test]
+fn a_zero_speed_pauses_and_a_negative_one_is_refused() {
+    let mut driver = driver_for(SCENARIO);
+
+    let paused = driver
+        .advance_real_time(10.0, 0.01, 0.0, 10_000, Demand::Rest, Backlog::Drop)
+        .expect("zero speed is legal");
+    assert_eq!(paused.steps, 0, "speed 0.0 advanced the pack");
+    assert_eq!(driver.sim_time_s(), 0.0);
+
+    for bad in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            matches!(
+                driver.advance_real_time(1.0, 0.01, bad, 10_000, Demand::Rest, Backlog::Drop),
+                Err(DriverError::OutOfRange(_))
+            ),
+            "speed = {bad} was accepted"
+        );
+    }
+    // Refusing left the pack alone rather than half-advancing it.
+    assert_eq!(driver.sim_time_s(), 0.0);
 }
 
 #[test]
@@ -348,7 +442,7 @@ fn the_step_cap_and_the_frame_cap_are_different_knobs() {
     // The per-frame policy, which is an argument rather than a constant — a game tunes it
     // and it must be allowed to be small without breaking anything.
     let advance = driver
-        .advance_real_time(100.0, 0.1, 3, Demand::Rest, Backlog::Drop)
+        .advance_real_time(100.0, 0.1, 1.0, 3, Demand::Rest, Backlog::Drop)
         .expect("tick");
     assert_eq!(advance.steps, 3);
     assert!(advance.capped);
@@ -385,7 +479,7 @@ fn non_finite_arguments_are_refused_at_the_boundary() {
         );
         assert!(
             matches!(
-                driver.advance_real_time(0.1, bad, 8, Demand::Rest, Backlog::Drop),
+                driver.advance_real_time(0.1, bad, 1.0, 8, Demand::Rest, Backlog::Drop),
                 Err(DriverError::OutOfRange(_))
             ),
             "fixed_dt = {bad} was accepted"
@@ -410,11 +504,11 @@ fn a_zero_dt_is_legal_explicitly_but_a_zero_fixed_dt_is_not() {
     let mut driver = driver_for(SCENARIO);
     assert!(driver.step_batch(0.0, 1, Demand::Rest).is_ok());
     assert!(matches!(
-        driver.advance_real_time(1.0, 0.0, 8, Demand::Rest, Backlog::Drop),
+        driver.advance_real_time(1.0, 0.0, 1.0, 8, Demand::Rest, Backlog::Drop),
         Err(DriverError::OutOfRange(_))
     ));
     assert!(matches!(
-        driver.advance_real_time(1.0, 0.1, 0, Demand::Rest, Backlog::Drop),
+        driver.advance_real_time(1.0, 0.1, 1.0, 0, Demand::Rest, Backlog::Drop),
         Err(DriverError::OutOfRange(_))
     ));
 }

@@ -951,6 +951,40 @@ SMOKE FAIL: 30 frames at speed 10 gave only 0.480000 s of simulated time —
 
 `0.48` is exactly the speed-1 answer, which is what makes the failure legible.
 
+### `speed` was added in the shell, which is where decisions are not allowed to live
+
+Caught in review, immediately after the slice: `speed` went in as a clamp inside
+`physics_process`.
+
+```rust
+let scaled = if self.speed.is_finite() && self.speed > 0.0 { delta * self.speed } else { 0.0 };
+```
+
+`driver.rs`'s own module comment says "if a decision appears here, it is in the wrong
+file", and that is a decision. Two things followed from breaking the rule, and neither was
+visible from reading the diff:
+
+- **`cargo test --workspace` had no coverage of `speed` at all.** `tests/driver.rs` calls
+  `advance_real_time` directly, so it went straight past the multiplier; the only check was
+  `smoke.gd`, which is deliberately outside the default gate. The newest thing in the
+  shipped surface was the one thing with no host test.
+- **The doc said the opposite of the code.** The property doc said "negative is not legal";
+  the code silently mapped negative *and* non-finite to `0.0`, i.e. accepted them as a
+  pause.
+
+`speed` is now a validated parameter of `advance_real_time`, beside `fixed_dt`, and
+`physics_process` is pure forwarding again. Negative and non-finite are **rejected**, not
+clamped — a configured value that silently becomes "paused" leaves a scene stopped with
+nothing reported, which is different from a hostile *frame delta*, which the accumulator
+still absorbs because it comes from the engine rather than from a person.
+
+Moving it also bought an assertion the smoke check structurally cannot make. On real
+physics frames the smoke test can only assert a band; in a host test the frame delta is a
+number the test chose, so `speed = 2.0` can be asserted to yield **exactly** twice the
+steps and exactly twice the simulated time. And the property that makes the knob safe to
+expose at all now has a test: a 1 s run at 100× is bit-identical to a hundred 1 s runs at
+1×, so `speed` is a presentation knob rather than a physics one.
+
 ### The demo bundles its data, and the copy is drift-proof rather than forbidden
 
 `res://` does not escape the project directory — and should not, because that is precisely

@@ -621,18 +621,34 @@ impl PackDriver {
     /// defines only how many fixed timesteps get consumed. Every step is still exactly
     /// `fixed_dt`.
     ///
+    /// `speed` is simulated seconds per wall-clock second: `1.0` is real time, `0.0` is
+    /// paused, `180.0` runs three minutes of battery life per second.
+    ///
     /// # Errors
-    /// [`DriverError::OutOfRange`] for a non-finite or non-positive `fixed_dt`, a zero
-    /// `max_steps`, or a non-finite demand. A hostile `delta_s` is absorbed by the
-    /// accumulator rather than rejected — see [`Accumulator::take`].
+    /// [`DriverError::OutOfRange`] for a non-finite or non-positive `fixed_dt`, a
+    /// non-finite or **negative** `speed`, a zero `max_steps`, or a non-finite demand. A
+    /// hostile `delta_s` is absorbed by the accumulator rather than rejected — see
+    /// [`Accumulator::take`]; `speed` is rejected instead, because unlike a frame delta it
+    /// is a configured value and a silent clamp would leave a game paused with nothing
+    /// reported.
     pub fn advance_real_time(
         &mut self,
         delta_s: f64,
         fixed_dt: f64,
+        speed: f64,
         max_steps: u32,
         demand: Demand,
         backlog: Backlog,
     ) -> Result<Advance, DriverError> {
+        if !speed.is_finite() || speed < 0.0 {
+            // Rejected rather than clamped, and `>= 0` rather than `> 0`: zero is a
+            // legitimate pause, but a negative speed is a request to run the engine
+            // backwards, which it cannot do. Silently treating that as a pause would
+            // leave a game stopped for a reason nothing reported.
+            return Err(DriverError::OutOfRange(format!(
+                "speed must be finite and >= 0 (0 means paused), got {speed}"
+            )));
+        }
         if !fixed_dt.is_finite() || fixed_dt <= 0.0 {
             // Note `> 0`, not `>= 0`: a zero-length step is a deliberate telemetry read on
             // the explicit path, but a zero `fixed_dt` here would mean every frame divides
@@ -650,7 +666,18 @@ impl PackDriver {
         }
         demand.check_finite()?;
 
-        let ticks = self.accumulator.take(delta_s, fixed_dt, max_steps, backlog);
+        // `speed` scales the wall-clock time fed in, and **never `dt`**. Every step is
+        // still exactly `fixed_dt`, which is what keeps a fast-forward bit-identical to a
+        // real-time run of the same step count.
+        //
+        // Note this is *not* what `fixed_dt` does: raising `fixed_dt` makes each step
+        // cover more simulated time and makes the accumulator take proportionally fewer
+        // of them, so sim time still tracks wall time 1:1. Only the granularity changes.
+        // Easy to get backwards — a comment in the demo scene did, and a headless probe
+        // caught it. See `docs/plans/phase-5-godot.md`.
+        let ticks = self
+            .accumulator
+            .take(delta_s * speed, fixed_dt, max_steps, backlog);
         if ticks.steps == 0 {
             return Ok(Advance {
                 steps: 0,
