@@ -685,6 +685,158 @@ fn a_fault_is_spelled_the_way_the_scenario_file_spells_it() {
 /// The cells array is the ground-truth pedagogy view, in the order the page indexes it
 /// by. Getting series-major/parallel-minor wrong draws the right numbers in the wrong
 /// squares, which looks plausible and is wrong.
+/// The sensor frame's two always-on errors, on a pack where both are visible: the
+/// probes under-sample space, and the current sensor is simply wrong.
+///
+/// Neither needs a fault. This is the part of principle 8 that is true of every healthy
+/// instrumented pack, and it is why the panel leads with current rather than voltage.
+#[test]
+fn the_sensor_frame_under_samples_space_and_mis_reads_current() {
+    let mut engine = scattered();
+    let frames = engine
+        .step_many(1.0, 700, Demand::Current(2.0), 700)
+        .expect("past the fault at 600 s");
+    let telemetry = frames.last().expect("a frame").telemetry;
+    let sensors = engine.sensors().expect("this scenario configures a BMS");
+
+    // Where the probes are is config, and the payload says so rather than making a
+    // client cross-reference the scenario file it may not have.
+    assert_eq!(
+        sensors.temp_probe_at,
+        vec![(0, 0), (3, 0)],
+        "two probes for four groups, and neither on the cell that shorts"
+    );
+
+    // The spatial error: the probes read *exactly*, but only where they are. The cell
+    // that shorted is at (1,0), which has no probe, so the hottest instrumented cell is
+    // cooler than the hottest cell — and the BMS cannot know the difference.
+    let hottest_probe = sensors
+        .temp_probe_k
+        .iter()
+        .copied()
+        .reduce(f64::max)
+        .expect("two probes");
+    assert!(
+        hottest_probe < telemetry.t_max,
+        "the shorted cell has no probe on it, so ground-truth t_max {} must exceed the \
+         hottest probe {hottest_probe}",
+        telemetry.t_max
+    );
+
+    // The value error: `current_offset_a` plus a noise draw, on every step. This is the
+    // channel the SOC estimate then integrates, which is why it is the root cause.
+    assert_ne!(
+        sensors.i_pack_a, telemetry.i_actual,
+        "the current sensor carries a configured offset, so it cannot equal the truth"
+    );
+    assert_eq!(
+        sensors.sampled_at_s, 700.0,
+        "the frame is sampled at the end of the step that produced it"
+    );
+}
+
+/// The voltage channel's whole claim: sensed group voltages are exact reads until a
+/// fault lies about one, and then that one reads **outside the pack's true envelope**
+/// while the envelope itself does not move.
+///
+/// Both routes to that fault are walked here, because they share nothing but the
+/// engine's `Fault` type: the scenario file's queue, and a live
+/// [`SimEngine::schedule_fault`] call — the path the live fault panel uses, which until
+/// now had only ever been exercised on a BMS-less pack that refused it.
+#[test]
+fn a_lying_group_sensor_reads_outside_the_true_envelope() {
+    use sim_core::{Fault, SensorId};
+
+    let mut engine = scattered();
+
+    // Before the scenario's fault at t = 600 s, every group is an exact read: the pack
+    // solve moves each node voltage straight into the frame, so all four sit inside the
+    // envelope the very same step reports.
+    let frames = engine
+        .step_many(1.0, 599, Demand::Current(2.0), 599)
+        .expect("up to the fault");
+    let before = frames.last().expect("a frame").telemetry;
+    let honest = engine.sensors().expect("a BMS").v_group;
+    for (g, v) in honest.iter().enumerate() {
+        assert!(
+            *v >= before.v_cell_min && *v <= before.v_cell_max,
+            "group {g} reads {v} V, outside the true envelope [{}, {}] — nothing has \
+             lied yet, so an exact read cannot be outside the range of exact reads",
+            before.v_cell_min,
+            before.v_cell_max
+        );
+    }
+
+    // Past it: the file's `SensorOffset { GroupVoltage(1), 0.12 }` fires, together with
+    // the short it exists to hide.
+    let frames = engine
+        .step_many(1.0, 10, Demand::Current(2.0), 10)
+        .expect("past the fault");
+    let after = frames.last().expect("a frame").telemetry;
+    let lying = engine.sensors().expect("a BMS").v_group;
+
+    assert!(
+        lying[1] > after.v_cell_max + 0.1,
+        "group 1's sensor is offset +120 mV, so it must read well above the highest \
+         *true* group voltage {}, got {}",
+        after.v_cell_max,
+        lying[1]
+    );
+    for g in [0, 2, 3] {
+        assert!(
+            lying[g] >= after.v_cell_min && lying[g] <= after.v_cell_max,
+            "only group 1's sensor was faulted, but group {g} reads {} outside [{}, {}]",
+            lying[g],
+            after.v_cell_min,
+            after.v_cell_max
+        );
+    }
+
+    // The same fault through the API rather than the file, on the group next door. The
+    // engine accepts it here — a BMS-less pack is what refuses a sensor fault, and the
+    // distinction between refusing and dropping is the one the last slice got wrong.
+    engine
+        .schedule_fault(
+            engine.facts().sim_time_s,
+            Fault::SensorOffset {
+                sensor: SensorId::GroupVoltage(2),
+                offset: -0.2,
+            },
+        )
+        .expect("a pack with a BMS has a group-2 voltage sensor to fault");
+    let frames = engine
+        .step_many(1.0, 2, Demand::Current(2.0), 2)
+        .expect("the queued fault fires on the next step, not retroactively");
+    let after = frames.last().expect("a frame").telemetry;
+    let lying = engine.sensors().expect("a BMS").v_group;
+    assert!(
+        lying[2] < after.v_cell_min - 0.15,
+        "the injected −200 mV offset must put group 2 below the lowest true group \
+         voltage {}, got {}",
+        after.v_cell_min,
+        lying[2]
+    );
+}
+
+/// A pack with no BMS has no sensors, and that is a supported mode rather than an error.
+#[test]
+fn a_pack_with_no_bms_has_no_sensor_frame() {
+    let mut engine = scattered();
+    assert!(engine.sensors().is_some(), "the scenario configures a BMS");
+
+    engine.restart(false).expect("the same pack, unprotected");
+    assert!(
+        engine.sensors().is_none(),
+        "there is nothing to measure with, so the payload is absent rather than empty"
+    );
+
+    let engine = SimEngine::new(CC_DISCHARGE, Some(LFP_TOML)).expect("builds");
+    assert!(
+        engine.sensors().is_none(),
+        "a scenario that never configured a BMS has no sensors either"
+    );
+}
+
 #[test]
 fn the_cell_array_is_series_major_and_parallel_minor() {
     let mut engine = scattered();

@@ -136,6 +136,62 @@ pub struct Cells {
     pub cells: Vec<CellView>,
 }
 
+/// Everything the BMS measured, as the BMS sees it.
+///
+/// The counterpart to [`Cells`]: that is ground truth, this is belief. A page holding
+/// both plus a [`Telemetry`] can draw every channel of the gap principle 8 exists to
+/// expose. Field-for-field the same shape as `sim_server`'s `SensorsResponse`, for the
+/// same reason [`Cells`] and its `CellsResponse` match — one engine, one dialect.
+///
+/// # Which of these actually lies, and when
+/// `v_group` and `temp_probe_k` are **exact** reads of the true state at the sensed
+/// positions: `sim_core`'s pack solve computes each group's node voltage and moves it
+/// straight into the sensor frame. Their error is not in the value, it is in the
+/// *sampling* — one voltage for a whole parallel group, and temperature only where a
+/// probe sits. `i_pack_a` is the one always-wrong channel, carrying the configured
+/// offset and a noise draw, and `soc_est` inherits that error by coulomb-counting it.
+///
+/// Injected sensor faults ([`Fault::SensorStuck`], [`Fault::SensorOffset`]) corrupt this
+/// frame on top of all that, and are the only way a voltage or a probe temperature here
+/// stops matching the truth.
+///
+/// # No `series` field
+/// Unlike [`Cells`], which carries `parallel` because its consumer does index
+/// arithmetic. `v_group.len()` *is* the series count and cannot disagree with itself; a
+/// restated one could.
+#[derive(Clone, Debug, Serialize)]
+pub struct Sensors {
+    /// Measured voltage of each parallel group \[V\], in series order.
+    pub v_group: Vec<f64>,
+    /// Measured temperature at each configured probe \[K\], in config order.
+    pub temp_probe_k: Vec<f64>,
+    /// Which cell each probe sits on, as `(series, parallel)`, in the same order as
+    /// `temp_probe_k`.
+    ///
+    /// Static config rather than a measurement, and it rides here rather than in
+    /// [`PackFacts`] only because that type is `Copy` and this is a `Vec`. It is what
+    /// lets a client show the probes' *spatial* under-sampling — the reason
+    /// `max_probe_k` and `Telemetry::t_max` part company — as positions rather than as
+    /// a number.
+    pub temp_probe_at: Vec<(u16, u16)>,
+    /// Measured pack current \[A\], discharge-positive, including offset and noise.
+    pub i_pack_a: f64,
+    /// Simulation time at which this frame was sampled \[s\].
+    ///
+    /// Sampling is gated on `dt > 0`, so a zero-length probe read does **not** resample
+    /// and this lags `PackFacts::sim_time_s` on a paused pack. That is the same
+    /// zero-length-read contract that means a probe step fires no queued fault, and a
+    /// client should say so rather than let a stale frame read as a broken one.
+    pub sampled_at_s: f64,
+    /// The BMS's own state-of-charge estimate, in \[0, 1\].
+    ///
+    /// The same number [`Telemetry::soc_bms`] reports; repeated here so this payload is
+    /// a complete picture of what the BMS believes without a telemetry frame beside it.
+    pub soc_est: f64,
+    /// Whether the main contactor is latched open by a hard fault.
+    pub contactor_open: bool,
+}
+
 /// Everything that can go wrong on this crate's surface.
 ///
 /// One flat enum rather than per-method types: every one of these ends up as a string
@@ -473,6 +529,26 @@ impl SimEngine {
         }
     }
 
+    /// What the BMS measured, or `None` for a pack that has no BMS.
+    ///
+    /// `None` is a supported mode, not an error: a pack with no BMS has no sensors, and
+    /// running one that way is one of the engine's teaching scenarios. See [`Sensors`]
+    /// for which of these channels lie and when.
+    #[must_use]
+    pub fn sensors(&self) -> Option<Sensors> {
+        let bms = self.pack.bms()?;
+        let frame = bms.sensors();
+        Some(Sensors {
+            v_group: frame.v_group.clone(),
+            temp_probe_k: frame.temp_probe_k.clone(),
+            temp_probe_at: bms.config().temp_probes.clone(),
+            i_pack_a: frame.i_pack_a,
+            sampled_at_s: frame.sampled_at_s,
+            soc_est: bms.soc_estimate(),
+            contactor_open: bms.contactor_open(),
+        })
+    }
+
     /// The whole engine state.
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
@@ -614,6 +690,23 @@ impl SimEngine {
     /// [`EngineError::Json`] if serialization fails.
     pub fn cells_json(&self) -> Result<String, EngineError> {
         serde_json::to_string(&self.cells()).map_err(EngineError::json("serializing cells"))
+    }
+
+    /// [`Self::sensors`] as JSON, or the literal `null` for a pack with no BMS.
+    ///
+    /// The `null` is the payload, not a failure: JS gets `null` from `JSON.parse` and
+    /// can branch on it directly, which is exactly what the `Option` means.
+    ///
+    /// Non-finite values are unreachable here even though `sim_core` uses `f64::NAN` as
+    /// its probe-read fallback and JSON cannot spell one: `Pack::new` rejects any probe
+    /// outside the topology, so the fallback never fires. Guarding it anyway would imply
+    /// that range check is not trusted — [`Self::cells_json`] guards nothing for the
+    /// same reason.
+    ///
+    /// # Errors
+    /// [`EngineError::Json`] if serialization fails.
+    pub fn sensors_json(&self) -> Result<String, EngineError> {
+        serde_json::to_string(&self.sensors()).map_err(EngineError::json("serializing sensors"))
     }
 
     /// [`Self::env`] as JSON.

@@ -40,6 +40,14 @@ function clearBanner() {
   banner.className = "";
 }
 
+/**
+ * Lowest `sim_wasm::WASM_API_VERSION` this page can run against.
+ *
+ * Raised when the page starts *calling* something new, not every time the constant
+ * moves: v3 added `Sim::sensors`, which the BMS panel below requires.
+ */
+const WASM_API_MIN = 3;
+
 let wasm = null;
 try {
   // Dynamic, so a missing bundle is a message rather than a blank page. `pkg/` is a
@@ -58,6 +66,30 @@ try {
       `Underlying error: ${e}`,
   );
   throw e;
+}
+
+// `pkg/` is gitignored and rebuilt by hand, so this page can be newer than the wasm it
+// loads — the one version pair in this workspace that can drift. Without this check the
+// symptom of a stale bundle is `TypeError: sim.sensors is not a function` from somewhere
+// in a render path, which names neither the cause nor the fix. Feature detection would
+// answer "is the method there"; the version answers the useful question, which is "is my
+// bundle old, and what do I run".
+//
+// Outside the `try` deliberately: inside it, the throw below is caught by the handler
+// above and relabelled as a bundle that would not load, which is a different fault with
+// a different fix. And it *throws* rather than only showing the banner, because boot
+// continues into an automatic scenario load and that calls `clearBanner` — a warning
+// erased 200 ms later is decoration, and this page genuinely cannot run.
+if (wasm.wasm_api_version() < WASM_API_MIN) {
+  const stale =
+    `This page needs wasm api ${WASM_API_MIN} or newer, but ./pkg/ is api ` +
+    `${wasm.wasm_api_version()} — the bundle is stale.\n\n` +
+    "Rebuild it from the workspace root:\n" +
+    "    wasm-pack build crates/sim-wasm --target web --out-dir ../../web/pkg\n\n" +
+    "then reload. (The bundle is a build artifact and is not committed, so it does not " +
+    "update when the Rust does.)";
+  showBanner(stale);
+  throw new Error(stale);
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +166,11 @@ class WasmBackend {
   /** Ground truth for every cell: `{series, parallel, cells}`, series-major. */
   cells() {
     return JSON.parse(this.sim.cells());
+  }
+
+  /** What the BMS measured, or `null` on a pack with no BMS. */
+  sensors() {
+    return JSON.parse(this.sim.sensors());
   }
 
   scheduleFault(atS, fault) {
@@ -366,6 +403,22 @@ class SocketBackend {
   async cells() {
     const res = await fetch(`/sessions/${this.sessionId}/cells`);
     if (!res.ok) throw new Error(`GET /sessions/${this.sessionId}/cells -> ${res.status}`);
+    return res.json();
+  }
+
+  /**
+   * What the BMS measured, over REST for the same reason `cells` is: the sensor frame
+   * is per-group and per-probe, which is exactly what a `Frame` is not.
+   *
+   * Returns `null` for a pack with no BMS — the route answers the JSON literal, so this
+   * needs no special case. Note the server's `API_VERSION` did **not** move for this
+   * route: its own rule exempts additions, so a 404 here means an older server rather
+   * than a version this page could have checked. See `WASM_API_MIN`, where the
+   * asymmetry is the other way round.
+   */
+  async sensors() {
+    const res = await fetch(`/sessions/${this.sessionId}/sensors`);
+    if (!res.ok) throw new Error(`GET /sessions/${this.sessionId}/sensors -> ${res.status}`);
     return res.json();
   }
 
@@ -856,6 +909,7 @@ function paintGrid() {
   const a = rampCss(m.ramp, 0).bg;
   const b = rampCss(m.ramp, 1).bg;
   $("pack-ramp").style.background = `linear-gradient(to right, ${a}, ${b})`;
+  markProbes(state.sensors?.temp_probe_at ?? []);
   renderCellDetail();
 }
 
@@ -897,6 +951,228 @@ function renderCellDetail() {
   host.textContent = `${parts.join("  ·  ")}${grid.pinned === i ? "  (pinned)" : ""}`;
 }
 
+// ---------------------------------------------------------------------------
+// The BMS view — what the pack knows, beside what the BMS believes
+// ---------------------------------------------------------------------------
+
+/*
+ * `CLAUDE.md` principle 8: the engine knows every cell's true state, the BMS only ever
+ * sees a `SensorFrame`, and the gap between them "is a feature to expose, not a bug to
+ * hide". Until this panel the page could expose exactly one scalar of that gap —
+ * `soc_bms` against `soc_true`.
+ *
+ * The order of the channels below is the physics and not the obvious layout. Leading
+ * with per-group voltage was the first instinct and it is degenerate: `sim-core` moves
+ * the true group voltage *straight into* the sensor frame, so voltages and probe
+ * temperatures are **exact** reads and would draw as pixel-identical to the truth
+ * forever on a healthy pack, which reads as a broken panel. What actually diverges,
+ * in causal order:
+ *
+ *   1. current      — offset + noise on every step. The root cause.
+ *   2. state of charge — coulomb-counts (1), so it inherits the error and integrates it.
+ *   3. temperature  — the probes read exactly, but only where they are.
+ *   4. group voltage — exact *until a fault lies about it*, which is the point of it.
+ *
+ * Truth wears the accent hue and belief wears the warm one throughout, the same pair
+ * the SOC plot already gives those two entities: colour follows the entity, so a
+ * reader who has learnt "amber is what the BMS thinks" on one panel keeps it here.
+ */
+
+/** °C where the channel is a temperature, plain otherwise. */
+const fmtSigned = (v, dp, unit) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(dp)} ${unit}`;
+
+/**
+ * How far outside the true envelope a sensed group voltage must sit before the panel
+ * calls it a lie \[V\].
+ *
+ * Not floating-point slack: an honest read is *bit*-identical to one of the values the
+ * envelope was taken from. It is sampler slack. The sensor frame and `state.latest`
+ * are two reads that can land one step apart, and over one step the envelope moves by
+ * microvolts. An injected offset is measured in tens of millivolts, so 1 mV separates
+ * them without ever being close to either.
+ */
+const LIE_TOLERANCE_V = 1e-3;
+
+function renderBms() {
+  const host = $("bms-body");
+  const when = $("bms-when");
+  const sensors = state.sensors;
+
+  if (!sensors) {
+    when.textContent = "";
+    host.replaceChildren();
+    const note = document.createElement("div");
+    note.className = "note";
+    note.textContent = state.backend
+      ? "This pack has no BMS, so it has no sensors and nothing to believe. The physics " +
+        "below is unchanged — that contrast is the point of the toggle."
+      : "Load a scenario to see what its BMS can and cannot measure.";
+    host.appendChild(note);
+    return;
+  }
+
+  const t = state.latest;
+  const simTime = state.facts?.sim_time_s ?? 0;
+  // Sampling is gated on `dt > 0`, so a paused pack's frame is legitimately old and a
+  // zero-length read does not refresh it. Saying so is what keeps a stale frame from
+  // reading as a broken panel — which is exactly how it looks otherwise.
+  const lag = simTime - sensors.sampled_at_s;
+  // A pack that has never advanced has never *sampled*: the frame it carries is the
+  // construction-time open-circuit read — every group at OCV(initial_soc), the current
+  // sensor an exact zero it has not earned. `readNow()` meanwhile reports telemetry
+  // under the page's standing demand, so the two describe the same instant and not the
+  // same pack. Comparing them tags every group as lying on a pack where nothing is
+  // wrong, which is a false accusation and not a stale-data warning — the clocks agree,
+  // so no timestamp check can catch it.
+  const booted = simTime > 0;
+  const comparable = Boolean(t) && booted && lag <= 1e-9;
+  when.textContent = !booted
+    ? "boot read — the sensors have not sampled yet"
+    : lag > 1e-9
+      ? `sampled at ${sensors.sampled_at_s.toFixed(1)} s — ${lag.toFixed(1)} s behind the clock, because sensors sample only on a step with dt > 0`
+      : `sampled at ${sensors.sampled_at_s.toFixed(1)} s`;
+  when.classList.toggle("stale", !booted || lag > 1e-9);
+
+  host.replaceChildren();
+
+  // ---- the three scalar channels, in causal order
+  const gaps = document.createElement("div");
+  gaps.className = "gaps";
+  const probeMax = sensors.temp_probe_k.length
+    ? Math.max(...sensors.temp_probe_k)
+    : null;
+  const channels = [
+    {
+      k: "current",
+      truth: t ? `${t.i_actual.toFixed(3)} A` : "—",
+      belief: `${sensors.i_pack_a.toFixed(3)} A`,
+      gap: t ? fmtSigned(sensors.i_pack_a - t.i_actual, 3, "A") : "—",
+      why: "a configured offset plus a noise draw, on every single step",
+    },
+    {
+      k: "state of charge",
+      truth: t ? `${(t.soc_true * 100).toFixed(2)} %` : "—",
+      belief: `${(sensors.soc_est * 100).toFixed(2)} %`,
+      gap: t ? fmtSigned((sensors.soc_est - t.soc_true) * 100, 2, "pt") : "—",
+      why: "coulomb-counts the current above, so it inherits that error and integrates it",
+    },
+    {
+      k: "temperature",
+      truth: t ? `${toC(t.t_max).toFixed(2)} °C` : "—",
+      belief: probeMax === null ? "no probes" : `${toC(probeMax).toFixed(2)} °C`,
+      gap: t && probeMax !== null ? fmtSigned(probeMax - t.t_max, 2, "K") : "—",
+      why: `${sensors.temp_probe_k.length} probe(s) read exactly, but only where they sit`,
+    },
+  ];
+  for (const c of channels) {
+    const el = document.createElement("div");
+    el.className = "gap";
+    el.innerHTML =
+      `<div class="k"></div>` +
+      `<div class="pair"><span class="sw truth"></span><span class="lab">truth</span><span class="num tv"></span></div>` +
+      `<div class="pair"><span class="sw belief"></span><span class="lab">BMS</span><span class="num bv"></span></div>` +
+      `<div class="delta"></div><div class="why"></div>`;
+    el.querySelector(".k").textContent = c.k;
+    el.querySelector(".tv").textContent = c.truth;
+    el.querySelector(".bv").textContent = c.belief;
+    el.querySelector(".delta").textContent = c.gap;
+    el.querySelector(".why").textContent = c.why;
+    gaps.appendChild(el);
+  }
+  host.appendChild(gaps);
+
+  // ---- the fourth channel: one sensed voltage per group against the true envelope
+  //
+  // A dot plot rather than bars. The interesting window is tens of millivolts on a
+  // 3.3 V cell, so the axis cannot start at zero — and a bar on a truncated axis is
+  // the textbook way to draw a difference that is not there. A dot carries a position
+  // and claims nothing about the distance to an origin it never touches.
+  const rows = document.createElement("div");
+  rows.className = "groups";
+
+  const lo = t ? Math.min(t.v_cell_min, ...sensors.v_group) : Math.min(...sensors.v_group);
+  const hi = t ? Math.max(t.v_cell_max, ...sensors.v_group) : Math.max(...sensors.v_group);
+  // A pack whose groups all agree has zero span; give it a window rather than dividing
+  // by nothing and putting every dot at the left edge.
+  const pad = Math.max((hi - lo) * 0.15, 5e-4);
+  const axisLo = lo - pad;
+  const axisHi = hi + pad;
+  const pct = (v) => `${((v - axisLo) / (axisHi - axisLo)) * 100}%`;
+
+  for (let g = 0; g < sensors.v_group.length; g += 1) {
+    const v = sensors.v_group[g];
+    const lying =
+      comparable &&
+      (v < t.v_cell_min - LIE_TOLERANCE_V || v > t.v_cell_max + LIE_TOLERANCE_V);
+    const row = document.createElement("div");
+    row.className = `grow${lying ? " lying" : ""}`;
+    row.innerHTML =
+      `<span class="gi"></span><div class="track">` +
+      `<div class="band"></div><div class="dot"></div></div>` +
+      `<span class="gv"></span><span class="tag"></span>`;
+    row.querySelector(".gi").textContent = `g${g}`;
+    row.querySelector(".gv").textContent = `${v.toFixed(4)} V`;
+    if (t) {
+      const band = row.querySelector(".band");
+      band.style.left = pct(t.v_cell_min);
+      band.style.width = `${((t.v_cell_max - t.v_cell_min) / (axisHi - axisLo)) * 100}%`;
+      band.title = `true group voltages span ${t.v_cell_min.toFixed(4)}–${t.v_cell_max.toFixed(4)} V`;
+    }
+    const dot = row.querySelector(".dot");
+    dot.style.left = pct(v);
+    dot.title = `group ${g} sensor reads ${v.toFixed(4)} V`;
+    // Never colour alone: a faulted sensor gets a word as well as a ring.
+    row.querySelector(".tag").textContent = lying ? "outside truth" : "";
+    rows.appendChild(row);
+  }
+  host.appendChild(rows);
+
+  const legend = document.createElement("div");
+  legend.className = "glegend";
+  legend.innerHTML =
+    `<span class="sw belief"></span><span>what the group sensor reads</span>` +
+    `<span class="sw bandsw"></span><span>the true spread across every group</span>` +
+    `<span class="ax"></span>`;
+  legend.querySelector(".ax").textContent = `${axisLo.toFixed(3)} – ${axisHi.toFixed(3)} V`;
+  host.appendChild(legend);
+
+  const note = document.createElement("div");
+  note.className = "note";
+  note.textContent =
+    "Group voltages are exact reads until something lies about one: parallel cells " +
+    "share a node, so this is the finest voltage resolution any real pack has, and a " +
+    "weak cell hiding inside a healthy group is invisible here even when nothing is " +
+    "faulted. Inject a SensorOffset on a GroupVoltage to watch a dot leave the band.";
+  if (!comparable) {
+    note.textContent += booted
+      ? " The dots and the band are from different instants right now, so no dot is " +
+        "called a liar until the sensors sample again."
+      : " Nothing is being compared yet: the band is this pack under its present " +
+        "demand, while the dots are the open-circuit read taken when it was built. " +
+        "Step once and they become the same instant.";
+  }
+  host.appendChild(note);
+
+}
+
+/**
+ * Ring the instrumented cells on the ground-truth grid.
+ *
+ * Called from `paintGrid` rather than from `renderBms`, because `paintGrid` is what
+ * rebuilds the tiles when the topology changes — ringing them from anywhere else means
+ * the rings survive until the next rebuild and then silently vanish.
+ *
+ * This is the temperature channel's spatial half: the probes read *exactly*, so the
+ * only way to see their error is to see where they are not.
+ */
+function markProbes(positions) {
+  if (!grid.tiles.length) return;
+  const wanted = new Set(positions.map(([s, p]) => s * grid.parallel + p));
+  for (let i = 0; i < grid.tiles.length; i += 1) {
+    grid.tiles[i].el.classList.toggle("probed", wanted.has(i));
+  }
+}
+
 /**
  * Sample the cells, at most every `CELLS_PERIOD_MS`.
  *
@@ -917,15 +1193,25 @@ async function refreshCells(force = false) {
   state.cellsBusy = true;
   state.cellsAtMs = now;
   try {
-    state.cells = await Promise.resolve(state.backend.cells());
+    // Both views on one clock. Ground truth and the BMS's belief are read for the same
+    // panel-pair and compared tile against dot, so sampling them at different moments
+    // would put a gap on screen that is the sampler's and label it the BMS's.
+    const [cells, sensors] = await Promise.all([
+      Promise.resolve(state.backend.cells()),
+      Promise.resolve(state.backend.sensors()),
+    ]);
+    state.cells = cells;
+    state.sensors = sensors;
     state.cellsError = null;
   } catch (e) {
     state.cells = null;
+    state.sensors = null;
     state.cellsError = String(e.message ?? e);
   } finally {
     state.cellsBusy = false;
     grid.dirty = true;
   }
+  renderBms();
 }
 
 // ---------------------------------------------------------------------------
@@ -1050,6 +1336,7 @@ const state = {
   latest: null,
   facts: null,
   cells: null,
+  sensors: null,
   cellsBusy: false,
   cellsAtMs: 0,
   cellsError: null,
@@ -1222,10 +1509,12 @@ async function loadScenario() {
   // The next scenario may be a different topology, so the grid is rebuilt rather than
   // repainted — and a pin is an index into a pack that no longer exists.
   state.cells = null;
+  state.sensors = null;
   state.cellsError = null;
   grid.pinned = null;
   grid.hovered = null;
   grid.dirty = true;
+  renderBms();
   clearBanner();
 
   try {

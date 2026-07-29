@@ -179,7 +179,7 @@ estimates it), and temperature. There is a BMS on/off toggle — flipping it res
 the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
-Two panels show what an aggregate cannot:
+Three panels show what an aggregate cannot:
 
 - **The pack grid** — one tile per cell, series down and parallel across, coloured by
   a metric you pick (SOC, temperature, overpotential, SOH, the scatter factors, or
@@ -197,11 +197,23 @@ Two panels show what an aggregate cannot:
   paused. You can also drop the pending queue and clear a latched BMS trip. Injecting
   is the same operation a scenario file's `[[faults]]` table performs, so anything
   schedulable from a file is schedulable live.
+- **The BMS view** — the same pack as the BMS measures it, channel by channel, beside
+  what the engine knows. The order is the physics rather than the obvious layout: the
+  **current** sensor is wrong on every step (a configured offset plus a noise draw),
+  the **SOC estimate** coulomb-counts that sensor and so integrates its error, the
+  **temperature probes** read exactly but only where they sit — two probes for four
+  groups on the shipped scenario, and the grid rings the cells they are on, because
+  that error is spatial — and only then **group voltage**, one dot per series group on
+  a shared axis with the pack's true spread drawn behind it as a band. Group voltages
+  are exact reads until something lies about one, which is the point of the channel:
+  run `soft_short_under_a_lying_sensor` past t = 600 s and group 1's dot jumps clear
+  of the band and is called out, while the band itself does not move. That scenario
+  has shipped since Phase 3 and this is the first time its lie has been drawable.
 
-Both panels work identically whether the engine runs in the tab or behind the server
-(see [Two clients, not two layers](#two-clients-not-two-layers)) — though the grid
-reads per-cell state over REST in the server mode, because per-cell arrays are
-deliberately not telemetry and never ride a socket frame.
+All three panels work identically whether the engine runs in the tab or behind the
+server (see [Two clients, not two layers](#two-clients-not-two-layers)) — though the
+grid and the BMS view read their state over REST in the server mode, because per-cell
+and per-group arrays are deliberately not telemetry and never ride a socket frame.
 
 If `/app/` 404s, the bundle is missing. The `wasm-pack` line above is a copy: the
 authoritative one is in `crates/sim-server/src/main.rs`, which also prints it as a

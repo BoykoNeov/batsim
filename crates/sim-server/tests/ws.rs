@@ -463,6 +463,51 @@ async fn a_zero_length_step_reports_without_advancing() {
     assert_eq!(first[0].telemetry.v_terminal, after.telemetry.v_terminal);
 }
 
+/// The sensor frame is sampled on `dt > 0` only, so a zero-length step leaves it where
+/// the last real step put it — and `sampled_at_s` is what lets a client tell.
+///
+/// The fourth member of the `dt > 0` family, after the aging sub-clock, the fault queue
+/// and the vent latch: a read must not mutate, so a probe step does not resample the
+/// sensors either. That makes a paused pack's frame legitimately stale, which is why the
+/// payload carries the timestamp at all — a client that draws the frame without it
+/// cannot distinguish "the BMS has not looked recently" from "the panel is broken".
+#[tokio::test]
+async fn the_sensor_frame_is_not_resampled_by_a_zero_length_step() {
+    let (address, id, mut writer) = writer_on(SOFT_SHORT).await;
+
+    let sensors = |address, id| async move {
+        let (status, body) =
+            http(address, "GET", &format!("/sessions/{id}/sensors"), None, "").await;
+        assert_eq!(status, 200, "{body}");
+        serde_json::from_str::<serde_json::Value>(&body).expect("JSON")
+    };
+
+    let moved = writer.step(&step(10.0, 5, 1)).await;
+    let stepped_to = moved.last().expect("frames").sim_time_s;
+
+    let after = sensors(address, id).await;
+    assert_eq!(
+        after["sampled_at_s"].as_f64().expect("a number"),
+        stepped_to,
+        "a real step must sample the sensors at the time it ended on"
+    );
+    assert_ne!(
+        after["i_pack_a"].as_f64().expect("a number"),
+        0.0,
+        "the pack has been under load, so the current sensor cannot still read its \
+         open-circuit zero — without this the staleness check below is vacuous"
+    );
+
+    // The clock moves; the frame does not.
+    writer.step(&step(0.0, 1, 1)).await;
+    let probed = sensors(address, id).await;
+    assert_eq!(
+        probed, after,
+        "a zero-length step resampled the sensors, so looking at the pack changed what \
+         the BMS believes it measured"
+    );
+}
+
 /// The standing environment: inherited when a step omits one, overridden for a batch
 /// that carries one, and not changed by that override.
 ///

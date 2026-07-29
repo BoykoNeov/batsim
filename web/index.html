@@ -148,6 +148,82 @@
   #pack-ramp { flex: 1; height: 7px; border-radius: 2px; }
   #pack-detail { margin-top: 8px; min-height: 30px; }
 
+  /* A probed cell, on the ground-truth grid: the BMS can read this one's temperature
+     and cannot read any other. Drawn as a ring rather than a fill so it composes with
+     whatever the metric ramp painted underneath. */
+  .celltile.probed { box-shadow: inset 0 0 0 2px var(--warn); }
+
+  /*
+    The BMS view. Truth wears --accent and belief wears --warn throughout, which is the
+    pair the SOC plot already gives those two entities — colour follows the entity, so
+    "amber is what the BMS thinks" carries from one panel to the other.
+  */
+  #bms {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 4px; padding: 10px 12px;
+  }
+  #bms-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px; }
+  #bms-head .t { font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+                 color: var(--dim); }
+  #bms-when { margin-left: auto; color: var(--dim); font-size: 10px; }
+  #bms-when.stale { color: var(--warn); }
+
+  .gaps { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+  .gap { border: 1px solid var(--line); border-radius: 4px; padding: 7px 9px; }
+  .gap .k { color: var(--dim); font-size: 10px; text-transform: uppercase;
+            letter-spacing: .07em; margin-bottom: 4px; }
+  .gap .pair { display: flex; align-items: center; gap: 6px; }
+  .gap .lab { color: var(--dim); font-size: 11px; width: 34px; }
+  .gap .num { font-size: 14px; }
+  .gap .delta {
+    margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--ink);
+  }
+  .gap .why { color: var(--dim); font-size: 10px; margin-top: 3px; }
+
+  /* 8px is the mark-size floor; identity is never the swatch alone — every one of
+     these sits beside its own word. */
+  .sw { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+  .sw.truth { background: var(--accent); }
+  .sw.belief { background: var(--warn); }
+  .sw.bandsw { border-radius: 2px; background: rgba(90, 200, 250, .22);
+               box-shadow: inset 0 0 0 1px rgba(90, 200, 250, .5); }
+
+  /*
+    One row per series group: a dot on a shared voltage axis, with the pack's true
+    spread as a band behind it. A dot and not a bar — the window is tens of millivolts
+    on a 3.3 V cell, so the axis cannot start at zero, and a bar on a truncated axis
+    draws a difference that is not there.
+  */
+  .groups { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .grow { display: flex; align-items: center; gap: 8px; }
+  .grow .gi { color: var(--dim); font-size: 10px; width: 22px; flex: 0 0 auto; }
+  .grow .gv { font-size: 11px; width: 66px; flex: 0 0 auto; text-align: right; }
+  .grow .tag { font-size: 10px; color: var(--bad); width: 78px; flex: 0 0 auto; }
+  .grow .track {
+    position: relative; flex: 1; height: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .grow .band {
+    position: absolute; top: 2px; bottom: 2px; min-width: 1px;
+    background: rgba(90, 200, 250, .22);
+    box-shadow: inset 0 0 0 1px rgba(90, 200, 250, .5);
+    border-radius: 2px;
+  }
+  .grow .dot {
+    position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--warn); transform: translate(-50%, -50%);
+    /* A 2px surface ring, so a dot sitting on the band stays a distinct mark. */
+    box-shadow: 0 0 0 2px var(--panel);
+  }
+  .grow.lying .dot { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--bad); }
+  .glegend {
+    display: flex; align-items: center; gap: 6px; margin-top: 8px;
+    color: var(--dim); font-size: 10px;
+  }
+  .glegend .ax { margin-left: auto; }
+  .glegend span:not(.sw):not(.ax) { margin-right: 8px; }
+
   /* The fault panel's per-variant fields, which are rebuilt when the variant changes. */
   #fault-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px; }
   #fault-fields .wide { grid-column: 1 / -1; }
@@ -283,6 +359,27 @@
       <span id="pack-hi">—</span>
     </div>
     <div class="note" id="pack-detail"></div>
+  </div>
+
+  <!--
+    The BMS's view, beside the truth. Principle 8: the engine knows every cell's true
+    state; the BMS only ever sees a `SensorFrame` — one voltage per parallel group, a
+    few temperature probes, one noisy current sensor — and the gap between the two is a
+    feature to expose rather than a bug to hide.
+
+    The channels are ordered by what actually diverges, which is *not* the order they
+    first suggest. Group voltages and probe temperatures are exact reads: `sim-core`
+    moves the true group voltage straight into the frame. So the panel leads with the
+    current sensor, which is wrong on every step, then the SOC estimate that
+    coulomb-counts it, then the probes that read exactly but only where they sit — and
+    only then group voltage, which is exact until a fault lies about one.
+  -->
+  <div id="bms">
+    <div id="bms-head">
+      <span class="t">bms view — measured, not known</span>
+      <span id="bms-when"></span>
+    </div>
+    <div id="bms-body"></div>
   </div>
 
   <!--

@@ -16,8 +16,8 @@
 //! host a `JsError` is a stub for a browser type that does not exist.
 //!
 //! # What crosses the boundary
-//! Strings and numbers, nothing else. Telemetry, snapshots, cells and faults are JSON
-//! text; `dt`, step counts and temperatures are raw numbers. There is deliberately no
+//! Strings and numbers, nothing else. Telemetry, snapshots, cells, sensors and faults
+//! are JSON text; `dt`, step counts and temperatures are raw numbers. There is deliberately no
 //! `Float64Array` fast path: the plan for this slice says not to pre-optimize the
 //! boundary, and a page plotting a few hundred pixels of curve has no measurement
 //! saying the JSON crossing costs anything.
@@ -48,7 +48,7 @@
 pub mod engine;
 
 pub use engine::{
-    frame_count, Cells, EngineError, Frame, PackFacts, SimEngine, MAX_FRAMES_PER_CALL,
+    frame_count, Cells, EngineError, Frame, PackFacts, Sensors, SimEngine, MAX_FRAMES_PER_CALL,
     MAX_STEPS_PER_CALL,
 };
 
@@ -67,7 +67,24 @@ use wasm_bindgen::prelude::*;
 /// page parses and this constant is owed for the same reason `sim_server::API_VERSION`
 /// is — which is the whole point of there being three of these rather than one shared
 /// number. `sim_core::SNAPSHOT_VERSION` stays at 9: no saved pack changed shape.
-pub const WASM_API_VERSION: u32 = 2;
+///
+/// v3 (UI slice, truth beside belief): [`Sim::sensors`] is new, returning [`Sensors`] —
+/// what the BMS measured, or `null` on a pack with no BMS. An added method rather than a
+/// changed shape, so a v2 page keeps working against a v3 module. The number moves anyway
+/// because **this module is a build artifact loaded separately from the JS that calls
+/// it**: `web/pkg` is gitignored and has to be rebuilt after any Rust change, so the page
+/// can be newer than the wasm it loads in a way no other version pair in this workspace
+/// can. `web/app.js` compares this against a minimum and asks for a rebuild by name; that
+/// check is what makes the bump load-bearing rather than decoration.
+///
+/// Note `sim_server::API_VERSION` deliberately did **not** move with it, the first time
+/// the two have parted. Its doc states a bump *rule* with an explicit additive exemption
+/// ("adding a field or an error code does not bump it") and a new route is an addition;
+/// this doc states the contract's *scope* — method names — which an added method changes.
+/// `docs/plans/ui-bms-view.md` records why the plan that priced them as a pair was wrong.
+/// `sim_core::SNAPSHOT_VERSION` stays at 10: every accessor this needed was already
+/// public, and no saved pack changed shape.
+pub const WASM_API_VERSION: u32 = 3;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///
@@ -209,6 +226,16 @@ impl Sim {
     /// Serialization failure.
     pub fn cells(&self) -> Result<String, JsError> {
         Ok(self.inner.cells_json()?)
+    }
+
+    /// What the BMS measured, as JSON — or the literal `null` on a pack with no BMS.
+    ///
+    /// The counterpart to [`Sim::cells`]: that is ground truth, this is belief.
+    ///
+    /// # Errors
+    /// Serialization failure.
+    pub fn sensors(&self) -> Result<String, JsError> {
+        Ok(self.inner.sensors_json()?)
     }
 
     /// The whole engine state, as JSON.

@@ -37,6 +37,7 @@ pub fn router(state: AppState) -> Router {
         .route("/sessions", post(create_session).get(list_sessions))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/{id}/cells", get(get_cells))
+        .route("/sessions/{id}/sensors", get(get_sensors))
         .route(
             "/sessions/{id}/snapshot",
             get(get_snapshot).post(restore_snapshot),
@@ -175,6 +176,45 @@ struct CellsResponse {
     /// This is ground truth — every cell's true state, not what the BMS can sense.
     /// The gap between this and `Telemetry::soc_bms` is a feature to look at.
     cells: Vec<CellView>,
+}
+
+/// `GET /sessions/{id}/sensors` response: what the BMS measured.
+///
+/// The counterpart to [`CellsResponse`] — that is ground truth, this is belief — and
+/// field-for-field the same shape as `sim_wasm::Sensors`, for the same reason
+/// `CellsResponse` matches `sim_wasm::Cells`: one engine should not have two dialects.
+/// The route answers `null` for a pack with no BMS, which is a supported mode rather
+/// than an error.
+///
+/// # Which channels actually lie
+/// `v_group` and `temp_probe_k` are **exact** reads of the true state at the sensed
+/// positions: the pack solve moves each group's node voltage straight into the frame.
+/// Their error is in the *sampling* — one voltage per parallel group, temperature only
+/// where a probe sits. `i_pack_a` is the always-wrong channel (configured offset plus a
+/// noise draw), and `soc_est` inherits that error by coulomb-counting it. Injected
+/// sensor faults are the only way a voltage or probe temperature here stops matching
+/// the truth.
+#[derive(Debug, Serialize)]
+struct SensorsResponse {
+    /// Measured voltage of each parallel group \[V\], in series order. No `series`
+    /// field: this length *is* the series count and cannot disagree with itself.
+    v_group: Vec<f64>,
+    /// Measured temperature at each configured probe \[K\], in config order.
+    temp_probe_k: Vec<f64>,
+    /// Which cell each probe sits on, `(series, parallel)`, ordered with
+    /// `temp_probe_k`. Static config, carried here rather than in [`PackFacts`] because
+    /// that type is `Copy` and this is a `Vec`.
+    temp_probe_at: Vec<(u16, u16)>,
+    /// Measured pack current \[A\], discharge-positive, including offset and noise.
+    i_pack_a: f64,
+    /// Simulation time at which this frame was sampled \[s\]. Sampling is gated on
+    /// `dt > 0`, so this lags a session's `sim_time_s` whenever the pack is not being
+    /// stepped — the same contract that makes a zero-length read fire no queued fault.
+    sampled_at_s: f64,
+    /// The BMS's own state-of-charge estimate, in \[0, 1\].
+    soc_est: f64,
+    /// Whether the main contactor is latched open by a hard fault.
+    contactor_open: bool,
 }
 
 /// `POST /sessions/{id}/snapshot` response.
@@ -348,6 +388,29 @@ fn cells_of(session: &Session) -> CellsResponse {
         parallel,
         cells,
     }
+}
+
+async fn get_sensors(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+) -> Result<Json<Option<SensorsResponse>>, ApiError> {
+    let session = state.session(SessionId(id)).await?;
+    let session = session.lock().await;
+    Ok(Json(sensors_of(&session)))
+}
+
+fn sensors_of(session: &Session) -> Option<SensorsResponse> {
+    let bms = session.pack.bms()?;
+    let frame = bms.sensors();
+    Some(SensorsResponse {
+        v_group: frame.v_group.clone(),
+        temp_probe_k: frame.temp_probe_k.clone(),
+        temp_probe_at: bms.config().temp_probes.clone(),
+        i_pack_a: frame.i_pack_a,
+        sampled_at_s: frame.sampled_at_s,
+        soc_est: bms.soc_estimate(),
+        contactor_open: bms.contactor_open(),
+    })
 }
 
 /// The whole engine state, as JSON.

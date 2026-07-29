@@ -430,6 +430,74 @@ async fn cells_are_series_major_and_ground_truth() {
     }
 }
 
+/// The sensors route is the BMS's *view*, and its shape is pinned against the pack's
+/// own config rather than against restated literals.
+///
+/// The pairing that makes it a view rather than a second ground truth is the probe
+/// list: this scenario runs two probes for four groups, and the route says which two.
+#[tokio::test]
+async fn sensors_report_the_bms_view_and_where_its_probes_sit() {
+    let state = state();
+    let id = create(&state, SOFT_SHORT).await;
+
+    let (status, body) = send(&state, get(&format!("/sessions/{id}/sensors"))).await;
+    assert_eq!(status, StatusCode::OK);
+    let sensors = json_of(&body);
+
+    let v_group = sensors["v_group"].as_array().expect("an array");
+    assert_eq!(
+        v_group.len(),
+        4,
+        "one voltage per series group — parallel cells share a node, so this is the \
+         finest voltage resolution any real pack has"
+    );
+
+    // Two probes on a four-group pack, and neither on the cell that shorts: the
+    // under-sampling is the point of the payload, so the positions are part of it.
+    assert_eq!(
+        sensors["temp_probe_at"],
+        json!([[0, 0], [3, 0]]),
+        "probe positions must match the scenario's own [pack.bms] temp_probes"
+    );
+    assert_eq!(
+        sensors["temp_probe_k"].as_array().expect("an array").len(),
+        2
+    );
+
+    // A fresh session has never stepped, so the frame is the construction-time
+    // open-circuit read: exactly zero current, at t = 0.
+    assert_eq!(sensors["sampled_at_s"], json!(0.0));
+    assert_eq!(
+        sensors["i_pack_a"],
+        json!(0.0),
+        "the initial frame is an open-circuit read taken before any sensor draw"
+    );
+    assert_eq!(sensors["contactor_open"], json!(false));
+
+    // The estimate is the pack's own, wrong by the configured boot error and no more.
+    let soc_est = sensors["soc_est"].as_f64().expect("a number");
+    assert!(
+        (soc_est - 0.88).abs() < 1e-9,
+        "initial_soc 0.85 + initial_soc_error 0.03, got {soc_est}"
+    );
+}
+
+/// A pack with no BMS has no sensors, and that is a supported mode rather than an
+/// error — principle 7. The route answers `null`, not 404 and not an empty object.
+#[tokio::test]
+async fn sensors_are_null_on_a_pack_with_no_bms() {
+    let state = state();
+    let id = create(&state, CC_DISCHARGE).await;
+
+    let (status, body) = send(&state, get(&format!("/sessions/{id}/sensors"))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        json_of(&body),
+        Value::Null,
+        "a BMS-less pack's sensors are absent, which is a payload and not a failure"
+    );
+}
+
 #[tokio::test]
 async fn a_snapshot_round_trips_through_rest_into_the_same_session() {
     let state = state();
@@ -537,6 +605,7 @@ async fn every_session_route_404s_on_an_unknown_id() {
     for path in [
         "/sessions/99",
         "/sessions/99/cells",
+        "/sessions/99/sensors",
         "/sessions/99/snapshot",
     ] {
         let (status, body) = send(&state, get(path)).await;
