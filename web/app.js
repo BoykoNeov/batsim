@@ -1359,6 +1359,16 @@ const state = {
 };
 
 /**
+ * The guided path's own state. Declared up here, beside `state`, rather than down with
+ * the rest of the path code: `frame` reads `path.until` and the first animation frame
+ * can fire while boot is still awaiting its scenario load, which would hit the temporal
+ * dead zone of a `const` declared further down.
+ *
+ * `until` is a simulation time in seconds, or null when no step is running to a mark.
+ */
+const path = { on: false, i: 0, until: null, busy: false };
+
+/**
  * Steps this frame, from wall-clock elapsed and the speed multiplier.
  *
  * This is the accumulator `CLAUDE.md` prescribes, and it lives here — on the client —
@@ -1486,7 +1496,15 @@ async function frame(nowMs) {
   if (state.running && !state.busy) {
     const dt = Math.max(1e-6, Number($("dt").value) || 0.5);
     const speed = 10 ** Number($("speed").value);
-    const n = stepsForFrame(nowMs, dt, speed);
+    let n = stepsForFrame(nowMs, dt, speed);
+    // A guided step runs to a stated simulation time. At 800x one frame is thousands of
+    // steps, so without this clamp a step would sail past its own mark by most of a
+    // lesson. Clamping the *count* keeps `dt` fixed — the step is never shortened to fit,
+    // which would be the frame rate defining the timestep by another route.
+    if (path.until !== null) {
+      const remaining = path.until - (state.facts?.sim_time_s ?? 0);
+      n = Math.min(n, Math.max(0, Math.ceil(remaining / dt)));
+    }
     if (n > 0) {
       state.busy = true;
       try {
@@ -1500,6 +1518,12 @@ async function frame(nowMs) {
         state.busy = false;
       }
     }
+  }
+  // Checked outside the `running` branch so a step whose mark is already behind it — a
+  // Back that reloaded, or a zero-length step — settles instead of waiting for a step
+  // that will never be taken.
+  if (path.until !== null && (state.facts?.sim_time_s ?? 0) >= path.until - 1e-9) {
+    pathArrived();
   }
   draw();
 }
@@ -1774,6 +1798,289 @@ $("restore-file").onchange = async (ev) => {
   } catch (e) {
     showBanner(String(e.message ?? e));
   }
+};
+
+// ---------------------------------------------------------------------------
+// The guided path
+// ---------------------------------------------------------------------------
+//
+// The page is a complete instrument panel and, without this, an empty lesson: every
+// control `CLAUDE.md`'s pedagogy sentence asks for exists, and nothing tells a reader
+// which one to turn or what to look at afterwards.
+//
+// A step is a **record**, and one renderer walks any of them. That is the whole design
+// decision, and it is not tidiness: the reason this repo has two scenarios is that the
+// `<option>` list is hardcoded, so every added scenario costs an HTML edit. Bespoke
+// markup per lesson would reproduce that disease one layer up, in the part of the page
+// most likely to grow. As records, a new lesson is an array entry — and when the
+// scenario-listing route lands it serves this same shape.
+//
+// Fields:
+//   scenario   file under /scenarios; a step reloads only when it must (below)
+//   transport  "wasm" when the step cannot run over the socket, else undefined
+//   demand     {mode, value} written into the sidebar inputs, which is all it takes:
+//              `advance` and `readNow` re-read them on every call
+//   ambient_c  written to the slider, then `applyEnv`
+//   bms        true/false to force, null to leave whatever is loaded
+//   speed_x    real-time multiplier; the slider is its base-10 log
+//   until_s    absolute simulation time the step runs to, then pauses
+//   watch      element ids to outline
+//   prose      paragraphs; backticks become <code>
+//   expect     what the reader should end up seeing. Prose, never an assertion — a page
+//              that argues with a reader about a slider they moved on purpose is worse
+//              than one that says nothing.
+
+const LESSONS = [
+  {
+    id: "bare-curve",
+    title: "One cell, and nothing else",
+    scenario: "cc_discharge_lfp.toml",
+    demand: { mode: "Current", value: 2 },
+    ambient_c: 25,
+    bms: null,
+    speed_x: 800,
+    until_s: 4200,
+    watch: ["plot-v"],
+    prose: [
+      "A single LFP cell at 100 % charge, isothermal, with no BMS, no aging and nothing wrong with it. Every model beyond the equivalent circuit is switched off, so this trace is the ECM itself with nothing layered on top.",
+      "2 A out of this cell is 0.87 C — it holds 2.303 Ah, not a round number, because the figure is the *usable* window fitted to the reference model rather than a marketing capacity. Watch the very first step: the voltage drops instantly by `I·R0`. That step is resistance, not charge — rest the cell and it comes straight back. The slower sag over the following minute is the RC pair filling.",
+    ],
+    expect:
+      "A long, nearly flat middle. LFP's open-circuit voltage barely moves between 20 % and 80 % charge, which is exactly what will make its charge state so hard to measure three steps from now. Then the knee, at about 69 minutes, where the cell empties — and a `SOC_CLAMPED_LOW` flag, which is the coulomb counter reporting that it was asked for charge the cell no longer had.",
+  },
+  {
+    id: "pack-disagrees",
+    title: "A pack disagrees with itself",
+    scenario: "soft_short_under_a_lying_sensor.toml",
+    demand: { mode: "Current", value: 6 },
+    ambient_c: 25,
+    bms: true,
+    speed_x: 200,
+    until_s: 300,
+    watch: ["pack"],
+    prose: [
+      "Eight cells now — 4 in series, 2 in parallel — built with 2 % capacity and 3 % resistance scatter. That is a manufacturing spread, not a fault: no two cells off a line are identical.",
+      "The pack solve does not average them. Each parallel group is solved as a node, so the two cells in a pair share a voltage and the current splits by state: the lower-resistance one takes more of the load than its twin, and then ages slightly faster for having done so.",
+    ],
+    expect:
+      "Switch the grid between state of charge and overpotential. The SOC tiles start identical and fan out as the run goes — a few hundredths of a percent by the end — while the overpotential tiles differ from the first step, because resistance scatter shows up there first. Click a tile to pin its full state; the legend prints both ends of the scale, which is the pack's own min and max, not a fixed axis. And notice the headline `soc (true)` sits a couple of points *below* every tile: a tile is the fraction of what that cell can hold today, while the pack figure is measured against nominal capacity. Scatter and aging are the difference, and neither number is wrong.",
+  },
+  {
+    id: "belief-drifts",
+    title: "What the BMS believes",
+    scenario: "soft_short_under_a_lying_sensor.toml",
+    demand: { mode: "Current", value: 6 },
+    ambient_c: 25,
+    bms: true,
+    speed_x: 200,
+    until_s: 600,
+    watch: ["bms", "plot-soc"],
+    prose: [
+      "The engine knows every cell's true state. The BMS is not allowed to look at it. It sees one voltage per parallel group, two temperature probes for eight cells, and one current sensor — and this pack's current sensor reads 20 mA high with 10 mA of noise on top, on every single step.",
+      "Its state of charge is coulomb counting on that sensor, so the error does not average out, it integrates. It also started 3 % wrong, because a BMS that has just been powered on does not know what it is holding.",
+    ],
+    expect:
+      "A gap of about three points that simply never closes — the estimate sits above the truth from the first step to the last. Most of that is the boot error it started with, and the sensor offset adds only a fraction of a point over ten minutes; the offset is the mechanism that would run away over a long drive, and the boot error is what you can see today. What matters is that neither is corrected. The fix needs a rested pack and a sloped OCV curve, and the first step showed you how flat LFP's curve is through the middle: below a configured slope the estimator declines to correct rather than amplify its own noise. That is the design working, not failing — the pack simply cannot be asked how full it is.",
+  },
+  {
+    id: "lying-sensor",
+    title: "A short, and a sensor that hides it",
+    scenario: "soft_short_under_a_lying_sensor.toml",
+    demand: { mode: "Current", value: 6 },
+    ambient_c: 25,
+    bms: true,
+    speed_x: 200,
+    until_s: 1200,
+    watch: ["bms", "flags"],
+    prose: [
+      "At t = 600 s this scenario springs a 5 Ω internal short on cell (1,0) and, in the same instant, lands a +120 mV offset on the voltage sensor for the group that cell sits in. Both are scheduled in the file; neither is an animation.",
+      "A soft internal short drains the whole parallel group it sits in, not just its own cell, and it self-heats while doing it. The offset is sized to cover the sag.",
+    ],
+    expect:
+      "Group 1's sensed voltage separates from truth by 120 mV and stays there — the only channel where a sensor fault is visible at all, since voltage and probe temperature are otherwise exact reads. The internal-short trace on the current plot lifts off zero, and the temperature grid finds a new hottest cell. The BMS sees four healthy groups the whole time and never trips.",
+  },
+  {
+    id: "protection-on",
+    title: "Protection, doing its job",
+    scenario: "soft_short_under_a_lying_sensor.toml",
+    demand: { mode: "Current", value: 40 },
+    ambient_c: 25,
+    bms: true,
+    speed_x: 20,
+    until_s: 60,
+    watch: ["flags", "readouts"],
+    prose: [
+      "Fresh pack, and now an unreasonable demand. Eight cells in 4S2P is 4.61 Ah at pack level, and the chemistry is rated 3 C continuous, so the discharge limit lands just under 14 A. We are asking for 40.",
+      "The BMS response is graduated: it clamps the demand long before it considers opening anything.",
+    ],
+    expect:
+      "An `OC` flag, and the current readout pinned near 14 A while the demand box still reads 40. The demand is what you asked for; `i_actual` is what you got. Nothing in the sidebar changed to make that happen — the clamp is downstream of you.",
+  },
+  {
+    id: "protection-off",
+    title: "The same demand, with nothing watching",
+    scenario: "soft_short_under_a_lying_sensor.toml",
+    transport: "wasm",
+    demand: { mode: "Current", value: 40 },
+    ambient_c: 25,
+    bms: false,
+    speed_x: 40,
+    until_s: 450,
+    watch: ["flags", "plot-cv", "plot-t"],
+    prose: [
+      "Same pack, same 40 A, BMS removed. `CLAUDE.md` calls this a supported and interesting mode rather than an error, and it is the contrast the entire protection layer exists to justify.",
+      "Notice what is *missing* as much as what happens. `OV`, `UV`, `OC` and `OT` are raised in one file — the BMS — and nowhere else. With it gone the pack does not merely fail to stop: it fails to say anything.",
+    ],
+    expect:
+      "The current readout now obeys the demand exactly. Cell voltage dives well under the 2.0 V the datasheet allows, temperature climbs, and the only flag you will see is `SOC_CLAMPED_LOW` — the coulomb counter hitting its floor. That is ground truth reporting an impossibility, not a warning anyone issued.",
+  },
+];
+
+/** Authored strings, so the escape is belt-and-braces; the backticks are the point. */
+function proseHtml(s) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+/** Outline exactly the panels this step is about, and nothing from the last one. */
+function setWatch(ids) {
+  for (const el of document.querySelectorAll(".watching")) el.classList.remove("watching");
+  for (const id of ids ?? []) $(id)?.classList.add("watching");
+}
+
+function renderStep() {
+  const L = LESSONS[path.i];
+  $("path-title").textContent = L.title;
+  $("path-where").textContent = `step ${path.i + 1} of ${LESSONS.length}`;
+  $("path-prose").innerHTML = L.prose.map((p) => `<p>${proseHtml(p)}</p>`).join("");
+  $("path-expect").innerHTML =
+    `<span class="k">what to watch</span>${proseHtml(L.expect)}`;
+  $("path-back").disabled = path.i === 0 || path.busy;
+  $("path-next").disabled = path.i === LESSONS.length - 1 || path.busy;
+
+  const t = state.facts?.sim_time_s ?? 0;
+  // The transport note is appended in *every* branch rather than only when paused. The
+  // switch happens on the way in, so the moment a reader most needs to be told their
+  // transport changed under them is while the step is still running.
+  const moved = path.switchedTransport
+    ? " Switched to the in-page engine for this step: the server builds the pack its scenario asked for and will not rebuild it without a BMS."
+    : "";
+  $("path-note").textContent = path.busy
+    ? "setting up…"
+    : (path.until !== null
+        ? `running to t = ${fmtTime(path.until)}. Pause whenever you like — every control stays yours, and Back then Next re-applies this step from scratch.`
+        : `paused at ${fmtTime(t)} of simulation. Nothing is advancing.`) + moved;
+}
+
+/**
+ * Put the page into the state a step describes.
+ *
+ * Everything here goes through the controls that already exist rather than reaching past
+ * them, so the sidebar and the path can never disagree about what the pack is doing. A
+ * step re-applies its whole set on the way in, which is also what makes Back-then-Next a
+ * repair for a reader who moved a slider mid-lesson.
+ */
+async function applyStep(L) {
+  path.until = null;
+  path.busy = true;
+  path.switchedTransport = false;
+  state.running = false;
+  $("run").textContent = "Run";
+  renderStep();
+  setWatch(L.watch);
+
+  try {
+    // Transport is part of the control set, so a step that cannot run over the socket
+    // switches it rather than showing the reader a lesson that quietly does nothing.
+    // The note says so, in every branch, because the switch happens on the way in.
+    if (L.transport === "wasm" && $("use-socket").checked) {
+      $("use-socket").checked = false;
+      path.switchedTransport = true;
+    }
+
+    // Reload only when there is no other way to reach the described state. Simulation
+    // time does not run backwards, so a step whose mark is behind us needs a fresh pack;
+    // a step ahead of us on the same scenario just keeps going, which is why lessons 2
+    // to 4 are one continuous run.
+    const reload =
+      !state.backend ||
+      path.switchedTransport ||
+      $("scenario").value !== L.scenario ||
+      (state.facts?.sim_time_s ?? 0) > L.until_s;
+    $("scenario").value = L.scenario;
+    if (reload) await loadScenario();
+
+    // `$("bms").onchange` is `() => $("reset").click()`, and a click cannot be awaited —
+    // so the handler is called directly and its promise awaited. Same code path, no
+    // shadow of it. Rebuilding at t = 0 is the documented behaviour of that toggle, not
+    // a side effect being routed around.
+    if (L.bms !== null && !$("bms").disabled && $("bms").checked !== L.bms) {
+      $("bms").checked = L.bms;
+      await $("reset").onclick();
+    }
+
+    $("demand-mode").value = L.demand.mode;
+    $("demand-value").value = String(L.demand.value);
+    $("ambient").value = String(L.ambient_c);
+    applyEnv();
+    $("speed").value = String(Math.log10(L.speed_x));
+    $("speed").oninput();
+
+    // So the readouts answer for the demand just dialled in instead of the previous one.
+    // `dt = 0` does not move the pack.
+    await readNow();
+
+    path.until = L.until_s;
+    state.accumulator = 0;
+    state.lastWallMs = null;
+    state.running = true;
+    $("run").textContent = "Pause";
+  } catch (e) {
+    // A step that cannot set itself up leaves the path where it is and says why, rather
+    // than arming a run over a pack that is not the one the prose describes.
+    showBanner(String(e.message ?? e));
+  } finally {
+    // Unconditional: without it, one throw anywhere above leaves `busy` set and wedges
+    // Back and Next permanently — a dead path with no error on screen, which is a worse
+    // failure than the one that caused it.
+    path.busy = false;
+    renderStep();
+  }
+}
+
+/** Called from `frame` when a step reaches its mark. */
+function pathArrived() {
+  path.until = null;
+  state.running = false;
+  $("run").textContent = "Run";
+  renderStep();
+}
+
+async function gotoStep(i) {
+  if (path.busy) return;
+  path.i = Math.max(0, Math.min(LESSONS.length - 1, i));
+  await applyStep(LESSONS[path.i]);
+}
+
+$("path-start").onclick = async () => {
+  path.on = true;
+  $("path").className = "show";
+  $("path-start").textContent = "Restart the path";
+  await gotoStep(0);
+};
+$("path-next").onclick = () => gotoStep(path.i + 1);
+$("path-back").onclick = () => gotoStep(path.i - 1);
+$("path-exit").onclick = () => {
+  path.on = false;
+  path.until = null;
+  state.running = false;
+  $("run").textContent = "Run";
+  $("path").className = "";
+  $("path-start").textContent = "Start — 6 steps";
+  setWatch([]);
 };
 
 window.addEventListener("beforeunload", () => state.backend?.close());

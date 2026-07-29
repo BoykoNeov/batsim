@@ -107,6 +107,47 @@
   code { color: var(--accent); }
 
   /*
+    The guided path. It gets its own element and never borrows `#banner`, because
+    `loadScenario` calls `clearBanner` and nearly every step of a path loads a scenario
+    — step text in the banner would be erased about 200 ms after it appeared. That is
+    not a hypothetical: it is the bug `docs/plans/ui-bms-view.md` records against the
+    stale-bundle warning, and here it would fire on almost every step rather than rarely.
+
+    The banner keeps its one job: errors, and refusals coming back from the engine.
+  */
+  #path {
+    display: none; background: var(--panel); border: 1px solid var(--accent);
+    border-radius: 4px; padding: 11px 13px;
+  }
+  #path.show { display: block; }
+  #path-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  #path-head .t {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--accent);
+  }
+  #path-title { font-size: 14px; }
+  #path-where { margin-left: auto; color: var(--dim); font-size: 10px; }
+  #path-prose p { margin: 0 0 7px; max-width: 78ch; }
+  #path-expect {
+    border-left: 2px solid var(--warn); padding-left: 9px; margin: 9px 0;
+    color: var(--ink); max-width: 78ch;
+  }
+  #path-expect .k {
+    display: block; color: var(--warn); font-size: 10px;
+    text-transform: uppercase; letter-spacing: .07em; margin-bottom: 2px;
+  }
+  #path-nav { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+  #path-nav button { width: auto; padding: 4px 13px; }
+  #path-nav .sp { flex: 1; }
+  #path-note { color: var(--dim); font-size: 11px; margin-top: 8px; }
+
+  /*
+    What a step points at. An outline rather than a fill or a tint: everything inside
+    these panels is data ink, and the accent is already spoken for as "ground truth" on
+    two of them. Chrome around the panel cannot be mistaken for a series in it.
+  */
+  .watching { outline: 2px solid var(--warn); outline-offset: 3px; }
+
+  /*
     The pack, as a pack. One tile per cell, series down / parallel across, which is
     the same series-major order `Sim::cells()` hands back — so tile n is cells[n] and
     there is no index arithmetic to get wrong.
@@ -235,6 +276,12 @@
   <h1>batsim <small id="versions"></small></h1>
   <div class="note">The engine runs in this tab. Everything below feeds the next step.</div>
 
+  <h2>Guided path</h2>
+  <button id="path-start">Start — 6 steps</button>
+  <div class="note">From one cell to a pack with nothing watching it. Each step sets the
+    controls below and says what to look at; they all stay live, and stepping back or
+    forward re-applies the whole set.</div>
+
   <h2>Scenario</h2>
   <select id="scenario">
     <option value="cc_discharge_lfp.toml">cc_discharge_lfp — 1S1P, nothing on</option>
@@ -321,6 +368,23 @@
 </div>
 
 <div id="main">
+  <div id="path">
+    <div id="path-head">
+      <span class="t">guided path</span>
+      <span id="path-title"></span>
+      <span id="path-where"></span>
+    </div>
+    <div id="path-prose"></div>
+    <div id="path-expect"></div>
+    <div id="path-nav">
+      <button id="path-back">&larr; Back</button>
+      <button id="path-next">Next &rarr;</button>
+      <span class="sp"></span>
+      <button id="path-exit">Exit</button>
+    </div>
+    <div id="path-note"></div>
+  </div>
+
   <div id="banner"></div>
 
   <div class="readouts" id="readouts"></div>

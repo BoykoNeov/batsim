@@ -171,6 +171,67 @@ now, because this slice adds no Rust. The out-of-tree trajectory instrument cann
 either: it builds its nine cases from scenario TOML through `parse_scenario` /
 `build_pack`, and no physics, no chemistry, and no scenario file changes here.
 
+## What the build changed, and what it found
+
+Written after the fact, because three of these contradict the plan above.
+
+**Six steps, not five.** Protection ships as two records (`protection-on`,
+`protection-off`) rather than one. It is a *comparison*, and a comparison needs two
+states; folding it into one step would have meant a lesson whose instruction was "now go
+and change a toggle yourself", which is the thing this slice exists to remove.
+
+**Two numbers in the prose were wrong, and the engine was right.** The first draft said
+"a 2.5 Ah cell" and "15 A pack limit" — both taken from the illustrative TOML in
+`CLAUDE.md` rather than from `chemistries/lfp_26650_generic.toml`, which says
+`capacity_ah = 2.303451` (the *usable* Prada2013 stoichiometry window, and deliberately
+not a round number). The real figures are 0.87 C at 2 A, and 3 C × 4.607 Ah = **13.82 A**
+at pack level, which is what the readout showed. Caught because the cell emptied at 4146 s
+where the arithmetic predicted 4500. **`CLAUDE.md`'s parameter block is a shape, not a
+source** — the provenance rule applies to reading constants as much as to writing them.
+
+**Lesson 3's claim did not survive its own instrument.** The draft said the estimate
+"walks away from the truth and never walks back", implying visible integration of the
+20 mA sensor offset. Measured over its ten minutes, the offset is worth about 0.07 points
+while the boot error is 3.00 — the gap is essentially constant, and a reader watching for
+a widening one would conclude the panel was broken. The text now leads with the error that
+is *there* and names the offset as the mechanism that runs away over a longer drive.
+
+**Lesson 2 gained a paragraph the page provoked.** The pack readout `soc (true)` sits
+about two points *below* every tile, because `Telemetry::soc_true` is `rem_ah / nom_ah` —
+measured against nominal — while a tile is the fraction of what that cell can hold today.
+Both are correct and they answer different questions. A grid lesson that did not say so
+would have taught a reader to distrust one of the two numbers.
+
+**`applyStep` needed `try`/`finally`, and the first version had neither.** Any throw left
+`path.busy` set, which disables Back *and* Next: a permanently dead path showing "setting
+up…" and no error. That is a worse failure than whatever caused it. The body is now
+wrapped, the catch banners the message, and the `finally` clears `busy` unconditionally.
+
+**The transport note only rendered in the paused branch.** So the one moment a reader most
+needs to be told their transport was switched under them — while the step is running, just
+after it happened — was the moment it said nothing. Appended in every branch now. Same
+family as the erased-banner bug this plan was already guarding against: the check existed,
+and the path through it that mattered did not run.
+
+### Verification traps, for the next client slice
+
+The rAF-occlusion trap recurred a third time, and this session pins it down harder than
+"take a screenshot":
+
+- **rAF does not fire *at all* while the automation window is occluded.** Thirty seconds
+  of `wait` advanced the clock by zero. A screenshot forces exactly one paint, hence one
+  frame — so frames are a currency you spend one screenshot at a time.
+- **Never `await requestAnimationFrame` in an injected script.** It never settles, and the
+  evaluate dies on the 45 s CDP timeout looking like a frozen renderer.
+- **A timed-out CDP evaluate keeps running in the page.** Its loop went on clicking `Next`
+  underneath later probes, producing step numbers that made no sense. Reload before
+  re-testing; a timeout abandons the *result*, not the script.
+- Raising the speed multiplier is a safe way to buy frames: it changes how many steps a
+  frame takes, never `dt`, so the trajectory is bit-identical.
+- At very high multipliers the pack grid can trail the headline by one frame, because
+  `refreshCells` self-throttles. Pre-existing, self-correcting on the next frame, and
+  invisible at the speeds the lessons actually set.
+
 ## Ordering, after this
 
 Unchanged from `[[ui-bms-view]]`, except that the path now gives the listing route a

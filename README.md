@@ -179,6 +179,15 @@ estimates it), and temperature. There is a BMS on/off toggle — flipping it res
 the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
+If you do not already know what to look at, press **Start** under *Guided path*
+instead. It walks six steps — one cell on its own, a pack disagreeing with itself,
+the BMS's estimate drifting from the truth, a short hidden by the sensor that should
+have caught it, and the same overload with protection on and then off — setting the
+controls for each and outlining the panel it is about. Every control stays live
+throughout; stepping back and forward re-applies a step from scratch, so there is
+nothing you can break by fiddling mid-lesson. Steps 2 to 4 are one continuous run on
+one pack, because changing what you look at teaches more than reloading.
+
 Three panels show what an aggregate cannot:
 
 - **The pack grid** — one tile per cell, series down and parallel across, coloured by
