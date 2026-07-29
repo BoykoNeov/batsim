@@ -253,6 +253,50 @@ design that comment predicted:
 - `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo fmt --all` before the commit, per `CLAUDE.md`.
 
+## What the build changed
+
+Written after the fact, as the last three plans were.
+
+**Three claims in this document did not survive being run**, all of them about the aging
+scenario, and all three were corrected in the files rather than left standing:
+
+1. **100 % SOC was wrong as an initial condition.** See Part B — the pack does not rest
+   there, and the reason is the SOC clamp meeting the steepest two percent of the LFP OCV
+   table. 95 % instead.
+2. **Scatter shows nothing at rest.** Drafted as "so the SOH tiles fan out"; measured, the
+   eight tiles agree to three parts per million.
+3. **The temperature factor a reader sees is 2.7×, not 3.6×.** This is the one worth
+   keeping. 3.6× is the ratio between two packs aged *from new* at the two temperatures.
+   The lesson raises the ambient **part-way through a run**, and a second leg of equal
+   length then costs 2.84 points against the first leg's 1.06. `√t` means an already-aged
+   pack pays less for the same stress. Writing 3.6× would have put a number on screen that
+   a reader measuring for themselves would have found wrong — and it would have hidden the
+   more interesting fact.
+
+**The picker's failure notice moved out of the banner before it was ever written.**
+`showBanner` at boot is erased by `loadScenario`'s own `clearBanner` a few lines later —
+the identical mechanism that erased the stale-bundle warning in `ui-bms-view.md`. It lives
+in the scenario note instead, which is rewritten on every load and therefore survives.
+
+**Verification, and what was and was not driven by hand.** All five scenarios were loaded
+through the picker by **real keystrokes** on a focused `<select>`, and the guided path was
+walked from step 1 to step 8 by **real clicks** on Next — the control whose handler went
+unexercised last slice. `plot-soh` was watched drawing the two curves live.
+
+The degraded path was **staged rather than reasoned**: a worktree at the previous commit,
+built and run on port 8081 with `--web-dir` pointed at the current page, giving exactly
+"new page, old server" — `GET /scenarios` 404, `GET /scenarios/<file>.toml` 200. The page
+kept its built-in list (visible in the label, which still read the stale `4S2P, BMS,
+faults` where the served listing says `BMS, aging, thermal, 2 faults`), carried the reason
+in the note, and loaded scenarios normally.
+
+Two things were **not** driven on screen, stated rather than glossed: the full 200 ks
+aging run (rAF does not fire under an occluded window, and one screenshot buys one frame —
+25 ks was reached, and the trajectory beyond it is measured natively against the committed
+file), and one final `change` event on the old server, where arrow keys stopped reaching
+the focused select. Every number in the two new lesson steps comes from a native run of
+the shipped scenario files, not from the page.
+
 ## Exit criterion
 
 A reader who has never edited a file can load every chemistry in the repo from the

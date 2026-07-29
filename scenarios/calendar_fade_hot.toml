@@ -61,7 +61,9 @@ description = """
 demanded of this pack — the lesson is that it wears out anyway, faster when it is warm \
 and faster when it is full. Watch soh_capacity fall and soh_resistance rise; the two \
 are one mechanism seen twice. Raise the ambient and the slope steepens: +20 K is worth \
-about 3.6x the fade."""
+about 3.6x the fade *measured from new*. Raising it part-way through a run buys less \
+than that — around 2.7x for a second leg of equal length — because sqrt(t) makes the \
+same stress cheaper once a pack has already aged."""
 
 [pack]
 series = 4

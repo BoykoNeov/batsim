@@ -462,9 +462,14 @@ fn every_shipped_scenario_parses_builds_and_steps() {
     );
 
     for path in files {
-        let name = path.file_name().expect("a file name").to_string_lossy().into_owned();
+        let name = path
+            .file_name()
+            .expect("a file name")
+            .to_string_lossy()
+            .into_owned();
         let text = std::fs::read_to_string(&path).expect("readable");
-        let scenario = parse_scenario(&text).unwrap_or_else(|e| panic!("{name} does not parse: {e}"));
+        let scenario =
+            parse_scenario(&text).unwrap_or_else(|e| panic!("{name} does not parse: {e}"));
 
         // Exactly `sim_server::AppState::resolve_chemistry`: an id becomes a file in the
         // chemistry directory, and the `[a-z0-9_]+` charset check `validate` has already

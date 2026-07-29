@@ -277,14 +277,24 @@
   <div class="note">The engine runs in this tab. Everything below feeds the next step.</div>
 
   <h2>Guided path</h2>
-  <button id="path-start">Start — 6 steps</button>
+  <button id="path-start">Start — 8 steps</button>
   <div class="note">From one cell to a pack with nothing watching it. Each step sets the
     controls below and says what to look at; they all stay live, and stepping back or
     forward re-applies the whole set.</div>
 
   <h2>Scenario</h2>
+  <!--
+    These options are a FALLBACK, not the list. `loadScenarioList` replaces them from
+    GET /scenarios at boot, so adding a scenario is a TOML file and no HTML edit. What
+    is written here is what a page shows when it is newer than the server it came from
+    and that route 404s — an empty picker would be a silent failure, so a possibly-stale
+    list plus a note saying so beats nothing.
+  -->
   <select id="scenario">
+    <option value="calendar_fade_hot.toml">calendar_fade_hot — 4S2P, aging, thermal</option>
     <option value="cc_discharge_lfp.toml">cc_discharge_lfp — 1S1P, nothing on</option>
+    <option value="cc_discharge_lgm50.toml">cc_discharge_lgm50 — 1S1P, nothing on</option>
+    <option value="cc_discharge_nmc.toml">cc_discharge_nmc — 1S1P, nothing on</option>
     <option value="soft_short_under_a_lying_sensor.toml" selected>soft_short_under_a_lying_sensor — 4S2P, BMS, faults</option>
   </select>
   <div class="row" style="margin-top:8px">
@@ -457,6 +467,14 @@
   <canvas id="plot-i" height="150"></canvas>
   <canvas id="plot-soc" height="150"></canvas>
   <canvas id="plot-t" height="150"></canvas>
+  <!--
+    Both health series share one axis because they share one unit: percent *of new*.
+    Capacity falls from 100, resistance rises from 100, and the angle between them is
+    the chemistry's r_growth_per_capacity_loss — 1.5 points of resistance for every
+    point of capacity, readable straight off the panel. With aging off they are two flat
+    lines at 100, which is the honest picture of a pack that never wears out.
+  -->
+  <canvas id="plot-soh" height="150"></canvas>
 
   <div class="note">
     Ground truth is what the engine knows; <code>soc_bms</code> is what the BMS

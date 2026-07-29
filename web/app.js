@@ -660,6 +660,10 @@ const history = {
   soc_bms: [],
   t_min: [],
   t_max: [],
+  // Both as "% of new", which is what lets them share one axis: capacity falls from
+  // 100, resistance rises from it.
+  soh_capacity: [],
+  soh_resistance: [],
 };
 
 function resetHistory() {
@@ -680,6 +684,8 @@ function record(frame) {
   history.soc_bms.push(m.soc_bms === null ? null : m.soc_bms * 100);
   history.t_min.push(toC(m.t_min));
   history.t_max.push(toC(m.t_max));
+  history.soh_capacity.push(m.soh_capacity * 100);
+  history.soh_resistance.push(m.soh_resistance * 100);
 
   if (history.t.length > MAX_SAMPLES) {
     // Drop the oldest tenth in one go rather than shifting every sample.
@@ -1356,6 +1362,9 @@ const state = {
   cellsBusy: false,
   cellsAtMs: 0,
   cellsError: null,
+  // Why the picker below is the page's own hand-written list rather than the server's,
+  // or null when the listing loaded. Sticky for the session: nothing retries it.
+  scenarioListError: null,
 };
 
 /**
@@ -1477,6 +1486,13 @@ function draw() {
     { label: "min", color: "#2ee6a8", values: history.t_min },
     { label: "max", color: "#ff6b6b", values: history.t_max },
   ]);
+  // One axis for both, because both are percentages *of new*. `CLAUDE.md` refuses to
+  // model capacity fade without the matching resistance growth, and this is that rule
+  // drawn: the two lines leave 100 % together and never come back.
+  drawPanel($("plot-soh"), "state of health (% of new)", "%", history.t, [
+    { label: "capacity", color: "#2ee6a8", values: history.soh_capacity },
+    { label: "resistance", color: "#ffb454", values: history.soh_resistance },
+  ]);
 
   renderReadouts(state.latest, state.facts ?? { sim_time_s: 0 });
   renderFlags(state.latest);
@@ -1533,6 +1549,59 @@ requestAnimationFrame(frame);
 // Controls
 // ---------------------------------------------------------------------------
 
+/**
+ * Fill the scenario picker from `GET /scenarios`.
+ *
+ * The `<option>` list in `index.html` is a **fallback, not the source of truth**. It
+ * exists for one case: a page newer than the server it was fetched from, where this
+ * route 404s. Leaving the picker empty there would be a silent failure — the reader sees
+ * a control with nothing in it and no reason given — so the hand-written list stays and
+ * the banner says what happened. That list may be stale; this one cannot be, and adding
+ * a scenario is a TOML file with no HTML edit behind it.
+ *
+ * A file that does not parse is listed **disabled, carrying its error**, which is the
+ * same choice the route makes and for the same reason: an author whose scenario has
+ * vanished from the picker has nowhere to look.
+ */
+async function loadScenarioList() {
+  const res = await fetch("/scenarios");
+  if (!res.ok) throw new Error(`GET /scenarios -> ${res.status}`);
+  const listed = await res.json();
+  if (!Array.isArray(listed) || listed.length === 0) {
+    throw new Error("GET /scenarios returned no scenarios");
+  }
+
+  const select = $("scenario");
+  const wanted = select.value;
+  select.replaceChildren();
+  for (const entry of listed) {
+    const option = document.createElement("option");
+    option.value = entry.file;
+    if (entry.error) {
+      option.disabled = true;
+      option.textContent = `${entry.file} — will not load: ${entry.error}`;
+    } else {
+      option.textContent = `${entry.file.replace(/\.toml$/, "")} — ${scenarioSummary(entry)}`;
+    }
+    select.appendChild(option);
+  }
+  // Keep the reader (or the guided path) pointed where they were, if it survived.
+  if (listed.some((e) => e.file === wanted && !e.error)) select.value = wanted;
+}
+
+/** The half-line after the file name: topology, then what is switched on. */
+function scenarioSummary(e) {
+  const on = [];
+  if (e.bms) on.push("BMS");
+  if (e.aging) on.push("aging");
+  if (e.thermal !== "Isothermal") on.push("thermal");
+  if (e.faults) on.push(e.faults === 1 ? "1 fault" : `${e.faults} faults`);
+  // `cell_model` is the scenario's own value — a string for the equivalent circuit, an
+  // object for anything else — so anything that is not "Ecm" is worth naming.
+  if (typeof e.cell_model !== "string") on.push(Object.keys(e.cell_model)[0]);
+  return `${e.series}S${e.parallel}P, ${on.length ? on.join(", ") : "nothing on"}`;
+}
+
 async function loadScenario() {
   const name = $("scenario").value;
   state.running = false;
@@ -1579,6 +1648,10 @@ function afterFactsChange(label) {
     `${f.series}S${f.parallel}P · ${label}` +
     (f.sensor_faults_dropped
       ? ` · ${f.sensor_faults_dropped} sensor fault(s) dropped: no BMS to sense them`
+      : "") +
+    (state.scenarioListError
+      ? ` · scenario list unavailable (${state.scenarioListError}); the picker above is ` +
+        `this page's built-in list and may be out of date with the server`
       : "");
 
   const socket = $("use-socket").checked;
@@ -1853,6 +1926,27 @@ const LESSONS = [
       "A long, nearly flat middle. LFP's open-circuit voltage barely moves between 20 % and 80 % charge, which is exactly what will make its charge state so hard to measure three steps from now. Then the knee, at about 69 minutes, where the cell empties — and a `SOC_CLAMPED_LOW` flag, which is the coulomb counter reporting that it was asked for charge the cell no longer had.",
   },
   {
+    id: "same-discharge-other-chemistry",
+    title: "The same discharge, a different chemistry",
+    scenario: "cc_discharge_nmc.toml",
+    // 2.60 A on a 3.0 Ah cell is 0.868 C — the rate step 1 used, not the current. Same
+    // fraction of the cell per hour means both runs empty at the same moment (4146 s
+    // and 4148 s, measured), so the time axis is not one of the differences and the
+    // voltage is the only thing left to look at.
+    demand: { mode: "Current", value: 2.6 },
+    ambient_c: 25,
+    bms: null,
+    speed_x: 800,
+    until_s: 4200,
+    watch: ["plot-v"],
+    prose: [
+      "The same experiment on an NMC cell: one cell, isothermal, nothing protecting it, discharged at the same 0.868 C. The scenario file differs from the last one in exactly one field — the chemistry id — which is what makes anything you see here attributable.",
+      "This cell holds 3.0 Ah against the LFP cell's 2.303, so the same C-rate is 2.6 A rather than 2. Both empty within two seconds of each other; the shapes are what differ.",
+    ],
+    expect:
+      "A curve that slopes the whole way down instead of sitting on a plateau. Between 90 % and 20 % charge this cell falls 481 mV — 4.030 V to 3.549 — where the LFP cell fell 168 across the same window. That ratio is the whole difference: on this chemistry, a voltage reading tells you the charge level; on LFP it barely does. Load `cc_discharge_lgm50` from the picker for a third (620 mV, a 5.15 Ah cell fitted from PyBaMM's Chen2020), then hold onto this — two steps from now an LFP state-of-charge estimator will refuse to correct itself, and this is why.",
+  },
+  {
     id: "pack-disagrees",
     title: "A pack disagrees with itself",
     scenario: "soft_short_under_a_lying_sensor.toml",
@@ -1937,6 +2031,27 @@ const LESSONS = [
     ],
     expect:
       "The current readout now obeys the demand exactly. Cell voltage dives well under the 2.0 V the datasheet allows, temperature climbs, and the only flag you will see is `SOC_CLAMPED_LOW` — the coulomb counter hitting its floor. That is ground truth reporting an impossibility, not a warning anyone issued.",
+  },
+  {
+    id: "wearing-out-while-idle",
+    title: "Nothing is happening, and it is still wearing out",
+    scenario: "calendar_fade_hot.toml",
+    demand: { mode: "Rest", value: 0 },
+    ambient_c: 25,
+    bms: null,
+    // 10 000x, the top of the slider: this is the one lesson whose subject is slower
+    // than a person. The multiplier changes steps per frame and never `dt`, so the
+    // trajectory is bit-identical to watching it in real time for two days.
+    speed_x: 10000,
+    until_s: 200000,
+    watch: ["plot-soh"],
+    prose: [
+      "A different pack: 4S2P LFP at 95 % charge, thermally coupled, aging switched on, nothing connected to it. The demand is `Rest`, so no current flows anywhere and the voltage and charge traces will be flat lines for the rest of this step.",
+      "Calendar fade does not care. A cell sitting on a shelf loses capacity as `√t`, at an Arrhenius rate set by its temperature and a stress factor set by how full it is. Every coefficient behind that is a labelled placeholder in the chemistry file — this is that parameter set integrated honestly, not a claim about a real cell's shelf life.",
+      "This runs to 200 000 s of simulation — about two and a half days — which is twenty seconds of watching at 10 000×. Then raise the ambient slider to 45 °C and press Run.",
+    ],
+    expect:
+      "Two lines leaving 100 % together and never coming back: capacity down, resistance up, at exactly 1.5 points of resistance per point of capacity, because `CLAUDE.md` refuses to model one without the other. The curve bends hard and then flattens — a quarter of the way in, 0.53 points are gone; at the mark it is 1.06, twice the damage for four times the time, which is `√t` visible on screen. Then the ambient: 20 K buys 2.84 points over the next 200 000 s against the 1.06 the first leg cost, about 2.7×. Not the 3.6× two fresh packs would show at those temperatures — this pack has already aged, and `√t` means the same stress costs less the second time. Everything else on the page stays perfectly still throughout.",
   },
 ];
 
@@ -2103,10 +2218,25 @@ $("path-exit").onclick = () => {
   state.running = false;
   $("run").textContent = "Run";
   $("path").className = "";
-  $("path-start").textContent = "Start — 6 steps";
+  $("path-start").textContent = "Start — 8 steps";
   setWatch([]);
 };
 
 window.addEventListener("beforeunload", () => state.backend?.close());
 
+// The picker first, because `loadScenario` reads its value. A failure here is not fatal
+// — the hand-written options in `index.html` still name scenarios this server serves —
+// so it is recorded and stepped over rather than thrown out of boot, which would leave
+// the page with no pack at all.
+//
+// Recorded, and deliberately **not** shown with `showBanner`: `loadScenario` opens with
+// `clearBanner`, so a banner raised here would be wiped one line later without ever
+// having been on screen. That is not hypothetical — this page shipped exactly that bug
+// once, in a version check whose warning erased itself. The note beside the picker is
+// rewritten on every load, so a failure parked there stays visible instead.
+try {
+  await loadScenarioList();
+} catch (e) {
+  state.scenarioListError = String(e.message ?? e);
+}
 await loadScenario();
