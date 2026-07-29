@@ -55,6 +55,11 @@ of the truth-vs-estimate story until an adapter exposes the frame.
 That exposure is the natural next slice and is where the first version bump should go:
 `API_VERSION` 2→3 and `WASM_API_VERSION` 2→3 together.
 
+> **Done, and that price was wrong.** See `docs/plans/ui-bms-view.md`. Only
+> `WASM_API_VERSION` moved: `API_VERSION`'s own doc states a bump rule with an explicit
+> additive exemption, and a new route is an addition. The pair was priced here without
+> reading either constant's rule, and they have now parted for the first time.
+
 ## Semantics the panel must respect, checked in the engine rather than assumed
 
 - **A past-dated fault fires on the next step, not retroactively.** `FaultQueue::take_due`

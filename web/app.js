@@ -985,11 +985,15 @@ const fmtSigned = (v, dp, unit) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed
  * How far outside the true envelope a sensed group voltage must sit before the panel
  * calls it a lie \[V\].
  *
- * Not floating-point slack: an honest read is *bit*-identical to one of the values the
- * envelope was taken from. It is sampler slack. The sensor frame and `state.latest`
- * are two reads that can land one step apart, and over one step the envelope moves by
- * microvolts. An injected offset is measured in tens of millivolts, so 1 mV separates
- * them without ever being close to either.
+ * It is **not** floating-point slack, and it is no longer the sampler slack an earlier
+ * draft claimed: `comparable` below already refuses to judge unless the frame's
+ * `sampled_at_s` matches the pack's clock, so by the time this constant is consulted
+ * the dot and the band are from the same step and an honest read is *bit*-identical to
+ * one of the values the envelope was taken from. Nothing this guards can be named.
+ *
+ * It stays because the cost of being wrong is asymmetric — a spurious "outside truth"
+ * accuses working hardware — and because 1 mV cannot mask a real fault: an injected
+ * offset is tens of millivolts, two orders up.
  */
 const LIE_TOLERANCE_V = 1e-3;
 
@@ -1192,18 +1196,31 @@ async function refreshCells(force = false) {
   if (!force && now - state.cellsAtMs < CELLS_PERIOD_MS) return;
   state.cellsBusy = true;
   state.cellsAtMs = now;
+  // Which pack this read is *about*. Loading a scenario replaces the backend, and a
+  // read already in flight against the old one still resolves — writing a pack the
+  // page has moved on from into `state`, where the grid rebuilds to its topology and
+  // the BMS panel draws its probes. It self-heals on the next tick, which is precisely
+  // what makes it worth catching: a wrong pack that corrects itself in 250 ms looks
+  // like a rendering glitch rather than the stale read it is.
+  const from = state.backend;
   try {
-    // Both views on one clock. Ground truth and the BMS's belief are read for the same
-    // panel-pair and compared tile against dot, so sampling them at different moments
-    // would put a gap on screen that is the sampler's and label it the BMS's.
+    // Ground truth and the BMS's belief are read as a pair, because the panel compares
+    // them directly and a gap opened by the sampler would be read as the BMS's.
+    //
+    // A pair, not an instant: the socket backend spends two independent round trips
+    // here, and a session another client is stepping can advance between them. That is
+    // what `comparable` in `renderBms` exists for — it declines to call any group a
+    // liar unless the frame's own `sampled_at_s` still matches the pack's clock.
     const [cells, sensors] = await Promise.all([
-      Promise.resolve(state.backend.cells()),
-      Promise.resolve(state.backend.sensors()),
+      Promise.resolve(from.cells()),
+      Promise.resolve(from.sensors()),
     ]);
+    if (state.backend !== from) return;
     state.cells = cells;
     state.sensors = sensors;
     state.cellsError = null;
   } catch (e) {
+    if (state.backend !== from) return;
     state.cells = null;
     state.sensors = null;
     state.cellsError = String(e.message ?? e);
