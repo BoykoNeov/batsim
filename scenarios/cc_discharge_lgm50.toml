@@ -1,0 +1,63 @@
+# The third chemistry, and the one whose file has two halves with different provenance.
+#
+# Same shape as the other two CC discharge scenarios — 1S1P, full, 25 degC, isothermal,
+# nothing protecting it — so the three are comparable by construction.
+#
+# ## Which half of the parameter set this scenario reads
+#
+# `nmc_21700_lgm50.toml` carries an extracted `[spm]` section (PyBaMM's Chen2020,
+# verbatim) *and* an ECM description of the same cell. This scenario leaves `cell_model`
+# at its default, so it runs the **ECM half**, and that half is mixed:
+#
+#   * `[ocv]` and `capacity_ah` are fitted from Chen2020 by tools/reference/fit_ocv.py.
+#     The 5.153 Ah is the usable stoichiometry window, not the 5.0 Ah label on the cell.
+#     The voltage curve you see here is therefore a real fit to a real parameter set.
+#   * `[r0]` and `[[rc]]` are labelled placeholders. Every ohmic drop and every RC sag
+#     in this trace is order-of-magnitude only.
+#
+# The chemistry file says the two halves "are not equally trustworthy and this comment
+# is where that is written down". A scenario against it inherits the obligation, which
+# is what this paragraph is.
+#
+# ## What it shows next to the other two
+#
+# Measured at 0.5 C and 25 degC: 618 mV of terminal-voltage fall between 90 % and 20 %
+# SOC, against 481 mV for the 18650 NMC and 168 mV for LFP. Sloped chemistries are easy
+# to read a charge level off; LFP is not, and that is the lesson the guided path builds
+# on. See docs/plans/scenario-catalog.md for the table.
+#
+# ## What it deliberately does not do
+#
+# It does not select the SPM cell model, which is reachable from no client and is a
+# slice of its own. The reason is measured rather than assumed: at 0.5 C the SPM and the
+# ECM agree to about +/-20 mV through the whole middle of the discharge and only part
+# near empty. A scenario that flipped `cell_model` here would cost 6.7x the step time
+# (0.80 us against 0.12 us per step at 12 shells) to show a reader almost nothing. The
+# comparison that would pay is a high C-rate, where diffusion limits the particle rather
+# than the circuit, and that needs a demand program rather than an initial condition.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "CC discharge, single LG M50 cell"
+description = """
+A 1S1P pack at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no faults. 5.153 Ah \
+of usable capacity, 4.20 V full, 2.50 V cutoff. Runs the equivalent-circuit half of a \
+chemistry file that also carries extracted single-particle parameters: the voltage \
+curve is fitted from PyBaMM's Chen2020, the resistances are placeholders."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+seed = 1
+
+# Omitted, and each omission means "off":
+#   [pack.scatter] / [pack.thermal] / [pack.bms] / [pack.aging] / [[faults]]
+#
+# And one omission that is not "off" but "default": `cell_model`, which is Ecm. Setting
+#   [pack.cell_model.Spm]
+#   shells = 12
+# would run the same cell through the porous-electrode model instead — see above for why
+# this file does not.

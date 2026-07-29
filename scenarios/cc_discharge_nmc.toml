@@ -1,0 +1,43 @@
+# `cc_discharge_lfp.toml` with one field changed.
+#
+# Same topology, same charge, same temperature, same nothing-else-switched-on. The only
+# difference is the chemistry id, which is the point: discharge the two side by side and
+# every difference in the trace has exactly one possible cause.
+#
+# What that buys, measured at 0.5 C and 25 degC (see docs/plans/scenario-catalog.md):
+# between 90 % and 20 % SOC this cell's terminal voltage falls 481 mV, against 168 mV
+# for the LFP cell over the same window. That ratio is the flat-plateau problem in one
+# number — and it is the missing first half of the guided path's step 3, where the LFP
+# state-of-charge estimator declines to correct itself because the curve is too flat to
+# read a charge level off.
+#
+# It is also the first scenario to run the 2-RC path: this chemistry ships a fast
+# charge-transfer pair and a slow diffusion pair, which its own header advertises and no
+# scenario used. Both are labelled placeholders — the sag after a step change here is
+# order-of-magnitude, not a fit.
+
+chemistry = "nmc_18650_generic"
+
+[meta]
+name = "CC discharge, single NMC cell"
+description = """
+A 1S1P pack at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no faults — \
+`cc_discharge_lfp.toml` with the chemistry swapped. 3.0 Ah, 4.20 V full, 3.00 V cutoff, \
+and a sloped open-circuit curve with no plateau anywhere in it. Nothing protects this \
+cell, so a discharge past empty runs it below its own v_min and says so with a flag."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+# Unused here (no scatter, no aging, no plating), but the seed is part of the snapshot
+# and every scenario names it rather than inheriting a default.
+seed = 1
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; demands pass through unclamped
+#   [pack.aging]    -> the pack never wears out
+#   [[faults]]      -> nothing scheduled

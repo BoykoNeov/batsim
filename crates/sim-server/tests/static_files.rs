@@ -142,6 +142,139 @@ async fn chemistry_and_scenario_text_are_fetchable() {
     assert_eq!(refetched.body, chem.body);
 }
 
+/// The catalogue: `/scenarios` answers what is in the directory that `/scenarios/…`
+/// serves file by file.
+///
+/// Also the guard on the route split this needed. The directory service moved from
+/// `/scenarios` to `/scenarios/` so the bare path could carry JSON, which changes the
+/// prefix `ServeDir` strips — `chemistry_and_scenario_text_are_fetchable` above is the
+/// other half of that check, and it fetches a file by name.
+#[tokio::test]
+async fn the_scenario_listing_names_every_file_in_the_directory() {
+    let res = get(&state(), "/scenarios").await;
+    assert_eq!(res.status, StatusCode::OK);
+    let listed: Vec<serde_json::Value> = serde_json::from_str(&res.body).expect("a JSON array");
+
+    // Every `*.toml` in the repo's own directory, and nothing else.
+    let mut on_disk: Vec<String> = std::fs::read_dir(format!("{REPO}/scenarios"))
+        .expect("the repo's scenario directory")
+        .map(|e| {
+            e.expect("a directory entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter(|n| n.ends_with(".toml"))
+        .collect();
+    on_disk.sort();
+    let files: Vec<String> = listed
+        .iter()
+        .map(|e| e["file"].as_str().expect("a file name").to_owned())
+        .collect();
+    assert_eq!(files, on_disk, "the listing and the directory disagree");
+    assert!(!files.is_empty(), "the repo ships scenarios");
+
+    // Sorted by name, not by whatever order the filesystem walked them in. A picker
+    // whose entries move between hosts is the client-side form of the nondeterminism
+    // `CLAUDE.md` bans inside the engine.
+    let mut sorted = files.clone();
+    sorted.sort();
+    assert_eq!(files, sorted, "the listing is not sorted by file name");
+
+    // And the facts are flattened into the entry rather than nested under a key.
+    let lfp = listed
+        .iter()
+        .find(|e| e["file"] == "cc_discharge_lfp.toml")
+        .expect("the CC discharge scenario is listed");
+    assert_eq!(lfp["chemistry"], "lfp_26650_generic");
+    assert_eq!(lfp["series"], 1);
+    assert_eq!(lfp["parallel"], 1);
+    assert_eq!(lfp["bms"], false);
+    assert_eq!(lfp["aging"], false);
+    assert_eq!(lfp["faults"], 0);
+    assert_eq!(lfp["thermal"], "Isothermal");
+    assert_eq!(lfp["cell_model"], "Ecm");
+    assert!(lfp["name"].is_string(), "a scenario has a [meta] name");
+    assert!(
+        lfp.get("error").is_none(),
+        "a parsing file carries no error"
+    );
+
+    // The trailing-slash path with no file after it is a 404 with an empty body — no
+    // directory index, and in particular not a second, differently-shaped answer to the
+    // question the bare path answers in JSON. Pinned because it was discovered rather
+    // than chosen, and because `/app/` — the other nested service — answers its own
+    // bare form with `index.html`, so the two are not alike.
+    let bare = get(&state(), "/scenarios/").await;
+    assert_eq!(bare.status, StatusCode::NOT_FOUND);
+    assert!(
+        bare.body.is_empty(),
+        "no directory index, got {}",
+        bare.body
+    );
+}
+
+/// A scenario that does not parse is **listed, carrying its error**.
+///
+/// Skipping it would produce the worst report available: the author of a broken file
+/// sees a picker that does not mention it, and nothing anywhere says why. Same shape as
+/// the banner that erased itself — the diagnostic existed and the path through it that
+/// mattered never ran.
+#[tokio::test]
+async fn a_scenario_that_does_not_parse_is_listed_with_its_error() {
+    let dir = std::env::temp_dir().join(format!("batsim-listing-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a temp directory");
+    std::fs::copy(
+        format!("{REPO}/scenarios/cc_discharge_lfp.toml"),
+        dir.join("good.toml"),
+    )
+    .expect("a good scenario");
+    // Valid TOML, invalid scenario: no chemistry key at all, which `Scenario::validate`
+    // rejects. That exercises the validation path rather than only the TOML parser.
+    std::fs::write(
+        dir.join("broken.toml"),
+        "[meta]\nname = \"no chemistry anywhere\"\n\n[pack]\nseries = 1\nparallel = 1\n\
+         initial_soc = 1.0\ninitial_temp_k = 298.15\nseed = 1\n",
+    )
+    .expect("a broken scenario");
+    // Not a scenario and not listed: the filter is on the extension, not on hope.
+    std::fs::write(dir.join("notes.md"), "# not a scenario\n").expect("a stray file");
+
+    let state = AppState::new(format!("{REPO}/chemistries")).with_static_dirs(StaticDirs {
+        web: format!("{REPO}/web").into(),
+        scenarios: dir.clone(),
+    });
+    let res = get(&state, "/scenarios").await;
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "one broken file is not a failed request"
+    );
+    let listed: Vec<serde_json::Value> = serde_json::from_str(&res.body).expect("a JSON array");
+
+    let files: Vec<&str> = listed.iter().map(|e| e["file"].as_str().unwrap()).collect();
+    assert_eq!(
+        files,
+        ["broken.toml", "good.toml"],
+        "the stray file is not a scenario"
+    );
+
+    let broken = &listed[0];
+    assert!(
+        broken["error"]
+            .as_str()
+            .is_some_and(|m| m.contains("chemistry")),
+        "the error should name what is wrong, got {broken}"
+    );
+    assert!(
+        broken.get("name").is_none() && broken.get("series").is_none(),
+        "a file that does not parse has no facts to report, got {broken}"
+    );
+    assert!(listed[1]["error"].is_null() || listed[1].get("error").is_none());
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
 /// `ServeDir` resolves `..` before touching the disk, so these routes expose their two
 /// directories and nothing above them. Worth pinning rather than trusting: this is the
 /// same class of hazard the `[a-z0-9_]+` charset check on chemistry ids exists for, and
@@ -179,6 +312,17 @@ async fn a_missing_web_directory_does_not_take_the_api_with_it() {
     assert_eq!(
         get(&state, "/scenarios/cc_discharge_lfp.toml").await.status,
         StatusCode::NOT_FOUND
+    );
+    // The catalogue is a 500 rather than an empty list, and the distinction is the
+    // point: "there are no scenarios here" and "you pointed me at nothing" are
+    // different facts, and only one of them is the operator's to fix. The message names
+    // the directory, because the person reading it chose that path.
+    let listing = get(&state, "/scenarios").await;
+    assert_eq!(listing.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(
+        listing.body.contains("no/such/directory"),
+        "the error should name the directory it could not read, got {}",
+        listing.body
     );
 
     let root = get(&state, "/").await;

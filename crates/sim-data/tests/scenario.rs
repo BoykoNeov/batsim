@@ -429,3 +429,66 @@ fn a_scenario_round_trips_through_toml() {
         assert_eq!(original, reparsed);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Every shipped scenario, without naming any of them
+// ---------------------------------------------------------------------------
+
+/// Walk `scenarios/`, and put every file through what a client puts it through.
+///
+/// The tests above use `include_str!`, which is compile-time and per file: each one
+/// names a scenario, so a new scenario is covered by nothing until somebody remembers
+/// to add it. That is the same disease the hardcoded `<option>` list had one layer up,
+/// and `GET /scenarios` is only trustworthy if the directory behind it is.
+///
+/// Parsing is not enough to be worth much. A scenario can parse and still fail to name
+/// a chemistry this repo ships, or fail to build a pack, or queue a fault at a cell that
+/// does not exist — `sim-server` has a distinct error code for each of those. So this
+/// resolves the chemistry the way an adapter does, builds the pack, and steps it once.
+#[test]
+fn every_shipped_scenario_parses_builds_and_steps() {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scenarios");
+    let chem_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../chemistries");
+
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+        .expect("the repo's scenario directory")
+        .map(|e| e.expect("a directory entry").path())
+        .filter(|p| p.extension().is_some_and(|e| e == "toml"))
+        .collect();
+    files.sort();
+    assert!(
+        files.len() >= 2,
+        "expected the shipped scenarios, found {files:?}"
+    );
+
+    for path in files {
+        let name = path.file_name().expect("a file name").to_string_lossy().into_owned();
+        let text = std::fs::read_to_string(&path).expect("readable");
+        let scenario = parse_scenario(&text).unwrap_or_else(|e| panic!("{name} does not parse: {e}"));
+
+        // Exactly `sim_server::AppState::resolve_chemistry`: an id becomes a file in the
+        // chemistry directory, and the `[a-z0-9_]+` charset check `validate` has already
+        // run is what makes that join safe.
+        let chem = match scenario.chemistry_source() {
+            ChemistrySource::Id(id) => {
+                let path = std::path::Path::new(chem_dir).join(format!("{id}.toml"));
+                let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                    panic!("{name} names chemistry {id:?}, which this repo does not ship: {e}")
+                });
+                parse_chemistry(&text).unwrap_or_else(|e| panic!("{name}: chemistry {id:?}: {e}"))
+            }
+            ChemistrySource::Inline(text) => {
+                parse_chemistry(text).unwrap_or_else(|e| panic!("{name}: inlined chemistry: {e}"))
+            }
+        };
+
+        let mut pack = scenario
+            .build_pack(chem)
+            .unwrap_or_else(|e| panic!("{name} parses but builds no pack: {e}"));
+        let telemetry = pack.step(1.0, Demand::Rest, &env());
+        assert!(
+            telemetry.v_terminal.is_finite() && telemetry.soc_true.is_finite(),
+            "{name}: a resting first step produced {telemetry:?}"
+        );
+    }
+}

@@ -1,0 +1,102 @@
+# A pack that is doing nothing at all, and wearing out anyway.
+#
+# Aging shipped in Phase 3 and has never been the *subject* of anything: the only other
+# [pack.aging] in this repo sets a sub-clock beside a fault that steals the attention.
+# This scenario has no fault, no BMS, no demand worth speaking of. Rest it and watch the
+# state of health.
+#
+# ## Why each section is here
+#
+# [pack.thermal.Network] is load-bearing rather than decorative. Calendar fade is
+# Arrhenius in *cell* temperature, and an isothermal pack pins every cell at
+# initial_temp_k forever — the ambient control would drive nothing and the whole
+# interaction would be dead. With the network on, cells relax toward ambient with a time
+# constant of about 271 s (95 J/K over 0.35 W/K), so a few seconds of watching at speed.
+#
+# [pack.scatter] is here because a pack is never eight identical cells, not because it
+# does anything visible at rest. Measured: after 600 ks the eight health tiles agree to
+# about three parts per million, which the grid renders as eight identical numbers.
+# Calendar fade depends on temperature and SOC, both uniform in a resting pack, and
+# scatter moves neither. The one trace it does leave is from the warm-up: while the pack
+# is still climbing to ambient, edge cells and middle cells are at different temperatures
+# for a few minutes, and that difference survives in the sixth decimal forever. Draw
+# current and the spread appears immediately — that is what the other 4S2P scenario is
+# for.
+#
+# No BMS: nothing here needs protecting — a resting pack trips nothing — and a
+# state-of-charge estimate beside a fade curve is a second lesson competing with this
+# one. `soft_short_under_a_lying_sensor.toml` is where the BMS lives.
+#
+# ## What it does, measured (docs/plans/scenario-catalog.md)
+#
+# Temperature and charge level are the two stresses. Held at 25 degC this pack loses
+# 1.83 points of capacity in 600 ks of simulation; held at 45 degC it loses 6.51 — about
+# 3.6x for +20 K, and 600 ks is one minute of watching at the browser client's top speed.
+# Charge level is the other axis: 50 % SOC costs 1.4x less than full, which is
+# `cal_soc_stress` read straight back out.
+#
+# The shape is sqrt(t): each doubling of elapsed time multiplies the accumulated fade by
+# root two. At fixed temperature that ratio comes out at 1.414 to three decimals, step
+# after step; from a cold start it runs slightly high at first (1.456, 1.434, 1.424, …)
+# because the pack is still warming into its own Arrhenius rate.
+#
+# And capacity never fades alone — resistance rises at exactly 1 + 1.5x the capacity
+# lost, this chemistry's `r_growth_per_capacity_loss`: 1.0275x when 1.83 points are gone,
+# 1.0976x at 6.51. An old pack is a smaller pack *and* a more resistive one.
+#
+# ## What these numbers are and are not
+#
+# Every coefficient in the LFP file's [aging] section is labelled a placeholder, and
+# what they add up to here — 6.51 points in a week at 45 degC, and by the sqrt(t) law
+# close to 12 in 23 days — is aggressive for a real cell. What is shown here is
+# this parameter set's behaviour, honestly integrated. It is not a claim about how fast
+# an LFP cell on a shelf actually dies, and the numbers above must not be quoted as one.
+
+chemistry = "lfp_26650_generic"
+
+[meta]
+name = "calendar fade, nearly full and warming"
+description = """
+4S2P LFP at 95 % SOC, thermally coupled, aging on, no BMS and no faults. Nothing is \
+demanded of this pack — the lesson is that it wears out anyway, faster when it is warm \
+and faster when it is full. Watch soh_capacity fall and soh_resistance rise; the two \
+are one mechanism seen twice. Raise the ambient and the slope steepens: +20 K is worth \
+about 3.6x the fade."""
+
+[pack]
+series = 4
+parallel = 2
+# 95 %, not 100 %, and the five points are load-bearing. At exactly 1.0 this pack does
+# not rest: measured, its parallel twins develop equal and opposite overpotentials of a
+# few millivolts, drift apart in SOC, and hold the pack ~0.44 K above ambient with
+# nothing connected to it. The ceiling is why — cells sit on the SOC clamp, and the top
+# segment of the LFP OCV table climbs 180 mV between 98 % and 100 %, so a rounding-sized
+# difference in charge becomes a millivolt-sized difference in open-circuit voltage and
+# the group solve does what it should with it. Interesting, and not this lesson: it would
+# read as self-discharge, which this engine does not model.
+#
+# At 0.95 the same pack is genuinely still — every cell holds 0.950000 and sits at
+# exactly ambient once relaxed. The SOC stress factor is 1.36 here against 1.40 at full,
+# which is not a difference worth defending.
+initial_soc = 0.95
+# Room temperature at the start, deliberately: the pack begins near the slow end of the
+# Arrhenius curve, so raising the ambient is a visible change of slope rather than a
+# continuation of what was already happening.
+initial_temp_k = 298.15
+seed = 20260729
+
+# Manufacturing spread. Invisible while the pack rests — see the note above — and the
+# first thing you see if you ask it for current.
+[pack.scatter]
+capacity_sigma = 0.02
+r0_sigma = 0.03
+
+# Enum, serde-default (externally tagged): the variant name is the table.
+[pack.thermal.Network]
+k_neighbor_w_per_k = 0.5
+
+# One aging update per 10 s of simulation time. This is a coarseness knob, not an
+# accuracy one: the sqrt(t) integral is exact over any interval at fixed stress, and a
+# longer period only samples the temperature and SOC that set the stress less often.
+[pack.aging]
+sub_clock_period_s = 10.0

@@ -50,6 +50,10 @@ repo two wrong numbers.
 | 160 ks | 99.03 % | 96.54 % |
 | 600 ks | 98.11 % | 93.30 % |
 
+(That table is the probe's own 100 % pack. The scenario this slice ships rests at 95 %
+for the reason in Part B, which costs it a little: 1.83 points at 25 °C and 6.51 at 45 °C
+over 600 ks, re-measured against the committed file.)
+
 The speed slider tops out at 10⁴×, so 600 ks is **one minute of watching**. The `√t` law
 is exact in the trace — each doubling of elapsed time multiplies accumulated fade by
 √2 (0.87, 1.22, 1.73, 2.45, 3.46, 4.90, 6.92 points at 45 °C) — and resistance tracks it
@@ -169,7 +173,7 @@ the standard for.
    the `[spm]` section is not touched by an `Ecm` pack and awaits the slice named above.
    The file itself says the two halves have different provenance and that "this comment is
    where that is written down" — a scenario against it inherits the obligation.
-3. **`calendar_fade_hot.toml`** — 4S2P LFP, 100 % SOC, `[pack.scatter]`, `[pack.thermal.Network]`,
+3. **`calendar_fade_hot.toml`** — 4S2P LFP, 95 % SOC, `[pack.scatter]`, `[pack.thermal.Network]`,
    `[pack.aging]`, **no BMS**, no faults, starting at 298.15 K.
    - Thermal coupling is load-bearing rather than decorative: without it the pack is
      isothermal and the ambient slider drives nothing, which is the whole interaction.
@@ -177,8 +181,20 @@ the standard for.
      seconds of watching at speed.
    - No BMS because nothing here needs protecting — a resting pack trips nothing — and
      because `soc_bms` beside a fade curve is a second lesson competing with this one.
-   - Scatter so the per-cell SOH tiles fan out instead of being eight copies of the
-     headline.
+   - Scatter because a pack is never eight identical cells — **not** because it shows at
+     rest, which was the reason drafted first and is wrong. Measured after the files were
+     written: calendar fade depends on temperature and SOC, both uniform in a resting
+     pack, so the eight health tiles end up agreeing to three parts per million. The
+     scenario header says so rather than implying a spread that is not there.
+   - **95 % SOC, not 100 %, and that came out of running it.** At exactly 1.0 this pack
+     does not rest: its parallel twins develop equal and opposite millivolt overpotentials,
+     drift apart in SOC, and hold the pack 0.44 K above ambient with nothing connected.
+     Cells sit on the SOC clamp, and the LFP OCV table climbs 180 mV between 98 % and
+     100 %, so a rounding-sized charge difference becomes a millivolt of open-circuit
+     voltage and the group solve does exactly what it should with it. Correct, and it
+     would read to a student as self-discharge, which this engine does not model. At 0.95
+     every cell holds `0.950000` and sits at exactly ambient. The stress factor is 1.36
+     against 1.40 — not a difference worth defending.
 
 A test walks `scenarios/*.toml` and `parse_scenario`s each. That test is what makes the
 listing route trustworthy and it does not exist today; `crates/sim-data/tests/load.rs` is
@@ -216,8 +232,10 @@ design that comment predicted:
   obvious fix and is not in this slice.
 - *Nothing is happening, and it is still wearing out* — loads `calendar_fade_hot.toml`,
   rests it at 10⁴×, watches `plot-soh` bend, then asks the reader to push ambient to 45 °C
-  and watch the slope steepen. The `√t` shape and the 3.5× temperature factor are the two
-  claims, and both are measured above rather than reasoned.
+  and watch the slope steepen. The `√t` shape and the temperature factor are the two
+  claims, and both are measured rather than reasoned. **Re-measured against the file as
+  committed**, which moved them: 1.83 points lost at 25 °C and 6.51 at 45 °C over 600 ks,
+  so **3.6×**, not the 3.5× the first probe gave for a different initial condition.
 
 ## Verification, and the traps this page has already sprung
 

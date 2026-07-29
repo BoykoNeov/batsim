@@ -7,12 +7,17 @@
 //! request/response cycle.
 //!
 //! # The static routes are not decoration
-//! `/app`, `/chemistries` and `/scenarios` exist because the browser page has no
+//! `/app`, `/chemistries` and `/scenarios/` exist because the browser page has no
 //! filesystem. It fetches scenario TOML and chemistry TOML as **text** and hands them
 //! to `sim-wasm`, which is the resolution `docs/plans/phase-4-server-wasm.md` chose for
 //! that adapter; and a wasm module cannot be loaded from `file://` at all. So the page
 //! is a client of these three routes even though it runs the engine itself and never
 //! touches the session API.
+//!
+//! A directory server answers *"give me this file"* and cannot answer *"what files are
+//! there"*, which is why the page's scenario picker was a hand-written `<option>` list
+//! and why the repo had two scenarios. [`list_scenarios`] answers the second question;
+//! see `docs/plans/scenario-catalog.md`.
 
 use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
@@ -21,7 +26,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
 use sim_core::{CellView, Pack, Snapshot, Telemetry, SNAPSHOT_VERSION};
-use sim_data::{parse_scenario, Scenario};
+use sim_data::{parse_scenario, ChemistrySource, Scenario};
 use tower_http::services::ServeDir;
 
 use crate::error::{ApiError, ErrorCode};
@@ -55,7 +60,13 @@ pub fn router(state: AppState) -> Router {
         // resolves `..` before touching the disk, so these expose the two directories
         // and nothing above them.
         .nest_service("/chemistries", ServeDir::new(state.chem_dir()))
-        .nest_service("/scenarios", ServeDir::new(&dirs.scenarios))
+        // The bare path is the catalogue and the trailing slash is the directory, which
+        // is the `/app` split three lines up for the reason stated there: nesting at a
+        // bare path swallows it. Unlike `/app` this needs no redirect — the bare path
+        // answers JSON, so there is no relative URL underneath it to resolve against
+        // the wrong base.
+        .route("/scenarios", get(list_scenarios))
+        .nest_service("/scenarios/", ServeDir::new(&dirs.scenarios))
         .with_state(state)
 }
 
@@ -82,8 +93,12 @@ struct ApiRoot {
     /// Also served verbatim at `/chemistries`, because the browser page has no
     /// filesystem and fetches parameter sets as text.
     chem_dir: String,
-    /// Directory scenario TOML is served from, at `/scenarios`.
+    /// Directory scenario TOML is served from, file by file, at `/scenarios/`.
     scenario_dir: String,
+    /// Where to ask what is *in* that directory, said in-band for the same reason
+    /// [`ApiRoot::web_note`] is: a `ServeDir` cannot answer that question, so a client
+    /// holding only this JSON would have to guess file names.
+    scenarios: &'static str,
     /// Where the browser demo lives. It may 404 — see [`ApiRoot::web_note`].
     app: &'static str,
     /// Why `/app` can 404 on a working server, said in-band because the person who
@@ -104,12 +119,169 @@ async fn api_root(State(state): State<AppState>) -> Json<ApiRoot> {
         sessions: state.session_count().await,
         chem_dir: state.chem_dir().display().to_string(),
         scenario_dir: dirs.scenarios.display().to_string(),
+        scenarios: "/scenarios",
         app: "/app/",
         web_note: "the demo page needs a wasm bundle that is not committed; if /app/ \
                    is blank or 404s, run: wasm-pack build crates/sim-wasm --target web \
                    --out-dir ../../web/pkg",
         limits: state.limits(),
     })
+}
+
+/// One line of `GET /scenarios`.
+///
+/// Either `error` is set or the flattened [`ScenarioFacts`] are — never both, never
+/// neither.
+#[derive(Debug, Serialize)]
+struct ScenarioEntry {
+    /// File name inside the served scenario directory: what `GET /scenarios/{file}`
+    /// takes, and what a guided-path lesson record names.
+    file: String,
+    /// Why this file has no facts. Present only for a file that does not parse.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    /// What the scenario says, flattened into this object. Absent when `error` is set.
+    #[serde(flatten)]
+    facts: Option<ScenarioFacts>,
+}
+
+/// The half of a scenario a picker or a lesson needs before loading it.
+///
+/// Deliberately **not** the whole [`Scenario`] — that is what `GET /scenarios/{file}`
+/// serves, verbatim, and a listing that restated the format would be a second copy of
+/// it to keep in step. These are the fields you choose a scenario *by*.
+#[derive(Debug, Serialize)]
+struct ScenarioFacts {
+    /// `[meta] name`.
+    name: String,
+    /// `[meta] description`, or `null`.
+    description: Option<String>,
+    /// The chemistry id, or `"inline"` for a scenario that carries its parameter set
+    /// in `chemistry_toml`. A caller that needs the inlined text fetches the file.
+    chemistry: String,
+    series: u16,
+    parallel: u16,
+    /// Initial state of charge, in \[0, 1\].
+    initial_soc: f64,
+    /// Initial cell temperature \[K\]. Not °C: this is the engine's own value, and
+    /// `CLAUDE.md` puts the conversion at the adapter's *outer* edge, which is the page.
+    initial_temp_k: f64,
+    /// The scenario's own `cell_model` value, not a summary of it — `"Ecm"`, or
+    /// `{"Spm": {"shells": n}}`. Serialising the config itself is what lets an SPM
+    /// scenario appear here without this route changing.
+    cell_model: sim_core::CellModelConfig,
+    /// Likewise the scenario's own `thermal` value: `"Isothermal"`, or
+    /// `{"Network": {"k_neighbor_w_per_k": k}}`.
+    thermal: sim_core::ThermalConfig,
+    /// Whether `[pack.bms]` is present. A bool rather than the config, because "does
+    /// this scenario have protection" is the question a picker asks.
+    bms: bool,
+    /// Whether `[pack.aging]` is present.
+    aging: bool,
+    /// How many `[[faults]]` are queued.
+    faults: usize,
+}
+
+/// `GET /scenarios` — what is in the scenario directory.
+///
+/// The counterpart to the `ServeDir` one path segment down: that answers *"give me this
+/// file"*, and until this route existed nothing could answer *"what files are there"*.
+/// The page's picker was a hand-written `<option>` list as a direct result, which is why
+/// the repo carried two scenarios.
+///
+/// # A file that does not parse is listed, carrying its error
+/// The tempting alternative — skip it — produces the worst report available: the author
+/// of a broken scenario sees a picker that simply does not mention their file, with
+/// nothing anywhere saying why. So a malformed file appears with `error` set and no
+/// facts. The failure is visible at exactly the place someone is looking for the file.
+///
+/// # Order is by file name, and that is not cosmetic
+/// `read_dir` order is unspecified and varies by filesystem. `CLAUDE.md` bans
+/// machine-dependent ordering inside the engine for determinism; a listing that shuffles
+/// between hosts would put the same disease in the client, where it would show up as a
+/// picker whose entries move.
+///
+/// Reads are blocking, as in [`crate::session::AppState::create_session`], which resolves
+/// a chemistry from disk on the same thread: a handful of small files under a directory
+/// the operator named on the command line.
+///
+/// # Errors
+/// [`ErrorCode::Internal`] with a 500 if the directory cannot be read at all — a
+/// misconfigured `--scenario-dir` rather than anything a client did.
+async fn list_scenarios(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ScenarioEntry>>, ApiError> {
+    let dir = &state.static_dirs().scenarios;
+    let unreadable = |e: std::io::Error| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ErrorCode::Internal,
+            format!("cannot read scenario directory {}: {e}", dir.display()),
+        )
+    };
+
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(unreadable)? {
+        let entry = entry.map_err(unreadable)?;
+        // A directory called `foo.toml` is not a scenario; nor is a file called
+        // `README.md`. Anything unreadable enough that its type cannot be established
+        // is skipped rather than reported — it is not a scenario that failed to parse.
+        if !entry.file_type().is_ok_and(|t| t.is_file()) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.to_ascii_lowercase().ends_with(".toml") {
+            files.push(name);
+        }
+    }
+    files.sort();
+
+    Ok(Json(
+        files
+            .into_iter()
+            .map(|file| {
+                let path = dir.join(&file);
+                match std::fs::read_to_string(&path)
+                    .map_err(|e| e.to_string())
+                    .and_then(|text| parse_scenario(&text).map_err(|e| e.to_string()))
+                {
+                    Ok(scenario) => ScenarioEntry {
+                        file,
+                        error: None,
+                        facts: Some(ScenarioFacts::of(&scenario)),
+                    },
+                    Err(error) => ScenarioEntry {
+                        file,
+                        error: Some(error),
+                        facts: None,
+                    },
+                }
+            })
+            .collect(),
+    ))
+}
+
+impl ScenarioFacts {
+    fn of(scenario: &Scenario) -> Self {
+        let pack = &scenario.pack;
+        Self {
+            name: scenario.meta.name.clone(),
+            description: scenario.meta.description.clone(),
+            chemistry: match scenario.chemistry_source() {
+                ChemistrySource::Id(id) => id.to_string(),
+                ChemistrySource::Inline(_) => "inline".to_string(),
+            },
+            series: pack.series,
+            parallel: pack.parallel,
+            initial_soc: pack.initial_soc,
+            initial_temp_k: pack.initial_temp_k,
+            cell_model: pack.cell_model,
+            thermal: pack.thermal,
+            bms: pack.bms.is_some(),
+            aging: pack.aging.is_some(),
+            faults: scenario.faults.len(),
+        }
+    }
 }
 
 /// `GET /sessions/{id}/ws` — upgrade to the stepping protocol.
