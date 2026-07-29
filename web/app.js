@@ -794,22 +794,21 @@ const METRICS = {
  * that is what makes a heat map unreadable at the middle.
  */
 const RAMPS = {
-  accent: { lo: [24, 32, 41], hi: [90, 200, 250] },
-  warm: { lo: [38, 27, 22], hi: [255, 138, 76] },
+  // `flip`: past this point the tile is bright enough that light text on it loses to
+  // dark text, so the ink flips to the page's darkest surface. It is per-ramp because
+  // it is a luminance crossover, and green carries far more luminance per channel than
+  // orange does — at the same t the accent ramp is the brighter tile, so it flips
+  // earlier. Colour alone never carries a value here (the number is printed on every
+  // tile), but it still has to be legible.
+  accent: { lo: [18, 34, 28], hi: [46, 230, 168], flip: 0.48 },
+  warm: { lo: [38, 27, 22], hi: [255, 138, 76], flip: 0.55 },
 };
 
-/**
- * Past this point on the ramp the tile is bright enough that light text on it fails
- * contrast, so the ink flips to the page's darkest surface. Colour alone never carries
- * a value here — the number is printed on every tile — but it still has to be legible.
- */
-const INK_FLIP = 0.55;
-
 function rampCss(name, t) {
-  const { lo, hi } = RAMPS[name];
+  const { lo, hi, flip } = RAMPS[name];
   const u = Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0;
   const ch = (i) => Math.round(lo[i] + (hi[i] - lo[i]) * u);
-  return { bg: `rgb(${ch(0)},${ch(1)},${ch(2)})`, ink: u > INK_FLIP ? "#10131a" : "#e6e9ef" };
+  return { bg: `rgb(${ch(0)},${ch(1)},${ch(2)})`, ink: u > flip ? "#10131a" : "#e6e9ef" };
 }
 
 /** Tiles are built once per topology and repainted in place — a 100S10P pack is 1000
@@ -1441,7 +1440,7 @@ async function readNow() {
 
 function draw() {
   drawPanel($("plot-v"), "pack terminal", "V", history.t, [
-    { label: "terminal", color: "#5ac8fa", values: history.v_terminal },
+    { label: "terminal", color: "#2ee6a8", values: history.v_terminal },
   ]);
   // Its own axis, so the spread between the best and worst cell stays legible however
   // many cells are in series.
@@ -1450,7 +1449,7 @@ function draw() {
     { label: "max", color: "#ffb454", values: history.v_cell_max },
   ]);
   drawPanel($("plot-i"), "current (discharge +)", "A", history.t, [
-    { label: "pack", color: "#5ac8fa", values: history.i_actual },
+    { label: "pack", color: "#2ee6a8", values: history.i_actual },
     { label: "int. short", color: "#ff6b6b", values: history.i_internal_short_a },
   ]);
   drawPanel(
@@ -1459,13 +1458,13 @@ function draw() {
     "%",
     history.t,
     [
-      { label: "truth", color: "#5ac8fa", values: history.soc_true },
+      { label: "truth", color: "#2ee6a8", values: history.soc_true },
       { label: "bms est.", color: "#ffb454", values: history.soc_bms },
     ],
     [0, 100],
   );
   drawPanel($("plot-t"), "cell temperature", "°C", history.t, [
-    { label: "min", color: "#5ac8fa", values: history.t_min },
+    { label: "min", color: "#2ee6a8", values: history.t_min },
     { label: "max", color: "#ff6b6b", values: history.t_max },
   ]);
 
