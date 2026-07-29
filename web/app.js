@@ -1626,21 +1626,52 @@ async function loadScenario() {
   renderBms();
   clearBanner();
 
+  // Ticket for this load. Two awaits below can interleave with a later call — a fetch
+  // and a backend build, and over the socket the second is a REST create plus a
+  // WebSocket handshake, so the spread between two loads is milliseconds wide.
+  const seq = ++loadSeq;
   try {
     const res = await fetch(`/scenarios/${name}`);
     if (!res.ok) throw new Error(`GET /scenarios/${name} -> ${res.status}`);
-    state.scenarioText = await res.text();
+    const text = await res.text();
 
     const Backend = $("use-socket").checked ? SocketBackend : WasmBackend;
-    state.backend = await Backend.create(state.scenarioText);
-    state.facts = state.backend.facts();
+    const backend = await Backend.create(text);
+    // Nothing above this line touched `state`. A load that has been overtaken stops
+    // here and takes its backend with it — over the socket that is a live session, so
+    // dropping the reference without closing it would leak one per keystroke.
+    if (seq !== loadSeq) {
+      backend.close();
+      return;
+    }
+
+    state.scenarioText = text;
+    state.backend = backend;
+    state.facts = backend.facts();
     applyEnv();
     afterFactsChange(Backend.label);
     await readNow();
   } catch (e) {
-    showBanner(String(e.message ?? e));
+    // A stale load's failure is not this page's news — the pack it was about is not the
+    // pack on screen, and the banner belongs to whatever loaded last.
+    if (seq === loadSeq) showBanner(String(e.message ?? e));
   }
 }
+
+/**
+ * Which `loadScenario` call is the current one.
+ *
+ * Found by arrowing through the picker over the socket: four `change` events in a row
+ * start four overlapping loads, and **the one that finishes last wins, which is not the
+ * one that started last**. The page settled showing a 1S1P pack at 100 % beside a picker
+ * reading `calendar_fade_hot` — a 4S2P pack at 95 %. Every control on the page was then
+ * driving a scenario the reader had not chosen.
+ *
+ * The race predates the picker being served, but two options made it nearly unreachable
+ * and five make it a normal keyboard interaction. `path.busy` guards the guided path and
+ * guards nothing here, because a reader turning the knob directly is not in a step.
+ */
+let loadSeq = 0;
 
 function afterFactsChange(label) {
   const f = state.facts;
@@ -1944,7 +1975,7 @@ const LESSONS = [
       "This cell holds 3.0 Ah against the LFP cell's 2.303, so the same C-rate is 2.6 A rather than 2. Both empty within two seconds of each other; the shapes are what differ.",
     ],
     expect:
-      "A curve that slopes the whole way down instead of sitting on a plateau. Between 90 % and 20 % charge this cell falls 481 mV — 4.030 V to 3.549 — where the LFP cell fell 168 across the same window. That ratio is the whole difference: on this chemistry, a voltage reading tells you the charge level; on LFP it barely does. Load `cc_discharge_lgm50` from the picker for a third (620 mV, a 5.15 Ah cell fitted from PyBaMM's Chen2020), then hold onto this — two steps from now an LFP state-of-charge estimator will refuse to correct itself, and this is why.",
+      "A curve that slopes the whole way down instead of sitting on a plateau. Between 90 % and 20 % charge this cell falls 481 mV — 4.030 V to 3.549 — where the LFP cell fell 168 across the same window. That ratio is the whole difference: on this chemistry, a voltage reading tells you the charge level; on LFP it barely does. Load `cc_discharge_lgm50` from the picker for a third (620 mV, a 5.15 Ah cell fitted from PyBaMM's Chen2020), then hold onto this — two steps from now an LFP state-of-charge estimator will refuse to correct itself, and this is why. At the end you get the same `SOC_CLAMPED_LOW` as before, and the same silence around it: nothing here is protecting this cell either, so it finishes at 2.92 V against a 3.00 V cutoff with no complaint from anything but the coulomb counter.",
   },
   {
     id: "pack-disagrees",

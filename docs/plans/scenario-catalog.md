@@ -297,6 +297,37 @@ file), and one final `change` event on the old server, where arrow keys stopped 
 the focused select. Every number in the two new lesson steps comes from a native run of
 the shipped scenario files, not from the page.
 
+### The socket, and the bug it found
+
+The first draft of this section said "both transports" on the strength of the wasm run
+alone — the same overclaim the previous slice had to correct one commit later. So the
+socket was actually driven, and it was worth it twice over.
+
+**`soh_capacity` and `soh_resistance` do cross the WebSocket**: `calendar_fade_hot` over
+`server (WebSocket)`, stepped to 38.9 h, read `soh cap 99.26 %` and `soh res 1.0111 ×`.
+This needed checking precisely because **its failure mode is silent** — a health field
+that never arrived would render as two flat lines at 100 %, which is exactly the picture
+`plot-soh` is designed to show for a pack with aging off. All three new scenarios also
+build server-side over REST, including `cc_discharge_lgm50`, whose chemistry id the server
+had never been asked to resolve.
+
+**And the socket exposed a real race.** Arrowing through the picker fires a `change` per
+keystroke, each starting an async `loadScenario`; **the one that finishes last wins, which
+is not the one that started last.** The page settled showing a 1S1P pack at 100 % beside a
+picker reading `calendar_fade_hot` — 4S2P at 95 %. Every control was then driving a
+scenario the reader had not chosen, with nothing on screen saying so. The race predates
+this slice, but two options made it nearly unreachable and five make it ordinary keyboard
+use; over the socket a load is a REST create plus a handshake, which is what widened the
+window enough to see it. Fixed with a generation counter: a load that has been overtaken
+closes its own backend and returns without touching `state` — closes, because over the
+socket that backend is a live session and dropping it would leak one per keystroke.
+
+**A third occlusion trap, beside rAF and CDP timeouts:** `await new Promise(r =>
+setTimeout(r, ms))` inside an injected script is throttled hard when the tab is
+backgrounded, so a 1.5 s sleep can outlast the 45 s CDP deadline and present as a frozen
+renderer. Injected scripts should not sleep at all — take the reading, return, and let the
+next tool call be the delay.
+
 ## Exit criterion
 
 A reader who has never edited a file can load every chemistry in the repo from the

@@ -155,9 +155,14 @@ arguments are needed from the workspace root. `--bind`, `--chem-dir`, `--web-dir
 
 ```bash
 curl -s http://127.0.0.1:8080/                                        # versions and limits
+curl -s http://127.0.0.1:8080/scenarios                               # what scenarios exist
 curl -s -X POST http://127.0.0.1:8080/sessions \
      --data-binary @scenarios/cc_discharge_lfp.toml                   # create a session
 ```
+
+`GET /scenarios` is the catalogue — topology, chemistry, and what each file switches
+on — while `GET /scenarios/<file>.toml` serves one file verbatim. A scenario that does
+not parse is listed carrying its error rather than quietly missing.
 
 Stepping is deliberately **not** on the REST surface — it lives on the WebSocket at
 `GET /sessions/{id}/ws`, because that is where `dt` can be explicit in every command,
@@ -180,13 +185,17 @@ the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
 If you do not already know what to look at, press **Start** under *Guided path*
-instead. It walks six steps — one cell on its own, a pack disagreeing with itself,
-the BMS's estimate drifting from the truth, a short hidden by the sensor that should
-have caught it, and the same overload with protection on and then off — setting the
-controls for each and outlining the panel it is about. Every control stays live
-throughout; stepping back and forward re-applies a step from scratch, so there is
-nothing you can break by fiddling mid-lesson. Steps 2 to 4 are one continuous run on
-one pack, because changing what you look at teaches more than reloading.
+instead. It walks eight steps — one cell on its own, the same discharge on a
+different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
+the truth, a short hidden by the sensor that should have caught it, the same overload
+with protection on and then off, and a pack that wears out while doing nothing at all
+— setting the controls for each and outlining the panel it is about. Every control
+stays live throughout; stepping back and forward re-applies a step from scratch, so
+there is nothing you can break by fiddling mid-lesson. Steps 3 to 5 are one continuous
+run on one pack, because changing what you look at teaches more than reloading.
+
+The scenario picker is filled from the server's own `GET /scenarios`, so adding a file
+under `scenarios/` puts it in the list with no edit to the page.
 
 Three panels show what an aggregate cannot:
 
@@ -317,7 +326,8 @@ screens.
 
 What the page does need the server for is files. A wasm module cannot be loaded from
 `file://`, and a browser tab has no filesystem — so the scenario and chemistry TOML
-the page hands to `sim-wasm` arrive over HTTP from `/scenarios` and `/chemistries`.
+the page hands to `sim-wasm` arrive over HTTP from `/scenarios/` and `/chemistries`,
+and the picker's contents from `/scenarios`.
 That is the whole dependency. (The page also has a socket toggle that switches it to
 driving a real server session instead, which keeps the wire protocol honest by giving
 it a live client.)
