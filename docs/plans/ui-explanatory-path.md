@@ -196,11 +196,19 @@ while the boot error is 3.00 — the gap is essentially constant, and a reader w
 a widening one would conclude the panel was broken. The text now leads with the error that
 is *there* and names the offset as the mechanism that runs away over a longer drive.
 
-**Lesson 2 gained a paragraph the page provoked.** The pack readout `soc (true)` sits
-about two points *below* every tile, because `Telemetry::soc_true` is `rem_ah / nom_ah` —
-measured against nominal — while a tile is the fraction of what that cell can hold today.
-Both are correct and they answer different questions. A grid lesson that did not say so
-would have taught a reader to distrust one of the two numbers.
+**Lesson 2 gained a paragraph, and then lost it — it was reading a stale grid.** Mid-build
+the pack readout `soc (true)` appeared to sit about two points *below* every tile, and
+that got written up as a real semantic gap: `Telemetry::soc_true` is `rem_ah / nom_ah`,
+against nominal, while a tile is the fraction of what that cell holds today. The
+*semantics* are right; **the observation was not**. `refreshCells` self-throttles, and at
+the multipliers used to buy frames during verification the grid was simply several
+seconds behind the headline. On a freshly sampled grid the tiles bracket the aggregate
+exactly — 73.83…74.32 around a headline of 74.09. The paragraph now says what is true and
+useful instead: the aggregate sits in the middle of the spread and says nothing about it,
+which is what an aggregate *is* and why the grid exists.
+
+Twice in one slice, then: a claim about what a reader will see, written from reasoning
+rather than from the screen, and wrong both times. **Measure first is not a style note.**
 
 **`applyStep` needed `try`/`finally`, and the first version had neither.** Any throw left
 `path.busy` set, which disables Back *and* Next: a permanently dead path showing "setting
@@ -212,6 +220,26 @@ needs to be told their transport was switched under them — while the step is r
 after it happened — was the moment it said nothing. Appended in every branch now. Same
 family as the erased-banner bug this plan was already guarding against: the check existed,
 and the path through it that mattered did not run.
+
+### What was verified, and how
+
+Same **landed** / **accepted** distinction `docs/plans/ui-pedagogy.md` drew: *landed*
+means the step's own stated observation was read off the screen, not that it applied
+without erroring.
+
+| step | on wasm | on socket |
+| --- | --- | --- |
+| 1 bare curve | **landed** — arrived exactly on 70m; flat plateau then the knee, `SOC_CLAMPED_LOW`, terminal 1.936 V | **landed** — same trajectory, clock advancing under `1S1P · server (WebSocket)` |
+| 2 pack disagrees | **landed** — tiles fanned from identical to 74.68…75.14 | **landed** — 73.83…74.32 around a 74.09 headline |
+| 3 belief drifts | **landed** — truth 63.17 vs BMS 66.24 (+3.07 pt); sensed current 6.035 against a true 6.000 | **landed** — +3.07 pt, bit-for-bit the same figures |
+| 4 lying sensor | **landed** — `SHORT (INT)` 0.630 A, g1's dot 113 mV clear of the other three and labelled *outside truth*, its true-spread bar shortest, 27.2/29.2 °C, **no flags** | **landed** — identical, including the *outside truth* label |
+| 5 protection on | **landed** — 13.821 A delivered against a demand of 40, `OC` raised (3 C × 4.607 Ah = 13.82 A) | **landed** — same 13.821 A and `OC` |
+| 6 protection off | **landed** — 40.000 A obeyed exactly, cell V 1.427, 62.6/65.7 °C, `SOC_CLAMPED_LOW` the only flag | **n/a by design** — the gate fires and switches transport; verified twice from a live socket session |
+
+Also landed: Back/Next repairing a sidebar perturbed to `Rest` / 999 / −20 °C / 1×;
+Pause mid-step re-rendering the note to *"paused at …, part-way to …"* and back on resume;
+the wasm-only gate naming its reason in the note while the step runs; console clean of
+anything from the page; `cargo test --workspace` 53 suites, clippy and fmt unmoved.
 
 ### Verification traps, for the next client slice
 

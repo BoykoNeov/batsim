@@ -1647,6 +1647,10 @@ $("run").onclick = () => {
   state.running = !state.running;
   state.lastWallMs = null;
   $("run").textContent = state.running ? "Pause" : "Run";
+  // A guided step's note reports whether it is running, so the note has to be re-rendered
+  // by whatever changes that — including this button, which is the one the note tells the
+  // reader they are free to press.
+  if (path.on) renderStep();
 };
 
 $("stepone").onclick = async () => {
@@ -1863,7 +1867,7 @@ const LESSONS = [
       "The pack solve does not average them. Each parallel group is solved as a node, so the two cells in a pair share a voltage and the current splits by state: the lower-resistance one takes more of the load than its twin, and then ages slightly faster for having done so.",
     ],
     expect:
-      "Switch the grid between state of charge and overpotential. The SOC tiles start identical and fan out as the run goes — a few hundredths of a percent by the end — while the overpotential tiles differ from the first step, because resistance scatter shows up there first. Click a tile to pin its full state; the legend prints both ends of the scale, which is the pack's own min and max, not a fixed axis. And notice the headline `soc (true)` sits a couple of points *below* every tile: a tile is the fraction of what that cell can hold today, while the pack figure is measured against nominal capacity. Scatter and aging are the difference, and neither number is wrong.",
+      "Switch the grid between state of charge and overpotential. The SOC tiles start identical and fan out as the run goes — a few hundredths of a percent by the end — while the overpotential tiles differ from the first step, because resistance scatter shows up there first. Click a tile to pin its full state; the legend prints both ends of the scale, which is the pack's own min and max, not a fixed axis. Then compare the spread against the headline `soc (true)`: the aggregate sits right in the middle of the tiles and moves smoothly, saying nothing at all about the half-point of disagreement underneath it. That is not a flaw in the readout — it is what an aggregate *is*, and it is the reason this grid exists.",
   },
   {
     id: "belief-drifts",
@@ -1945,7 +1949,16 @@ function proseHtml(s) {
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
-/** Outline exactly the panels this step is about, and nothing from the last one. */
+/**
+ * Outline exactly the panels this step is about, and nothing from the last one.
+ *
+ * Deliberately does **not** scroll the first one into view, which was tried and removed:
+ * the path panel sits at the top of the column, so scrolling down to `#pack` or a plot
+ * pushes the prose off screen — it makes the reader look before they have read, which is
+ * backwards for a page whose whole premise is "try this, *then* watch that". The outline
+ * persists, so it is waiting when they scroll. The cost is that on a short viewport the
+ * two plot-watching steps point at something below the fold.
+ */
 function setWatch(ids) {
   for (const el of document.querySelectorAll(".watching")) el.classList.remove("watching");
   for (const id of ids ?? []) $(id)?.classList.add("watching");
@@ -1968,11 +1981,18 @@ function renderStep() {
   const moved = path.switchedTransport
     ? " Switched to the in-page engine for this step: the server builds the pack its scenario asked for and will not rebuild it without a BMS."
     : "";
-  $("path-note").textContent = path.busy
+  // Three states, not two. A reader who takes up the invitation to pause leaves
+  // `path.until` set while `state.running` goes false, and a note that still said
+  // "running to…" would be contradicted by the button right next to it — the note would
+  // be inviting the one action that falsifies it.
+  const where = path.busy
     ? "setting up…"
-    : (path.until !== null
+    : path.until === null
+      ? `paused at ${fmtTime(t)} of simulation. Nothing is advancing.`
+      : state.running
         ? `running to t = ${fmtTime(path.until)}. Pause whenever you like — every control stays yours, and Back then Next re-applies this step from scratch.`
-        : `paused at ${fmtTime(t)} of simulation. Nothing is advancing.`) + moved;
+        : `paused at ${fmtTime(t)}, part-way to t = ${fmtTime(path.until)}. Press Run to carry on, or Next to move on without finishing.`;
+  $("path-note").textContent = where + moved;
 }
 
 /**
@@ -2032,6 +2052,10 @@ async function applyStep(L) {
     // So the readouts answer for the demand just dialled in instead of the previous one.
     // `dt = 0` does not move the pack.
     await readNow();
+
+    // Exit can land while this was still awaiting a load. Arming a run now would leave
+    // the page stepping behind a panel that is no longer on screen to explain it.
+    if (!path.on) return;
 
     path.until = L.until_s;
     state.accumulator = 0;
