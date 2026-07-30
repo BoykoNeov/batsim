@@ -277,7 +277,7 @@
   <div class="note">The engine runs in this tab. Everything below feeds the next step.</div>
 
   <h2>Guided path</h2>
-  <button id="path-start">Start — 11 steps</button>
+  <button id="path-start">Start — 14 steps</button>
   <div class="note">From one cell to a pack with nothing watching it. Each step sets the
     controls below and says what to look at; they all stay live, and stepping back or
     forward re-applies the whole set.</div>
@@ -310,6 +310,7 @@
     <option value="Power">Power [W] — positive discharges</option>
     <option value="Voltage">Voltage [V] — hold terminal</option>
     <option value="CcCv">CC-CV charge — current, then hold</option>
+    <option value="Pulse">Pulse train — on, off, repeat</option>
   </select>
   <div id="demand-simple">
     <label for="demand-value">value</label>
@@ -329,6 +330,22 @@
     <label for="cccv-taper">done below [A]</label>
     <input type="number" id="cccv-taper" value="0.15" min="0" step="0.05">
     <div class="note" id="cccv-note"></div>
+  </div>
+  <!--
+    A pulse train is the *simplest* thing on this menu, and strictly simpler than CC-CV:
+    the demand is a pure function of simulation time, with no feedback and nothing to
+    remember. It borrows CC-CV's frame-chopping so an edge lands where the simulation
+    says and not where the animation frame happened to end. See `pulseDemand` in app.js
+    and docs/plans/spm-scenario.md for what it is for.
+  -->
+  <div id="demand-pulse" style="display:none">
+    <label for="pulse-i">pulse current [A] — positive discharges, as everywhere else</label>
+    <input type="number" id="pulse-i" value="5.153" step="0.1">
+    <label for="pulse-on">on [s]</label>
+    <input type="number" id="pulse-on" value="60" min="0" step="10">
+    <label for="pulse-off">off [s] — rest</label>
+    <input type="number" id="pulse-off" value="600" min="0" step="10">
+    <div class="note" id="pulse-note"></div>
   </div>
 
   <h2>Environment</h2>

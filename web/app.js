@@ -207,6 +207,63 @@ function ccCvDone(telemetry, cfg, series) {
   return { ok: true, why: `complete — tapered to ${Math.abs(telemetry.i_actual).toFixed(3)} A` };
 }
 
+// ---------------------------------------------------------------------------
+// The pulse train, which is CC-CV's machinery with the feedback taken out
+// ---------------------------------------------------------------------------
+
+/** What the three pulse fields currently say. `i` is signed: positive discharges. */
+function pulseConfig() {
+  return {
+    i: Number($("pulse-i").value) || 0,
+    t_on: Math.max(0, Number($("pulse-on").value) || 0),
+    t_off: Math.max(0, Number($("pulse-off").value) || 0),
+  };
+}
+
+/**
+ * Where in the train a given simulation time falls, **in steps**.
+ *
+ * Steps rather than seconds, and this is the whole reason the function exists. An edge
+ * has to land on a step boundary that the simulation agrees on, not on whichever step a
+ * browser frame happened to end at — `CLAUDE.md` principle 3, the same rule
+ * `CCCV_PERIOD_S` is quantised by. Working in seconds and comparing floats would put the
+ * edge half a step out whenever `t_on` is not an exact multiple of `dt`, and *which* way
+ * it rounded would depend on accumulated floating-point drift in `sim_time_s`.
+ *
+ * Returns `null` for a degenerate train (both legs zero), which the caller treats as a
+ * plain rest — there is no sensible edge in a period of no length.
+ */
+function pulsePhase(simTimeS, cfg, dt) {
+  const kOn = Math.round(cfg.t_on / dt);
+  const kOff = Math.round(cfg.t_off / dt);
+  const kPeriod = kOn + kOff;
+  if (kPeriod <= 0) return null;
+  const index = Math.round(simTimeS / dt);
+  const phase = ((index % kPeriod) + kPeriod) % kPeriod;
+  const on = phase < kOn;
+  return {
+    on,
+    kPeriod,
+    /** Steps until the leg changes — what `advance` chops the frame at. */
+    toEdge: on ? kOn - phase : kPeriod - phase,
+    /** 1-based, and it keeps counting across a pause because it is derived from time. */
+    pulse: Math.floor(index / kPeriod) + 1,
+  };
+}
+
+/**
+ * The demand itself: `Current` on the on-leg, `Rest` otherwise.
+ *
+ * A **pure function of simulation time**, which is strictly stronger than CC-CV's
+ * memorylessness. CC-CV reads back the pack's own voltage and therefore needed a band
+ * sized by the solver's residual; this reads back nothing at all, so there is no
+ * residual, no chatter, and nothing a restore could resurrect — a snapshot carries
+ * `sim_time_s`, and `sim_time_s` is the entire state of this controller.
+ */
+function pulseDemand(phase, cfg) {
+  return phase !== null && phase.on ? demandJson("Current", cfg.i) : demandJson("Rest", 0);
+}
+
 /**
  * `EventFlags` arrives as `"OV | PLATING_RISK"`, or `""` for none.
  *
@@ -1530,6 +1587,23 @@ async function advance(nSteps) {
     }
   };
 
+  if (mode === "Pulse") {
+    // Same chopping as CC-CV below, and for the same reason — but the boundaries are
+    // the train's own edges rather than a fixed sub-clock, so there is no third
+    // quantisation to explain: the demand changes exactly where `pulsePhase` says and
+    // nowhere else. No completion test, because a train does not finish; the guided
+    // path's mark or the reader stops it.
+    const cfg = pulseConfig();
+    let left = steps;
+    while (left > 0) {
+      const phase = pulsePhase(state.facts?.sim_time_s ?? 0, cfg, dt);
+      const n = phase === null ? left : Math.min(left, phase.toEdge);
+      await take(n, pulseDemand(phase, cfg));
+      left -= n;
+    }
+    return;
+  }
+
   if (mode !== "CcCv") {
     await take(steps, demandJson(mode, Number($("demand-value").value) || 0));
     return;
@@ -1586,14 +1660,25 @@ async function advance(nSteps) {
  * produces the first one — so the probe is taken on the CC leg, which is the leg any
  * pack below the target would be on anyway. A pack already above it reads one frame of
  * a current it will not be given, and the first real window corrects it.
+ *
+ * `Pulse` needs no such concession and is the contrast worth noticing: its leg is a
+ * function of `sim_time_s`, which is known here, so the probe is taken under exactly
+ * the demand the next real step will use — including `Rest`, if the train is between
+ * pulses.
  */
 async function readNow() {
   if (!state.backend) return;
   const mode = $("demand-mode").value;
-  const demand =
-    mode === "CcCv"
-      ? demandJson("Current", -ccCvConfig().i_charge)
-      : demandJson(mode, Number($("demand-value").value) || 0);
+  const dt = Math.max(1e-6, Number($("dt").value) || 0.5);
+  let demand;
+  if (mode === "CcCv") {
+    demand = demandJson("Current", -ccCvConfig().i_charge);
+  } else if (mode === "Pulse") {
+    const cfg = pulseConfig();
+    demand = pulseDemand(pulsePhase(state.facts?.sim_time_s ?? 0, cfg, dt), cfg);
+  } else {
+    demand = demandJson(mode, Number($("demand-value").value) || 0);
+  }
   const frames = await state.backend.step(0, 1, demand, 1);
   for (const frame of frames) record(frame);
   if (frames.length > 0) {
@@ -1659,8 +1744,35 @@ function ccCvNote() {
         `${soc}. Done below ${cfg.i_taper.toFixed(3)} A.`;
 }
 
+/**
+ * Where the train is, in words, under the pulse fields.
+ *
+ * Like `ccCvNote` this derives everything it says, but from a stricter source: the
+ * *leg* and the *pulse number* come from `sim_time_s` alone, so they are right even
+ * before a single frame has been recorded. Only the measured current comes from
+ * telemetry, and it is labelled as what the pack got rather than what was asked for —
+ * a BMS between the two is exactly the sort of thing this page exists to show.
+ */
+function pulseNote() {
+  if ($("demand-mode").value !== "Pulse") return;
+  const el = $("pulse-note");
+  const cfg = pulseConfig();
+  const dt = Math.max(1e-6, Number($("dt").value) || 0.5);
+  const phase = pulsePhase(state.facts?.sim_time_s ?? 0, cfg, dt);
+  if (phase === null) {
+    el.textContent = "both legs are zero, so there is no train — this rests.";
+    return;
+  }
+  const secs = (phase.toEdge * dt).toFixed(0);
+  const measured = state.latest ? `${state.latest.i_actual.toFixed(3)} A measured, ` : "";
+  el.textContent = phase.on
+    ? `pulse ${phase.pulse}, on: ${measured}${secs} s to the rest.`
+    : `pulse ${phase.pulse}, resting: ${measured}${secs} s to the next pulse.`;
+}
+
 function draw() {
   ccCvNote();
+  pulseNote();
   drawPanel($("plot-v"), "pack terminal", "V", history.t, [
     { label: "terminal", color: "#2ee6a8", values: history.v_terminal },
   ]);
@@ -1980,13 +2092,19 @@ $("ambient").oninput = applyEnv;
  *
  * The single `value` box cannot serve CC-CV: the mode needs three numbers, and one of
  * them is entered with the *opposite* sign convention to everything else on this page
- * (positive charges, because it is a charge current). Two field groups, one visible.
+ * (positive charges, because it is a charge current). Nor `Pulse`, which needs three of
+ * its own — and keeps the page's usual sign convention, so the two groups do not share
+ * a current field however similar they look. Three field groups, one visible.
  */
 function applyDemandMode() {
-  const cccv = $("demand-mode").value === "CcCv";
-  $("demand-simple").style.display = cccv ? "none" : "";
+  const mode = $("demand-mode").value;
+  const cccv = mode === "CcCv";
+  const pulse = mode === "Pulse";
+  $("demand-simple").style.display = cccv || pulse ? "none" : "";
   $("demand-cccv").style.display = cccv ? "" : "none";
+  $("demand-pulse").style.display = pulse ? "" : "none";
   if (cccv) ccCvNote();
+  if (pulse) pulseNote();
 }
 
 $("demand-mode").onchange = () => {
@@ -2372,6 +2490,67 @@ const LESSONS = [
     expect:
       "`BALANCING` at 3111 s as the first group crosses 4.10 V, then `OV` at 3986 s and the charge stops at **95.1 %**. With the BMS off the same pack runs on to **99.5 %**. Those 4.4 points are what protection costs, and the cell-voltage panel says why: one step before the trip the pack is at 16.775 V, only 25 mV short of the 16.80 V it is aiming for, but its eight cells are spread over 11 mV and the top one has already crossed 4.20. **They cannot all arrive together, so the pack stops when the first one does** — which is the entire argument for balancing. (The 130 mV gap you see *after* the trip is not imbalance; it is the IR drop vanishing when the current stops.) Two more things this pack will do: ask for 6 A and the BMS derates it to exactly 4.2 A — 0.7 C, its charge rating — with `OC` raised from the first step and the status line saying it was limited; or drag the ambient to −5 °C and watch the pack cool until `UT` inhibits the charge at 60.8 %, then switch the BMS off and see `PLATING_RISK` at the same instant with the charge carrying on regardless. That flag is the damage the inhibit exists to prevent.",
   },
+  {
+    id: "circuit-repeats-itself",
+    title: "A pulse train, and a circuit that repeats itself",
+    scenario: "pulse_train_ecm.toml",
+    // 5.153 A is 1 C of this cell's 5.153 Ah. 60 s on / 600 s off: the long rest is the
+    // point of the whole experiment, because it is what separates the part of the
+    // response that vanishes with the current from the part that has to diffuse away.
+    demand: { mode: "Pulse", value: 5.153, on_s: 60, off_s: 600 },
+    ambient_c: 25,
+    bms: null,
+    // 100x, far slower than the discharge steps: the shape *within* one rest is the
+    // subject here, and at 800x a 600 s rest is under a second of watching.
+    speed_x: 100,
+    until_s: 3300,
+    watch: ["plot-v", "plot-i"],
+    prose: [
+      "A fifth demand mode, and the simplest one on the menu: `Current` for 60 s, `Rest` for 600, repeat. Unlike CC-CV it reads nothing back — the leg is a function of simulation time and nothing else, so there is no controller state a snapshot could fail to carry and nothing for a band to protect.",
+      "The cell is the LG M50 from step 2's aside, at 90 % charge, running the equivalent circuit. Watch one tooth closely: the voltage drops the instant the current comes on, sags further while it flows, jumps back the instant it stops, and then climbs slowly for the rest of the ten minutes. Those are two different things — the jump is `I·R0`, which is resistance and is over immediately; the climb is the RC pairs discharging.",
+    ],
+    expect:
+      "Five teeth, and **every one of them is the same tooth**. The pack drifts down the OCV curve as charge leaves it, but the shape sitting on top of that drift does not change: 212.8 mV of total sag, of which 132.8 mV returns instantly and 74.8 mV climbs back over the following 600 s — and that 74.8 mV figure is identical on all five pulses to four decimal places. It is also 99.5 % finished within the first 300 s of each rest, so the second half of every rest is a flat line. That is not a property of this cell or these coefficients. It is what *linear and time-invariant* means: hand the same pulse to the same circuit and you get the same answer, every time, forever. Hold onto the number 74.8 mV — the next two steps are both about what happens to it.",
+  },
+  {
+    id: "particle-remembers",
+    title: "The same train, on a model that knows the particle",
+    scenario: "pulse_train_spm.toml",
+    demand: { mode: "Pulse", value: 5.153, on_s: 60, off_s: 600 },
+    ambient_c: 25,
+    bms: null,
+    speed_x: 100,
+    until_s: 3300,
+    watch: ["plot-v"],
+    prose: [
+      "The same cell, the same 90 %, the same train. The scenario file differs from the last one in exactly one field — it adds `[pack.cell_model.Spm]` — and that field selects a model that has been in this engine since Phase 6 and that, until now, no client could reach.",
+      "It does not solve a circuit. It solves lithium diffusing radially inside a particle, 20 shells deep, on parameters extracted verbatim from PyBaMM's Chen2020 rather than fitted. Pulling current out of it strips lithium from the particle *surface* faster than the inside can resupply it, and what the terminal reads is the surface, not the average.",
+      "So compare the rebounds, not the depths. This file's `[r0]` and `[[rc]]` are labelled placeholders and the extracted parameter set's contact resistance is zero, so the millivolt heights of the two runs are not comparable — but how they *change* is.",
+    ],
+    expect:
+      "The first rebound is 17.3 mV where the circuit's was 74.8. Ignore that gap; watch what it does. Second pulse 24.3 mV, third 31.7, fourth 35.4, fifth **37.2** — it more than doubles across the run, and it has not stopped growing. Ten minutes of rest does not undo sixty seconds of diffusion, so a gradient is left standing when the next pulse arrives and the next one builds on it. **The cell remembers the earlier pulses.** The circuit could not: its 74.8 mV was the same five times because a linear system has no way to carry anything from one pulse to the next. Look at the tail of each rest, too — 8 % of the fifth rebound arrives in its final five minutes, against the circuit's 0.5 %, because what is relaxing is a concentration profile and not a capacitor. (This half is a comparison against placeholders: the RC pairs are 9 s and 72 s because someone picked round numbers. What is not picked is the particle's own timescale, which is its radius squared over a measured diffusivity.)",
+  },
+  {
+    id: "three-times-the-current",
+    title: "Three times the current, and two answers to it",
+    scenario: "pulse_train_spm.toml",
+    // 15.459 A is 3 C. The mark is deliberately *below* the previous step's: `applyStep`
+    // reloads when `sim_time_s > until_s`, and that reload is what puts this run back at
+    // 90 % SOC, where its first tooth is comparable with the first tooth of step 13.
+    // Same mechanism step 6 relies on.
+    demand: { mode: "Pulse", value: 15.459, on_s: 60, off_s: 600 },
+    ambient_c: 25,
+    bms: null,
+    speed_x: 100,
+    until_s: 1980,
+    watch: ["plot-v", "readouts"],
+    prose: [
+      "The same file, back at 90 %, with the pulse current tripled to 3 C. Three pulses is enough.",
+      "The question is the one a modeller actually asks: if I know what this cell does at 1 C, do I know what it does at 3 C? For the circuit of step 12 the answer is yes, trivially and by construction — triple the current and every term triples, because every term is a resistance times a current. Its jump goes 132.8 → 397.3 mV and its slow climb 74.8 → 224.3 mV: **×2.99 and ×3.00**.",
+    ],
+    expect:
+      "The particle gives two different answers to the same question. Its instantaneous jump goes 113.9 → 213.2 mV — **×1.87**, not ×3 — because that part is charge-transfer kinetics, and kinetics saturate: overpotential goes as the *arcsinh* of current, so asking harder buys less each time. Its slow climb goes 17.3 → 103.9 mV, which is **×6.01** — accelerating, because the open-circuit potential is a curved function of surface composition and driving the surface further out of balance costs more than proportionally. One part gentler than the circuit, one part far harsher, from the same three-fold demand. And the total sag, which is the only one of the three you can read off the plot without pausing, lands at ×2.48 — a number that looks like mild sub-linearity and conceals both effects underneath it. **No single resistance can be 1.87 and 6.01 at once**, which is the whole argument for a model with an inside. Two footnotes. This costs about 8× the circuit's arithmetic per step at 20 shells (0.90 µs against 0.11 on one cell), which is why it is not the default. And do not run this one to empty: past the charge clamp the particle model pins near 0.4 V while the circuit stops at 1.79, because the surface concentration falls off the bottom of its table — a hole in the model, left visible rather than papered over.",
+  },
 ];
 
 /** Authored strings, so the escape is belt-and-braces; the backticks are the point. */
@@ -2484,6 +2663,14 @@ async function applyStep(L) {
       $("cccv-i").value = String(L.demand.value);
       $("cccv-v").value = String(L.demand.v_cell);
       $("cccv-taper").value = String(L.demand.taper);
+    }
+    // Same treatment for the train: `value` is the pulse current, and the two leg
+    // lengths are its own. A step that is not a pulse step leaves them alone, so a
+    // reader who has been fiddling keeps their fiddling.
+    if (L.demand.mode === "Pulse") {
+      $("pulse-i").value = String(L.demand.value);
+      $("pulse-on").value = String(L.demand.on_s);
+      $("pulse-off").value = String(L.demand.off_s);
     }
     applyDemandMode();
     $("ambient").value = String(L.ambient_c);

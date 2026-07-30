@@ -185,12 +185,15 @@ the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
 If you do not already know what to look at, press **Start** under *Guided path*
-instead. It walks eleven steps — one cell on its own, the same discharge on a
+instead. It walks fourteen steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
-with protection on and then off, a pack that wears out while doing nothing at all, and
-then three that put charge back in: the two legs of a CC-CV charge, a chemistry whose
-second leg never arrives, and what a BMS costs a charge it decides to stop — setting
+with protection on and then off, a pack that wears out while doing nothing at all,
+three that put charge back in (the two legs of a CC-CV charge, a chemistry whose
+second leg never arrives, and what a BMS costs a charge it decides to stop), and three
+that pulse the same cell through two different cell models — a circuit that answers an
+identical pulse identically, a particle that remembers the last one, and three times
+the current buying ×1.87 of one part of the answer and ×6.01 of another — setting
 the controls for each and outlining the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step from scratch, so
 there is nothing you can break by fiddling mid-lesson. Steps 3 to 5 are one continuous
