@@ -101,6 +101,112 @@ function demandJson(mode, value) {
   return mode === "Rest" ? '"Rest"' : JSON.stringify({ [mode]: value });
 }
 
+// ---------------------------------------------------------------------------
+// CC-CV, the one demand the engine does not have
+// ---------------------------------------------------------------------------
+
+/**
+ * How often the CC-CV controller is allowed to change its mind, in **simulation**
+ * seconds. 10 s, the same period `[pack.aging]`'s sub-clock uses by default.
+ *
+ * This being a fixed period rather than "once per animation frame" is the whole design.
+ * A frame delivering 500 steps and two frames delivering 200 + 300 would otherwise
+ * evaluate the controller at different step indices, so the same scenario at the same
+ * `dt` would take a different trajectory depending on how long a frame happened to take
+ * — the frame rate defining the physics by the back door, which `CLAUDE.md` forbids
+ * twice over (principle 3, and determinism in principle 4).
+ *
+ * Measured cost of the quantisation at the knee: +0.11 mV on NMC at 0.5 C, +0.84 mV on
+ * the LG M50 cell at 1 C, and the end state unmoved in the fifth decimal of SOC. The
+ * excursion is *not* monotone in the period — where the grid lands relative to the
+ * crossing matters more than how long the window is — so do not read the number as a
+ * trade-off curve. See docs/plans/cc-cv.md.
+ */
+const CCCV_PERIOD_S = 10;
+
+/**
+ * Half-width of the band the CC/CV comparison uses, in volts **per series cell**.
+ *
+ * Not decoration, and not a tolerance in the usual sense. The engine's `Voltage` solve
+ * lands about 1.4e-4 V from the target rather than on it, and the residual shrinks as
+ * the current tapers — so a plain `v >= target` comparison flips back to CC the moment
+ * the residual changes sign. One CC step then re-establishes the whole
+ * `I·R0 + ΣV_rc` overpotential that the voltage hold had let decay, and the next step
+ * flips again. Measured on `nmc_21700_lgm50` at 1 C: **1311 flips, a terminal voltage
+ * peaking 127 mV above a 4.20 V target, and a charge that reported itself done 1160 s
+ * and 2.8 SOC points early** because one chattering step fell below the taper cutoff.
+ *
+ * 1 mV is three orders above that residual and below anything a reader can see: it moves
+ * the knee 3.5 s earlier and the peak overshoot to +0.17 mV. Per *cell*, multiplied by
+ * the series count, because the residual is a terminal-voltage quantity.
+ */
+const CCCV_BAND_V_PER_CELL = 0.001;
+
+/** Flags that mean the current stopped because something intervened, not because it tapered. */
+const PROTECTION_FLAGS = ["UT", "OT", "OV", "UV", "OC", "CONTACTOR_OPEN"];
+
+/** What the three CC-CV fields currently say. */
+function ccCvConfig() {
+  return {
+    i_charge: Math.abs(Number($("cccv-i").value) || 0),
+    v_cell: Number($("cccv-v").value) || 0,
+    i_taper: Math.abs(Number($("cccv-taper").value) || 0),
+  };
+}
+
+/**
+ * The controller, and it is deliberately **memoryless**: which leg to run is a function
+ * of the last telemetry frame and nothing else.
+ *
+ * That property is worth more than it looks. A CC/CV phase flag would be client state
+ * that no `Snapshot` carries, so restoring a session would resurrect whichever leg the
+ * page happened to be in — and the reset would have to be threaded through load,
+ * restart and restore, the same list the load generation counter already guards. With no
+ * state there is nothing to get wrong: the pack's own voltage says which leg it is in.
+ *
+ * `series` scales both the target and the band, so the fields stay per-cell and a
+ * scenario with a different topology needs no re-entry. Positive `i_charge` becomes a
+ * negative demand: on this page positive is discharge everywhere, and a charger charges.
+ */
+function ccCvDemand(vTerminal, cfg, series) {
+  const target = cfg.v_cell * series;
+  const band = CCCV_BAND_V_PER_CELL * series;
+  return vTerminal < target - band
+    ? demandJson("Current", -cfg.i_charge)
+    : demandJson("Voltage", target);
+}
+
+/**
+ * Is the charge over, and what ended it?
+ *
+ * `|i| <= taper` alone is not an answer, because the same condition arrives three ways
+ * and one of them is a pack that is *not* charged: a BMS charge inhibit takes the
+ * current to zero at whatever SOC the pack happened to have reached — measured at 60.8 %
+ * on `cc_cv_charge_pack.toml` cooled to −5 °C. `i_actual` is the post-BMS current, which
+ * is exactly why the flags have to be read beside it. Calling that "charged" would be
+ * the page lying about the one thing this mode exists to show.
+ */
+function ccCvDone(telemetry, cfg, series) {
+  if (!telemetry || Math.abs(telemetry.i_actual) > cfg.i_taper) return null;
+  const flags = parseFlags(telemetry.flags);
+  const tripped = flags.filter((f) => PROTECTION_FLAGS.includes(f));
+  if (tripped.length > 0) {
+    return { ok: false, why: `stopped by the BMS — ${tripped.join(", ")}` };
+  }
+  const target = cfg.v_cell * series;
+  const band = CCCV_BAND_V_PER_CELL * series;
+  if (telemetry.v_terminal < target - band) {
+    // The charge current is at or below the cutoff, so the very first window "finishes".
+    return {
+      ok: false,
+      why:
+        `the charge current (${cfg.i_charge.toFixed(3)} A) is not above the cutoff ` +
+        `(${cfg.i_taper.toFixed(3)} A), so this stopped before it charged anything`,
+    };
+  }
+  return { ok: true, why: `complete — tapered to ${Math.abs(telemetry.i_actual).toFixed(3)} A` };
+}
+
 /**
  * `EventFlags` arrives as `"OV | PLATING_RISK"`, or `""` for none.
  *
@@ -1402,7 +1508,6 @@ function stepsForFrame(nowMs, dt, speed) {
 async function advance(nSteps) {
   const dt = Math.max(1e-6, Number($("dt").value) || 0.5);
   const mode = $("demand-mode").value;
-  const demand = demandJson(mode, Number($("demand-value").value) || 0);
 
   // Whichever backend is loaded reports its own caps — the wasm module from its
   // constants, the server from its hello frame. Nothing here restates them.
@@ -1416,11 +1521,51 @@ async function advance(nSteps) {
     throw new Error("frame cap exceeded — this is a bug in the page's decimation");
   }
 
-  const frames = await state.backend.step(dt, steps, demand, reportEvery);
-  for (const frame of frames) record(frame);
-  if (frames.length > 0) {
-    state.latest = frames[frames.length - 1].telemetry;
-    state.facts = state.backend.facts();
+  const take = async (n, demand) => {
+    const frames = await state.backend.step(dt, n, demand, reportEvery);
+    for (const frame of frames) record(frame);
+    if (frames.length > 0) {
+      state.latest = frames[frames.length - 1].telemetry;
+      state.facts = state.backend.facts();
+    }
+  };
+
+  if (mode !== "CcCv") {
+    await take(steps, demandJson(mode, Number($("demand-value").value) || 0));
+    return;
+  }
+
+  // The CC-CV path. One backend call per *decision window* instead of one per frame:
+  // the frame's steps are chopped at multiples of the sub-clock, so which step the leg
+  // changes on is a property of the simulation and not of how the browser scheduled us.
+  //
+  // The grid is anchored to `sim_time_s`, which the backend reports and a snapshot
+  // carries — not to a counter this page keeps. That is what makes a restore land back
+  // on the same decision points without the page remembering anything about the run it
+  // is resuming.
+  const cfg = ccCvConfig();
+  const series = state.facts?.series ?? 1;
+  const k = Math.max(1, Math.round(CCCV_PERIOD_S / dt));
+  let left = steps;
+  while (left > 0) {
+    const index = Math.round((state.facts?.sim_time_s ?? 0) / dt);
+    const toBoundary = k - ((index % k) + k) % k;
+    const n = Math.min(left, toBoundary === 0 ? k : toBoundary);
+    // The pack's own voltage decides, from the last frame the backend reported. It is
+    // one step stale, which the 1 mV band swallows three orders over.
+    await take(n, ccCvDemand(state.latest?.v_terminal ?? 0, cfg, series));
+    left -= n;
+
+    const done = ccCvDone(state.latest, cfg, series);
+    if (done) {
+      // Stopping here rather than letting the loop run on is the point of having a
+      // completion test at all: a finished charge that keeps stepping either sits at
+      // the clamp or, with a BMS in the way, quietly holds a pack that was never
+      // charged at the SOC where protection stopped it.
+      state.running = false;
+      $("run").textContent = "Run";
+      return;
+    }
   }
 }
 
@@ -1436,11 +1581,19 @@ async function advance(nSteps) {
  *
  * It uses the *current* demand rather than `Rest`, because "what would this pack read
  * under the load I have dialled in" is the useful question.
+ *
+ * In CC-CV mode there is no previous frame to decide a leg from — this is the call that
+ * produces the first one — so the probe is taken on the CC leg, which is the leg any
+ * pack below the target would be on anyway. A pack already above it reads one frame of
+ * a current it will not be given, and the first real window corrects it.
  */
 async function readNow() {
   if (!state.backend) return;
   const mode = $("demand-mode").value;
-  const demand = demandJson(mode, Number($("demand-value").value) || 0);
+  const demand =
+    mode === "CcCv"
+      ? demandJson("Current", -ccCvConfig().i_charge)
+      : demandJson(mode, Number($("demand-value").value) || 0);
   const frames = await state.backend.step(0, 1, demand, 1);
   for (const frame of frames) record(frame);
   if (frames.length > 0) {
@@ -1457,7 +1610,57 @@ async function readNow() {
   draw();
 }
 
+/**
+ * Which leg the charge is on, in words, under the CC-CV fields.
+ *
+ * Derived entirely from the last telemetry frame and the fields, like the controller
+ * itself — there is no leg stored anywhere for this to read, and that is deliberate.
+ */
+function ccCvNote() {
+  if ($("demand-mode").value !== "CcCv") return;
+  const el = $("cccv-note");
+  const cfg = ccCvConfig();
+  const series = state.facts?.series ?? 1;
+  const target = cfg.v_cell * series;
+  const band = CCCV_BAND_V_PER_CELL * series;
+  const t = state.latest;
+  if (!t) {
+    el.textContent = `${cfg.i_charge.toFixed(3)} A up to ${target.toFixed(3)} V (${series} in series), done below ${cfg.i_taper.toFixed(3)} A.`;
+    return;
+  }
+  const soc = `${(t.soc_true * 100).toFixed(1)} %`;
+  const done = ccCvDone(t, cfg, series);
+  if (done) {
+    el.textContent = done.ok
+      ? `${done.why}, at ${soc}. Raise the target or lower the cutoff to carry on.`
+      : `${done.why}. The pack is at ${soc}.`;
+    return;
+  }
+  if (t.v_terminal < target - band) {
+    // `i_actual` is what the pack got, not what was asked for: when a BMS derates a
+    // charge the two differ silently, and this is the only place the page says so. The
+    // test is `i_actual < 0` and not `|i_actual| != i_charge`, because a frame taken
+    // under some *other* demand — the moment the mode is switched, before the probe
+    // lands — is not evidence of a derate. Written the loose way first, and it
+    // immediately accused a 2 A discharge of being a limited charge.
+    const charging = t.i_actual < 0;
+    const shortfall = charging && cfg.i_charge - Math.abs(t.i_actual) > 1e-6;
+    el.textContent =
+      `constant current: ${Math.abs(t.i_actual).toFixed(3)} A ${charging ? "in" : "out"}, ` +
+      `terminal ${t.v_terminal.toFixed(3)} V of ${target.toFixed(3)} V, ${soc}.` +
+      (shortfall ? ` Asked for ${cfg.i_charge.toFixed(3)} A — something is limiting it.` : "");
+    return;
+  }
+  el.textContent =
+    t.i_actual > cfg.i_taper
+      ? `holding ${target.toFixed(3)} V, but this pack is *above* that target, so the hold ` +
+        `is drawing ${t.i_actual.toFixed(3)} A out of it rather than charging. Raise the target.`
+      : `holding ${target.toFixed(3)} V: ${Math.abs(t.i_actual).toFixed(3)} A and falling, ` +
+        `${soc}. Done below ${cfg.i_taper.toFixed(3)} A.`;
+}
+
 function draw() {
+  ccCvNote();
   drawPanel($("plot-v"), "pack terminal", "V", history.t, [
     { label: "terminal", color: "#2ee6a8", values: history.v_terminal },
   ]);
@@ -1772,6 +1975,30 @@ $("stepone").onclick = async () => {
 
 $("ambient").oninput = applyEnv;
 
+/**
+ * Show the fields the selected mode actually uses.
+ *
+ * The single `value` box cannot serve CC-CV: the mode needs three numbers, and one of
+ * them is entered with the *opposite* sign convention to everything else on this page
+ * (positive charges, because it is a charge current). Two field groups, one visible.
+ */
+function applyDemandMode() {
+  const cccv = $("demand-mode").value === "CcCv";
+  $("demand-simple").style.display = cccv ? "none" : "";
+  $("demand-cccv").style.display = cccv ? "" : "none";
+  if (cccv) ccCvNote();
+}
+
+$("demand-mode").onchange = () => {
+  applyDemandMode();
+  // A dt = 0 probe under the demand just selected. Without it the readouts — and the
+  // CC-CV status line, which reasons about them — describe the pack under the *previous*
+  // demand until someone presses Run. The guided path already does this after setting a
+  // step's controls, for the same reason; a reader turning the knob deserves it too.
+  readNow();
+};
+applyDemandMode();
+
 $("pack-metric").onchange = () => {
   grid.dirty = true;
   paintGrid();
@@ -2084,6 +2311,67 @@ const LESSONS = [
     expect:
       "Two lines leaving 100 % together and never coming back: capacity down, resistance up, at exactly 1.5 points of resistance per point of capacity, because `CLAUDE.md` refuses to model one without the other. The curve bends hard and then flattens — a quarter of the way in, 0.53 points are gone; at the mark it is 1.06, twice the damage for four times the time, which is `√t` visible on screen. Then the ambient: 20 K buys 2.84 points over the next 200 000 s against the 1.06 the first leg cost, about 2.7×. Not the 3.6× two fresh packs would show at those temperatures — this pack has already aged, and `√t` means the same stress costs less the second time. Everything else on the page stays perfectly still throughout.",
   },
+  {
+    id: "two-legs",
+    title: "Putting it back: the two legs of a charge",
+    scenario: "cc_cv_charge_nmc.toml",
+    // 1.5 A on a 3.0 Ah cell is 0.5 C, and 0.15 A is the 0.05 C cutoff a datasheet
+    // would call "charge termination". Both are the page's, not the file's: a scenario
+    // is an initial condition and never a demand program.
+    demand: { mode: "CcCv", value: 1.5, v_cell: 4.2, taper: 0.15 },
+    ambient_c: 25,
+    bms: null,
+    speed_x: 800,
+    until_s: 6300,
+    watch: ["plot-i", "plot-v"],
+    prose: [
+      "Eight steps of taking charge out; this one puts it back. The `CC-CV charge` demand mode is not a demand the engine has — it is two of them with a rule between them, which is where `CLAUDE.md` says a charge policy belongs: constant current until the pack reaches its voltage limit, then hold that voltage and let the current do what it likes.",
+      "The same NMC cell as step 2, starting at 20 % instead of full. Nothing is protecting it, so the only thing that ends this charge is the current falling below the 0.15 A cutoff.",
+      "The rule is checked every 10 s of *simulation* time, never once per frame — otherwise the speed multiplier would decide which step the legs change on, and the same experiment would take a different path at 1× and at 800×.",
+    ],
+    expect:
+      "Watch the current trace, which is flat and negative — negative because positive is discharge everywhere on this page. It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %. Then the knee: nothing on the page moves, but the current starts falling by itself — 0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %. **The last leg is 13 % of the time for 5 % of the charge**, and that is the shape worth taking away: near the top, the only thing pushing current in is the gap between the cell's own open-circuit voltage and the limit, and the charging is what closes it.",
+  },
+  {
+    id: "leg-that-is-not-there",
+    title: "The same charge, on a cell with no second leg",
+    scenario: "cc_cv_charge_lfp.toml",
+    // 1.15 A is 0.5 C of 2.303 Ah — the same rate as the step before, so the rate is
+    // not one of the differences.
+    demand: { mode: "CcCv", value: 1.15, v_cell: 3.65, taper: 0.115 },
+    ambient_c: 25,
+    bms: null,
+    speed_x: 800,
+    until_s: 7000,
+    watch: ["plot-v", "flags"],
+    prose: [
+      "The same charge at the same rate on the LFP cell from step 1, and the same controller. Wait for the knee.",
+      "It does not come. The terminal voltage climbs to 3.6357 V and stops — 14.3 mV short of this cell's own 3.65 V limit — and the mode stays on constant current until the coulomb counter hits 100 % and raises `SOC_CLAMPED_HIGH` at 5769 s.",
+      "The arithmetic is the plateau from step 1, read from the charging end: this file's open-circuit curve tops out at 3.60 V, its resistance is about 21 mΩ, and 0.5 C is 1.15 A — so 3.60 + 0.024 never reaches 3.65. **This cell fills up before it reaches its voltage limit**, which leaves the constant-voltage leg with nothing to do.",
+    ],
+    expect:
+      "A voltage trace that flattens against a ceiling it never touches, and a status line that says `constant current` for the whole run. Two honest caveats. First, this is this parameter set's behaviour and not a claim about LFP cells: real ones are charged CC-CV to 3.65 V, and both numbers that decide it here — where the OCV table ends, how large R0 is — are hand-fitted values the chemistry file labels as such. Second, look at what happens *after* the flag: the charge counter stops but the current does not, because this engine models no overcharge chemistry and the energy simply goes nowhere. That is a hole in the model, left visible rather than papered over with an automatic stop. The next step is the same situation with a BMS in the way, which is what actually prevents it.",
+  },
+  {
+    id: "what-protection-costs",
+    title: "What the protection costs, and why",
+    scenario: "cc_cv_charge_pack.toml",
+    // The BMS toggle rebuilds the pack in-page, so this step needs the wasm backend —
+    // the server builds whatever the scenario asked for and will not rewrite it.
+    transport: "wasm",
+    demand: { mode: "CcCv", value: 3.0, v_cell: 4.2, taper: 0.3 },
+    ambient_c: 25,
+    bms: true,
+    speed_x: 800,
+    until_s: 4100,
+    watch: ["flags", "plot-cv", "pack"],
+    prose: [
+      "A 4S2P NMC pack with 2 % capacity and 3 % resistance scatter, protection on, passive balancing above 4.10 V per group. 3 A is 0.5 C. Everything the BMS does here, it does because the pack is being charged — a discharging pack in this repo raises none of these flags, which is why none of them have appeared in eight steps.",
+      "Then run it again with the BMS unchecked, and compare where the two stop.",
+    ],
+    expect:
+      "`BALANCING` at 3111 s as the first group crosses 4.10 V, then `OV` at 3986 s and the charge stops at **95.1 %**. With the BMS off the same pack runs on to **99.5 %**. Those 4.4 points are what protection costs, and the cell-voltage panel says why: one step before the trip the pack is at 16.775 V, only 25 mV short of the 16.80 V it is aiming for, but its eight cells are spread over 11 mV and the top one has already crossed 4.20. **They cannot all arrive together, so the pack stops when the first one does** — which is the entire argument for balancing. (The 130 mV gap you see *after* the trip is not imbalance; it is the IR drop vanishing when the current stops.) Two more things this pack will do: ask for 6 A and the BMS derates it to exactly 4.2 A — 0.7 C, its charge rating — with `OC` raised from the first step and the status line saying it was limited; or drag the ambient to −5 °C and watch the pack cool until `UT` inhibits the charge at 60.8 %, then switch the BMS off and see `PLATING_RISK` at the same instant with the charge carrying on regardless. That flag is the damage the inhibit exists to prevent.",
+  },
 ];
 
 /** Authored strings, so the escape is belt-and-braces; the backticks are the point. */
@@ -2190,6 +2478,14 @@ async function applyStep(L) {
 
     $("demand-mode").value = L.demand.mode;
     $("demand-value").value = String(L.demand.value);
+    // `value` is the charge current in a CC-CV step; the other two fields are only ever
+    // read in that mode, so a step that does not use them leaves them where they were.
+    if (L.demand.mode === "CcCv") {
+      $("cccv-i").value = String(L.demand.value);
+      $("cccv-v").value = String(L.demand.v_cell);
+      $("cccv-taper").value = String(L.demand.taper);
+    }
+    applyDemandMode();
     $("ambient").value = String(L.ambient_c);
     applyEnv();
     $("speed").value = String(Math.log10(L.speed_x));

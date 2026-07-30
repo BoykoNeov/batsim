@@ -301,6 +301,58 @@ this repo paid for in `ui-bms-view.md`.
   `cargo fmt --all` before the commit, per `CLAUDE.md`. No Rust changes are expected; the
   gate runs anyway.
 
+## What the build changed
+
+Written after the fact, as the last four plans were.
+
+**The status line's first act was to lie about a derate.** Switching the mode to CC-CV
+with the page holding a frame from a 2 A *discharge*, it read: *"constant current: 2.000 A
+in, terminal 3.596 V of 4.200 V. Asked for 1.500 A — something is limiting it."* Two
+faults in one sentence — "in" for a current flowing out, and a derate diagnosed from a
+frame taken under a different demand. Fixed at both ends: the shortfall test is now
+`i_actual < 0` (a derate is only a derate if the pack is actually charging), and
+`demand-mode`'s `onchange` takes a `dt = 0` probe so the readouts describe the demand
+just selected. The guided path already did the second thing after setting a step's
+controls; a reader turning the knob by hand deserved it too.
+
+**The frame-independence check came out better than it was planned.** The plan asked for
+two speed multipliers agreeing. What was actually run is stronger: `cc_cv_charge_nmc`
+over the **WebSocket** at 10 000×, in frames of thousands of steps arriving at whatever
+irregular cadence a screenshot-driven automation window produces, finished at
+`sim_time_s` = **6210.0** — the same instant, to the tenth of a second, as the native
+harness stepping one step at a time. The page's own splitting code lands on the same
+decision grid as the algorithm it implements. The wasm path agreed independently
+(104 m displayed, 99.5 %, −0.150 A).
+
+**The socket pays for the sub-clock, and the number is worth recording.** At 10 000× and
+`dt = 0.5` a frame is ~5000 steps, which is **250 decision windows and therefore 250
+round trips**. Measured, the socket path advanced ~800 s of simulation per frame where
+the in-page engine did ~2500 s. Correctness is untouched — the trajectory is identical,
+which is the whole point — but the socket at top speed in this mode is window-bound. The
+in-page engine is the default and is unaffected.
+
+**Verified on screen, by hand:** the mode option and all three fields; the two legs
+(`−1.500 A` flat, then the knee, then `0.604 A and falling`, then *complete — tapered to
+0.150 A, at 99.5 %*, with the run stopping itself); the LFP step stalling at 3.636 V with
+`SOC_CLAMPED_HIGH` and a status line still reading `constant current` at 100 % SOC; the
+pack step's `OV` + `BALANCING` at 67 m with *stopped by the BMS — OV. The pack is at
+95.1 %*, terminal 16.670 V and balancing 2.106 W — both to the digit the harness
+predicted; the same pack with the BMS off reaching *complete — tapered to 0.298 A, at
+99.5 %*; and the derate, by typing `6` into the charge-current field and taking one step:
+`−4.200 A`, `OC`, and *Asked for 6.000 A — something is limiting it.*
+
+**Not driven on screen, stated rather than glossed:** the cold-charge half of step 11
+(ambient to −5 °C → `UT` at 1494.5 s and 60.75 %, or `PLATING_RISK` at the same instant
+with the BMS off). Those numbers come from a native run of the committed scenario.
+
+**The select-dropdown trap recurred**, and the last slice's note was right to say *do not
+retry*: after the first page reload, arrow keys stopped reaching a focused `<select>`
+entirely and the native dropdown does not render into a screenshot of an occluded window.
+Everything after that point was driven with buttons, checkboxes, sliders and typed text
+fields, which all work. The CC-CV `<option>` itself was selected by hand once, before the
+reload; every later selection came from the guided path's applier pressing the same code
+path.
+
 ## Exit criterion
 
 A reader can charge a pack from the page, see the current fall away at the knee without

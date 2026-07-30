@@ -277,7 +277,7 @@
   <div class="note">The engine runs in this tab. Everything below feeds the next step.</div>
 
   <h2>Guided path</h2>
-  <button id="path-start">Start — 8 steps</button>
+  <button id="path-start">Start — 11 steps</button>
   <div class="note">From one cell to a pack with nothing watching it. Each step sets the
     controls below and says what to look at; they all stay live, and stepping back or
     forward re-applies the whole set.</div>
@@ -309,9 +309,27 @@
     <option value="Current" selected>Current [A] — positive discharges</option>
     <option value="Power">Power [W] — positive discharges</option>
     <option value="Voltage">Voltage [V] — hold terminal</option>
+    <option value="CcCv">CC-CV charge — current, then hold</option>
   </select>
-  <label for="demand-value">value</label>
-  <input type="number" id="demand-value" value="2" step="0.1">
+  <div id="demand-simple">
+    <label for="demand-value">value</label>
+    <input type="number" id="demand-value" value="2" step="0.1">
+  </div>
+  <!--
+    CC-CV is a *policy*, not a demand: the engine is handed `Current` while the pack is
+    below the target and `Voltage` once it arrives, and the switch is decided by the page
+    on a fixed simulation-time sub-clock. See `ccCvDemand` in app.js for why it is a band
+    and not an equality, and docs/plans/cc-cv.md for what it costs.
+  -->
+  <div id="demand-cccv" style="display:none">
+    <label for="cccv-i">charge current [A] — entered positive; a charger charges</label>
+    <input type="number" id="cccv-i" value="1.5" min="0" step="0.1">
+    <label for="cccv-v">target [V per series cell]</label>
+    <input type="number" id="cccv-v" value="4.2" step="0.05">
+    <label for="cccv-taper">done below [A]</label>
+    <input type="number" id="cccv-taper" value="0.15" min="0" step="0.05">
+    <div class="note" id="cccv-note"></div>
+  </div>
 
   <h2>Environment</h2>
   <label for="ambient">ambient <span id="ambient-label">25.0 °C</span></label>
