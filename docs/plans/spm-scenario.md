@@ -196,6 +196,45 @@ fields by name so an 18th is invisible to it. A slice of its own. `overpotential
 already model-neutral and already on the wire, which is exactly what makes this slice
 cost no Rust.
 
+## What the build changed
+
+Written after the fact, as the other plans in this directory are.
+
+**The `[ocv]` breakpoint nearly became a lesson.** The first metric drafted was tooth
+depth — `v@on − v@off`, which is what a reader sees on the plot. It contains the OCV fall
+over the pulse, and the ECM table has a node at soc 0.85: the sag jumps 209.8 → 218.8 mV
+crossing it, a **9 mV artifact of the same order as the 26 mV effect** the step was going
+to point at. The rebound during the rest has no OCV term in it and is what shipped.
+Generalises: a metric taken between two instants that straddle a table node is measuring
+the node.
+
+**`x + 0·y` again, in a different disguise.** The `jump` and `climb` decomposition is
+taken with a `dt = 0` probe under `Rest`, which is only meaningful because zero current
+means zero ohmic drop *and* zero kinetic overpotential while the concentration profile
+stands. That the probe does not move the pack is a property Phase 6 slice D had to fix
+once already.
+
+**The step-cost ratio in the notes was 26×, and is 8× here.** Both are right about
+different denominators — 26× is per *cell-step* against 0.05 µs, and this is
+`Pack::step` at 1S1P against 0.11 µs. The 12-shell arm reproduces the catalogue's
+recorded 6.7× at 6.4×, which is how the new instrument was checked against the old one.
+Quote a ratio with its topology or it is not a number.
+
+**The picker already knew.** `scenarioSummary` has named a non-`Ecm` `cell_model` since
+the catalogue slice, written against no file that used it; `pulse_train_spm` is the
+first, and the twins list as `1S1P, nothing on` and `1S1P, Spm`. Nothing had to change
+for the reader to tell them apart.
+
+**Verification, and one thing that looked like a bug.** Both transports were driven and
+both matched a native one-step-at-a-time run at a stop time the browser's own irregular
+10 000× frames chose: wasm `4.054697731091032` and the socket `3.877435486490554` at
+`sim_time_s = 5294.5`, against native `4.054697731` and `3.877435486`. The ECM twin
+likewise (`4.0520305030278205` against `4.052030503`). The pack grid read 85.00 % beside
+a headline of 75.0 % at step 14's mark — **not stale state but a stale paint**:
+`refreshCells` runs at the *top* of a frame, before that frame's stepping, and an
+occluded window has no next frame to correct it. One more screenshot and it read 75.00.
+Third appearance of "re-read at rest".
+
 ## Exit criterion
 
 The guided path runs 14 steps. A reader can select the single-particle model from the
