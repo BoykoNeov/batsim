@@ -1764,7 +1764,19 @@ function pulseNote() {
     return;
   }
   const secs = (phase.toEdge * dt).toFixed(0);
-  const measured = state.latest ? `${state.latest.i_actual.toFixed(3)} A measured, ` : "";
+  // The leg is the leg of the step about to be taken; `i_actual` is from the step just
+  // taken. Sitting exactly on an edge those are different legs, and the line would read
+  // "on: 0.000 A measured" — the milder cousin of the CC-CV status line that accused a
+  // discharge of being a limited charge. So the measured current is shown only when the
+  // step that produced it was on this same leg.
+  // At t = 0 there is no previous step, so whatever frame exists is the `dt = 0` probe
+  // `readNow` took under this very leg — freshest it could be. Elsewhere the check errs
+  // towards saying less: a probe taken while sitting exactly on an edge is suppressed
+  // even though it was valid, which is the harmless direction.
+  const simT = state.facts?.sim_time_s ?? 0;
+  const previous = simT <= 0 ? phase : pulsePhase(simT - dt, cfg, dt);
+  const fresh = state.latest && previous !== null && previous.on === phase.on;
+  const measured = fresh ? `${state.latest.i_actual.toFixed(3)} A measured, ` : "";
   el.textContent = phase.on
     ? `pulse ${phase.pulse}, on: ${measured}${secs} s to the rest.`
     : `pulse ${phase.pulse}, resting: ${measured}${secs} s to the next pulse.`;
@@ -2277,6 +2289,8 @@ $("restore-file").onchange = async (ev) => {
 //   bms        true/false to force, null to leave whatever is loaded
 //   speed_x    real-time multiplier; the slider is its base-10 log
 //   until_s    absolute simulation time the step runs to, then pauses
+//   reload     true for a step that must start from t = 0 whichever direction it is
+//              entered from; omitted means "reload only when you must" (see applyStep)
 //   watch      element ids to outline
 //   prose      paragraphs; backticks become <code>
 //   expect     what the reader should end up seeing. Prose, never an assertion — a page
@@ -2504,13 +2518,16 @@ const LESSONS = [
     // subject here, and at 800x a 600 s rest is under a second of watching.
     speed_x: 100,
     until_s: 3300,
+    // All three pulse steps compare their *first* tooth at 90 %, so none of them can
+    // inherit a pack from a neighbour however it was entered.
+    reload: true,
     watch: ["plot-v", "plot-i"],
     prose: [
       "A fifth demand mode, and the simplest one on the menu: `Current` for 60 s, `Rest` for 600, repeat. Unlike CC-CV it reads nothing back — the leg is a function of simulation time and nothing else, so there is no controller state a snapshot could fail to carry and nothing for a band to protect.",
       "The cell is the LG M50 from step 2's aside, at 90 % charge, running the equivalent circuit. Watch one tooth closely: the voltage drops the instant the current comes on, sags further while it flows, jumps back the instant it stops, and then climbs slowly for the rest of the ten minutes. Those are two different things — the jump is `I·R0`, which is resistance and is over immediately; the climb is the RC pairs discharging.",
     ],
     expect:
-      "Five teeth, and **every one of them is the same tooth**. The pack drifts down the OCV curve as charge leaves it, but the shape sitting on top of that drift does not change: 212.8 mV of total sag, of which 132.8 mV returns instantly and 74.8 mV climbs back over the following 600 s — and that 74.8 mV figure is identical on all five pulses to four decimal places. It is also 99.5 % finished within the first 300 s of each rest, so the second half of every rest is a flat line. That is not a property of this cell or these coefficients. It is what *linear and time-invariant* means: hand the same pulse to the same circuit and you get the same answer, every time, forever. Hold onto the number 74.8 mV — the next two steps are both about what happens to it.",
+      "Five teeth, and the thing to measure is **the rebound**: how far the voltage climbs back during each rest. It is 74.8 mV on the first pulse and 74.8 mV on all four after it, identical to four decimal places — and 99.5 % of it has arrived within the first 300 s, so the second half of every rest is a flat line. That is not a property of this cell or these coefficients. It is what *linear and time-invariant* means: hand the same pulse to the same circuit and you get the same answer, every time, forever. Break the first tooth into its parts and it is 212.8 mV of sag, of which 132.8 mV returns the instant the current stops (`I·R0`, pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all — that is charge that has actually left the cell, and it is the open-circuit voltage itself stepping down. Measure the *depth* rather than the rebound and you will find teeth 4 and 5 are 9 mV deeper than teeth 1 to 3: that is not the circuit changing its mind, it is the `[ocv]` table's node at 85 % charge passing under the pulse, and it is exactly why the rebound is the number to watch. Hold onto 74.8 mV — the next two steps are both about what happens to it.",
   },
   {
     id: "particle-remembers",
@@ -2521,6 +2538,7 @@ const LESSONS = [
     bms: null,
     speed_x: 100,
     until_s: 3300,
+    reload: true,
     watch: ["plot-v"],
     prose: [
       "The same cell, the same 90 %, the same train. The scenario file differs from the last one in exactly one field — it adds `[pack.cell_model.Spm]` — and that field selects a model that has been in this engine since Phase 6 and that, until now, no client could reach.",
@@ -2528,21 +2546,22 @@ const LESSONS = [
       "So compare the rebounds, not the depths. This file's `[r0]` and `[[rc]]` are labelled placeholders and the extracted parameter set's contact resistance is zero, so the millivolt heights of the two runs are not comparable — but how they *change* is.",
     ],
     expect:
-      "The first rebound is 17.3 mV where the circuit's was 74.8. Ignore that gap; watch what it does. Second pulse 24.3 mV, third 31.7, fourth 35.4, fifth **37.2** — it more than doubles across the run, and it has not stopped growing. Ten minutes of rest does not undo sixty seconds of diffusion, so a gradient is left standing when the next pulse arrives and the next one builds on it. **The cell remembers the earlier pulses.** The circuit could not: its 74.8 mV was the same five times because a linear system has no way to carry anything from one pulse to the next. Look at the tail of each rest, too — 8 % of the fifth rebound arrives in its final five minutes, against the circuit's 0.5 %, because what is relaxing is a concentration profile and not a capacitor. (This half is a comparison against placeholders: the RC pairs are 9 s and 72 s because someone picked round numbers. What is not picked is the particle's own timescale, which is its radius squared over a measured diffusivity.)",
+      "The first rebound is 17.3 mV where the circuit's was 74.8. Ignore that gap; watch what it does. (The same tooth breaks down as 135.7 mV of sag: 113.9 mV back instantly, 17.3 mV climbing, and 4.5 mV that has not returned when the ten minutes are up — which for this model is *both* charge that has left and gradient still standing, and telling those two apart is the rest of this step.) Second pulse 24.3 mV, third 31.7, fourth 35.4, fifth **37.2** — it more than doubles across the run, and it has not stopped growing. Ten minutes of rest does not undo sixty seconds of diffusion, so a gradient is left standing when the next pulse arrives and the next one builds on it. **The cell remembers the earlier pulses.** The circuit could not: its 74.8 mV was the same five times because a linear system has no way to carry anything from one pulse to the next. Look at the tail of each rest, too — 8 % of the fifth rebound arrives in its final five minutes, against the circuit's 0.5 %, because what is relaxing is a concentration profile and not a capacitor. (This half is a comparison against placeholders: the RC pairs are 9 s and 72 s because someone picked round numbers. What is not picked is the particle's own timescale, which is its radius squared over a measured diffusivity.)",
   },
   {
     id: "three-times-the-current",
     title: "Three times the current, and two answers to it",
     scenario: "pulse_train_spm.toml",
-    // 15.459 A is 3 C. The mark is deliberately *below* the previous step's: `applyStep`
-    // reloads when `sim_time_s > until_s`, and that reload is what puts this run back at
-    // 90 % SOC, where its first tooth is comparable with the first tooth of step 13.
-    // Same mechanism step 6 relies on.
+    // 15.459 A is 3 C. The mark is *below* the previous step's, which is what makes
+    // `reload` explicit rather than inherited: the inequality in `applyStep` would
+    // reload on the way in and not on the way back, and this run has to start at 90 %
+    // in both directions for its first tooth to be comparable with step 13's.
     demand: { mode: "Pulse", value: 15.459, on_s: 60, off_s: 600 },
     ambient_c: 25,
     bms: null,
     speed_x: 100,
     until_s: 1980,
+    reload: true,
     watch: ["plot-v", "readouts"],
     prose: [
       "The same file, back at 90 %, with the pulse current tripled to 3 C. Three pulses is enough.",
@@ -2638,9 +2657,17 @@ async function applyStep(L) {
     // time does not run backwards, so a step whose mark is behind us needs a fresh pack;
     // a step ahead of us on the same scenario just keeps going, which is why lessons 2
     // to 4 are one continuous run.
+    // `reload: true` is for a step whose prose describes a run **from t = 0** and which
+    // therefore cannot inherit a pack. Without it the rule below is an inequality that
+    // only holds in one direction: the pulse steps 12-14 are the first in this path
+    // whose marks do not increase, and Back from 14 (t = 1980) into 13 (mark 3300)
+    // satisfies neither clause — so 13 would arm from t = 1980 on a pack three 3 C
+    // pulses into its life, while its prose talks about a first tooth at 90 %. Steps
+    // 2-5 never met this because their marks ascend.
     const reload =
       !state.backend ||
       path.switchedTransport ||
+      L.reload === true ||
       $("scenario").value !== L.scenario ||
       (state.facts?.sim_time_s ?? 0) > L.until_s;
     $("scenario").value = L.scenario;

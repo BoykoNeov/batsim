@@ -22,10 +22,14 @@
 #
 # The circuit's answer to a pulse is one shape scaled by one number. This cell's is not:
 #
-#   * first pulse — 135.7 mV of sag, of which 113.9 mV returns the instant the current
-#     stops (the kinetic overpotential, which is zero at zero current; this parameter
-#     set's `contact_resistance_ohm` is Chen2020's own 0, so there is no ohmic term at
-#     all) and 17.3 mV climbs back slowly as the concentration gradient flattens;
+#   * first pulse — 135.7 mV of sag: 113.9 mV returns the instant the current stops
+#     (the kinetic overpotential, which is zero at zero current; this parameter set's
+#     `contact_resistance_ohm` is Chen2020's own 0, so there is no ohmic term at all),
+#     17.3 mV climbs back slowly as the concentration gradient flattens, and 4.5 mV has
+#     not returned when the rest ends. That last figure is NOT the clean open-circuit
+#     step its sibling file's 5.3 mV is: this rest is still climbing at 600 s, so it is
+#     charge that has left *and* gradient that has not finished flattening, mixed. Which
+#     is the whole point of the next line;
 #   * that slow rebound is 17.3 mV on the first pulse and **37.2 mV on the fifth**, and
 #     still growing. 600 s of rest does not undo 60 s of diffusion, so gradient carries
 #     over from one pulse to the next. The cell remembers the earlier pulses. The

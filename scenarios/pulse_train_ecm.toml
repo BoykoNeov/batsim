@@ -20,8 +20,16 @@
 #   * the terminal drops 212.8 mV under load;
 #   * 132.8 mV of that comes back instantly when the current goes off — that is
 #     `I*R0`, and this file's [r0] is a labelled placeholder;
-#   * the remaining 74.8 mV climbs back over the following 600 s as the RC pairs
-#     discharge, and 99.5 % of it has arrived within 300 s.
+#   * 74.8 mV climbs back over the following 600 s as the RC pairs discharge, and
+#     99.5 % of it has arrived within 300 s;
+#   * and the last 5.3 mV does not come back at all, because it is not polarisation:
+#     60 s at 1 C is 1.67 % of the cell, and that is the open-circuit voltage itself
+#     stepping down. The three add to the sag, and only the first two are the tooth.
+#
+# Measure the tooth's *depth* rather than its rebound and the [ocv] table intrudes: the
+# sag reads 212.8 / 212.6 / 212.5 / 221.5 / 221.3 mV across five pulses, and the 9 mV
+# step is the table's node at soc 0.85 passing under the pulse, not the circuit changing.
+# The rebound has no OCV term in it, which is why it is the number the lesson uses.
 #
 # And then it does exactly the same thing again. The 74.8 mV rebound is identical to
 # four decimals on all five pulses of the guided path's run, because a linear

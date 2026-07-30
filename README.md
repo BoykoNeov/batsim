@@ -195,8 +195,11 @@ that pulse the same cell through two different cell models — a circuit that an
 identical pulse identically, a particle that remembers the last one, and three times
 the current buying ×1.87 of one part of the answer and ×6.01 of another — setting
 the controls for each and outlining the panel it is about. Every control
-stays live throughout; stepping back and forward re-applies a step from scratch, so
-there is nothing you can break by fiddling mid-lesson. Steps 3 to 5 are one continuous
+stays live throughout; stepping back and forward re-applies a step's whole control set,
+so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when
+it needs to start from t = 0 and otherwise keeps the run going, which is why the last
+three steps — whose claims are all about a *first* pulse — ask for the reload explicitly
+rather than inheriting whatever the neighbouring step left behind. Steps 3 to 5 are one continuous
 run on one pack, because changing what you look at teaches more than reloading.
 
 The scenario picker is filled from the server's own `GET /scenarios`, so adding a file
