@@ -103,6 +103,43 @@
 
   canvas { display: block; width: 100%; background: var(--panel);
            border: 1px solid var(--line); border-radius: 4px; }
+
+  /*
+    The plots, two across. Half the width and half the height of the full-bleed stack
+    they replace — a quarter of the area each — so all six are on screen at once instead
+    of being three scrolls apart. Reading a pack means reading its panels *against each
+    other*: the current plot explains the voltage plot, and the temperature plot explains
+    both. That comparison was previously done from memory while scrolling.
+
+    Two columns and not `auto-fill`: more columns would keep shrinking the panels on a
+    wide monitor, and 75 px tall is already where `drawPanel` switches to its compact
+    chrome. The height is repeated here because it must be: a grid item stretches in the
+    block axis by default, and `fitCanvas` sizes the backing store from `clientHeight`,
+    so a stretched row would silently redraw the panel at the row's height instead.
+  */
+  #plots {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    /* 10 and not the 8 used elsewhere: `.watching` is an outline at 3 px offset, and an
+       outline takes up no layout space — at 8 px two outlined neighbours would be 2 px
+       apart, and the pair would read as one box. */
+    gap: 10px;
+    align-items: start;
+  }
+  #plots canvas { height: 75px; }
+  /*
+    Below this, the grid is not worth having: two panels would be too narrow to label. The
+    legend is clamped against the panel's right edge but the *title* is not clamped against
+    the legend, so a narrow "state of health (% of new) [%]" beside two traces would
+    collide. ~370 px of panel is where that stops, which at a 320 px sidebar is here.
+
+    A window this narrow gets the full-height stack back, not one column of squashed
+    strips — a single 75 px panel spanning the whole column is the worst of both. This is
+    also what keeps `drawPanel`'s non-compact chrome a path that actually renders.
+  */
+  @media (max-width: 1100px) {
+    #plots { grid-template-columns: 1fr; }
+    #plots canvas { height: 150px; }
+  }
   .note { color: var(--dim); font-size: 11px; margin-top: 6px; }
   code { color: var(--accent); }
 
@@ -497,19 +534,21 @@
     into flat lines at opposite edges — the cell spread, which is where the imbalance
     physics shows, becomes invisible at exactly the moment it matters.
   -->
-  <canvas id="plot-v" height="150"></canvas>
-  <canvas id="plot-cv" height="150"></canvas>
-  <canvas id="plot-i" height="150"></canvas>
-  <canvas id="plot-soc" height="150"></canvas>
-  <canvas id="plot-t" height="150"></canvas>
-  <!--
-    Both health series share one axis because they share one unit: percent *of new*.
-    Capacity falls from 100, resistance rises from 100, and the angle between them is
-    the chemistry's r_growth_per_capacity_loss — 1.5 points of resistance for every
-    point of capacity, readable straight off the panel. With aging off they are two flat
-    lines at 100, which is the honest picture of a pack that never wears out.
-  -->
-  <canvas id="plot-soh" height="150"></canvas>
+  <div id="plots">
+    <canvas id="plot-v" height="75"></canvas>
+    <canvas id="plot-cv" height="75"></canvas>
+    <canvas id="plot-i" height="75"></canvas>
+    <canvas id="plot-soc" height="75"></canvas>
+    <canvas id="plot-t" height="75"></canvas>
+    <!--
+      Both health series share one axis because they share one unit: percent *of new*.
+      Capacity falls from 100, resistance rises from 100, and the angle between them is
+      the chemistry's r_growth_per_capacity_loss — 1.5 points of resistance for every
+      point of capacity, readable straight off the panel. With aging off they are two flat
+      lines at 100, which is the honest picture of a pack that never wears out.
+    -->
+    <canvas id="plot-soh" height="75"></canvas>
+  </div>
 
   <div class="note">
     Ground truth is what the engine knows; <code>soc_bms</code> is what the BMS

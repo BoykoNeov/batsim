@@ -658,17 +658,21 @@ function fitCanvas(canvas) {
  */
 function drawPanel(canvas, title, unit, times, traces, yFixed) {
   const { ctx, w, h } = fitCanvas(canvas);
-  const padL = 54;
-  const padR = 10;
-  const padT = 20;
-  const padB = 22;
-  const plotW = Math.max(1, w - padL - padR);
+  // Chrome is sized from the box, not fixed. Six panels sit two-across at 75 px tall, and
+  // the pads that read well full-bleed would spend 42 of those 75 px on axis furniture —
+  // the frame would be most of the picture. One threshold rather than a continuous scale:
+  // there are exactly two sizes on this page, and a formula would imply otherwise.
+  const small = h < 110;
+  const font = small ? 10 : 11;
+  const padR = small ? 8 : 10;
+  const padT = small ? 15 : 20;
+  const padB = small ? 15 : 22;
   const plotH = Math.max(1, h - padT - padB);
 
   ctx.fillStyle = PLOT_BG;
   ctx.fillRect(0, 0, w, h);
 
-  ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  ctx.font = `${font}px ui-monospace, Menlo, Consolas, monospace`;
   ctx.textBaseline = "middle";
 
   if (times.length === 0) {
@@ -707,6 +711,40 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
     y1 += pad;
   }
 
+  // Ask for four ticks, then thin the axis until the labels clear each other. Lowering
+  // the *target* instead is what suggests itself and it does not work: `tickStep` snaps
+  // to 1, 2 or 5, so the same target yields 11 px spacing on one panel and 22 px on the
+  // next depending on the span — asking for two gave the temperature panel a readable
+  // pair and the terminal panel a single lonely gridline. The pixel gap is the thing
+  // actually being protected, so it is the thing tested. A tall panel never trips this,
+  // which is why full-bleed panels look exactly as they did.
+  //
+  // Doubling and not re-snapping: 2 → 4 → 8 leaves the axis on a round multiple of the
+  // step it started from, whereas re-snapping to the 1/2/5 family can land on a step
+  // that does not divide the one already drawn.
+  let yStep = tickStep(y1 - y0, 4);
+  const minLabelGap = font + 3;
+  while (y1 > y0 && (plotH * yStep) / (y1 - y0) < minLabelGap) yStep *= 2;
+  // Decimals from the tick step, not a fixed 2. A cell-voltage panel can span 12 mV,
+  // and two ticks 5 mV apart both render as "3.23" at fixed precision — a labelled
+  // axis that repeats itself is worse than none.
+  const decimals = Math.min(6, Math.max(0, Math.ceil(-Math.log10(yStep))));
+  const yTicks = [];
+  for (let v = Math.ceil(y0 / yStep) * yStep; v <= y1; v += yStep) {
+    yTicks.push({ v, text: v.toFixed(decimals) });
+  }
+
+  // The label gutter is measured, not assumed. `decimals` reaches 6 on a panel spanning
+  // tens of microvolts — which a resting pack's cell voltage does — and "3.234567" is
+  // 8 glyphs where a fixed gutter budgeted for 4. Too small and the axis runs into the
+  // trace; the cost of measuring is one `measureText` per tick.
+  const gap = 6;
+  const padL = yTicks.reduce(
+    (wide, t) => Math.max(wide, ctx.measureText(t.text).width + gap + 3),
+    small ? 34 : 54,
+  );
+  const plotW = Math.max(1, w - padL - padR);
+
   const sx = (t) => padL + ((t - x0) / (x1 - x0)) * plotW;
   const sy = (v) => padT + plotH - ((v - y0) / (y1 - y0 || 1)) * plotH;
 
@@ -715,31 +753,35 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   ctx.fillStyle = PLOT_INK;
   ctx.lineWidth = 1;
   ctx.textAlign = "right";
-  const yStep = tickStep(y1 - y0, 4);
-  // Decimals from the tick step, not a fixed 2. A cell-voltage panel can span 12 mV,
-  // and two ticks 5 mV apart both render as "3.23" at fixed precision — a labelled
-  // axis that repeats itself is worse than none.
-  const decimals = Math.min(6, Math.max(0, Math.ceil(-Math.log10(yStep))));
-  for (let v = Math.ceil(y0 / yStep) * yStep; v <= y1; v += yStep) {
-    const y = Math.round(sy(v)) + 0.5;
+  for (const tick of yTicks) {
+    const y = Math.round(sy(tick.v)) + 0.5;
     ctx.beginPath();
     ctx.moveTo(padL, y);
     ctx.lineTo(w - padR, y);
     ctx.stroke();
-    ctx.fillText(v.toFixed(decimals), padL - 6, y);
+    ctx.fillText(tick.text, padL - gap, y);
   }
 
-  // x labels.
+  // x labels. Also per available width, and for the same reason — but the constraint here
+  // is the label, not the gridline: "104m" needs its own room on both sides.
   ctx.textAlign = "center";
   if (spanned) {
-    const xStep = tickStep(x1 - x0, 6);
+    const xStep = tickStep(x1 - x0, Math.max(2, Math.round(plotW / 150)));
     for (let t = Math.ceil(x0 / xStep) * xStep; t <= x1; t += xStep) {
       const x = Math.round(sx(t)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, padT);
       ctx.lineTo(x, padT + plotH);
       ctx.stroke();
-      ctx.fillText(fmtTime(t), x, h - padB / 2);
+      // The gridline sits on the tick; the *label* is nudged back inside the canvas if
+      // centring it there would hang it over the edge. A tick can land exactly on the
+      // right edge — the last one usually does — and half of "3.3h" was being cut off
+      // with nothing to scroll to reveal it. A label 4 px off its own line still reads
+      // against that line; half a label reads as a different number.
+      const label = fmtTime(t);
+      const half = ctx.measureText(label).width / 2;
+      const lxx = Math.min(Math.max(x, half + 1), w - half - 1);
+      ctx.fillText(label, lxx, h - padB / 2);
     }
   } else {
     ctx.fillText(fmtTime(x0), padL, h - padB / 2);
@@ -777,11 +819,13 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   ctx.textAlign = "left";
   ctx.fillStyle = PLOT_INK;
   const heading = `${title} [${unit}]`;
-  ctx.fillText(heading, padL, 10);
+  // Centred in the top pad, whatever that pad is, so the heading never overhangs the
+  // plot's top gridline.
+  const headY = padT / 2;
+  ctx.fillText(heading, padL, headY);
 
-  const swatch = 10;
-  const gap = 6;
-  const between = 14;
+  const swatch = small ? 8 : 10;
+  const between = small ? 10 : 14;
   const legendW = traces.reduce(
     (sum, t) => sum + swatch + gap + ctx.measureText(t.label).width + between,
     -between,
@@ -793,8 +837,8 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   let lx = Math.max(padL, w - padR - legendW);
   for (const trace of traces) {
     ctx.fillStyle = trace.color;
-    ctx.fillRect(lx, 8, swatch, 3);
-    ctx.fillText(trace.label, lx + swatch + gap, 10);
+    ctx.fillRect(lx, headY - 1.5, swatch, 3);
+    ctx.fillText(trace.label, lx + swatch + gap, headY);
     lx += swatch + gap + ctx.measureText(trace.label).width + between;
   }
 }
@@ -2588,8 +2632,10 @@ function proseHtml(s) {
  * the path panel sits at the top of the column, so scrolling down to `#pack` or a plot
  * pushes the prose off screen — it makes the reader look before they have read, which is
  * backwards for a page whose whole premise is "try this, *then* watch that". The outline
- * persists, so it is waiting when they scroll. The cost is that on a short viewport the
- * two plot-watching steps point at something below the fold.
+ * persists, so it is waiting when they scroll. The cost used to be that on a short
+ * viewport the plot-watching steps pointed at something below the fold; the plots are now
+ * a two-column grid a quarter the area each, so on a wide window they are all on screen
+ * with the prose. On a narrow one they fall back to the old stack and the old cost.
  */
 function setWatch(ids) {
   for (const el of document.querySelectorAll(".watching")) el.classList.remove("watching");
