@@ -28,13 +28,20 @@
 #
 # ## What it deliberately does not do
 #
-# It does not select the SPM cell model, which is reachable from no client and is a
-# slice of its own. The reason is measured rather than assumed: at 0.5 C the SPM and the
-# ECM agree to about +/-20 mV through the whole middle of the discharge and only part
-# near empty. A scenario that flipped `cell_model` here would cost 6.7x the step time
-# (0.80 us against 0.12 us per step at 12 shells) to show a reader almost nothing. The
-# comparison that would pay is a high C-rate, where diffusion limits the particle rather
-# than the circuit, and that needs a demand program rather than an initial condition.
+# It does not select the SPM cell model. That model is now reachable — see
+# `pulse_train_spm.toml`, which is the slice this paragraph used to say was still owed —
+# but it is not reachable from *here*, and the reason is measured rather than assumed:
+# at 0.5 C the two models agree to within the ECM's own table error through the whole
+# middle of the discharge. Remeasured for docs/plans/spm-scenario.md, the difference
+# oscillates and **changes sign** — -21.6, +1.8, -8.0, +9.2, -24.3 mV — against the
+# 13.91 mV maximum interpolation error [ocv] documents for itself. There is nothing here
+# that is not the grid, and a scenario that flipped `cell_model` would cost 6.7x the step
+# time (0.80 us against 0.12 us per step at 12 shells) to show a reader that.
+#
+# What separates the models is not an initial condition but a *demand program*: a pulse
+# train, where the response splits into a part that vanishes with the current and a part
+# that has to diffuse away, and the two scale differently with rate. That is what the
+# pulse_train pair does, on this same cell at 90 % SOC.
 
 chemistry = "nmc_21700_lgm50"
 
@@ -58,6 +65,7 @@ seed = 1
 #
 # And one omission that is not "off" but "default": `cell_model`, which is Ecm. Setting
 #   [pack.cell_model.Spm]
-#   shells = 12
-# would run the same cell through the porous-electrode model instead — see above for why
+#   shells = 20
+# would run the same cell through the porous-electrode model instead — `pulse_train_spm.toml`
+# is exactly that edit applied to a file built for it — see above for why
 # this file does not.

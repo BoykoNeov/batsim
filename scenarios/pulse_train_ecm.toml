@@ -1,0 +1,74 @@
+# The control arm of the repo's first cell-model comparison.
+#
+# 1S1P LG M50, 90 % SOC, isothermal, nothing protecting it — and `cell_model` left at
+# its default, so this is the equivalent circuit. `pulse_train_spm.toml` is this file
+# with one field added. Nothing else differs, including the initial SOC, and that is
+# load-bearing: the claims the guided path reads off these two files are read off the
+# **first** pulse, and two arms starting at different SOC would be comparing the OCV
+# curve instead of the two models.
+#
+# ## Why a pulse train, and why this one
+#
+# A scenario is an initial condition, not a demand program; the train lives in the
+# client's `Pulse` demand mode (60 s on, 600 s off in the guided path). The long rest is
+# the point. It separates the part of a cell's response that vanishes the instant the
+# current stops from the part that has to diffuse away, and those two parts are where
+# the two models disagree.
+#
+# Measured on this file at 1 C = 5.153 A, 25 degC, first pulse:
+#
+#   * the terminal drops 212.8 mV under load;
+#   * 132.8 mV of that comes back instantly when the current goes off — that is
+#     `I*R0`, and this file's [r0] is a labelled placeholder;
+#   * the remaining 74.8 mV climbs back over the following 600 s as the RC pairs
+#     discharge, and 99.5 % of it has arrived within 300 s.
+#
+# And then it does exactly the same thing again. The 74.8 mV rebound is identical to
+# four decimals on all five pulses of the guided path's run, because a linear
+# time-invariant circuit answers an identical pulse identically. Ask it for 3 C instead
+# and every part of the answer triples: 397.3 mV instantly, 224.3 mV slowly, x2.99 and
+# x3.00 against the 1 C run. That is not a property of these coefficients — it is what
+# "linear" means, and no choice of R0 and RC can escape it.
+#
+# See `pulse_train_spm.toml` for a model that answers x1.87 and x6.01 to the same
+# question, and docs/plans/spm-scenario.md for the whole table.
+#
+# ## What is a placeholder here
+#
+# [r0] and [[rc]] both, as the chemistry file says of itself. So the *magnitudes* above
+# are order-of-magnitude only, and the guided path leads with ratios rather than
+# millivolts for exactly that reason. What no placeholder can move is that the ratios
+# are 3.00.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "Pulse train, equivalent circuit"
+description = """
+A 1S1P LG M50 cell at 90 % SOC and 25 degC, isothermal, no BMS, no aging, no faults, \
+running the equivalent-circuit model. Drive it with the client's pulse mode (60 s on, \
+600 s off) and every tooth is the same tooth: the rebound after each pulse is 74.8 mV \
+at 1 C, five times running, and exactly three times that at 3 C. Compare with \
+`pulse_train_spm.toml`, which is this file with one field added."""
+
+[pack]
+series = 1
+parallel = 1
+# 90 %, not 100 %: at the clamp a pulse train's first rest has nowhere to put the
+# charge it would recover, and 0.90 is a node of the [ocv] table rather than a point
+# interpolated between two.
+initial_soc = 0.90
+initial_temp_k = 298.15
+# Unused (no scatter, no aging, no plating), but the seed is part of the snapshot and
+# every scenario names it rather than inheriting a default.
+seed = 1
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; demands pass through unclamped
+#   [pack.aging]    -> the pack never wears out
+#   [[faults]]      -> nothing scheduled
+#
+# And one omission that is not "off" but "default": `cell_model`, which is Ecm. That
+# omission is this file's entire identity.

@@ -1,0 +1,77 @@
+# The first scenario in this repo that selects the single-particle model.
+#
+# `sim-core` has carried a porous-electrode cell model since Phase 6 — 900 lines,
+# validated against PyBaMM to 2.6 / 6.7 / 1.9 mV over three scenarios — and until this
+# file no client could reach it, because `cell_model` is settable only from a scenario
+# and not one of the eight files here set it.
+#
+# This is `pulse_train_ecm.toml` with `[pack.cell_model.Spm]` added and nothing else
+# changed. Same cell, same 90 % SOC, same everything: one field is the whole difference,
+# which is what makes what you see attributable to the model rather than to the setup.
+#
+# ## Which half of the chemistry file this reads
+#
+# The [spm] half — every value a key of PyBaMM's Chen2020, a literal inside one of its
+# functions, or a stated product of two keys, regenerable by tools/reference/extract_spm.py.
+# Nothing in it is fitted. The sibling ECM run reads [r0] and [[rc]], which that file
+# labels as placeholders. **The two arms are therefore not equally trustworthy**, and
+# the comparison is written in ratios rather than millivolts for that reason: a ratio
+# survives a placeholder that a magnitude does not.
+#
+# ## What the pulse train shows, measured at 1 C = 5.153 A, 25 degC
+#
+# The circuit's answer to a pulse is one shape scaled by one number. This cell's is not:
+#
+#   * first pulse — 135.7 mV of sag, of which 113.9 mV returns the instant the current
+#     stops (the kinetic overpotential, which is zero at zero current; this parameter
+#     set's `contact_resistance_ohm` is Chen2020's own 0, so there is no ohmic term at
+#     all) and 17.3 mV climbs back slowly as the concentration gradient flattens;
+#   * that slow rebound is 17.3 mV on the first pulse and **37.2 mV on the fifth**, and
+#     still growing. 600 s of rest does not undo 60 s of diffusion, so gradient carries
+#     over from one pulse to the next. The cell remembers the earlier pulses. The
+#     circuit's rebound is 74.8 mV on all five, identical to four decimals.
+#   * ask for 3 C and the two parts scale in **opposite directions**: the fast part
+#     saturates at x1.87 (Butler-Volmer's asinh), the slow part accelerates to x6.01
+#     (the OCP is a nonlinear function of surface stoichiometry). They sum to x2.48,
+#     which merely looks mildly sub-linear and hides both. The circuit answers x2.99 and
+#     x3.00 to the same question, because that is what linear means.
+#
+# See docs/plans/spm-scenario.md for the whole table and for the three candidate
+# experiments the measurement killed on the way to this one.
+#
+# ## Two limitations, named rather than avoided
+#
+# * Do not drive this past the SOC clamp. Both models stay finite there, but this one
+#   pins at 0.39-0.50 V — its surface concentration runs to the bottom of the OCP table
+#   — where the circuit cannot leave its own [ocv] and stops at 1.79 V. Same family as
+#   the overcharge hole: a hole in the model, left visible.
+# * `shells = 20` is `spm::DEFAULT_SHELLS`, chosen in Phase 6 by the accuracy curve
+#   (flat past 20, cost linear at 29.4 ns/shell). It is a cost knob, not a property of
+#   the material, and it is part of the snapshot layout — which is why it is written out
+#   here rather than defaulted.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "Pulse train, single-particle model"
+description = """
+A 1S1P LG M50 cell at 90 % SOC and 25 degC, isothermal, no BMS, no aging, no faults, \
+running the porous-electrode model on parameters extracted verbatim from PyBaMM's \
+Chen2020. `pulse_train_ecm.toml` with one field added. Drive it with the client's pulse \
+mode (60 s on, 600 s off): the rebound after each pulse grows from 17.3 mV to 37.2 mV \
+across five, where the circuit's is identical every time, and three times the current \
+buys x1.87 of the fast part and x6.01 of the slow one."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.90
+initial_temp_k = 298.15
+seed = 1
+
+# The one field. Everything else in this file is `pulse_train_ecm.toml` verbatim.
+[pack.cell_model.Spm]
+shells = 20
+
+# Omitted, and each omission means "off":
+#   [pack.scatter] / [pack.thermal] / [pack.bms] / [pack.aging] / [[faults]]
