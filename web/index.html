@@ -105,17 +105,21 @@
            border: 1px solid var(--line); border-radius: 4px; }
 
   /*
-    The plots, two across. Half the width and half the height of the full-bleed stack
-    they replace — a quarter of the area each — so all six are on screen at once instead
-    of being three scrolls apart. Reading a pack means reading its panels *against each
-    other*: the current plot explains the voltage plot, and the temperature plot explains
-    both. That comparison was previously done from memory while scrolling.
+    The plots, two across at full height. Reading a pack means reading its panels
+    *against each other*: the current plot explains the voltage plot, and the temperature
+    plot explains both. Two columns is what puts a pair side by side; the height is what
+    makes each one readable. A 5 mV wiggle in a resting cell is a sub-pixel event in a
+    75 px box, and half the point of these panels is the small excursion.
+
+    The cost is honest: three rows of 150 px plus gaps is taller than `#main`, so the
+    bottom row scrolls on a laptop. Two panels compared closely beat six glanced at.
 
     Two columns and not `auto-fill`: more columns would keep shrinking the panels on a
-    wide monitor, and 75 px tall is already where `drawPanel` switches to its compact
-    chrome. The height is repeated here because it must be: a grid item stretches in the
-    block axis by default, and `fitCanvas` sizes the backing store from `clientHeight`,
-    so a stretched row would silently redraw the panel at the row's height instead.
+    wide monitor, and the narrow ones are where the title collides with its own legend
+    (see the breakpoint below). The height is repeated here because it must be: a grid
+    item stretches in the block axis by default, and `fitCanvas` sizes the backing store
+    from `clientHeight`, so a stretched row would silently redraw the panel at the row's
+    height instead.
   */
   #plots {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -125,20 +129,36 @@
     gap: 10px;
     align-items: start;
   }
-  #plots canvas { height: 75px; }
+  #plots canvas { height: 150px; }
   /*
     Below this, the grid is not worth having: two panels would be too narrow to label. The
     legend is clamped against the panel's right edge but the *title* is not clamped against
     the legend, so a narrow "state of health (% of new) [%]" beside two traces would
-    collide. ~370 px of panel is where that stops, which at a 320 px sidebar is here.
+    collide — the ") [%]" is overdrawn by the `capacity` swatch. That panel governs; it is
+    the longest title on the page and it carries two traces.
 
-    A window this narrow gets the full-height stack back, not one column of squashed
-    strips — a single 75 px panel spanning the whole column is the worst of both. This is
-    also what keeps `drawPanel`'s non-compact chrome a path that actually renders.
+    This breakpoint moved from 1100 px when the panels got taller, and the chain is worth
+    recording because only its first link is obvious: taller panels crossed `drawPanel`'s
+    `h < 110` threshold, so the chrome grew (font 11 not 10, `padL` floor 54 not 34), so
+    the width at which the title clears the legend grew with it — measured on the page at
+    ~415 px of canvas, against ~370 px for the compact chrome this page no longer uses.
+    Converting: 415×2 + 10 gap + 366 (320 sidebar + 28 padding + 18 scrollbar) ≈ 1205.
+    Rounded up to 1250 rather than sat on, because 415 assumes `padL` is on its floor —
+    a barely-aging pack collapses the y-range, `decimals` climbs, and a "99.9995" tick
+    label measures wider than the floor reserves.
+
+    One column, and taller again rather than merely as tall: a panel that has the whole
+    window's width can afford the vertical room to match it, and this is the size the axis
+    furniture was originally proportioned for.
+
+    Note that at 150 px nothing on this page renders `drawPanel`'s compact chrome any more
+    — its `h < 110` threshold is below both heights here. The branch is kept because it is
+    what makes the height a free parameter rather than a load-bearing constant: drop these
+    numbers back and the panels shed their pads instead of drowning in them.
   */
-  @media (max-width: 1100px) {
+  @media (max-width: 1250px) {
     #plots { grid-template-columns: 1fr; }
-    #plots canvas { height: 150px; }
+    #plots canvas { height: 300px; }
   }
   .note { color: var(--dim); font-size: 11px; margin-top: 6px; }
   code { color: var(--accent); }
@@ -535,11 +555,11 @@
     physics shows, becomes invisible at exactly the moment it matters.
   -->
   <div id="plots">
-    <canvas id="plot-v" height="75"></canvas>
-    <canvas id="plot-cv" height="75"></canvas>
-    <canvas id="plot-i" height="75"></canvas>
-    <canvas id="plot-soc" height="75"></canvas>
-    <canvas id="plot-t" height="75"></canvas>
+    <canvas id="plot-v" height="150"></canvas>
+    <canvas id="plot-cv" height="150"></canvas>
+    <canvas id="plot-i" height="150"></canvas>
+    <canvas id="plot-soc" height="150"></canvas>
+    <canvas id="plot-t" height="150"></canvas>
     <!--
       Both health series share one axis because they share one unit: percent *of new*.
       Capacity falls from 100, resistance rises from 100, and the angle between them is
@@ -547,7 +567,7 @@
       point of capacity, readable straight off the panel. With aging off they are two flat
       lines at 100, which is the honest picture of a pack that never wears out.
     -->
-    <canvas id="plot-soh" height="75"></canvas>
+    <canvas id="plot-soh" height="150"></canvas>
   </div>
 
   <div class="note">

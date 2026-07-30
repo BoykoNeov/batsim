@@ -658,10 +658,15 @@ function fitCanvas(canvas) {
  */
 function drawPanel(canvas, title, unit, times, traces, yFixed) {
   const { ctx, w, h } = fitCanvas(canvas);
-  // Chrome is sized from the box, not fixed. Six panels sit two-across at 75 px tall, and
-  // the pads that read well full-bleed would spend 42 of those 75 px on axis furniture —
-  // the frame would be most of the picture. One threshold rather than a continuous scale:
-  // there are exactly two sizes on this page, and a formula would imply otherwise.
+  // Chrome is sized from the box, not fixed: the pads below spend 42 px on axis furniture
+  // regardless of height, which is a reasonable frame around a 150 px panel and most of
+  // the picture in a 75 px one. One threshold rather than a continuous scale — a formula
+  // would imply the chrome tracks the box, and it does not; it only gives way when it
+  // would otherwise crowd out the trace.
+  //
+  // No panel on this page is currently short enough to take this branch (the grid is
+  // 150 px, the one-column breakpoint 300). It is what lets index.html treat those
+  // numbers as a free parameter, so it stays.
   const small = h < 110;
   const font = small ? 10 : 11;
   const padR = small ? 8 : 10;
