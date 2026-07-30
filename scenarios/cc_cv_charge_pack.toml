@@ -1,0 +1,122 @@
+# A pack with a BMS that has something to protect it from.
+#
+# The BMS shipped in Phase 2 and the page has never watched it *act*. Every scenario
+# here discharges, and a discharging pack in this repo trips nothing: the four flags that
+# say "the protection did something" — BALANCING, OC, OV, PLATING_RISK — are all reached
+# by charging, and until now nothing in the client could charge. This file is the pack
+# that makes them reachable.
+#
+# 4S2P NMC, the first NMC pack in the repo. NMC because a charge on this chemistry has
+# both legs (see `cc_cv_charge_lfp.toml` for one that does not), so the protection lesson
+# is not tangled up with a knee that never arrives.
+#
+# ## Why each section is here
+#
+# [pack.scatter] because a pack is never eight identical cells, and because on a charge
+# it *shows*: at rest all eight read 3.75000 V to five decimals — SOC is uniform and the
+# spread lives in capacity and R0 factors — and 13.3 mV of spread opens up as soon as
+# current flows. The resting pack in `calendar_fade_hot.toml` makes the same point from
+# the other side.
+#
+# [pack.thermal.Network] is load-bearing. The cold-charge lesson works by dragging the
+# ambient control below freezing and letting the pack cool through 0 degC; an isothermal
+# pack would sit at initial_temp_k forever and there would be nothing to see.
+#
+# [pack.bms.balancing] at 4.10 V is the whole reason balancing exists, made visible: a
+# bleed resistor across any group whose sensed voltage is above the threshold. Passive
+# balancing only ever removes charge from the *high* group, which is why it is an
+# end-of-charge activity and why the pack it balances ends up at the weakest group's
+# capacity, not the average.
+#
+# No [pack.aging] and no [[faults]]: this scenario is about protection, and a health
+# curve or a scheduled misfortune beside it would be a second lesson competing with the
+# first. `calendar_fade_hot.toml` and `soft_short_under_a_lying_sensor.toml` are where
+# those live.
+#
+# ## What it does, measured (docs/plans/cc-cv.md), CC-CV at 0.5 C = 3.0 A to 4.20 V/cell
+#
+#   * BMS on:  BALANCING from t = 3111 s, then OV at 3986 s and the charge stops — at
+#              95.1 % SOC. Read the step before the trip rather than the one after it:
+#              under charge the pack is at 16.775 V, only 24.8 mV short of the 16.80 V
+#              it is aiming for, and its eight cells are spread over 11.0 mV —
+#              4.18901 V at the bottom and 4.20004 V at the top. The top group has
+#              reached the per-cell limit while the pack as a whole has not, which is
+#              what an 11 mV spread means: they cannot all arrive together. The 130 mV
+#              gap visible *after* the trip is the IR drop disappearing when the current
+#              stops, not the imbalance.
+#   * BMS off: no such trip. The same charge runs to the taper and finishes at 99.5 %.
+#
+# That 4.4-point gap is what protection costs on an imbalanced pack, and the balancer
+# bleeding the high group is what would eventually close it.
+#
+# Two more, on the same file:
+#
+#   * ask for 1.0 C and the BMS derates from the very first step to exactly 4.200 A —
+#     0.7 C x 2P, this chemistry's `max_charge_c` — with OC raised throughout. The
+#     demand and `i_actual` disagree, on purpose;
+#   * drag the ambient to -5 degC and the pack cools; at t = 1494 s a cell crosses
+#     273.15 K, UT is raised and the charge is inhibited at 60.8 % SOC. Switch the BMS
+#     off and the same instant produces PLATING_RISK instead, and the charge continues —
+#     which is exactly the damage the inhibit exists to prevent.
+
+chemistry = "nmc_18650_generic"
+
+[meta]
+name = "CC-CV charge, 4S2P NMC with a BMS"
+description = """
+4S2P NMC at 40 % SOC and 25 degC, thermally coupled, seeded scatter, protection and \
+passive balancing on, no aging and no faults. Charge it with the client's CC-CV mode \
+and the BMS is finally doing something: balancing near the top, an over-voltage trip \
+that ends the charge 4.4 points short of where the same pack gets to with protection \
+off, an over-current derate if you ask for more than 0.7 C, and a charge inhibit if you \
+let the pack get cold. Turn the BMS off and the same cold charge raises PLATING_RISK \
+instead and carries on regardless."""
+
+[pack]
+series = 4
+parallel = 2
+# 40 %: enough room for a charge that takes about 80 minutes of simulation at 0.5 C
+# (seconds at speed), and high enough that the pack starts on the sloped middle of the
+# NMC OCV curve rather than on the steep bottom.
+initial_soc = 0.40
+# Room temperature at the start, so the cold lesson is a change a reader makes rather
+# than a condition they inherit.
+initial_temp_k = 298.15
+seed = 20260730
+
+# Manufacturing spread. Invisible at rest, and the reason the over-voltage trip below
+# arrives before the pack as a whole is full.
+[pack.scatter]
+capacity_sigma = 0.02
+r0_sigma = 0.03
+
+# Enum, serde-default (externally tagged): the variant name is the table.
+[pack.thermal.Network]
+k_neighbor_w_per_k = 0.5
+
+[pack.bms]
+# Sensor error the BMS cannot know about: the current sensor reads 20 mA high with 10 mA
+# of noise on top, so the coulomb count drifts even when nothing is wrong.
+current_offset_a = 0.02
+current_noise_sigma_a = 0.01
+# Two probes for four groups: the BMS cannot see the temperature of every cell.
+temp_probes = [[0, 0], [3, 0]]
+initial_soc_error = 0.03
+rest_current_threshold_a = 0.05
+rest_time_for_ocv_s = 600.0
+ocv_correction_gain = 0.1
+# NMC's curve is sloped everywhere, so unlike the LFP pack this estimator *can* correct
+# itself from an OCV reading whenever the pack rests long enough. The same threshold,
+# the opposite outcome.
+min_ocv_slope_v_per_soc = 0.15
+
+[pack.bms.protection]
+v_hard_margin_v = 0.15
+t_hard_margin_k = 10.0
+
+# 4.10 V is 100 mV below this chemistry's 4.20 V ceiling: high enough that balancing is
+# an end-of-charge activity and not a permanent drain, low enough that it starts before
+# the first group hits the limit.
+[pack.bms.balancing]
+bleed_r_ohms = 33.0
+v_threshold_v = 4.10

@@ -1,0 +1,60 @@
+# `cc_discharge_nmc.toml` with one field changed: an empty cell instead of a full one.
+#
+# The first scenario in this repo that exists to be *charged*. Everything else here
+# starts at 85-100 % SOC, which makes a charge policy unwatchable — there is nothing to
+# put back. Same cell, same temperature, same nothing-else-switched-on; only
+# `initial_soc` differs from the discharge file, so the two runs are the same cell seen
+# from both ends.
+#
+# A scenario is still an initial condition and not a demand program. CC-CV lives in the
+# client (see docs/plans/cc-cv.md and `CLAUDE.md`: "combined CC-CV is a client-side
+# policy"); this file only supplies a cell with room in it.
+#
+# What the client's CC-CV mode does with it, measured at 0.5 C = 1.5 A to 4.20 V with a
+# 0.15 A taper, 25 degC:
+#
+#   * constant current for 5420 s, terminal voltage climbing 3.66 -> 4.20 V, and the
+#     cell reaches 95.3 % SOC;
+#   * then the knee: the demand becomes "hold 4.20 V" and the current falls away by
+#     itself — 1.50 A, 0.65 A at t = 5700, 0.27 A at t = 6000;
+#   * done at 6210 s and 99.5 % SOC.
+#
+# The CV leg is 13 % of the time and 5 % of the charge, which is the shape worth
+# understanding: the last few percent are slow because the only thing driving current in
+# is the gap between the cell's own open-circuit voltage and the limit, and that gap is
+# closing.
+#
+# NMC is the chemistry for this because it *has* a CV leg. See `cc_cv_charge_lfp.toml`,
+# which is the same experiment on a cell whose terminal voltage never reaches its own
+# limit at this rate.
+
+chemistry = "nmc_18650_generic"
+
+[meta]
+name = "CC-CV charge, single NMC cell"
+description = """
+A 1S1P pack at 20 % SOC and 25 degC, isothermal, no BMS, no aging, no faults — \
+`cc_discharge_nmc.toml` with the cell nearly empty instead of full. Drive it with the \
+client's CC-CV mode (1.5 A to 4.20 V, taper 0.15 A) and both legs are visible: 90 \
+minutes of constant current to 95 % SOC, then 13 more of falling current for the last \
+4 points. Nothing protects this cell; the charge stops because the current tapered, \
+not because anything intervened."""
+
+[pack]
+series = 1
+parallel = 1
+# 20 %, not 0 %: an empty cell sits on the SOC clamp, and the first thing a reader would
+# see is a clamp flag rather than a charge. 20 % is also where the NMC OCV table is
+# still sloped, so the CC leg's voltage rise is legible from the first step.
+initial_soc = 0.20
+initial_temp_k = 298.15
+# Unused here (no scatter, no aging, no plating), but the seed is part of the snapshot
+# and every scenario names it rather than inheriting a default.
+seed = 1
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; demands pass through unclamped
+#   [pack.aging]    -> the pack never wears out
+#   [[faults]]      -> nothing scheduled

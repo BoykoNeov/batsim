@@ -135,7 +135,7 @@ BMS with balancing, from 40 % SOC):
 
 | run | what happens |
 |---|---|
-| 0.5 C, 25 °C, BMS **on** | `BALANCING` from t = 3111 s; **`OV` at 3986 s** and the current stops — at SOC **0.9514** |
+| 0.5 C, 25 °C, BMS **on** | `BALANCING` from t = 3111 s; **`OV` at 3986 s** and the current stops — at SOC **0.9514**, with the top cell at 4.20004 V and the bottom at 4.18901 V |
 | 0.5 C, 25 °C, BMS **off** | runs to the taper: SOC **0.9952** at 4820 s |
 | 1.0 C, 25 °C, BMS on | `OC` **from the first step**, current derated to exactly 4.200 A = 0.7 C × 2P; `OV` at 2729 s, SOC 0.9321 |
 | 0.5 C, −5 °C, BMS on | pack cools; `UT` at 1494 s and charge stops at SOC **0.6075** |
@@ -145,8 +145,15 @@ BMS with balancing, from 40 % SOC):
 and none of them has ever been reachable *from the page*: a discharging pack raises none
 of them. The BMS-on/BMS-off pair at 0.5 C is the cleanest protection lesson in the repo —
 **4.4 points of charge is what the protection costs, and it costs them because one group
-out of four hit 4.20 V while the pack as a whole was still 130 mV short of its target.**
-That gap is what the balancer exists for and it is now visible.
+of four reached 4.20 V while the pack as a whole had not.**
+
+The instant to quote is the step *before* the trip, and getting that wrong was worth
+105 mV: at t = 3985.5 s the pack is at **16.775 V, 24.8 mV short** of its 16.80 V target,
+with its cells spread over **11.0 mV** — 4.18901 V at the bottom, **4.20004 V at the
+top**, over the limit. One step later the contactor is open and the terminal reads
+16.670 V, 130 mV below target, because the IR drop went away with the current. The first
+draft of this plan quoted that 130 mV as the imbalance. It is not; it is the load coming
+off, and the imbalance is the 11 mV.
 
 Two things this measurement *killed*:
 
@@ -256,7 +263,7 @@ The `demand` record grows two optional fields (`v_cell`, `taper`) that only `CcC
   worth understanding.
 - *The leg that is not there* — `cc_cv_charge_lfp.toml`, same controller, same rate. The
   terminal voltage stalls at 3.6357 V, the mode stays in CC forever, and `SOC_CLAMPED_HIGH`
-  appears at 5760 s. The clamp is also where this engine's known overcharge hole lives —
+  appears at 5769 s. The clamp is also where this engine's known overcharge hole lives —
   the coulomb counter stops but the current does not — and the step says so rather than
   letting a reader infer that a full pack accepting 1.15 A is physics.
 - *What the BMS costs, and why* — `cc_cv_charge_pack.toml` at 0.5 C with the BMS on

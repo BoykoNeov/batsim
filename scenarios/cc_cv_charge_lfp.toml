@@ -1,0 +1,71 @@
+# The same charge as `cc_cv_charge_nmc.toml`, on a cell that never gets to the second
+# leg.
+#
+# `cc_discharge_lfp.toml` with `initial_soc` changed, so this is the repo's first cell
+# seen from both ends too. Charge it with the client's CC-CV mode at 0.5 C = 1.15 A to
+# 3.65 V and watch for the knee. It does not come.
+#
+# ## What happens instead, measured (docs/plans/cc-cv.md)
+#
+# The terminal voltage climbs to 3.6357 V and stops there — 14.3 mV short of this cell's
+# own 3.65 V limit. The demand never switches to the voltage hold. At t = 5769 s the
+# coulomb counter reaches 100 % and raises SOC_CLAMPED_HIGH, and the pack sits full with
+# the charge current still flowing into it.
+#
+# The arithmetic is the plateau, and both halves of it are in this file: [ocv] ends at
+# 3.60 V, [r0] is about 21 mOhm at the top of the range, and 0.5 C is 1.15 A — so
+# 3.60 + 0.024 never crosses 3.65. **This cell fills up before it reaches its voltage
+# limit.** Raise the rate to 1 C and the extra IR drop does cross the limit, but only at
+# 99.99 % SOC, which is a knee in name only.
+#
+# ## What that is and is not
+#
+# It is this parameter set's behaviour, integrated honestly. It is *not* a claim that
+# real LFP cells have no CV phase — they are charged CC-CV to 3.65 V routinely, and both
+# numbers that decide the outcome here (where the OCV table ends, how large R0 is) are
+# hand-fitted values this chemistry file labels as such.
+#
+# What does generalise is the shape of the argument. The CV leg's job is to deliver the
+# charge that the constant-current leg cannot, because the cell's open-circuit voltage
+# has risen to meet the limit. A chemistry whose open-circuit voltage barely moves has
+# very little for that leg to do. Steps 1 and 2 of the guided path teach the discharge
+# side of the same fact (168 mV of span across the 90-20 % window, against 481 mV for
+# NMC); this is the charge side, out of the same table.
+#
+# ## A known limitation, deliberately left visible
+#
+# Past the clamp the coulomb counter stops but the current does not: this engine models
+# no overcharge chemistry, so the energy has nowhere to go and simply disappears. That
+# is a gap in the model — recorded here rather than hidden behind an automatic stop,
+# because a reader who charges an already-full pack should be told which part of what
+# they are seeing is physics and which part is a missing model. With a BMS in the way
+# the pack is protected long before this matters; `cc_cv_charge_pack.toml` is where that
+# happens.
+
+chemistry = "lfp_26650_generic"
+
+[meta]
+name = "CC-CV charge, single LFP cell"
+description = """
+A 1S1P pack at 20 % SOC and 25 degC, isothermal, no BMS, no aging, no faults — \
+`cc_discharge_lfp.toml` with the cell nearly empty. Charge it at 0.5 C (1.15 A) to \
+3.65 V and the second leg never arrives: the terminal voltage stalls 14.3 mV below the \
+limit and the cell reaches 100 % SOC still on constant current, flagging \
+SOC_CLAMPED_HIGH at 5769 s. The flat plateau that makes this chemistry's charge state \
+hard to measure also leaves its constant-voltage phase with nothing to do."""
+
+[pack]
+series = 1
+parallel = 1
+# 20 % to match `cc_cv_charge_nmc.toml` exactly — the comparison is the point, so the
+# initial condition must not be one of the differences.
+initial_soc = 0.20
+initial_temp_k = 298.15
+seed = 1
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; demands pass through unclamped
+#   [pack.aging]    -> the pack never wears out
+#   [[faults]]      -> nothing scheduled
