@@ -679,6 +679,72 @@ fn a_voltage_demand_actually_holds_the_voltage() {
     );
 }
 
+/// Protection is applied **inside** the pack's iteration loop, so a DFN pack that used to
+/// call it once per step now calls it once per pass — and a derate is a clamp, which is not
+/// smooth.
+///
+/// The hazard is a demand sitting on the limit: pass one linearizes on a stale line and
+/// lands under it, pass two corrects and lands over it, the clamp engages and disengages,
+/// and the solve runs to `SOLVE_ITER_CAP` raising `SOLVE_UNCONVERGED` on a pack that is
+/// physically fine. Slice C created that exposure and nothing else covers it — no scenario
+/// in the repo or in the out-of-tree instrument pairs a nonlinear cell model with a BMS.
+///
+/// It does not happen, and the reason is structural rather than lucky: `apply_protection`
+/// computes its allowed window from the **sensor frame and the chemistry**, never from
+/// `i_req`, so every pass sees the *same* clamp to the same interval. A projection onto a
+/// fixed interval cannot introduce an oscillation the unclamped map does not have. The only
+/// `i_req`-dependent part is the `OC` flag, which the pack already treats as a per-pass
+/// binding rather than an accumulator.
+///
+/// Swept across the limit at 0.90/0.98/0.999/1.0/1.001/1.02/1.10× under both a current and a
+/// power demand: never unconverged, and at most 4 passes — the worst point being exactly on
+/// the limit under a power demand, which is where it should be.
+#[test]
+fn a_derate_inside_the_iteration_does_not_chatter() {
+    // 1.5C on the shipped cell: the chemistry's `max_discharge_c` times its capacity.
+    let limit_a = 1.5 * CAPACITY_AH;
+    for frac in [0.999, 1.0, 1.001, 1.10] {
+        let mut c = cfg(dfn_model(NODES, SHELLS), 1.0);
+        c.bms = Some(sim_core::BmsConfig {
+            balancing: None,
+            protection: Some(sim_core::ProtectionConfig {
+                v_hard_margin_v: 0.1,
+                t_hard_margin_k: 8.0,
+            }),
+            current_offset_a: 0.0,
+            current_noise_sigma_a: 0.0,
+            temp_probes: vec![(0, 0)],
+            initial_soc_error: 0.0,
+            rest_current_threshold_a: 0.05,
+            rest_time_for_ocv_s: 300.0,
+            ocv_correction_gain: 0.2,
+            min_ocv_slope_v_per_soc: 0.05,
+        });
+        let mut p = Pack::new(&c, parse_chemistry(LGM50).expect("LG M50 parses")).expect("builds");
+        // A power demand, because it is the one whose current is solved off the line and so
+        // the one that can step across the clamp between passes.
+        let demand = Demand::Power(limit_a * frac * 3.7);
+        for n in 0..60 {
+            let t = p.step(2.0, demand, &env());
+            assert!(
+                !t.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+                "a power demand at {frac}x the discharge limit failed to converge at step {n}"
+            );
+            assert!(
+                t.solve_iterations <= 8,
+                "a power demand at {frac}x the limit took {} passes at step {n}; the clamp is \
+                 cycling between engaged and disengaged",
+                t.solve_iterations
+            );
+            assert!(
+                t.i_actual <= limit_a + 1.0e-9,
+                "protection let {} A through a {limit_a} A limit",
+                t.i_actual
+            );
+        }
+    }
+}
+
 /// A zero-length probe step must not reach the cell's solver, and a *voltage* demand is
 /// the only demand that shows it.
 ///

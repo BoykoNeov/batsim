@@ -1,6 +1,6 @@
 # Phase 7 — the electrolyte (`Dfn`)
 
-**Status: slices A and B have landed; C and D remain. The repo is at `SNAPSHOT_VERSION`
+**Status: slices A, B and C have landed; D remains. The repo is at `SNAPSHOT_VERSION`
 11.** Everything above the slice notes was written *before* the work, after a spike, so
 the decisions that shape the phase are made once and made from measurements; the
 "learned while building" material is appended as each slice lands, the way
@@ -784,14 +784,14 @@ finite.
 
 ## Slice C — pack integration
 
-**Landed. `SNAPSHOT_VERSION` unmoved at v11.** `cargo test --workspace` green (406 tests),
+**Landed. `SNAPSHOT_VERSION` unmoved at v11.** `cargo test --workspace` green (407 tests),
 `cargo clippy --workspace --all-targets -- -D warnings` clean.
 
 What shipped: `CellModel::probe_at` replacing `source_at` **and** `terminal_v_at`,
 `dfn::probe_at` (a real solve at the trial current) and `dfn::setup_for`, `spm::probe_at`
 (with `spm::terminal_v` deleted and `source_at` reduced to a projection of it), the pack
 loop's second tangent buffer and swap, a `debug_assert` pinning the precondition of the
-deferred optimisation, and five tests in `crates/sim-data/tests/dfn_cell.rs` (13 → 18).
+deferred optimisation, and six tests in `crates/sim-data/tests/dfn_cell.rs` (13 → 19).
 
 ### What the slice actually buys, which is not what this plan predicted
 
@@ -888,6 +888,31 @@ answer rests on is the identical solve `advance` raises `SOLVE_UNCONVERGED` for.
 intermediate iterates are deliberately unreported, on the same reasoning that keeps the
 pack's protection flags a per-pass binding rather than an accumulator.
 
+### Protection now runs once per pass, and the clamp does not chatter
+
+This slice created an exposure it did not set out to: `apply_protection` is called **inside**
+the solve loop, so a DFN pack went from one call per step to two-to-five. A derate is a
+*clamp*, which is not smooth, and a demand sitting on the limit could in principle land under
+it on the stale-line pass and over it on the corrected one, cycling to `SOLVE_ITER_CAP` and
+raising `SOLVE_UNCONVERGED` on a physically fine pack.
+
+**Nothing in the repo covered it.** Every DFN test used `bms: None`, and no case in the
+out-of-tree instrument pairs a nonlinear cell model with a BMS at all — the BMS cases are
+equivalent-circuit, which breaks on `is_linear` before the loop body ever runs.
+
+Swept at 0.90/0.98/0.999/1.0/1.001/1.02/1.10× the 1.5C discharge limit under both a current
+and a power demand: **never unconverged, at most 4 passes**, worst exactly on the limit under
+a power demand. The reason is structural rather than lucky, and is why it is worth writing
+down: `apply_protection` builds its allowed window from the **sensor frame and the
+chemistry**, never from `i_req`, so every pass applies the *same* clamp to the same interval,
+and a projection onto a fixed interval cannot introduce an oscillation the unclamped map does
+not have. The only `i_req`-dependent part is the `OC` flag, which the pack already treats as a
+per-pass binding rather than an accumulator — the argument that comment makes now covers a
+loop that really iterates. `a_derate_inside_the_iteration_does_not_chatter` pins it.
+
+The contactor latch is the other per-pass mutation and it is idempotent: it is set from the
+frame, not from the iterate, so N calls decide what one call would.
+
 ### Exit criterion 1: an exception, and it is 431 sign bits
 
 76 lines moved against `after-sliceB-p7.txt`, and **every one of the 431 changed fields is
@@ -915,16 +940,21 @@ all four of the demand/topology tests and nothing else in the workspace — no p
 test covered the mechanism, which is expected, and better than Phase 6's two-of-four.
 Removing only the `dt <= 0` guard failed **nothing**, and that is where the fifth test came
 from. A perturbation harness that had only run the first perturbation would have reported a
-clean sweep over a hole.
+clean sweep over a hole. The sixth test came from a question the perturbations could not ask
+at all — what the slice changed *for other components* — which is the derate note above.
 
 ### What slice D inherits
 
 - The 3C cliff assertion still passes and its margin is **unmoved**: the constant-current
   trajectory did not change, so the 0.69-against-0.8 thinness slice B recorded is exactly as
   it was, and refining the grid still moves it the wrong way.
-- The DFN perf budget slice D must state is now **165–184 µs per 1S1P step** at 10/5/10 with
-  `N_r = 10`, ~135× an `Spm` N=20 step in the same process — not slice B's 50–65×. Both the
-  ~40 µs projection earlier in this document and slice B's factor are superseded.
+- The DFN perf budget slice D must state is **≈160 µs per cell per step at 10/5/10 with
+  `N_r = 10`, on a 2-pass 1S1P pack** — and it must be quoted per cell, because the pass count
+  is not a constant: a scattered parallel group needs 3 where a single cell needs 2. Measured
+  1S1P 160.5, 2S1P 305.2, 1S2P 314.1, 2S2P 687.2 µs, i.e. 155–172 µs/cell and roughly linear,
+  so a 10S10P DFN is ~16 ms/step. That is ~135× an `Spm` N=20 step in the same process, not
+  slice B's 50–65×; both that factor and the ~40 µs projection earlier in this document are
+  superseded.
 - The aging-vs-resistance-growth gap slice B named is untouched: still implemented and still
   unverified for this model.
 
