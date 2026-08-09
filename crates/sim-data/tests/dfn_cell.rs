@@ -407,6 +407,25 @@ fn the_electrolyte_starves_at_three_c_and_an_spm_never_notices() {
 /// Both bounds carry a small tolerance because the solid diffusion is a finite-volume
 /// scheme with a backward-Euler step, not an exact integrator; what it may not do is
 /// overshoot by tens of percent.
+///
+/// # Exactly which quantity this bounds, because there are two and they differ
+/// It bounds the **shell averages** — the concentrations actually stored in `DfnState`, and
+/// therefore the lithium the cell is holding. That is the conservation claim.
+///
+/// It does **not** bound the *extrapolated surface* the kinetics evaluate,
+/// `c_surf = c0 + β·j`, which is a reconstruction rather than stored lithium and is the
+/// quantity [`dfn::SURFACE_EDGE_FRACTION`] actually clamps. The two are not
+/// interchangeable and the gap is not small: measured over a 3C sweep of 1939 converged
+/// steps, the shell average peaks at **0.918** while the extrapolated surface peaks at
+/// **1.0164**, and the clamp engages at a converged solution on **12 of those 1939 steps**.
+///
+/// So the guard is still doing real work at the shipped constant — it is simply doing it
+/// 1.6 % past full instead of 111 % past full, which is a linear reconstruction overshooting
+/// slightly at the end of a hard discharge rather than an electrode accepting lithium it
+/// cannot hold. A future regression could in principle push the reconstruction well past 1
+/// while the shell averages stayed inside this bound. That is not left to inference: the
+/// slice D perturbation table records that restoring the wide clamp fails **three** tests,
+/// this one among them, so the coverage is measured rather than argued.
 #[test]
 fn the_solid_phase_never_holds_more_than_it_can() {
     // 3C, because that is where the reaction front is sharp enough for one x-node to
@@ -421,9 +440,9 @@ fn the_solid_phase_never_holds_more_than_it_can() {
     // was worth +111 %.
     assert!(
         r.peak_solid_fraction <= 1.01,
-        "a particle shell reached {:.4} of c_max at 3C — the solid phase is accepting \
-         lithium it cannot hold, which means the kinetics have stopped choking as the \
-         surface fills (see dfn::SURFACE_EDGE_FRACTION)",
+        "a stored shell concentration reached {:.4} of c_max at 3C — the solid phase is \
+         holding lithium it cannot hold. The mechanism to suspect is the kinetics no longer \
+         choking as the surface fills; see dfn::SURFACE_EDGE_FRACTION",
         r.peak_solid_fraction
     );
     assert!(

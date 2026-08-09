@@ -1080,6 +1080,23 @@ and is **independent of `SURFACE_EDGE_FRACTION`'s value** — a future change to
 width or shape is free to move the trajectory and not free to break conservation. It carries
 its own vacuity guard (`peak > 0.85`), because a bound nothing approaches is not a test.
 
+**But it bounds the shell averages, not the surface the kinetics clamp, and those differ by
+more than the tolerance.** Post-review measurement over a 3C sweep of 1939 *converged*
+steps: shell average peaks at **0.918**, the extrapolated surface `c0 + β·j` peaks at
+**1.0164**, and the clamp engages at a converged solution on **12 of 1939 steps**. So the
+guard still does real work at the shipped constant — 1.6 % past full rather than 111 % past
+full, which is a linear reconstruction overshooting at the end of a hard discharge rather
+than an electrode accepting impossible lithium. The invariant's doc now names which quantity
+it bounds instead of implying it bounds the other; the coverage claim rests on the
+perturbation table (a restored wide clamp fails three tests) rather than on the bound alone.
+
+**And the first attempt to measure this measured the wrong thing.** Instrumenting `kinetics`
+directly reported a peak of **12.2 × `c_max`** and 152 079 clamp engagements — because it
+records every *Newton trial iterate*, and an overdriven trial step is precisely what the
+clamp exists to survive. Only the converged evaluation is a statement about stored state.
+**An instrument inside an iterative solver measures the search, not the answer, unless it is
+told where the answer is.**
+
 ### The grid recommendation is cost-led, and now says so
 
 `DEFAULT_NODES_*` (10/5/10) came from the spike's **cost** table and was adopted without an

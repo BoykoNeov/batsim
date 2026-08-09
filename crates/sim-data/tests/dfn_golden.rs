@@ -410,9 +410,18 @@ fn refining_the_x_grid_converges_toward_the_reference() {
     // from the reference — and that divergence-under-refinement is what identified the
     // surface-clamp defect in the first place, since an error that grows as the grid
     // improves is not a discretisation error. Pinning the direction pins the diagnostic.
+    //
+    // This is the most expensive test in the file — four full DFN discharges, two of them
+    // at 20/10/20 where a step costs roughly twice the recommended grid — and it is most of
+    // this file's wall clock. Said here so that whoever shortens the suite knows what they
+    // would be buying back and what they would be giving up.
     let rows = parse_csv(CC_3C);
     let window = 0.90 * ref_3c_duration(&rows);
-    let t_ref = 488.7;
+    // Read from the CSV, not written as 488.7: regenerating the golden at a different
+    // solver tolerance moves the reference's own cut-off, and a hardcoded constant would
+    // quietly keep comparing against the old one. (The CSV's last sample is 488.0 s, the
+    // last 2 s row before the solver's 488.7 s event.)
+    let t_ref = ref_3c_duration(&rows);
 
     let coarse = dfn(RECOMMENDED_NODES, DEFAULT_SHELLS);
     let fine = dfn((20, 10, 20), DEFAULT_SHELLS);
