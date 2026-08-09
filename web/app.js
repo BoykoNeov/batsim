@@ -2247,7 +2247,7 @@ $("fault-clear").onclick = async () => {
     faultNote(
       count === 0
         ? "nothing was queued."
-        : `dropped ${count} queued fault(s). Faults that already fired stay in effect — clearing the queue is not a repair.`,
+        : `cleared ${count} fault(s) — the queue, plus anything that had already fired: the external short, every cell's internal leak, every sensor corruption. The one thing it cannot undo is a fired WeakCell, which stops being a fault the moment it lands and becomes part of that cell's manufacturing spread.`,
     );
     clearBanner();
   } catch (e) {
@@ -2619,6 +2619,50 @@ const LESSONS = [
     expect:
       "The particle gives two different answers to the same question. Its instantaneous jump goes 113.9 → 213.2 mV — **×1.87**, not ×3 — because that part is charge-transfer kinetics, and kinetics saturate: overpotential goes as the *arcsinh* of current, so asking harder buys less each time. Its slow climb goes 17.3 → 103.9 mV, which is **×6.01** — accelerating, because the open-circuit potential is a curved function of surface composition and driving the surface further out of balance costs more than proportionally. One part gentler than the circuit, one part far harsher, from the same three-fold demand. And the total sag, which is the only one of the three you can read off the plot without pausing, lands at ×2.48 — a number that looks like mild sub-linearity and conceals both effects underneath it. **No single resistance can be 1.87 and 6.01 at once**, which is the whole argument for a model with an inside. Two footnotes. This costs about 8× the circuit's arithmetic per step at 20 shells (0.90 µs against 0.11 on one cell), which is why it is not the default. And do not run this one to empty: past the charge clamp the particle model pins near 0.4 V while the circuit stops at 1.79, because the surface concentration falls off the bottom of its table — a hole in the model, left visible rather than papered over.",
   },
+  {
+    id: "one-step-that-got-through",
+    title: "A short across the terminals, and the one step that got through",
+    scenario: "external_short_30_milliohm.toml",
+    demand: { mode: "Rest", value: 0 },
+    ambient_c: 25,
+    bms: true,
+    // The first step in this path whose headline quantity *is* one step long, so the
+    // step length stops being whatever the reader last typed. Every earlier step's
+    // numbers assume 0.5 s too; these are the two that would be wrong by a factor.
+    dt: 0.5,
+    speed_x: 10,
+    until_s: 90,
+    watch: ["flags", "plot-i", "readouts"],
+    prose: [
+      "Back to the circuit model, and to a pack with a BMS. Nothing is connected to this one: the demand is `Rest` for the whole run, and for the first sixty seconds nothing whatever happens.",
+      "Then the file springs a **30 milliohm short across the pack's terminals** — not across a cell, like the leak in step 5, but across the whole pack, on the load side of the main contactor. That last detail is the entire design of this experiment: the contactor is upstream of the fault, so opening it is a repair. `sim-core` puts it there deliberately.",
+      "Eleven steps of protection have derated a demand. This one cannot be derated, because there is no demand — and that is what the contactor is for.",
+    ],
+    expect:
+      "One tooth on the current plot and then nothing. The pack draws **183.84 A** for a single step with *no flag raised at all*, then `UV` and `CONTACTOR_OPEN` together, and the current is zero from there on. The pack was at 90.00 % when the short landed and it is at **89.44 %** for the rest of the run — half a percent, and 0.96 K, is the whole cost of a dead short. The step that got through is not a bug: protection decides from sensors sampled at the end of the *previous* step, which still read a resting 3.3142 V per group. The frame taken after the spike reads **1.3336 V**, well under the 1.85 V that this file calls a fault rather than an operating point, and the next step latches. **The lag is one step long, so it is yours to set.** Put `dt` up to 5 s and press Back then Next: the spike is the same 183.84 A — a resistive sag is instantaneous and does not care how long you look at it — but it lasts ten times longer, and the damage is exactly proportional. 0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, by which point the cell is 19 K hotter instead of 1. Then try the reset, which is two buttons and an order. Press **close contactor** on its own: the short is still there, so you get a *second* 184 A tooth and it re-latches immediately. Press **clear faults** first and then close the contactor, and the pack simply sits there at 13.16 V. A latch that cleared itself when the voltage recovered would be a thermostat, not a protection device.",
+  },
+  {
+    id: "nothing-to-clamp",
+    title: "The same short, three times weaker, and nothing to clamp",
+    scenario: "external_short_100_milliohm.toml",
+    // The BMS toggle rebuilds the pack in-page, so the contrast at the end of this step
+    // needs the wasm backend — same reason step 11 switches.
+    transport: "wasm",
+    demand: { mode: "Rest", value: 0 },
+    ambient_c: 25,
+    bms: true,
+    dt: 0.5,
+    speed_x: 20,
+    until_s: 200,
+    watch: ["flags", "plot-t", "plot-soc"],
+    prose: [
+      "The twin file. Same pack, same seed, same fault at the same second, and the only difference is that the short is 100 milliohms instead of 30. Three times the resistance is a third of the sag — and a third of the sag does not reach the margin that saved the pack a moment ago.",
+      "So watch how long the BMS says nothing. There are two rungs on this ladder and the weaker fault slips between them: the sag is not deep enough for the hard limit, and the *soft* rung has nothing to act on either, because derating shrinks the window of current the **demand** is allowed — and a short is not a demand. Nobody asked for this current. There is no `OC`, because over-current is judged against what you requested, and you requested `Rest`.",
+      "A clamp on a number the fault does not go through cannot stop the fault. Only the contactor is in the current's way.",
+    ],
+    expect:
+      "86 amps, and **73 seconds of no flags at all**. The groups sag to 2.13 V — above `v_min` itself, so not even a soft under-voltage — while the charge trace falls off a cliff. The first thing the BMS says is `OT` at t = 133.5 s, by which point the pack is already at 51 %. It latches at **t = 156.0 s**, 96 s after the short, at **39.62 %**: against the twin's half a percent, this fault costs **fifty points**, because the rung that caught the bigger short was never in this one's way. Two details worth pausing on. The trip is a *probe* crossing 343.15 K — the two probes sit on corner cells, and the cell that is genuinely hottest is at 344.52 K when it fires, so protection is late by 1.3 K of somebody else's temperature. And the pack peaks at 344.6 K here against 299.1 K in the twin: the weaker short is the more dangerous one, which is not the intuition. Now uncheck the BMS and run it again. The trajectory is identical — the same 93.29 A on the first frame after the fault, the same 87.02 A thirty seconds later — right up to the instant it isn't, and then it simply carries on: `SOC_CLAMPED_LOW` at 235.5 s and 375 K, still climbing. Read that tail with one caveat, honestly: past the clamp the current does not stop, because this engine models no empty electrode and a cell at SOC 0 keeps sourcing at `OCV(0)` forever. It is the discharge face of the same hole step 10 shows on the charging side, and the heat after that is the model's, not the pack's.",
+  },
 ];
 
 /** Authored strings, so the escape is belt-and-braces; the backticks are the point. */
@@ -2751,6 +2795,11 @@ async function applyStep(L) {
       $("pulse-off").value = String(L.demand.off_s);
     }
     applyDemandMode();
+    // Optional, and only the steps whose subject is step-sized set it. Every other step
+    // leaves the box where the reader left it — the same treatment the CC-CV and pulse
+    // fields get, and for the same reason: a step should not silently undo fiddling it
+    // does not depend on.
+    if (L.dt !== undefined) $("dt").value = String(L.dt);
     $("ambient").value = String(L.ambient_c);
     applyEnv();
     $("speed").value = String(Math.log10(L.speed_x));
