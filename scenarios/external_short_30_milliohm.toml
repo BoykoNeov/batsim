@@ -1,0 +1,74 @@
+# A dead short across the pack terminals, and a BMS fast enough to survive it.
+#
+# The twin of `external_short_100_milliohm.toml`: same pack, same seed, same fault at
+# the same instant, and the only difference between the two files is `ohms`. That is
+# the whole experiment — 30 milliohms sags the groups far enough to cross the hard
+# voltage margin and the contactor latches one step later, where 100 milliohms does
+# not and the pack loses half its charge to the thermal path instead.
+#
+# `ExternalShort` sits downstream of the main contactor (see `sim_core::faults`), so
+# opening it interrupts the short. Compare `pack.bms` removed: identical physics, and
+# nothing to open.
+
+chemistry = "lfp_26650_generic"
+
+[meta]
+name = "external short, 30 milliohm"
+description = """
+4S2P LFP at 90 % charge, resting, thermally coupled, with a protective BMS. At \
+t = 60 s a 30-milliohm short appears across the pack's load-side terminals. One step \
+of 183.84 A flows before the BMS can see it — protection decides on the frame sampled \
+at the end of the previous step — and the contactor latches open on the next. \
+Telemetry::flags for UV and CONTACTOR_OPEN is where to watch it."""
+
+[pack]
+series = 4
+parallel = 2
+# 90 %, not the 85 % its sibling scenario starts at: high enough that the pack has
+# something to lose, and clear of the top of LFP's curve where the OCV climbs steeply.
+initial_soc = 0.90
+initial_temp_k = 298.15
+# Same seed as the twin, so the two runs differ by the short resistance and by nothing
+# else — including their sensor-noise draws.
+seed = 20260727
+
+[pack.scatter]
+capacity_sigma = 0.02
+r0_sigma = 0.03
+
+# The short's heat has to go somewhere and be able to reach a probe. An isothermal pack
+# would hide the whole second half of the story, which is the twin file's subject.
+[pack.thermal.Network]
+k_neighbor_w_per_k = 0.5
+
+[pack.aging]
+sub_clock_period_s = 10.0
+
+[pack.bms]
+current_offset_a = 0.02
+current_noise_sigma_a = 0.01
+# Two probes for four groups, both on corner cells — so the temperature the BMS acts on
+# is never quite the temperature of the cell that is hottest.
+temp_probes = [[0, 0], [3, 0]]
+initial_soc_error = 0.03
+rest_current_threshold_a = 0.05
+rest_time_for_ocv_s = 600.0
+ocv_correction_gain = 0.1
+min_ocv_slope_v_per_soc = 0.15
+
+# 0.15 V past `v_min` (2.00 V) is a fault rather than an operating point: below 1.85 V
+# on a sensed group the contactor latches instead of the current being derated. This
+# short sags the groups to 1.33 V, so it is the voltage rung that catches it.
+[pack.bms.protection]
+v_hard_margin_v = 0.15
+t_hard_margin_k = 10.0
+
+[pack.bms.balancing]
+bleed_r_ohms = 33.0
+v_threshold_v = 3.45
+
+# 60 s of rest first, so the fault has a flat baseline to interrupt rather than landing
+# in a transient the reader would have to discount.
+[[faults]]
+at_s = 60.0
+fault = { ExternalShort = { ohms = 0.03 } }
