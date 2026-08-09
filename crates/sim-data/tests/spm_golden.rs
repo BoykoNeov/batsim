@@ -214,7 +214,16 @@ fn spm_cc_1c_tracks_pybamm_spm() {
     let (rows, v, _) = load(CC_1C, "cc_1c", DEFAULT_SHELLS);
     let (worst, at) = worst_v_error(&rows, &v);
     // Measured 6.7 mV, at the *first* step (soc ≈ 0.999) where the surface gradient
-    // establishes inside one 5 s step. Everything after row 1 sits under 4 mV.
+    // establishes inside one 5 s step. Everything after row 1 sits under 4 mV — 2.91 mV,
+    // at row 187 of 699.
+    //
+    // That second figure was **3.89 mV at the final row** before Phase 7's slice A, and
+    // where it sat mattered more than what it was: the last row is where the positive
+    // particle's surface stoichiometry left the old OCP table and the lookup clamped
+    // flat. So "under 4 mV" was true by 0.11 mV, and true *because* of an artefact. With
+    // the table extended to the full range the worst post-first-step row is an ordinary
+    // mid-discharge one and the margin is real. The bound is deliberately left at 12 mV:
+    // it is answerable to the first step, which did not move.
     assert!(
         worst < 0.012,
         "cc_1c worst error {:.2} mV (at soc {at:.3}) exceeds 12 mV",
