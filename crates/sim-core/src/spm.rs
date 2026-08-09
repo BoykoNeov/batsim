@@ -166,7 +166,7 @@ impl SpmState {
 /// snapshot — the hazard [`crate::pack`]'s `SourceCache` had to be reasoned about
 /// carefully and the one `diffsol` failed on.
 #[derive(Clone, Copy, Debug)]
-struct Geometry {
+pub(crate) struct Geometry {
     /// Total interfacial area \[m²\] the reaction current spreads over:
     /// `3·ε_s·A·L / R_p`, i.e. the surface area of every particle in the coating.
     area_m2: f64,
@@ -175,7 +175,7 @@ struct Geometry {
 }
 
 impl Geometry {
-    fn of(spm: &SpmParams, e: &ElectrodeParams) -> Self {
+    pub(crate) fn of(spm: &SpmParams, e: &ElectrodeParams) -> Self {
         let volume_m3 = e.active_volume_fraction * spm.electrode_area_m2 * e.thickness_m;
         Self {
             area_m2: 3.0 * volume_m3 / e.particle_radius_m,
@@ -190,7 +190,7 @@ impl Geometry {
 /// This is the *geometric* capacity, and it is what [`Working::kappa`] measures the
 /// configured capacity against.
 #[must_use]
-fn geometric_capacity_ah(e: &ElectrodeParams, g: Geometry) -> f64 {
+pub(crate) fn geometric_capacity_ah(e: &ElectrodeParams, g: Geometry) -> f64 {
     (e.stoich_max - e.stoich_min) * e.c_max_mol_per_m3 * g.volume_m3 * FARADAY_C_PER_MOL / 3600.0
 }
 
@@ -335,6 +335,21 @@ impl<'a> Working<'a> {
 #[must_use]
 pub fn ocp_lookup(table: &OcpTable, stoich: f64) -> f64 {
     interp1(&table.stoich, &table.volts, stoich)
+}
+
+/// `∂U/∂stoich` \[V\] of [`ocp_lookup`]: the slope of the segment the lookup lands in.
+///
+/// Piecewise **constant**, because the lookup is piecewise linear — and exactly `0` past
+/// either end, because the lookup clamps there. Both facts matter to whoever differentiates
+/// a cell voltage: the derivative is discontinuous at every breakpoint and a difference
+/// quotient straddling one measures neither adjacent segment.
+///
+/// Written against the same bracket [`ocp_lookup`] uses, so the two never disagree about
+/// which segment a stoichiometry is in — including at a clamped end, where the bracket
+/// answers `lo == hi` and this answers zero.
+#[must_use]
+pub fn ocp_slope(table: &OcpTable, stoich: f64) -> f64 {
+    crate::ecm::interp1_slope(&table.stoich, &table.volts, stoich)
 }
 
 /// Volume-weighted mean concentration \[mol/m³\] of a particle's shells.

@@ -40,8 +40,8 @@ bitflags! {
         const VENTED           = 1 << 10;
         /// Thermal runaway is in progress on at least one cell.
         const THERMAL_RUNAWAY  = 1 << 11;
-        /// The pack's nonlinear current solve hit its iteration cap without
-        /// reaching its voltage tolerance; the step used the last iterate.
+        /// A nonlinear solve hit its iteration cap without reaching its tolerance;
+        /// the step used the last iterate.
         ///
         /// Only reachable with a nonlinear cell model — an all-equivalent-circuit
         /// pack is solved exactly on the first pass and can never raise this. It is
@@ -49,6 +49,20 @@ bitflags! {
         /// than an `Err` for the same reason every other event here is: `step` does
         /// not fail, it reports. A client seeing this should treat the step's
         /// voltages as approximate, not the pack as broken.
+        ///
+        /// # Two solves can raise it, and the flag does not distinguish them
+        /// Through Phase 6 this meant exactly one thing: **the pack's** current solve
+        /// failed to reconcile its cells' tangents ([`crate::pack::SOLVE_ITER_CAP`],
+        /// [`crate::pack::SOLVE_TOL_V`]). Phase 7's [`crate::dfn`] cell has a Newton
+        /// solve of its own, and it raises the same flag on the same terms
+        /// ([`crate::dfn::NEWTON_ITER_CAP`], [`crate::dfn::NEWTON_TOL`]).
+        ///
+        /// Widening a flag's meaning is a cost, and it was taken deliberately over
+        /// the alternative of an 18th [`crate::Telemetry`] field — which the Phase 7
+        /// plan rules out, because the out-of-tree trajectory instrument enumerates
+        /// those fields by name and would be blind to a new one. What a client loses
+        /// is the ability to tell *which* solve struggled; what it keeps is the only
+        /// thing it can act on, which is that some voltage this step is approximate.
         const SOLVE_UNCONVERGED = 1 << 12;
     }
 }

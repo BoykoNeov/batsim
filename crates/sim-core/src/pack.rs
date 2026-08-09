@@ -25,6 +25,7 @@ use thiserror::Error;
 use crate::aging::{Aging, AgingConfig, CellAging};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
+use crate::dfn;
 use crate::ecm::{solve_current, CellModel};
 use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
@@ -128,7 +129,27 @@ use crate::{Demand, Env, Telemetry};
 /// was added under one phase earlier. The phase's one bump is budgeted for slice B,
 /// where `CellModel` gains its fourth variant and the compatibility argument genuinely
 /// fails.
-pub const SNAPSHOT_VERSION: u32 = 10;
+///
+/// v11 (Phase 7 slice B, the DFN cell): [`CellModel`] gained its fourth variant,
+/// [`CellModel::Dfn`], carrying an electrolyte field, one radial profile per electrode
+/// node, a temperature, the current its tangent was taken at, **and the Newton
+/// warm-start vector**.
+///
+/// The compatibility argument the `[dfn]` section was added under — new optional field,
+/// `#[serde(default)]`, round-trips both ways at the same version — does **not** extend
+/// to this, and the difference is worth stating because slice A's note above is the
+/// tempting precedent. A v10 blob remains structurally deserializable at v11 for exactly
+/// the reason a v9 blob did at v10 (adding a variant to an externally-tagged enum leaves
+/// the existing variants' bytes alone), so the version check is again the only thing
+/// standing between a v10 snapshot and a build whose semantics it was not written for.
+/// `snapshot_version.rs` pins that: the same bytes are rejected at `version: 10` and
+/// restore at `version: 11`.
+///
+/// The warm-start vector is the part that makes this a *semantic* bump as well as a
+/// structural one. It is state, not a cache — a Newton that stops at a tolerance lands
+/// where it started from — so a snapshot without it does not merely restore more slowly,
+/// it continues a different trajectory. See [`crate::dfn::DfnState::u`].
+pub const SNAPSHOT_VERSION: u32 = 11;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -272,6 +293,29 @@ pub enum CellModelConfig {
         /// \[[`crate::spm::MIN_SHELLS`], [`crate::spm::MAX_SHELLS`]\].
         shells: usize,
     },
+    /// Doyle–Fuller–Newman model. Requires a chemistry with **both** an `[spm]` and a
+    /// `[dfn]` section — the electrodes are described by the first and only the
+    /// electrolyte by the second — and [`Pack::new`] names whichever is missing.
+    ///
+    /// # This is not a real-time configuration above a few cells
+    /// A DFN cell-step is roughly 30× a single-particle one and 200× an equivalent
+    /// circuit's, and unlike [`Self::Spm`] there is no knob to trade accuracy for cost:
+    /// the expense is in the x-grid, which is the whole point of the model. 1S1P is a
+    /// study; 10S10P is a fast-forward. See [`crate::dfn`].
+    Dfn {
+        /// Radial finite volumes per particle, in
+        /// \[[`crate::spm::MIN_SHELLS`], [`crate::spm::MAX_SHELLS`]\]. Shared with
+        /// [`Self::Spm`] because it is the same discretisation of the same particle —
+        /// a DFN simply has one per x-node instead of one per electrode.
+        shells: usize,
+        /// Finite volumes across the negative electrode, in
+        /// \[[`crate::dfn::MIN_NODES`], [`crate::dfn::MAX_NODES`]\].
+        nodes_negative: usize,
+        /// Finite volumes across the separator, in the same range.
+        nodes_separator: usize,
+        /// Finite volumes across the positive electrode, in the same range.
+        nodes_positive: usize,
+    },
 }
 
 /// Reasons [`Pack::new`] can fail.
@@ -342,6 +386,36 @@ pub enum BuildError {
     MissingSpmParams {
         /// Identifier of the chemistry that came up short.
         chem_id: String,
+    },
+    /// [`PackConfig::cell_model`] selected [`CellModelConfig::Dfn`] but the chemistry has
+    /// no `[dfn]` section.
+    ///
+    /// A separate error from [`Self::MissingSpmParams`] rather than one covering both,
+    /// because a DFN needs the two sections for different things and the fix differs: a
+    /// chemistry with `[spm]` and no `[dfn]` describes the electrodes fully and is one
+    /// electrolyte block short, while one with neither is not a porous-electrode
+    /// parameter set at all. Selecting `Dfn` against a chemistry missing both reports the
+    /// `[spm]` one first, since that is the larger gap.
+    #[error(
+        "cell_model is Dfn but chemistry '{chem_id}' has no [dfn] section \
+         (electrolyte parameters: transport fits, transference number, porosities and \
+         Bruggeman exponents, separator, solid conductivities)"
+    )]
+    MissingDfnParams {
+        /// Identifier of the chemistry that came up short.
+        chem_id: String,
+    },
+    /// A [`CellModelConfig::Dfn`] node count was outside the supported range.
+    #[error("cell_model.nodes_{region} must be in [{min}, {max}], got {nodes}")]
+    BadNodeCount {
+        /// Which of the three counts: `negative`, `separator` or `positive`.
+        region: &'static str,
+        /// Requested node count.
+        nodes: usize,
+        /// Smallest supported count ([`crate::dfn::MIN_NODES`]).
+        min: usize,
+        /// Largest supported count ([`crate::dfn::MAX_NODES`]).
+        max: usize,
     },
     /// [`CellModelConfig::Spm::shells`] was outside the supported range.
     #[error("cell_model.shells must be in [{min}, {max}], got {shells}")]
@@ -701,12 +775,14 @@ impl Pack {
                 });
             }
         }
-        if let CellModelConfig::Spm { shells } = config.cell_model {
-            // Same refusal as aging's, for the same reason: a pack configured for
-            // porous-electrode physics against a chemistry that cannot describe an
-            // electrode has no defensible fallback. Falling back to the equivalent
-            // circuit would be worse than failing — the run would look like it
-            // worked.
+        // Same refusal as aging's, for the same reason: a pack configured for
+        // porous-electrode physics against a chemistry that cannot describe an
+        // electrode has no defensible fallback. Falling back to the equivalent
+        // circuit would be worse than failing — the run would look like it
+        // worked.
+        if let CellModelConfig::Spm { shells } | CellModelConfig::Dfn { shells, .. } =
+            config.cell_model
+        {
             if chem.spm.is_none() {
                 return Err(BuildError::MissingSpmParams {
                     chem_id: chem.meta.id.clone(),
@@ -718,6 +794,33 @@ impl Pack {
                     min: spm::MIN_SHELLS,
                     max: spm::MAX_SHELLS,
                 });
+            }
+        }
+        if let CellModelConfig::Dfn {
+            nodes_negative,
+            nodes_separator,
+            nodes_positive,
+            ..
+        } = config.cell_model
+        {
+            if chem.dfn.is_none() {
+                return Err(BuildError::MissingDfnParams {
+                    chem_id: chem.meta.id.clone(),
+                });
+            }
+            for (region, nodes) in [
+                ("negative", nodes_negative),
+                ("separator", nodes_separator),
+                ("positive", nodes_positive),
+            ] {
+                if !(dfn::MIN_NODES..=dfn::MAX_NODES).contains(&nodes) {
+                    return Err(BuildError::BadNodeCount {
+                        region,
+                        nodes,
+                        min: dfn::MIN_NODES,
+                        max: dfn::MAX_NODES,
+                    });
+                }
             }
         }
 
@@ -740,6 +843,23 @@ impl Pack {
                         CellModelConfig::Spm { shells } => match &chem.spm {
                             Some(spm) => CellModel::new_spm(
                                 spm,
+                                shells,
+                                config.initial_soc,
+                                config.initial_temp_k,
+                            ),
+                            None => {
+                                CellModel::new_ecm(n_rc, config.initial_soc, config.initial_temp_k)
+                            }
+                        },
+                        CellModelConfig::Dfn {
+                            shells,
+                            nodes_negative,
+                            nodes_separator,
+                            nodes_positive,
+                        } => match &chem.spm {
+                            Some(spm) => CellModel::new_dfn(
+                                spm,
+                                (nodes_negative, nodes_separator, nodes_positive),
                                 shells,
                                 config.initial_soc,
                                 config.initial_temp_k,
@@ -1528,6 +1648,7 @@ impl Pack {
                 let temp_before = cell.model.temp_k();
                 let eff_cap = cap_ah * cell.capacity_factor;
                 let soh_cap = cell.aging.soh_capacity;
+                let eff_r0 = cell.eff_r0_factor();
                 // Plating: cold, charging, and above the C-rate threshold, judged from
                 // the same start-of-step state that produced `i_k`. This is an
                 // *observation*, so unlike every accumulator it is deliberately not
@@ -1539,7 +1660,9 @@ impl Pack {
                 if plating {
                     flags |= EventFlags::PLATING_RISK;
                 }
-                flags |= cell.model.advance(&self.chem, i_k, dt, eff_cap, soh_cap);
+                flags |= cell
+                    .model
+                    .advance(&self.chem, i_k, dt, eff_r0, eff_cap, soh_cap);
                 if aging_accumulates {
                     // Throughput from the cell's own current, half-cycle direction
                     // from the pack's — see `CellAging::accumulate` for why the two

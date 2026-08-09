@@ -34,7 +34,7 @@ badly that assumption fails, and the spike measured it.
 | slice | scope | version |
 | ----- | ----- | ------- |
 | A | **`[dfn]` chemistry section** — schema, validation, extraction script, LG M50 gains one. **Plus the OCP table extension the spike found is required**, which is the part that can move an SPM trajectory and so carries exit criterion 1. No engine physics. **Landed; it did move one, and criterion 1 is amended — see the slice A note.** | v10 (no bump) |
-| B | **the DFN cell** — grid, state, the coupled Newton with an *analytic* banded Jacobian, `CellModel::Dfn`, `CellModelConfig::Dfn`, both `BuildError`s, the version-check test. Single cell; the pack still sees a linear source. **Carries the one bump.** | **v10 → v11** |
+| B | **the DFN cell** — grid, state, the coupled Newton with an *analytic* banded Jacobian, `CellModel::Dfn`, `CellModelConfig::Dfn`, both `BuildError`s, the version-check test. Single cell; the pack still sees a linear source. **Carries the one bump. Landed; see the slice B note.** | **v10 → v11** |
 | C | **pack integration** — the tangent, which for a DFN cannot be the central difference `spm.rs` uses. Sensitivity solve off the already-factorised Jacobian. | v11 (no bump) |
 | D | **PyBaMM DFN goldens, tolerance built to fail, DFN's own perf budget, README.** Carries exit criterion 2. | v11 (no bump) |
 
@@ -595,6 +595,175 @@ confined to the tables.
   Phase 6's anchor as well as the new one. `Demand::Voltage(3.5)` is 1.75 V/cell on a
   2.5 V-cut-off cell, and the SPM's voltage-demand path does not survive it. The
   instrument is blind from that leg to the end of those two cases.
+
+---
+
+## Slice B — the DFN cell
+
+**Landed. `SNAPSHOT_VERSION` v10 → v11**, the phase's one bump, spent where it was
+budgeted. `cargo test --workspace` green (55 binaries), `cargo clippy --workspace
+--all-targets -- -D warnings` clean.
+
+What shipped: `crates/sim-core/src/dfn.rs` (the grid, the state, the residual, the
+analytic banded Jacobian, a damped Newton, a band LU with partial pivoting, and the
+sensitivity solve that produces the cell's tangent), `CellModel::Dfn` arms throughout
+`ecm.rs`, `CellModelConfig::Dfn` with `BuildError::MissingDfnParams` and
+`BuildError::BadNodeCount`, `spm::ocp_slope` / `ecm::interp1_slope`, and
+`crates/sim-data/tests/dfn_cell.rs` (13 tests). The pack layer's own code is untouched
+apart from the new config arm and one added argument.
+
+### Exit criterion 1 held with **no exception**, and that was tested rather than argued
+
+The instrument (now anchored at `after-sliceB-p7.txt`) moved **18 lines, all of them
+`## final snapshot` hashes** — nine cases, one line each — with `len=` unchanged on all
+nine, because "10" and "11" are the same number of bytes. Not one telemetry line moved.
+
+"The version bump explains the whole diff" is exactly the shape of claim slice A caught
+being false, so it was **run**: with `SNAPSHOT_VERSION` alone reverted to 10 and nothing
+else touched, the instrument's output is byte-identical to `after-sliceA-p7.txt`. Reverted
+by restoring `pack.rs` from a copy made beforehand, never `git checkout`.
+
+### The design decision the slice turned on: what a DFN shows the pack
+
+The plan says slice B leaves "the pack still seeing a linear source" and slice C brings the
+tangent. There is a tempting alternative that had to be refused: give `terminal_v_at` a
+**quasi-static** solve — freeze `c_e`, keep the mass row as `c = c_old`, and the particle
+affine map degenerates to exactly `spm::c_surface`'s half-shell extrapolation, so one
+residual serves both regimes and the pack gets a real nonlinear `V(i)` from slice B
+onwards. It is elegant, and it is wrong for three compounding reasons:
+
+- **It is slice C's job.** A `terminal_v_at` that runs a Newton solve *is* the pack
+  integration.
+- **It builds the wrong artifact either way.** Taking the tangent off it by central
+  difference is the thing this plan explicitly forbids; taking it by sensitivity builds
+  slice C's mechanism against the *quasi-static* Jacobian, when the one the plan argues
+  for comes off the **transient** step's already-factorised matrix.
+- **Cost.** A per-pass `terminal_v_at` + `source_at` is ~6 Newton solves per step on top
+  of `advance`'s one.
+
+So the discriminator held to was: **slice B contains no Newton solve outside `advance`.**
+`DfnState::tangent` carries the line the last solve produced, `source_at` ignores its
+operating point exactly as the ECM arm does, and `terminal_v_at` evaluates that line.
+
+The consequence is worth naming because a reader will meet the number before the reason: a
+DFN pack reports **`solve_iterations == 1`**, the same as an all-equivalent-circuit pack,
+even though `is_linear` answers `false` and the iteration really runs. It exits on its
+first pass because the curve it measures the aggregate against *is* the line it
+aggregated. That number is a statement about this slice, not about the physics, and
+`the_pack_solve_has_nothing_to_chase_yet` pins it so slice C's change is visible rather
+than silent.
+
+### The tangent is a sensitivity solve, and it landed here rather than in C
+
+`dR/di_app` is nonzero only in the solid-charge row at each current collector (−1 and +1),
+so `dV/di` is **one back-substitution** against a factorisation the step has already paid
+for. Delivering it through the *existing* `source` contract needed no contract change,
+which is why slice B could have it: what slice C still owes is letting the pack ask for a
+tangent at a current the cell has not solved at.
+
+One deliberate cost inside it: the Jacobian is **re-assembled and re-factorised at the
+converged point** rather than reusing the last iteration's, which was taken one Newton
+step short of the answer. That buys a tangent actually tangent to the curve at the point
+reported.
+
+### Cost: the analytic Jacobian delivered, and the projection was still optimistic
+
+Measured through `Pack::step` at 1S1P, 10/5/10, `N_r = 10`, priced in the same process as
+the models compared against: **50–65× an `Spm` N=20 step**, ~350–500× an ECM one. Against
+the spike's dense-numerical 849× that is a 13–23× improvement, and the analytic assembly
+is what bought it — but the plan projected ~30×, and the gap is two things the projection
+did not cost: the damping line-search evaluates the residual at least once more per
+iteration, and the sensitivity solve re-assembles at the converged point. Both are
+deliberate. Slice D re-measures and states the budget; **the ~40 µs figure elsewhere in
+this document remains a projection and should not be quoted as a result.**
+
+### The measurement that produced a constant: the damping search's depth
+
+A cheap-looking loop restructure (carrying the residual across the iteration boundary
+instead of recomputing it, worth ~25 % of the step) introduced a real bug and then exposed
+a real one. The bug: the `!accepted` fallback recomputed the step at a lambda the residual
+had never been evaluated at, so the carried residual described a different point — 39 steps
+of a 3C discharge falsely flagged `SOLVE_UNCONVERGED`. Fixing it left **27** still flagged,
+where the original loop had zero, which is what surfaced the real finding.
+
+The original had been halving lambda once *past* its last evaluation, and that accident was
+load-bearing. Counting unconverged steps of a 3C discharge against the attempt cap:
+
+| attempts | 11 | 12 | **13** | 14 | 16 | 20 |
+| -------- | -- | -- | ------ | -- | -- | -- |
+| unconverged steps | 53 | 27 | **0** | 0 | 0 | 0 |
+
+The knee is sharp and sits at 13: the step that gets a depleted cell moving is around
+`2^-12` of the Newton step, and a search stopping one halving early reads that as a local
+minimum and gives up. `DAMPING_ATTEMPTS = 16`, past the knee, costing nothing on any step
+that converges.
+
+**The trajectory those 27 steps produced was the same to every printed digit.** What moved
+was the *flag* — which is the honest thing to have moved, and the reason a numerical event
+is a flag rather than a silent approximation.
+
+### What the model reproduces
+
+Against the spike's own prototype and PyBaMM, at 10/5/10 with `N_r = 10`:
+
+| | this engine | spike prototype | PyBaMM DFN |
+| - | ----------- | --------------- | ---------- |
+| 1C to cut-off | 3484 s | 3490 s | 3555 s |
+| 1C minimum `c_e` | 461 mol/m³ | 464 | — |
+| 3C minimum `c_e` (floor 0.01) | −0.20 mol/m³ | −0.29 | ~−0.0007 |
+
+And the cliff, which is the phase's reason to exist: at 3C the DFN delivers **3.12 A·h in
+726 s** against the *same cell as an SPM* managing **4.55 A·h in 1060 s** — 69 % and 68 %.
+PyBaMM's own pair is 51 %, so this engine **under-states** the cliff at 3C; quantifying
+that is slice D's job, and it is stated here so slice D does not meet it as a surprise.
+Both models read the same `[spm]` block, the same OCP tables and the same particle solver,
+so the difference between them is the electrolyte and nothing else.
+
+### Smaller things settled here
+
+- **`c_e0` is not a `[dfn]` field.** It is `SpmParams::c_e_mol_per_m3` — the number the
+  single-particle model holds constant *is* the DFN's initial uniform field. Adding a
+  field would have been slice A's schema changing under slice B, and would have tripped
+  `dfn_chemistry.rs`'s serde-visible-number count.
+- **`x^1.5` is `x·sqrt(x)`, decided before any golden exists.** `PowerTerm`'s doc records
+  that the first is bit-pinnable and `powf(1.5)` is not; changing the form after slice D
+  commits goldens would move every one of them.
+- **`0.0 · x^-1` is `NaN`, and the constant term is special-cased to exactly zero.** With
+  the floor at 0.01 mol/m³ the argument never reaches zero, so this guard is **not
+  currently reachable** — stated rather than dressed up as a fixed bug. It is written this
+  way because the floor is the only thing standing between the derivative and a `NaN`, and
+  a future floor is not this file's to assume.
+- **The node counts are recovered from the state, not stored.** `n_s = c_e.len() −
+  c_neg.len() − c_pos.len()`, saturating, so a hand-edited snapshot yields a degenerate
+  grid rather than a panicking underflow, and `advance` refuses a grid that does not
+  describe the state it came from.
+- **Neither adapter version moved**, checked against each constant's own doc rather than
+  as a pair: `API_VERSION` bumps on *renames* and this is additive; `WASM_API_VERSION`
+  bumps on the method surface and no method changed.
+- **`EventFlags::SOLVE_UNCONVERGED` now means "the pack solve **or** a cell's own solve"**,
+  and its doc says so in the same commit. No 18th telemetry field, per this document's own
+  gate note.
+- **`dfn::probe` is a `#[doc(hidden)]` module in the shipped crate**, and that is a real
+  cost accepted for a reason. The analytic Jacobian is the one piece of this file that can
+  be *silently* wrong — a bad entry costs Newton iterations and, past the damping, nothing
+  else — so it needs a check reading the same two private functions the solve does. The
+  alternative was a hand-built chemistry in a `sim-core` unit test, which would have
+  checked the Jacobian against a parameter set nobody ships.
+- **The scenario surface is tested, not asserted.** This plan claimed `CellModelConfig::Dfn`
+  is reachable from scenario TOML — the claim the instrument's coverage of this phase rests
+  on. `a_dfn_pack_is_selectable_from_a_scenario_file` runs it, and pins the four field
+  names, which are a file-format contract the moment a scenario names them.
+
+### What the Jacobian test can and cannot say
+
+Three kinks make the residual non-differentiable — the surface clamp, the `c_e` lookup
+floor, and every OCP breakpoint — and at each one the analytic derivative takes a branch
+while a central difference straddles it. So the comparison runs at five states chosen away
+from the floor, with that distance **asserted rather than assumed** (a first attempt failed
+on exactly this: a 40-step 3C state sat at `c_e = 0.05`, five times the floor). Worst
+row-relative disagreement across them is ~1e-9 against a 1e-5 tolerance. A depleted state
+is then checked for the weaker property that actually matters there: every Jacobian entry
+finite.
 
 ## Environment
 

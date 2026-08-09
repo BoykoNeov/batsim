@@ -25,6 +25,7 @@
 pub mod aging;
 pub mod bms;
 pub mod chem;
+pub mod dfn;
 pub mod ecm;
 pub mod faults;
 pub mod flags;
@@ -38,9 +39,10 @@ pub mod thermal;
 pub use aging::{Aging, AgingConfig};
 pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
 pub use chem::{
-    AgingParams, ChemistryError, ChemistryParams, ElectrodeParams, OcpTable, SafetyParams,
-    SpmParams, ThermalParams,
+    AgingParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams, DfnSeparator,
+    ElectrodeParams, OcpTable, PowerTerm, SafetyParams, SpmParams, ThermalParams,
 };
+pub use dfn::DfnState;
 pub use ecm::{CellModel, EcmState};
 pub use faults::{Fault, FaultError, FaultState, ScheduledFault, SensorFault, SensorId};
 pub use flags::EventFlags;

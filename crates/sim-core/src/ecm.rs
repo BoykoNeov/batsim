@@ -26,7 +26,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::chem::{ChemistryParams, OcvTable, R0Table, SpmParams};
+use crate::chem::{ChemistryParams, DfnParams, OcvTable, R0Table, SpmParams};
+use crate::dfn::{self, DfnState};
 use crate::flags::EventFlags;
 use crate::spm::{self, SpmState};
 use crate::Demand;
@@ -76,6 +77,9 @@ pub enum CellModel {
     Ecm2Rc(EcmState),
     /// Single-particle porous-electrode model. See [`crate::spm`].
     Spm(SpmState),
+    /// Doyle–Fuller–Newman model: the single-particle model with the electrolyte solved
+    /// for rather than held constant. See [`crate::dfn`].
+    Dfn(DfnState),
 }
 
 impl CellModel {
@@ -108,6 +112,23 @@ impl CellModel {
         CellModel::Spm(SpmState::new(spm, shells, soc, temp_k))
     }
 
+    /// A fresh Doyle–Fuller–Newman cell: `nodes` finite volumes across
+    /// `(negative, separator, positive)` and `shells` per particle, at rest and uniform.
+    /// See [`DfnState::new`].
+    ///
+    /// Requires **both** the chemistry's `[spm]` and `[dfn]` blocks;
+    /// [`crate::Pack::new`] refuses the combination against a chemistry missing either,
+    /// naming which one, so there is no arm here for a missing section.
+    pub(crate) fn new_dfn(
+        spm: &SpmParams,
+        nodes: (usize, usize, usize),
+        shells: usize,
+        soc: f64,
+        temp_k: f64,
+    ) -> Self {
+        CellModel::Dfn(DfnState::new(spm, nodes, shells, soc, temp_k))
+    }
+
     /// The chemistry's `[spm]` block, for the arms that need it.
     ///
     /// A missing section cannot happen on a built pack — [`crate::Pack::new`]
@@ -116,6 +137,14 @@ impl CellModel {
     /// tests that prove the build error say so.
     fn spm_params(chem: &ChemistryParams) -> Option<&SpmParams> {
         chem.spm.as_ref()
+    }
+
+    /// The chemistry's `[spm]` **and** `[dfn]` blocks, which a DFN cell needs together:
+    /// the electrode geometry, kinetics and OCPs live in the first and only the
+    /// electrolyte in the second. Same unreachable-by-construction argument as
+    /// [`Self::spm_params`], now over a pair.
+    fn dfn_params(chem: &ChemistryParams) -> Option<(&SpmParams, &DfnParams)> {
+        Some((chem.spm.as_ref()?, chem.dfn.as_ref()?))
     }
 
     /// Ground-truth state of charge, in \[0, 1\].
@@ -131,6 +160,7 @@ impl CellModel {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc,
             CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| spm::soc(s, spm)),
+            CellModel::Dfn(s) => Self::spm_params(chem).map_or(0.0, |spm| dfn::soc(s, spm)),
         }
     }
 
@@ -140,6 +170,7 @@ impl CellModel {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.temp_k,
             CellModel::Spm(s) => s.temp_k,
+            CellModel::Dfn(s) => s.temp_k,
         }
     }
 
@@ -151,6 +182,7 @@ impl CellModel {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.temp_k = temp_k,
             CellModel::Spm(s) => s.temp_k = temp_k,
+            CellModel::Dfn(s) => s.temp_k = temp_k,
         }
     }
 
@@ -173,6 +205,9 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.v_rc.iter().sum(),
             CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
                 spm::overpotential_v(s, spm, eff_r0_factor, eff_capacity_ah)
+            }),
+            CellModel::Dfn(s) => Self::dfn_params(chem).map_or(0.0, |(spm, d)| {
+                dfn::overpotential_v(s, spm, d, eff_r0_factor, eff_capacity_ah)
             }),
         }
     }
@@ -204,6 +239,9 @@ impl CellModel {
             CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
                 spm::source(s, spm, eff_r0_factor, eff_capacity_ah)
             }),
+            CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, 1.0), |(spm, d)| {
+                dfn::source(s, spm, d, eff_r0_factor, eff_capacity_ah)
+            }),
         }
     }
 
@@ -232,6 +270,12 @@ impl CellModel {
             CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
                 spm::source_at(s, spm, eff_r0_factor, eff_capacity_ah, i)
             }),
+            // Ignores `i` like the equivalent circuit's arm, and for a different reason:
+            // not because the line is exact, but because evaluating this model's curve
+            // anywhere is a full nonlinear solve. See `crate::dfn::source`.
+            CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, 1.0), |(spm, d)| {
+                dfn::source(s, spm, d, eff_r0_factor, eff_capacity_ah)
+            }),
         }
     }
 
@@ -259,6 +303,9 @@ impl CellModel {
             CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
                 spm::terminal_v(s, spm, eff_r0_factor, eff_capacity_ah, i)
             }),
+            CellModel::Dfn(s) => Self::dfn_params(chem).map_or(0.0, |(spm, d)| {
+                dfn::terminal_v(s, spm, d, eff_r0_factor, eff_capacity_ah, i)
+            }),
         }
     }
 
@@ -276,7 +323,7 @@ impl CellModel {
     pub(crate) fn is_linear(&self) -> bool {
         match self {
             CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) => true,
-            CellModel::Spm(_) => false,
+            CellModel::Spm(_) | CellModel::Dfn(_) => false,
         }
     }
 
@@ -311,17 +358,28 @@ impl CellModel {
             CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
                 spm::heat_w(s, spm, eff_r0_factor, eff_capacity_ah, i, v_terminal)
             }),
+            CellModel::Dfn(s) => {
+                Self::spm_params(chem).map_or(0.0, |spm| dfn::heat_w(s, spm, i, v_terminal))
+            }
         }
     }
 
     /// Advance this cell's internal state by `dt` seconds under the current the
     /// pack solve assigned it. See [`advance_cell`].
+    ///
+    /// `eff_r0_factor` is ignored by every arm but the DFN's, and is here on the same
+    /// terms `eff_capacity_ah` arrived on one phase earlier: the argument a new model
+    /// needs is **added** to the signature rather than the existing arms being rewritten
+    /// around it. A DFN's state update *is* its voltage solve, so unlike an ECM's RC
+    /// update or an SPM's diffusion it genuinely depends on the resistance multiplier —
+    /// which reaches its kinetics and its contact resistance.
     #[must_use]
     pub(crate) fn advance(
         &mut self,
         chem: &ChemistryParams,
         i: f64,
         dt: f64,
+        eff_r0_factor: f64,
         eff_capacity_ah: f64,
         soh_capacity: f64,
     ) -> EventFlags {
@@ -335,6 +393,17 @@ impl CellModel {
             // amount of lithium the geometry has to be reconciled against.
             CellModel::Spm(s) => chem.spm.as_ref().map_or(EventFlags::empty(), |spm| {
                 spm::advance(s, spm, i, dt, eff_capacity_ah * soh_capacity)
+            }),
+            CellModel::Dfn(s) => Self::dfn_params(chem).map_or(EventFlags::empty(), |(spm, d)| {
+                dfn::advance(
+                    s,
+                    spm,
+                    d,
+                    i,
+                    dt,
+                    eff_r0_factor,
+                    eff_capacity_ah * soh_capacity,
+                )
             }),
         }
     }
@@ -390,6 +459,23 @@ fn lerp_at(ys: &[f64], (lo, hi, frac): (usize, usize, f64)) -> f64 {
 pub(crate) fn interp1(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     debug_assert!(!xs.is_empty() && xs.len() == ys.len());
     lerp_at(ys, bracket(xs, x))
+}
+
+/// `d(ys)/d(xs)` of [`interp1`] at `x`: the slope of the segment the lookup lands in, and
+/// exactly `0.0` outside the breakpoints, where the lookup clamps.
+///
+/// Shares [`bracket`] with `interp1` rather than re-deriving the segment, so the value and
+/// its derivative can never disagree about which segment they are on. A clamped end returns
+/// `lo == hi`, which is the "take the endpoint verbatim" case — a constant, hence zero.
+#[must_use]
+pub(crate) fn interp1_slope(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+    debug_assert!(!xs.is_empty() && xs.len() == ys.len());
+    let (lo, hi, _) = bracket(xs, x);
+    if lo == hi {
+        0.0
+    } else {
+        (ys[hi] - ys[lo]) / (xs[hi] - xs[lo])
+    }
 }
 
 /// Open-circuit voltage \[V\] at the given SOC, by clamped linear interpolation.
