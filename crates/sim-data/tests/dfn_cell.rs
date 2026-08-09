@@ -90,34 +90,77 @@ fn dfn_state(p: &Pack) -> sim_core::DfnState {
     .expect("cell 0 is a DFN cell")
 }
 
-/// Run to the voltage cut-off (or `max_steps`), returning `(seconds, amp-hours, min c_e,
-/// unconverged step count, last telemetry)`.
-fn run_to_cutoff(
-    p: &mut Pack,
-    i: f64,
-    dt: f64,
-    max_steps: usize,
-) -> (f64, f64, f64, u32, Telemetry) {
-    let mut t = 0.0;
-    let mut ah = 0.0;
-    let mut min_ce = f64::INFINITY;
-    let mut unconverged = 0;
-    let mut last = p.step(0.0, Demand::Current(i), &env());
+/// What a run to cut-off observed. A struct rather than the tuple this was, because the
+/// solid-phase bounds below are a conservation claim several tests need and a sixth and
+/// seventh tuple slot stops being readable.
+struct Run {
+    /// Elapsed simulated time \[s\].
+    t: f64,
+    /// Charge removed \[A·h\].
+    ah: f64,
+    /// Lowest electrolyte concentration seen at any node, at any step \[mol/m³\].
+    min_ce: f64,
+    /// Steps that raised [`EventFlags::SOLVE_UNCONVERGED`].
+    unconverged: u32,
+    /// Whether the *only* unconverged step, if any, was the final one.
+    unconverged_only_last: bool,
+    /// Highest solid concentration in any shell of any particle, as a fraction of that
+    /// electrode's `c_max`. Physically this can never exceed 1.
+    peak_solid_fraction: f64,
+    /// Lowest solid concentration in any shell of any particle, as a fraction of `c_max`.
+    /// Physically this can never go below 0.
+    min_solid_fraction: f64,
+    /// Telemetry from the last step taken.
+    last: Telemetry,
+}
+
+/// Run to the voltage cut-off (or `max_steps`).
+fn run_to_cutoff(p: &mut Pack, i: f64, dt: f64, max_steps: usize) -> Run {
+    let chem = parse_chemistry(LGM50).expect("LG M50 parses");
+    let spm = chem
+        .spm
+        .as_ref()
+        .expect("the LG M50 file has an [spm] section");
+    let (c_max_neg, c_max_pos) = (spm.negative.c_max_mol_per_m3, spm.positive.c_max_mol_per_m3);
+
+    let mut r = Run {
+        t: 0.0,
+        ah: 0.0,
+        min_ce: f64::INFINITY,
+        unconverged: 0,
+        unconverged_only_last: true,
+        peak_solid_fraction: f64::NEG_INFINITY,
+        min_solid_fraction: f64::INFINITY,
+        last: p.step(0.0, Demand::Current(i), &env()),
+    };
     for _ in 0..max_steps {
-        last = p.step(dt, Demand::Current(i), &env());
-        t += dt;
-        ah += i * dt / 3600.0;
-        for c in dfn_state(p).c_e {
-            min_ce = min_ce.min(c);
+        r.last = p.step(dt, Demand::Current(i), &env());
+        r.t += dt;
+        r.ah += i * dt / 3600.0;
+        let st = dfn_state(p);
+        for c in st.c_e {
+            r.min_ce = r.min_ce.min(c);
         }
-        if last.flags.contains(EventFlags::SOLVE_UNCONVERGED) {
-            unconverged += 1;
+        for (profiles, c_max) in [(&st.c_neg, c_max_neg), (&st.c_pos, c_max_pos)] {
+            for prof in profiles {
+                for &c in prof {
+                    r.peak_solid_fraction = r.peak_solid_fraction.max(c / c_max);
+                    r.min_solid_fraction = r.min_solid_fraction.min(c / c_max);
+                }
+            }
         }
-        if !last.v_terminal.is_finite() || last.v_terminal <= V_CUT {
+        let done = !r.last.v_terminal.is_finite() || r.last.v_terminal <= V_CUT;
+        if r.last.flags.contains(EventFlags::SOLVE_UNCONVERGED) {
+            r.unconverged += 1;
+            if !done {
+                r.unconverged_only_last = false;
+            }
+        }
+        if done {
             break;
         }
     }
-    (t, ah, min_ce, unconverged, last)
+    r
 }
 
 // ---------------------------------------------------------------------------
@@ -238,22 +281,23 @@ fn a_dfn_pack_is_selectable_from_a_scenario_file() {
 #[test]
 fn the_shipped_dfn_cell_discharges_at_one_c() {
     let mut p = pack(dfn_model(NODES, SHELLS), 1.0);
-    let (t, ah, min_ce, unconverged, last) = run_to_cutoff(&mut p, CAPACITY_AH, 2.0, 5_000);
-    assert_eq!(unconverged, 0, "no 1C step should fail to converge");
+    let r = run_to_cutoff(&mut p, CAPACITY_AH, 2.0, 5_000);
+    assert_eq!(r.unconverged, 0, "no 1C step should fail to converge");
     assert!(
-        (3_000.0..4_000.0).contains(&t),
-        "1C cut-off at {t} s is nowhere near the reference's 3555 s"
+        (3_000.0..4_000.0).contains(&r.t),
+        "1C cut-off at {} s is nowhere near the reference's 3555 s",
+        r.t
     );
     assert!(
-        (4.5..5.4).contains(&ah),
-        "1C delivered {ah} A·h against the reference's 4.94"
+        (4.5..5.4).contains(&r.ah),
+        "1C delivered {} A·h against the reference's 4.94",
+        r.ah
     );
-    assert!(last.v_terminal <= V_CUT);
+    assert!(r.last.v_terminal <= V_CUT);
     assert!(
-        last.soc_true < 0.1,
+        r.last.soc_true < 0.1,
         "a full discharge should empty the cell"
     );
-
     // The gradient itself: a concentration spread across x is precisely the quantity the
     // single-particle approximation sets to zero.
     let c_e = dfn_state(&p).c_e;
@@ -264,7 +308,7 @@ fn the_shipped_dfn_cell_discharges_at_one_c() {
         "the electrolyte should be visibly graded at 1C, spread was {} mol/m3",
         hi - lo
     );
-    assert!(min_ce > 400.0, "1C should not come close to depletion");
+    assert!(r.min_ce > 400.0, "1C should not come close to depletion");
 }
 
 /// The cliff, which is the reason the phase exists: at 3C the DFN starves and delivers
@@ -275,19 +319,44 @@ fn the_shipped_dfn_cell_discharges_at_one_c() {
 /// tables and the same particle solver, and the *only* difference is whether the
 /// electrolyte is solved for.
 ///
-/// # The 0.8 threshold is a margin over *this grid*, and it is not much of one
-/// Measured on 10/5/10: the DFN delivers **0.69** of the SPM's amp-hours. PyBaMM's own
-/// pair manages 0.51, so this engine under-states the cliff — and refining the grid moves
-/// the ratio the *wrong* way, toward the threshold: the same run at 20/10/20 lasts 758 s
-/// and at 30/15/30 lasts 764 s against 726 s here, i.e. about 0.72. The grid is fixed in
-/// this test so nothing drifts under it, but whoever changes the default in slice D should
-/// read a failure here as "the margin was thin", not as a physics regression.
+/// # The 0.8 threshold, and the margin that stopped being thin (Phase 7, slice D)
+/// This used to record **0.69** on 10/5/10 against a 0.8 threshold, note that PyBaMM's own
+/// pair manages 0.51 — so the engine *under*-stated the cliff — and warn that refining the
+/// grid moved the ratio the wrong way, toward the threshold.
+///
+/// All three of those were symptoms of one defect, which slice D found and fixed: the
+/// kinetics surface clamp was wide enough to disable the choke that ends a hard discharge,
+/// so the positive electrode accepted lithium past `c_max` and the cell over-delivered. See
+/// [`dfn::SURFACE_EDGE_FRACTION`], and [`the_solid_phase_never_holds_more_than_it_can`] for
+/// the invariant that now catches it directly. The ratio is **0.44** here and PyBaMM's 0.51
+/// is no longer beaten from the wrong side; refining the grid now moves the ratio *away*
+/// from the threshold, as a converging discretisation should.
+///
+/// The threshold stays at 0.8 rather than tightening to the new measurement: it is a
+/// "there is a cliff at all" assertion, and pinning it at 0.44 would make an ordinary grid
+/// change read as a physics regression — which is precisely the trap the old note warned
+/// about and then fell into.
 #[test]
 fn the_electrolyte_starves_at_three_c_and_an_spm_never_notices() {
     let mut d = pack(dfn_model(NODES, SHELLS), 1.0);
-    let (t_dfn, ah_dfn, min_ce, unconverged, _) =
-        run_to_cutoff(&mut d, 3.0 * CAPACITY_AH, 2.0, 5_000);
-    assert_eq!(unconverged, 0, "no 3C step should fail to converge either");
+    let r = run_to_cutoff(&mut d, 3.0 * CAPACITY_AH, 2.0, 5_000);
+
+    // Not `== 0`, and the difference is the physics. As the positive surface fills,
+    // `i_0 → 0` and the cell's `V(i)` goes near-vertical; the step that crosses the
+    // cut-off is asking the Newton to resolve a singularity, and it says so instead of
+    // pretending. What must not happen is unconverged steps *during* the discharge, which
+    // is what the `only_last` half asserts — and what a wider clamp used to hide by
+    // removing the singularity altogether.
+    assert!(
+        r.unconverged <= 1 && r.unconverged_only_last,
+        "3C raised SOLVE_UNCONVERGED on {} step(s), and not only on the last: a 3C \
+         discharge must converge everywhere except possibly the collapse itself",
+        r.unconverged
+    );
+    assert!(
+        r.last.v_terminal.is_finite(),
+        "the collapse must still produce a finite voltage, not a NaN"
+    );
 
     let mut s = pack(CellModelConfig::Spm { shells: SHELLS }, 1.0);
     let mut t_spm = 0.0;
@@ -302,16 +371,75 @@ fn the_electrolyte_starves_at_three_c_and_an_spm_never_notices() {
     }
 
     assert!(
-        ah_dfn < 0.8 * ah_spm,
-        "the DFN delivered {ah_dfn} A·h against the SPM's {ah_spm}: no cliff"
+        r.ah < 0.8 * ah_spm,
+        "the DFN delivered {} A·h against the SPM's {ah_spm}: no cliff",
+        r.ah
     );
     assert!(
-        t_dfn < 0.8 * t_spm,
-        "the DFN lasted {t_dfn} s against the SPM's {t_spm}: no cliff"
+        r.t < 0.8 * t_spm,
+        "the DFN lasted {} s against the SPM's {t_spm}: no cliff",
+        r.t
     );
     assert!(
-        min_ce < 1.0,
-        "3C should drive the electrolyte to depletion; the minimum was {min_ce} mol/m3"
+        r.min_ce < 1.0,
+        "3C should drive the electrolyte to depletion; the minimum was {} mol/m3",
+        r.min_ce
+    );
+}
+
+/// A particle may not hold more lithium than it can hold. The invariant the wide surface
+/// clamp violated, asserted directly on the state rather than inferred from a trajectory.
+///
+/// # Why this test exists and why it is separate from the golden
+/// Slice D found the shipped cell driving the positive electrode's outermost shell to
+/// **1.66–2.11 × `c_max`** at 3C — twice the lithium a solid phase can contain. It was
+/// found by comparing against a PyBaMM reference, which is an expensive and indirect way to
+/// notice a conservation violation: the golden says "the trajectory is wrong", and it took a
+/// grid sweep, a floor sweep and a state dump to get from there to "the solid phase is
+/// unbounded". This assertion says it in one line, needs no reference, and would have
+/// failed the moment the defect was introduced.
+///
+/// It is also **independent of [`dfn::SURFACE_EDGE_FRACTION`]'s value**, which is what makes
+/// it worth more than a test pinning that constant: any future change to the kinetics guard
+/// — a different width, a smooth choke, a different functional form — is free to move the
+/// trajectory but is not free to break conservation.
+///
+/// Both bounds carry a small tolerance because the solid diffusion is a finite-volume
+/// scheme with a backward-Euler step, not an exact integrator; what it may not do is
+/// overshoot by tens of percent.
+#[test]
+fn the_solid_phase_never_holds_more_than_it_can() {
+    // 3C, because that is where the reaction front is sharp enough for one x-node to
+    // saturate while the rest of the electrode sits near a third full — the regime the
+    // defect lived in. A 1C run never approaches either bound and would pass with the
+    // clamp back at its old width.
+    let mut p = pack(dfn_model(NODES, SHELLS), 1.0);
+    let r = run_to_cutoff(&mut p, 3.0 * CAPACITY_AH, 2.0, 5_000);
+
+    // Measured 0.918 peak (positive, outermost shell of the most-loaded node) and 0.048
+    // minimum. The 1 % tolerance is scheme noise, not a licence: the defect this catches
+    // was worth +111 %.
+    assert!(
+        r.peak_solid_fraction <= 1.01,
+        "a particle shell reached {:.4} of c_max at 3C — the solid phase is accepting \
+         lithium it cannot hold, which means the kinetics have stopped choking as the \
+         surface fills (see dfn::SURFACE_EDGE_FRACTION)",
+        r.peak_solid_fraction
+    );
+    assert!(
+        r.min_solid_fraction >= -0.01,
+        "a particle shell reached {:.4} of c_max at 3C — a solid phase cannot hold \
+         negative lithium",
+        r.min_solid_fraction
+    );
+
+    // And the guard against this test quietly becoming vacuous: if nothing ever gets near
+    // full, the bound above is not being exercised and would pass with the choke removed.
+    assert!(
+        r.peak_solid_fraction > 0.85,
+        "no particle shell got past {:.4} of c_max at 3C, so the upper bound above is \
+         never approached and this test no longer discriminates",
+        r.peak_solid_fraction
     );
 }
 
@@ -339,7 +467,7 @@ fn the_electrolyte_floor_is_inert_at_one_c_and_live_at_three_c() {
     let floor = dfn::C_E_FLOOR_MOL_PER_M3;
 
     let mut slow = pack(dfn_model(NODES, SHELLS), 1.0);
-    let (_, _, min_slow, _, _) = run_to_cutoff(&mut slow, CAPACITY_AH, 2.0, 5_000);
+    let min_slow = run_to_cutoff(&mut slow, CAPACITY_AH, 2.0, 5_000).min_ce;
     assert!(
         min_slow > 1_000.0 * floor,
         "at 1C the minimum c_e was {min_slow} mol/m3, only {}x the floor — the floor is \
@@ -348,7 +476,7 @@ fn the_electrolyte_floor_is_inert_at_one_c_and_live_at_three_c() {
     );
 
     let mut fast = pack(dfn_model(NODES, SHELLS), 1.0);
-    let (_, _, min_fast, _, _) = run_to_cutoff(&mut fast, 3.0 * CAPACITY_AH, 2.0, 5_000);
+    let min_fast = run_to_cutoff(&mut fast, 3.0 * CAPACITY_AH, 2.0, 5_000).min_ce;
     assert!(
         min_fast < floor,
         "at 3C the minimum c_e was {min_fast} mol/m3, above the floor — the guard is \

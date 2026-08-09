@@ -1,5 +1,5 @@
 # batsim golden reference - nmc_21700_lgm50 - dfn_cc_1c_25c.csv
-# scenario: 1C constant-current discharge from full, isothermal 25 degC (DFN, for the SPM-vs-DFN physics gap — not a batsim assertion)
+# scenario: 1C constant-current discharge from full, isothermal 25 degC (DFN, for the SPM-vs-DFN physics gap and batsim's own DFN)
 # source: PyBaMM Chen2020 DFN (isothermal 298.15 K), pybamm 26.6.2.0
 # particle grid: r_n = r_p = 200 points (converged; see common.Reference for the measurement)
 # solver: IDAKLU, rtol = 1e-10, atol = 1e-10 (PyBaMM's default 1e-6 moves the knee by tens of mV)

@@ -298,10 +298,19 @@ pub enum CellModelConfig {
     /// electrolyte by the second — and [`Pack::new`] names whichever is missing.
     ///
     /// # This is not a real-time configuration above a few cells
-    /// A DFN cell-step is roughly 30× a single-particle one and 200× an equivalent
-    /// circuit's, and unlike [`Self::Spm`] there is no knob to trade accuracy for cost:
-    /// the expense is in the x-grid, which is the whole point of the model. 1S1P is a
-    /// study; 10S10P is a fast-forward. See [`crate::dfn`].
+    /// **≈180 µs per cell per step** at the recommended grid — about **141× an
+    /// [`Self::Spm`] step** and three orders of magnitude past an equivalent circuit's.
+    /// (Earlier projections of ~30× and ~40 µs are superseded; they priced one residual
+    /// evaluation per Newton iteration and costed neither the damping line-search nor the
+    /// sensitivity solve.) Quoted per **cell** rather than per step because the pack's
+    /// solve takes a topology-dependent number of passes — a scattered parallel group needs
+    /// three where a single cell needs two. So 1S1P is a study, 10S10P is ~18 ms per step
+    /// and therefore a fast-forward.
+    ///
+    /// Unlike [`Self::Spm`], whose one knob trades accuracy against cost, most of the
+    /// expense is in the x-grid — which is the whole point of the model, and so not
+    /// somewhere to economise. See [`crate::dfn`] and
+    /// `sim-data/benches/dfn_pack_step.rs`.
     Dfn {
         /// Radial finite volumes per particle, in
         /// \[[`crate::spm::MIN_SHELLS`], [`crate::spm::MAX_SHELLS`]\]. Shared with

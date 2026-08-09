@@ -117,11 +117,28 @@ pub const MAX_NODES: usize = 128;
 
 /// Negative-electrode nodes to reach for when nothing argues otherwise.
 ///
-/// The spike's convergence and cost tables were both run at **10/5/10 with `N_r = 10`**,
-/// which is where its `dt` envelope and its ~40 µs projection come from. Like
-/// [`crate::spm::DEFAULT_SHELLS`] this is a recommendation, not a default anything applies
-/// silently: [`crate::CellModelConfig::Dfn`] requires all three counts, because a
-/// discretisation knob that fills itself in is one a caller never has to think about.
+/// The Phase 7 spike's convergence and cost tables were both run at **10/5/10**, which is
+/// where its `dt` envelope comes from. Like [`crate::spm::DEFAULT_SHELLS`] this is a
+/// recommendation, not a default anything applies silently:
+/// [`crate::CellModelConfig::Dfn`] requires all three counts, because a discretisation knob
+/// that fills itself in is one a caller never has to think about.
+///
+/// # This recommendation is cost-led, and slice D measured what it costs in accuracy
+/// It was adopted from a **cost** table without an accuracy measurement. Against PyBaMM's
+/// own DFN, at `N_r = `[`crate::spm::DEFAULT_SHELLS`]:
+///
+/// * at **1C** the x-grid is worth nothing — 5.83 mV whole-trajectory here against 6.22 mV
+///   at 20/10/20, i.e. refining is very slightly *worse*, and the shell count is the knob
+///   that matters (23.4 mV at `N_r = 10` against 5.8 at 20);
+/// * at **3C**, where a sharp reaction front is the physics, refining is worth a great
+///   deal — the cut-off lands at 464 s here against 490 s at 20/10/20 and a reference of
+///   488.7 s, and the in-window voltage error falls from 62 mV to 22 mV.
+///
+/// Two knobs, each decisive on a different scenario, which is why neither moved on one
+/// measurement. `dfn_golden.rs`'s `refining_the_x_grid_converges_toward_the_reference` is
+/// the committed form of the table above, and `sim-data/benches/dfn_pack_step.rs` prices
+/// both knobs; the cost of 20/10/20 is roughly double, since the banded factorisation is
+/// linear in the node count.
 pub const DEFAULT_NODES_NEGATIVE: usize = 10;
 
 /// Separator nodes to reach for when nothing argues otherwise. See
@@ -161,6 +178,51 @@ pub const DEFAULT_NODES_POSITIVE: usize = 10;
 /// precedent: a cell driven somewhere unphysical keeps what it was given and has to give
 /// it back.
 pub const C_E_FLOOR_MOL_PER_M3: f64 = 0.01;
+
+/// How close to full (or empty) a particle **surface** may get, as a fraction of `c_max`,
+/// before the kinetics stop tracking it.
+///
+/// # This is the choke that ends a hard discharge, not a NaN guard
+/// `i_0 ∝ √(c_s·(c_max − c_s))` is real only inside `(0, c_max)`, so *some* guard is
+/// needed. But the guard's value is physics, because the vanishing of `i_0` as a surface
+/// fills **is** the mechanism that ends a high-rate discharge: as `c_s → c_max` the
+/// exchange current collapses, `η = (R·T/(α·F))·asinh(i/(2·i_0))` diverges, and the cell
+/// hits its cut-off. Clamping wide short-circuits exactly that feedback — a clamped
+/// surface no longer moves with `j` (`dcs_dj = 0`), so the reaction stops resisting and
+/// the node accepts lithium without bound.
+///
+/// # What a wide clamp cost, measured against PyBaMM's own DFN
+/// This constant was `1e-6`, inherited from [`crate::spm`]'s `clamp_surface`, and at 3C on
+/// the shipped LG M50 set it drove the positive electrode's outermost shell to
+/// **1.66–2.11 × `c_max`** — a solid phase holding twice the lithium it can hold. The cell
+/// delivered **3.12–3.30 A·h against the reference's 2.098**, and refining the grid made it
+/// *worse* (726 → 768 s against 488.7 s), because a sharper reaction front saturates its
+/// most-loaded node sooner and so reaches the disabled feedback sooner. An error that grows
+/// under refinement is not a discretisation error, which is what identified this.
+///
+/// # Why `1e-10`, which is a converged value rather than a chosen one
+/// Time to the 3C cut-off at 20/10/20, against the reference's 488.7 s:
+///
+/// | edge | 1e-6 | 1e-7 | 1e-8 | **1e-9** | **1e-10** | **1e-12** | **1e-15** |
+/// | ---- | ---- | ---- | ---- | -------- | --------- | --------- | --------- |
+/// | t \[s\] | 758 | 640 | 524 | 486 | 486 | 486 | 486 |
+///
+/// The answer is converged from `1e-9` down and does not move for six further orders of
+/// magnitude, so this constant is **inert below `1e-9` whatever its value** — the argument
+/// [`C_E_FLOOR_MOL_PER_M3`] makes, in the same shape. `1e-10` is one decade inside that
+/// plateau so the shipped value is not sitting on its first converged point. The
+/// intermediate values are also the numerically worst (14 and 20 unconverged steps at
+/// `1e-7` and `1e-8`, against 1 here): a partially-engaged clamp chatters on and off.
+///
+/// # [`crate::spm`]'s clamp is deliberately left at `1e-6`, and that was measured
+/// An SPM has one particle per electrode and therefore only the x-averaged surface; a DFN
+/// has one per x-node, and it is the *local* surface at a reaction front — spread 0.31 to
+/// 1.00 across the positive electrode in the reference — that saturates. Perturbing
+/// `spm.rs`'s edge to `1e-10` leaves all three shipped SPM goldens **bit-identical to 17
+/// significant digits**, so it is provably unreached there. Measured rather than argued:
+/// the x-averaged-quantity-stays-clear inference is exactly the one Phase 7's slice A got
+/// wrong in the other direction.
+pub const SURFACE_EDGE_FRACTION: f64 = 1.0e-10;
 
 /// Floor \[S/m\] on the *effective* ionic conductivity, after the Bruggeman correction.
 ///
@@ -771,12 +833,13 @@ impl<'a> System<'a> {
         let c_max = side.p.c_max_mol_per_m3;
         let j = u[NVAR * i + JJ];
         let cs_raw = part.c0 + part.beta * j;
-        // Same guard, same argument, as `spm::clamp_surface`: `i_0 ∝ √(c_s·(c_max − c_s))`
-        // is real only inside `(0, c_max)`, and an overdriven cell can put a *surface*
-        // concentration outside it for a step. The state itself is never clamped.
-        const EDGE: f64 = 1.0e-6;
-        let lo = EDGE * c_max;
-        let hi = (1.0 - EDGE) * c_max;
+        // `i_0 ∝ √(c_s·(c_max − c_s))` is real only inside `(0, c_max)`, and an overdriven
+        // cell can put a *surface* concentration outside it for a step. The state itself is
+        // never clamped. Unlike `spm::clamp_surface`, whose shape this borrows, the width
+        // here is physics rather than a NaN guard: see [`SURFACE_EDGE_FRACTION`], which is
+        // where that difference and the measurement behind it are written down.
+        let lo = SURFACE_EDGE_FRACTION * c_max;
+        let hi = (1.0 - SURFACE_EDGE_FRACTION) * c_max;
         let clamped = cs_raw < lo || cs_raw > hi;
         let cs = cs_raw.clamp(lo, hi);
         let prod = cs * (c_max - cs);

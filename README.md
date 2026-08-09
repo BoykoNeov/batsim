@@ -29,7 +29,7 @@ Key invariants:
 
 ## Status
 
-Phases 0–6 are complete. Each phase's exit criterion is a committed test rather than a
+Phases 0–7 are complete. Each phase's exit criterion is a committed test rather than a
 judgement call, so the right-hand column is the thing to run if you doubt a row.
 
 | phase | what landed | exit criterion pinned by |
@@ -41,6 +41,7 @@ judgement call, so the right-hand column is the thing to run if you doubt a row.
 | 4 | `sim-server` (REST + WebSocket), `sim-wasm`, the browser demo, the example script | `sim-server/tests/e2e_experiment.rs` |
 | 5 | `sim-godot` — a `BatteryPack` GDExtension node, exported properties, fixed-`dt` accumulator, signals, and a Godot demo scene | `sim-godot/tests/godot_gate.rs` (needs Godot — see below) |
 | 6 | the `Spm` porous-electrode cell model — radial solid diffusion, Butler–Volmer kinetics, a nonlinear pack solve, and an extracted LG M50 parameter set | `sim-data/tests/spm_golden.rs`, `spm_exact_bits.rs`, `sim-core/tests/spm_cell.rs` |
+| 7 | the `Dfn` cell model — electrolyte transport solved rather than assumed, an analytic banded Jacobian, and a pack tangent taken as a sensitivity solve | `sim-data/tests/dfn_golden.rs`, `dfn_cell.rs`, `dfn_chemistry.rs` |
 
 Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
 LG M50 21700. Every constant in them carries a provenance note, **including the ones
@@ -59,15 +60,13 @@ acquire one.
 
 It also carries a `[dfn]` section — the electrolyte transport fits, porosities and solid
 conductivities a Doyle–Fuller–Newman cell needs, extending `[spm]` rather than replacing
-it. That section is **data ahead of a model**: nothing in the engine reads it yet, and
-the `Dfn` cell it is for is Phase 7's later slices. Its two transport properties are
-stored as the published Nyman 2008 coefficients rather than sampled onto a table, so they
-carry no interpolation error at all.
+it. Its two transport properties are stored as the published Nyman 2008 coefficients
+rather than sampled onto a table, so they carry no interpolation error at all.
 
-## Two cell models
+## Three cell models
 
-`PackConfig::cell_model` selects between them, and both are the same public API — a pack,
-a `step(dt, demand, env)`, one `Telemetry`.
+`PackConfig::cell_model` selects between them, and all three are the same public API — a
+pack, a `step(dt, demand, env)`, one `Telemetry`.
 
 - **`Ecm`** — a 1- or 2-RC Thévenin equivalent circuit, exact-exponential RC update,
   coulomb-counted SOC. Cheap (≈0.05 µs per cell per step), stable at any `dt`, and the
@@ -80,14 +79,29 @@ a `step(dt, demand, env)`, one `Telemetry`.
   cell per step at the recommended 20 shells — **≈26× the ECM**, measured on the same
   chemistry at the same topology. `docs/plans/phase-6-porous-electrodes.md` has the
   numbers and the accuracy-vs-shell-count curve behind that 20.
+- **`Dfn`** — the full Doyle–Fuller–Newman cell: one particle per finite volume across the
+  electrodes, and the electrolyte concentration and potential **solved for** rather than
+  held constant. That last clause is the whole difference. An `Spm` assumes the electrolyte
+  never runs out, which is true until it isn't; a `Dfn` reproduces the reaction front that
+  develops across a thick electrode at high rate, and the concentration collapse that ends
+  a hard discharge long before the cell is empty. At 3C on the LG M50 set that is worth
+  **2.1 A·h against the SPM's 4.5** — the same cell, the same parameters, a different
+  answer, and the reference agrees with the `Dfn`.
 
-Against a grid- and time-converged PyBaMM SPM on the same parameter set, batsim's SPM
-tracks terminal voltage to **2–7 mV over a whole discharge**, cut-off knee included —
-no SOC window, unlike the Phase 1 ECM-vs-DFN goldens, which need one because the models
-genuinely differ.
+  It costs **≈180 µs per cell per step**, about **141× the `Spm`**, with a stiff Newton
+  solve behind an analytic banded Jacobian. A 1S1P `Dfn` is a study and a 10S10P one is a
+  ~18 ms fast-forward; this is not a real-time model above a few cells, and it is quoted
+  per *cell* because the pack solve's pass count depends on topology.
 
-**`[spm]` is NMC-only on purpose.** LFP keeps its ECM path and its existing goldens and
-gets no `[spm]` section: lithium iron phosphate intercalates through a moving phase
+Against grid- and time-converged PyBaMM references on the same parameter set, batsim's SPM
+tracks terminal voltage to **2–7 mV over a whole discharge** and its DFN to **5.8 mV at
+1C**, cut-off knee included — no SOC window, unlike the Phase 1 ECM-vs-DFN goldens, which
+need one because the models genuinely differ. In the 3C depletion scenario the DFN tracks
+the reference to 62 mV where the SPM is off by **521 mV**, which is the clearest single
+statement of what the electrolyte equations buy.
+
+**`[spm]` and `[dfn]` are NMC-only on purpose.** LFP keeps its ECM path and its existing
+goldens and gets neither section: lithium iron phosphate intercalates through a moving phase
 boundary, which is what produces the flat plateau this repo teaches with, and a
 single-particle model with Fickian diffusion is the wrong physics for it. It could be
 made to *fit*; shipping that as "porous-electrode physics for LFP" is the kind of
@@ -96,9 +110,11 @@ unlabelled claim the provenance rule exists to prevent.
 **`diffsol` was evaluated for the stiff solve and declined**, because its solver state
 cannot be extracted and restored bit-identically through its public API — which fails
 the "everything is snapshotable" principle outright — and because a fixed-step method
-whose entire state *is* the concentration vector passes that test trivially. The
-measurement, and what it would take to revisit for a future `Dfn`, are in
-[`docs/plans/phase-6-porous-electrodes.md`](docs/plans/phase-6-porous-electrodes.md).
+whose entire state *is* the concentration vector passes that test trivially. Phase 7
+re-checked it at 0.16.1 for the `Dfn` — the harder solve the evaluation was really about —
+and declined it again on the same grounds. The measurements are in
+[`docs/plans/phase-6-porous-electrodes.md`](docs/plans/phase-6-porous-electrodes.md) and
+[`docs/plans/phase-7-dfn.md`](docs/plans/phase-7-dfn.md).
 
 Design notes for each phase, including what was measured and what was deliberately
 *not* built, are under [`docs/plans/`](docs/plans).

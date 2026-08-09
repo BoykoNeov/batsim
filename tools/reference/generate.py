@@ -21,9 +21,14 @@ batsim has two cell models:
     same model form on the same parameter set, so the comparison is of two
     implementations rather than of two models, and the tolerance is an order of
     magnitude tighter;
-  * `dfn_cc_1c_25c.csv` is the *same* scenario as `spm_cc_1c_25c.csv` run as a
-    DFN, so the SPM-vs-DFN gap can be shown as the physics result it is. Nothing
-    asserts batsim against it — see `spm_golden.rs`.
+  * the **LG M50** `dfn_*` scenarios are DFN references for batsim's DFN, added in
+    Phase 7. `dfn_cc_1c_25c.csv` is also the *same* scenario as `spm_cc_1c_25c.csv`,
+    so the SPM-vs-DFN gap can be shown as the physics result it is (`spm_golden.rs`
+    uses it that way and asserts nothing about batsim); `dfn_golden.rs` is where
+    batsim's own DFN is asserted against both of them.
+  * `dfn_cc_3c_25c.csv` is the depletion scenario: at 3C the electrolyte is driven
+    to zero, which is the regime a single-particle model cannot represent at all.
+    It carries Phase 7's exit criterion 2.
 
 Not shipped; requires PyBaMM (see requirements.txt). Never on the Rust/CI path.
 """
@@ -105,10 +110,18 @@ SCENARIOS = {
         (
             "dfn_cc_1c_25c.csv",
             "1C constant-current discharge from full, isothermal 25 degC "
-            "(DFN, for the SPM-vs-DFN physics gap — not a batsim assertion)",
+            "(DFN, for the SPM-vs-DFN physics gap and batsim's own DFN)",
             run_cc_discharge,
             DFN_CONVERGED,
             {"c_rate": 1.0, "dt_s": 5.0},
+        ),
+        (
+            "dfn_cc_3c_25c.csv",
+            "3C constant-current discharge from full, isothermal 25 degC "
+            "(DFN; the electrolyte depletes — an SPM cannot represent this at all)",
+            run_cc_discharge,
+            DFN_CONVERGED,
+            {"c_rate": 3.0, "dt_s": 2.0},
         ),
     ],
 }

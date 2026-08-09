@@ -287,6 +287,20 @@ def run_cc_discharge(
     # PyBaMM "Current [A]" is discharge-positive; confirm it before we rely on it.
     assert np.median(sol["Current [A]"].entries) > 0, "expected discharge-positive current"
 
+    # The last sample is the cut-off only if the run ENDED on the cut-off. If the
+    # integration window `t_end` expires first, `entries[-1]` is the window and the
+    # committed golden silently stops mid-discharge at a voltage that means nothing.
+    # Phase 7's plan lost three of six cells in its first cliff table to exactly this,
+    # including the denominator of its headline ratio, so it is asserted rather than
+    # trusted: `t_end` is 110 % of the nominal C-rate duration, which is ample for a
+    # discharge that gets *shorter* as the rate rises, but a scenario that starves early
+    # or a parameter set with more capacity than its nominal would both breach it.
+    assert "event" in str(sol.termination), (
+        f"the {c_rate}C run ended as {sol.termination!r} rather than on a voltage event: "
+        f"t_end={t_native[-1]:.1f} s against a {t_end:.1f} s window. The golden would "
+        "record the integration window, not the cut-off."
+    )
+
     total_s = float(t_native[-1])  # ends at the lower voltage cut-off event
     t = np.arange(0.0, total_s + dt_s, dt_s)
     t = t[t <= total_s]

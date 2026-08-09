@@ -1,7 +1,8 @@
 # Phase 7 — the electrolyte (`Dfn`)
 
-**Status: slices A, B and C have landed; D remains. The repo is at `SNAPSHOT_VERSION`
-11.** Everything above the slice notes was written *before* the work, after a spike, so
+**Status: complete. All four slices have landed and both authored exit criteria are
+closed. The repo is at `SNAPSHOT_VERSION` 11**, the one bump the phase budgeted, spent on
+slice B. Everything above the slice notes was written *before* the work, after a spike, so
 the decisions that shape the phase are made once and made from measurements; the
 "learned while building" material is appended as each slice lands, the way
 `phase-2-thermal-bms.md` through `phase-6-porous-electrodes.md` grew. Where a slice note
@@ -29,7 +30,7 @@ badly that assumption fails, and the spike measured it.
 | exit criterion (authored here) | carried by |
 | ------------------------------ | ---------- |
 | **1. The floor did not move ~~bit-identically~~ — amended by slice A, see below.** Every ECM trajectory is bit-identical before and after the phase. Every SPM trajectory is bit-identical **except** where the old OCP tables were clamping, which slice A measured and corrected: the last ~1.4 % of the shipped 1C golden. The criterion as first authored said "bit-identical" on the premise that the extension was provably inert for the SPM; **that premise was false**, and the amendment is a measured, argued exception rather than a widened tolerance. | slice A, re-checked by every later slice |
-| **2. The door opened.** A pack configured with `CellModel::Dfn` runs, and its trajectory matches a committed **PyBaMM DFN golden** within a documented per-scenario tolerance, with the tolerance **built to fail** before it is trusted. At least one scenario must reach electrolyte depletion — the regime an SPM cannot represent at all, and therefore the only one that proves the phase did something. | slice D |
+| **2. The door opened. — CLOSED by slice D**, and closing it required fixing a defect the criterion's own depletion clause exposed. A pack configured with `CellModel::Dfn` runs, and its trajectory matches a committed **PyBaMM DFN golden** within a documented per-scenario tolerance, with the tolerance **built to fail** before it is trusted. At least one scenario must reach electrolyte depletion — the regime an SPM cannot represent at all, and therefore the only one that proves the phase did something. *That clause earned its place:* 1C passed at 5.83 mV whole-trajectory against a cell that was over-delivering by 57 % at 3C, so a phase whose goldens stopped at 1C would have shipped the defect and called the criterion met. | slice D |
 | **3. The new state is snapshotable.** Snapshot at t/2 → restore → continue is bit-identical for a DFN pack. **This includes the Newton warm-start vector**, which is state and not a cache — see slice B. | slice B, re-checked by slice C |
 
 ## Slices
@@ -39,7 +40,7 @@ badly that assumption fails, and the spike measured it.
 | A | **`[dfn]` chemistry section** — schema, validation, extraction script, LG M50 gains one. **Plus the OCP table extension the spike found is required**, which is the part that can move an SPM trajectory and so carries exit criterion 1. No engine physics. **Landed; it did move one, and criterion 1 is amended — see the slice A note.** | v10 (no bump) |
 | B | **the DFN cell** — grid, state, the coupled Newton with an *analytic* banded Jacobian, `CellModel::Dfn`, `CellModelConfig::Dfn`, both `BuildError`s, the version-check test. Single cell; the pack still sees a linear source. **Carries the one bump. Landed; see the slice B note.** | **v10 → v11** |
 | C | **pack integration** — the tangent, which for a DFN cannot be the central difference `spm.rs` uses. Sensitivity solve off the already-factorised Jacobian. **Landed; see the slice C note.** | v11 (no bump) |
-| D | **PyBaMM DFN goldens, tolerance built to fail, DFN's own perf budget, README.** Carries exit criterion 2. | v11 (no bump) |
+| D | **PyBaMM DFN goldens, tolerance built to fail, DFN's own perf budget, README.** Carries exit criterion 2. **Landed — and it changed engine physics, which this row said it would not: the goldens found a conservation violation in the shipped cell. See the slice D note.** | v11 (no bump) |
 
 Each slice keeps `cargo test --workspace` and
 `cargo clippy --workspace --all-targets -- -D warnings` clean.
@@ -957,6 +958,231 @@ at all — what the slice changed *for other components* — which is the derate
   superseded.
 - The aging-vs-resistance-growth gap slice B named is untouched: still implemented and still
   unverified for this model.
+
+---
+
+## Slice D — the goldens, and the defect they found
+
+**Landed. `SNAPSHOT_VERSION` unmoved at v11**, neither adapter version moved (each
+constant's own doc checked separately). `cargo test --workspace` green at **414 tests**
+(407 after slice C), `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+Slice D was chartered as "goldens, budget, README" — no engine physics. It changed engine
+physics, because the goldens it was chartered to write found a **conservation violation** in
+the shipped cell. The scope change was put to the owner with the fix priced, not taken
+unilaterally; what follows is what the measurement said and how it was narrowed.
+
+### Exit criterion 2 is closed, and criterion 1 held with no exception
+
+`dfn_cc_1c_25c.csv` (already committed by Phase 6 slice E as an SPM-vs-DFN comparison, now
+also asserted against) and **`dfn_cc_3c_25c.csv`**, new: 3C from full, which drives the
+electrolyte to **complete depletion** — minimum `c_e` touches zero, 89.8 % of the run has
+some node below 100 mol/m³ — and cuts off at 488.7 s having delivered 2.098 of 5.153 A·h.
+That is the regime criterion 2 requires, and `crates/sim-data/tests/dfn_golden.rs` is where
+it is asserted.
+
+**1C tracks the reference to 5.83 mV over the whole trajectory**, cut-off knee included, no
+SOC window — the `spm_golden.rs`-shaped claim, worst at the *first* step where the gradients
+establish inside one 5 s backward-Euler step, everything after under 2.2 mV.
+
+Criterion 1 held with **no exception**, the first time this phase: the nine pre-existing
+instrument cases are byte-identical to `after-sliceC-p7.txt`, verified as a prefix
+comparison rather than asserted. Anchor is now `after-sliceD-p7.txt` — see below for why it
+moved anyway.
+
+### The defect: a NaN guard that was load-bearing physics
+
+At 3C the shipped cell delivered **3.12–3.30 A·h against the reference's 2.098** — 49–57 %
+long — and **refining the grid made it worse** (726 → 758 → 764 → 768 s as the x-grid went
+10/5/10 → 40/20/40, against 488.7 s).
+
+**An error that grows under refinement is not a discretisation error.** That is Phase 6's
+diagnostic, and it is what turned a tolerance question into a defect hunt. Narrowing it took
+three measurements and each one *removed* a candidate:
+
+1. **The `c_e` floor, exonerated by sweep.** `0.01 → 1e-10`, four orders of magnitude: the
+   cut-off did not move at all (726 s / 758 s to the printed digit) while the discrepancy
+   was 240 s. It does change the *state* — `c_e` stops at +0.0002 instead of reaching
+   −0.197 — so the guard is genuinely *reached* at 3C, as slice B's test says. **Reached is
+   not the same as load-bearing**, and slice B's test asserts the first while reading like
+   the second.
+2. **The diffusional potential term, exonerated by inspection.** `κ_D·∂ln c_e/∂x` with the
+   full `2RT/F(1−t₊)(1+∂ln f/∂ln c)` coefficient is present and correct.
+3. **PyBaMM asked what actually ends *its* run.** Not the electrolyte: `c_e` had been at
+   zero since mid-run. The **positive particle's surface saturates** — `y_surf_p` reaches
+   **0.99981** while its minimum across x is 0.31378 — and the positive reaction
+   overpotential goes from −0.247 V to **−0.563 V in the final 49 s**. `i_0 ∝
+   √(c_s·(c_max − c_s))` vanishing as a surface fills *is* the mechanism that ends a hard
+   discharge.
+
+batsim could not reproduce that, because its surface clamp — `EDGE = 1e-6`, inherited from
+`spm::clamp_surface` and documented as a NaN guard — sets `dcs_dj = 0` once hit. A clamped
+surface stops responding to current, so the reaction stops resisting and the node accepts
+lithium without bound: the positive electrode's outermost shell reached **1.66–2.11 ×
+`c_max`**. A solid phase holding twice the lithium it can hold.
+
+The refinement paradox then explains itself: a sharper front saturates its most-loaded node
+sooner, so a better grid reaches the *disabled* feedback sooner.
+
+### What the fix is, and why its constant is converged rather than chosen
+
+`dfn::SURFACE_EDGE_FRACTION` = **`1e-10`**, promoted from an inline `const` to a documented
+module-level constant because its value is physics. Time to the 3C cut-off at 20/10/20,
+reference 488.7 s:
+
+| edge | 1e-6 | 1e-7 | 1e-8 | **1e-9** | **1e-10** | **1e-12** | **1e-15** |
+| ---- | ---- | ---- | ---- | -------- | --------- | --------- | --------- |
+| t \[s\] | 758 | 640 | 524 | 486 | 486 | 486 | 486 |
+
+Converged from `1e-9` down and unmoved for six further orders of magnitude, so the constant
+is **inert below `1e-9` whatever its value** — the same argument shape `C_E_FLOOR_MOL_PER_M3`
+makes. `1e-10` sits one decade inside the plateau so the shipped value is not its own first
+converged point. The intermediate values are also the numerically *worst* (14 and 20
+unconverged steps at `1e-7`/`1e-8` against 1 at the shipped value): a partially-engaged
+clamp chatters on and off, which is the CC-CV slice's lesson in a different costume.
+
+After the fix, batsim's 3C cut-off **converges toward the reference** — 464 → 490 → 494 →
+496 s at 10/5/10 → 40/20/40 — instead of away from it.
+
+**One step reports `SOLVE_UNCONVERGED`, and that is the honest outcome.** It is the step
+that crosses the cut-off, where `i_0 → 0` makes `V(i)` near-vertical and the Newton is being
+asked to resolve a singularity; the reference has an *event* there. The test asserts
+`unconverged <= 1 && unconverged_only_last` rather than `== 0`, because unconverged steps
+*during* a discharge would be a real failure and the wide clamp used to hide the singularity
+by removing it.
+
+### The SPM's clamp is left alone, and that was measured rather than argued
+
+An SPM has one particle per electrode and so only an x-averaged surface; a DFN has one per
+x-node, and it is the **local** surface at a reaction front that saturates. Tempting to stop
+there — but that is precisely the inference slice A got wrong in the other direction, when
+"the x-averaged value never leaves the table" was false for the shipped SPM golden.
+
+So it was perturbed instead: `spm.rs`'s edge moved to `1e-10`, and all three shipped SPM
+goldens came back **bit-identical to 17 significant digits**. Provably unreached, on the
+scenarios that exist.
+
+### Two things a golden test cannot do, and what was done instead
+
+**A replay is driven by the reference's clock.** It applies the reference's current at the
+reference's timestamps regardless of what batsim's cell is doing, so once batsim's own cell
+has collapsed the comparison is between a dead cell and a live one. At the recommended grid
+batsim's 3C cut-off is 464 s against the reference's 488.7, so the last rows of a full
+replay measure the 5 % timing difference amplified by the steepest part of the curve — 438
+mV, which is not a physics statement. The voltage claim therefore stops at 90 % of the
+reference's duration and the timing difference is asserted **directly**, by running batsim's
+own discharge to its own cut-off.
+
+**A conservation violation deserves an invariant, not a tolerance.** Finding this one cost a
+golden comparison plus a grid sweep plus a floor sweep plus a state dump. `dfn_cell.rs`'s
+`the_solid_phase_never_holds_more_than_it_can` says it in one assertion, needs no reference,
+and is **independent of `SURFACE_EDGE_FRACTION`'s value** — a future change to the guard's
+width or shape is free to move the trajectory and not free to break conservation. It carries
+its own vacuity guard (`peak > 0.85`), because a bound nothing approaches is not a test.
+
+### The grid recommendation is cost-led, and now says so
+
+`DEFAULT_NODES_*` (10/5/10) came from the spike's **cost** table and was adopted without an
+accuracy measurement. Slice D made it, at `DEFAULT_SHELLS`, and the owner's call was to
+**record it rather than move the default**:
+
+| | 1C, whole trajectory | 3C, cut-off (ref 488.7 s) | 3C, in-window worst |
+| --- | --- | --- | --- |
+| 10/5/10 | 5.83 mV | 464 s | 62.1 mV |
+| 20/10/20 | 6.22 mV | 490 s | 21.8 mV |
+
+At 1C the x-grid is worth **nothing** — refining is very slightly worse — and the shell count
+is the knob (23.4 mV at `N_r = 10` against 5.8 at 20). At 3C the x-grid is worth a great
+deal and the shells rather less. **Two knobs, each decisive on a different scenario**, which
+is why neither moves on one measurement. Committed as
+`refining_the_x_grid_converges_toward_the_reference`, which asserts the *direction* rather
+than a value: before the fix refinement went the other way, and pinning the direction pins
+the diagnostic that found the defect.
+
+### The gate was blind to the model the phase added
+
+The trajectory instrument had **no DFN case at all**. Slices B and C shipped an entire cell
+model and a pack tangent while the gate that guards trajectories could not see either, and a
+byte-identical run read as "criterion 1 holds" when it said "the ECM and SPM halves hold" —
+a true statement of criterion 1 *as authored*, so nothing was mis-reported, and still a
+hole. Slice D added `lgm50_1s1p_dfn` and `lgm50_1s2p_dfn_scatter_thermal` (+278 lines, pure
+additions), which is why the anchor moved despite the physics change moving nothing.
+
+**Transferable: check what a green gate covers, not just that it is green.** The same shape
+as slice C's "one perturbation reported a clean sweep over a hole".
+
+Also worth recording because it is the kind of promise that rots silently: `common.py` has
+claimed since Phase 6 that regenerating the LFP goldens produces byte-identical files, and
+**nobody had ever run it**. It was run. It does. So do the three SPM goldens.
+
+### Built to fail: four perturbations, and the one that named the wrong hero
+
+Harness at `M:\claud_projects\temp\phase7-sliceD\btf.py` — restores from a copy it made
+itself, never `git checkout`; `'rb'`/`'wb'` throughout so a Windows `'w'` round trip cannot
+turn `\r\n` into `\r\r\n`; `cargo test --no-fail-fast`, or the first failing binary hides
+the second's verdict.
+
+| perturbation | tests that caught it |
+| ------------ | -------------------- |
+| `SURFACE_EDGE_FRACTION` back to `1e-6` (the defect) | **3** |
+| `bruggeman_electrolyte` → 0 (named in this plan) | **9** |
+| `C_E_FLOOR_MOL_PER_M3` → 100 | **7** |
+| the diffusional potential coefficient → 0 | **18** |
+
+**The Bruggeman perturbation is caught by `dfn_cc_1c_tracks_pybamm_dfn`.** This plan's
+stated signal was: *"If a 1C golden passes with it, the goldens are testing the wrong
+rate."* It does not pass. The goldens are at the right rate.
+
+**And the tabulation earned its keep, because it contradicted what I would have assumed.**
+The three tests that catch the restored defect are
+`dfn_cc_3c_lands_on_the_references_cut_off`,
+`refining_the_x_grid_converges_toward_the_reference`, and
+`the_solid_phase_never_holds_more_than_it_can`. The 3C *voltage* test —
+`dfn_cc_3c_tracks_the_reference_into_depletion`, the one that looks most like "the golden
+that caught the bug" — **passes with the defect restored**, because its window stops at
+90 % of the reference's duration and the pre-fix error only reaches 62 mV inside it against
+a 100 mV bound. The tolerance test is not the guard here; the *cut-off* test and the
+*invariant* are.
+
+That is the plan's own rule (*"tabulate which tests actually catch the perturbation rather
+than assuming the suite does"*) paying out for the third phase running, and it is worth
+stating in its general form: **a windowed tolerance is the weakest instrument in the file,
+and the one most likely to be miscredited.** It was written to document a grid, and it does
+that; it was never going to be what noticed a conservation violation.
+
+### Smaller things
+
+`run_cc_discharge` now asserts on **`sol.termination`**. The Phase 7 plan lost three of six
+cells in its first cliff table to `entries[-1]` being the integration window rather than the
+cut-off, including the denominator of its headline ratio. All five NMC scenarios and all
+three LFP ones terminate on a voltage event, so nothing was wrong in the committed set —
+which is exactly when to install the check, rather than after it bites again.
+
+The DFN perf budget is stated in `sim-data/benches/dfn_pack_step.rs` as a **third** budget
+rather than a widened ECM one, following Phase 6's precedent, and its `ecm/` arms exist as a
+**contamination detector**: an ECM pack breaks on `is_linear` before any probe, so no DFN
+change can move it, and slice C identified a build-contaminated run precisely by that arm
+reporting an impossible 2×.
+
+**The inherited figure was wrong for the recommended grid, and the detector is how that was
+noticed rather than propagated.** Slice D's own first bench run had the two ECM arms 1.6×
+apart and two independent measurements of the *same* 1S1P DFN config 1.3× apart, minutes
+after a build storm — discarded, per the standing rule. The settled re-run gives 1S1P 181.6,
+2S1P 350.4, 1S2P 352.8, 2S2P 729.0 µs, i.e. **175–182 µs per cell** and **141× an `Spm`**,
+so a 10S10P is ~18 ms. Slice C's inherited **≈160 µs / ~135×** was measured at `N_r = 10`
+where the shipped shell recommendation is 20, and the `dfn_shells` arm prices exactly that
+difference (170.4 → 181.2 µs, +6 %). Absolutes are quoted here only because the run's
+preconditions held: the `spm/` arm reproduced its recorded 1.22 µs at 1.27, the ECM arms
+agreed to 15 %, and the duplicate DFN measurements to 1.4 %.
+
+**Transferable: an inherited number carries its measurement conditions with it.** "≈160 µs
+per cell" was true, at `N_r = 10`; restating it under a recommendation of `N_r = 20` would
+have been a quiet 12 % error in the phase's headline budget.
+
+The aging-vs-resistance-growth gap slice B named is **still open**: the `eff_r0_factor` path
+is wired the same two ways for the DFN as for the SPM and still exercised by nothing, so
+`CLAUDE.md`'s no-fade-without-resistance-growth rule remains implemented and unverified for
+this model. Slice D did not close it and does not claim to.
 
 ## Environment
 
