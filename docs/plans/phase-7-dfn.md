@@ -115,19 +115,38 @@ schema that derived one from the other would be wrong.
 PyBaMM DFN against PyBaMM SPM on the shipped LG M50 set, same solver, same grid,
 `t_interp` throughout (never `t_eval` resampling — Phase 6's 346 mV chord trap):
 
-| C-rate | mean \|DFN − SPM\| | max | DFN to cut-off | SPM to cut-off |
-| ------ | ------------------ | --- | -------------- | -------------- |
-| 0.2C | 11.0 mV | 13.3 mV | 16560 s | 16560 s |
-| 1C | 57.9 mV | 67.8 mV | 3300 s | 3300 s |
-| **3C** | **366.8 mV** | **899.3 mV** | **557 s** | 1050 s |
+| C-rate | mean \|DFN − SPM\| | max | DFN to cut-off | SPM to cut-off | DFN Ah | SPM Ah |
+| ------ | ------------------ | --- | -------------- | -------------- | ------ | ------ |
+| 0.2C | 11.0 mV | 13.3 mV | 18226.5 s | 18234.6 s | 5.063 | 5.065 |
+| 1C | 58.1 mV | 67.8 mV | 3555.3 s | 3567.8 s | 4.938 | 4.955 |
+| **3C** | **366.4 mV** | **899.3 mV** | **557.4 s** | 1084.7 s | **2.322** | 4.520 |
 
-At 3C the DFN reaches the cut-off in **53 % of the time** the SPM does — the electrolyte
-starves and the cell delivers about half its amp-hours. That is a statement about the two
-*models* as PyBaMM implements them; it is **not** yet a statement about batsim's shipped
-SPM, which is validated against PyBaMM SPM at C/5, 1C and GITT only, and 3C is outside
-that set. Slice D should either add a 3C row to that comparison or keep the claim
-model-shaped. Getting this backwards in a lesson would be the "written from reasoning,
-not from the screen" mistake the UI slices already paid for three times.
+**Every cell in those two cut-off columns is a real termination** — `sol.termination` is
+`'event: Minimum voltage [V]'` for all six. The first cut of this table was not: it
+passed a fixed integration window per C-rate and printed the last sample, so three of six
+cells reported the *window* rather than a cut-off, including the SPM's at 3C, which was
+the denominator of the headline. This is the same failure as the "range over (x,t)"
+metric two paragraphs down — a column measuring one thing under another thing's label —
+and it is recorded rather than quietly corrected because it took a second probe to catch
+and will be available to catch the next one.
+
+Corrected: at 3C the DFN reaches the cut-off in **51.4 %** of the time the SPM does, and
+delivers **2.32 Ah against 4.52**. At 1C and C/5 the two models reach the cut-off within
+0.3 %, so the whole effect is a cliff between 1C and 3C rather than a slope.
+
+That is a statement about the two *models* as PyBaMM implements them; it is **not** yet a
+statement about batsim's shipped SPM, which is validated against PyBaMM SPM at C/5, 1C
+and GITT only — 3C is outside that set. Slice D should either add a 3C row to that
+comparison or keep the claim model-shaped. Getting this backwards in a lesson would be
+the "written from reasoning, not from the screen" mistake the UI slices already paid for
+three times.
+
+**A basis note, because this document quotes two different "3C".** The table above is
+PyBaMM's own Chen2020 basis, where nominal capacity is **5.0 Ah**, so 3C is 15.0 A. The
+prototype runs against `nmc_21700_lgm50.toml`, whose `capacity_ah` is **5.153198**, so
+its 3C is 15.459594 A — and the reference figures quoted in the OCP finding below were
+re-run at *those* amps, which is why PyBaMM ends at 488.5 s there and 557.4 s here. Both
+are right for their own experiment; they are not the same experiment.
 
 Where the volts go, measured as the spread **across x at fixed t** (the first cut of this
 probe measured the range over (x,t), which a discharge dominates with the OCP moving and
@@ -226,8 +245,15 @@ the "tidiest-looking answer is the one to distrust" case, and the distrust was w
 
 ### The finding slice A has to act on: the OCP tables' margin is a Phase 6 artefact
 
-The prototype agrees with PyBaMM to **3–8 mV in the bulk at 1C**, and its amp-hours agree
-to **0.6 % at 2C**. At 3C it ran 876 s against the reference's 488 s at the same amps.
+The prototype agrees with PyBaMM to **3–8 mV through the bulk at 1C** — but over the
+**whole trajectory, with no window**, the worst disagreement is **250.9 mV**, all of it
+at the knee (the prototype reaches the cut-off at 3490 s against the reference's 3555 s,
+and the last few points are comparing two curves falling at different moments). Phase 6's
+exit criterion 2 is explicitly whole-trajectory with no SOC window, and this plan cites
+that precedent, so the bulk figure alone would set slice D up to look like a regression
+against a standard it never claimed. Mean over the whole 1C overlap is 20.3 mV.
+Amp-hours agree to **0.6 % at 2C**. At 3C the prototype ran 876 s against the reference's
+488.5 s at the same amps.
 Both terminate on minimum voltage — `sol.termination` was checked at every rate and is
 `'event: Minimum voltage [V]'`, not some zero-electrolyte event, which was the first
 hypothesis and was wrong.
@@ -267,7 +293,12 @@ script, same provenance. Two things to verify rather than assume:
 
 - Extending a table **beyond** its current range does not change `interp1` inside that
   range, so SPM trajectories that stay inside should be bit-identical. That is the claim,
-  and exit criterion 1 is where it gets checked rather than believed.
+  and exit criterion 1 is where it gets checked rather than believed. The measurement
+  above is a stronger safety argument than the check, though, and it is worth stating in
+  the slice: **the x-averaged positive surface stoichiometry peaks at 0.7065 even at 3C**,
+  and an SPM has only the x-averaged quantity — so no SPM scenario at any rate this
+  simulator runs can reach the 0.9040 table top that slice A extends past. The extension
+  is provably inert for the SPM, not merely observed to be.
 - `crates/sim-data/tests/spm_exact_bits.rs` pins specific parsed literals. Appending
   points adds literals without moving existing ones — again, checked, not assumed.
 
