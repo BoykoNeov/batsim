@@ -583,22 +583,199 @@ fn the_tangent_is_state_and_the_seed_is_only_ever_the_first_answer() {
     );
 }
 
-/// A DFN pack reports `solve_iterations == 1`, and that number is about **this slice**
-/// rather than about the physics.
+/// A DFN pack's solve now has something to chase: **two** passes, not one.
 ///
-/// [`sim_core::CellModel::is_linear`] answers `false` for a DFN, so the pack's nonlinear
-/// iteration really does run — and exits on its first pass, because the curve it measures
-/// its aggregate against is the same line it aggregated. Slice C is what gives those
-/// passes something to do; pinning the number here is what will make that change visible
-/// rather than silent.
+/// Slice B pinned this at `1` deliberately. A DFN answered the iteration with the same
+/// line it had already handed over as its source, so the residual was zero by construction
+/// and the loop exited having done an all-equivalent-circuit pack's arithmetic — a number
+/// about that slice, not about the physics. Slice C's `probe_at` re-solves the cell at the
+/// current each pass assigns, so the second pass measures a real curve against a real line.
+///
+/// Exactly two is worth pinning rather than "more than one". A constant-current 1S1P pack
+/// is the degenerate case: `solve_current` hands back the demand whatever the aggregate
+/// says, so pass two re-linearizes at the current pass one already assigned and lands on
+/// it. Two is what "the tangent was one step stale and now is not" costs, and a pack that
+/// suddenly needed more would be saying something changed.
 #[test]
-fn the_pack_solve_has_nothing_to_chase_yet() {
+fn the_pack_solve_re_linearizes_where_it_put_the_cell() {
     let mut p = pack(dfn_model(NODES, SHELLS), 0.9);
     for _ in 0..20 {
         let t = p.step(5.0, Demand::Current(CAPACITY_AH), &env());
-        assert_eq!(t.solve_iterations, 1);
+        assert_eq!(t.solve_iterations, 2);
         assert!(!t.flags.contains(EventFlags::SOLVE_UNCONVERGED));
     }
+}
+
+/// A power demand is where a stale linearisation costs **first-order** accuracy, and this
+/// is the test that says slice C shipped something.
+///
+/// `Demand::Power` is solved as `P = V(i)·i` on the pack's *aggregate line*, so a line
+/// whose intercept is a step stale asks for the wrong current — and unlike a current
+/// demand, nothing downstream corrects it. Measured on this cell before slice C: a 50 W
+/// request drew 23.3 A and delivered **87.0 W** on the first step, because the only line
+/// available was the never-solved cell's first-order seed; it settled to 75 mW off. The
+/// iteration drives the same demand onto the curve, and what is left is the pack solve's
+/// own `SOLVE_TOL_V`-sized residual.
+///
+/// The tolerance here is `1e-6` W against a measured worst case of ~1.2e-8 W. That is not
+/// slack for its own sake: it is two orders below the *first* number this assertion has to
+/// separate from (75 mW steady-state) and nine below the first step's 37 W, so the test
+/// fails loudly if the iteration stops happening and does not fail on a re-tuned
+/// `SOLVE_TOL_V`.
+#[test]
+fn a_power_demand_lands_on_the_curve_rather_than_on_a_stale_line() {
+    for watts in [20.0, 50.0] {
+        let mut p = pack(dfn_model(NODES, SHELLS), 1.0);
+        let mut worst: f64 = 0.0;
+        let mut passes = 0;
+        for _ in 0..120 {
+            let t = p.step(2.0, Demand::Power(watts), &env());
+            passes = passes.max(t.solve_iterations);
+            assert!(!t.flags.contains(EventFlags::SOLVE_UNCONVERGED));
+            worst = worst.max((t.v_terminal * t.i_actual - watts).abs());
+        }
+        assert!(
+            worst < 1.0e-6,
+            "{watts} W demand delivered up to {worst} W off the request"
+        );
+        // The first step, where the cell has only its seed resistance, is the pass the
+        // iteration works hardest on. If this ever reads 1 the loop is not running.
+        assert!(
+            passes >= 3,
+            "{watts} W demand converged in {passes} passes, which is too few to have \
+             corrected a seed-resistance line"
+        );
+    }
+}
+
+/// A voltage demand is the same failure with a name this repo already uses: **CV**.
+///
+/// `Demand::Voltage` is closed form off the aggregate line, `i = (E − V*)/R`, so an
+/// intercept one step stale asks for a current wrong by `ΔE/R` — and on a taper, where the
+/// current is small, that error is a large fraction of it. Measured before slice C on a
+/// pack held at 3.60 V after a long 1C discharge: the first CV step drew **−4.64 A** where
+/// the converged answer is −2.56 A, and the pack sat at 3.651 V — **51 mV** off the voltage
+/// it was told to hold, settling to tens of microvolts.
+///
+/// This matters beyond the DFN: the CC-CV charge policy the browser client ships sizes its
+/// switching band on how far the voltage solve lands from the target, and for this model
+/// that distance was three to four orders larger than the equivalent circuit's.
+#[test]
+fn a_voltage_demand_actually_holds_the_voltage() {
+    let mut p = pack(dfn_model(NODES, SHELLS), 1.0);
+    for _ in 0..200 {
+        p.step(2.0, Demand::Current(CAPACITY_AH), &env());
+    }
+    let mut worst: f64 = 0.0;
+    for _ in 0..60 {
+        let t = p.step(2.0, Demand::Voltage(3.90), &env());
+        assert!(!t.flags.contains(EventFlags::SOLVE_UNCONVERGED));
+        worst = worst.max((t.v_terminal - 3.90).abs());
+    }
+    assert!(
+        worst < 1.0e-6,
+        "a 3.90 V hold landed up to {worst} V away, where the pack solve's own tolerance \
+         is 1e-9 V"
+    );
+}
+
+/// A zero-length probe step must not reach the cell's solver, and a *voltage* demand is
+/// the only demand that shows it.
+///
+/// This test exists because removing [`sim_core::dfn`]'s `dt <= 0` guard broke **nothing**
+/// in this suite. It is a real landmine: the backward-Euler mass rows carry
+/// `(c − c_old)/dt`, so at `dt = 0` the transient vanishes and the solve returns the same
+/// voltage at every current — a curve with `dV/di = 0`, whose tangent resistance falls onto
+/// the `1e-9 Ω` floor that exists to stop the pack dividing by zero. Measured with the
+/// guard removed: a 3.90 V hold asked for **1.03e9 A** and ran the pack solve to its
+/// iteration cap. With it, 6.86 A in one pass.
+///
+/// A current demand cannot catch this — `solve_current` hands back the demand whatever the
+/// aggregate resistance says — which is why the two probe steps below differ in kind rather
+/// than in number. Reading an instantaneous voltage with a zero-length step is how this
+/// repo does it (see the energy-balance property test), so this path is walked, not
+/// hypothetical.
+#[test]
+fn a_zero_length_probe_step_does_not_reach_the_solver() {
+    let mut p = pack(dfn_model(NODES, SHELLS), 1.0);
+    for _ in 0..50 {
+        p.step(2.0, Demand::Current(CAPACITY_AH), &env());
+    }
+    // A current demand: the current is the demand, so this only pins that nothing blows up.
+    let held = p.step(0.0, Demand::Current(CAPACITY_AH), &env());
+    assert!(held.v_terminal.is_finite() && !held.flags.contains(EventFlags::SOLVE_UNCONVERGED));
+
+    // A voltage demand: here the current comes from the aggregate line's resistance, and a
+    // resistance on the floor is a current off the scale.
+    let cv = p.step(0.0, Demand::Voltage(3.90), &env());
+    assert!(
+        !cv.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+        "a zero-length voltage probe ran the pack solve to its cap"
+    );
+    assert_eq!(
+        cv.solve_iterations, 1,
+        "a zero-length probe has no transient to re-linearize, so one pass is the answer"
+    );
+    assert!(
+        cv.i_actual.abs() < 10.0 * CAPACITY_AH,
+        "a 3.90 V zero-length probe drew {} A, which is not a current this cell can pass — \
+         the differential resistance has collapsed onto its floor",
+        cv.i_actual
+    );
+}
+
+/// A parallel group re-splits its current too — and the effect is **much smaller** than
+/// the demand solves above, for a reason worth recording rather than discovering.
+///
+/// A stale line is stale mostly in its intercept, by roughly one step of `dV/dt`. Inside a
+/// parallel group that staleness is common-mode: it moves every cell's `E` by nearly the
+/// same amount and cancels out of the split. What survives is the differential part, and on
+/// a 5 %-scatter 1S2P pack at 1C it moves the split by about 30 µA on 2.6 A — twelve parts
+/// per million, rising with rate.
+///
+/// So this test asserts what is actually true: the group re-linearizes (three passes, where
+/// a current demand on a single cell needs two), and the two cells still carry the whole
+/// pack current between them. It deliberately does **not** assert a large split change,
+/// because there is not one.
+#[test]
+fn a_parallel_group_re_splits_but_the_staleness_was_common_mode() {
+    let mut c = cfg(dfn_model(NODES, SHELLS), 1.0);
+    c.parallel = 2;
+    c.scatter = Scatter {
+        capacity_sigma: 0.05,
+        r0_sigma: 0.05,
+    };
+    let mut p = Pack::new(&c, parse_chemistry(LGM50).expect("LG M50 parses")).expect("builds");
+    let demand = 2.0 * CAPACITY_AH;
+    let mut passes = 0;
+    for _ in 0..40 {
+        let t = p.step(2.0, Demand::Current(demand), &env());
+        passes = passes.max(t.solve_iterations);
+        assert!(!t.flags.contains(EventFlags::SOLVE_UNCONVERGED));
+    }
+    assert!(
+        passes >= 3,
+        "a scattered parallel group converged in {passes} passes; the split is nonlinear \
+         and should cost at least one more than a single cell's two"
+    );
+    let cells = &snapshot_json(&p)["pack"]["groups"][0]["cells"];
+    let split: Vec<f64> = (0..2)
+        .map(|k| {
+            cells[k]["model"]["Dfn"]["i_last"]
+                .as_f64()
+                .expect("i_last is a number")
+        })
+        .collect();
+    assert!(
+        (split[0] + split[1] - demand).abs() < 1.0e-9,
+        "the group's cells carry {} + {} A against a {demand} A demand",
+        split[0],
+        split[1]
+    );
+    assert!(
+        split[0] != split[1],
+        "a 5 % scattered group split its load evenly, so the scatter reached nothing"
+    );
 }
 
 /// Charge in, charge out: driving the cell down and back returns the lithium to the

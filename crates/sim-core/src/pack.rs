@@ -1328,11 +1328,18 @@ impl Pack {
         let g_ext = self.faults.external_short_conductance_s();
 
         let mut group_src: Vec<(f64, f64)> = Vec::with_capacity(self.groups.len());
-        // Scratch for the nonlinear iteration: the tangents pass *n+1* aggregates from,
-        // and the currents pass *n* assigned. Both stay empty — and therefore
-        // unallocated — on a linear pack, and neither is ever written into `cell_src`:
-        // an in-flight iterate is exactly what [`SourceCache`]'s invariant excludes.
+        // Scratch for the nonlinear iteration: the tangents pass *n* aggregates from, the
+        // ones its probes just took (which become pass *n+1*'s after the swap below), and
+        // the currents pass *n* assigned. All stay empty — and therefore unallocated — on
+        // a linear pack, and none is ever written into `cell_src`: an in-flight iterate is
+        // exactly what [`SourceCache`]'s invariant excludes.
+        //
+        // Two tangent buffers rather than one because the pass's *aggregation source* has
+        // to survive the probes: the converged pass reports and advances from the line it
+        // aggregated, not from the fresher line its own probes took at the currents that
+        // line predicted. Writing the probes back in place would silently swap those two.
         let mut tangent: Vec<(f64, f64)> = Vec::new();
+        let mut probed: Vec<(f64, f64)> = Vec::new();
         let mut i_cell: Vec<f64> = Vec::new();
         let mut flags = EventFlags::empty();
         let mut solve_iterations: u32 = 0;
@@ -1480,6 +1487,7 @@ impl Pack {
                 &tangent
             };
             i_cell.clear();
+            probed.clear();
             let mut residual_v = 0.0_f64;
             for (g_idx, group) in self.groups.iter().enumerate() {
                 let (e_gv, r_gv) = group_src[g_idx];
@@ -1487,13 +1495,23 @@ impl Pack {
                 for (k, cell) in group.cells.iter().enumerate() {
                     let (e_k, r_k) = src[g_idx * parallel + k];
                     let i_k = (e_k - v_node) / r_k;
-                    let gap = (cell.model.terminal_v_at(
+                    // One evaluation of the cell's curve, answering both questions this
+                    // pass has: where the curve is (the residual) and where it is going
+                    // (the next pass's tangent). Asking separately would evaluate twice,
+                    // and for a DFN an evaluation is a nonlinear solve — see
+                    // [`CellModel::probe_at`]. The tangent is kept even on the pass that
+                    // turns out to converge, where it is then discarded; that costs a
+                    // single-particle cell two table-lookup voltage evaluations per cell
+                    // and a DFN one Jacobian factorisation it was doing anyway.
+                    let (v_k, line_k) = cell.model.probe_at(
                         &self.chem,
                         cell.eff_r0_factor(),
                         cell.eff_capacity_ah(cap_ah),
                         i_k,
-                    ) - v_node)
-                        .abs();
+                        dt,
+                    );
+                    probed.push(line_k);
+                    let gap = (v_k - v_node).abs();
                     // The NaN arm is not defensive noise: `f64::max` *discards* a NaN
                     // in favour of the other operand, so a pack driven somewhere
                     // pathological would report a converged solve over a state that
@@ -1513,16 +1531,9 @@ impl Pack {
                 break (i_g, i_external_short_a, prot_flags);
             }
 
-            // Re-take every tangent where this pass put the cell.
-            tangent.clear();
-            for (idx, cell) in self.groups.iter().flat_map(|g| g.cells.iter()).enumerate() {
-                tangent.push(cell.model.source_at(
-                    &self.chem,
-                    cell.eff_r0_factor(),
-                    cell.eff_capacity_ah(cap_ah),
-                    i_cell[idx],
-                ));
-            }
+            // The tangents the probes above took, where this pass put each cell, become
+            // what the next pass aggregates from.
+            std::mem::swap(&mut tangent, &mut probed);
         };
         flags |= prot_flags;
         // The sources the *converged* pass aggregated from — the ones the per-cell
@@ -1620,6 +1631,27 @@ impl Pack {
                 // A shorted cell's terminal current is smaller by `v_node · shunt_g`
                 // — the part that never leaves the cell.
                 let i_k = (e_k - v_node) / r_k;
+                // The converged pass probed this same cell at this same current: same
+                // expression, same `solved_src`, same `v_node`. Two things rest on that
+                // and neither should rest on an argument alone, so it is checked here on
+                // the [`SourceCache`] staleness assert's precedent — every test in the
+                // suite becomes a check of it, and release builds pay nothing.
+                //
+                // * **A probe needs no flag channel.** `dfn::probe_at` returns no
+                //   `EventFlags`, and the justification is that the probe the step's
+                //   answer rests on is the identical solve `advance` is about to run and
+                //   raise `SOLVE_UNCONVERGED` for.
+                // * **The deferred optimisation is real.** That identity means a DFN pays
+                //   one solve here that the converged probe already did — `advance` could
+                //   consume it. Doing so means threading a solved artifact plus its
+                //   particle affine maps through `CellModel::advance`, which is a slice of
+                //   its own; this assert is what makes the deferral verified rather than
+                //   plausible.
+                debug_assert!(
+                    !nonlinear || i_cell[g * parallel + k].to_bits() == i_k.to_bits(),
+                    "cell {g}S{k}P advances at {i_k} A but was probed at {} A",
+                    i_cell[g * parallel + k]
+                );
                 // Heat from the same start-of-step state that produced `i_k`, so
                 // the energy accounting closes exactly (see `cell_heat_w`).
                 let mut q = cell.model.heat_w(

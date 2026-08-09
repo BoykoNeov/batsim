@@ -682,6 +682,29 @@ pub(crate) fn source_at(
     eff_capacity_ah: f64,
     i: f64,
 ) -> (f64, f64) {
+    probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i).1
+}
+
+/// Where the curve is at `i`, and what straight line touches it there: `(V(i), (E, R))`,
+/// from the cell's start-of-step state.
+///
+/// The pack's iteration wants both at the same operating point — the curve to measure its
+/// aggregate against, and the line to aggregate on the next pass — and asking for them
+/// separately evaluated `voltage` at `i` twice. Both are pure in the same arguments, so
+/// computing it once is bit-for-bit what computing it twice was; the saving is small here
+/// and structural for [`crate::dfn::probe_at`], where each of those calls is a nonlinear
+/// solve rather than a table lookup.
+///
+/// **Not a pure function of state**, exactly as [`source_at`] is not: `i` is an in-flight
+/// iterate, and nothing computed here may be written into `SourceCache`.
+#[must_use]
+pub(crate) fn probe_at(
+    s: &SpmState,
+    spm: &SpmParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    i: f64,
+) -> (f64, (f64, f64)) {
     let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
     let h = 1.0e-6 * eff_capacity_ah;
     let r = -(voltage(&w, s, i + h) - voltage(&w, s, i - h)) / (2.0 * h);
@@ -696,26 +719,8 @@ pub(crate) fn source_at(
     } else {
         R_FLOOR_OHMS
     };
-    (voltage(&w, s, i) + i * r, r)
-}
-
-/// Terminal voltage \[V\] this cell would actually hold at current `i`
-/// \[A, discharge-positive\], from its start-of-step state.
-///
-/// The nonlinear counterpart of the tangent [`source_at`] returns: `source_at`
-/// answers "what straight line touches the curve here", this answers "where is the
-/// curve". The pack's solve needs both — the line to aggregate, and the curve to
-/// measure how far the aggregate's answer has drifted from it.
-#[must_use]
-pub(crate) fn terminal_v(
-    s: &SpmState,
-    spm: &SpmParams,
-    eff_r0_factor: f64,
-    eff_capacity_ah: f64,
-    i: f64,
-) -> f64 {
-    let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
-    voltage(&w, s, i)
+    let v = voltage(&w, s, i);
+    (v, (v + i * r, r))
 }
 
 /// Advance both particles by `dt` seconds under the current `i` the pack solve

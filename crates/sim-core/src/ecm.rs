@@ -245,66 +245,51 @@ impl CellModel {
         }
     }
 
-    /// [`Self::source`], but tangent at the caller's operating point `i`
-    /// \[A, discharge-positive\] rather than at the model's own.
+    /// Where this cell's curve is at current `i` \[A, discharge-positive\] over a step of
+    /// `dt` seconds, and the straight line touching it there: `(V(i), (E, R))`.
     ///
-    /// The equivalent circuit **ignores `i` entirely**, and that is the point rather
+    /// The pack's nonlinear iteration needs both at the same operating point — the curve
+    /// to measure its aggregate against, and the tangent to aggregate from on the next
+    /// pass — and this returns them from one evaluation. **That is a cost decision, not
+    /// tidiness.** Two calls at one current are two evaluations, and for
+    /// [`crate::dfn::probe_at`] an evaluation is a coupled nonlinear solve. For every arm
+    /// the merged answer is bit-for-bit what the two separate ones were.
+    ///
+    /// The equivalent circuit **ignores both `i` and `dt`**, and that is the point rather
     /// than an omission: a linear cell's Thévenin source is the same line at every
     /// current, so the tangent at any operating point is `cell_source`'s existing
-    /// expression, byte for byte. That is what makes the pack's nonlinear iteration
-    /// collapse to today's closed form on an all-equivalent-circuit pack — see
-    /// [`Self::is_linear`], which is the flag the pack actually branches on.
+    /// expression, byte for byte, and `V` is that line evaluated. That is what makes the
+    /// pack's nonlinear iteration collapse to today's closed form on an
+    /// all-equivalent-circuit pack — see [`Self::is_linear`], which is the flag the pack
+    /// actually branches on.
+    ///
+    /// `dt` is here for the DFN alone, and it is the argument that made this a *contract*
+    /// change rather than a merge: an equivalent circuit's and a single particle's
+    /// `V(i)` are start-of-state readouts with no step length in them, while a DFN's is
+    /// the backward-Euler solve over the step. See [`crate::dfn::probe_at`] for what it
+    /// does with `dt <= 0`, which is the path a zero-length probe step takes.
     ///
     /// Not memoisable: `i` is an in-flight iterate, not state. See
     /// [`crate::spm::source_at`].
     #[must_use]
-    pub(crate) fn source_at(
+    pub(crate) fn probe_at(
         &self,
         chem: &ChemistryParams,
         eff_r0_factor: f64,
         eff_capacity_ah: f64,
         i: f64,
-    ) -> (f64, f64) {
-        match self {
-            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_source(s, chem, eff_r0_factor),
-            CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
-                spm::source_at(s, spm, eff_r0_factor, eff_capacity_ah, i)
-            }),
-            // Ignores `i` like the equivalent circuit's arm, and for a different reason:
-            // not because the line is exact, but because evaluating this model's curve
-            // anywhere is a full nonlinear solve. See `crate::dfn::source`.
-            CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, 1.0), |(spm, d)| {
-                dfn::source(s, spm, d, eff_r0_factor, eff_capacity_ah)
-            }),
-        }
-    }
-
-    /// Terminal voltage \[V\] this cell holds at current `i`
-    /// \[A, discharge-positive\], from its start-of-step state.
-    ///
-    /// Slice A's design listed this among the quantities `pack.rs` needs and slice A
-    /// did not ship it, because nothing needed it while every cell was linear: for an
-    /// equivalent circuit it is exactly `E − i·R` off [`Self::source`], which the
-    /// pack already had. A nonlinear cell is where the two part company, and the gap
-    /// between them *is* the residual the pack's iteration drives to zero.
-    #[must_use]
-    pub(crate) fn terminal_v_at(
-        &self,
-        chem: &ChemistryParams,
-        eff_r0_factor: f64,
-        eff_capacity_ah: f64,
-        i: f64,
-    ) -> f64 {
+        dt: f64,
+    ) -> (f64, (f64, f64)) {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
                 let (e, r) = cell_source(s, chem, eff_r0_factor);
-                e - i * r
+                (e - i * r, (e, r))
             }
-            CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
-                spm::terminal_v(s, spm, eff_r0_factor, eff_capacity_ah, i)
+            CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, (0.0, 1.0)), |spm| {
+                spm::probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i)
             }),
-            CellModel::Dfn(s) => Self::dfn_params(chem).map_or(0.0, |(spm, d)| {
-                dfn::terminal_v(s, spm, d, eff_r0_factor, eff_capacity_ah, i)
+            CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, (0.0, 1.0)), |(spm, d)| {
+                dfn::probe_at(s, spm, d, eff_r0_factor, eff_capacity_ah, i, dt)
             }),
         }
     }

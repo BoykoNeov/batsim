@@ -73,13 +73,18 @@
 //! real-time stepping and months-long aging fast-forward" holds here *with that stated
 //! envelope*, unlike the SPM where it holds unconditionally.
 //!
-//! # What this cell shows the pack, in this slice
-//! A **line**: the Thévenin tangent its own last solve produced, carried in
-//! [`DfnState::tangent`]. Slice B deliberately contains no Newton solve outside
-//! [`advance`] — evaluating `V(i)` at an arbitrary operating point is a full nonlinear
-//! solve for this model, and letting the pack's iteration ask for one would cost three
-//! DFN solves per cell per pass. Wiring the pack to a tangent the cell computed *during*
-//! its own solve is Phase 7 slice C. See [`source`].
+//! # What this cell shows the pack
+//! Two things, and the split is the whole of the pack integration. [`source`] hands over a
+//! **line** — the Thévenin tangent its own last solve produced, carried in
+//! [`DfnState::tangent`] — which is a pure function of state and is where the pack's first
+//! pass linearizes. [`probe_at`] then answers the iteration with the **curve**, by solving
+//! the step again at the current that pass assigned.
+//!
+//! That costs a full nonlinear solve per pass, and it is one rather than three only because
+//! the tangent comes off the same factorised Jacobian as a sensitivity solve. The pack asks
+//! for the voltage and the tangent in a single call for exactly that reason: two calls at
+//! one current would be two solves. A 1S1P constant-current step therefore runs two probes
+//! and one [`advance`] — three solves where the cell alone needs one.
 
 use serde::{Deserialize, Serialize};
 
@@ -1188,6 +1193,39 @@ struct StepSetup<'a> {
     c_e0: f64,
 }
 
+/// Assemble the per-step, per-`dt` half of a solve's inputs from the cell's state.
+///
+/// Split out of [`advance`] so that [`probe_at`] builds *exactly* the same setup: a probe
+/// at the current the pack finally assigns has to be the same computation `advance` then
+/// runs, or the argument that a probe needs no flag channel of its own (see [`probe_at`])
+/// would not hold. The caller still builds `sides` and `grid` itself, because it has to
+/// check the grid against the state before there is anything to set up.
+fn setup_for<'a>(
+    s: &DfnState,
+    spm: &SpmParams,
+    dfn: &'a DfnParams,
+    sides: &'a Sides<'a>,
+    grid: &'a Grid,
+    dt: f64,
+) -> StepSetup<'a> {
+    StepSetup {
+        sides,
+        grid,
+        dfn,
+        parts_neg: s
+            .c_neg
+            .iter()
+            .map(|c| particle_map(c, &spm.negative, sides.neg.d_s, sides.kappa, dt))
+            .collect(),
+        parts_pos: s
+            .c_pos
+            .iter()
+            .map(|c| particle_map(c, &spm.positive, sides.pos.d_s, sides.kappa, dt))
+            .collect(),
+        c_e0: spm.c_e_mol_per_m3,
+    }
+}
+
 /// Solve one step of the coupled system at applied current `i` \[A, discharge-positive\].
 ///
 /// Fixed-step backward Euler, damped Newton, analytic banded Jacobian. Never panics and
@@ -1448,24 +1486,12 @@ fn seed_resistance(s: &DfnState, spm: &SpmParams, dfn: &DfnParams, sides: &Sides
 /// This cell's Thévenin line `(E, R)` for the pack's solve: the tangent its own last solve
 /// produced, or a seed if it has never taken one.
 ///
-/// # Why this is a stored line rather than an evaluated curve
-/// For an SPM, `V(i)` is a handful of table lookups, so [`crate::spm::source_at`] can
-/// re-take the tangent wherever the pack's iteration asks. **For a DFN, `V(i)` is a full
-/// nonlinear solve.** Answering the pack's iteration in kind would cost three DFN solves
-/// per cell per pass — the structural risk the SPM's shape hides — so this slice does not
-/// offer it. The line stored in [`DfnState::tangent`] is tangent to the curve at the
-/// current the cell last carried, which is the same arrangement the SPM had at Phase 6
-/// slice C2 before its iteration landed.
-///
-/// A consequence worth reading off rather than discovering: a DFN pack reports
-/// **`solve_iterations == 1`**, the same number an all-equivalent-circuit pack does, even
-/// though [`crate::CellModel::is_linear`] answers `false` for it and the iteration really
-/// does run. It exits on its first pass because the "curve" it measures the aggregate
-/// against — [`terminal_v`] — *is* the line it aggregated, so the residual is zero up to
-/// floating-point reassociation. That number means **the pack has nothing to chase yet**,
-/// not that a DFN is nearly linear; the same reading of `solve_iterations` on an SPM pack
-/// would be a statement about physics, and here it is a statement about this slice.
-/// Phase 7 slice C is what makes those passes mean something.
+/// # This is the *start* of the pack's iteration, not its answer
+/// The line stored in [`DfnState::tangent`] is tangent to the curve at the current the cell
+/// carried over the previous step, so it is where the pack's first pass linearizes and
+/// nothing more. [`probe_at`] is what the iteration then measures that pass against, and it
+/// re-solves. This function stays a pure function of state so that `SourceCache` can
+/// memoise it; the probe deliberately is not one.
 ///
 /// # Purity
 /// A pure function of cell state and the two scale factors, which is what lets
@@ -1489,11 +1515,12 @@ pub(crate) fn source(
     )
 }
 
-/// Terminal voltage \[V\] this cell holds at current `i` \[A, discharge-positive\].
+/// The stored line [`source`] returns, evaluated at `i` \[A, discharge-positive\].
 ///
-/// The line [`source`] returns, evaluated — because in this slice the line *is* what this
-/// cell claims about itself. When slice C gives the model a way to hand the pack a tangent
-/// it computed mid-solve, this is where the curve arrives.
+/// **Not the curve** — [`probe_at`] is the curve, and it costs a solve. This is the cheap
+/// readout, used where a caller wants the cell's own claim about itself without asking it
+/// to integrate a step: [`overpotential_v`] reads it at [`DfnState::i_last`], which is the
+/// current the state it is decomposing was produced by.
 #[must_use]
 pub(crate) fn terminal_v(
     s: &DfnState,
@@ -1505,6 +1532,74 @@ pub(crate) fn terminal_v(
 ) -> f64 {
     let (e, r) = source(s, spm, dfn, eff_r0_factor, eff_capacity_ah);
     e - i * r
+}
+
+/// Evaluate this cell's real `V(i)` over a step of length `dt`, and take the tangent there:
+/// returns `(V, (E, R))` with `E = V + i·R` so the line passes through the point solved.
+///
+/// This is the whole of Phase 7 slice C. The pack's nonlinear iteration measures its
+/// aggregate against each cell's curve and re-linearizes there; until this existed a DFN
+/// answered with the line [`source`] had already handed over, so the residual was zero by
+/// construction and the iteration exited on its first pass with nothing to chase.
+///
+/// # It costs a full solve, and that is the honest price
+/// For an SPM, `V(i)` is a handful of table lookups and [`crate::spm::source_at`] takes its
+/// tangent by central difference — three evaluations. **For a DFN, `V(i)` is a coupled
+/// nonlinear solve**, so the same contract would have cost three of them per cell per pass.
+/// It costs one instead: the tangent comes off the *same* factorised Jacobian as a
+/// sensitivity solve (see [`solve`]), which is one back-substitution rather than a second
+/// and third solve. That is why `(V, (E, R))` is returned together rather than through two
+/// calls — two calls at the same current would be two solves, and the pack asks for both.
+///
+/// # Why no flag channel
+/// A probe's own Newton can fail exactly as [`advance`]'s can, and this returns no
+/// [`EventFlags`]. It does not need to: the pack probes the converged pass at the same
+/// current it then hands `advance` — bit-for-bit, which `pack::step` pins with a
+/// `debug_assert` — and this function and `advance` build the same [`setup_for`] from the
+/// same state, so the failing solve is the one `advance` raises the flag for. Probes on
+/// *intermediate* iterates are deliberately not reported, on the same reasoning that keeps
+/// the pack's protection flags a per-pass binding rather than an accumulator: an
+/// intermediate operating point the converged answer does not visit did not happen.
+///
+/// # `dt <= 0` does not reach the solver
+/// A zero-length probe step is how this repo reads an instantaneous voltage, and the
+/// backward-Euler mass rows carry `(c − c_old)/dt`. So a non-positive or `NaN` `dt` — which
+/// [`advance`] already refuses, without ever having had to survive it below — answers with
+/// the stored line instead. That is the right answer as well as the safe one: no time
+/// passes, so there is no transient to solve, and the cell reports what its last real solve
+/// concluded. The `NaN` test is spelled out rather than folded into a negated comparison,
+/// which is [`advance`]'s spelling and the one clippy accepts.
+#[must_use]
+pub(crate) fn probe_at(
+    s: &DfnState,
+    spm: &SpmParams,
+    dfn: &DfnParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    i: f64,
+    dt: f64,
+) -> (f64, (f64, f64)) {
+    let stored = |s: &DfnState| {
+        let line = source(s, spm, dfn, eff_r0_factor, eff_capacity_ah);
+        (line.0 - i * line.1, line)
+    };
+    if dt.is_nan() || dt <= 0.0 {
+        return stored(s);
+    }
+    let sides = Sides::new(spm, dfn, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    let grid = Grid::of(spm, dfn, &sides, s);
+    if grid.n() == 0 || grid.n() != s.c_e.len() {
+        // A grid that does not describe the state it came from, reachable only from a
+        // hand-edited snapshot. `advance` does nothing on it rather than indexing off the
+        // end; the matching answer here is the line, not a solve over a bad grid.
+        return stored(s);
+    }
+    let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
+    let solved = solve(s, &setup, i, dt);
+    (
+        solved.v_terminal,
+        (solved.v_terminal + i * solved.r_tangent, solved.r_tangent),
+    )
 }
 
 /// Total overpotential \[V\], discharge-positive: everything between the equilibrium
@@ -1578,22 +1673,7 @@ pub(crate) fn advance(
         // the end of it.
         return flags | soc_flags(s, spm);
     }
-    let setup = StepSetup {
-        sides: &sides,
-        grid: &grid,
-        dfn,
-        parts_neg: s
-            .c_neg
-            .iter()
-            .map(|c| particle_map(c, &spm.negative, sides.neg.d_s, sides.kappa, dt))
-            .collect(),
-        parts_pos: s
-            .c_pos
-            .iter()
-            .map(|c| particle_map(c, &spm.positive, sides.pos.d_s, sides.kappa, dt))
-            .collect(),
-        c_e0: spm.c_e_mol_per_m3,
-    };
+    let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
 
     let solved = solve(s, &setup, i, dt);
     if !solved.converged {

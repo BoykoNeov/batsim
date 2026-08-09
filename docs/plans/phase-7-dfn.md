@@ -38,7 +38,7 @@ badly that assumption fails, and the spike measured it.
 | ----- | ----- | ------- |
 | A | **`[dfn]` chemistry section** — schema, validation, extraction script, LG M50 gains one. **Plus the OCP table extension the spike found is required**, which is the part that can move an SPM trajectory and so carries exit criterion 1. No engine physics. **Landed; it did move one, and criterion 1 is amended — see the slice A note.** | v10 (no bump) |
 | B | **the DFN cell** — grid, state, the coupled Newton with an *analytic* banded Jacobian, `CellModel::Dfn`, `CellModelConfig::Dfn`, both `BuildError`s, the version-check test. Single cell; the pack still sees a linear source. **Carries the one bump. Landed; see the slice B note.** | **v10 → v11** |
-| C | **pack integration** — the tangent, which for a DFN cannot be the central difference `spm.rs` uses. Sensitivity solve off the already-factorised Jacobian. | v11 (no bump) |
+| C | **pack integration** — the tangent, which for a DFN cannot be the central difference `spm.rs` uses. Sensitivity solve off the already-factorised Jacobian. **Landed; see the slice C note.** | v11 (no bump) |
 | D | **PyBaMM DFN goldens, tolerance built to fail, DFN's own perf budget, README.** Carries exit criterion 2. | v11 (no bump) |
 
 Each slice keeps `cargo test --workspace` and
@@ -781,6 +781,152 @@ on exactly this: a 40-step 3C state sat at `c_e = 0.05`, five times the floor). 
 row-relative disagreement across them is ~1e-9 against a 1e-5 tolerance. A depleted state
 is then checked for the weaker property that actually matters there: every Jacobian entry
 finite.
+
+## Slice C — pack integration
+
+**Landed. `SNAPSHOT_VERSION` unmoved at v11.** `cargo test --workspace` green (406 tests),
+`cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+What shipped: `CellModel::probe_at` replacing `source_at` **and** `terminal_v_at`,
+`dfn::probe_at` (a real solve at the trial current) and `dfn::setup_for`, `spm::probe_at`
+(with `spm::terminal_v` deleted and `source_at` reduced to a projection of it), the pack
+loop's second tangent buffer and swap, a `debug_assert` pinning the precondition of the
+deferred optimisation, and five tests in `crates/sim-data/tests/dfn_cell.rs` (13 → 18).
+
+### What the slice actually buys, which is not what this plan predicted
+
+The plan and the slice B note both frame the payoff as the parallel group's current split.
+**It is not.** A stale line is stale mostly in its *intercept*, by about one step of
+`dV/dt`, and inside a parallel group that staleness is common-mode: it moves every cell's
+`E` by nearly the same amount and cancels out of the split. On a 5 %-scatter 1S2P pack at
+1C it moves the split by ~30 µA on 2.6 A — **12 ppm**, rising with rate.
+
+Where it is first-order is the two demands whose *current* is solved off the line:
+
+| | before slice C | after |
+| - | -------------- | ----- |
+| `Power(50 W)`, first step | 23.3 A drawn, **87.0 W delivered** | 50.000000 W |
+| `Power(50 W)`, settled | 75 mW off | ~1e-8 W |
+| `Power(20 W)`, settled | 2.4–3.9 mW off | ~2e-9 W |
+| `Voltage(3.60)` after a long 1C, first step | −4.64 A, holding **3.651 V** (51 mV off) | ≤1e-9 V |
+| `Voltage(3.90)`, settled | 120–190 µV off | ≤1e-9 V |
+
+The first rows are the seed resistance being asked to answer a demand; the settled rows are
+the one-step staleness. Both now land on the pack solve's own `SOLVE_TOL_V`. This reaches
+past the DFN: the browser client's CC-CV policy sizes its switching band on how far the
+voltage solve lands from its target, and for this model that distance was three to four
+orders larger than the equivalent circuit's 1.4e-4 V.
+
+A 1S1P constant-current discharge is the degenerate case and is **unchanged to every
+printed digit** (1C: 3484.0 s, 4.9872 A·h, min `c_e` 461.173; 3C: 726.0 s, 3.1177 A·h,
+−0.197), because `solve_current` hands back the demand whatever the aggregate says. Only
+the last bits of `i_k` move. `solve_iterations` goes 1 → **2** there, which is what
+`the_pack_solve_re_linearizes_where_it_put_the_cell` now pins.
+
+### The measurement that had to come first, and did
+
+`SOLVE_TOL_V` is 1e-9 V while the cell's own Newton stops at `NEWTON_TOL = 1e-8` on a
+row-scaled residual. If that termination error were *noise* in `i` above 1e-9 V, the pack
+residual would floor above its tolerance, every step would cost 32 solves, and every step
+would raise a false `SOLVE_UNCONVERGED` — a cost blowup wearing a physics problem's label.
+
+Measured before writing the contract, by sweeping trial currents around the operating point
+and subtracting the tangent the solve itself reports. The deviation falls as **exactly `h²`**
+— 7.9e-8, 7.9e-10, 7.9e-12, 7.9e-14 at `h` = 1e-2 … 1e-5 — and then sits at ~4e-16 V, one
+ULP of `V`. There is no noise floor: the inner solve's termination error is smooth in `i`,
+and 1e-9 V is reachable. (The same sweep cross-checks the sensitivity tangent: `R_fd − R`
+is ~1e-11 on `R = 0.0235 Ω` where curvature and cancellation are both small.)
+
+### The dt = 0 arm, which was a landmine and was unguarded by the suite
+
+`advance` refuses `dt <= 0`, so `solve` had never had to survive it — and this repo reads
+instantaneous voltage with zero-length probe steps. `probe_at` therefore answers `dt <= 0`
+with the stored line. **Removing that guard broke no test in the workspace**, which is why
+`a_zero_length_probe_step_does_not_reach_the_solver` now exists.
+
+What it prevents, measured: at `dt = 0` the mass rows' `(c − c_old)/dt` vanishes, the solve
+returns the same voltage at every current, and a curve with `dV/di = 0` has its tangent
+resistance clamped to the `1e-9 Ω` floor that exists to stop the pack dividing by zero. A
+`Voltage(3.90)` probe then asks for **1.03e9 A** and runs the pack solve to its cap. With
+the guard: 6.86 A, one pass, no flags. A *current* demand cannot catch this, because
+`solve_current` returns the demand whatever the resistance is — the test needs a voltage
+demand specifically.
+
+### Cost: three solves where slice B had one, and an SPM regression it does not repay
+
+Warm, alternating runs on the same box (the first pair was discarded — a build immediately
+before a measurement inflated everything, exactly as the perf note warns):
+
+| | slice B | slice C | |
+| - | ------- | ------- | - |
+| ECM 100S1P | 4.27–4.39 µs | 4.21–4.40 µs | unchanged |
+| SPM 1S1P | 1.03–1.05 | 1.22–1.23 | **+17 %** |
+| SPM 10S1P | 10.15–10.89 | 11.29–11.76 | +8–11 % |
+| DFN 1S1P | 58.1–61.9 | 165–184 | **2.8–3.2×** |
+
+The DFN factor is exactly the structure: two probes plus `advance`, where slice B ran one
+solve. The equivalent circuit is untouched because the loop breaks on `is_linear` before any
+probe — which is the check that caught the contaminated first run, since a 2× there could
+only have been the box.
+
+**The SPM regression is real and buys the SPM nothing.** `spm::source_at` already re-took
+its tangent at the trial current, so the SPM's iteration was already correct; what it now
+pays for is the merged call computing a tangent on the pass that turns out to converge,
+where the old shape skipped it. That waste is not removable without reintroducing the
+two-evaluation shape the DFN cannot afford: whether the tangent is needed is known only
+after every cell's gap is in, and by then a second call is a second solve. Stated rather
+than engineered around.
+
+**The one duplicate that is removable is priced and deferred.** `advance` re-solves at
+exactly the current the converged pass probed at — bit-for-bit, which `pack::step` now pins
+with a `debug_assert` on `to_bits()`, so every test in the suite checks it. Consuming that
+probe would take a DFN step from three solves to two (~33 %), and it needs a solved artifact
+plus `StepSetup`'s particle affine maps threaded through `CellModel::advance`. That is a
+slice, not a tidy-up. The assert is what makes the deferral *verified* rather than plausible,
+and it is also why `dfn::probe_at` carries no `EventFlags` channel: the probe the step's
+answer rests on is the identical solve `advance` raises `SOLVE_UNCONVERGED` for. Probes on
+intermediate iterates are deliberately unreported, on the same reasoning that keeps the
+pack's protection flags a per-pass binding rather than an accumulator.
+
+### Exit criterion 1: an exception, and it is 431 sign bits
+
+76 lines moved against `after-sliceB-p7.txt`, and **every one of the 431 changed fields is
+`7ff8000000000000` → `fff8000000000000`** — the sign bit of a quiet NaN. No finite value
+moved in 1254 lines. All of them are in `lgm50_2s2p_spm_scatter_thermal_aging` from its
+`CV 3.5 V` leg onward: the region `ANCHORS.md` already records as garbage in the anchor
+itself.
+
+The cause was **bisected, not argued**. With the SPM arm alone reverted to the old two-call
+shape, the instrument is byte-identical to the slice B anchor. So it is exactly
+`spm::probe_at` evaluating `voltage(&w, s, i)` once where two functions each evaluated it —
+the same value by purity, and no guarantee about which NaN bit pattern equivalent code
+produces. The merge was kept: un-merging to preserve the sign of a NaN would be writing
+deliberately redundant code, and the merge is the slice's contract.
+
+**And the snapshot hashes agreeing is not corroboration here.** They did not move on any
+case — but `serde_json` spells every non-finite float `null`, so an FNV over the snapshot
+JSON cannot tell `+NaN` from `−NaN`. That is a *fourth* blind spot of the instrument, and it
+is recorded in `ANCHORS.md` beside the other three. Anchor is now `after-sliceC-p7.txt`.
+
+### Built to fail: 5 of 5, and one test that exists only because of it
+
+Removing the mechanism (making `probe_at` answer with the stored line at every `dt`) fails
+all four of the demand/topology tests and nothing else in the workspace — no pre-existing
+test covered the mechanism, which is expected, and better than Phase 6's two-of-four.
+Removing only the `dt <= 0` guard failed **nothing**, and that is where the fifth test came
+from. A perturbation harness that had only run the first perturbation would have reported a
+clean sweep over a hole.
+
+### What slice D inherits
+
+- The 3C cliff assertion still passes and its margin is **unmoved**: the constant-current
+  trajectory did not change, so the 0.69-against-0.8 thinness slice B recorded is exactly as
+  it was, and refining the grid still moves it the wrong way.
+- The DFN perf budget slice D must state is now **165–184 µs per 1S1P step** at 10/5/10 with
+  `N_r = 10`, ~135× an `Spm` N=20 step in the same process — not slice B's 50–65×. Both the
+  ~40 µs projection earlier in this document and slice B's factor are superseded.
+- The aging-vs-resistance-growth gap slice B named is untouched: still implemented and still
+  unverified for this model.
 
 ## Environment
 
