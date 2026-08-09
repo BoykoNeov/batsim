@@ -187,9 +187,19 @@ change, and `scenarioSummary` already labels them by topology and BMS.
 **Two lesson steps**, taking the guided path from 14 to 16:
 
 1. *A short across the terminals, and the one step that got through* — 30 mΩ, `Rest`,
-   BMS on. The spike, the latch, the frozen SOC, and the invitation to press
-   **close contactor** with the short still live (another spike) and then in the right
-   order (nothing).
+   BMS on. The spike, the latch, the frozen SOC, and the invitation to clear the latch
+   with the short still live (another spike) and then in the right order (nothing).
+
+   Three details of that invitation are page behaviour, not engine behaviour, and each
+   was wrong in the first draft. The buttons are labelled **Clear latched BMS fault**
+   and **Clear queued**, so the prose must use those words rather than describing what
+   they do. The page is *paused* at a step's mark and clearing a latch does not step, so
+   the second spike needs an explicit Run. And re-running with a different `dt` must go
+   through **Restart** — `restart(bms)` rebuilds from the scenario at t = 0, re-queueing
+   the fault, and leaves the controls alone — because Back-then-Next re-applies the
+   step's whole control set and the new `dt` field would undo the very change the reader
+   was invited to make. A step that hands out instructions is a control path of its own
+   and has to be walked, not reasoned about.
 2. *The same short, three times weaker, and nothing that will clamp it* — 100 mΩ, `Rest`,
    BMS on, wasm transport so the BMS-off contrast can rebuild the pack in place. 73 s of
    silence, the thermal path arriving instead of the voltage one, the probe trailing
