@@ -48,7 +48,7 @@ whose note says they are order-of-magnitude placeholders awaiting a fit**; that 
 project rule (placeholders are acceptable, unlabeled numbers are not) rather than a claim
 that every number is fitted.
 
-The LG M50 file is the first with an `[spm]` section, and the first whose two halves have
+The LG M50 file is the first with an `[spm]` section, and the first whose parts have
 genuinely different provenance: its porous-electrode parameters are **extracted** verbatim
 from PyBaMM's Chen2020 set (so each has a literal citation), while its equivalent-circuit
 resistances remain labelled placeholders. Reading a voltage out of one half is reading
@@ -56,6 +56,13 @@ Chen2020; out of the other, a placeholder — and running the *same* cell throug
 models is the comparison Phase 6 exists for. The NMC 18650 set is hand-fit to datasheet
 curves and has no PyBaMM source; see its provenance line for why it cannot honestly
 acquire one.
+
+It also carries a `[dfn]` section — the electrolyte transport fits, porosities and solid
+conductivities a Doyle–Fuller–Newman cell needs, extending `[spm]` rather than replacing
+it. That section is **data ahead of a model**: nothing in the engine reads it yet, and
+the `Dfn` cell it is for is Phase 7's later slices. Its two transport properties are
+stored as the published Nyman 2008 coefficients rather than sampled onto a table, so they
+carry no interpolation error at all.
 
 ## Two cell models
 

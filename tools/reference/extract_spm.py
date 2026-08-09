@@ -42,7 +42,8 @@ import pybamm
 
 from common import PARAM_SETS
 
-# Stoichiometry margin either side of the usable window that the OCP tables cover.
+# Stoichiometry margin either side of the usable window that the OCP table's **core**
+# covers.
 #
 # The tables cannot stop at the usable limits. Under load a particle's *surface*
 # stoichiometry runs ahead of its bulk value — that lag is the entire point of the
@@ -50,7 +51,43 @@ from common import PARAM_SETS
 # the cell is working hardest. The margin is not free: graphite's OCP diverges as
 # x -> 0, so widening far enough to be safe would spend most of the table's points on
 # a region the cell never reaches.
+#
+# Phase 7 measured that 0.05 is not enough for a DFN, and *why* it looked like enough
+# for an SPM. See EXTEND_TO_FULL_RANGE below: the margin is no longer where the table
+# ends, only where its adaptively-refined core does.
 STOICH_MARGIN = 0.05
+
+# Extend each OCP table past the core margin to the full stoichiometry range [0, 1].
+#
+# ## Why, and why it is a Phase 7 finding rather than a Phase 6 bug
+#
+# A DFN resolves the reaction current through the electrode thickness, so it has a
+# *local* surface stoichiometry at every x-node. Phase 7's spike measured the positive
+# particle's local surface stoichiometry reaching **0.9998** at 3C, against a table
+# topping at 0.9040 — and spending 27.6 % of the run above it, where `ocp_lookup`
+# clamps flat exactly as the real OCP plunges. The x-AVERAGED value peaks at only
+# 0.7065. An SPM has only the x-averaged quantity, so no SPM run at any rate can reach
+# the table top: the 0.05 margin was right for the model it was sized for, and this
+# failure mode was unreachable in Phase 6, not merely undetected.
+#
+# ## Why the core is still generated over the old window
+#
+# `_ocp_table` refines greedily from `linspace(lo, hi, 9)` against a dense reference on
+# the same interval. Widening `lo`/`hi` and regenerating in one pass would move **every
+# breakpoint**, redistributing interpolation error *inside* the old window — and the
+# shipped SPM goldens and `spm_exact_bits.rs` are pinned to those breakpoints. So the
+# extension is append-only **by construction**: the core call is byte-for-byte the one
+# that produced the shipped table, and the two tails are tabulated separately and
+# concatenated. Regenerating this file must reproduce every existing breakpoint exactly
+# and must not insert a point strictly inside the old range.
+EXTEND_TO_FULL_RANGE = True
+
+# Seed points for a tail's adaptive grid, against `_ocp_table`'s 9 for a core.
+#
+# Lower because a tail is short and, at the top of both shipped electrodes, nearly or
+# exactly flat: graphite's fit is constant at 0.092020 V above ~0.96, so nine seed
+# points there would be nine ways of writing the same number.
+TAIL_SEED_POINTS = 3
 
 
 def _literal_from_source(fn, name: str) -> float:
@@ -72,7 +109,8 @@ def _literal_from_source(fn, name: str) -> float:
     return float(match.group(1))
 
 
-def _ocp_table(pv, ocp_fn, lo: float, hi: float, tol_v: float, max_points: int):
+def _ocp_table(pv, ocp_fn, lo: float, hi: float, tol_v: float, max_points: int,
+               n_seed: int = 9):
     """Tabulate `ocp_fn` over [lo, hi] to within `tol_v` of the true curve.
 
     Returns `(stoich, volts, max_lin_err_v, n)`.
@@ -96,7 +134,7 @@ def _ocp_table(pv, ocp_fn, lo: float, hi: float, tol_v: float, max_points: int):
     def err_of(grid):
         return np.abs(dense_v - np.interp(dense, grid, np.interp(grid, dense, dense_v)))
 
-    grid = list(np.linspace(lo, hi, 9))
+    grid = list(np.linspace(lo, hi, n_seed))
     while len(grid) < max_points:
         residual = err_of(np.array(grid))
         if float(np.max(residual)) <= tol_v:
@@ -119,6 +157,29 @@ def _fmt(xs, places: int) -> str:
     return ", ".join(f"{x:.{places}f}" for x in xs)
 
 
+def _tail(pv, ocp_fn, lo: float, hi: float, tol_v: float, drop: str):
+    """Tabulate the segment `[lo, hi]` that sits outside a core table, ready to append.
+
+    Returns `(stoich, volts, max_lin_err_v)`, empty when the segment is degenerate —
+    which the negative electrode's lower tail always is, because `lo - STOICH_MARGIN`
+    already clamps at zero there.
+
+    `drop` names the endpoint the core already owns (`"last"` for a segment below the
+    core, `"first"` for one above), and dropping it is what makes the concatenation a
+    valid strictly-ascending table rather than one with a repeated breakpoint. The
+    junction value is therefore always the core's, never this segment's — which is the
+    mechanical statement of "append-only": nothing this function returns can land on,
+    or inside, the core's range.
+    """
+    if not hi - lo > 0.0:
+        return np.array([]), np.array([]), 0.0
+    stoich, volts, err, _ = _ocp_table(
+        pv, ocp_fn, lo, hi, tol_v, 200, n_seed=TAIL_SEED_POINTS
+    )
+    cut = slice(None, -1) if drop == "last" else slice(1, None)
+    return stoich[cut], volts[cut], err
+
+
 def _electrode_block(name: str, side: str, pv, lo: float, hi: float, tol_v: float):
     """Emit one `[spm.<name>]` table. `side` is PyBaMM's "Negative"/"Positive"."""
     ocp_fn = pv[f"{side} electrode OCP [V]"]
@@ -128,7 +189,18 @@ def _electrode_block(name: str, side: str, pv, lo: float, hi: float, tol_v: floa
 
     lo_t = max(0.0, lo - STOICH_MARGIN)
     hi_t = min(1.0, hi + STOICH_MARGIN)
-    stoich, volts, err, n_points = _ocp_table(pv, ocp_fn, lo_t, hi_t, tol_v, 200)
+    stoich, volts, err, n_core = _ocp_table(pv, ocp_fn, lo_t, hi_t, tol_v, 200)
+
+    tail_err = 0.0
+    n_below = n_above = 0
+    if EXTEND_TO_FULL_RANGE:
+        below_s, below_v, err_below = _tail(pv, ocp_fn, 0.0, lo_t, tol_v, drop="last")
+        above_s, above_v, err_above = _tail(pv, ocp_fn, hi_t, 1.0, tol_v, drop="first")
+        n_below, n_above = len(below_s), len(above_s)
+        tail_err = max(err_below, err_above)
+        stoich = np.concatenate([below_s, stoich, above_s])
+        volts = np.concatenate([below_v, volts, above_v])
+    n_points = len(stoich)
 
     print(f"[spm.{name}]")
     print(f"particle_radius_m       = {pv[f'{side} particle radius [m]']:.6g}")
@@ -144,9 +216,17 @@ def _electrode_block(name: str, side: str, pv, lo: float, hi: float, tol_v: floa
     print(f"docp_dt_v_per_k         = {pv[f'{side} electrode OCP entropic change [V.K-1]']:.6g}")
     # ASCII only: the shipped chemistry files keep to it (they write "degC", not the
     # degree sign), and this text is pasted straight into one.
-    print(f"# OCP table over [{lo_t:.4f}, {hi_t:.4f}]: {n_points} adaptively-placed "
-          f"points, margin {STOICH_MARGIN} either side of the usable window")
-    print(f"# max piecewise-linear interpolation error of this table = {err * 1e3:.2f} mV")
+    print(f"# OCP table over the FULL stoichiometry range [{stoich[0]:.4f}, "
+          f"{stoich[-1]:.4f}]: {n_core} adaptively-placed core points over "
+          f"[{lo_t:.4f}, {hi_t:.4f}] (margin {STOICH_MARGIN} either side of the usable")
+    print(f"# window), plus {n_below} appended below and {n_above} above. The core is "
+          f"generated over the margin window ALONE and its breakpoints are unchanged "
+          f"from Phase 6:")
+    print(f"# regenerating it over [0, 1] in one pass would move every one of them and "
+          f"shift the interpolation inside the window that the shipped SPM goldens "
+          f"are pinned to.")
+    print(f"# max piecewise-linear interpolation error = {err * 1e3:.2f} mV in the "
+          f"core, {tail_err * 1e3:.2f} mV in the extension.")
     print(f"[spm.{name}.ocp]")
     print(f"stoich = [{_fmt(stoich, 6)}]")
     print(f"volts  = [{_fmt(volts, 6)}]")

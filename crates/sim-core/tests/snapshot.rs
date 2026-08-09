@@ -29,6 +29,7 @@ fn rich_chem() -> ChemistryParams {
         aging: None,
         safety: None,
         spm: None,
+        dfn: None,
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,
             h_area_w_per_k: 0.35,

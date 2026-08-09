@@ -291,44 +291,84 @@ fn the_spm_soc_readout_tracks_the_references_coulomb_count() {
 fn shell_count_convergence_puts_the_documented_default_at_the_floor() {
     // The open question slice C2 left for slice E: what is `N`? The answer is a
     // measurement, and this is it — worst-case voltage error against the converged
-    // reference at four shell counts on the rate that stresses the grid hardest.
+    // reference at three shell counts, on **all three** shipped scenarios.
     //
-    // Two assertions, and the second is the one that makes this a test rather than
-    // a printout: a coarse grid must be **materially worse**. Without it the whole
-    // thing passes just as well if the shell count stops doing anything.
-    let rows = parse_csv(CC_1C);
-    let err = |n: usize| {
-        let (v, _) = replay(&rows, n);
-        worst_v_error(&rows, &v).0
-    };
+    // # Why all three, and not the 1C curve alone (Phase 7, slice A)
+    //
+    // This test used to measure the 1C curve only, on the argument that it "stresses
+    // the grid hardest", and it asserted `fine > 0.5 * default` — refining past the
+    // default buys nothing — with the stated premise that the residual was the OCP
+    // tables' 1.88/1.90 mV interpolation error rather than the grid.
+    //
+    // **The premise was true for the wrong reason, and slice A's table extension
+    // falsified it.** The floor was not the tables' interpolation error, it was the
+    // positive table's *clamp*: this replay drives the positive particle's surface
+    // stoichiometry past the 0.9040 the table used to stop at for the last ~1.4 % of
+    // the run, where `ocp_lookup` reported a flat OCP exactly as the real one plunges.
+    // With the table run out to 1.0 that ceiling is gone, and at 1C refining to N=40
+    // now buys a genuine 2.5x (6.7 -> 2.6 mV).
+    //
+    // That is *not* a reason to move `DEFAULT_SHELLS`, and this is the measurement
+    // that says so: at C/5 and on the pulse train N=40 is **worse** than N=20. So 20
+    // is where the curves cross, refining is a trade rather than an improvement, and
+    // a single-rate bound dressed as a default-shells decision is exactly what the old
+    // third assertion turned out to be. It is not repaired by relaxing its constant.
+    let cases: [(&str, &str, f64); 3] = [
+        ("cc_c5", CC_C5, 0.005),
+        ("cc_1c", CC_1C, 0.012),
+        ("pulse_relax", PULSE, 0.005),
+    ];
 
-    let coarse = err(5);
-    let default = err(DEFAULT_SHELLS);
-    let fine = err(40);
+    // Measured after slice A's extension, worst |dV| in mV:
+    //
+    //   scenario     N=5     N=20    N=40
+    //   cc_c5        8.75    2.58    3.36
+    //   cc_1c       53.06    6.65    2.63
+    //   pulse_relax 30.59    1.87    2.98
+    //
+    // The N=40 column is the whole argument: it improves only on the 1C curve.
+    let mut n_fine_worse = 0;
+    for (name, csv, bound) in cases {
+        let rows = parse_csv(csv);
+        let err = |n: usize| {
+            let (v, _) = replay(&rows, n);
+            worst_v_error(&rows, &v).0
+        };
+        let coarse = err(5);
+        let default = err(DEFAULT_SHELLS);
+        let fine = err(40);
 
-    // Measured: N=5 → 53.1 mV, N=10 → 24.1 mV, N=20 → 6.7 mV, N=40 → 5.0 mV.
+        assert!(
+            default < bound,
+            "{name}: N={DEFAULT_SHELLS} worst error {:.2} mV is no longer at the floor",
+            default * 1e3
+        );
+        // The assertion that makes this a test rather than a printout: a coarse grid
+        // must be **materially worse**. Without it the whole thing passes just as well
+        // if the shell count stops doing anything.
+        assert!(
+            coarse > 3.0 * default,
+            "{name}: N=5 ({:.2} mV) is not materially worse than N={DEFAULT_SHELLS} \
+             ({:.2} mV) — the shell count has stopped mattering, and this test would \
+             pass with the radial solve removed",
+            coarse * 1e3,
+            default * 1e3
+        );
+        if fine > default {
+            n_fine_worse += 1;
+        }
+    }
+
+    // And the default-shells claim itself, which is a statement about the *set* of
+    // scenarios and cannot be made from any one of them: refining to N=40 has to cost
+    // somewhere, or 20 is simply under-resolved and the default should move. Two of
+    // three is what is measured; one of three would already be enough to make it a
+    // trade rather than a free improvement, and requiring all three would assert that
+    // refining never helps, which slice A just showed is false at 1C.
     assert!(
-        default < 0.012,
-        "N={DEFAULT_SHELLS} worst error {:.1} mV is no longer at the floor",
-        default * 1e3
-    );
-    assert!(
-        coarse > 4.0 * default,
-        "N=5 ({:.1} mV) is not materially worse than N={DEFAULT_SHELLS} ({:.1} mV) — \
-         the shell count has stopped mattering, and this test would pass with the \
-         radial solve removed",
-        coarse * 1e3,
-        default * 1e3
-    );
-    // And refining past the default buys nothing, because the residual is the OCP
-    // tables rather than the grid. Stated as a bound rather than an equality: the
-    // claim is "no longer improving", not "identical".
-    assert!(
-        fine > 0.5 * default,
-        "N=40 ({:.1} mV) improved on N={DEFAULT_SHELLS} ({:.1} mV) by more than 2x — \
-         the default is under-resolved and DEFAULT_SHELLS should move",
-        fine * 1e3,
-        default * 1e3
+        n_fine_worse >= 1,
+        "N=40 beat N={DEFAULT_SHELLS} on every shipped scenario — refining is no \
+         longer a trade, and DEFAULT_SHELLS should move rather than this bound"
     );
 }
 

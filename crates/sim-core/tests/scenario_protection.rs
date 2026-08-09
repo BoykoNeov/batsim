@@ -68,6 +68,7 @@ fn chem() -> ChemistryParams {
         aging: None,
         safety: None,
         spm: None,
+        dfn: None,
         meta: ChemMeta {
             id: "prot".into(),
             name: "Protection test cell".into(),

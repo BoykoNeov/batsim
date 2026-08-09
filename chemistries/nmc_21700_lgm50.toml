@@ -10,26 +10,28 @@
 # truthful file rather than by renaming an untruthful one. See
 # docs/plans/phase-6-porous-electrodes.md.
 #
-# ## The two halves of this file have very different provenance, and it matters
+# ## The parts of this file have very different provenance, and it matters
 #
-# * The **[spm] section is extracted**: every value is a key of the Chen2020 parameter
-#   set, a literal inside one of its functions, or a stated product of two keys.
-#   Nothing in it is fitted, and `tools/reference/extract_spm.py` regenerates it.
+# * The **[spm] and [dfn] sections are extracted**: every value is a key of the Chen2020
+#   parameter set, a literal inside one of its functions, or a stated product of two
+#   keys. Nothing in either is fitted, and `tools/reference/extract_spm.py` and
+#   `extract_dfn.py` regenerate them.
 # * The **ECM sections are mixed**: [ocv] and capacity_ah are fitted from the same
 #   parameter set (tools/reference/fit_ocv.py), [thermal] is derived from its keys, and
 #   [r0] / [[rc]] / [aging] / [safety] are labelled placeholders, exactly as in the
 #   other shipped chemistries.
 #
 # Reading a terminal voltage out of the ECM half of this file is therefore reading a
-# placeholder resistance; reading one out of the SPM half is reading Chen2020. A cell
-# may carry both descriptions — running the same cell through both models is the
-# pedagogy Phase 6 exists for — but the two are not equally trustworthy and this
-# comment is where that is written down.
+# placeholder resistance; reading one out of the porous-electrode half is reading
+# Chen2020. A cell may carry all three descriptions — running the same cell through
+# three models and watching where the cheaper ones go wrong is the pedagogy Phases 6 and
+# 7 exist for — but they are not equally trustworthy and this comment is where that is
+# written down. Note [dfn] EXTENDS [spm] rather than replacing it: a DFN cell reads both.
 
 [meta]
 id         = "nmc_21700_lgm50"
 name       = "LG M50 21700 (NMC811/graphite)"
-provenance = "SPM parameters extracted verbatim from PyBaMM's Chen2020 parameter set (Chang-Hui Chen et al., 'Development of Experimental Techniques for Parameterization of Multi-scale Lithium-ion Battery Models', J. Electrochem. Soc. 167 (2020) 080534) by tools/reference/extract_spm.py; [ocv] and capacity fitted from the same set by tools/reference/fit_ocv.py; [thermal] derived from its keys; [r0]/[[rc]]/[aging]/[safety] are labelled placeholders."
+provenance = "SPM parameters extracted verbatim from PyBaMM's Chen2020 parameter set (Chang-Hui Chen et al., 'Development of Experimental Techniques for Parameterization of Multi-scale Lithium-ion Battery Models', J. Electrochem. Soc. 167 (2020) 080534) by tools/reference/extract_spm.py; [dfn] extracted from the same set by tools/reference/extract_dfn.py, its two electrolyte transport fits being Nyman 2008 (A. Nyman, M. Behm, G. Lindbergh, 'Electrochemical characterisation and modelling of the mass transport phenomena in LiPF6-EC-EMC electrolyte', Electrochim. Acta 53 (2008) 6356) stored as published coefficients rather than sampled; [ocv] and capacity fitted from the same set by tools/reference/fit_ocv.py; [thermal] derived from its keys; [r0]/[[rc]]/[aging]/[safety] are labelled placeholders."
 
 [cell]
 # provenance: usable capacity between the Chen2020 stoichiometry limits, as reported by
@@ -179,14 +181,24 @@ charge_transfer_alpha   = 0.5        # Chen2020 "Negative electrode charge trans
 stoich_min              = 0.02634579027064577  # pybamm.lithium_ion.get_min_max_stoichiometries
 stoich_max              = 0.910618046652409    # ditto
 docp_dt_v_per_k         = 0          # Chen2020 "Negative electrode OCP entropic change [V.K-1]" — literally zero
-# OCP table over [0.0000, 0.9606]: 45 adaptively-placed points, margin 0.05 either side of
-# the usable window (a particle's SURFACE stoichiometry runs past its bulk limits under
-# load, and a table that stopped at the limits would flatten the OCP exactly there).
-# max piecewise-linear interpolation error of this table = 1.90 mV.
+# OCP table over the FULL stoichiometry range [0, 1]: 45 adaptively-placed core points
+# over [0.0000, 0.9606] (margin 0.05 either side of the usable window), plus 2 appended
+# above. Max piecewise-linear interpolation error = 1.90 mV in the core, 0.00 mV in the
+# extension — graphite's fit is exactly constant at 0.092020 V above 0.96, which is why
+# two points describe that whole tail.
 # Monotone NON-INCREASING: lithiating an electrode lowers its potential against Li metal.
+#
+# The core's 45 breakpoints are UNCHANGED from Phase 6 and that is load-bearing rather
+# than incidental: `extract_spm.py` refines its grid greedily against a dense reference
+# over the interval it is given, so regenerating over [0, 1] in one pass would move every
+# one of them and shift the interpolation inside the window the shipped SPM goldens and
+# `spm_exact_bits.rs` are pinned to. The extension is therefore append-only by
+# construction — the core is generated over the margin window alone, and the tails are
+# tabulated separately and concatenated. See the extension note above [spm.positive.ocp],
+# which is the electrode this was actually measured on.
 [spm.negative.ocp]
-stoich = [0.000000, 0.001921, 0.003842, 0.005764, 0.008165, 0.010086, 0.012488, 0.014409, 0.016811, 0.019212, 0.021614, 0.024015, 0.026897, 0.029779, 0.032661, 0.035543, 0.038905, 0.041787, 0.044669, 0.048031, 0.051393, 0.054755, 0.058598, 0.066283, 0.073968, 0.082613, 0.120077, 0.131605, 0.141211, 0.150817, 0.160904, 0.182037, 0.240155, 0.313161, 0.360232, 0.405381, 0.480309, 0.562442, 0.582615, 0.600386, 0.627284, 0.646976, 0.720464, 0.840541, 0.960618]
-volts  = [2.383542, 2.239361, 2.105678, 1.981729, 1.839406, 1.734843, 1.614777, 1.526564, 1.425269, 1.333101, 1.249234, 1.172918, 1.090348, 1.016606, 0.950740, 0.891900, 0.831122, 0.785002, 0.743763, 0.701109, 0.663619, 0.630624, 0.597669, 0.544080, 0.502793, 0.466069, 0.339172, 0.301626, 0.275332, 0.255382, 0.240870, 0.224442, 0.200475, 0.155705, 0.139904, 0.134918, 0.133212, 0.130928, 0.126620, 0.118532, 0.102776, 0.095991, 0.092070, 0.092020, 0.092020]
+stoich = [0.000000, 0.001921, 0.003842, 0.005764, 0.008165, 0.010086, 0.012488, 0.014409, 0.016811, 0.019212, 0.021614, 0.024015, 0.026897, 0.029779, 0.032661, 0.035543, 0.038905, 0.041787, 0.044669, 0.048031, 0.051393, 0.054755, 0.058598, 0.066283, 0.073968, 0.082613, 0.120077, 0.131605, 0.141211, 0.150817, 0.160904, 0.182037, 0.240155, 0.313161, 0.360232, 0.405381, 0.480309, 0.562442, 0.582615, 0.600386, 0.627284, 0.646976, 0.720464, 0.840541, 0.960618, 0.980309, 1.000000]
+volts  = [2.383542, 2.239361, 2.105678, 1.981729, 1.839406, 1.734843, 1.614777, 1.526564, 1.425269, 1.333101, 1.249234, 1.172918, 1.090348, 1.016606, 0.950740, 0.891900, 0.831122, 0.785002, 0.743763, 0.701109, 0.663619, 0.630624, 0.597669, 0.544080, 0.502793, 0.466069, 0.339172, 0.301626, 0.275332, 0.255382, 0.240870, 0.224442, 0.200475, 0.155705, 0.139904, 0.134918, 0.133212, 0.130928, 0.126620, 0.118532, 0.102776, 0.095991, 0.092070, 0.092020, 0.092020, 0.092020, 0.092020]
 
 [spm.positive]
 particle_radius_m       = 5.22e-06   # Chen2020 "Positive particle radius [m]"
@@ -200,10 +212,105 @@ charge_transfer_alpha   = 0.5        # Chen2020 "Positive electrode charge trans
 stoich_min              = 0.2638452245913301   # pybamm.lithium_ion.get_min_max_stoichiometries
 stoich_max              = 0.853974674630047    # ditto
 docp_dt_v_per_k         = 0          # Chen2020 "Positive electrode OCP entropic change [V.K-1]" — literally zero
-# OCP table over [0.2138, 0.9040]: 20 adaptively-placed points, same margin rule as above.
-# max piecewise-linear interpolation error of this table = 1.88 mV.
-# Monotone NON-INCREASING, for the same reason — note the cell voltage still RISES with
-# state of charge, because charging drives x up and y down at once.
+# OCP table over the FULL stoichiometry range [0, 1]: 20 adaptively-placed core points
+# over [0.2138, 0.9040] (same margin rule as above), plus 5 appended below and 2 above.
+# Max piecewise-linear interpolation error = 1.88 mV in the core, 1.37 mV in the
+# extension. Monotone NON-INCREASING, for the same reason as the negative — note the cell
+# voltage still RISES with state of charge, because charging drives x up and y down at
+# once.
+#
+# ## Why this table now runs to 1.0, and why a 0.05 margin looked sufficient for six
+#
+# This is the electrode the extension was MEASURED on. Phase 7's spike found that a DFN
+# drives this particle's LOCAL surface stoichiometry — the value at the separator-facing
+# edge, which only a model that resolves the electrode thickness has — to 0.9998 at 3C,
+# spending 27.6 % of the run above the 0.9040 this table used to stop at. Above it
+# `ocp_lookup` clamps flat, precisely where the real OCP plunges, so the modelled cell
+# kept delivering voltage: 876 s to cut-off against PyBaMM's 488 s at the same amps.
+#
+# The x-AVERAGED surface stoichiometry peaks at only 0.7065 even at 3C. An SPM has only
+# the x-averaged quantity, so no SPM run at any rate this simulator supports can reach
+# the old table top. The margin was not too small for the model it was sized for — it was
+# unreachably generous there, and this failure mode was not merely undetected in Phase 6
+# but impossible to reach. Extending both electrodes to the full range removes the
+# question rather than re-sizing a margin for a second model and inheriting it to a third.
 [spm.positive.ocp]
-stoich = [0.213845, 0.235239, 0.277682, 0.289069, 0.300111, 0.312879, 0.339104, 0.351871, 0.367054, 0.386378, 0.428821, 0.472644, 0.517157, 0.558910, 0.580304, 0.599283, 0.645176, 0.731442, 0.817708, 0.903975]
-volts  = [4.439085, 4.382325, 4.250906, 4.223702, 4.205249, 4.193330, 4.182349, 4.173384, 4.156102, 4.126908, 4.060738, 4.005020, 3.949186, 3.884181, 3.850953, 3.825361, 3.777287, 3.704691, 3.634779, 3.564985]
+stoich = [0.000000, 0.106923, 0.142421, 0.170007, 0.193209, 0.213845, 0.235239, 0.277682, 0.289069, 0.300111, 0.312879, 0.339104, 0.351871, 0.367054, 0.386378, 0.428821, 0.472644, 0.517157, 0.558910, 0.580304, 0.599283, 0.645176, 0.731442, 0.817708, 0.903975, 0.951987, 1.000000]
+volts  = [4.678510, 4.588174, 4.552776, 4.518795, 4.481868, 4.439085, 4.382325, 4.250906, 4.223702, 4.205249, 4.193330, 4.182349, 4.173384, 4.156102, 4.126908, 4.060738, 4.005020, 3.949186, 3.884181, 3.850953, 3.825361, 3.777287, 3.704691, 3.634779, 3.564985, 3.526142, 3.487300]
+
+# --- extracted from PyBaMM Chen2020 (pybamm 26.6.2.0) by tools/reference/extract_dfn.py ---
+# Every value below is a key of the parameter set or a coefficient of one of its published
+# closed-form electrolyte fits, read out of the function source and cross-checked against
+# PyBaMM's own evaluation at 7 concentrations. Nothing here is fitted, sampled or invented.
+#
+# ## This section EXTENDS [spm]; it does not stand alone
+#
+# Every electrode geometry, kinetic coefficient and OCP table a Doyle-Fuller-Newman cell
+# needs is already in [spm] above, and a DFN cell reads both sections. What is here is
+# only what a DFN adds: the electrolyte's transport properties as functions of
+# concentration, the porous geometry it occupies, and the solid-phase conductivities that
+# let the reaction current vary through the electrode thickness. In particular the
+# electrode thicknesses are [spm.negative]/[spm.positive].thickness_m and are not
+# repeated, while the SEPARATOR thickness is here, because a single-particle model has no
+# separator at all.
+#
+# ## Why the transport properties are coefficients rather than a table
+#
+# PyBaMM publishes D_e and kappa_e as callables, which is the shape that made
+# extract_spm.py parse function bodies. Underneath they are published closed-form fits
+# (Nyman 2008, LiPF6 in EC:EMC 3:7) with NO temperature dependence, so they are stored
+# exactly, as sums of coefficient * (c_e/1000)^exponent in the fit's own variable. That
+# is not tidiness: Phase 6 found the OCP tables' 1.88/1.90 mV interpolation error WAS the
+# SPM's accuracy floor, and sampling these onto a second grid would have raised it for
+# nothing. The exponent 1.5 in the conductivity is why this is a list of (coefficient,
+# exponent) pairs and not a coefficient array -- the fit is a sum of power terms, not a
+# polynomial.
+#
+# ## What this section deliberately does NOT carry
+#
+# No numerical guard on the concentration. kappa_e -> 0 as c_e -> 0 degenerates the
+# electrolyte potential equation and the reference genuinely goes there (at 3C, 90.6 % of
+# the run has c_e < 100 mol/m3 somewhere), but whatever floor a solver applies to its
+# LOOKUPS is a property of the solver, not of the electrolyte. The distinction is
+# load-bearing and measured: a floor of 100 mol/m3 buys four Newton iterations and pays
+# 0.72 A.h for them, monotonically and without raising any flag. A chemistry file that
+# carried that number would be hiding a solver decision inside a parameter set.
+[dfn]
+transference_number  = 0.2594   # "Cation transference number"
+thermodynamic_factor = 1.0   # "Thermodynamic factor" - literally 1.0, so the (1 + dlnf/dlnc) term is unity
+# D_e(c_e) [m2/s] and kappa_e(c_e) [S/m] as sums of coefficient * (c_e/1000)^exponent.
+# Nyman 2008, LiPF6 in EC:EMC 3:7; no temperature dependence, per the fit's own comment.
+# Both are NON-MONOTONE over the range a 3C discharge visits: D_e falls 10.8x from 200 to
+# 2200 mol/m3 and then rises, kappa_e peaks near 1000 and falls 2.3x by 2600.
+electrolyte_diffusivity_terms  = [{ coefficient = 8.794e-11, exponent = 2 }, { coefficient = -3.972e-10, exponent = 1 }, { coefficient = 4.862e-10, exponent = 0 }]
+electrolyte_conductivity_terms = [{ coefficient = 0.1297, exponent = 3 }, { coefficient = -2.51, exponent = 1.5 }, { coefficient = 3.329, exponent = 1 }]
+
+# Note porosity (eps_e) is a DIFFERENT number from [spm.*].active_volume_fraction (eps_s),
+# and the two do not sum to one: binder, conductive additive and carbon make up the rest.
+# Negative here is 0.75 solid against 0.25 pore; positive 0.665 against 0.335.
+[dfn.negative]
+porosity                   = 0.25   # "Negative electrode porosity" (eps_e, NOT the [spm] active_volume_fraction)
+bruggeman_electrolyte      = 1.5
+bruggeman_electrode        = 0   # the set's own value, not an omission
+# 215 S/m is a LOT of conductivity, and the spike measured what it buys: this electrode's
+# solid phase is equipotential to within 36 microvolts even at 3C.
+solid_conductivity_s_per_m = 215.0
+
+[dfn.positive]
+porosity                   = 0.335   # "Positive electrode porosity" (eps_e, NOT the [spm] active_volume_fraction)
+bruggeman_electrolyte      = 1.5
+bruggeman_electrode        = 0   # the set's own value, not an omission
+# Four orders of magnitude below the negative's, and this is the one that costs volts:
+# 2 mV at C/5, 42 mV at 3C. Still small next to the electrolyte's 668 mV at 3C, which is
+# why shipping "an SPM plus an electrolyte" would be nearly indistinguishable ON THIS SET
+# and is refused anyway -- a set with a worse positive conductivity would expose it.
+solid_conductivity_s_per_m = 0.18
+
+[dfn.separator]
+thickness_m           = 1.2e-05   # "Separator thickness [m]"
+porosity              = 0.47   # "Separator porosity"
+bruggeman_electrolyte = 1.5
+
+# For reference, the initial electrolyte concentration is 1000 mol/m3 and is NOT
+# repeated here: it is [spm].c_e_mol_per_m3, which an SPM holds CONSTANT and a DFN takes
+# as the initial value of a field it then solves for. Same key, same number, two readings.

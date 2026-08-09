@@ -50,6 +50,7 @@ fn chem() -> ChemistryParams {
         aging: None,
         safety: None,
         spm: None,
+        dfn: None,
         meta: ChemMeta {
             id: "fast_path".into(),
             name: "Fast-path test cell".into(),

@@ -62,7 +62,40 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
      near zero stoichiometry, where 81 uniform points left 43.9 mV of error; 45 adaptive
      ones give 1.9 mV.
 
-3. **`generate.py`** — runs isothermal (25 °C) scenarios and writes one CSV per
+   Since Phase 7 the tables span the **full** stoichiometry range [0, 1] rather than the
+   usable window plus a 0.05 margin, and the shape of the script matters here: the
+   adaptively-refined **core is still generated over the old margin window alone**, and
+   the two tails are tabulated separately and concatenated. That is not a stylistic
+   choice. The refinement is greedy against a dense reference on whatever interval it is
+   given, so regenerating over [0, 1] in one pass would move every breakpoint and shift
+   the interpolation *inside* the window the shipped SPM goldens are pinned to. The
+   extension has to be append-only by construction, and it is.
+
+3. **`extract_dfn.py`** — prints a TOML-ready `[dfn]` block: the electrolyte transport
+   fits, transference number, thermodynamic factor, porosities, Bruggeman exponents,
+   separator thickness and solid conductivities. Paste it into the matching
+   `chemistries/*.toml`, after `[spm]` — `[dfn]` **extends** that section rather than
+   replacing it, and a DFN cell reads both.
+
+   ```bash
+   python tools/reference/extract_dfn.py nmc_21700_lgm50
+   ```
+
+   The two transport properties are the whole difficulty and the answer is a good one.
+   PyBaMM publishes `D_e` and `κ_e` as *callables*, but underneath they are published
+   closed-form fits (Nyman 2008) with no temperature dependence, so they are stored
+   **exactly** as `(coefficient, exponent)` pairs in the fit's own variable `x = c_e/1000`
+   and carry no interpolation error at all. Sampling them onto a grid would have been the
+   obvious move and would have been actively harmful: Phase 6 found the OCP tables' own
+   1.88/1.90 mV interpolation error *was* the SPM's accuracy floor.
+
+   Unlike `extract_spm.py`'s regex, these coefficients live in *expressions* rather than
+   `name = value` assignments, so the script parses the function source with `ast` and
+   then **evaluates the parsed terms against PyBaMM's own callable at seven
+   concentrations**, refusing to emit anything if they disagree. That cross-check is what
+   makes a silent mis-parse loud.
+
+4. **`generate.py`** — runs isothermal (25 °C) scenarios and writes one CSV per
    scenario under `tests/golden/<chem_id>/`. Which reference model runs is a
    per-scenario choice, because batsim has two cell models:
 

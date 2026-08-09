@@ -44,6 +44,7 @@ fn chem() -> ChemistryParams {
         aging: None,
         safety: None,
         spm: None,
+        dfn: None,
         meta: ChemMeta {
             id: "bal".into(),
             name: "Balancing test cell".into(),

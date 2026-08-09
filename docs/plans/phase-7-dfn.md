@@ -25,7 +25,7 @@ badly that assumption fails, and the spike measured it.
 
 | exit criterion (authored here) | carried by |
 | ------------------------------ | ---------- |
-| **1. The floor did not move.** Every ECM **and SPM** trajectory the repo already asserts is bit-identical before and after the phase. Note the SPM half is new relative to Phase 6's version of this criterion, and it is not free — **slice A edits a file the SPM reads** (see below). | slice A, re-checked by every later slice |
+| **1. The floor did not move ~~bit-identically~~ — amended by slice A, see below.** Every ECM trajectory is bit-identical before and after the phase. Every SPM trajectory is bit-identical **except** where the old OCP tables were clamping, which slice A measured and corrected: the last ~1.4 % of the shipped 1C golden. The criterion as first authored said "bit-identical" on the premise that the extension was provably inert for the SPM; **that premise was false**, and the amendment is a measured, argued exception rather than a widened tolerance. | slice A, re-checked by every later slice |
 | **2. The door opened.** A pack configured with `CellModel::Dfn` runs, and its trajectory matches a committed **PyBaMM DFN golden** within a documented per-scenario tolerance, with the tolerance **built to fail** before it is trusted. At least one scenario must reach electrolyte depletion — the regime an SPM cannot represent at all, and therefore the only one that proves the phase did something. | slice D |
 | **3. The new state is snapshotable.** Snapshot at t/2 → restore → continue is bit-identical for a DFN pack. **This includes the Newton warm-start vector**, which is state and not a cache — see slice B. | slice B, re-checked by slice C |
 
@@ -33,7 +33,7 @@ badly that assumption fails, and the spike measured it.
 
 | slice | scope | version |
 | ----- | ----- | ------- |
-| A | **`[dfn]` chemistry section** — schema, validation, extraction script, LG M50 gains one. **Plus the OCP table extension the spike found is required**, which is the part that can move an SPM trajectory and so carries exit criterion 1. No engine physics. | v10 (no bump) |
+| A | **`[dfn]` chemistry section** — schema, validation, extraction script, LG M50 gains one. **Plus the OCP table extension the spike found is required**, which is the part that can move an SPM trajectory and so carries exit criterion 1. No engine physics. **Landed; it did move one, and criterion 1 is amended — see the slice A note.** | v10 (no bump) |
 | B | **the DFN cell** — grid, state, the coupled Newton with an *analytic* banded Jacobian, `CellModel::Dfn`, `CellModelConfig::Dfn`, both `BuildError`s, the version-check test. Single cell; the pack still sees a linear source. **Carries the one bump.** | **v10 → v11** |
 | C | **pack integration** — the tangent, which for a DFN cannot be the central difference `spm.rs` uses. Sensitivity solve off the already-factorised Jacobian. | v11 (no bump) |
 | D | **PyBaMM DFN goldens, tolerance built to fail, DFN's own perf budget, README.** Carries exit criterion 2. | v11 (no bump) |
@@ -275,12 +275,20 @@ correctly so — exactly where the real OCP plunges. A modelled cell whose posit
 stops falling keeps delivering voltage, which is precisely the symptom.
 
 The detail that makes this a *phase* finding rather than a bug report: the
-**x-averaged** positive surface stoichiometry peaks at only **0.7065**, comfortably
-inside the table. It is the *local* value at the separator-facing edge that leaves it.
-**An SPM has only the x-averaged quantity.** So this failure mode is not merely undetected
-in Phase 6 — it is unreachable there, and no amount of SPM testing could have found it.
-Phase 6 sized that margin at 0.05 either side of the usable window and documented the
-choice; the choice was right for the model it was made for.
+**x-averaged** positive surface stoichiometry peaks at only **0.7065** in this 3C DFN
+run, comfortably inside the table. It is the *local* value at the separator-facing edge
+that leaves it, and only a model that resolves the electrode thickness has one. So the
+3C severity of this failure is a DFN phenomenon, and Phase 6 sized its 0.05 margin for
+the model it was making it for.
+
+> **Slice A measured this and found the inference that followed it to be wrong.** The
+> paragraph below originally read that 0.7065 *bounds* the SPM, so the extension was
+> "provably inert" there. It does not bound it, and it is not. See the **slice A** note
+> at the end of this document — the short version is that a
+> quantity measured on a model that **terminates early** does not bound the same
+> quantity in a model that runs to completion. The DFN delivers 2.32 of 5.15 A·h at 3C,
+> so its positive electrode never fills; a 1C SPM discharge that reaches the cut-off
+> fills it to `stoich_max` and its surface leads to **0.9115**, past the old table top.
 
 The **negative** table is not implicated: its surface stoichiometry stayed within
 \[0.2560, 0.9014\] against a table covering \[0, 0.960618\]. Only the positive was
@@ -293,12 +301,10 @@ script, same provenance. Two things to verify rather than assume:
 
 - Extending a table **beyond** its current range does not change `interp1` inside that
   range, so SPM trajectories that stay inside should be bit-identical. That is the claim,
-  and exit criterion 1 is where it gets checked rather than believed. The measurement
-  above is a stronger safety argument than the check, though, and it is worth stating in
-  the slice: **the x-averaged positive surface stoichiometry peaks at 0.7065 even at 3C**,
-  and an SPM has only the x-averaged quantity — so no SPM scenario at any rate this
-  simulator runs can reach the 0.9040 table top that slice A extends past. The extension
-  is provably inert for the SPM, not merely observed to be.
+  and exit criterion 1 is where it gets checked rather than believed. ~~The measurement
+  above is a stronger safety argument than the check~~ — it is not, and slice A found out
+  which way round it goes. **The claim as stated is true; the assumption that SPM
+  trajectories stay inside is false.** Checked, not believed, is what saved it.
 - `crates/sim-data/tests/spm_exact_bits.rs` pins specific parsed literals. Appending
   points adds literals without moving existing ones — again, checked, not assumed.
 
@@ -409,9 +415,13 @@ the one being validated.
 ## Gates, and where they are blind
 
 **The out-of-tree trajectory instrument** at `M:\claud_projects\temp\phase6-baseline`
-(anchor `after-sliceE.txt`, 9 cases, 1254 lines) is what exit criterion 1 is measured
-with. Two known blind spots, both of which have to be checked against this phase's actual
-diff rather than assumed away:
+is what exit criterion 1 is measured with. The anchor is
+**`after-sliceA-p7.txt`** (9 cases, 1254 lines), *not* Phase 6's `after-sliceE.txt`:
+slice A moved 82 lines and re-anchored, and `ANCHORS.md` beside it records which three
+regions moved and why. Diffing a slice-B run against the Phase 6 anchor would carry
+slice A's delta forward and teach its reader to ignore it. **Three** known blind spots,
+all of which have to be checked against this phase's actual diff rather than assumed
+away:
 
 - It **enumerates its 17 telemetry fields by name**, so an 18th would be invisible to it.
   Phase 7 is not expected to add one — `solve_iterations` already reports what a nonlinear
@@ -422,12 +432,24 @@ diff rather than assumed away:
   enum *variant* on an existing field, which is reachable from scenario TOML, so new DFN
   cases are additive and valid from slice B forward — the same status slice E's SPM cases
   have.
+- **The `CV 3.5 V` leg of both LG M50 cases is garbage in the anchor itself**, found by
+  slice A. `Demand::Voltage(3.5)` is 1.75 V/cell on a 2.5 V-cut-off cell, and the SPM's
+  voltage-demand path answers with NaN, Inf, negative kelvin and megavolt terminals — in
+  `after-sliceE.txt` as well as in the new anchor. A baseline whose tail is garbage
+  cannot detect a change in that region, so the instrument is blind from that leg to the
+  end of those two cases. Recorded rather than fixed: it is a real hole in the SPM's
+  `Demand::Voltage` path and deserves its own slice, not a correction folded into this
+  phase.
 
 **Slice A is the slice where criterion 1 is genuinely at risk**, and this is the
 difference from Phase 6, where slice A was a pure refactor with a mechanical gate. Here
 slice A edits `nmc_21700_lgm50.toml`, which the SPM reads. The claim that appending OCP
 points cannot move an interpolation inside the old range is almost certainly true and is
 exactly the kind of "almost certainly" that Phase 6 caught twice. Run the anchor.
+
+> **It was run, and it was the assumption around the claim that broke.** The claim held
+> exactly as stated; what failed was the belief that no SPM trajectory leaves the old
+> range. See the slice A note below.
 
 **Built-to-fail discipline for slices C and D**, inherited and non-negotiable: the
 perturbation harness restores from a copy it made itself and **never** `git checkout` —
@@ -443,6 +465,136 @@ A DFN-specific perturbation worth building deliberately: **set the Bruggeman exp
 which is large, physical, and invisible to any test that does not run at a rate where the
 electrolyte matters. If a 1C golden passes with it, the goldens are testing the wrong
 rate — which is the whole reason criterion 2 requires a depletion scenario.
+
+---
+
+## Slice A — the `[dfn]` chemistry section
+
+**Landed. `SNAPSHOT_VERSION` unmoved at v10.** `cargo test --workspace` green,
+`cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+What shipped: `[dfn]` schema (`DfnParams`, `PowerTerm`, `DfnElectrode`, `DfnSeparator`)
+with validation, `tools/reference/extract_dfn.py`, the block itself in
+`nmc_21700_lgm50.toml`, both OCP tables extended to the full stoichiometry range, and
+`crates/sim-data/tests/dfn_chemistry.rs` (20 tests). No engine physics.
+
+### The finding: "provably inert for the SPM" was false, and the gate caught it
+
+This plan argued — and commit `b5ef486` deliberately *strengthened* the argument — that
+extending the OCP tables could not move an SPM trajectory, because the x-averaged
+positive surface stoichiometry peaks at 0.7065 even at 3C and an SPM has only the
+x-averaged quantity. **Measured, the shipped 1C SPM golden reaches 0.9115**, past the
+0.9040 the positive table used to stop at, at every shell count.
+
+The inference was invalid, and the reason generalises:
+
+> **A quantity measured on a model that terminates early does not bound the same
+> quantity in a model that runs to completion.** The 0.7065 came from a 3C DFN run that
+> hits the cut-off at 557 s having delivered 2.32 of 5.15 A·h — its positive electrode
+> never fills. An SPM discharge that *reaches* the cut-off fills the positive bulk to
+> `stoich_max` = 0.8540, and the surface leads the bulk from there.
+
+Same family as the two errors this document already records fixing: a column measuring
+one thing under another thing's label, and a metric taken over the wrong domain. The
+tell here was different, though, and worth having: the claim was checkable and the plan
+said to check it, so the only thing that saved it was **running the gate instead of
+believing the argument**.
+
+Measured across all three shipped SPM goldens (`ocp-probe`, replaying through the real
+`Pack::step`):
+
+| golden | pos surface max | rows whose voltage moves | worst move |
+| ------ | --------------- | ------------------------ | ---------- |
+| `spm_cc_c5_25c` | 0.8649 | **0** of 595 | — |
+| `spm_pulse_relax_25c` | 0.5924 | **0** of 1560 | — |
+| **`spm_cc_1c_25c`** | **0.9115** | **9–15** of 699 | **5.9–9.9 mV** |
+
+Every differing row is at the end of discharge. The stoichiometry column is an estimate
+— the probe reads the profile *after* the step and applies that step's flux, the
+"read the step BEFORE" offset the CC-CV slice already paid for — but the trajectory
+column is direct and carries the conclusion on its own.
+
+**It is a correction, not a regression.** Against the PyBaMM SPM reference, N=40's worst
+error over the 1C golden halves, 5.04 → 2.63 mV. The old table clamped the positive OCP
+flat from 0.9040 up, exactly at the end-of-discharge knee where the real OCP plunges, so
+the modelled cell held its voltage too high. Exit criterion 1 is therefore **amended
+rather than met**: bit-identity holds everywhere except where the old table was wrong.
+
+### The second-order consequence: an assertion that was measuring the artefact
+
+`shell_count_convergence_puts_the_documented_default_at_the_floor` asserted
+`fine > 0.5 * default` — "refining past the default buys nothing, because the residual is
+the OCP tables rather than the grid" — and it failed. Its premise was true *for the wrong
+reason*: the floor was the **clamp**, not the tables' 1.88 mV interpolation error.
+
+It was rebuilt from all three goldens rather than repaired by relaxing its constant,
+because the discriminating data points away from moving `DEFAULT_SHELLS`:
+
+| scenario | N=5 | N=20 | N=40 |
+| -------- | --- | ---- | ---- |
+| `cc_c5` | 8.75 | **2.58** | 3.36 |
+| `cc_1c` | 53.06 | 6.65 | **2.63** |
+| `pulse_relax` | 30.59 | **1.87** | 2.98 |
+
+N=40 improves only at 1C and is *worse* at the other two rates, so 20 is still where the
+curves cross and refining is a trade. A single-rate bound dressed as a default-shells
+decision is precisely what the old assertion turned out to be; shipping a second one
+would have been the same mistake with a different constant.
+
+### How the extension was made safe, and the check that discriminates
+
+`extract_spm.py` refines its grid greedily from `linspace(lo, hi, 9)` against a dense
+reference on the same interval, so **regenerating over [0, 1] in one pass would move
+every breakpoint** and shift the interpolation inside the old window — the failure mode
+that would have been indistinguishable from the real finding. The script now generates
+the **core over the old margin window alone** and concatenates two separately-tabulated
+tails, so the extension is append-only *by construction* rather than by inspection.
+
+The check that discriminates is stronger than "the old points are all still there":
+
+1. every old breakpoint **and its potential** identical bit-for-bit, and
+2. **no new breakpoint strictly inside the old range** — because a shifted dense
+   reference can insert one without moving any existing point, and that alone changes
+   `interp1` there.
+
+Both verified mechanically on both electrodes before anything else ran. Both fits turned
+out to be finite and monotone non-increasing over the whole extension, so no endpoint had
+to be truncated; graphite's is *exactly* constant at 0.092020 V above 0.96, which is why
+two points describe that tail.
+
+Free discriminator worth reusing: `the_shipped_spm_geometry_derives_to_exact_bits` reads
+**scalars only**, so it stays green through a table edit and goes red on a scalar one.
+When the sibling hash moved and it did not, that was positive evidence the change was
+confined to the tables.
+
+### Smaller things
+
+- **The snapshot grew 11 bytes in every case, including ECM-only ones** — `,"dfn":null`,
+  because the chemistry is serialized inside the snapshot. Bytes, not layout: the field is
+  `#[serde(default)]` and serde ignores the unknown key in the other direction, so both
+  directions round-trip at v10. The bump stays budgeted for slice B.
+- **`extract_spm.py`'s regex cannot reach the Nyman coefficients**: they are
+  *expressions*, not `name = value` assignments. `extract_dfn.py` parses the function
+  source with `ast` and then evaluates the parsed terms against PyBaMM's own callable at
+  seven concentrations, refusing to emit on disagreement. `inspect.cleandoc` is the wrong
+  dedent for this — it strips the body's indentation relative to the first line and turns
+  a module-level `def` into an `IndentationError`; `textwrap.dedent` is right.
+- **`[dfn]` needs no bit-pin file.** `[spm]` hashes because it carries 148 numbers;
+  `[dfn]` has 22 named ones, so asserting each by name is feasible and strictly stronger
+  (a failure says *which* moved). What a per-value pin loses is the new-field tripwire a
+  hash gets for free, so that is a separate test counting the numbers serde can see —
+  which trips on a field added inside `DfnElectrode` or `DfnSeparator` too, where a reader
+  looking only at `DfnParams` would miss one.
+- **Validation checks the transport fits at one point and says so.** Both are
+  non-monotone over the range a 3C discharge visits, so no cheap sampling would prove
+  positivity; at `x = 1` (`c_e = 1000`, the fit's own reference) the sum is
+  `Σ coefficient` — plain arithmetic, no `powf`, the one value derived from this section
+  that could ever be bit-pinned.
+- **A pre-existing hole, found and recorded rather than fixed.** The `CV 3.5 V` leg of
+  both LG M50 instrument cases is NaN, Inf, negative kelvin and megavolt terminals — in
+  Phase 6's anchor as well as the new one. `Demand::Voltage(3.5)` is 1.75 V/cell on a
+  2.5 V-cut-off cell, and the SPM's voltage-demand path does not survive it. The
+  instrument is blind from that leg to the end of those two cases.
 
 ## Environment
 

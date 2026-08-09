@@ -144,6 +144,7 @@ const SOC: f64 = 0.6;
 fn lfp_like_chem() -> ChemistryParams {
     ChemistryParams {
         spm: None,
+        dfn: None,
         // Present, like the shipped file's `[aging]` section. A chemistry that cannot
         // age makes `PackConfig::aging = Some(..)` a build error, so the aging cases
         // below need this — and the cases that leave aging off are unaffected by it,

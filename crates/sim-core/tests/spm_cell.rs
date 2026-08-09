@@ -42,6 +42,7 @@ fn spm_chem() -> ChemistryParams {
     ChemistryParams {
         aging: None,
         safety: None,
+        dfn: None,
         spm: Some(SpmParams {
             t_ref_k: 298.15,
             c_e_mol_per_m3: 1000.0,

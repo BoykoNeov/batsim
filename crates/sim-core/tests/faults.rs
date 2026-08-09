@@ -37,6 +37,7 @@ fn chem() -> ChemistryParams {
         aging: None,
         safety: None,
         spm: None,
+        dfn: None,
         meta: ChemMeta {
             id: "fault_test".into(),
             name: "Fault test cell".into(),

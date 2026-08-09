@@ -70,6 +70,26 @@ pub struct ChemistryParams {
     /// watching where the cheap one goes wrong is the pedagogy this phase exists for.
     #[serde(default)]
     pub spm: Option<SpmParams>,
+    /// Electrolyte parameters (`[dfn]`) — everything a Doyle–Fuller–Newman cell needs
+    /// that a single-particle one does not — or `None` for a chemistry that cannot
+    /// parameterize one.
+    ///
+    /// **This section extends [`Self::spm`]; it does not stand alone.** Every electrode
+    /// geometry, kinetic coefficient and OCP table a DFN needs is already in `[spm]`,
+    /// and a DFN cell reads both. A file carrying `[dfn]` and no `[spm]` therefore
+    /// parameterizes nothing, but it is *not* rejected here: the same rule
+    /// [`Self::spm`]'s own absence follows applies, which is that the mismatch is
+    /// diagnosed where the configuration asks for the model, with a build error naming
+    /// whichever half is missing. Validation on this struct stays local to the block.
+    ///
+    /// The `[spm]` field this one leans on hardest is
+    /// [`SpmParams::c_e_mol_per_m3`], and its meaning changes: for a single-particle
+    /// model it is the electrolyte concentration *held constant*, and for a DFN it is
+    /// the **initial** value of a field the model then solves for. Same Chen2020 key,
+    /// same number, and the difference between those two readings is the entire
+    /// difference between the models.
+    #[serde(default)]
+    pub dfn: Option<DfnParams>,
     /// Emergent-failure thresholds (`[safety]`), or `None` for a chemistry that
     /// carries no safety data.
     ///
@@ -326,6 +346,182 @@ pub struct OcpTable {
     /// Potential at each breakpoint \[V\], monotone **non-increasing**, same length
     /// as `stoich`.
     pub volts: Vec<f64>,
+}
+
+/// Electrolyte parameters for a Doyle–Fuller–Newman cell (`[dfn]`).
+///
+/// # What a DFN adds, in one sentence
+/// An [`SpmParams`] cell holds its electrolyte at one constant concentration — that
+/// *is* the single-particle approximation. This section is what it takes to stop doing
+/// that: transport properties as functions of concentration, the porous geometry the
+/// electrolyte occupies, and the solid-phase conductivities that let the reaction
+/// current vary through the electrode thickness.
+///
+/// Phase 7's spike measured what the assumption costs on the shipped LG M50 set. At C/5
+/// and 1C the two models reach the cut-off within 0.3 % of each other; at 3C the DFN
+/// reaches it in **51.4 %** of the SPM's time and delivers **2.32 A·h against 4.52**,
+/// because the electrolyte starves. It is a cliff between 1C and 3C, not a slope.
+///
+/// # These are extracted, and the transport fits are stored exactly
+/// Like `[spm]` and unlike the ECM tables, every number here is a Chen2020 key or a
+/// literal in one of its functions. The two transport properties are the interesting
+/// case: PyBaMM publishes them as *callables*, but underneath they are closed-form
+/// published fits (Nyman 2008) with no temperature dependence, so they are stored as
+/// the power terms they are rather than sampled onto a grid. That matters beyond
+/// tidiness — Phase 6 found the OCP tables' 1.88/1.90 mV interpolation error *was* the
+/// SPM's accuracy floor, and a second sampled table would have raised it for nothing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DfnParams {
+    /// Cation (Li⁺) transference number `t₊`, in \[0, 1\]. Must be finite.
+    ///
+    /// The fraction of the ionic current carried by lithium rather than by the anion.
+    /// It enters twice: the concentration equation's source is `(1 − t₊)·j/F`, and the
+    /// diffusion-potential term in the electrolyte carries the same factor.
+    ///
+    /// Both endpoints are **allowed**, unlike [`ElectrodeParams::charge_transfer_alpha`]
+    /// where 0 and 1 each kill a Butler–Volmer branch. Here neither degenerates
+    /// anything: `t₊ = 1` is a single-ion conductor whose concentration simply never
+    /// moves, and `t₊ = 0` leaves every term finite. A value outside \[0, 1\] is not a
+    /// transference number at all, which is what the range check is for.
+    pub transference_number: f64,
+    /// Thermodynamic factor `1 + ∂ln f±/∂ln c`, dimensionless. Must be finite and
+    /// `> 0`.
+    ///
+    /// The correction for a non-ideal electrolyte, multiplying the diffusion-potential
+    /// term. **Chen2020 publishes it as exactly 1.0**, so on the shipped set the term
+    /// reduces to the ideal-solution form and this field earns its keep only for a
+    /// parameter set that measures it.
+    ///
+    /// Rejected at zero and below rather than treated as "off": a non-positive factor
+    /// reverses the sign of the concentration overpotential, which makes the
+    /// electrolyte push current the way it should resist it. That is a sign error
+    /// wearing a parameter's clothes, not a modelling choice.
+    pub thermodynamic_factor: f64,
+    /// Electrolyte diffusivity `D_e` \[m²/s\] as a sum of power terms in
+    /// `x = c_e/1000` (`c_e` in mol/m³). Must be non-empty with finite entries.
+    ///
+    /// Stored in the fit's own variable, so the shipped coefficients are the published
+    /// numbers rather than a rescale of them. See [`PowerTerm`] for why a
+    /// `(coefficient, exponent)` pair rather than a coefficient array: the
+    /// conductivity fit has an `x^1.5` term and is not a polynomial.
+    pub electrolyte_diffusivity_terms: Vec<PowerTerm>,
+    /// Electrolyte ionic conductivity `κ_e` \[S/m\] as a sum of power terms in
+    /// `x = c_e/1000`. Must be non-empty with finite entries.
+    ///
+    /// `κ_e → 0` as `c_e → 0` degenerates the electrolyte potential equation, and the
+    /// reference genuinely goes there — at 3C on this set, 90.6 % of the run has
+    /// `c_e < 100 mol/m³` somewhere. Whatever floor the solver applies to *lookups*
+    /// through this fit is a numerical guard that belongs with the solver, not a
+    /// number this section may quietly carry: the spike measured a floor of
+    /// 100 mol/m³ buying four Newton iterations and paying 0.72 A·h for them,
+    /// monotonically and without raising anything.
+    pub electrolyte_conductivity_terms: Vec<PowerTerm>,
+    /// The negative electrode's porous-phase parameters (`[dfn.negative]`).
+    pub negative: DfnElectrode,
+    /// The separator (`[dfn.separator]`) — the one domain with no solid phase.
+    pub separator: DfnSeparator,
+    /// The positive electrode's porous-phase parameters (`[dfn.positive]`).
+    pub positive: DfnElectrode,
+}
+
+/// One term `coefficient · x^exponent` of a transport-property fit.
+///
+/// # Why a pair rather than a coefficient array
+/// A coefficient array indexed by degree would cover the diffusivity fit, which is a
+/// plain quadratic. It would **not** cover the conductivity, whose middle term is
+/// `x^1.5` — Nyman's fit is a sum of power terms, not a polynomial, and a schema that
+/// could not spell a fractional exponent would force the one shipped chemistry to be
+/// stored as something it is not.
+///
+/// # A note for whoever writes an exact-bit pin
+/// Phase 6's rule is that only pure IEEE-754 arithmetic and decimal→`f64` parsing may
+/// be committed as an exact-bit assertion, because those are identical on every
+/// conforming platform while `exp`, `asinh` and `powf` are not. **A value computed
+/// through these terms is generally not pinnable**: `x^1.5` evaluated as `x·√x` would
+/// be (`sqrt` is IEEE-exact), but as `powf(1.5)` it is not. Pin the parsed coefficients
+/// and exponents, not anything evaluated from them.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PowerTerm {
+    /// Multiplier, carrying the whole term's unit (the variable is dimensionless).
+    /// Must be finite; may be negative — both shipped fits have negative terms.
+    pub coefficient: f64,
+    /// Power the dimensionless concentration is raised to. Must be finite.
+    pub exponent: f64,
+}
+
+/// The porous-phase parameters of one electrode (`[dfn.negative]` / `[dfn.positive]`).
+///
+/// The geometry, kinetics and OCP of the same electrode live in the matching
+/// `[spm.*]` block; this is only what a DFN adds. In particular the electrode
+/// *thickness* is [`ElectrodeParams::thickness_m`] and is not repeated here.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DfnElectrode {
+    /// Electrolyte volume fraction `ε_e` (porosity), in (0, 1). Must be finite.
+    ///
+    /// **A different number from [`ElectrodeParams::active_volume_fraction`]** (`ε_s`),
+    /// and the two do not sum to one: on the shipped set the negative electrode is
+    /// `ε_s = 0.75` against `ε_e = 0.25`, and the positive `0.665` against `0.335`,
+    /// with binder, conductive additive and carbon making up whatever is left. A schema
+    /// that derived one from the other would be wrong for every real cell.
+    pub porosity: f64,
+    /// Bruggeman exponent for the **electrolyte** phase. Must be finite and `>= 0`.
+    ///
+    /// Effective transport is `ε_e^bruggeman` times bulk, so this is the tortuosity of
+    /// the pore network expressed as a power law. 1.5 is the classical value and the
+    /// one Chen2020 publishes for all three domains. Setting it to 0 makes the pores
+    /// straight pipes and changes every effective transport property by a factor of
+    /// 0.12–0.32 on this set — large, physical, and invisible to any test that does not
+    /// run at a rate where the electrolyte matters, which is what makes it a good
+    /// deliberate perturbation.
+    pub bruggeman_electrolyte: f64,
+    /// Bruggeman exponent for the **solid** phase, applied to
+    /// [`ElectrodeParams::active_volume_fraction`]. Must be finite and `>= 0`.
+    ///
+    /// A separate exponent because it describes a different network. Chen2020 publishes
+    /// **0** for both electrodes — i.e. the solid conductivity below is already the
+    /// effective one and needs no correction — which is a real value rather than a
+    /// missing one, and is why this field is not folded into the electrolyte's.
+    pub bruggeman_electrode: f64,
+    /// Solid-phase electronic conductivity `σ_s` \[S/m\]. Must be finite and `> 0`.
+    ///
+    /// Zero is rejected rather than read as "no solid conduction": a zero conductivity
+    /// is an infinite resistance, so the electrode could carry no current at all. That
+    /// is a divide-by-zero dressed as a parameter choice, the same argument
+    /// [`ElectrodeParams::m_ref`] refuses zero on.
+    ///
+    /// The two shipped values are four orders of magnitude apart — 215 S/m for the
+    /// graphite, **0.18** for the NMC — and the spike measured what that buys: the
+    /// negative electrode's solid phase is equipotential to within **36 µV even at
+    /// 3C**, while the positive's costs 2–42 mV. It would therefore be possible to ship
+    /// "an SPM plus an electrolyte" and drop the solid-phase equations entirely without
+    /// anyone noticing *on this parameter set*. It is refused: `σ_s` is chemistry data,
+    /// a set with a worse positive conductivity would expose it, and a model named
+    /// `Dfn` that silently omits one of the DFN's four equations is a quiet lie.
+    pub solid_conductivity_s_per_m: f64,
+}
+
+/// The separator (`[dfn.separator]`).
+///
+/// Its own type rather than a [`DfnElectrode`] with two fields left blank, because the
+/// separator genuinely has no solid phase to conduct through and no active material to
+/// react at — the `φ_s` and `j` equations there are the trivial `φ_s = 0`, `j = 0`. A
+/// shared type would have to carry a solid conductivity that means nothing, and the
+/// first reader to fill it in would be describing a cell that cannot exist.
+///
+/// The thickness lives here rather than in `[spm]` because a single-particle model has
+/// no separator: it is one of the things this section adds, not one it extends.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DfnSeparator {
+    /// Separator thickness \[m\]. Must be finite and `> 0`.
+    pub thickness_m: f64,
+    /// Electrolyte volume fraction `ε_e`, in (0, 1). Must be finite.
+    ///
+    /// Higher than either electrode's on any real cell (0.47 here), which is why the
+    /// separator is rarely where the electrolyte starves first.
+    pub porosity: f64,
+    /// Bruggeman exponent for the electrolyte phase. Must be finite and `>= 0`. See
+    /// [`DfnElectrode::bruggeman_electrolyte`].
+    pub bruggeman_electrolyte: f64,
 }
 
 /// Semi-empirical aging coefficients (`[aging]`).
@@ -793,8 +989,176 @@ impl ChemistryParams {
         if let Some(spm) = &self.spm {
             check_spm(spm)?;
         }
+
+        // --- Electrolyte / DFN (optional) ---
+        // Deliberately not cross-checked against `[spm]`, though a `[dfn]` block alone
+        // parameterizes nothing: see the field's doc comment. The pairing is diagnosed
+        // where a config asks for the model, which is the same place `[spm]`'s own
+        // absence is diagnosed, and splitting that rule across two layers would give
+        // one mistake two different error messages.
+        if let Some(dfn) = &self.dfn {
+            check_dfn(dfn)?;
+        }
         Ok(())
     }
+}
+
+/// Validate a `[dfn]` block. Split out for the same reason [`check_spm`] is: it checks
+/// two structurally identical electrodes plus a third domain that is *nearly* identical,
+/// and would otherwise be written three times.
+fn check_dfn(dfn: &DfnParams) -> Result<(), ChemistryError> {
+    // A transference number outside [0, 1] is not a fraction of a current. Neither
+    // endpoint is excluded — see the field doc for why this differs from
+    // `charge_transfer_alpha`, whose endpoints are genuinely degenerate.
+    let t_plus_ok = (0.0..=1.0).contains(&dfn.transference_number);
+    if !t_plus_ok {
+        return Err(ChemistryError::BadRange {
+            what: "dfn.transference_number must be in [0, 1]",
+        });
+    }
+    if !is_positive(dfn.thermodynamic_factor) || !dfn.thermodynamic_factor.is_finite() {
+        return Err(ChemistryError::NotPositive {
+            what: "dfn.thermodynamic_factor",
+            value: dfn.thermodynamic_factor,
+        });
+    }
+    check_transport(
+        "dfn.electrolyte_diffusivity_terms",
+        &dfn.electrolyte_diffusivity_terms,
+    )?;
+    check_transport(
+        "dfn.electrolyte_conductivity_terms",
+        &dfn.electrolyte_conductivity_terms,
+    )?;
+    check_dfn_electrode("dfn.negative", &dfn.negative)?;
+    check_dfn_electrode("dfn.positive", &dfn.positive)?;
+
+    let sep = &dfn.separator;
+    if !is_positive(sep.thickness_m) || !sep.thickness_m.is_finite() {
+        return Err(ChemistryError::NotPositive {
+            what: "dfn.separator.thickness_m",
+            value: sep.thickness_m,
+        });
+    }
+    check_porosity("dfn.separator.porosity", sep.porosity)?;
+    check_bruggeman(
+        "dfn.separator.bruggeman_electrolyte",
+        sep.bruggeman_electrolyte,
+    )?;
+    Ok(())
+}
+
+/// Validate one transport-property fit: a non-empty sum of finite power terms whose
+/// value at the reference concentration is positive.
+///
+/// # The one point this can check exactly, and what it deliberately does not claim
+/// A transport property must be positive everywhere the solver evaluates it, and
+/// nothing here knows that range — both shipped fits are **non-monotone** over the
+/// concentrations a 3C discharge visits (`D_e` falls 10.8× from 200 to 2200 mol/m³ and
+/// then rises; `κ_e` peaks near 1000 and falls 2.3× by 2600), so no cheap sampling
+/// would be a proof either.
+///
+/// What is checked is the fit at `x = 1`, i.e. `c_e = 1000 mol/m³` — the concentration
+/// the fit's own variable is written in, and the initial concentration of every
+/// parameter set that uses this form. There the sum is `Σ coefficient`: **plain
+/// arithmetic, no `powf`**, so it is exact, platform-independent, and the one value
+/// derived from this section that could be pinned bit-for-bit. A fit that is negative
+/// where the cell *starts* is broken beyond argument; a fit that goes negative
+/// somewhere in the middle is a physical question this layer cannot answer and does not
+/// pretend to.
+fn check_transport(what: &'static str, terms: &[PowerTerm]) -> Result<(), ChemistryError> {
+    if terms.is_empty() {
+        return Err(ChemistryError::Empty(what));
+    }
+    let mut at_reference = 0.0;
+    for term in terms {
+        if !term.coefficient.is_finite() || !term.exponent.is_finite() {
+            return Err(ChemistryError::BadRange {
+                what: if what.contains("diffusivity") {
+                    "dfn.electrolyte_diffusivity_terms entries must be finite"
+                } else {
+                    "dfn.electrolyte_conductivity_terms entries must be finite"
+                },
+            });
+        }
+        at_reference += term.coefficient;
+    }
+    if !is_positive(at_reference) {
+        return Err(ChemistryError::NotPositive {
+            what: if what.contains("diffusivity") {
+                "dfn.electrolyte_diffusivity_terms summed at c_e = 1000 mol/m3"
+            } else {
+                "dfn.electrolyte_conductivity_terms summed at c_e = 1000 mol/m3"
+            },
+            value: at_reference,
+        });
+    }
+    Ok(())
+}
+
+/// Validate one `[dfn.negative]` / `[dfn.positive]` block. `side` prefixes every error,
+/// for the reason [`check_electrode`] gives: the two blocks are identical in shape, so
+/// an unprefixed error sends the reader to the wrong one.
+fn check_dfn_electrode(side: &'static str, e: &DfnElectrode) -> Result<(), ChemistryError> {
+    let negative = side == "dfn.negative";
+    check_porosity(
+        if negative {
+            "dfn.negative.porosity"
+        } else {
+            "dfn.positive.porosity"
+        },
+        e.porosity,
+    )?;
+    check_bruggeman(
+        if negative {
+            "dfn.negative.bruggeman_electrolyte"
+        } else {
+            "dfn.positive.bruggeman_electrolyte"
+        },
+        e.bruggeman_electrolyte,
+    )?;
+    check_bruggeman(
+        if negative {
+            "dfn.negative.bruggeman_electrode"
+        } else {
+            "dfn.positive.bruggeman_electrode"
+        },
+        e.bruggeman_electrode,
+    )?;
+    if !is_positive(e.solid_conductivity_s_per_m) || !e.solid_conductivity_s_per_m.is_finite() {
+        return Err(ChemistryError::NotPositive {
+            what: if negative {
+                "dfn.negative.solid_conductivity_s_per_m"
+            } else {
+                "dfn.positive.solid_conductivity_s_per_m"
+            },
+            value: e.solid_conductivity_s_per_m,
+        });
+    }
+    Ok(())
+}
+
+/// A porosity is an open-interval volume fraction: 0 is a domain with no electrolyte in
+/// it (no ionic path at all) and 1 is a domain that is pure electrolyte (no separator,
+/// or an electrode with no electrode in it). Both ends are excluded on purpose, unlike
+/// [`ElectrodeParams::active_volume_fraction`], which admits 1.
+fn check_porosity(what: &'static str, value: f64) -> Result<(), ChemistryError> {
+    let ok = value > 0.0 && value < 1.0;
+    if !ok {
+        return Err(ChemistryError::BadRange { what });
+    }
+    Ok(())
+}
+
+/// A Bruggeman exponent multiplies a volume fraction in (0, 1), so a negative one would
+/// make a *less* porous domain conduct *better*. Zero is allowed and is Chen2020's own
+/// value for both electrode phases: it means the published conductivity is already the
+/// effective one.
+fn check_bruggeman(what: &'static str, value: f64) -> Result<(), ChemistryError> {
+    if !is_non_negative(value) || !value.is_finite() {
+        return Err(ChemistryError::Negative { what, value });
+    }
+    Ok(())
 }
 
 /// Validate a `[spm]` block. Split out of [`ChemistryParams::validate`] because it

@@ -115,6 +115,19 @@ use crate::{Demand, Env, Telemetry};
 /// `snapshot_version.rs` ships it: the *same* blob is asserted to be rejected at
 /// `version: 9` and to restore at `version: 10`, which is what separates "the
 /// version field rejected it" from "deserialization rejected it".
+///
+/// **v10 unmoved (Phase 7, slice A), and the reason is worth stating because the
+/// snapshot visibly grew.** [`crate::ChemistryParams`] gained an optional `dfn`
+/// section, and the chemistry is serialized *inside* the snapshot, so every blob this
+/// engine writes is now 11 bytes longer — `,"dfn":null` — including for chemistries
+/// that have no such section and for packs that could never use one. That is a change
+/// to the bytes but **not** to the layout in the sense `CLAUDE.md`'s bump rule is
+/// about: the field is `#[serde(default)]`, so a blob written before it restores
+/// unchanged, and serde ignores the unknown key in the other direction, so both
+/// directions round-trip at the same version. The same argument the `[spm]` section
+/// was added under one phase earlier. The phase's one bump is budgeted for slice B,
+/// where `CellModel` gains its fourth variant and the compatibility argument genuinely
+/// fails.
 pub const SNAPSHOT_VERSION: u32 = 10;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.

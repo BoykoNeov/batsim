@@ -52,6 +52,7 @@ fn chem(aging: Option<AgingParams>) -> ChemistryParams {
         aging,
         safety: None,
         spm: None,
+        dfn: None,
         meta: ChemMeta {
             id: "aging_test".into(),
             name: "Aging test cell".into(),

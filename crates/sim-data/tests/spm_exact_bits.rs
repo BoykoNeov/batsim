@@ -107,15 +107,21 @@ fn the_shipped_spm_parameters_are_pinned_bit_for_bit() {
     // 12 scalars and two tables per electrode. If the struct grows a field, this
     // count moves and the reader is told to extend `electrode_values` rather than
     // silently pinning a subset.
+    //
+    // The table counts went 45 -> 47 and 20 -> 27 in Phase 7 slice A, which extended
+    // both OCP tables to the full stoichiometry range [0, 1]. That is an **append**:
+    // every pre-existing breakpoint and potential is bit-identical and no point was
+    // inserted inside the old spans, verified mechanically rather than assumed. The
+    // hash below moves anyway, because it hashes the whole table.
     assert_eq!(
         values.len(),
-        4 + 2 * 12 + (45 + 45) + (20 + 20),
+        4 + 2 * 12 + (47 + 47) + (27 + 27),
         "the [spm] value count changed — extend electrode_values() before repinning"
     );
 
     assert_eq!(
         fnv1a(values),
-        0xa3e8_716a_96b3_6ee2,
+        0x2410_32c7_99f2_e883,
         "a number in chemistries/nmc_21700_lgm50.toml's [spm] section changed. \
          That is allowed — re-extraction from a newer parameter set is exactly the \
          case — but it must be deliberate: say which number and why, then update \
