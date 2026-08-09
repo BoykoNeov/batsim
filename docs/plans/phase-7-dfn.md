@@ -1,9 +1,12 @@
 # Phase 7 — the electrolyte (`Dfn`)
 
-**Status: planned. No slice has landed.** This file is written before the work, after a
-spike, so the decisions that shape the phase are made once and made from measurements.
-The "learned while building" material is appended as each slice lands, the way
-`phase-2-thermal-bms.md` through `phase-6-porous-electrodes.md` grew.
+**Status: slices A and B have landed; C and D remain. The repo is at `SNAPSHOT_VERSION`
+11.** Everything above the slice notes was written *before* the work, after a spike, so
+the decisions that shape the phase are made once and made from measurements; the
+"learned while building" material is appended as each slice lands, the way
+`phase-2-thermal-bms.md` through `phase-6-porous-electrodes.md` grew. Where a slice note
+contradicts the pre-work text, **the slice note is the measurement and wins** — the
+projected `~30×` cost below is the live example, and it is labelled where it appears.
 
 ## Framing: this phase completes a bullet rather than opening one
 
@@ -753,6 +756,20 @@ so the difference between them is the electrolyte and nothing else.
   is reachable from scenario TOML — the claim the instrument's coverage of this phase rests
   on. `a_dfn_pack_is_selectable_from_a_scenario_file` runs it, and pins the four field
   names, which are a file-format contract the moment a scenario names them.
+
+### Two things slice B leaves for slice D, named rather than left to be found
+
+- **No DFN counterpart to `aging_grows_the_dc_resistance_of_the_shipped_spm_cell`.** The
+  `eff_r0_factor` path is wired (it divides `m_ref` on both electrodes and multiplies
+  `contact_resistance_ohm`, the same two places and the same argument as the SPM's, which
+  matters because this chemistry's contact resistance is Chen2020's own **0**) but no DFN
+  test configures aging, and `probe::jacobian_pair` hardcodes the factor to 1.0. So
+  `CLAUDE.md`'s "never model capacity fade without resistance growth" is *implemented* for
+  the DFN and **unverified** for it.
+- **The 3C cliff margin is thin and points the wrong way.** The test asserts the DFN
+  delivers under 0.8 of the SPM's amp-hours; the measured ratio is 0.69 on 10/5/10, and
+  refining moves it *up* — about 0.72 at 30/15/30. A default-grid change in slice D can
+  therefore fail that test without any physics having regressed.
 
 ### What the Jacobian test can and cannot say
 

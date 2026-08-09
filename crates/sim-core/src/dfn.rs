@@ -783,8 +783,6 @@ impl<'a> System<'a> {
             i0,
             arg: scale * eta,
             scale,
-            cs,
-            c_max,
             // A clamped surface no longer moves with `j`, so every derivative through it
             // is zero — the branch the analytic Jacobian takes and a central difference
             // straddles.
@@ -1014,10 +1012,6 @@ struct Kinetics {
     arg: f64,
     /// `α·F/(R·T)`.
     scale: f64,
-    #[allow(dead_code)]
-    cs: f64,
-    #[allow(dead_code)]
-    c_max: f64,
     /// `∂c_s/∂j`, exactly `0` past the surface clamp.
     dcs_dj: f64,
     /// `∂i₀/∂c_s`.
@@ -1349,20 +1343,23 @@ fn solve(s: &DfnState, setup: &StepSetup<'_>, i: f64, dt: f64) -> Solved {
     }
 }
 
-/// Volume-weighted mean stoichiometry of one electrode's particles, across x.
-fn bulk_stoich(profiles: &[Vec<f64>], h: &[f64], offset: usize, c_max: f64) -> f64 {
-    let mut num = 0.0;
-    let mut den = 0.0;
-    for (i, prof) in profiles.iter().enumerate() {
-        let w = h.get(offset + i).copied().unwrap_or(0.0);
-        num += w * mean_concentration(prof);
-        den += w;
+/// Mean stoichiometry of one electrode's particles across x, each particle's own profile
+/// already volume-averaged over r by [`mean_concentration`].
+///
+/// # A plain mean is the exact volume weighting here, and only here
+/// [`Grid::of`] gives every node in a region the same width, so weighting by node width
+/// would multiply and divide by one constant. This takes the mean directly rather than
+/// carrying a weight vector that is always uniform: a signature that promises weighting
+/// its callers do not supply reads as working, and it would allocate a throwaway `Vec` on
+/// a path the pack walks twice per cell per step. **A future non-uniform grid has to change
+/// this function**, which is the trade, and is why the constraint is written down here
+/// rather than left in `Grid`.
+fn bulk_stoich(profiles: &[Vec<f64>], c_max: f64) -> f64 {
+    if profiles.is_empty() {
+        return 0.0;
     }
-    if den > 0.0 {
-        num / den / c_max
-    } else {
-        0.0
-    }
+    let sum: f64 = profiles.iter().map(|p| mean_concentration(p)).sum();
+    sum / profiles.len() as f64 / c_max
 }
 
 /// Ground-truth state of charge, in \[0, 1\]: the negative electrode's mean stoichiometry
@@ -1381,10 +1378,7 @@ pub(crate) fn soc(s: &DfnState, spm: &SpmParams) -> f64 {
 #[must_use]
 fn raw_soc(s: &DfnState, spm: &SpmParams) -> f64 {
     let e = &spm.negative;
-    // The grid's node widths are uniform within a region, so a plain mean would do; the
-    // weighted form is written out because nothing here guarantees that forever.
-    let h: Vec<f64> = vec![1.0; s.c_neg.len()];
-    let x = bulk_stoich(&s.c_neg, &h, 0, e.c_max_mol_per_m3);
+    let x = bulk_stoich(&s.c_neg, e.c_max_mol_per_m3);
     (x - e.stoich_min) / (e.stoich_max - e.stoich_min)
 }
 
@@ -1396,10 +1390,8 @@ fn raw_soc(s: &DfnState, spm: &SpmParams) -> f64 {
 /// gradient the load created is an overpotential the cell gets back on relaxation.
 #[must_use]
 fn equilibrium_voltage(s: &DfnState, spm: &SpmParams) -> f64 {
-    let hn: Vec<f64> = vec![1.0; s.c_neg.len()];
-    let hp: Vec<f64> = vec![1.0; s.c_pos.len()];
-    let x = bulk_stoich(&s.c_neg, &hn, 0, spm.negative.c_max_mol_per_m3);
-    let y = bulk_stoich(&s.c_pos, &hp, 0, spm.positive.c_max_mol_per_m3);
+    let x = bulk_stoich(&s.c_neg, spm.negative.c_max_mol_per_m3);
+    let y = bulk_stoich(&s.c_pos, spm.positive.c_max_mol_per_m3);
     ocp_lookup(&spm.positive.ocp, y) - ocp_lookup(&spm.negative.ocp, x)
 }
 
@@ -1423,10 +1415,7 @@ fn seed_resistance(s: &DfnState, spm: &SpmParams, dfn: &DfnParams, sides: &Sides
     let area = sides.area_m2;
     let rt_over_f = GAS_CONSTANT_J_PER_MOL_K * sides.temp_k / FARADAY_C_PER_MOL;
     let ce = spm.c_e_mol_per_m3;
-    let bulk = |profiles: &[Vec<f64>], c_max: f64| {
-        let h: Vec<f64> = vec![1.0; profiles.len()];
-        bulk_stoich(profiles, &h, 0, c_max) * c_max
-    };
+    let bulk = |profiles: &[Vec<f64>], c_max: f64| bulk_stoich(profiles, c_max) * c_max;
     for (side, dfn_e, profiles) in [
         (&sides.neg, &dfn.negative, &s.c_neg),
         (&sides.pos, &dfn.positive, &s.c_pos),

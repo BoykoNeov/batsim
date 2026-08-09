@@ -274,6 +274,14 @@ fn the_shipped_dfn_cell_discharges_at_one_c() {
 /// about the discretisation — both models read the same `[spm]` block, the same OCP
 /// tables and the same particle solver, and the *only* difference is whether the
 /// electrolyte is solved for.
+///
+/// # The 0.8 threshold is a margin over *this grid*, and it is not much of one
+/// Measured on 10/5/10: the DFN delivers **0.69** of the SPM's amp-hours. PyBaMM's own
+/// pair manages 0.51, so this engine under-states the cliff — and refining the grid moves
+/// the ratio the *wrong* way, toward the threshold: the same run at 20/10/20 lasts 758 s
+/// and at 30/15/30 lasts 764 s against 726 s here, i.e. about 0.72. The grid is fixed in
+/// this test so nothing drifts under it, but whoever changes the default in slice D should
+/// read a failure here as "the margin was thin", not as a physics regression.
 #[test]
 fn the_electrolyte_starves_at_three_c_and_an_spm_never_notices() {
     let mut d = pack(dfn_model(NODES, SHELLS), 1.0);
