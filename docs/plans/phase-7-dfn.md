@@ -767,6 +767,13 @@ so the difference between them is the electrolyte and nothing else.
   test configures aging, and `probe::jacobian_pair` hardcodes the factor to 1.0. So
   `CLAUDE.md`'s "never model capacity fade without resistance growth" is *implemented* for
   the DFN and **unverified** for it.
+
+  **Closed — see `docs/plans/dfn-aging-gap.md`.** Both halves: three tests in
+  `dfn_cell.rs` and a `probe::Health` parameter on `jacobian_pair`. The gap was real
+  rather than notional — with the `m_ref` divide removed the entire pre-existing DFN
+  suite still passes. The protocol could **not** be copied from the SPM sibling: a
+  zero-length probe on a DFN returns the stored line rather than a solve, so the copy
+  would have gone green while exercising nothing.
 - **The 3C cliff margin is thin and points the wrong way.** The test asserts the DFN
   delivers under 0.8 of the SPM's amp-hours; the measured ratio is 0.69 on 10/5/10, and
   refining moves it *up* — about 0.72 at 30/15/30. A default-grid change in slice D can
@@ -957,7 +964,7 @@ at all — what the slice changed *for other components* — which is the derate
   slice B's 50–65×; both that factor and the ~40 µs projection earlier in this document are
   superseded.
 - The aging-vs-resistance-growth gap slice B named is untouched: still implemented and still
-  unverified for this model.
+  unverified for this model. **(Closed after the phase — `docs/plans/dfn-aging-gap.md`.)**
 
 ---
 
@@ -1200,6 +1207,14 @@ The aging-vs-resistance-growth gap slice B named is **still open**: the `eff_r0_
 is wired the same two ways for the DFN as for the SPM and still exercised by nothing, so
 `CLAUDE.md`'s no-fade-without-resistance-growth rule remains implemented and unverified for
 this model. Slice D did not close it and does not claim to.
+
+**Closed — see `docs/plans/dfn-aging-gap.md`, and one clause above is wrong.** "Exercised
+by nothing" was true of the DFN and **false of the SPM even when it was written**:
+`spm_pack.rs:151` is `aging_grows_the_dc_resistance_of_the_shipped_spm_cell`, from Phase 6
+slice B. The gap was therefore DFN-only and half the size this sentence implies — found by
+checking at the *configuration* level (`aging: Some(..)` plus a `cell_model`) rather than by
+grepping the internal parameter name, which is what a test that exercises this would never
+mention. Third time in this repo a stale plan-doc claim has mis-scoped a slice.
 
 ## Environment
 

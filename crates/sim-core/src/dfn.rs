@@ -555,6 +555,13 @@ impl<'a> Sides<'a> {
         // resistance growth — the one thing `CLAUDE.md` forbids outright. Dividing
         // `m_ref` multiplies the linearized charge-transfer resistance by the factor
         // exactly, on both electrodes. See `crate::spm::Working::new`.
+        //
+        // Both halves of that are measured rather than argued, in `sim-data`'s
+        // `dfn_cell.rs`: dropping the divide leaves the whole DFN suite green except
+        // `aging_grows_the_dc_resistance_of_the_shipped_dfn_cell`, which reports a
+        // growth ratio of exactly 1, and dropping the `r_contact` multiply below changes
+        // no test in the workspace — it is inert on *this* chemistry, and kept for one
+        // that reports a contact resistance. See `docs/plans/dfn-aging-gap.md`.
         let side = |p: &'a ElectrodeParams, d: &'a DfnElectrode| Side {
             p,
             d_s: p.diffusivity_m2_per_s
@@ -1794,20 +1801,53 @@ pub mod probe {
         Transport, NVAR,
     };
 
+    /// The two health multipliers a cell carries into a solve.
+    ///
+    /// Bundled rather than passed loose because they only ever travel together — every
+    /// entry point in this module takes both — and because [`jacobian_pair`] would
+    /// otherwise take eight arguments.
+    #[derive(Clone, Copy, Debug)]
+    pub struct Health {
+        /// Resistance-growth multiplier: a cell's static `r0_factor` times aging's
+        /// `soh_resistance`. `1.0` is a cell in new condition.
+        pub eff_r0_factor: f64,
+        /// Effective capacity \[A·h\] the flux conversion divides by. Pass
+        /// [`spm_capacity`] for a cell in new condition.
+        pub eff_capacity_ah: f64,
+    }
+
     /// Assemble the residual and the analytic Jacobian at one state, and return the
     /// Jacobian together with a central-difference approximation of it.
     ///
     /// Both are dense `m × m` in row-major order. `h_rel` scales the perturbation.
+    ///
+    /// # Why `health` is a parameter rather than the `1.0` it used to be
+    /// It was hardcoded to a cell in new condition, which slice B named as half of the
+    /// aging-vs-resistance-growth gap: the entries that carry the two multipliers —
+    /// Butler–Volmer's, through `m_ref`, and the particle flux boundary's, through
+    /// `kappa` — were never differentiated anywhere but at `1.0`. What this can say is
+    /// that the analytic derivative still matches the residual's own in that regime.
+    /// What it cannot say is whether the multipliers are applied *correctly*: both sides
+    /// of the comparison are built from the same [`Sides`], so a factor in the wrong
+    /// place moves them together. That claim belongs to a DC-resistance measurement
+    /// against the shipped chemistry, and lives in `sim-data`'s `dfn_cell.rs`.
     #[must_use]
     pub fn jacobian_pair(
         s: &DfnState,
         spm: &SpmParams,
         dfn: &DfnParams,
+        health: Health,
         i: f64,
         dt: f64,
         h_rel: f64,
     ) -> (usize, Vec<f64>, Vec<f64>) {
-        let sides = Sides::new(spm, dfn, s.temp_k, 1.0, spm_capacity(spm));
+        let sides = Sides::new(
+            spm,
+            dfn,
+            s.temp_k,
+            health.eff_r0_factor,
+            health.eff_capacity_ah,
+        );
         let grid = Grid::of(spm, dfn, &sides, s);
         let parts_neg: Vec<Particle> = s
             .c_neg

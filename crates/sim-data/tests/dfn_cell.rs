@@ -14,8 +14,8 @@
 
 use sim_core::dfn::{self, probe};
 use sim_core::{
-    BuildError, CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, Telemetry,
-    ThermalConfig,
+    AgingConfig, BuildError, CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter,
+    Telemetry, ThermalConfig,
 };
 use sim_data::parse_chemistry;
 
@@ -522,21 +522,51 @@ fn the_electrolyte_floor_is_inert_at_one_c_and_live_at_three_c() {
 /// distance from the observed agreement is for: the worst disagreement measured across
 /// these states is ~1e-9, and `1e-5` would still catch a wrong sign, a missing term or a
 /// transposed index — the failures this test exists for.
+///
+/// # The last two cases are an aged cell
+/// The health multipliers used to be hardcoded to a cell in new condition here, which is
+/// the half of the aging-vs-resistance-growth gap that is about *this* test rather than
+/// about the model: the entries carrying them — Butler–Volmer's through `m_ref`, the
+/// particle flux boundary's through `kappa` — were differentiated only at `1.0`. Both
+/// aged cases run the cell aged as well as probing it aged, so the state and the
+/// Jacobian describe the same cell.
+///
+/// This says the derivative still matches its residual in that regime. It cannot say the
+/// multipliers are applied *correctly* — both sides come from the same `Sides`, so a
+/// misplaced factor moves them together — and that is what
+/// [`aging_grows_the_dc_resistance_of_the_shipped_dfn_cell`] is for.
 #[test]
 fn the_analytic_jacobian_matches_a_difference_quotient() {
     let chem = parse_chemistry(LGM50).expect("LG M50 parses");
     let spm = chem.spm.as_ref().expect("[spm]");
     let d = chem.dfn.as_ref().expect("[dfn]");
     let capacity = probe::spm_capacity(spm);
+    let new = probe::Health {
+        eff_r0_factor: 1.0,
+        eff_capacity_ah: capacity,
+    };
+    let aged = probe::Health {
+        eff_r0_factor: 1.5,
+        eff_capacity_ah: 0.8 * capacity,
+    };
 
-    for (label, steps, i, dt) in [
-        ("fresh, discharge", 0, CAPACITY_AH, 10.0),
-        ("mid-discharge", 20, CAPACITY_AH, 10.0),
-        ("charging", 20, -CAPACITY_AH, 10.0),
-        ("at rest", 20, 0.0, 10.0),
-        ("hard discharge", 20, 3.0 * CAPACITY_AH, 5.0),
+    for (label, steps, i, dt, health) in [
+        ("fresh, discharge", 0, CAPACITY_AH, 10.0, new),
+        ("mid-discharge", 20, CAPACITY_AH, 10.0, new),
+        ("charging", 20, -CAPACITY_AH, 10.0, new),
+        ("at rest", 20, 0.0, 10.0, new),
+        ("hard discharge", 20, 3.0 * CAPACITY_AH, 5.0, new),
+        ("aged, mid-discharge", 20, CAPACITY_AH, 10.0, aged),
+        ("aged, hard discharge", 20, 3.0 * CAPACITY_AH, 5.0, aged),
     ] {
         let mut p = pack(dfn_model((6, 3, 6), 8), 1.0);
+        p.set_cell_factors(
+            0,
+            0,
+            health.eff_capacity_ah / capacity,
+            health.eff_r0_factor,
+        )
+        .expect("cell 0S0P exists");
         for _ in 0..steps {
             p.step(dt, Demand::Current(i), &env());
         }
@@ -548,7 +578,7 @@ fn the_analytic_jacobian_matches_a_difference_quotient() {
              comparison below would be measuring the branch, not the Jacobian"
         );
 
-        let (m, analytic, numeric) = probe::jacobian_pair(&s, spm, d, i, dt, 1.0e-6);
+        let (m, analytic, numeric) = probe::jacobian_pair(&s, spm, d, health, i, dt, 1.0e-6);
         assert_eq!(m, 4 * (6 + 3 + 6));
         let mut worst = 0.0_f64;
         for row in 0..m {
@@ -581,7 +611,7 @@ fn the_analytic_jacobian_matches_a_difference_quotient() {
         min_ce < dfn::C_E_FLOOR_MOL_PER_M3,
         "this state was meant to be past the floor; its minimum c_e is {min_ce}"
     );
-    let (_, analytic, _) = probe::jacobian_pair(&s, spm, d, 3.0 * CAPACITY_AH, 5.0, 1.0e-6);
+    let (_, analytic, _) = probe::jacobian_pair(&s, spm, d, new, 3.0 * CAPACITY_AH, 5.0, 1.0e-6);
     assert!(
         analytic.iter().all(|v| v.is_finite()),
         "the Jacobian of a depleted cell contains a non-finite entry"
@@ -1011,5 +1041,242 @@ fn a_discharge_and_recharge_returns_the_lithium() {
     assert!(
         (back - soc0).abs() < 1.0e-3,
         "SOC returned to {back} from {soc0} after a symmetric cycle"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The two aging multipliers, against this file by name
+// ---------------------------------------------------------------------------
+//
+// `CLAUDE.md` forbids modelling capacity fade without the matching resistance growth.
+// For the DFN that rule was implemented in slice B and verified by nothing until here:
+// `docs/plans/phase-7-dfn.md` carried it as still open through slice D. The sibling
+// claims for the SPM are in `spm_pack.rs`; the arguments below are the same shape and
+// the *protocol* is not, for a reason the first test spells out.
+//
+// Both multipliers reach a cell as a product — `eff_r0_factor` is
+// `r0_factor × aging.soh_resistance`, and `eff_capacity_ah` is its sibling — so the
+// first two tests drive the per-cell half directly and the third pins that a live
+// `[aging]` block moves the other.
+
+/// A pack whose one cell carries the given static health factors.
+fn aged_pack(soc: f64, capacity_factor: f64, r0_factor: f64) -> Pack {
+    let mut p = pack(dfn_model(NODES, SHELLS), soc);
+    p.set_cell_factors(0, 0, capacity_factor, r0_factor)
+        .expect("cell 0S0P exists");
+    p
+}
+
+/// An aged DFN cell pushes back harder — measured as DC resistance, on the shipped
+/// chemistry, whose only ohms-valued field is zero.
+///
+/// # This is the test the finding was made for
+/// `nmc_21700_lgm50.toml` sets `contact_resistance_ohm = 0`, Chen2020's own value, so
+/// applying `soh_resistance` to the model's one resistance evaluates to `1.5 × 0 = 0`
+/// and an aged cell would fade capacity with no resistance growth at all. The
+/// implementation instead divides the exchange-current density on **both** electrodes
+/// (`dfn.rs`'s `Sides::new`), which multiplies the linearized charge-transfer
+/// resistance by exactly the factor. The premise is asserted below rather than trusted,
+/// because a later nonzero contact resistance would make this test pass whatever the
+/// implementation did — and would do the same to its SPM sibling, which shares the
+/// premise and does not pin it.
+///
+/// # Why *not* the SPM sibling's zero-length protocol
+/// `spm_pack.rs` measures `ΔV/ΔI` between two `dt = 0` probe steps. Copying that here
+/// would have been wrong in a way that still passes: [`dfn::probe_at`] answers a
+/// non-positive `dt` with the **stored line** rather than a solve, so two zero-length
+/// probes return two points on one straight line and `ΔV/ΔI` is that line's slope
+/// exactly. On a fresh cell the line is the seed, which does carry the factor — so the
+/// test would have gone green while exercising none of the solver, and would have gone
+/// green identically if the real path had lost the factor entirely.
+///
+/// The numbers say the same thing: at `soc` 0.6 the zero-length protocol reports
+/// 0.0558 Ω growing to 0.0810 Ω (**1.45×**), while a real 1 A step reports 0.0346 Ω
+/// growing to 0.0458 Ω (**1.32×**). Both are honest readings of different quantities —
+/// the first is the *linearized* resistance at zero current, which is roughly twice the
+/// chord a real current draws.
+///
+/// So this measures a chord of the real curve: two packs built from the same config and
+/// stepped once each, at 0 A and at 1 A, over the same `dt`.
+///
+/// # Why the SPM sibling's threshold would fail here on correct code
+/// A DFN's DC resistance is a sum, and only the charge-transfer term scales:
+/// electrolyte ohmic, solid ohmic and the separator do not. On the linearized reading
+/// above, charge transfer is **90 %** of the total (1.45 = 1 + 0.5 × 0.903). On a real
+/// chord it is diluted further by Butler–Volmer's own nonlinearity — scaling `i₀` costs
+/// less once the kinetics turn logarithmic — so the observed growth **falls with the
+/// current it is measured at**: 1.32× at 1 A (≈ C/5), 1.18× at 5 A (≈ 1C), 1.11× at
+/// 15 A (≈ 3C). The SPM sibling's `> 1.2 ×` bound would therefore fail on correct code
+/// anywhere above about C/3.
+///
+/// This asserts at C/5, where the reading is closest to the linear claim the
+/// implementation actually makes, with a bound picked from that decomposition rather
+/// than from running the test until it passed. Removing the divide makes the ratio
+/// exactly 1.0 — `contact_resistance_ohm` is zero — so any bound clear of 1.0
+/// discriminates, and the margin is spent on not pinning the Tafel curve's shape.
+#[test]
+fn aging_grows_the_dc_resistance_of_the_shipped_dfn_cell() {
+    let chem = parse_chemistry(LGM50).expect("LG M50 parses");
+    let contact = chem
+        .spm
+        .as_ref()
+        .expect("LG M50 has an [spm] section")
+        .contact_resistance_ohm;
+    assert_eq!(
+        contact, 0.0,
+        "this test's whole claim is that the factor reaches the exchange-current \
+         density, and it only says that while the chemistry's one ohms-valued field is \
+         zero. contact_resistance_ohm is now {contact} ohms, so a implementation that \
+         scaled only that field would pass — re-derive the assertion or move it."
+    );
+
+    // A chord of the real V(i) curve: same state, two currents, one real solve each.
+    let probe_a = 1.0;
+    let dc_resistance = |r0_factor: f64| {
+        let v = |i: f64| {
+            aged_pack(0.6, 1.0, r0_factor)
+                .step(1.0, Demand::Current(i), &env())
+                .v_terminal
+        };
+        (v(0.0) - v(probe_a)) / probe_a
+    };
+
+    let healthy = dc_resistance(1.0);
+    let aged = dc_resistance(1.5);
+    assert!(
+        healthy > 0.0,
+        "a healthy DFN cell must have a positive DC resistance, got {healthy} ohms"
+    );
+    assert!(
+        aged > healthy * 1.15,
+        "a 1.5x resistance-growth factor must show up as a substantially higher DC \
+         resistance: healthy {healthy} ohms -> aged {aged} ohms, ratio {}. The shipped \
+         chemistry's contact_resistance_ohm is 0, so this only moves if the factor \
+         reaches the exchange-current density; an implementation that scaled the \
+         contact resistance alone reports exactly 1.0 here.",
+        aged / healthy
+    );
+}
+
+/// The capacity multipliers reach the particles: a cell configured to hold less
+/// delivers proportionally fewer amp-hours between the same two SOC readings.
+///
+/// The SPM sibling's reasoning for a quasi-static protocol applies unchanged and more
+/// so — under load a DFN's surface concentration runs ahead of its bulk *and* its
+/// electrolyte polarizes — so this discharges at C/10 and measures between two SOC
+/// readings rather than to a voltage cut-off.
+///
+/// # `dt = 60 s` rather than the sibling's 10
+/// The step is 6× coarser because a DFN step is ≈180 µs where an SPM's is ≈1.3, and at
+/// C/10 the answer does not move: 3.60833 Ah at `dt` = 60 against 3.60833 at `dt` = 10,
+/// with the ratio 0.80139 against 0.79985. What the coarse step does cost is
+/// granularity — the loop can overshoot `soc = 0.2` by one step's charge, 0.0083 A·h —
+/// and both bounds below are set several times clear of that rather than at the
+/// tightest value the run happens to allow. No step of either run raised
+/// `SOLVE_UNCONVERGED`.
+#[test]
+fn capacity_multipliers_scale_the_amp_hours_of_the_shipped_dfn_cell() {
+    let (i, dt) = (0.5, 60.0);
+    let measure = |capacity_factor: f64| {
+        let mut p = aged_pack(0.9, capacity_factor, 1.0);
+        let mut ah = 0.0;
+        for _ in 0..10_000 {
+            let tele = p.step(dt, Demand::Current(i), &env());
+            ah += tele.i_actual * dt / 3600.0;
+            assert!(
+                !tele.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+                "a C/10 discharge is not a hard one; a step failed to converge"
+            );
+            if tele.soc_true <= 0.2 {
+                return ah;
+            }
+        }
+        panic!("the pack never reached soc = 0.2");
+    };
+
+    let full = measure(1.0);
+    let weak = measure(0.8);
+    let ratio = weak / full;
+    assert!(
+        (ratio - 0.8).abs() < 0.01,
+        "a cell configured at 80 % capacity must deliver 80 % of the amp-hours over the \
+         same SOC span: {weak} Ah / {full} Ah = {ratio}. If this is ~1.0 the capacity \
+         factors are not reaching the flux conversion, and manufacturing scatter and \
+         Fault::WeakCell are no-ops on DFN packs."
+    );
+
+    // And the absolute number is the chemistry's own capacity over that span, which pins
+    // the geometry-to-capacity reconciliation rather than merely its proportionality.
+    // 0.7 of nominal; the run lands 0.0011 A·h off it.
+    let expected = 0.7 * CAPACITY_AH;
+    assert!(
+        (full - expected).abs() < 0.01 * CAPACITY_AH,
+        "0.9 -> 0.2 on a nominal cell should draw {expected} Ah, got {full} Ah"
+    );
+}
+
+/// Aging still ages: the SOH multipliers a live `[aging]` block produces reach a DFN
+/// pack, rather than the model quietly ignoring the health it is handed — and the
+/// resistance half moves with the capacity half, which is the rule `CLAUDE.md` states
+/// outright.
+///
+/// # A month bought at 30 steps
+/// The sibling walks its month in hourly steps. Calendar fade over this horizon is
+/// **bit-identical** at `dt` = 1 h, 6 h and 24 h — 0.95807743 and 1.06288386 at all
+/// three, cool — so a DFN, which costs ≈140× an SPM step, buys the same horizon at
+/// 1/24 the steps. That is a measurement, not an assumption: the sub-clock integrates
+/// the `√t` law over the step rather than sampling it, and a day-long step at rest is
+/// a trivial solve (no step of either run raised `SOLVE_UNCONVERGED`).
+#[test]
+fn a_configured_dfn_pack_actually_fades() {
+    let month = |t_k: f64| {
+        let mut config = cfg(dfn_model(NODES, SHELLS), 0.9);
+        config.initial_temp_k = t_k;
+        config.aging = Some(AgingConfig {
+            sub_clock_period_s: 10.0,
+        });
+        let e = Env {
+            t_ambient: t_k,
+            t_coolant: None,
+        };
+        let mut p = Pack::new(&config, parse_chemistry(LGM50).expect("LG M50 parses"))
+            .expect("a DFN pack with aging builds");
+        for _ in 0..30 {
+            let t = p.step(86_400.0, Demand::Rest, &e);
+            assert!(
+                !t.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+                "a day at rest is not a hard step; the solve failed at {t_k} K"
+            );
+        }
+        p.step(0.0, Demand::Rest, &e)
+    };
+
+    // A month on the shelf at 25 degC and at 45 degC: calendar fade's worst corner, and
+    // enough of it to be visible without asserting a placeholder coefficient's magnitude.
+    let cool = month(298.15);
+    let warm = month(318.15);
+
+    assert!(
+        cool.soh_capacity < 1.0 && cool.soh_resistance > 1.0,
+        "a month on the shelf must cost a DFN pack capacity and add resistance, got \
+         soh_capacity {} and soh_resistance {}",
+        cool.soh_capacity,
+        cool.soh_resistance
+    );
+    assert!(
+        warm.soh_capacity < cool.soh_capacity,
+        "calendar fade is Arrhenius, so the hot pack must fade further: {} (45 degC) vs \
+         {} (25 degC)",
+        warm.soh_capacity,
+        cool.soh_capacity
+    );
+    // The rule itself: wherever the capacity multiplier moved further, the resistance
+    // multiplier moved with it. Capacity fade alone is what CLAUDE.md forbids.
+    assert!(
+        warm.soh_resistance > cool.soh_resistance,
+        "the pack that faded further must also have grown more resistance: {} (45 degC) \
+         vs {} (25 degC)",
+        warm.soh_resistance,
+        cool.soh_resistance
     );
 }
