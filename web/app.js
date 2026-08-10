@@ -2693,7 +2693,7 @@ const LESSONS = [
       "There is nothing to do here but watch. That is deliberate: the point of this step is what an answer looks like when you have no way to tell it is wrong.",
     ],
     expect:
-      "Nothing anomalous, which is the whole of it. The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat. That flattening is the NMC plateau and it is real. Not one flag is raised on any step of the run. Press **Run** again when it stops and it simply carries on, just as smoothly: 2.502 V at 1058 s and **2.495 V at 1060 s**, which is where it crosses the 2.50 V cut-off, with 11.7 % left on the readout. 15.46 A for 1060 s is **4.55 A·h** — 88 % of this cell's 5.15, in under eighteen minutes, at three times its rated hour rate. (Keep going well past that and it eventually pins near 0.3 V, which is the floor step 14 mentions seen from the discharge side. The cut-off is a long way above it, so a reader who stops where the cell stops never meets it.) Everything about this trace is plausible. Hold onto the 500 s reading — 3.418 V, 58.3 % — because the next step is the same cell, at the same current, at the same instant.",
+      "Nothing anomalous, which is the whole of it. The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat. That flattening is the NMC plateau and it is real. Not one flag is raised on any step of the run. Press **Run** again when it stops and it simply carries on, just as smoothly: 2.502 V at 1058 s and **2.495 V at 1060 s**, which is where it crosses the 2.50 V cut-off, with 11.7 % left on the readout. 15.46 A for 1060 s is **4.55 A·h** — 88 % of this cell's 5.15, in the eighteen minutes the clock will be showing, at three times its rated hour rate. (Keep going well past that and it eventually pins near 0.3 V, which is the floor step 14 mentions seen from the discharge side. The cut-off is a long way above it, so a reader who stops where the cell stops never meets it.) Everything about this trace is plausible. Hold onto the 500 s reading — 3.418 V, 58.3 % — because the next step is the same cell, at the same current, at the same instant.",
   },
   {
     id: "the-electrolyte-starves",
@@ -2807,14 +2807,27 @@ function renderStep() {
   const moved = path.switchedTransport
     ? " Switched to the in-page engine for this step: the server builds the pack its scenario asked for and will not rebuild it without a BMS."
     : "";
-  // Three states, not two. A reader who takes up the invitation to pause leaves
+  // Four states, not two. A reader who takes up the invitation to pause leaves
   // `path.until` set while `state.running` goes false, and a note that still said
   // "running to…" would be contradicted by the button right next to it — the note would
   // be inviting the one action that falsifies it.
+  //
+  // The fourth is the mirror of that and was missing: `pathArrived` clears `path.until`,
+  // so a step that has *finished* takes the same branch as one that has not started, and
+  // pressing Run then advanced the trace under a note still reading "Nothing is
+  // advancing." (`$("run").onclick` does re-render — the branch was simply keyed on
+  // `path.until` alone.) Pre-existing, and harmless while no lesson asked for it; steps
+  // 15 and 16 do — the SPM arm's cut-off at 1060 s is past its own mark and is reached by
+  // pressing Run again, which is exactly the case that used to lie.
   const where = path.busy
     ? "setting up…"
     : path.until === null
-      ? `paused at ${fmtTime(t)} of simulation. Nothing is advancing.`
+      ? state.running
+        // No live time in this branch: `renderStep` runs on events, not on frames, so a
+        // clock printed here would freeze at the instant Run was pressed. The readouts
+        // panel has the moving one.
+        ? `running on past this step's mark, which it left at ${fmtTime(t)}. Nothing will stop it but you — Back then Next re-applies the step from scratch.`
+        : `paused at ${fmtTime(t)} of simulation. Nothing is advancing.`
       : state.running
         ? `running to t = ${fmtTime(path.until)}. Pause whenever you like — every control stays yours, and Back then Next re-applies this step from scratch.`
         : `paused at ${fmtTime(t)}, part-way to t = ${fmtTime(path.until)}. Press Run to carry on, or Next to move on without finishing.`;

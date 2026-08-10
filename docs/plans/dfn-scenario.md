@@ -381,10 +381,20 @@ the two insertions — both `bms: null` — leave them true. `README.md`'s "sixt
 the one real hit and is now eighteen. `docs/plans/spm-scenario.md` was on the candidate list
 and turned out to defer nothing about the DFN; that is a result, not an omission.
 
-**4. One defect the plan did not know about.** `$("path-exit")` relabelled the start button
+**4. Two defects the plan did not know about.** `$("path-exit")` relabelled the start button
 `"Start — 8 steps"` — stale by four insertions, and `index.html` said 16, so the two had
 already drifted. Both now derive from `LESSONS.length`; the markup string is only what
 shows before the script runs.
+
+The second was found by asking what step 15's own instruction depends on. It tells the
+reader to press **Run** after the mark to watch the SPM on to its 1060 s cut-off — and
+`renderStep`'s note keyed its "paused / running" choice on `path.until` **alone**.
+`pathArrived` clears `path.until`, so a step that has *finished* took the same branch as one
+that has not started: pressing Run advanced the trace under a note reading "Nothing is
+advancing." (`$("run").onclick` does re-render — the branch was simply wrong.) Now four
+states instead of three. Pre-existing and harmless while no lesson asked for it; step 15
+asks for it, and the headline figure a reader gets from that step is on the other side of
+that button.
 
 ## What the measurement did *not* change
 
@@ -478,12 +488,53 @@ thrown; the millivolts would simply have stopped matching.
   delta at 0.25 s, so one forced frame buys `0.25 × speed_x` of simulation and no more,
   which is what makes a full 18-step walk expensive enough to be worth skipping through.
 
-**Not verified, and said rather than glossed:** step 18 (`nothing-to-clamp`) hung this
-harness on arrival, in both directions, twice — under a browser that had accumulated a
-dozen live pages and again on a clean one. Nothing in this slice touches that step: its
-`dt: 0.5` pin predates it, and step 17 was confirmed forward at `dt = 0.5` immediately
-after step 16 set the box to 2, which is the only interaction this slice could have had
-with either. Left as a harness limitation rather than claimed as a pass.
+### The last step wedges the harness, and that was measured rather than argued
+
+Step 18 (`nothing-to-clamp`) hung this harness on arrival, in both directions, twice —
+under a browser that had accumulated a dozen live pages and again on a clean one. The
+tempting write-up was "nothing in this slice touches that step, so it is a harness
+limitation." That is the inference shape this repo has been burned by twice already
+(`phase-7-slice-a-landed`'s "provably inert for the SPM", `dfn-aging-gap-closed`'s stale
+plan-doc claim), and the stakes are not cosmetic: the exit criterion below says the path
+runs 18 steps forward and back, and a page that really hangs on its last step is a defect,
+not a quirk.
+
+So it was **discriminated** with `scenario-catalog.md`'s recipe: a worktree at `HEAD~1`
+served with `--web-dir` on a second port, where the same lesson is **step 16 of 16** and
+none of this slice's code exists. Same browser, same driver, same forced-frame loop.
+
+**It hangs there too, identically** — arrives at "The same short, three times weaker, and
+nothing to clamp", the note reads "running to t = 3m", the readouts freeze at
+`SIM TIME 2s`, and the CDP connection then stops answering altogether until the socket
+times out. Pre-existing, and not caused by this slice.
+
+What it is *not* is settled: a wedged debugger connection is the renderer going
+unresponsive, not the page's step loop stalling, so this is at least as likely to be a
+`--headless=new` artifact (that step is the one that runs `transport: "wasm"` through a BMS
+rebuild while a screenshot loop drives every frame) as a page defect. A human with a real
+browser would settle it in seconds. Recorded as an open question with the blame correctly
+assigned rather than as a pass.
+
+### Step 15's own instruction, driven end to end
+
+The step tells the reader to press **Run** at the mark and watch the SPM on to its cut-off,
+which is where the headline 4.55 A·h comes from. Driven: the note reads
+`paused at 8m of simulation. Nothing is advancing.` on arrival; pressing Run turns it into
+`running on past this step's mark, which it left at 8m…` (the fourth branch, added above)
+and the button into `Pause`; and the run carries on unattended to `SIM TIME 18m`,
+`TERMINAL 2.475 V`, `SOC (TRUE) 11.2 %` — the first sample this coarser poll caught below
+2.50 V, consistent with the socket sampler's 2.502 V at 1058 s and 2.495 V at 1060 s.
+The instruction works and the note no longer contradicts it.
+
+### One cross-check that came free
+
+The two instruments disagree about everything except the answer. The path walk read steps
+15 and 16 at their marks over the **in-page wasm engine at `speed_x` 100**; the sampling
+pass read the same instants over the **server WebSocket at `speed_x` ≈ 20**, with a
+different frame cadence and a different backend. They agree exactly — 3.418 V / 58.3 % and
+2.379 V / 58.3 %, `SOLVE_UNCONVERGED` present in both. The quoted numbers are therefore not
+artefacts of transport or of how fast the harness drove the page, which is the first doubt
+a reader should have about anything read off a driven page.
 
 ## The number that turned out to be the lesson
 
@@ -504,3 +555,15 @@ Both files load from the picker with no page edit; the guided path runs 18 steps
 and back; and a reader who runs step 15 and then step 16 sees the same cell, at the same
 current, die in half the time — with the reason on the screen rather than in the prose, and
 with every number in the `expect` blocks read off that screen.
+
+**Met, with one clause qualified rather than quietly dropped.** Both files load from the
+picker (`GET /scenarios` lists them, no page edit). Every number in both `expect` blocks
+was read off the panel, twice, over two different transports at two different speeds. Steps
+12 to 17 were walked forward and 12 to 16 back, reading identically in both directions.
+
+The clause that is not met as written is **"runs 18 steps forward and back"**: step 18
+wedges the CDP harness on arrival, and the `HEAD~1` discriminator above shows it does so
+with none of this slice's code present. So the path was verified over steps 12–17 forward
+and 12–16 back, and step 18's behaviour under a real browser is an open question this slice
+inherited rather than created. Said here, on the criterion, so that a later reader checking
+whether this closed does not have to find the caveat two hundred lines up.
