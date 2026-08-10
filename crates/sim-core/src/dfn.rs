@@ -92,8 +92,8 @@ use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
 use crate::chem::{DfnElectrode, DfnParams, ElectrodeParams, PowerTerm, SpmParams};
 use crate::flags::EventFlags;
 use crate::spm::{
-    c_surface, diffuse, geometric_capacity_ah, mean_concentration, ocp_lookup, ocp_slope, Geometry,
-    FARADAY_C_PER_MOL,
+    c_surface, diffuse, geometric_capacity_ah, mean_concentration, ocp_lookup, ocp_slope,
+    window_fraction_neg, window_fraction_pos, Geometry, FARADAY_C_PER_MOL,
 };
 
 /// Smallest number of finite volumes a region may be discretised into.
@@ -1499,8 +1499,7 @@ pub(crate) fn soc(s: &DfnState, spm: &SpmParams) -> f64 {
 #[must_use]
 fn raw_soc(s: &DfnState, spm: &SpmParams) -> f64 {
     let e = &spm.negative;
-    let x = bulk_stoich(&s.c_neg, e.c_max_mol_per_m3);
-    (x - e.stoich_min) / (e.stoich_max - e.stoich_min)
+    window_fraction_neg(bulk_stoich(&s.c_neg, e.c_max_mol_per_m3), e)
 }
 
 /// Equilibrium (open-circuit) voltage \[V\] at the particles' **bulk** stoichiometry,
@@ -1705,6 +1704,100 @@ pub(crate) fn overpotential_v(
     let v = terminal_v(s, spm, dfn, eff_r0_factor, eff_capacity_ah, i);
     let sides = Sides::new(spm, dfn, s.temp_k, eff_r0_factor, eff_capacity_ah);
     equilibrium_voltage(s, spm) - v - i * sides.r_contact
+}
+
+/// Mean **surface** stoichiometry of one electrode's particles across x — the exact
+/// sibling of [`bulk_stoich`], over the same nodes, reduced the same way.
+///
+/// # The sameness of the reduction is the whole point
+/// Each particle's surface comes from the same expression [`particle_map`] built its
+/// affine map with: the stored profile extrapolated a half-shell out along the flux that
+/// node's own converged reaction current imposes. Because `j` and the profiles are both
+/// committed from one `solve` (see [`advance`]), this reproduces the surface the solve
+/// actually used, exactly, rather than approximating it.
+///
+/// What it must **not** be is a max or a min. Differencing an x-*extreme* against the
+/// x-mean bulk differences two different spatial reductions, and nothing moves solid
+/// lithium between x positions except the small reaction currents a relaxing electrolyte
+/// drives — so the result carries a standing offset that rest does not remove. Measured
+/// on a 3 C discharge: the extreme is still `0.028918` two hours into a rest, where the
+/// mean is gone by 300 s. "Rest it and watch them converge" is only true of the mean.
+fn surface_stoich(
+    profiles: &[Vec<f64>],
+    e: &ElectrodeParams,
+    d_s: f64,
+    u: &[f64],
+    first_node: usize,
+    kappa: f64,
+) -> f64 {
+    if profiles.is_empty() {
+        return 0.0;
+    }
+    let sum: f64 = profiles
+        .iter()
+        .enumerate()
+        .map(|(i, prof)| {
+            let j_surf = u[NVAR * (first_node + i) + JJ] * kappa / FARADAY_C_PER_MOL;
+            c_surface(prof, e.particle_radius_m, d_s, j_surf)
+        })
+        .sum();
+    sum / profiles.len() as f64 / e.c_max_mol_per_m3
+}
+
+/// Bulk minus surface stoichiometry on each electrode, `(negative, positive)`, both on
+/// the window [`soc`] uses and both **discharge-positive**.
+///
+/// The porous-electrode twin of [`crate::spm::surface_gap`] — read that doc for why the
+/// quantity is a difference rather than a level, and why resistance growth does not
+/// enter. The only difference here is that both sides are averaged over x as well as
+/// over r, exactly as [`soc`] is, because a DFN has a lithium distribution through the
+/// electrode and not just through a particle.
+///
+/// # What this does not report
+/// The **spread** across x — how differently the node at the separator and the node at
+/// the current collector are behaving — is the quantity that actually separates this
+/// model from a single particle, whose spread is structurally zero. It is deliberately
+/// not here: it does not relax on a timescale a reader can watch (still `0.0589` on the
+/// negative two hours into a rest, where this gap is zero inside 600 s), so it needs a
+/// lesson of its own rather than a second number beside this one.
+#[must_use]
+pub(crate) fn surface_gap(
+    s: &DfnState,
+    spm: &SpmParams,
+    dfn: &DfnParams,
+    eff_capacity_ah: f64,
+) -> (f64, f64) {
+    let sides = Sides::new(spm, dfn, s.temp_k, 1.0, eff_capacity_ah);
+    let grid = Grid::of(spm, dfn, &sides, s);
+    if grid.n() == 0 || grid.n() != s.c_e.len() || s.u.len() < NVAR * grid.n() {
+        // A grid that does not describe the state it came from, or an unknown vector that
+        // does not span it — both reachable only from a hand-edited snapshot, and both
+        // guarded here for the reason `advance` guards the first: this may not index off
+        // the end of a bad state. `0.0` is the honest answer to "how far is the surface
+        // from the bulk" on a state whose surface cannot be located at all.
+        return (0.0, 0.0);
+    }
+    let n = &spm.negative;
+    let p = &spm.positive;
+    (
+        window_fraction_neg(bulk_stoich(&s.c_neg, n.c_max_mol_per_m3), n)
+            - window_fraction_neg(
+                surface_stoich(&s.c_neg, n, sides.neg.d_s, &s.u, 0, sides.kappa),
+                n,
+            ),
+        window_fraction_pos(bulk_stoich(&s.c_pos, p.c_max_mol_per_m3), p)
+            - window_fraction_pos(
+                surface_stoich(
+                    &s.c_pos,
+                    p,
+                    sides.pos.d_s,
+                    &s.u,
+                    grid.first_pos(),
+                    sides.kappa,
+                ),
+                p,
+            ),
+    )
 }
 
 /// Heat generated inside this cell \[W\] at current `i`, given the terminal voltage

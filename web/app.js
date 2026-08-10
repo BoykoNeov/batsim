@@ -51,8 +51,14 @@ function clearBanner() {
  * would get `undefined` and throw `TypeError` from inside a render path: precisely the
  * unhelpful symptom the paragraph below describes, and the reason the rule is about
  * what the page consumes rather than about method names specifically.
+ *
+ * v5 is two more fields — `CellView`'s `surface_gap_neg` and `surface_gap_pos` — which
+ * the pack grid offers as metrics, the cell tooltip prints, and a readout row shows. The
+ * same test as v4: a v4 bundle omits them, so `null` and `undefined` are indistinguishable
+ * to the availability check below, and the grid would offer a metric that paints as a flat
+ * range over nothing.
  */
-const WASM_API_MIN = 4;
+const WASM_API_MIN = 5;
 
 let wasm = null;
 try {
@@ -918,6 +924,23 @@ function record(frame) {
 // Readouts
 // ---------------------------------------------------------------------------
 
+/**
+ * One row each, `[label, format, quiet]`.
+ *
+ * `format` is `(telemetry, facts, cells)`. The third argument arrived with the
+ * surface-gap row and is the first thing here that is **not** pack-level telemetry: the
+ * gradient is per-cell state, read from `Pack::cell`, and there is no pack-wide twin of
+ * it because the only configurations that have one ship as 1S1P. Two consequences a
+ * reader of this table should know:
+ *
+ *  * `cells` is sampled on its own 250 ms clock (`CELLS_PERIOD_MS`), not per frame, so a
+ *    gap row can be up to a quarter-second behind the voltage beside it. Harmless for a
+ *    quantity whose whole story is a rise and a decay over minutes; it would not be for a
+ *    step-sized one.
+ *  * `cells` is `null` before the first read and on a backend error, which is the same
+ *    `null` the formatter returns for "this model has no such quantity". Both land on the
+ *    `quiet` placeholder, so that placeholder has to be true of both.
+ */
 const READOUTS = [
   ["sim time", (m, f) => fmtTime(f.sim_time_s)],
   ["terminal", (m) => `${m.v_terminal.toFixed(3)} V`],
@@ -948,6 +971,29 @@ const READOUTS = [
         : `${m.i_rejected_a < 0 ? "refused" : "invented"} ${Math.abs(m.i_rejected_a).toFixed(3)} A`,
     "none",
   ],
+  // Points of state of charge, two decimals — the units of `soc (true)` above, on a scale
+  // that row cannot resolve. It prints one decimal, and the negative electrode's whole
+  // gradient at 3 C is 5.8 points; the panel's precision is not the engine's, which is a
+  // thing this page has had to relearn once already.
+  //
+  // Positive on discharge on both electrodes: the surface is further through the
+  // discharge than the bulk is. The two are printed side by side rather than as one
+  // number because the interesting fact about them is that they *differ* — the positive
+  // electrode runs several times ahead, and it is the one that ends a hard discharge,
+  // while `soc` is named after the other one.
+  //
+  // Lives here rather than only in the pack grid because the packs that have this
+  // quantity are 1S1P: one tile, nothing to compare it against, and a tooltip that needs
+  // a hover to appear at all.
+  [
+    "surface gap",
+    (m, f, cells) => {
+      const c = cells?.cells?.[0];
+      if (!c || c.surface_gap_neg === null || c.surface_gap_neg === undefined) return null;
+      return `${(c.surface_gap_neg * 100).toFixed(2)} / ${(c.surface_gap_pos * 100).toFixed(2)} pts`;
+    },
+    "circuit — no electrodes",
+  ],
 ];
 
 const readoutEls = new Map();
@@ -963,14 +1009,14 @@ const readoutEls = new Map();
   }
 }
 
-function renderReadouts(telemetry, facts) {
+function renderReadouts(telemetry, facts, cells) {
   // `quiet` is what a row shows when its formatter has nothing to report on a *running*
   // pack, as distinct from the em dash that means "no telemetry yet". It defaulted to
   // "no BMS" back when `soc (bms)` was the only formatter that could return null; the
   // `clamp` row can too, and "no BMS" is not what an absent clamp means.
   for (const [key, fn, quiet = "no BMS"] of READOUTS) {
     const el = readoutEls.get(key);
-    const value = telemetry ? fn(telemetry, facts) : null;
+    const value = telemetry ? fn(telemetry, facts, cells) : null;
     if (value === null || value === undefined) {
       el.textContent = telemetry ? quiet : "—";
       el.className = "v none";
@@ -1015,6 +1061,14 @@ function renderFlags(telemetry) {
  *
  * So "which cell is taking the most load right now" is not on this menu. The SOC
  * spread is the same story integrated, which is why `soc` is the default.
+ *
+ * An entry may carry `avail`, a predicate on one cell. It exists for the surface-gap
+ * pair, which is `null` on an equivalent circuit because a circuit has no electrodes —
+ * and `null` is not a number the ramp can normalise. The predicate is evaluated on
+ * `cells[0]` alone and that is sound rather than lazy: the cell model is chosen in the
+ * *pack* config, so the field is null for every cell or for none. An unavailable metric
+ * is removed from the selector rather than shown flat, because a metric that paints every
+ * tile identically reads as "the pack is uniform", which is a different and false claim.
  */
 const METRICS = {
   soc: { ramp: "accent", get: (c) => c.soc * 100, dp: 2, unit: "%" },
@@ -1030,7 +1084,47 @@ const METRICS = {
     dp: 4,
     unit: "S",
   },
+  // In points of state of charge, so they read against the `soc` metric directly.
+  surface_gap_neg: {
+    ramp: "warm",
+    get: (c) => c.surface_gap_neg * 100,
+    dp: 3,
+    unit: "pts",
+    avail: (c) => c.surface_gap_neg !== null && c.surface_gap_neg !== undefined,
+  },
+  surface_gap_pos: {
+    ramp: "warm",
+    get: (c) => c.surface_gap_pos * 100,
+    dp: 3,
+    unit: "pts",
+    avail: (c) => c.surface_gap_pos !== null && c.surface_gap_pos !== undefined,
+  },
 };
+
+/**
+ * Show only the metrics this pack's cell model actually has, and never leave the
+ * selector pointing at one it does not.
+ *
+ * Hiding an `<option>` does **not** clear the select's `value` if that option was the
+ * selected one — so without the fallback here, walking from an SPM scenario to an ECM one
+ * with `surface_gap_pos` chosen leaves `METRICS[value]` undefined and `paintGrid` throws
+ * from inside a draw call, which stops the whole animation loop over a menu item.
+ */
+function syncMetricOptions(cells) {
+  const sample = cells?.cells?.[0];
+  const sel = $("pack-metric");
+  for (const opt of sel.options) {
+    const m = METRICS[opt.value];
+    const ok = !m?.avail || (sample ? m.avail(sample) : false);
+    opt.hidden = !ok;
+    opt.disabled = !ok;
+  }
+  const chosen = METRICS[sel.value];
+  if (chosen?.avail && !(sample && chosen.avail(sample))) {
+    sel.value = "soc";
+    grid.dirty = true;
+  }
+}
 
 /**
  * Sequential encodings: **one hue each, never a rainbow across a single scale.**
@@ -1120,7 +1214,12 @@ function paintGrid() {
     buildGrid(data.series, data.parallel);
   }
 
-  const m = METRICS[$("pack-metric").value];
+  syncMetricOptions(data);
+  // `?? METRICS.soc` is belt and braces behind `syncMetricOptions`, which already puts the
+  // selector back on a metric this pack has. It is here because the cost of the two
+  // disagreeing is a `TypeError` thrown out of the animation frame, which takes the whole
+  // page down rather than one panel.
+  const m = METRICS[$("pack-metric").value] ?? METRICS.soc;
   const values = data.cells.map(m.get);
   let lo = Infinity;
   let hi = -Infinity;
@@ -1187,6 +1286,12 @@ function renderCellDetail() {
     `soh cap ${(c.soh_capacity * 100).toFixed(3)} %`,
     `soh res ×${c.soh_resistance.toFixed(4)}`,
   ];
+  // Absent on an equivalent circuit rather than printed as zero: a circuit has no
+  // electrodes, and a row reading "0.00 pts" would say "measured, and flat".
+  if (c.surface_gap_neg !== null && c.surface_gap_neg !== undefined) {
+    parts.push(`surface gap − ${(c.surface_gap_neg * 100).toFixed(3)} pts`);
+    parts.push(`surface gap + ${(c.surface_gap_pos * 100).toFixed(3)} pts`);
+  }
   if (c.internal_short_conductance_s > 0) {
     parts.push(`internal short ${(1 / c.internal_short_conductance_s).toFixed(2)} Ω`);
   }
@@ -1904,7 +2009,7 @@ function draw() {
     { label: "resistance", color: "#ffb454", values: history.soh_resistance },
   ]);
 
-  renderReadouts(state.latest, state.facts ?? { sim_time_s: 0 });
+  renderReadouts(state.latest, state.facts ?? { sim_time_s: 0 }, state.cells);
   renderFlags(state.latest);
   paintGrid();
 }
@@ -2717,6 +2822,48 @@ const LESSONS = [
     ],
     expect:
       "It disagrees before you even press Run: the panel reads **2.808 V** where the twin read 3.927. That is not the cell's resting voltage — it is a zero-length probe of the demand you just dialled in, the answer with no time for anything to move at all, and the three models give three of them (3.798 V for the circuit, 3.927 for the particle, 2.808 here). Now run it. The two traces are the same shape until they are not. This one starts lower — **3.839 V** against the twin's 3.918 on the first step — and falls faster all the way down: 2.957 V at 400 s where the other reads 3.471. Then, over the 64 seconds from 400 s to 464 s, it drops **535 mV** while the single-particle arm falls 34 mV, and it is finished: **2.422 V at t = 464 s, past the 2.50 V cut-off, with 61.3 % of the capacity still showing on the readout.** 15.46 A for 464 s is 1.99 A·h of this cell's 5.15. The twin, at that same instant, reads 3.437 V — **a full volt higher** — and has 596 seconds still to run. Same cell, same current: one model says the cell is empty and the other has not noticed. Look at the heat, too: 22.41 W here against the twin's 6.33 W at the mark, from the identical current, because heat is what the current times the gap between equilibrium and the terminal buys you and that gap is where the whole disagreement lives. The mechanism is not on the screen but the shape is its signature: as the current pulls lithium out faster than it can diffuse back through the liquid, the electrolyte in the positive electrode starves, its conductivity falls with it, and the collapse feeds itself. An SPM holds that concentration constant by construction, so it cannot represent any of it and reports a cell that is fine. **Two things to be honest about.** The voltage plot autoscales to whatever it is showing, and these two runs cover very different ranges — so the traces will look more alike in shape than they are. Compare the numbers, not the slopes. And `SOLVE_UNCONVERGED` appears at **466 s**, one step after the cut-off, and stays: past that point the Newton solve is hitting its iteration cap, and the flat shelf that carries the run from 2.414 V down to 2.379 V at the mark is the solver, not the cell. That the flag arrives one step *after* the collapse and not before it is the useful part — the solve stops being able to answer at almost exactly the moment there is nothing left to answer about. Now the thing that makes this a boundary rather than a verdict: **set the current to 5.153198 A — 1 C — and run both files again** (press Run again each time the mark passes; a full discharge is about an hour of simulation). The two models now reach their cut-offs **12 seconds apart in 3484 — 0.34 %**. The disagreement is not a property of the DFN, it is a property of the rate. Below that boundary the cheap model is right and costs about 200× less per step; above it, it is wrong by a factor of 2.28 on how much charge the cell holds, and it gives you no sign of it.",
+  },
+  {
+    id: "the-gradient-itself",
+    title: "The gradient itself, and two electrodes that disagree about time",
+    scenario: "cc_discharge_3c_spm.toml",
+    // The single-particle arm rather than its DFN twin, and that is a measurement rather
+    // than a saving: the radial gap is the same on both models to five parts in 10^5,
+    // because it is set quasi-statically by the *current* and not by anything the DFN
+    // adds. What the DFN has and this does not is a spread across x, which is a different
+    // quantity and does not relax on a watchable timescale. So this step buys nothing by
+    // being 200x more expensive, and the contrast it is actually about — a porous
+    // electrode against a circuit — is the one fourteen earlier steps set up.
+    //
+    // One `Pulse` step and not two steps, which is the whole reason this mode is here:
+    // a rest step written separately would have its entire claim be about state inherited
+    // from its predecessor, and `applyStep` reloads whenever the scenario name differs —
+    // so arriving by Back from step 19 would rebuild at t = 0 and the step's headline
+    // would be zero. `Pulse`'s leg is a pure function of `sim_time_s`, so one record
+    // carries both phases and is correct from either direction.
+    demand: { mode: "Pulse", value: 15.459594, on_s: 1060, off_s: 1800 },
+    ambient_c: 25,
+    bms: null,
+    // The pair's timestep, and this arm is nearly indifferent to it — see step 15.
+    dt: 2,
+    speed_x: 200,
+    // 1060 + 1800. The mark lands exactly on the end of the rest leg because the frame
+    // clamp chops the step count at the mark, so the last step taken is a resting one and
+    // not the first step of a second pulse.
+    until_s: 2860,
+    // Load-bearing in a way the scenario name would not reveal: step 15 runs *this same
+    // file* to t = 500, so a reader arriving from there satisfies neither reload clause
+    // and would start this run already 500 s into a discharge — with `Pulse` reading its
+    // phase off a clock that no longer means what it means here.
+    reload: true,
+    watch: ["readouts", "plot-v"],
+    prose: [
+      "Every step so far has shown you what a concentration gradient *costs*. Step 13's rebound was a gradient relaxing; step 16's collapse was one the electrolyte could not refill. Both times you were asked to infer the gradient from a voltage. This step puts it on the panel.",
+      "Look at the readouts for a new row: **surface gap**, two numbers, in points of state of charge — the units of `soc (true)` two rows above it. The engine knows *where* the lithium is inside each particle, not just how much of it there is. `soc` is the average over the whole particle. The voltage does not see the average; it sees the **surface**. The gap is the average minus the surface, and it is positive when the surface is further through the discharge than the bulk — which is the entire reason a hard discharge stops early with charge still in the cell. An equivalent circuit has no such number, and on steps 1 to 12 that row says so rather than printing a zero.",
+      "Two numbers because there are two electrodes, and they are not interchangeable. The same file and the same 15.459594 A as step 15 — this time run all the way to the cut-off, and then left to rest for half an hour.",
+    ],
+    expect:
+      "Both numbers read **0.00 / 0.00** before you press Run, which is a true zero rather than a missing one: a cell that has never been asked for a current has a uniform particle and no gradient anywhere, and the zero-length probe that fills these readouts does not move it. Then watch the two numbers do completely different things. The **negative** electrode's gap climbs to about 5.8 points and then simply stops: 5.74 at 200 s, 5.80 at 400 s, and **5.81 for the entire remaining eleven minutes of the discharge**. It has reached a steady state — lithium is leaving the surface exactly as fast as diffusion resupplies it, and the gradient that balances those two does not care how long you hold it. The **positive** electrode never gets there. It goes 26.46 points at 200 s, 32.07 at 400, 34.79 at 600, 36.23 at 800, **37.18 when the run reaches 2.4953 V at 1060 s** — still climbing when the cell dies, and more than six times the negative's. Same cell, same current, same instant. The reason is two numbers from Chen2020 that are not placeholders: a particle's diffusion time is its radius squared over its diffusivity, which is **1040 s** for the negative and **6812 s** for the positive. The negative electrode has time to settle inside an eighteen-minute discharge and the positive does not. Now the rest leg, and this is the part worth waiting for. The voltage snaps back — 2.4953 V to **3.3380 V by 600 s of rest**, which is 98.3 % of everything it will ever recover. If you were reading the voltage you would call the cell settled. The gaps say otherwise: at that same instant the negative reads **0.00** and the positive still reads **3.08 points**. One electrode is finished and the other is not, and the trace has no way to tell you. Keep going and the last of it comes back exactly as the positive's gradient drains — 1.26 points and 3.3467 V at 900 s, **0.09 points and 3.3523 V when the run stops at 2860 s**. The final 14.7 mV of that rebound takes twenty minutes to arrive and it is *entirely* one electrode still levelling out. Two footnotes. The `soc (true)` row does not move by one digit through the whole rest — 11.7 % from the cut-off to the mark — because resting moves no charge; everything on this screen that changed was lithium rearranging itself inside particles that already held it. And the pack grid's metric menu has gained these two as well, which is only useful on a pack with more than one cell: this one is 1S1P, so the grid is a single tile and the readout row is where the number lives.",
   },
   {
     id: "one-step-that-got-through",

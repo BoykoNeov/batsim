@@ -99,7 +99,31 @@ use wasm_bindgen::prelude::*;
 ///
 /// `sim_core::SNAPSHOT_VERSION` stays at 11: the rejected amount is computed and
 /// consumed inside a step, so no saved pack changed shape.
-pub const WASM_API_VERSION: u32 = 4;
+///
+/// v5 (surface vs bulk): `sim_core::CellView` gains `surface_gap_neg` and
+/// `surface_gap_pos`, the concentration gradient a porous-electrode cell has and an
+/// equivalent circuit does not. `CellView` crosses this boundary verbatim inside
+/// [`Cells`], so both land in the JSON a page parses.
+///
+/// Additions again, so `sim_server::API_VERSION` stays at 2 by its own explicit
+/// exemption and the two part company for the **third** time — after v3's new method and
+/// v4's added telemetry field. The plan that priced this slice had them moving together;
+/// each constant's own doc said otherwise, and the habit of reading them before paying a
+/// planned bump is the whole reason there are three numbers.
+///
+/// This one moves for the reason v3 and v4 give and which has nothing to do with
+/// renames: `web/pkg` is a build artifact loaded separately from the JS that calls it.
+/// Against a v4 bundle these two fields are `undefined`, and the page's new grid metric
+/// would divide a range on them from inside a draw call. `web/app.js`'s `WASM_API_MIN`
+/// moves with it, which is what makes the bump load-bearing rather than decoration.
+///
+/// `sim_core::SNAPSHOT_VERSION` stays at 13: both fields are pure functions of stored
+/// state — a post-step concentration profile and the current that produced it — so no
+/// saved pack changed shape. Note this is `CellView`'s *second* addition of a field that
+/// is `None` on some models, and the second time the alternative `0.0` was rejected for
+/// the same reason: an absent quantity that plots as a real measurement is worse than no
+/// quantity at all.
+pub const WASM_API_VERSION: u32 = 5;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///

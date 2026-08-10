@@ -212,6 +212,38 @@ impl CellModel {
         }
     }
 
+    /// Bulk minus surface stoichiometry on each electrode, `(negative, positive)`, both
+    /// discharge-positive and on the scale [`crate::CellView::soc`] uses — or `None` on a
+    /// model that has no surface.
+    ///
+    /// The concentration gradient itself, where [`Self::overpotential_v`] is the voltage
+    /// it costs. That one is model-neutral because every cell model has an overpotential;
+    /// this one is not, and the difference is the point of it.
+    ///
+    /// # `None` rather than `0.0` for an equivalent circuit
+    /// An ECM has no electrodes, no particles and no surface — not a flat gradient, no
+    /// gradient. `0.0` would be indistinguishable, to a client that plots it, from a real
+    /// measurement of a fully relaxed porous cell, which is *precisely* the trap the
+    /// `v_rc_sum` → `overpotential_v` rename was paid to remove. `None` is also what a
+    /// porous cell configured against a chemistry with no `[spm]`/`[dfn]` section
+    /// answers: no parameters, no gradient, and no invented zero.
+    ///
+    /// Takes no `eff_r0_factor`, unlike its siblings: see [`crate::spm::surface_gap`] for
+    /// why resistance growth cannot reach a diffusion gradient while `eff_capacity_ah`
+    /// can.
+    #[must_use]
+    pub fn surface_gap(&self, chem: &ChemistryParams, eff_capacity_ah: f64) -> Option<(f64, f64)> {
+        match self {
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) => None,
+            CellModel::Spm(s) => {
+                Self::spm_params(chem).map(|spm| spm::surface_gap(s, spm, eff_capacity_ah))
+            }
+            CellModel::Dfn(s) => {
+                Self::dfn_params(chem).map(|(spm, d)| dfn::surface_gap(s, spm, d, eff_capacity_ah))
+            }
+        }
+    }
+
     /// This cell's Thévenin source `(E, R)` for the pack's linear solve, from its
     /// start-of-step state. See [`cell_source`].
     ///

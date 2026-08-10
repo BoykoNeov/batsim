@@ -671,6 +671,34 @@ pub struct CellView {
     /// does to a cell (mass loss, ejected electrolyte, the end of it being a battery).
     /// See [`crate::runaway`].
     pub vented: bool,
+    /// Bulk minus surface stoichiometry on the **negative** electrode,
+    /// discharge-positive, on the same scale [`Self::soc`] uses — or `None` on a cell
+    /// model that has no surface.
+    ///
+    /// The gradient an equivalent circuit cannot have. Where [`Self::overpotential_v`]
+    /// reports what a concentration gradient *costs in volts*, this reports the gradient,
+    /// and a reader can watch it stand up under load and collapse at rest.
+    ///
+    /// `None` for `Ecm1Rc` and `Ecm2Rc`, and deliberately not `0.0` — see
+    /// [`crate::CellModel::surface_gap`], which is also where the units argument lives.
+    /// A positive number means the surface is further through the discharge than the bulk
+    /// is, which is true of *both* electrodes at once on a discharge even though their
+    /// stoichiometries move in opposite directions.
+    ///
+    /// # Read with [`Self::soc`], not against it
+    /// `soc` is clamped to \[0, 1\]; this is a difference of two **unclamped** window
+    /// fractions and carries no clamp on either side. Subtracting one from the other is
+    /// therefore meaningless — measured, an overcharged pack at rest shows `+0.186667`
+    /// of pure clamp that way, with no gradient anywhere in it.
+    pub surface_gap_neg: Option<f64>,
+    /// The same on the **positive** electrode. See [`Self::surface_gap_neg`].
+    ///
+    /// Usually the larger of the two by several times — measured at `0.331415` against
+    /// the negative's `0.058047` at a 3 C DFN cut-off — because on these chemistries it is
+    /// the positive electrode that saturates and ends a hard discharge. `soc` is defined
+    /// from the negative, so the electrode the state of charge is named after is *not*
+    /// the one carrying the gradient that stops the cell.
+    pub surface_gap_pos: Option<f64>,
 }
 
 /// Per-cell start-of-step Thévenin `(E, R)`, carried across the step boundary.
@@ -1029,6 +1057,9 @@ impl Pack {
     #[must_use]
     pub fn cell(&self, s: usize, p: usize) -> Option<CellView> {
         let cell = self.groups.get(s)?.cells.get(p)?;
+        let gap = cell
+            .model
+            .surface_gap(&self.chem, cell.eff_capacity_ah(self.chem.cell.capacity_ah));
         Some(CellView {
             soc: cell.model.soc(&self.chem),
             temp_k: cell.model.temp_k(),
@@ -1044,6 +1075,8 @@ impl Pack {
             internal_short_conductance_s: cell.shunt_g,
             runaway_energy_remaining_j: cell.runaway.energy_remaining_j,
             vented: cell.runaway.vented,
+            surface_gap_neg: gap.map(|(n, _)| n),
+            surface_gap_pos: gap.map(|(_, p)| p),
         })
     }
 

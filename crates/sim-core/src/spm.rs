@@ -566,8 +566,42 @@ pub(crate) fn soc(s: &SpmState, spm: &SpmParams) -> f64 {
 #[must_use]
 fn raw_soc(s: &SpmState, spm: &SpmParams) -> f64 {
     let e = &spm.negative;
-    let x = mean_concentration(&s.c_neg) / e.c_max_mol_per_m3;
-    (x - e.stoich_min) / (e.stoich_max - e.stoich_min)
+    window_fraction_neg(mean_concentration(&s.c_neg) / e.c_max_mol_per_m3, e)
+}
+
+/// Where a **negative**-electrode stoichiometry sits on its usable window, as a
+/// fraction — the mapping [`soc`] is built from, before its clamp.
+///
+/// Rising: the negative electrode is emptied by a discharge, so its stoichiometry runs
+/// the same direction as state of charge.
+///
+/// **Unclamped**, and every caller has to know it. [`soc`] applies the clamp itself
+/// because the window is the *usable* range rather than a physical bound; a
+/// **difference** of two of these must not, because a clamp on one side and not the
+/// other stops being a gradient and starts being the clamp. Measured: after a 3 C
+/// overcharge at rest, a uniform pack reads `1.186667` here and `1.000000` from
+/// [`soc`], so differencing the two shows a standing `+0.186667` that no rest removes
+/// and that is not a gradient at all. See [`surface_gap`].
+#[must_use]
+pub(crate) fn window_fraction_neg(stoich: f64, e: &ElectrodeParams) -> f64 {
+    (stoich - e.stoich_min) / (e.stoich_max - e.stoich_min)
+}
+
+/// Where a **positive**-electrode stoichiometry sits on its usable window, as a
+/// fraction. The sibling of [`window_fraction_neg`]; read that doc for the clamp.
+///
+/// Falling: the positive electrode is *filled* by a discharge, so its stoichiometry
+/// runs backwards against state of charge — which is the direction
+/// [`SpmState::new`] and `DfnState::new` both seed it in.
+///
+/// That reversal is not a detail to normalise away. It is what makes a `bulk − surface`
+/// gap read **positive on discharge on both electrodes** with no sign fixed up by the
+/// caller: a discharging negative particle has a surface *below* its bulk and a
+/// discharging positive particle has one *above*, and the two mappings turn both into
+/// the same statement — the surface is further through the discharge than the bulk is.
+#[must_use]
+pub(crate) fn window_fraction_pos(stoich: f64, e: &ElectrodeParams) -> f64 {
+    (e.stoich_max - stoich) / (e.stoich_max - e.stoich_min)
 }
 
 /// Total overpotential \[V\], discharge-positive: everything between the
@@ -593,6 +627,45 @@ pub(crate) fn overpotential_v(
     let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
     let i = s.i_last;
     equilibrium_voltage(&w, s) - voltage(&w, s, i) - i * w.r_contact
+}
+
+/// Bulk minus surface stoichiometry on each electrode, `(negative, positive)`, both on
+/// the window [`soc`] uses and both **discharge-positive**.
+///
+/// The concentration half of [`overpotential_v`], reported as the gradient itself
+/// rather than as the voltage it costs. Evaluated at [`SpmState::i_last`] — the current
+/// the state it reads was produced by — so a zero-length probe step, which never writes
+/// `i_last`, leaves this reading whatever the last real step left it. On a pack that has
+/// never stepped that is exactly `0.0` on both electrodes, and it is a true zero: a
+/// uniform particle has no gradient.
+///
+/// # Why a difference and not a level
+/// A surface *level* on this window leaves \[0, 1\] — measured at `1.161385` here on a
+/// 3 C overcharge, and past `stoich_max` there is no window left to be a fraction of.
+/// A difference of two unclamped fractions on the same window has no such bound to
+/// break, is not a state of charge, and relaxes to exactly `0.0` at rest in every case
+/// measured including that one. See [`window_fraction_neg`] for what a clamp on one
+/// side alone does to it.
+///
+/// # Resistance growth deliberately does not enter
+/// No `eff_r0_factor` argument, unlike [`overpotential_v`]: it would reach only `m_ref`
+/// and `r_contact`, and a concentration gradient is set by diffusion and the flux
+/// boundary — neither of which is a resistance. `eff_capacity_ah` **does** enter, through
+/// `κ`: how much active material a cell holds decides what flux a given current is.
+/// Same reasoning, and the same shape, as [`advance`]'s own note on the argument.
+#[must_use]
+pub(crate) fn surface_gap(s: &SpmState, spm: &SpmParams, eff_capacity_ah: f64) -> (f64, f64) {
+    let w = Working::new(spm, s.temp_k, 1.0, eff_capacity_ah);
+    let n = &spm.negative;
+    let p = &spm.positive;
+    let cs_n = c_surface(&s.c_neg, n.particle_radius_m, w.neg.d_s, w.j_neg(s.i_last));
+    let cs_p = c_surface(&s.c_pos, p.particle_radius_m, w.pos.d_s, w.j_pos(s.i_last));
+    (
+        window_fraction_neg(mean_concentration(&s.c_neg) / n.c_max_mol_per_m3, n)
+            - window_fraction_neg(cs_n / n.c_max_mol_per_m3, n),
+        window_fraction_pos(mean_concentration(&s.c_pos) / p.c_max_mol_per_m3, p)
+            - window_fraction_pos(cs_p / p.c_max_mol_per_m3, p),
+    )
 }
 
 /// Heat generated inside this cell \[W\] at current `i`, given the terminal voltage
