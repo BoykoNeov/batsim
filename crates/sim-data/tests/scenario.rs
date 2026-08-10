@@ -90,6 +90,9 @@ fn soft_short_example_matches_a_hand_built_config() {
                 balancing: Some(BalancingConfig {
                     bleed_r_ohms: 33.0,
                     v_threshold_v: 3.45,
+                    // Omitted by the file, like the two protection bands below: the
+                    // `serde` default is what this pins.
+                    v_release_band_v: 0.010,
                 }),
                 protection: Some(ProtectionConfig {
                     v_hard_margin_v: 0.15,

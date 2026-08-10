@@ -267,3 +267,12 @@ pre-change numbers exactly with the band set back to zero.
   resistor on and off at the step rate. It is far cheaper than the protection cycle was
   (a 33 Ω bleed at 3.6 V is 0.4 W against 73.6 W) and it is out of scope here, but it is
   the same defect and it is now the only one left in this file.
+
+  **Closed — see `docs/plans/balancing-chatter.md`.** `SNAPSHOT_VERSION` 12 → 13. The
+  band it needed is sized by a **different rule than this document's**: not
+  `v_max − OCV(1.0)` but the bleed's own load line `I_bleed · (R0 + Σ R_rc)`, because
+  opening a bleed switch returns the reading to wherever the group sits rather than to a
+  rested voltage the cell cannot exceed. That makes it scale with parallel count and with
+  `R_bleed`, so unlike this one it is not a property of the chemistry file. The open
+  question this file also left — whether `snapshot.rs`'s replay tests share the `Clone`
+  blind spot — was answered there in passing: **they do not.**

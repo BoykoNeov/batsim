@@ -99,6 +99,7 @@ fn config() -> PackConfig {
             balancing: Some(BalancingConfig {
                 bleed_r_ohms: 47.0,
                 v_threshold_v: 3.0, // below the resting voltage here, so bleeds close
+                v_release_band_v: 0.010,
             }),
             protection: Some(ProtectionConfig {
                 v_hard_margin_v: 0.2,

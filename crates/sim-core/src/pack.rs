@@ -172,7 +172,27 @@ use crate::{Demand, Env, Telemetry};
 /// is the case `snapshot_version.rs` pins. Under a self-describing format (the JSON the
 /// server uses) the defaults do apply and the wider claim holds. See
 /// `docs/plans/protection-chatter.md`.
-pub const SNAPSHOT_VERSION: u32 = 12;
+///
+/// v13 (balancing hysteresis): [`crate::bms::BalancingConfig`] gained a release band and
+/// [`Bms`] gained one held-switch bool per group.
+///
+/// **Semantic, and for the same reason v12 was:** a v12 pack ran its bleed switches off
+/// a bare comparator, the new band does not default to zero, so a restored v12 pack
+/// would continue a different trajectory. The held bools again default to the correct
+/// v12 reading — but only *nominally*: `Bms::new` seeds them from the initial frame, so
+/// "nothing held" is the right reading for a v12 blob and the wrong one for a pack built
+/// fresh above the threshold. That is a second reason they cannot carry the bump alone.
+///
+/// **The structural argument is re-derived, not inherited, and it lands where v12's
+/// did.** The field set is different — `BalancingConfig` goes from two `f64`s to three
+/// and `Bms` gains a `Vec<bool>` — but the mechanism is the same: `bincode` is
+/// positional, so a v12 blob with `bms: Some(..)` is short by a scalar and a sequence
+/// and fails at *deserialization*, not at the version check. Only `bms: None` leaves the
+/// bytes valid with the version field as the thing that refuses them, and that is again
+/// the case `snapshot_version.rs` pins. `#[serde(default)]` on the two new fields buys
+/// TOML scenario back-compat and the self-describing JSON path, and buys `bincode`
+/// nothing. See `docs/plans/balancing-chatter.md`.
+pub const SNAPSHOT_VERSION: u32 = 13;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -2056,6 +2076,9 @@ impl Pack {
                 // happened, so a stuck sensor reads exactly its stuck value without
                 // shifting the RNG stream (see [`crate::faults`]).
                 bms.corrupt_sensors(self.faults.sensor_faults());
+                // The balancer re-decides here, on the frame as corrupted, and not in
+                // the solve that reads the result — see `Bms::bleed_conductances`.
+                bms.update_bleed_latches();
             }
         }
         if any_vented {
@@ -2182,6 +2205,16 @@ fn validate_bms(bms: &BmsConfig, series: u16, parallel: u16) -> Result<(), Build
                 field: "balancing.v_threshold_v",
                 reason: "must be finite",
                 value: bal.v_threshold_v,
+            });
+        }
+        // Same rule, and the same reason, as the protection bands below: a negative or
+        // non-finite band inverts or poisons the Schmitt trigger's release. Zero is
+        // allowed and meaningful — it is the bare comparator.
+        if !(bal.v_release_band_v.is_finite() && bal.v_release_band_v >= 0.0) {
+            return Err(BuildError::BadBmsConfig {
+                field: "balancing.v_release_band_v",
+                reason: "must be finite and >= 0",
+                value: bal.v_release_band_v,
             });
         }
     }

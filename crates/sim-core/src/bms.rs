@@ -220,6 +220,13 @@ fn rung(held: bool, trip: bool, release: bool) -> bool {
 /// The *decision* to close the switch is made from the lagged sensor frame, because
 /// that is a BMS control decision and the BMS only has sensors. The *physics* once
 /// closed is exact.
+///
+/// The decision is a **Schmitt trigger**, not a bare comparator — close above
+/// [`Self::v_threshold_v`], reopen only below `v_threshold_v − v_release_band_v` — and it
+/// is made once per sampled frame in `Bms::update_bleed_latches`, never in the read that
+/// the solve uses. Without the band it could not be otherwise stable: the bleed current
+/// flows through the group's own resistance, so **closing the switch is itself what pulls
+/// the reading back under the threshold**. See [`Self::v_release_band_v`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BalancingConfig {
     /// Bleed resistance across one group \[ohms\]. Must be finite and `> 0`. Smaller
@@ -230,6 +237,75 @@ pub struct BalancingConfig {
     /// Set this near the top of charge: below it, bleeding just throws away energy
     /// without reducing any imbalance that matters.
     pub v_threshold_v: f64,
+    /// How far a measured group voltage must fall back **below** [`Self::v_threshold_v`]
+    /// before that group's bleed switch opens again \[V\]. Must be finite and `>= 0`.
+    ///
+    /// # Why this is not zero
+    /// Zero reproduces a bare comparator exactly — the switch closes on
+    /// `v > v_threshold_v` and opens the moment it is not — and a bare comparator here
+    /// is a **two-step limit cycle**, because closing the switch is itself what pushes
+    /// the reading back under the threshold. Measured on a 1S1P fixture charged at
+    /// 0.05 A against a 33 Ω bleed drawing 0.104 A: **5999 flips in 6000 steps at
+    /// `dt` = 1 s, and 59999 in 60000 at `dt` = 0.1 s** — the same 6000 s of simulated
+    /// time. A flip count that tracks the step rate is the definition of numerical
+    /// chatter rather than physics.
+    ///
+    /// # How to size it, which is *not* how [`ProtectionConfig::v_release_band_v`] is sized
+    /// The band must clear the reading's response to the switch's own action. For
+    /// protection that is `v_max − OCV(1.0)`, because tripping removes the external
+    /// load entirely and the reading falls back to a rested voltage the cell cannot
+    /// exceed. A bleed switch has no such pin: opening it returns the reading to
+    /// wherever the group actually sits, so the quantity to clear is the **bleed's own
+    /// load line**, `I_bleed · (R0 + Σ R_rc)` per cell — and the *settled* value, not
+    /// the instantaneous `I_bleed · R0`, because hysteresis lengthens the closed dwell
+    /// into exactly the regime where the RC pairs finish developing. On the fixture
+    /// above that is 2.1 mV instantaneous growing to 4.2 mV settled.
+    ///
+    /// Two consequences that `ProtectionConfig`'s band does not have:
+    ///
+    /// * **It cannot be derived in code.** The BMS knows `R_bleed` and the measured
+    ///   voltage, so it knows `I_bleed` — but the group resistance is ground truth, and
+    ///   the BMS never reads ground truth (see the module docs). Hence a configured
+    ///   voltage rather than a computed one.
+    /// * **It is not a property of the chemistry alone.** The load line scales as
+    ///   `1/parallel` and with `1/R_bleed`, so a band sized for a 1P string is roughly
+    ///   an order of magnitude larger than a 10P pack needs, and a stiffer bleed
+    ///   resistor needs more. `soh_resistance` also grows the load line over pack life,
+    ///   so a margin measured on new cells shrinks as the pack ages.
+    ///
+    /// **Provenance for the default (10 mV):** a sweep of the parked fixture over four
+    /// `(parallel, R_bleed)` combinations, each run at `dt` = 1 s and `dt` = 0.1 s across
+    /// the same 6000 s. The ratio of the two flip counts is the reading — 10 while the
+    /// switch is chattering, 1 once it is not — and it falls off a cliff at the load
+    /// line every time:
+    ///
+    /// | parallel | `R_bleed` | `I_bleed · (R0 + Σ R_rc)` | measured cliff |
+    /// | --- | --- | --- | --- |
+    /// | 1 | 33 Ω | 3.1 mV | between 2 and 4 mV |
+    /// | 4 | 33 Ω | 0.78 mV | between 0 and 2 mV |
+    /// | 10 | 33 Ω | 0.31 mV | between 0 and 2 mV |
+    /// | 1 | 5 Ω | 20.6 mV | between 10 and 20 mV |
+    ///
+    /// 10 mV clears the first row by 3.2×. Note the last row: the shipped default is
+    /// **not** enough for a 5 Ω bleed on a 1P string, which will chatter until it is
+    /// raised. Like [`ProtectionConfig::v_release_band_v`], this number is sized against
+    /// a fixture rather than derived from one — but unlike that one it is not even a
+    /// property of the chemistry file, so a pack that changes `bleed_r_ohms` or its
+    /// parallel count is changing what this has to clear.
+    ///
+    /// # What it costs
+    /// The band is extra depth of discharge on the bled group: the switch keeps
+    /// bleeding until the reading reaches `v_threshold_v − band` rather than
+    /// `v_threshold_v`, so a larger band overshoots the balance target. Setting it to
+    /// `0.0` restores the bang-bang behaviour bit-for-bit, which makes the contrast
+    /// something a scenario can show.
+    #[serde(default = "default_bleed_release_band_v")]
+    pub v_release_band_v: f64,
+}
+
+/// See [`BalancingConfig::v_release_band_v`].
+fn default_bleed_release_band_v() -> f64 {
+    0.010
 }
 
 /// What the BMS is allowed to know and how badly its sensors lie.
@@ -376,6 +452,19 @@ pub struct Bms {
     /// exemption from the bump.
     #[serde(default)]
     latches: SoftLatches,
+    /// Which groups' bleed switches are currently *held* closed by their release band,
+    /// in series order. Empty when balancing is disabled.
+    ///
+    /// Snapshot state for the same reason [`Self::latches`] is: a switch held at the
+    /// instant a snapshot is taken is still held after the restore, and a pack that
+    /// forgot would re-derive it from a bare comparator — which is the chatter this
+    /// band exists to stop.
+    ///
+    /// `#[serde(default)]` reads a pre-band snapshot as "nothing held"; the
+    /// [`crate::SNAPSHOT_VERSION`] check still refuses such a blob (see
+    /// `tests/snapshot_version.rs` for why that is the only thing which does).
+    #[serde(default)]
+    bleed_held: Vec<bool>,
 }
 
 impl Bms {
@@ -401,6 +490,19 @@ impl Bms {
             i_pack_a: 0.0,
             sampled_at_s: 0.0,
         };
+        // Seed the bleed latches from the initial frame rather than from "nothing
+        // held". The latch is only recomputed when a frame is sampled, so an unseeded
+        // pack whose first frame is already above the threshold would delay its first
+        // bleed by one step — and that one step is the whole difference between a band
+        // of zero and today's bare comparator. Seeding is what makes `0.0` reproduce
+        // the old trajectory bit-for-bit, which is the control every test here leans on.
+        let bleed_held = config.balancing.map_or_else(Vec::new, |bal| {
+            frame
+                .v_group
+                .iter()
+                .map(|&v| v > bal.v_threshold_v)
+                .collect()
+        });
         Self {
             soc_est: (initial_soc + config.initial_soc_error).clamp(0.0, 1.0),
             rest_time_s: 0.0,
@@ -408,6 +510,7 @@ impl Bms {
             frame,
             contactor_open: false,
             latches: SoftLatches::default(),
+            bleed_held,
         }
     }
 
@@ -429,10 +532,14 @@ impl Bms {
     /// where the switch is closed, `0.0` where it is open, in series order.
     ///
     /// Left empty when balancing is disabled, which the caller reads as "no bleed
-    /// anywhere". Decided from the lagged sensor frame — a real balancer switches on
-    /// what it measured, not on what is true — but note this is a pure read: it
-    /// mutates nothing, so it is safe to call on a zero-length probe step, where it
-    /// keeps the reported voltage consistent with the step that follows.
+    /// anywhere".
+    ///
+    /// This is a **pure read** of the latch state, and must stay one. The switch
+    /// decision itself lives in [`Self::update_bleed_latches`], which runs once per
+    /// sampled frame; deciding here instead would mutate the BMS on a zero-length probe
+    /// step, and would also make the decision depend on how many times the pack's
+    /// nonlinear iteration happened to call it. As it stands a probe step reports
+    /// exactly the bleed the next real step will carry.
     pub(crate) fn bleed_conductances(&self, out: &mut Vec<f64>) {
         out.clear();
         let Some(bal) = self.config.balancing else {
@@ -440,11 +547,35 @@ impl Bms {
         };
         let g = 1.0 / bal.bleed_r_ohms;
         out.extend(
-            self.frame
-                .v_group
+            self.bleed_held
                 .iter()
-                .map(|&v| if v > bal.v_threshold_v { g } else { 0.0 }),
+                .map(|&held| if held { g } else { 0.0 }),
         );
+    }
+
+    /// Re-decide every group's bleed switch from the frame just sampled.
+    ///
+    /// Called once per sampled frame, immediately after [`Self::corrupt_sensors`], so
+    /// the balancer switches on what its sensors say — including what an injected
+    /// sensor fault made them say. A `dt` of zero samples no frame and so moves no
+    /// switch.
+    ///
+    /// Each switch is the same Schmitt trigger the protection rungs use: close above
+    /// [`BalancingConfig::v_threshold_v`], reopen only below
+    /// `v_threshold_v − v_release_band_v`. At a band of zero the two thresholds
+    /// coincide and [`rung`] collapses to the bare comparator this replaced.
+    pub(crate) fn update_bleed_latches(&mut self) {
+        let Some(bal) = self.config.balancing else {
+            self.bleed_held.clear();
+            return;
+        };
+        // A frame is always `series` long, but resize rather than assume it: this is
+        // also the path a restored snapshot takes on its first step.
+        self.bleed_held.resize(self.frame.v_group.len(), false);
+        let release = bal.v_threshold_v - bal.v_release_band_v;
+        for (held, &v) in self.bleed_held.iter_mut().zip(self.frame.v_group.iter()) {
+            *held = rung(*held, v > bal.v_threshold_v, v <= release);
+        }
     }
 
     /// Apply protection to the current the demand solved for, returning the current

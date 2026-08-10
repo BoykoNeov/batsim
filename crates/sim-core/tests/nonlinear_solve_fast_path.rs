@@ -93,6 +93,7 @@ fn bms() -> BmsConfig {
             // Low enough that the bleed switches actually close on this pack, so the
             // group conductance the solve aggregates really does gain a term.
             v_threshold_v: 3.10,
+            v_release_band_v: 0.010,
         }),
         protection: Some(ProtectionConfig {
             v_hard_margin_v: 0.50,

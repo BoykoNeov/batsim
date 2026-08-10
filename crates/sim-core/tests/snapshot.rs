@@ -92,6 +92,7 @@ fn config() -> PackConfig {
             balancing: Some(BalancingConfig {
                 bleed_r_ohms: 47.0,
                 v_threshold_v: 3.0,
+                v_release_band_v: 0.010,
             }),
             protection: None,
             current_offset_a: 0.01,

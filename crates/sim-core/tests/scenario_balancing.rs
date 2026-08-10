@@ -24,6 +24,10 @@ const CAP_AH: f64 = 2.5;
 /// ohmic and polarisation drops add ~30 mV at 1 A.
 const V_BLEED: f64 = 3.43;
 const R_BLEED: f64 = 33.0;
+/// Bleed-switch release band \[V\], at the shipped default. The bleed's own load line
+/// on this cell is `I_bleed · (R0 + Σ R_rc)` = `(3.43/33) · 0.03` = **3.1 mV**, so the
+/// default clears it by 3.2×. See `BalancingConfig::v_release_band_v`.
+const BAND: f64 = 0.010;
 /// Charge duration \[s\] before resting. Kept short enough that the healthy groups
 /// stay under the bleed threshold, so their behaviour isolates "never bled".
 const CHARGE_S: usize = 1000;
@@ -114,6 +118,7 @@ fn balancing() -> BalancingConfig {
     BalancingConfig {
         bleed_r_ohms: R_BLEED,
         v_threshold_v: V_BLEED,
+        v_release_band_v: BAND,
     }
 }
 

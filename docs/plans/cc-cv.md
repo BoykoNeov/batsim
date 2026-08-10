@@ -13,6 +13,29 @@
 > own controller: the port was validated by reproducing 95.1 % exactly with the band set
 > back to zero.
 
+> **Amended again 2026-08-10 — the step-before-the-trip reading moved after all.** The
+> balancing bleed switch gained its own release band
+> (`docs/plans/balancing-chatter.md`), and this pack's bleed threshold is 4.10 V/group,
+> which the charge drives straight through. The note above says the
+> step-before-the-trip reading is "a step the change does not reach" — that was correct
+> about *protection* hysteresis and is **not** correct about this one, which is the
+> whole reason it was re-measured rather than inherited.
+>
+> What moved: **24.8 mV → 24.9 mV** short of target, and the cell pair
+> **4.18901/4.20004 → 4.18899/4.20001 V**. Corrected inline below. What did not move,
+> measured on the same run: `BALANCING` still first at 3111 s, `OV` still at 3986 s, the
+> charge still ends at 3990 s and still rounds to 94.9 %, the spread is still 11.0 mV,
+> and the pack is still 16.775 V. The mechanism is that a bare bleed comparator
+> chattered **21 times** on this scenario and now flips **once**, so the high group is
+> bled continuously rather than at roughly half duty — 1749 bleeding steps became 1759.
+> Same controller port, validated the same way: it reproduces every documented number
+> above exactly with the bleed band set back to zero.
+>
+> One consequence worth naming: at 4.20001 V the top cell now clears 4.20 by **0.01 mV**
+> where it used to clear it by 0.04. The page's prose ("the top one has already crossed
+> 4.20") is still true and still rounds the same way, but it is a thinner margin than it
+> was, and a future change to the bleed path should re-read it rather than assume it.
+
 Item 1 of the queue `docs/plans/scenario-catalog.md` left open. Not a numbered phase —
 Phases 0–6 built an engine, and this is the fourth slice of the client catching up to
 it, on the same footing as the `ui-*.md` slices and the catalogue.
@@ -148,7 +171,7 @@ BMS with balancing, from 40 % SOC):
 
 | run | what happens |
 |---|---|
-| 0.5 C, 25 °C, BMS **on** | `BALANCING` from t = 3111 s; **`OV` at 3986 s** and the current stops — at SOC **0.9514**, with the top cell at 4.20004 V and the bottom at 4.18901 V |
+| 0.5 C, 25 °C, BMS **on** | `BALANCING` from t = 3111 s; **`OV` at 3986 s** and the current stops — at SOC **0.9514**, with the top cell at 4.20001 V and the bottom at 4.18899 V |
 | 0.5 C, 25 °C, BMS **off** | runs to the taper: SOC **0.9952** at 4820 s |
 | 1.0 C, 25 °C, BMS on | `OC` **from the first step**, current derated to exactly 4.200 A = 0.7 C × 2P; `OV` at 2729 s, SOC 0.9321 |
 | 0.5 C, −5 °C, BMS on | pack cools; `UT` at 1494 s and charge stops at SOC **0.6075** |
@@ -161,8 +184,8 @@ of them. The BMS-on/BMS-off pair at 0.5 C is the cleanest protection lesson in t
 of four reached 4.20 V while the pack as a whole had not.**
 
 The instant to quote is the step *before* the trip, and getting that wrong was worth
-105 mV: at t = 3985.5 s the pack is at **16.775 V, 24.8 mV short** of its 16.80 V target,
-with its cells spread over **11.0 mV** — 4.18901 V at the bottom, **4.20004 V at the
+105 mV: at t = 3985.5 s the pack is at **16.775 V, 24.9 mV short** of its 16.80 V target,
+with its cells spread over **11.0 mV** — 4.18899 V at the bottom, **4.20001 V at the
 top**, over the limit. One step later the contactor is open and the terminal reads
 16.670 V, 130 mV below target, because the IR drop went away with the current. The first
 draft of this plan quoted that 130 mV as the imbalance. It is not; it is the load coming

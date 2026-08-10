@@ -41,9 +41,9 @@
 #              for two more decision windows and 0.27 SOC points before the client's
 #              completion test caught it. `docs/plans/protection-chatter.md`.)
 #              Read the step before the trip rather than the one after it:
-#              under charge the pack is at 16.775 V, only 24.8 mV short of the 16.80 V
+#              under charge the pack is at 16.775 V, only 24.9 mV short of the 16.80 V
 #              it is aiming for, and its eight cells are spread over 11.0 mV —
-#              4.18901 V at the bottom and 4.20004 V at the top. The top group has
+#              4.18899 V at the bottom and 4.20001 V at the top. The top group has
 #              reached the per-cell limit while the pack as a whole has not, which is
 #              what an 11 mV spread means: they cannot all arrive together. The 130 mV
 #              gap visible *after* the trip is the IR drop disappearing when the current
@@ -124,3 +124,9 @@ t_hard_margin_k = 10.0
 [pack.bms.balancing]
 bleed_r_ohms = 33.0
 v_threshold_v = 4.10
+# v_release_band_v is omitted, so the shipped 10 mV default applies. It matters here:
+# the charge drives the high group straight through 4.10 V, and with a bare comparator
+# the bleed switch flipped 21 times on this run — closing pulls the sensed voltage down
+# by the bleed's own I*R, which re-opens it. The band leaves it closed (1 flip), so the
+# group is bled continuously rather than at roughly half duty. Set it to 0.0 to see the
+# chatter. docs/plans/balancing-chatter.md

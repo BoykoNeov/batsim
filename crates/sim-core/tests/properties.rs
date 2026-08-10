@@ -339,7 +339,11 @@ proptest! {
         // Balancing on, with a threshold well below the flat OCV so every group bleeds
         // for the whole run: the bleed path is then part of what this test covers.
         config.bms = Some(BmsConfig {
-            balancing: Some(BalancingConfig { bleed_r_ohms: 47.0, v_threshold_v: FLAT_V0 - 0.5 }),
+            balancing: Some(BalancingConfig {
+                bleed_r_ohms: 47.0,
+                v_threshold_v: FLAT_V0 - 0.5,
+                v_release_band_v: 0.010,
+            }),
             protection: None, // clamping the current would end the run early
             current_offset_a: 0.0,
             current_noise_sigma_a: 0.0,

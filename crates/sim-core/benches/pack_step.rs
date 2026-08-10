@@ -251,6 +251,7 @@ fn make_full_pack(series: u16, parallel: u16, aging: Option<AgingConfig>) -> Pac
             // Below the resting OCV at SOC 0.6, so bleed switches are actually closed
             // during the benchmark rather than being an untaken branch.
             v_threshold_v: 3.20,
+            v_release_band_v: 0.010,
         }),
         protection: Some(ProtectionConfig {
             v_hard_margin_v: 0.2,
