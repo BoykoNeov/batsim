@@ -39,26 +39,22 @@
 //!   external-short scenario in `tests/faults.rs` remains the case where derating
 //!   discovers it can do nothing and the contactor is the only move left.
 //!
-//! # What the protected arm exposes, which is not the protection working
+//! # The protected arm's history, because it has moved twice
 //!
-//! The BMS arm used to settle 0.8 K above ambient. It now climbs to 333.17 K — the
-//! chemistry's `t_max_k` — where the over-temperature rung latches the charge off for
-//! good. The pack is still saved, by a wide margin, but it is saved by `OT` rather than
-//! never being in danger, and the difference is a **pre-existing** behaviour that closing
-//! the energy hole made expensive.
+//! It originally settled 0.8 K above ambient. Closing the energy hole
+//! (`docs/plans/energy-hole.md`) made it climb to 333.17 K — the chemistry's `t_max_k`,
+//! where the over-temperature rung latched the charge off — and the test was renamed to
+//! say so. That was not protection working: it was **chatter**. Over-voltage was a bare
+//! comparator, so at the top of charge it ran a two-step limit cycle (admit the full
+//! derated 6.91 A, land above `v_max`, derate to zero, the load comes off, the reading
+//! falls back under, repeat), and once a refused-charge step cost 73.6 W instead of
+//! 1.3 W a ~42 % duty cycle on that walked the pack to its limit.
 //!
-//! Protection's over-voltage response is memoryless, so at the top of charge it is a
-//! two-step limit cycle: one step admits the full derated 6.91 A and raises
-//! `SOC_CLAMPED_HIGH`, the voltage jumps above `v_max`, the next step derates to zero,
-//! the voltage falls back with no load, and the cycle repeats — measured, step by step,
-//! and **identical at `1365808` before this fix**. What changed is the price of an
-//! admitted step: 1.32 W of ohmic heat became 73.57 W once refused charge stopped
-//! vanishing, a factor of 55, and a 50 % duty cycle on that is what walks the pack to its
-//! temperature limit.
-//!
-//! So the chatter is not new and is not this commit's to fix — hysteresis on the
-//! protection comparators is its own change. It is recorded here because it stopped being
-//! cosmetic: `docs/plans/energy-hole.md` carries the measurement.
+//! The rungs carry hysteresis now (`docs/plans/protection-chatter.md`), so this arm is
+//! back where it started: **298.72 K, 0.57 K above ambient**, stopped by `OV` and never
+//! near `OT`. The name is the original one again, and the reason is worth keeping in
+//! view — the intermediate name was accurate about the engine and wrong about what the
+//! scenario was for.
 
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, SafetyParams, ThermalParams,
@@ -208,6 +204,8 @@ fn protective_bms() -> BmsConfig {
         protection: Some(ProtectionConfig {
             v_hard_margin_v: 0.2,
             t_hard_margin_k: 10.0,
+            v_release_band_v: 0.08,
+            t_release_band_k: 2.0,
         }),
         current_offset_a: 0.0,
         current_noise_sigma_a: 0.0,
@@ -523,14 +521,21 @@ fn the_fire_spreads_from_the_centre_to_its_neighbours() {
 /// under every configuration would show only that the scenario was built to burn; this
 /// one burns exactly when the protection that exists to prevent it is absent.
 ///
-/// The bound was `ONSET_K - 100.0` when a clamped cell's refused charge vanished, and
-/// the pack then sat 0.8 K above ambient for the whole run. It reaches 333.17 K now, and
-/// the assertion is written against the chemistry's own `t_max_k` rather than a round
-/// number, because *that* is what stops it: see the module docs on the protection
-/// chatter this exposed. `OT` is asserted for the same reason — the rung that saves the
-/// pack should be named by the test, not left implicit in a temperature.
+/// # This assertion has been rewritten twice; see the module docs
+/// Closing the energy hole made the protected pack climb to its `t_max_k` and be saved
+/// by `OT`, and this test was renamed and re-pointed at that rung. Hysteresis on the
+/// over-voltage comparator removed the limit cycle that was doing the heating, so the
+/// pack is back to **298.72 K — 0.57 K above the 298.15 K ambient** — and `OT` is never
+/// reached at all. The rung named here is `OV`, which is the one that should always have
+/// stopped an overcharge, and the temperature bound is written against **ambient**,
+/// because "never gets warm" is the actual claim.
+///
+/// What is deliberately *not* asserted: `SOC_CLAMPED_HIGH`. Whether the pack stops just
+/// short of the clamp or just past it moves with the release band (absent at 0.08 V,
+/// present at 0.10 V, absent again at 0.15 V), so a claim either way would be pinning a
+/// knife edge rather than the physics.
 #[test]
-fn the_same_abuse_through_a_bms_is_stopped_at_its_temperature_limit() {
+fn the_same_abuse_through_a_bms_never_gets_warm() {
     let run = overcharge(
         Pack::new(&config(Some(protective_bms())), lfp(REACTION_W_AT_ONSET))
             .expect("fixture builds"),
@@ -549,8 +554,14 @@ fn the_same_abuse_through_a_bms_is_stopped_at_its_temperature_limit() {
         run.flags_seen
     );
     assert!(
-        run.flags_seen.contains(EventFlags::OT),
-        "the rung that actually stops this charge is over-temperature: {:?}",
+        run.flags_seen.contains(EventFlags::OV),
+        "the rung that stops this charge is over-voltage: {:?}",
+        run.flags_seen
+    );
+    assert!(
+        !run.flags_seen.contains(EventFlags::OT),
+        "with the over-voltage rung holding, the pack never approaches its {T_MAX_K} K \
+         temperature limit — reaching it would mean the limit cycle is back: {:?}",
         run.flags_seen
     );
     assert!(
@@ -560,14 +571,13 @@ fn the_same_abuse_through_a_bms_is_stopped_at_its_temperature_limit() {
         run.flags_seen
     );
 
-    // Protection may overshoot a limit by one step by design (Phase 2), so the bound is
-    // the chemistry's own limit plus a step's worth of the heating that reaches it — not
-    // the limit itself, and not a round number chosen after seeing the answer.
+    // "Never gets warm" is the claim, so the bound is ambient plus a degree rather than
+    // a fraction of the distance to onset. Measured: 298.7206 K, i.e. 0.5706 K up.
     let (s, p, hot) = hottest(&run.pack);
     assert!(
-        hot < T_MAX_K + 1.0,
-        "the protected pack reached {hot} K at {s}S{p}P; over-temperature protection \
-         should have held it at the chemistry's {T_MAX_K} K limit"
+        hot < AMBIENT_K + 1.0,
+        "the protected pack reached {hot} K at {s}S{p}P; a charge the BMS refuses \
+         should leave it within a degree of the {AMBIENT_K} K ambient"
     );
     assert!(
         hot < ONSET_K - 80.0,

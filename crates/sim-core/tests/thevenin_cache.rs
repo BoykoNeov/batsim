@@ -103,6 +103,8 @@ fn config() -> PackConfig {
             protection: Some(ProtectionConfig {
                 v_hard_margin_v: 0.2,
                 t_hard_margin_k: 10.0,
+                v_release_band_v: 0.08,
+                t_release_band_k: 2.0,
             }),
             current_offset_a: 0.01,
             current_noise_sigma_a: 0.05,

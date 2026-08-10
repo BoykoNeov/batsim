@@ -75,6 +75,14 @@ use crate::noise::standard_normal;
 ///    [`crate::Pack::clear_bms_fault`] is called — a safety contactor that silently
 ///    re-closed when a cell cooled below its threshold would be a thermostat, not a
 ///    protection device.
+///
+/// # The soft rungs are Schmitt triggers, not bare comparators
+///
+/// Each derate rung trips at the chemistry's limit and then **holds** until the
+/// measurement has fallen back past a release band. That band is the difference
+/// between a protection device and an oscillator: with no band, cutting the current
+/// removes the load, the measured voltage drops back under the limit within one
+/// sample, the rung releases, and the pack chatters. See [`Self::v_release_band_v`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProtectionConfig {
     /// How far past the chemistry's `v_max`/`v_min` \[V\] a measured group voltage
@@ -84,6 +92,105 @@ pub struct ProtectionConfig {
     /// How far past the chemistry's `t_max_k` \[K\] a measured probe temperature must
     /// go before the contactor latches open. Must be finite and `>= 0`.
     pub t_hard_margin_k: f64,
+    /// How far a measured group voltage must fall back **below** `v_max` — or rise
+    /// back **above** `v_min` — before the corresponding derate rung releases \[V\].
+    /// Must be finite and `>= 0`.
+    ///
+    /// # Why this is not zero
+    /// Zero reproduces a bare comparator exactly (`trip || (held && !release)`
+    /// collapses to `trip` when the two thresholds coincide), and a bare comparator
+    /// at the top of charge is a **two-step limit cycle**: one step admits the full
+    /// derated current and pushes the group over `v_max`, the next derates to zero,
+    /// the load comes off and the reading falls back under, repeat. It is not
+    /// cosmetic — with the refused-charge heat term of `docs/plans/energy-hole.md`
+    /// an admitted step deposits 73.6 W where it used to deposit 1.3 W, and a 42 %
+    /// duty cycle on that walks a protected pack to its temperature limit.
+    ///
+    /// # How to size it, which is not what it looks like
+    /// The obvious quantity to clear is the loaded-to-idle swing in the measured group
+    /// voltage — `i_derated · (R0 + Σ R_rc)` per cell, **39.9 mV** on the shipped LFP
+    /// file at its derated 2.30 A per cell. **That is the wrong quantity**, and a band
+    /// sized against it does essentially nothing: a sweep of the shipped LFP overcharge
+    /// scenario admits 2461 of 6000 steps at a band of 0, 2461 at 20 mV and 2454 at
+    /// 40 mV, then falls off a cliff to 625 at 60 mV and 447 at 80 mV.
+    ///
+    /// The cliff is at `v_max − OCV(1.0)`, which for that file is `3.65 − 3.60` = **50
+    /// mV exactly**. The rung releases when the *rested* group voltage falls below
+    /// `v_max − band`, and a saturated pack rests at its own `OCV(1.0)`; so while the
+    /// band is under that gap the reading drops through the release threshold every
+    /// time the load comes off, whatever the band is, and the cycle re-arms. The band
+    /// must exceed **the distance between the protection threshold and the cell's own
+    /// full-charge open-circuit voltage** — not the load line.
+    ///
+    /// **Provenance for the default (0.08 V):** that sweep. 80 mV is where the run
+    /// saturates (447 steps, and 450 at 100 mV and 443 at 150 mV are the same answer),
+    /// giving 60 % margin on the shipped LFP's 50 mV gap. A chemistry whose `v_max`
+    /// sits further above its `OCV(1.0)` than this needs a larger band, and will
+    /// chatter until it gets one — the default is sized against a shipped file, not
+    /// derived from one.
+    ///
+    /// # What it costs
+    /// The band is also how much charge the pack declines to take: charging stops when
+    /// the *rested* group voltage reaches `v_max − band`, not when the loaded one
+    /// reaches `v_max`. On that same scenario the final SOC goes from 0.999846 at a
+    /// band of 0 to 0.999315 at 80 mV. Setting it to `0.0` restores the bang-bang
+    /// behaviour bit-for-bit, which makes the contrast a scenario can show rather than
+    /// something only this doc comment asserts.
+    #[serde(default = "default_v_release_band_v")]
+    pub v_release_band_v: f64,
+    /// How far a measured probe temperature must fall back below `t_max_k` — or rise
+    /// back above `t_charge_min_k` — before the corresponding derate rung releases
+    /// \[K\]. Must be finite and `>= 0`. See [`Self::v_release_band_v`].
+    ///
+    /// **Provenance for the default (2.0 K):** unlike the voltage band there is no
+    /// measured chatter to size this against — a pack at its temperature limit is on a
+    /// thermal time constant of minutes, so the rung does not oscillate at the step
+    /// rate no matter how it is written. 2 K is a placeholder in the sense
+    /// `CLAUDE.md` allows: order-of-magnitude only, chosen as a conventional thermostat
+    /// deadband, and labelled rather than left to look measured.
+    #[serde(default = "default_t_release_band_k")]
+    pub t_release_band_k: f64,
+}
+
+/// See [`ProtectionConfig::v_release_band_v`].
+fn default_v_release_band_v() -> f64 {
+    0.08
+}
+
+/// See [`ProtectionConfig::t_release_band_k`].
+fn default_t_release_band_k() -> f64 {
+    2.0
+}
+
+/// Which soft protection rungs are currently *held* by their release band.
+///
+/// One bool per rung rather than one per limit, because the two temperature rungs
+/// respond in opposite directions (`ot` derates both ways, `ut` inhibits charge only)
+/// and would otherwise share a latch that means two different things.
+///
+/// This is snapshot state, not a cache: a rung held at the instant a snapshot is taken
+/// is still held after the restore, and a pack that forgot would admit one more
+/// full-current step — the very step the band exists to prevent.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+struct SoftLatches {
+    /// Over-voltage: charge inhibited.
+    ov: bool,
+    /// Under-voltage: discharge inhibited.
+    uv: bool,
+    /// Over-temperature: both directions inhibited.
+    ot: bool,
+    /// Under-temperature: charge inhibited (plating, not heat).
+    ut: bool,
+}
+
+/// One Schmitt-trigger rung: trip on `trip`, hold until `release`.
+///
+/// `trip` and `release` are mutually exclusive for any band `>= 0`, so a zero band
+/// makes `!release` identical to `trip` and the whole expression collapses to the bare
+/// comparator this replaced. That is what makes a zero band bit-for-bit the old
+/// behaviour rather than approximately it.
+fn rung(held: bool, trip: bool, release: bool) -> bool {
+    trip || (held && !release)
 }
 
 /// Passive balancing: a bleed resistor across each parallel group, switched in when
@@ -260,6 +367,15 @@ pub struct Bms {
     /// Latched hard-fault state: once the contactor opens it stays open until
     /// [`crate::Pack::clear_bms_fault`] is called.
     contactor_open: bool,
+    /// Which soft derate rungs are currently held by their release band.
+    ///
+    /// `#[serde(default)]` so that a snapshot written before the bands existed
+    /// deserializes as "nothing held", which is what a pack that never had hysteresis
+    /// was. The [`crate::SNAPSHOT_VERSION`] check still refuses such a blob — this is
+    /// belt-and-braces on a field whose absence has a correct reading, not an
+    /// exemption from the bump.
+    #[serde(default)]
+    latches: SoftLatches,
 }
 
 impl Bms {
@@ -291,6 +407,7 @@ impl Bms {
             config,
             frame,
             contactor_open: false,
+            latches: SoftLatches::default(),
         }
     }
 
@@ -344,6 +461,13 @@ impl Bms {
     /// Temperature protection is skipped entirely when the pack has no temperature
     /// probes — a BMS cannot protect against a condition it cannot measure, and that
     /// is a legitimate (if unwise) configuration.
+    ///
+    /// The soft rungs carry hysteresis ([`ProtectionConfig::v_release_band_v`]), so
+    /// this **mutates** the BMS beyond the contactor latch: it is called once per
+    /// solve pass, and the pack's nonlinear iteration calls it on every pass. That is
+    /// safe for the same reason the contactor latch is — a rung's trip and release
+    /// conditions read [`Self::frame`], which no pass touches, so every pass reaches
+    /// the same verdict and re-deciding it is idempotent.
     pub(crate) fn apply_protection(
         &mut self,
         chem: &ChemistryParams,
@@ -389,33 +513,59 @@ impl Bms {
         if i_req > i_discharge_max || i_req < -i_charge_max {
             flags |= EventFlags::OC;
         }
+        // Each rung below is a Schmitt trigger: it trips at the chemistry's limit and
+        // holds until the measurement has come back past the release band. A rung with
+        // no sensor to read is left exactly as it was rather than being cleared — a
+        // BMS that lost a probe has not learnt that the condition went away.
+        let v_band = prot.v_release_band_v;
+        let t_band = prot.t_release_band_k;
         if let Some(v_lo) = self.frame.min_group_v() {
-            if v_lo <= limits.v_min {
-                i_discharge_max = 0.0; // any further discharge digs the hole deeper
-                flags |= EventFlags::UV;
-            }
+            self.latches.uv = rung(
+                self.latches.uv,
+                v_lo <= limits.v_min,
+                v_lo > limits.v_min + v_band,
+            );
+        }
+        if self.latches.uv {
+            i_discharge_max = 0.0; // any further discharge digs the hole deeper
+            flags |= EventFlags::UV;
         }
         if let Some(v_hi) = self.frame.max_group_v() {
-            if v_hi >= limits.v_max {
-                i_charge_max = 0.0;
-                flags |= EventFlags::OV;
-            }
+            self.latches.ov = rung(
+                self.latches.ov,
+                v_hi >= limits.v_max,
+                v_hi < limits.v_max - v_band,
+            );
+        }
+        if self.latches.ov {
+            i_charge_max = 0.0;
+            flags |= EventFlags::OV;
         }
         if let Some(t_hi) = self.frame.max_probe_k() {
-            if t_hi >= limits.t_max_k {
-                // Too hot for either direction: all current makes more heat.
-                i_discharge_max = 0.0;
-                i_charge_max = 0.0;
-                flags |= EventFlags::OT;
-            }
+            self.latches.ot = rung(
+                self.latches.ot,
+                t_hi >= limits.t_max_k,
+                t_hi < limits.t_max_k - t_band,
+            );
+        }
+        if self.latches.ot {
+            // Too hot for either direction: all current makes more heat.
+            i_discharge_max = 0.0;
+            i_charge_max = 0.0;
+            flags |= EventFlags::OT;
         }
         if let Some(t_lo) = self.frame.min_probe_k() {
-            if t_lo < limits.t_charge_min_k {
-                // Charge inhibit: plating risk, not a heat problem, so discharge
-                // stays available.
-                i_charge_max = 0.0;
-                flags |= EventFlags::UT;
-            }
+            self.latches.ut = rung(
+                self.latches.ut,
+                t_lo < limits.t_charge_min_k,
+                t_lo >= limits.t_charge_min_k + t_band,
+            );
+        }
+        if self.latches.ut {
+            // Charge inhibit: plating risk, not a heat problem, so discharge
+            // stays available.
+            i_charge_max = 0.0;
+            flags |= EventFlags::UT;
         }
 
         (i_req.clamp(-i_charge_max, i_discharge_max), flags)

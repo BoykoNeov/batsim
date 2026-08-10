@@ -453,7 +453,7 @@ proptest! {
         let mut config = cfg(series, parallel, soc0, seed, Scatter::default());
         config.bms = Some(BmsConfig {
             balancing: None,
-            protection: Some(ProtectionConfig { v_hard_margin_v: 0.2, t_hard_margin_k: 10.0 }),
+            protection: Some(ProtectionConfig { v_hard_margin_v: 0.2, t_hard_margin_k: 10.0 , v_release_band_v: 0.08, t_release_band_k: 2.0 }),
             current_offset_a: 0.0,
             current_noise_sigma_a: 0.0,
             temp_probes: vec![(0, 0)],

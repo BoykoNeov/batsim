@@ -36,7 +36,11 @@
 # ## What it does, measured (docs/plans/cc-cv.md), CC-CV at 0.5 C = 3.0 A to 4.20 V/cell
 #
 #   * BMS on:  BALANCING from t = 3111 s, then OV at 3986 s and the charge stops — at
-#              95.1 % SOC. Read the step before the trip rather than the one after it:
+#              94.9 % SOC. (It was 95.1 % until the protection rungs gained hysteresis:
+#              the bare comparator released after each trip, so the charge chattered on
+#              for two more decision windows and 0.27 SOC points before the client's
+#              completion test caught it. `docs/plans/protection-chatter.md`.)
+#              Read the step before the trip rather than the one after it:
 #              under charge the pack is at 16.775 V, only 24.8 mV short of the 16.80 V
 #              it is aiming for, and its eight cells are spread over 11.0 mV —
 #              4.18901 V at the bottom and 4.20004 V at the top. The top group has
@@ -46,7 +50,7 @@
 #              stops, not the imbalance.
 #   * BMS off: no such trip. The same charge runs to the taper and finishes at 99.5 %.
 #
-# That 4.4-point gap is what protection costs on an imbalanced pack, and the balancer
+# That 4.6-point gap is what protection costs on an imbalanced pack, and the balancer
 # bleeding the high group is what would eventually close it.
 #
 # Two more, on the same file:
@@ -67,7 +71,7 @@ description = """
 4S2P NMC at 40 % SOC and 25 degC, thermally coupled, seeded scatter, protection and \
 passive balancing on, no aging and no faults. Charge it with the client's CC-CV mode \
 and the BMS is finally doing something: balancing near the top, an over-voltage trip \
-that ends the charge 4.4 points short of where the same pack gets to with protection \
+that ends the charge 4.6 points short of where the same pack gets to with protection \
 off, an over-current derate if you ask for more than 0.7 C, and a charge inhibit if you \
 let the pack get cold. Turn the BMS off and the same cold charge raises PLATING_RISK \
 instead and carries on regardless."""

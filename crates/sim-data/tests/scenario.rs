@@ -94,6 +94,8 @@ fn soft_short_example_matches_a_hand_built_config() {
                 protection: Some(ProtectionConfig {
                     v_hard_margin_v: 0.15,
                     t_hard_margin_k: 10.0,
+                    v_release_band_v: 0.08,
+                    t_release_band_k: 2.0,
                 }),
                 current_offset_a: 0.02,
                 current_noise_sigma_a: 0.01,

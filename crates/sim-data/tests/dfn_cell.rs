@@ -857,6 +857,8 @@ fn a_derate_inside_the_iteration_does_not_chatter() {
             protection: Some(sim_core::ProtectionConfig {
                 v_hard_margin_v: 0.1,
                 t_hard_margin_k: 8.0,
+                v_release_band_v: 0.08,
+                t_release_band_k: 2.0,
             }),
             current_offset_a: 0.0,
             current_noise_sigma_a: 0.0,

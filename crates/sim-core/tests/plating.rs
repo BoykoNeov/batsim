@@ -771,6 +771,8 @@ fn charge_inhibit_keeps_a_protected_pack_out_of_plating() {
         protection: Some(ProtectionConfig {
             v_hard_margin_v: 0.5,
             t_hard_margin_k: 20.0,
+            v_release_band_v: 0.08,
+            t_release_band_k: 2.0,
         }),
         current_offset_a: 0.0,
         current_noise_sigma_a: 0.0,

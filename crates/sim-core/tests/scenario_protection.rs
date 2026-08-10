@@ -114,6 +114,8 @@ fn protecting_bms() -> BmsConfig {
             // reaching the contactor would mean derating had failed.
             v_hard_margin_v: 0.50,
             t_hard_margin_k: 20.0,
+            v_release_band_v: 0.08,
+            t_release_band_k: 2.0,
         }),
         current_offset_a: 0.0,
         current_noise_sigma_a: 0.0,
@@ -360,6 +362,8 @@ fn overtemperature_latches_the_contactor_open() {
         protection: Some(ProtectionConfig {
             v_hard_margin_v: 0.5,
             t_hard_margin_k: 5.0,
+            v_release_band_v: 0.08,
+            t_release_band_k: 2.0,
         }),
         ..protecting_bms()
     };

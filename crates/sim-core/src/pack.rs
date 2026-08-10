@@ -149,7 +149,30 @@ use crate::{Demand, Env, Telemetry};
 /// structural one. It is state, not a cache — a Newton that stops at a tolerance lands
 /// where it started from — so a snapshot without it does not merely restore more slowly,
 /// it continues a different trajectory. See [`crate::dfn::DfnState::u`].
-pub const SNAPSHOT_VERSION: u32 = 11;
+///
+/// v12 (protection hysteresis): [`crate::bms::ProtectionConfig`] gained two release
+/// bands and [`Bms`] gained one held-rung bool per soft rung.
+///
+/// **Why it is a semantic bump.** A v11 pack ran with bare comparators — a band of
+/// zero. The new bands do not default to zero, they default to the values that stop the
+/// limit cycle, so restoring a v11 pack here would silently continue a different
+/// trajectory. That is the same "it is state, not a cache" argument the warm-start
+/// vector made one version earlier, reached from the other direction: here it is the
+/// *config* that changed meaning, not the state. The held-rung bools do default to the
+/// correct v11 reading ("nothing held"), so they are not what forces the bump.
+///
+/// **The structural-validity argument is narrower than v10's and v11's, and the
+/// difference matters.** Those two could say a stale blob was still deserializable
+/// whatever it contained. This one cannot: `bincode` writes struct fields positionally
+/// with no framing, so `#[serde(default)]` buys nothing there, and a v11 blob carrying
+/// `bms: Some(..)` is six values short of what v12 reads. Such a blob fails at
+/// *deserialization*, which is the pre-v10 situation the version check was written to
+/// improve on. It is only for `bms: None` — where none of the new fields is emitted at
+/// all — that the bytes stay valid and the version field is what refuses them, and that
+/// is the case `snapshot_version.rs` pins. Under a self-describing format (the JSON the
+/// server uses) the defaults do apply and the wider claim holds. See
+/// `docs/plans/protection-chatter.md`.
+pub const SNAPSHOT_VERSION: u32 = 12;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -2163,9 +2186,14 @@ fn validate_bms(bms: &BmsConfig, series: u16, parallel: u16) -> Result<(), Build
         }
     }
     if let Some(prot) = bms.protection {
-        let margins: [(&'static str, f64); 2] = [
+        let margins: [(&'static str, f64); 4] = [
             ("protection.v_hard_margin_v", prot.v_hard_margin_v),
             ("protection.t_hard_margin_k", prot.t_hard_margin_k),
+            // Same rule as the hard margins, and for the same reason: a negative or
+            // non-finite band would invert or poison the Schmitt trigger's release.
+            // Zero is allowed and meaningful — it is the bare comparator.
+            ("protection.v_release_band_v", prot.v_release_band_v),
+            ("protection.t_release_band_k", prot.t_release_band_k),
         ];
         for (field, value) in margins {
             if !(value.is_finite() && value >= 0.0) {

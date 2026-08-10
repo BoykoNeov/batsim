@@ -467,10 +467,32 @@ and the sign alone does not carry that.
 
 ## Still open, and priced
 
+*Both items were taken up on 2026-08-10. One landed; the other turned out to have been
+priced for a fix that does not work.*
+
 * **The low clamp still fabricates energy.** Reported and pinned, not fixed. The
   solve-side fix costs `CellModel::is_linear() == true` for the equivalent circuit and
   collides with `CLAUDE.md`'s "with `bms: None`, demands pass through unclamped"; it wants
   its own slice and its own argument.
+
+  **Still open, and the price above is superseded — see
+  `docs/plans/low-clamp-solve-side.md`.** Spiked three ways in a worktree, and the two
+  costs are not alternatives: `solve_current(Demand::Current(i), e, r)` returns `i`
+  without reading either, so **no cell-model change can refuse a demanded current** and
+  the `CLAUDE.md` collision is unconditional rather than the second horn of a choice. A
+  blocking arm poisons the Thévenin aggregation outright (`-inf` terminal voltage, the
+  iteration pinned at its 32-pass cap, `NaN` heat on a scattered pack); the one candidate
+  that keeps `is_linear()` true closes 98 % of the *energy* hole for free but draws a
+  spurious −180 A on a charge demand.
+
 * **Protection chatters at the top of charge.** Pre-existing, measured at `1365808`, and
   now expensive: a 50 % duty cycle depositing 73.57 W. Hysteresis on the comparators is
   the obvious fix and is not free — it is state, so it is snapshot layout.
+
+  **Closed — see `docs/plans/protection-chatter.md`.** Hysteresis on the four soft rungs,
+  `SNAPSHOT_VERSION` 11 to 12, and the duty cycle goes from 2461 admitting steps in 6000
+  to 447. The band that does it is **not** the one this document's framing implies: it
+  has to clear `v_max − OCV(1.0)` — where the pack *rests* — rather than the load-line
+  swing, and a band sized against the swing measurably does nothing. The protected arm of
+  `scenario_runaway.rs` is back to 0.57 K above ambient and its name is the original one
+  again.

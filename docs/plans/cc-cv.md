@@ -1,5 +1,18 @@
 # CC-CV: the other half of the demand story, and the leg LFP does not have
 
+> **Amended 2026-08-10 — two numbers in this document have moved.** Every "95.1 %" and
+> "4.4 points" below was measured against protection rungs that were bare comparators.
+> They now carry hysteresis (`docs/plans/protection-chatter.md`), so the over-voltage
+> trip no longer releases and the charge no longer chatters on past it: the BMS-on arm
+> of `cc_cv_charge_pack.toml` ends at **94.9 % at 3990 s** rather than 95.1 % at 4010 s,
+> and the gap to the unprotected charge is **4.6 points** rather than 4.4. Everything
+> else here is unaffected, and that was checked rather than assumed — the trip times
+> (`BALANCING` 3111 s, `OV` 3986 s, `UT` 1494 s at 60.8 %) are *first* occurrences, which
+> a release band cannot move, and the step-before-the-trip reading (16.775 V, 11.0 mV of
+> spread) is a step the change does not reach. The re-measurement re-ran this document's
+> own controller: the port was validated by reproducing 95.1 % exactly with the band set
+> back to zero.
+
 Item 1 of the queue `docs/plans/scenario-catalog.md` left open. Not a numbered phase —
 Phases 0–6 built an engine, and this is the fourth slice of the client catching up to
 it, on the same footing as the `ui-*.md` slices and the catalogue.
