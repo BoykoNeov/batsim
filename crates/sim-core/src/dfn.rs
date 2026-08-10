@@ -270,6 +270,19 @@ const DAMPING_ATTEMPTS: u32 = 16;
 /// (21 iterations, at 3C through depletion at this floor) with room for the damping
 /// line-search, so hitting it means something has genuinely gone wrong rather than that a
 /// hard step needed one pass more than usual.
+///
+/// # What an unconverged step costs, measured
+/// A converged step at the recommended grid is **360 µs** on a 1S1P pack. One that runs
+/// the cap out is **8177 µs** — **23×** — because every iteration pays a Jacobian
+/// assembly, a band factorisation and a damping line-search, and nothing short-circuits.
+/// Measured driving `cc_discharge_3c_dfn.toml`'s configuration *past* its 464 s cut-off,
+/// which is the only regime that reaches the cap on the shipped parameter set: the flag
+/// first appears at 466 s, one step after the cell collapses, and then on most steps
+/// after it. Nobody had priced this before `docs/plans/dfn-scenario.md`, and it is the
+/// reason that scenario's guided-path mark sits 36 s past the cut-off rather than 600.
+///
+/// Raising the cap therefore has an asymmetric price: free on every step that converges,
+/// and directly proportional on a run that has left the model's domain.
 pub const NEWTON_ITER_CAP: u32 = 50;
 
 /// Unknowns per x-node: `(c_e, φ_e, φ_s, j)`.

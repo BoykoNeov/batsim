@@ -28,20 +28,28 @@
 #
 # ## What it deliberately does not do
 #
-# It does not select the SPM cell model. That model is now reachable — see
-# `pulse_train_spm.toml`, which is the slice this paragraph used to say was still owed —
-# but it is not reachable from *here*, and the reason is measured rather than assumed:
-# at 0.5 C the two models agree to within the ECM's own table error through the whole
-# middle of the discharge. Remeasured for docs/plans/spm-scenario.md, the difference
+# It does not select either porous-electrode cell model. Both are now reachable — see
+# `pulse_train_spm.toml` for the SPM and the `cc_discharge_3c_*` pair for the DFN, which
+# are the slices this paragraph used to say were still owed — but neither is reachable
+# from *here*, and the reason is measured rather than assumed:
+# at 0.5 C the ECM and the SPM agree to within the ECM's own table error through the
+# whole middle of the discharge. Remeasured for docs/plans/spm-scenario.md, the difference
 # oscillates and **changes sign** — -21.6, +1.8, -8.0, +9.2, -24.3 mV — against the
 # 13.91 mV maximum interpolation error [ocv] documents for itself. There is nothing here
 # that is not the grid, and a scenario that flipped `cell_model` would cost 6.7x the step
 # time (0.80 us against 0.12 us per step at 12 shells) to show a reader that.
 #
-# What separates the models is not an initial condition but a *demand program*: a pulse
-# train, where the response splits into a part that vanishes with the current and a part
-# that has to diffuse away, and the two scale differently with rate. That is what the
-# pulse_train pair does, on this same cell at 90 % SOC.
+# The same holds for the DFN, and there the statement is sharper because the boundary has
+# since been measured: at 1 C the SPM and the DFN reach their cut-offs 12 s apart in 3484
+# (0.34 %), and only at 3 C do they part company — 464 s against 1060. 0.5 C is well below
+# that boundary, so nothing about the electrolyte is visible in this trace either.
+#
+# What separates the models is not an initial condition but a *demand program*. Two of
+# them, in fact, and this repo ships both: a pulse train, where the response splits into a
+# part that vanishes with the current and a part that has to diffuse away and the two scale
+# differently with rate (the pulse_train pair, on this same cell at 90 % SOC); and simply
+# asking for enough current that the electrolyte cannot keep up (the cc_discharge_3c pair,
+# on this same cell from full).
 
 chemistry = "nmc_21700_lgm50"
 

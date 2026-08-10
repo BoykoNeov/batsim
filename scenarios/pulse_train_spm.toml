@@ -5,6 +5,12 @@
 # file no client could reach it, because `cell_model` is settable only from a scenario
 # and not one of the eight files here set it.
 #
+# That sentence was true of *both* porous-electrode models when it was written, and it is
+# now true of only this one: `cc_discharge_3c_dfn.toml` did the same job for the
+# Doyle-Fuller-Newman cell one slice later. Read literally the claim still holds — this is
+# the file that made `Spm` reachable — but "the porous-electrode model" is no longer a
+# definite description, and the pair at 3 C is where the two of them are compared.
+#
 # This is `pulse_train_ecm.toml` with `[pack.cell_model.Spm]` added and nothing else
 # changed. Same cell, same 90 % SOC, same everything: one field is the whole difference,
 # which is what makes what you see attributable to the model rather than to the setup.

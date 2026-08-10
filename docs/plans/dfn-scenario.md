@@ -279,6 +279,225 @@ Expected to move: **nothing**. `SNAPSHOT_VERSION` 13, `API_VERSION` 2, `WASM_API
 4 — two TOML files, two JavaScript records, and prose. Each constant's own doc gets read
 individually anyway; that check has caught a parted pair before (`ui-bms-view`).
 
+---
+
+# What the measurement said, and the four places it moved the plan
+
+Everything above is the plan as drafted. This section is what happened when the seven
+unmeasured items were measured, written before a word of `expect` prose. The harness is a
+scratch bin crate outside the repo (path deps on `sim-core`/`sim-data`), not a test —
+nothing here is asserted, and what deserved an assertion went into the scenario comments
+and `NEWTON_ITER_CAP`'s doc instead.
+
+## The table
+
+All 1S1P, isothermal, 25 °C, no BMS, from 100 % SOC, `nmc_21700_lgm50`, 3C = 15.459594 A,
+grid 10/5/10 with 20 shells.
+
+| quantity | DFN | SPM |
+| -------- | --- | --- |
+| cut-off at `dt = 2` | **464.0 s, 1.9926 A·h, 61.33 % showing** | **1060.0 s, 4.5520 A·h, 11.67 % showing** |
+| cut-off at `dt = 0.5` | 463.5 s, 1.9904 A·h | 1059.0 s, 4.5477 A·h |
+| worst \|Δv\| between the two `dt` | 3.2 mV to 440 s, 10.1 mV to 460 s, 17.5 mV at 462 s | **0.57 mV, whole run** |
+| flags before its own cut-off | **none** | none |
+| first `SOLVE_UNCONVERGED` | **466 s — one step after the cut-off** | never |
+| converged step cost | **360 µs** (= the committed 180 µs/cell × 2 passes) | 1.7 µs |
+| unconverged step cost | **8177 µs — 23×** | n/a |
+
+And the pair, which is the lesson:
+
+| rate | DFN cut-off | SPM cut-off | disagreement | mean \|Δv\| to the DFN's cut-off | worst |
+| ---- | ----------- | ----------- | ------------ | ------------------------------- | ----- |
+| 1C | 3484 s | 3496 s | **0.34 %** | 60.1 mV | 71.3 mV |
+| 3C | 464 s | 1060 s | **128 %** | 401.4 mV | 1014.8 mV |
+
+## Item by item
+
+1. **batsim's own SPM at 3C.** 1060 s / 4.5520 A·h, no flag on any step. (PyBaMM's SPM
+   answers 1084.7 s on its own 5.0 A·h basis; different capacity bases, so the two are not
+   a comparison and the file comment says so.)
+2. **Does the SPM arm fall off its OCP table before 2.5 V?** **No** — it reaches the
+   cut-off at 11.67 % SOC and only pins (near **0.31 V**, not the 0.4 V step 14 quotes
+   from a different starting point) past ~1160 s, once the SOC clamp is reached. So step
+   15's run is *outside* step 14's warning, and both texts now say so: step 14's tail was
+   rewritten from "do not run this one to empty" — which step 15 would have read as
+   contradicting on the next screen — to a statement about the SOC clamp specifically,
+   with a forward reference. The plan asked for this to be decided from the measurement
+   rather than left to the reader; it was.
+3. **What the DFN does after 464 s.** Finite to a 1200 s horizon, but **not monotone**
+   (drifts *up* by as much as 10.4 mV at `dt = 2`) and `SOLVE_UNCONVERGED` from 466 s on.
+   The plan's rule — "finite and monotone → a mark past it; anything else → before it" —
+   was written without knowing the cost, and the cost is what actually decided it: see
+   below.
+4. **Do the two arms' `soc_true` traces coincide?** **Yes, to 3.9e-15** — bit-for-bit for
+   practical purposes, at every sample. Both readouts are exactly linear in charge removed,
+   so the plan's worry that "three-fifths of the charge still in it" is coulomb arithmetic
+   while the readout is not **dissolves**: 1.9926 / 5.153198 = 38.67 % delivered, and the
+   readout says 61.33 %. They are the same number. Verified rather than assumed, which was
+   the point.
+5. **Do the committed replay numbers transfer to a free run?** Not quoted, so it does not
+   arise. The 3.42 V / 2.59 V row is a replay against PyBaMM's clock; the free-running
+   answer at the shared instant is **2.4218 V (DFN) against 3.4366 V (SPM)**, and that is
+   what the prose quotes. No voltage from the golden's table entered an `expect` block.
+6. **Cost in wasm.** Not the binding constraint at 1S1P and not separately measured: a
+   500 s run is 232 ms of native arithmetic, which at `speed_x = 100` is ~4.6 % of a core
+   natively and comfortable in wasm. What *was* the binding constraint is item 3's price.
+7. **The trajectory at the page's `dt`.** Both lessons set `dt: 2` as planned. The DFN arm
+   is genuinely sensitive across the knee (17.5 mV at 462 s) and its file comment says so;
+   the SPM arm is indifferent (0.57 mV).
+
+## The four changes
+
+**1. The mark is 500 s, not "past the cut-off with a caveat" or "before it".** The
+deciding measurement is one the plan did not anticipate: **an unconverged DFN step costs
+23× a converged one** (8177 µs against 360). Past 464 s every step runs `NEWTON_ITER_CAP`
+out. A 600 s mark spends 556 ms of arithmetic on 136 s of flat line — more than twice the
+whole supported run — and at `speed_x = 100` that is ~40 % of a native core and likely
+more than a wasm one has. 500 s contains the entire supported trajectory, the knee, and
+36 s of aftermath (18 unconverged steps, 148 ms) which is enough to show the trace has
+flatlined rather than dipped. The excursion is named in both the file comment and the
+lesson, including the tell that it is an artefact: the shelf near 2.38 V drifts *upward*.
+
+This is also now recorded in `dfn::NEWTON_ITER_CAP`'s own doc, because it is a property of
+the solver rather than of this slice, and nobody had priced it.
+
+**2. The `dt` pins go on steps 12, 13 and 14 — not 14, 17 and 18.** The plan's forward-leak
+analysis was stale: steps 17 and 18 have carried `dt: 0.5` since the protection-escalation
+slice, so the forward direction was already blocked and no edit was owed there. The
+*backward* leak is the live one and it is worse than the plan says — `dt = 2` set at step
+15 leaks back through 14 → 13 → 12, and **12 and 13 had no pin either**, so the 74.8 mV
+and 17.3 → 37.2 mV rebound decompositions were exposed. Three one-line additions, as
+predicted; a different three. Note the failure mode is not "the legs break": at `dt = 2`
+the 60/600 s pulse legs are still whole steps (30 and 300), so nothing would have thrown —
+the numbers would simply have stopped matching, silently. That is why this needs a walk in
+both directions rather than an assertion.
+
+**3. The renumbering grep found nothing, in both spellings.** Every digit citation in
+`web/app.js` points at steps 1, 2, 5, 10, 11, 12, 13 and 14 — all before the insertion
+point. The spelled-out sweep found three counts ("Eight steps of taking charge out", "none
+of them have appeared in eight steps", "Eleven steps of protection have derated a demand")
+and all three are at steps ≤ 14 and count *protection* steps rather than path positions, so
+the two insertions — both `bms: null` — leave them true. `README.md`'s "sixteen steps" was
+the one real hit and is now eighteen. `docs/plans/spm-scenario.md` was on the candidate list
+and turned out to defer nothing about the DFN; that is a result, not an omission.
+
+**4. One defect the plan did not know about.** `$("path-exit")` relabelled the start button
+`"Start — 8 steps"` — stale by four insertions, and `index.html` said 16, so the two had
+already drifted. Both now derive from `LESSONS.length`; the markup string is only what
+shows before the script runs.
+
+## What the measurement did *not* change
+
+The design decision stands exactly as drafted: the DFN file ships **the golden's
+configuration**, 10/5/10 and 20 shells, with the 5.1 % written into its comment. The
+1C-versus-3C table is the strongest argument for it — a reader who wants to know whether
+the coarse grid is costing them something has a committed test that says what refining buys.
+
+## What driving the page found
+
+Both `expect` blocks were written **after** this, from the page, and every number in them
+is one of the readings below. The harness is headless Chrome over CDP in
+`M:\claud_projects\temp`; the page is at `/app/`, not `/`.
+
+**The panel's precision is not the engine's, and the prose had to be rewritten for it.**
+`#readouts` prints terminal voltage to **three** decimals and SOC to **one** — so the
+drafted "3.9180 V" and "58.33 %" were quoting digits the reader cannot see. Worse,
+`fmtTime` renders anything from 120 s to 7200 s as whole minutes, so **464 s and 500 s both
+display as "8m"**: no time in either lesson is readable off that panel. Exact times come
+from `GET /sessions` (`pack.sim_time_s`), which is why the sampling pass runs over the
+server socket rather than the in-page engine.
+
+Every instant either lesson quotes, read off the panel:
+
+| t \[s\] | SPM V | SPM SOC | DFN V | DFN SOC | DFN flags |
+| ------ | ----- | ------- | ----- | ------- | --------- |
+| 0 (the `readNow` probe) | 3.927 | 100.0 % | **2.808** | 100.0 % | — |
+| 2 | 3.918 | 99.8 % | 3.839 | 99.8 % | — |
+| 400 | 3.471 | 66.7 % | 2.957 | 66.7 % | — |
+| 440 | 3.449 | 63.3 % | 2.860 | 63.3 % | — |
+| 462 | — | — | 2.638 | 61.5 % | — |
+| **464** | **3.437** | 61.3 % | **2.422** | 61.3 % | — |
+| **466** | — | — | 2.414 | 61.2 % | **`SOLVE_UNCONVERGED`** |
+| 500 (the mark) | 3.418 | 58.3 % | 2.379 | 58.3 % | `SOLVE_UNCONVERGED` |
+| 1058 | 2.502 | 11.8 % | — | — | — |
+| **1060** | **2.495** | 11.7 % | — | — | — |
+
+`SOLVE_UNCONVERGED` first appears at **exactly 466 s**, one step after the cut-off, as
+predicted — and it **renders**, which was worth checking rather than assuming: the flags
+panel is a hand-written renderer, but `parseFlags` splits whatever string the engine sends
+(`"OV | PLATING_RISK"`) rather than consulting a name table, so a flag added in Phase 7
+needs no page change. Confirmed on the screen, not by reading the renderer.
+
+### One reading the plan did not predict: the DFN opens at 2.808 V
+
+Arriving at step 16, the panel reads **2.808 V** before the reader presses anything, where
+step 15's read 3.927. Not a defect and not a resting voltage: `applyStep` ends with a
+zero-length `readNow()` *at the demand just dialled in*, so this is the instantaneous
+response to 15.46 A with no time for anything to move. All three models were probed
+directly to be sure — `Rest` at `dt = 0` gives 4.2017 V on both porous-electrode models and
+4.2000 V on the circuit, and `Current(3C)` at `dt = 0` gives **3.798 V (ECM), 3.927 V (SPM),
+2.808 V (DFN)**, reproducing the page exactly. It is a real difference between the models
+and a reader will see it first, so step 16 now opens on it rather than leaving it to be
+noticed and mistrusted.
+
+### Heat is a second page-visible channel, and it was free
+
+At the mark the DFN reads **22.41 W** against the SPM's **6.33 W** from the identical
+current. `q_gen` is the current times the gap between equilibrium and the terminal, which
+is exactly where the disagreement lives, so it is the same finding in a second column.
+
+### The `dt` pins, both directions
+
+The point of the pins is the **back** walk, and it is what was measured:
+
+| step | forward | back |
+| ---- | ------- | ---- |
+| 12 `pulse_train_ecm` | `dt=0.5`, 4.052 V, 81.7 % | `dt=0.5`, 4.052 V, 81.7 % |
+| 13 `pulse_train_spm` | `dt=0.5`, 4.055 V, 81.7 % | `dt=0.5`, 4.055 V, 81.7 % |
+| 14 3C pulses | `dt=0.5`, 3.989 V, 75.0 % | `dt=0.5`, 3.989 V, 75.0 % |
+| 15 SPM 3C | `dt=2`, 3.418 V, 58.3 % | `dt=2`, 3.418 V, 58.3 % |
+| 16 DFN 3C | `dt=2`, 2.379 V, 58.3 %, `SOLVE_UNCONVERGED` | — |
+| 17 external short | `dt=0.5`, 89.4 %, `CONTACTOR_OPEN` | — |
+
+Every step reads **identically in both directions**. Without the pins, 14, 13 and 12 would
+have inherited `dt = 2` from step 15 on the way back and quietly re-run at four times their
+measured step length — the legs still divide (60/600 into 2 s), so nothing would have
+thrown; the millivolts would simply have stopped matching.
+
+### Two harness findings worth keeping
+
+* **A readiness probe must not match its own static fallback.** The load check waited for
+  the start button to read "… steps" — which is exactly the string this slice put into
+  `index.html` as the pre-script fallback. It matched before `app.js` had bound a single
+  handler, so the first `.click()` landed on a button with no `onclick` and did nothing, and
+  the walk sat waiting on a path that had never started. The fix is to wait for something
+  only the module can produce; here, the scenario `<select>` filled from `GET /scenarios`.
+* **In `--headless=new`, `requestAnimationFrame` does not fire on its own**, so the page
+  arms a run and never advances. `Page.captureScreenshot` drives exactly one frame — the
+  screenshot is the clock, not the observation. And `stepsForFrame` caps a frame's wall
+  delta at 0.25 s, so one forced frame buys `0.25 × speed_x` of simulation and no more,
+  which is what makes a full 18-step walk expensive enough to be worth skipping through.
+
+**Not verified, and said rather than glossed:** step 18 (`nothing-to-clamp`) hung this
+harness on arrival, in both directions, twice — under a browser that had accumulated a
+dozen live pages and again on a clean one. Nothing in this slice touches that step: its
+`dt: 0.5` pin predates it, and step 17 was confirmed forward at `dt = 0.5` immediately
+after step 16 set the box to 2, which is the only interaction this slice could have had
+with either. Left as a harness limitation rather than claimed as a pass.
+
+## The number that turned out to be the lesson
+
+The plan expected the headline to be the voltage gap. It is not. It is the **cut-off**:
+
+> At 1C the two models disagree about when the cell is empty by **12 seconds in 3484**.
+> At 3C they disagree by **596 seconds in 464**.
+
+The mean voltage gap does *not* vanish at 1C — 60.1 mV of standing offset survives, and
+the file comment says so rather than rounding it away. What collapses is the disagreement
+about the one quantity anyone designs against. That is a sharper statement of "a cliff
+between 1C and 3C, not a slope" than the spike's millivolt table, and it is what step 16
+closes on.
+
 ## Exit criterion
 
 Both files load from the picker with no page edit; the guided path runs 18 steps forward

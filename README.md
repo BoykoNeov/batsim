@@ -103,6 +103,13 @@ pack, a `step(dt, demand, env)`, one `Telemetry`.
   ~18 ms fast-forward; this is not a real-time model above a few cells, and it is quoted
   per *cell* because the pack solve's pass count depends on topology.
 
+  `scenarios/cc_discharge_3c_dfn.toml` selects it, and its twin
+  `cc_discharge_3c_spm.toml` differs in exactly one block — so the difference above is
+  something a client can run rather than only something the goldens assert. That pair is
+  also where the *boundary* is written down: at 1 C the two models' cut-offs land 12 s
+  apart in 3484 (0.34 %), and at 3 C they are 128 % apart. Below the boundary the cheap
+  model is right; above it, it is wrong and says nothing.
+
 Against grid- and time-converged PyBaMM references on the same parameter set, batsim's SPM
 tracks terminal voltage to **2–7 mV over a whole discharge** and its DFN to **5.8 mV at
 1C**, cut-off knee included — no SOC window, unlike the Phase 1 ECM-vs-DFN goldens, which
@@ -218,7 +225,7 @@ the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
 If you do not already know what to look at, press **Start** under *Guided path*
-instead. It walks sixteen steps — one cell on its own, the same discharge on a
+instead. It walks eighteen steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
 with protection on and then off, a pack that wears out while doing nothing at all,
@@ -226,17 +233,25 @@ three that put charge back in (the two legs of a CC-CV charge, a chemistry whose
 second leg never arrives, and what a BMS costs a charge it decides to stop), three
 that pulse the same cell through two different cell models — a circuit that answers an
 identical pulse identically, a particle that remembers the last one, and three times
-the current buying ×1.87 of one part of the answer and ×6.01 of another — and two
+the current buying ×1.87 of one part of the answer and ×6.01 of another — a pair that
+pulls that same cell flat at 3 C through the two *porous-electrode* models and differs
+in one block of one file, where the single-particle model runs smoothly to 4.55 A·h
+with no flag raised and the Doyle–Fuller–Newman one is finished at 1.99 with 61 % still
+on the readout, because the electrolyte an `Spm` holds constant has starved — and two
 shorts across the terminals that separate the two rungs of the protection ladder: a
 dead one the contactor catches in a single step for half a percent, and a weaker one
 that costs fifty because a derate clamps demands and a short is not a demand. Each
 step sets the controls for itself and outlines the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step's whole control set,
 so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when
-it needs to start from t = 0 and otherwise keeps the run going, which is why the last
-three steps — whose claims are all about a *first* pulse — ask for the reload explicitly
-rather than inheriting whatever the neighbouring step left behind. Steps 3 to 5 are one continuous
-run on one pack, because changing what you look at teaches more than reloading.
+it needs to start from t = 0 and otherwise keeps the run going, which is why steps 12
+to 16 — whose claims are about a *first* pulse or a discharge from full — ask for the
+reload explicitly rather than inheriting whatever the neighbouring step left behind.
+Those five also pin the timestep, for the same class of reason: steps 15 and 16 run at
+the 2 s step their golden asserts at, and without a pin that setting would leak back
+into the pulse steps on the way and quietly move every millivolt they quote. Steps 3 to
+5 are one continuous run on one pack, because changing what you look at teaches more
+than reloading.
 
 The scenario picker is filled from the server's own `GET /scenarios`, so adding a file
 under `scenarios/` puts it in the list with no edit to the page.

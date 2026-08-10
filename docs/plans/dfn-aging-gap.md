@@ -207,5 +207,6 @@ calls. That is an argument; the instrument is the measurement, and it agrees.
   the term that closes it is a cooling one.
 * The low-clamp solve-side fix (`low-clamp-solve-side.md`), measured not to work.
 * `Pack::step` at 100S10P, still over the ECM-only budget.
-* No DFN scenario file, so no client can reach the model — the Phase 6 SPM slice's
-  counterpart has never been written for Phase 7.
+* ~~No DFN scenario file, so no client can reach the model — the Phase 6 SPM slice's
+  counterpart has never been written for Phase 7.~~ **Closed** by `dfn-scenario.md`:
+  `scenarios/cc_discharge_3c_dfn.toml` and its SPM twin, plus guided-path steps 15 and 16.

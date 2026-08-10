@@ -2597,6 +2597,13 @@ const LESSONS = [
     demand: { mode: "Pulse", value: 5.153, on_s: 60, off_s: 600 },
     ambient_c: 25,
     bms: null,
+    // Every millivolt in this step's `expect` was measured at 0.5 s, and this pin is
+    // what keeps that true. Steps 15 and 16 set the box to 2 s, and `applyStep` leaves
+    // it wherever the reader last left it — so without a pin here, walking **back**
+    // from 15 would silently re-run steps 12, 13 and 14 at four times the step length.
+    // The legs stay whole (60/600 divide by 2), so nothing would break; the numbers
+    // would just quietly stop matching, which is worse.
+    dt: 0.5,
     // 100x, far slower than the discharge steps: the shape *within* one rest is the
     // subject here, and at 800x a 600 s rest is under a second of watching.
     speed_x: 100,
@@ -2619,6 +2626,8 @@ const LESSONS = [
     demand: { mode: "Pulse", value: 5.153, on_s: 60, off_s: 600 },
     ambient_c: 25,
     bms: null,
+    // See step 12's note: pinned so a walk back from step 15 cannot re-run this at 2 s.
+    dt: 0.5,
     speed_x: 100,
     until_s: 3300,
     reload: true,
@@ -2642,6 +2651,8 @@ const LESSONS = [
     demand: { mode: "Pulse", value: 15.459, on_s: 60, off_s: 600 },
     ambient_c: 25,
     bms: null,
+    // See step 12's note: pinned so a walk back from step 15 cannot re-run this at 2 s.
+    dt: 0.5,
     speed_x: 100,
     until_s: 1980,
     reload: true,
@@ -2651,7 +2662,61 @@ const LESSONS = [
       "The question is the one a modeller actually asks: if I know what this cell does at 1 C, do I know what it does at 3 C? For the circuit of step 12 the answer is yes, trivially and by construction — triple the current and every term triples, because every term is a resistance times a current. Its jump goes 132.8 → 397.3 mV and its slow climb 74.8 → 224.3 mV: **×2.99 and ×3.00**.",
     ],
     expect:
-      "The particle gives two different answers to the same question. Its instantaneous jump goes 113.9 → 213.2 mV — **×1.87**, not ×3 — because that part is charge-transfer kinetics, and kinetics saturate: overpotential goes as the *arcsinh* of current, so asking harder buys less each time. Its slow climb goes 17.3 → 103.9 mV, which is **×6.01** — accelerating, because the open-circuit potential is a curved function of surface composition and driving the surface further out of balance costs more than proportionally. One part gentler than the circuit, one part far harsher, from the same three-fold demand. And the total sag, which is the only one of the three you can read off the plot without pausing, lands at ×2.48 — a number that looks like mild sub-linearity and conceals both effects underneath it. **No single resistance can be 1.87 and 6.01 at once**, which is the whole argument for a model with an inside. Two footnotes. This costs about 8× the circuit's arithmetic per step at 20 shells (0.90 µs against 0.11 on one cell), which is why it is not the default. And do not run this one to empty: past the charge clamp the particle model pins near 0.4 V while the circuit stops at 1.79, because the surface concentration falls off the bottom of its table — a hole in the model, left visible rather than papered over.",
+      "The particle gives two different answers to the same question. Its instantaneous jump goes 113.9 → 213.2 mV — **×1.87**, not ×3 — because that part is charge-transfer kinetics, and kinetics saturate: overpotential goes as the *arcsinh* of current, so asking harder buys less each time. Its slow climb goes 17.3 → 103.9 mV, which is **×6.01** — accelerating, because the open-circuit potential is a curved function of surface composition and driving the surface further out of balance costs more than proportionally. One part gentler than the circuit, one part far harsher, from the same three-fold demand. And the total sag, which is the only one of the three you can read off the plot without pausing, lands at ×2.48 — a number that looks like mild sub-linearity and conceals both effects underneath it. **No single resistance can be 1.87 and 6.01 at once**, which is the whole argument for a model with an inside. Two footnotes. This costs about 8× the circuit's arithmetic per step at 20 shells (0.90 µs against 0.11 on one cell), which is why it is not the default. And there is a floor under this model you should know about before you go looking for it: run it past the **SOC clamp** — not to its cut-off, past empty — and it pins somewhere between 0.3 and 0.5 V while the circuit stops at 1.79, because the surface concentration falls off the bottom of its table. A hole in the model, left visible rather than papered over. It is a long way below the cut-off and you have to keep pressing Run to reach it: the next step discharges this same model from full at 3 C and stops at 2.50 V with 11.67 % still showing, nowhere near it.",
+  },
+  {
+    id: "looks-fine-from-outside",
+    title: "A hard discharge, and a model that sees nothing wrong",
+    scenario: "cc_discharge_3c_spm.toml",
+    // 15.459594 A is 3 C of this cell's 5.153198 Ah — the current the committed DFN
+    // golden runs at, quoted to the digit the golden quotes it to.
+    demand: { mode: "Current", value: 15.459594 },
+    ambient_c: 25,
+    bms: null,
+    // The golden's timestep, and therefore the pair's. This arm barely notices it
+    // (0.57 mV across the whole trajectory between 0.5 s and 2 s); its twin does.
+    dt: 2,
+    speed_x: 100,
+    // Both steps of the pair share one mark, because the comparison is "the same cell
+    // at the same current at the same instant" and two x-axes would hide it. 500 s is
+    // chosen from the twin: it contains the DFN's whole supported run (it dies at
+    // 464 s) plus 36 s of aftermath, and no more — past the cut-off a DFN step costs
+    // 23x what a converged one does, so a longer mark buys a flat line at 8 ms a step.
+    until_s: 500,
+    // Step 14 ends at t = 1980, so this mark does not ascend; and both halves of the
+    // pair describe a run from full.
+    reload: true,
+    watch: ["plot-v", "plot-soc"],
+    prose: [
+      "A different question from the last three, and the one a cell actually gets asked: pull it hard, from full, until it is empty. `Current` at 15.459594 A — 3 C for this cell — and nothing else. No pulses, no rests, no protection.",
+      "Same LG M50, same single-particle model as steps 13 and 14, same 20 shells. The only things that have changed are the starting charge (100 % rather than 90 %) and the demand.",
+      "There is nothing to do here but watch. That is deliberate: the point of this step is what an answer looks like when you have no way to tell it is wrong.",
+    ],
+    expect:
+      "Nothing anomalous, which is the whole of it. The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat. That flattening is the NMC plateau and it is real. Not one flag is raised on any step of the run. Press **Run** again when it stops and it simply carries on, just as smoothly: 2.502 V at 1058 s and **2.495 V at 1060 s**, which is where it crosses the 2.50 V cut-off, with 11.7 % left on the readout. 15.46 A for 1060 s is **4.55 A·h** — 88 % of this cell's 5.15, in under eighteen minutes, at three times its rated hour rate. (Keep going well past that and it eventually pins near 0.3 V, which is the floor step 14 mentions seen from the discharge side. The cut-off is a long way above it, so a reader who stops where the cell stops never meets it.) Everything about this trace is plausible. Hold onto the 500 s reading — 3.418 V, 58.3 % — because the next step is the same cell, at the same current, at the same instant.",
+  },
+  {
+    id: "the-electrolyte-starves",
+    title: "The same discharge, one block different, dead in half the time",
+    scenario: "cc_discharge_3c_dfn.toml",
+    demand: { mode: "Current", value: 15.459594 },
+    ambient_c: 25,
+    bms: null,
+    // Load-bearing on this arm in a way it is not on the twin: this is the timestep
+    // `dfn_golden.rs` asserts at, and the knee is steep enough that 0.5 s moves the
+    // samples across it by up to 17.5 mV.
+    dt: 2,
+    speed_x: 100,
+    until_s: 500,
+    reload: true,
+    watch: ["plot-v", "flags", "readouts"],
+    prose: [
+      "The same file with one block swapped: `[pack.cell_model.Spm]` becomes `[pack.cell_model.Dfn]`. Same cell, same 100 %, same 15.459594 A, same 25 °C, same everything else. Whatever you are about to see is the model and cannot be the setup.",
+      "A single-particle model solves lithium inside a particle. This one also solves the liquid *between* the particles — concentration and potential in the electrolyte, across the negative electrode, the separator and the positive. It is the model this engine's Phase 7 was built for, and until this file no client could select it.",
+      "That is the quantity a single-particle model holds constant by construction. Watch what happens when it is allowed to move.",
+    ],
+    expect:
+      "It disagrees before you even press Run: the panel reads **2.808 V** where the twin read 3.927. That is not the cell's resting voltage — it is a zero-length probe of the demand you just dialled in, the answer with no time for anything to move at all, and the three models give three of them (3.798 V for the circuit, 3.927 for the particle, 2.808 here). Now run it. The two traces are the same shape until they are not. This one starts lower — **3.839 V** against the twin's 3.918 on the first step — and falls faster all the way down: 2.957 V at 400 s where the other reads 3.471. Then, over the 64 seconds from 400 s to 464 s, it drops **535 mV** while the single-particle arm falls 34 mV, and it is finished: **2.422 V at t = 464 s, past the 2.50 V cut-off, with 61.3 % of the capacity still showing on the readout.** 15.46 A for 464 s is 1.99 A·h of this cell's 5.15. The twin, at that same instant, reads 3.437 V — **a full volt higher** — and has 596 seconds still to run. Same cell, same current: one model says the cell is empty and the other has not noticed. Look at the heat, too: 22.41 W here against the twin's 6.33 W at the mark, from the identical current, because heat is what the current times the gap between equilibrium and the terminal buys you and that gap is where the whole disagreement lives. The mechanism is not on the screen but the shape is its signature: as the current pulls lithium out faster than it can diffuse back through the liquid, the electrolyte in the positive electrode starves, its conductivity falls with it, and the collapse feeds itself. An SPM holds that concentration constant by construction, so it cannot represent any of it and reports a cell that is fine. **Two things to be honest about.** The voltage plot autoscales to whatever it is showing, and these two runs cover very different ranges — so the traces will look more alike in shape than they are. Compare the numbers, not the slopes. And `SOLVE_UNCONVERGED` appears at **466 s**, one step after the cut-off, and stays: past that point the Newton solve is hitting its iteration cap, and the flat shelf that carries the run from 2.414 V down to 2.379 V at the mark is the solver, not the cell. That the flag arrives one step *after* the collapse and not before it is the useful part — the solve stops being able to answer at almost exactly the moment there is nothing left to answer about. Now the thing that makes this a boundary rather than a verdict: **set the current to 5.153198 A — 1 C — and run both files again** (press Run again each time the mark passes; a full discharge is about an hour of simulation). The two models now reach their cut-offs **12 seconds apart in 3484 — 0.34 %**. The disagreement is not a property of the DFN, it is a property of the rate. Below that boundary the cheap model is right and costs about 200× less per step; above it, it is wrong by a factor of 2.28 on how much charge the cell holds, and it gives you no sign of it.",
   },
   {
     id: "one-step-that-got-through",
@@ -2673,7 +2738,7 @@ const LESSONS = [
       "Eleven steps of protection have derated a demand. This one cannot be derated, because there is no demand — and that is what the contactor is for.",
     ],
     expect:
-      "One tooth on the current plot and then nothing. The pack draws **183.84 A** for a single step with *no flag raised at all*, then `UV` and `CONTACTOR_OPEN` together, and the current is zero from there on. The pack was at 90.00 % when the short landed and it is at **89.44 %** for the rest of the run — half a percent, and 0.96 K, is the whole cost of a dead short. The step that got through is not a bug: protection decides from sensors sampled at the end of the *previous* step, which still read a resting 3.3142 V per group. The frame taken after the spike reads **1.3336 V**, well under the 1.85 V that this file calls a fault rather than an operating point, and the next step latches. **The lag is one step long, so it is yours to set.** Put `dt` up to 5 s and press **Restart**, which rebuilds this pack at t = 0 from the same file — fault and all — without touching the controls you just set, and then Run. Not Back-then-Next: that re-applies the whole step, `dt` included, and puts it back to 0.5. The spike is the same 183.84 A, because a resistive sag is instantaneous and does not care how long you look at it; it simply lasts ten times longer, and the damage is exactly proportional. 0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1. Put it back to 0.5 before moving on — the pulse steps behind you count their legs in whole timesteps. Then the reset, which is two buttons, an order, and a Run. Nothing advances while the page is paused, so **Clear latched BMS fault** on its own only unlatches: press Run and the short, still connected, delivers a *second* 184 A tooth and it latches straight back. Do it the other way round — **Clear queued** first, which despite its name is a repair and removes the short that already fired, then **Clear latched BMS fault** — and the pack simply sits there at 13.16 V with nothing flowing. A latch that cleared itself when the voltage recovered would be a thermostat, not a protection device.",
+      "One tooth on the current plot and then nothing. The pack draws **183.84 A** for a single step with *no flag raised at all*, then `UV` and `CONTACTOR_OPEN` together, and the current is zero from there on. The pack was at 90.00 % when the short landed and it is at **89.44 %** for the rest of the run — half a percent, and 0.96 K, is the whole cost of a dead short. The step that got through is not a bug: protection decides from sensors sampled at the end of the *previous* step, which still read a resting 3.3142 V per group. The frame taken after the spike reads **1.3336 V**, well under the 1.85 V that this file calls a fault rather than an operating point, and the next step latches. **The lag is one step long, so it is yours to set.** Put `dt` up to 5 s and press **Restart**, which rebuilds this pack at t = 0 from the same file — fault and all — without touching the controls you just set, and then Run. Not Back-then-Next: that re-applies the whole step, `dt` included, and puts it back to 0.5. The spike is the same 183.84 A, because a resistive sag is instantaneous and does not care how long you look at it; it simply lasts ten times longer, and the damage is exactly proportional. 0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1. Put it back to 0.5 before moving on, or just press Back then Next, which re-applies it. Then the reset, which is two buttons, an order, and a Run. Nothing advances while the page is paused, so **Clear latched BMS fault** on its own only unlatches: press Run and the short, still connected, delivers a *second* 184 A tooth and it latches straight back. Do it the other way round — **Clear queued** first, which despite its name is a repair and removes the short that already fired, then **Clear latched BMS fault** — and the pack simply sits there at 13.16 V with nothing flowing. A latch that cleared itself when the voltage recovered would be a thermostat, not a protection device.",
   },
   {
     id: "nothing-to-clamp",
@@ -2879,6 +2944,18 @@ async function gotoStep(i) {
   await applyStep(LESSONS[path.i]);
 }
 
+/**
+ * The button's idle label, derived rather than written.
+ *
+ * It used to be spelled out in two places — `index.html` and the exit handler — and they
+ * had drifted: the markup said 16 while the handler still said 8, so exiting the path
+ * relabelled the button with a count four insertions out of date. Derived from
+ * `LESSONS.length` here, and the string in `index.html` is only what shows before this
+ * script runs.
+ */
+const PATH_START_LABEL = `Start — ${LESSONS.length} steps`;
+$("path-start").textContent = PATH_START_LABEL;
+
 $("path-start").onclick = async () => {
   path.on = true;
   $("path").className = "show";
@@ -2893,7 +2970,7 @@ $("path-exit").onclick = () => {
   state.running = false;
   $("run").textContent = "Run";
   $("path").className = "";
-  $("path-start").textContent = "Start — 8 steps";
+  $("path-start").textContent = PATH_START_LABEL;
   setWatch([]);
 };
 

@@ -1,0 +1,105 @@
+# The first scenario in this repo that selects the Doyle-Fuller-Newman model.
+#
+# `sim-core` has carried a full DFN since Phase 7 — four coupled equations, an analytic
+# banded Jacobian, a damped Newton solve, goldens against PyBaMM at 1 C and 3 C — and until
+# this file no client could reach it, because `cell_model` is settable only from a scenario
+# and not one of the twelve files here set it to `Dfn`.
+#
+# This is `cc_discharge_3c_spm.toml` with the `[pack.cell_model.*]` block swapped and
+# nothing else changed. Read that file first: it is the arm that looks fine.
+#
+# ## Which half of the chemistry file this reads
+#
+# Both halves of the porous-electrode description: the [spm] electrodes *plus* the [dfn]
+# electrolyte and separator, both extracted from PyBaMM's Chen2020 by
+# tools/reference/extract_spm.py and extract_dfn.py, neither fitted. So unlike
+# `cc_discharge_lgm50.toml`, which reads the placeholder [r0] and [[rc]] tables, **this
+# pair reads no placeholder** and the two arms can be compared in volts rather than only
+# in ratios.
+#
+# ## What it shows, measured at dt = 2 s
+#
+# Free-running from full at 15.459594 A, the same cell that the SPM arm carries to
+# **1060 s and 4.5520 A·h** is finished at **464 s and 1.9926 A·h** — 43.8 % of the time
+# and 43.8 % of the charge, with **61.33 % of its capacity still showing on the readout**.
+# The whole of that gap is one quantity: the electrolyte between the particles. An SPM
+# holds its concentration constant by construction, so it cannot see the cell starve.
+#
+# The shape is a cliff and not a slope, and it is worth knowing which side of it you are
+# on. Run the same pair at 1 C and the two models' cut-offs land **12 s apart in 3484 —
+# 0.34 %**. Triple the current and they are 128 % apart. Measured, same files, same dt:
+#
+#   rate   DFN cut-off   SPM cut-off   disagreement   mean |dV| to the DFN's cut-off
+#   1 C     3484 s        3496 s         0.34 %         60.1 mV
+#   3 C      464 s        1060 s          128 %        401.4 mV
+#
+# The mean voltage gap at 1 C is not zero and this file does not claim it is: 60 mV of
+# standing offset survives, and it is a real difference between the two models on this
+# parameter set. What collapses at 1 C is the disagreement about *when the cell is empty*,
+# which is the quantity anyone actually designs against.
+#
+# ## The grid is the golden's, not the best one available
+#
+# 10/5/10 x-nodes and 20 shells are `dfn::DEFAULT_NODES_*` and `spm::DEFAULT_SHELLS` — the
+# shipped recommendation, and what `crates/sim-data/tests/dfn_golden.rs` asserts at. They
+# are **known to be coarse at exactly this rate**: batsim's 464 s sits 5.1 % short of the
+# PyBaMM DFN reference's 488.7 s, and the in-window voltage error is 62.1 mV where
+# 20/10/20 gives 490 s and 21.8 mV. `refining_the_x_grid_converges_toward_the_reference`
+# is that price as a committed number.
+#
+# Shipping the finer grid would be a better number with no reference behind it. This file
+# ships the configuration the golden runs and writes the 5.1 % down, which is the weaker
+# number and the stronger document.
+#
+# ## Three limitations, named rather than avoided
+#
+# * **`dt = 2 s` is load-bearing here, unlike on the SPM arm.** It is the golden's
+#   timestep. The trajectory is within 3.2 mV of a dt = 0.5 s run through the first 440 s
+#   and the cut-off moves by half a second in 464 — but the knee itself is steep enough
+#   that the worst single-sample disagreement across it is 10.1 mV by 460 s and 17.5 mV at
+#   462 s. A reader who changes the box is off-golden by that much and no more.
+# * **Do not read the tail past 464 s.** Nothing stops the run: `bms` is omitted and
+#   `Demand::Current` is unrefusable by any cell model. Past the cut-off the solve stops
+#   converging — `SOLVE_UNCONVERGED` is raised on the very next step, at 466 s, and on most
+#   steps after it — and the trace flattens onto a shelf near 2.33 V that is an artefact of
+#   a Newton solve hitting its iteration cap, not a cell holding a voltage. It stays finite
+#   all the way to a horizon of 1200 s, and it drifts *upwards* by up to 10 mV in places,
+#   which is the tell. That the flag appears one step after the cut-off and not before it
+#   is the useful part: the solver stops being able to answer at almost exactly the moment
+#   there is nothing left to answer about.
+# * **Cost.** 360 us per step at this grid — 180 us per cell per step over the two solve
+#   passes a 1S1P pack takes, which is `dfn_pack_step.rs`'s committed budget. That is 3000x
+#   the equivalent circuit and 200x the SPM arm. Past the cut-off it goes to **8177 us per
+#   step**, 23x more, because every step then burns the full Newton iteration cap. A 500 s
+#   run at dt = 2 is 232 ms of arithmetic, of which 148 ms is the 18 steps after the cell
+#   is already dead. A DFN *pack* is not shipped for this reason: 10S10P is ~18 ms per step,
+#   a fast-forward rather than a study.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "3 C discharge, Doyle-Fuller-Newman model"
+description = """
+A 1S1P LG M50 cell at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no faults, \
+pulled at 3 C (15.459594 A) on parameters extracted verbatim from PyBaMM's Chen2020. \
+`cc_discharge_3c_spm.toml` with one block swapped. The electrolyte starves and the cell \
+is finished at 464 s having delivered 1.9926 A·h with 61.33 % still on the readout — \
+where the single-particle model runs to 1060 s and 4.5520 A·h and sees nothing wrong. At \
+1 C the two agree on the cut-off to 0.34 %."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+seed = 0
+
+# The one block that differs from the twin. The grid is the golden's; see above.
+[pack.cell_model.Dfn]
+shells = 20
+nodes_negative = 10
+nodes_separator = 5
+nodes_positive = 10
+
+# Omitted, and each omission means "off":
+#   [pack.scatter] / [pack.thermal] / [pack.bms] / [pack.aging] / [[faults]]

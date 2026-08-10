@@ -350,10 +350,21 @@ pub enum CellModelConfig {
     /// three where a single cell needs two. So 1S1P is a study, 10S10P is ~18 ms per step
     /// and therefore a fast-forward.
     ///
+    /// That 180 µs is a *converged* step. Past the end of a hard discharge the Newton
+    /// solve runs its cap out and a step costs **23× more**; see
+    /// [`crate::dfn::NEWTON_ITER_CAP`] for the measurement and for why it matters to a
+    /// client that keeps stepping after a cell is empty.
+    ///
     /// Unlike [`Self::Spm`], whose one knob trades accuracy against cost, most of the
     /// expense is in the x-grid — which is the whole point of the model, and so not
     /// somewhere to economise. See [`crate::dfn`] and
     /// `sim-data/benches/dfn_pack_step.rs`.
+    ///
+    /// # Reaching it from a client
+    /// `scenarios/cc_discharge_3c_dfn.toml` selects this variant at the grid the goldens
+    /// assert at, and its twin `cc_discharge_3c_spm.toml` differs in exactly this block —
+    /// which is what turns "the electrolyte equations buy 2.1 A·h against 4.5" from an
+    /// assertion in `dfn_golden.rs` into something a reader can run.
     Dfn {
         /// Radial finite volumes per particle, in
         /// \[[`crate::spm::MIN_SHELLS`], [`crate::spm::MAX_SHELLS`]\]. Shared with

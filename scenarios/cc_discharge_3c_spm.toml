@@ -1,0 +1,82 @@
+# One half of a pair. The other is `cc_discharge_3c_dfn.toml`, and the two differ in
+# exactly one block — the `[pack.cell_model.*]` table — which is what makes anything you
+# see attributable to the model rather than to the setup. Same cell, same 100 % SOC, same
+# 3 C, same 25 degC, same everything.
+#
+# This is the arm that **looks fine**. Read it before its twin.
+#
+# ## Which half of the chemistry file this reads
+#
+# The [spm] half — every value a key of PyBaMM's Chen2020, a literal inside one of its
+# functions, or a stated product of two keys, regenerable by tools/reference/extract_spm.py.
+# Nothing in it is fitted and nothing in it is a placeholder. The twin adds the [dfn]
+# electrolyte section, extracted the same way from the same source. So unlike the ECM
+# scenarios on this chemistry, **this pair's millivolts are comparable to each other** —
+# neither arm reads a placeholder, which is why the comparison can be stated in volts
+# rather than in the ratios `pulse_train_spm.toml` had to fall back on.
+#
+# ## The asymmetry, stated rather than avoided
+#
+# The twin's numbers are backed by a committed golden: `dfn_cc_3c_25c.csv` is a PyBaMM DFN
+# run at exactly this current on exactly this cell, and `crates/sim-data/tests/dfn_golden.rs`
+# asserts against it. **This file's arm has no 3 C golden.** batsim's SPM is validated
+# against PyBaMM's SPM at C/5, 1 C and GITT, and 3 C is outside that set. What is committed
+# about the SPM at 3 C is one thing only, and it is a negative result:
+# `the_spm_cannot_follow_the_reference_into_depletion` measures it tracking the DFN
+# reference to 521.0 mV where the DFN tracks to 62.1 — 8.4x worse.
+#
+# Generating a 3 C SPM golden was considered and declined for this slice: it costs a PyBaMM
+# run, a committed CSV and a test, and the asymmetry is one paragraph. See
+# docs/plans/dfn-scenario.md. This paragraph is that decision, written where a reader of
+# the file will find it rather than in a plan nobody opens.
+#
+# ## What this arm answers, measured at dt = 2 s
+#
+# Free-running from full at 15.459594 A, this cell reaches its 2.50 V cut-off at
+# **1060 s having delivered 4.5520 A·h** of its 5.153198, with no flag raised on any step
+# of the run. The trace is smooth, the slope is unremarkable, and there is nothing in it
+# to suggest the answer is wrong. It is wrong by a factor of 2.28 — see the twin.
+#
+# For scale, PyBaMM's own SPM answers 1084.7 s on its 5.0 A·h basis; the two are not
+# directly comparable (different capacity bases) and neither is a reference for the other.
+#
+# ## Two limitations, named rather than avoided
+#
+# * `dt = 2 s` is the twin's golden's timestep and therefore the pair's. This arm is
+#   almost indifferent to it — the whole trajectory moves by at most **0.57 mV** between
+#   dt = 0.5 and dt = 2, and the cut-off by 1 s in 1060. The twin is not; see its comment.
+# * Do not read the tail past the cut-off. Nothing stops it: `bms` is omitted and
+#   `Demand::Current` is unrefusable by any cell model. Past about 1160 s the surface
+#   concentration falls off the bottom of the OCP table and this model pins near 0.31 V,
+#   which is `pulse_train_spm.toml`'s hole seen from the discharge side. The cut-off at
+#   1060 s is comfortably before it — 11.67 % SOC still showing — so a reader who stops
+#   where the cell stops never meets it.
+#
+# `shells = 20` is `spm::DEFAULT_SHELLS`, a cost knob rather than a property of the
+# material, and part of the snapshot layout — which is why it is written out here rather
+# than defaulted.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "3 C discharge, single-particle model"
+description = """
+A 1S1P LG M50 cell at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no faults, \
+pulled at 3 C (15.459594 A) on parameters extracted verbatim from PyBaMM's Chen2020. \
+One of a pair with `cc_discharge_3c_dfn.toml`, which differs in exactly one block. This \
+arm reaches its 2.50 V cut-off at 1060 s having delivered 4.5520 A·h, smoothly and with \
+no flag raised — and the answer is wrong by a factor of 2.28."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+seed = 0
+
+# The one block that differs from the twin.
+[pack.cell_model.Spm]
+shells = 20
+
+# Omitted, and each omission means "off":
+#   [pack.scatter] / [pack.thermal] / [pack.bms] / [pack.aging] / [[faults]]
