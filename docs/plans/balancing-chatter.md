@@ -195,7 +195,9 @@ Its threshold needed two attempts, and the first is the lesson: at 4.12 V the pa
 is decorative** — the same fact that made `scenario_protection.rs`'s over-voltage fixture
 vacuous one commit ago, approached from the other side.
 
-Anchor is now `after-bleed-band.txt`, 14 cases.
+Anchor is now `after-bleed-band.txt`, 14 cases — regenerated from the committed tree after
+the final `cargo fmt` and doc edits and confirmed **byte-identical**, because this
+directory's `after-sliceB-postfmt.txt` records a slice where that assumption failed.
 
 ## Prose this commit falsified, found by measuring rather than reasoning
 
@@ -228,6 +230,33 @@ The page's own prose survives unedited — it rounds to "25 mV" and "11 mV" and 
 cell "has already crossed 4.20", all still true. But 4.20001 clears 4.20 by 0.01 mV where
 it used to clear it by 0.04, so that sentence is now thin enough to re-read rather than
 assume next time.
+
+### The sweep that found this had a blind spot, and closing it needed a different search
+
+The hunt was a grep for three literals lifted from the CC-CV run — which finds stale
+copies of *those* numbers and cannot find numbers in a different scenario the change also
+moved. The right search is over **scenarios that have a balancer**, and there are four:
+
+| scenario | covered by | verdict |
+| --- | --- | --- |
+| `cc_cv_charge_pack.toml` | the ported CC-CV controller | two numbers moved, corrected above |
+| `soft_short_under_a_lying_sensor.toml` | the instrument | telemetry unmoved |
+| `external_short_30_milliohm.toml` | **nothing, until this was noticed** | unmoved, measured |
+| `external_short_100_milliohm.toml` | **nothing, until this was noticed** | unmoved, measured |
+
+The two external-short files are the protection-escalation slice's, they carry measured
+numbers in their headers and in two guided-path lessons, and neither is in the instrument.
+Reasoning says they are inert — LFP at `initial_soc = 0.90` rests at `OCV(0.90)` = 3.34 V
+against a 3.45 V threshold, and a short only drives the reading lower. **That argument was
+not trusted**, because `docs/plans/phase-7-slice-a-landed.md` records a "provably inert"
+claim of exactly this shape that turned out to be false and was caught only by running the
+gate.
+
+Run instead, comparing the whole telemetry stream bit-for-bit between band 0 and the
+shipped band rather than merely asking whether the flag fired: **identical FNV over the
+stream on both files** (`3308dc325d647b0b`, `96f15d3a8357cb08`), with the balancer never
+closing and the maximum sensed group voltage reaching **3.31420 V** — 136 mV of margin on
+the threshold. Nothing in those two files, or the lessons quoting them, needs touching.
 
 ## Adapter versions: checked individually, neither moved
 

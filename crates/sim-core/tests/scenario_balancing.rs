@@ -31,7 +31,11 @@ const BAND: f64 = 0.010;
 /// Charge duration \[s\] before resting. Kept short enough that the healthy groups
 /// stay under the bleed threshold, so their behaviour isolates "never bled".
 const CHARGE_S: usize = 1000;
-/// Rest duration \[s\]. The weak group needs ~1700 s to bleed down to the threshold.
+/// Rest duration \[s\]. The weak group reaches the threshold at ~1700 s — but that is no
+/// longer when it stops bleeding, and the constant is sized against when it stops. With
+/// [`BAND`] the switch holds until the reading reaches `V_BLEED − BAND`, so the rest
+/// phase now bleeds on 29.6 % of its steps rather than 21.5 % and dissipates 635 J rather
+/// than 461 J. 6000 s covers both, with room; it was not re-sized, it was re-checked.
 const REST_S: usize = 6000;
 
 fn env() -> Env {
