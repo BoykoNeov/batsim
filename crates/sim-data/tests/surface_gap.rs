@@ -55,6 +55,10 @@ fn env() -> Env {
 }
 
 fn pack(model: CellModelConfig, initial_soc: f64) -> Pack {
+    scattered_pack(model, initial_soc, Scatter::default())
+}
+
+fn scattered_pack(model: CellModelConfig, initial_soc: f64, scatter: Scatter) -> Pack {
     Pack::new(
         &PackConfig {
             series: 1,
@@ -62,7 +66,7 @@ fn pack(model: CellModelConfig, initial_soc: f64) -> Pack {
             initial_soc,
             initial_temp_k: 298.15,
             seed: 1,
-            scatter: Scatter::default(),
+            scatter,
             // Isothermal on purpose: diffusivity is temperature-dependent, so a warming
             // cell would move the gap for a reason that is not the gradient.
             thermal: ThermalConfig::Isothermal,
@@ -243,6 +247,69 @@ fn the_two_porous_models_agree_about_the_radial_gradient() {
     assert!(
         (sn - dn).abs() < 0.01 * sn.abs(),
         "the same current should make the same radial gradient: spm {sn}, dfn {dn}"
+    );
+}
+
+/// Resistance growth does not reach a diffusion gradient — except through one rounding
+/// step, which this names rather than hides. **Capacity does** reach it, properly.
+///
+/// [`sim_core::CellModel::surface_gap`] takes no `eff_r0_factor` where its siblings do, on
+/// the argument that the factor would reach only `m_ref` and `r_contact` while a gradient
+/// is set by diffusion and a flux boundary. An argument a function does not take cannot be
+/// perturbed, so this test stands in for that perturbation.
+///
+/// # The gradient is not bit-identical, and the reason is worth knowing
+/// A 30 % spread in `R0` leaves the *negative* electrode's gap bit-for-bit unchanged and
+/// moves the positive's by **one ULP**. Not through the physics: through
+/// [`sim_core::Pack`]'s own current reconstruction. A parallel group solves its node
+/// voltage as `V = (Σ E/R − I) / Σ(1/R)` and then hands each cell `I_k = (E_k − V) / R_k`,
+/// which for a single cell is algebraically the current that went in and in floating point
+/// is `(E − (E − I·R))/R` — exact in real arithmetic, off by a bit in this one. That
+/// one-bit difference in `i_last` then propagates differently through two electrodes with
+/// different radii and diffusivities, which is why it survives in one and cancels in the
+/// other.
+///
+/// So the bound is 8 ULP rather than equality, and the assertion below it is the one that
+/// makes the claim mean something: the difference must be *at* rounding scale and not
+/// merely small.
+///
+/// # Why the second half is not decoration
+/// `eff_capacity_ah` **does** enter, through `κ` — how much active material a cell holds
+/// decides what flux a given current is. Without this half, the test would pass equally on
+/// a `surface_gap` that ignored its cell entirely and returned a constant.
+#[test]
+fn resistance_growth_cannot_reach_the_gradient_but_capacity_can() {
+    let scatter = |capacity_sigma, r0_sigma| Scatter {
+        capacity_sigma,
+        r0_sigma,
+    };
+    let mut plain = pack(SPM, 1.0);
+    let mut resistive = scattered_pack(SPM, 1.0, scatter(0.0, 0.30));
+    let mut smaller = scattered_pack(SPM, 1.0, scatter(0.30, 0.0));
+    for p in [&mut plain, &mut resistive, &mut smaller] {
+        let _ = run(p, I_3C, 2.0, 60);
+    }
+
+    let (a, b) = (gap(&plain), gap(&resistive));
+    let ulps = |x: f64, y: f64| (x.to_bits() as i64 - y.to_bits() as i64).abs();
+    assert!(
+        ulps(a.0, b.0) <= 8 && ulps(a.1, b.1) <= 8,
+        "a 30 % spread in R0 must not move a concentration gradient beyond rounding: \
+         {a:?} vs {b:?} ({} and {} ulp)",
+        ulps(a.0, b.0),
+        ulps(a.1, b.1)
+    );
+    // Rounding scale, not merely "small" — this is what says the R0 factor reached the
+    // gradient through arithmetic and not through the physics.
+    assert!(
+        (a.0 - b.0).abs() < 1.0e-15 && (a.1 - b.1).abs() < 1.0e-15,
+        "and the residual must be at the last bit: {a:?} vs {b:?}"
+    );
+
+    let c = gap(&smaller);
+    assert!(
+        (a.0 - c.0).abs() > 1.0e-6,
+        "but a 30 % spread in capacity must move it, or this proves nothing: {a:?} vs {c:?}"
     );
 }
 

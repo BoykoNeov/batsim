@@ -990,11 +990,29 @@ const READOUTS = [
     (m, f, cells) => {
       const c = cells?.cells?.[0];
       if (!c || c.surface_gap_neg === null || c.surface_gap_neg === undefined) return null;
-      return `${(c.surface_gap_neg * 100).toFixed(2)} / ${(c.surface_gap_pos * 100).toFixed(2)} pts`;
+      return `${gapPts(c.surface_gap_neg, 2)} / ${gapPts(c.surface_gap_pos, 2)} pts`;
     },
     "circuit — no electrodes",
   ],
 ];
+
+/**
+ * A surface gap in points of state of charge, with negative zero spelled `0.00`.
+ *
+ * The guard is not cosmetic and it is not a tolerance. A uniform particle does not read a
+ * hard zero — it reads about `-1.11e-16`, because the bulk side of the difference goes
+ * through a volume-weighted mean that sums and divides while the surface side returns the
+ * outermost shell untouched. `toFixed` on that gives **`-0.00`**, and a minus sign in
+ * front of a fresh cell's reading claims a direction the number does not have.
+ *
+ * The threshold is exactly the last digit printed, so nothing that would have shown a
+ * non-zero digit is touched: below it the display already said `0.00`, and all this
+ * decides is which zero.
+ */
+function gapPts(x, dp) {
+  const v = x * 100;
+  return (Math.abs(v) < 0.5 * 10 ** -dp ? 0 : v).toFixed(dp);
+}
 
 const readoutEls = new Map();
 {
@@ -1289,8 +1307,11 @@ function renderCellDetail() {
   // Absent on an equivalent circuit rather than printed as zero: a circuit has no
   // electrodes, and a row reading "0.00 pts" would say "measured, and flat".
   if (c.surface_gap_neg !== null && c.surface_gap_neg !== undefined) {
-    parts.push(`surface gap − ${(c.surface_gap_neg * 100).toFixed(3)} pts`);
-    parts.push(`surface gap + ${(c.surface_gap_pos * 100).toFixed(3)} pts`);
+    // "neg"/"pos" and not the − / + signs this first used: rendered, `surface gap −
+    // 0.000 pts` reads as a gap of *minus* zero rather than as the negative electrode's,
+    // which is the one misreading this field cannot afford — its sign is its meaning.
+    parts.push(`surface gap neg ${gapPts(c.surface_gap_neg, 3)} pts`);
+    parts.push(`surface gap pos ${gapPts(c.surface_gap_pos, 3)} pts`);
   }
   if (c.internal_short_conductance_s > 0) {
     parts.push(`internal short ${(1 / c.internal_short_conductance_s).toFixed(2)} Ω`);
@@ -2863,7 +2884,7 @@ const LESSONS = [
       "Two numbers because there are two electrodes, and they are not interchangeable. The same file and the same 15.459594 A as step 15 — this time run all the way to the cut-off, and then left to rest for half an hour.",
     ],
     expect:
-      "Both numbers read **0.00 / 0.00** before you press Run, which is a true zero rather than a missing one: a cell that has never been asked for a current has a uniform particle and no gradient anywhere, and the zero-length probe that fills these readouts does not move it. Then watch the two numbers do completely different things. The **negative** electrode's gap climbs to about 5.8 points and then simply stops: 5.74 at 200 s, 5.80 at 400 s, and **5.81 for the entire remaining eleven minutes of the discharge**. It has reached a steady state — lithium is leaving the surface exactly as fast as diffusion resupplies it, and the gradient that balances those two does not care how long you hold it. The **positive** electrode never gets there. It goes 26.46 points at 200 s, 32.07 at 400, 34.79 at 600, 36.23 at 800, **37.18 when the run reaches 2.4953 V at 1060 s** — still climbing when the cell dies, and more than six times the negative's. Same cell, same current, same instant. The reason is two numbers from Chen2020 that are not placeholders: a particle's diffusion time is its radius squared over its diffusivity, which is **1040 s** for the negative and **6812 s** for the positive. The negative electrode has time to settle inside an eighteen-minute discharge and the positive does not. Now the rest leg, and this is the part worth waiting for. The voltage snaps back — 2.4953 V to **3.3380 V by 600 s of rest**, which is 98.3 % of everything it will ever recover. If you were reading the voltage you would call the cell settled. The gaps say otherwise: at that same instant the negative reads **0.00** and the positive still reads **3.08 points**. One electrode is finished and the other is not, and the trace has no way to tell you. Keep going and the last of it comes back exactly as the positive's gradient drains — 1.26 points and 3.3467 V at 900 s, **0.09 points and 3.3523 V when the run stops at 2860 s**. The final 14.7 mV of that rebound takes twenty minutes to arrive and it is *entirely* one electrode still levelling out. Two footnotes. The `soc (true)` row does not move by one digit through the whole rest — 11.7 % from the cut-off to the mark — because resting moves no charge; everything on this screen that changed was lithium rearranging itself inside particles that already held it. And the pack grid's metric menu has gained these two as well, which is only useful on a pack with more than one cell: this one is 1S1P, so the grid is a single tile and the readout row is where the number lives.",
+      "Both numbers read **0.00 / 0.00** before you press Run, beside 3.927 V and 100.0 %. That is a true zero and not a missing one: a cell that has never been asked for a current has a uniform particle and no gradient anywhere, and the zero-length probe that fills these readouts does not move it. Then watch the two numbers do completely different things. The **negative** electrode's gap climbs and then simply stops — 4.77 points after the first minute and a half, 5.67 at three minutes, 5.80 at six, and **5.81 for the whole remaining twelve minutes of the discharge**, not moving in the second decimal. It has reached a steady state: lithium is leaving the surface exactly as fast as diffusion resupplies it, and the gradient that balances those two does not care how much longer you pull. The **positive** electrode never gets there. 16.66 points at the same first sample, 24.70 at three minutes, 30.19 at six, 33.88 at nine, 36.12 at thirteen, and **37.14 by the end of the discharge** — still climbing when the cell dies, and more than six times the negative's. Same cell, same current, same instant. The reason is two numbers from Chen2020 that are not placeholders: a particle's diffusion time is its radius squared over its diffusivity, which is **1040 s** for the negative and **6812 s** for the positive. The negative electrode has time to settle inside an eighteen-minute discharge and the positive does not. Now the rest leg, and this is the part worth waiting for. The voltage snaps back hard. By the time the **negative gap first reads 0.00** the terminal is at **3.323 V** — and 3.352 V is all it will ever reach, so about **97 % of the rebound is already over**. If you were reading the voltage you would call this cell settled. The positive gap at that same moment is **6.74 points**. One electrode is finished, the other is nowhere near it, and the trace has no way to tell you. From there the last of the voltage comes back exactly as the positive's gradient drains: 3.60 points and 3.336 V, then 3.06 and 3.340, and **0.09 points and 3.352 V when the run stops**. That final 29 mV takes twenty minutes of simulated time to arrive and it is *entirely* one electrode still levelling out. Four footnotes, and the first is about this panel rather than the cell. **These two numbers are sampled four times a second while everything else is redrawn every frame**, so at 200× they step in jumps of roughly fifty simulated seconds and the exact peak flashes past between samples — and at the instant the load comes off you can catch the voltage already rebounding while the gap still shows its value from under load. Do not read a gap and a voltage from the same glance as if they were simultaneous. Second: `soc (true)` does not move by one digit through the entire rest, sitting at 11.7 % from the cut-off to the mark, because resting moves no charge — everything that changed on this screen was lithium rearranging itself inside particles that already held it. Third, hover the single tile for the same two numbers at three decimals, and note the pack grid's metric menu has gained both; that menu is only useful on a pack with more than one cell, and this one is 1S1P, which is why the readout row is where the number lives. And do not press Run expecting more rest — this is a *pulse train*, the mark sits exactly on the end of the first cycle, and the clock has come round to the start of a second 3 C discharge.",
   },
   {
     id: "one-step-that-got-through",
