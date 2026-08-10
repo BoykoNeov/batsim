@@ -398,6 +398,27 @@ Three things the walk changed:
   − 0.000 pts` reads as a gap of *minus zero* rather than as the negative electrode's — the
   one misreading this field cannot afford, since its sign is its meaning. Now `neg`/`pos`.
 
+### The step-19 wedge is pre-existing — measured this time, not carried over
+
+This plan asserted "it already wedged at `HEAD~1`, so nothing here creates it." That was
+true when written and stopped being a claim this slice could lean on the moment it inserted
+a step in front of that one and changed both `paintGrid` and the readout signature. So it
+was re-measured:
+
+* **After this slice**, the walk gets through steps 1–18 — every one answering, including
+  the new 17 — and the page stops responding to CDP evaluates on the transition **into step
+  19**, and never recovers (checked again at +5 s and +15 s).
+* **The scenario is not the cause.** Loading `external_short_100_milliohm.toml` directly
+  over the in-page engine, with no guided path at all, runs cleanly: 88 A through the short,
+  the contactor opening, thirteen simulated minutes, no wedge. It is the *step entry*.
+* **A worktree at `aa22c2d`** — the commit before this slice, served on its own port with
+  its own 18-lesson page — wedges on **exactly the same transition**, entering *its* last
+  step from the one before. Same lesson, same symptom, different number.
+
+So the wedge belongs to that lesson's entry path and not to this slice. It is still
+unattributed and still worth a slice of its own; what changed is that "pre-existing" is now
+a measurement rather than an inheritance.
+
 The metric guard was exercised on the crossing it exists for — a porous scenario with
 `surface_gap_pos` selected, then a pack of equivalent circuits. The selector falls back to
 `soc`, both options hide, the row reads "circuit — no electrodes", the tooltip omits the
@@ -418,6 +439,24 @@ before writing it up is the difference between reporting a hole and re-reporting
 this slice adds is only that the new field inherits the blindness rather than escaping it:
 byte-identical telemetry in the previous anchor, flags `0x1400`, and the 1S1P SPM case holds
 3.4995 V and a smooth decaying gap through the same leg.
+
+## The exit criterion, met — with its last clause qualified
+
+Met: `CellView` reports the gap on both electrodes for both porous models and `None` for the
+equivalent circuit; the pack grid colours by it and **hides** it rather than faking it on an
+ECM pack (verified on the crossing, with the animation loop still alive afterwards); and a
+reader who runs the new step sees the numbers above, all of them read off the panel.
+
+**Not met as written: "and the whole path walked forward and back."** What was actually
+walked is step 17 forward, and back from 17 into 16 and 15 — and the forward pass was not a
+real one either, because the driver paused every step to skip its mark, so no step but 17
+ran to completion. Steps 18 and 19 were entered only by the wedge measurement above. The
+renumbering is separately safe: every absolute `step N` reference in the page's prose points
+at 15 or below, which was checked by grep rather than by reading.
+
+Qualified here rather than quietly dropped, on `dfn-scenario.md`'s precedent — and the
+honest version of the criterion for a slice that adds one step is "that step, both
+directions", which is what the next one should say.
 
 ## Versions, as built
 
