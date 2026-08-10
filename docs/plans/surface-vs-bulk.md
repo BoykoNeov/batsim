@@ -161,21 +161,48 @@ Read a constant's doc before paying a planned bump. Third time.
   "the panel's precision is not the engine's" recurring.
 * `web/pkg` rebuilt. Any Rust change requires it; this one is load-bearing.
 
-## Part D — one lesson
+## Part D — one lesson, and it must be a `Pulse` step
 
 A new guided-path step, inserted after the current 16 (renumbering 17 and 18 to 18 and 19 —
-note that the step that wedges the CDP harness becomes **19**, and it was already failing
-at `HEAD~1`, so nothing here creates it).
+the step that wedges the CDP harness becomes **19**, and it already wedged at `HEAD~1`, so
+nothing here creates it). Verified safe to insert there: every absolute `step N` reference in
+`web/app.js`'s prose points at 1–15, so none of them shifts.
 
-The step runs the 3C SPM scenario to its cut-off, then rests. The reader sees the panel
-report a cell with charge left that will not deliver it, watches the positive-electrode gap
-at **0.372** at the cut-off, and watches it reach **0.000** — with the terminal voltage
-recovering as it goes. The rebound `spm-scenario.md` had the reader *infer* becomes the
-thing on the screen.
+The lesson is the rebound `spm-scenario.md` had the reader *infer*: discharge to the
+cut-off, rest, watch the gap collapse and the voltage come back with it.
+
+**That is two demand phases, and a step record carries exactly one `demand`.** Written as
+two steps it would break: the rest step's whole claim is about state inherited from its
+predecessor, and `applyStep`'s reload rule reloads on `$("scenario").value !== L.scenario` —
+so arriving by **Back** from step 19 (a different scenario) rebuilds a fresh pack at t = 0
+and the step's own number is zero. That is `spm-scenario.md`'s recorded inequality — a
+reload rule that only holds one direction — recurring in a new place.
+
+**So the step uses `Pulse`**, the demand mode the SPM slice added, with a single long leg:
+`{ mode: "Pulse", value: 15.459594, on_s: 1060, off_s: 600 }`, `reload: true`, mark at the
+end of the rest leg. One step, one demand record, both phases, and correct arriving from
+either direction — `Pulse`'s leg is a function of `sim_time_s`, so it needs no inherited
+state at all.
 
 The SPM arm, not the DFN, because measurement 4 says the gap is the same in both and the
-SPM step is 200× cheaper. Every number in the `expect` block gets read off the panel, twice,
-over two transports — `dfn-scenario.md`'s cross-check.
+SPM step is 200× cheaper.
+
+**Every number below is the spike's prediction, taken from the native API at `dt = 2`, and
+is to be replaced by the panel reading before this step ships.** Writing "what you will
+see" from reasoning has been wrong three times in this repo's own record, and once in a
+neighbouring shape (a status line reasoning about a frame from the previous demand). The
+predictions: positive-electrode gap **0.372** at the cut-off, **0.000** by the end of a
+600 s rest; negative **0.058** → **0.000**.
+
+## Part C addendum — the headline needs a surface that paints without interaction
+
+On a 1S1P pack the grid is **one square**, a lesson cannot instruct "hover cell (0,0)", and
+a hover cannot be reliably CDP-driven under `--headless=new`, where rAF does not fire and
+one screenshot is one frame. So the metric entry and the tooltip are right for multi-cell
+packs and **cannot carry this lesson**.
+
+The gap therefore also gets a `#readouts` line — which is where the precision lives anyway,
+the panel's SOC readout being 1 dp against a 0.058 effect.
 
 ## Verification
 
@@ -223,5 +250,10 @@ over two transports — `dfn-scenario.md`'s cross-check.
 `CellView` reports a surface-vs-bulk gap on both electrodes for both porous models and
 `None` for the equivalent circuit; the pack grid can colour by it and hides it rather than
 faking it on an ECM pack; and a reader who runs the new step sees a 3C SPM cell stop at
-0.372 of positive-electrode gap and watches that number reach 0.000 while the voltage comes
-back — every quoted number read off the panel, and the whole path walked forward and back.
+a positive-electrode gap the spike predicts at **0.372** and watches it reach **0.000**
+while the voltage comes back — with both figures **replaced by the panel's own reading**
+before this criterion is called met, and the whole path walked forward and back.
+
+The two predicted numbers are the criterion's only unmeasured content, and they are marked
+as such deliberately: `dfn-scenario.md` qualified an unmet clause on its own criterion
+rather than two hundred lines above it, and this does the same for an unread one.
