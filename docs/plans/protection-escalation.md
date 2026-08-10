@@ -139,6 +139,13 @@ t = 235 s is the model's hole, not the pack's energy. Step 10 already points at 
 charging half of the same hole, so this is the second face of a defect the path already
 admits to.
 
+> **Amended by `energy-hole.md`.** The two faces have since parted company. The
+> *charging* half is fixed — refused charge is dissipated at `OCV(1.0)` and step 10's
+> prose was rewritten — while the **discharge half above is still exactly as described**,
+> and is now *reported* rather than merely admitted to: `Telemetry::i_rejected_a` is
+> positive throughout that tail and a property test pins the fabricated energy to it.
+> Nothing in this section's measurements moved; the low clamp adds no heat, by decision.
+
 ### D: the reset seam, and why it is a two-step
 
 ```

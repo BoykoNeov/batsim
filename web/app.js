@@ -45,8 +45,14 @@ function clearBanner() {
  *
  * Raised when the page starts *calling* something new, not every time the constant
  * moves: v3 added `Sim::sensors`, which the BMS panel below requires.
+ *
+ * v4 is a *field* rather than a method — `Telemetry::i_rejected_a`, which the readout
+ * and the current plot both read. A v3 bundle serialises no such field, so the page
+ * would get `undefined` and throw `TypeError` from inside a render path: precisely the
+ * unhelpful symptom the paragraph below describes, and the reason the rule is about
+ * what the page consumes rather than about method names specifically.
  */
-const WASM_API_MIN = 3;
+const WASM_API_MIN = 4;
 
 let wasm = null;
 try {
@@ -868,6 +874,7 @@ const history = {
   v_cell_max: [],
   i_actual: [],
   i_internal_short_a: [],
+  i_rejected_a: [],
   soc_true: [],
   soc_bms: [],
   t_min: [],
@@ -890,6 +897,7 @@ function record(frame) {
   history.v_cell_max.push(m.v_cell_max);
   history.i_actual.push(m.i_actual);
   history.i_internal_short_a.push(m.i_internal_short_a);
+  history.i_rejected_a.push(m.i_rejected_a);
   history.soc_true.push(m.soc_true * 100);
   // `null` stays `null`: no BMS means no estimate, and the line must break rather than
   // dive to zero.
@@ -923,6 +931,23 @@ const READOUTS = [
   ["soh res", (m) => `${m.soh_resistance.toFixed(4)} ×`],
   ["balancing", (m) => `${m.q_balancing_w.toFixed(3)} W`],
   ["short (int)", (m) => `${m.i_internal_short_a.toFixed(3)} A`],
+  // Quiet on the overwhelming majority of steps, on the same terms as `soc (bms)`
+  // above: a row that reads "0.000 A" for an entire ordinary run teaches nothing, and
+  // this one has something to say only at a clamp. Hence the third element — the
+  // placeholder for "nothing to report", which for `soc (bms)` is "no BMS" and here is
+  // "none"; before this row existed the renderer had only the one hardcoded label.
+  //
+  // The direction is spelled out because the sign convention alone does not carry it:
+  // charge going *in* and being refused is the overcharge case, and it is the one that
+  // makes heat.
+  [
+    "clamp",
+    (m) =>
+      m.i_rejected_a === 0
+        ? null
+        : `${m.i_rejected_a < 0 ? "refused" : "invented"} ${Math.abs(m.i_rejected_a).toFixed(3)} A`,
+    "none",
+  ],
 ];
 
 const readoutEls = new Map();
@@ -939,11 +964,15 @@ const readoutEls = new Map();
 }
 
 function renderReadouts(telemetry, facts) {
-  for (const [key, fn] of READOUTS) {
+  // `quiet` is what a row shows when its formatter has nothing to report on a *running*
+  // pack, as distinct from the em dash that means "no telemetry yet". It defaulted to
+  // "no BMS" back when `soc (bms)` was the only formatter that could return null; the
+  // `clamp` row can too, and "no BMS" is not what an absent clamp means.
+  for (const [key, fn, quiet = "no BMS"] of READOUTS) {
     const el = readoutEls.get(key);
     const value = telemetry ? fn(telemetry, facts) : null;
     if (value === null || value === undefined) {
-      el.textContent = telemetry ? "no BMS" : "—";
+      el.textContent = telemetry ? quiet : "—";
       el.className = "v none";
     } else {
       el.textContent = value;
@@ -1846,6 +1875,11 @@ function draw() {
   drawPanel($("plot-i"), "current (discharge +)", "A", history.t, [
     { label: "pack", color: "#2ee6a8", values: history.i_actual },
     { label: "int. short", color: "#ff6b6b", values: history.i_internal_short_a },
+    // Charge that crossed the terminals and changed nobody's stored charge. It sits at
+    // zero for an ordinary run and rises to meet the pack trace once a cell is against
+    // a SOC clamp — negative while an overcharge is being refused, positive while an
+    // empty cell is sourcing charge it does not have.
+    { label: "refused", color: "#b48ead", values: history.i_rejected_a },
   ]);
   drawPanel(
     $("plot-soc"),
@@ -2531,7 +2565,7 @@ const LESSONS = [
       "The arithmetic is the plateau from step 1, read from the charging end: this file's open-circuit curve tops out at 3.60 V, its resistance is about 21 mΩ, and 0.5 C is 1.15 A — so 3.60 + 0.024 never reaches 3.65. **This cell fills up before it reaches its voltage limit**, which leaves the constant-voltage leg with nothing to do.",
     ],
     expect:
-      "A voltage trace that flattens against a ceiling it never touches, and a status line that says `constant current` for the whole run. Two honest caveats. First, this is this parameter set's behaviour and not a claim about LFP cells: real ones are charged CC-CV to 3.65 V, and both numbers that decide it here — where the OCV table ends, how large R0 is — are hand-fitted values the chemistry file labels as such. Second, look at what happens *after* the flag: the charge counter stops but the current does not, because this engine models no overcharge chemistry and the energy simply goes nowhere. That is a hole in the model, left visible rather than papered over with an automatic stop. The next step is the same situation with a BMS in the way, which is what actually prevents it.",
+      "A voltage trace that flattens against a ceiling it never touches, and a status line that says `constant current` for the whole run. Two honest caveats. First, this is this parameter set's behaviour and not a claim about LFP cells: real ones are charged CC-CV to 3.65 V, and both numbers that decide it here — where the OCV table ends, how large R0 is — are hand-fitted values the chemistry file labels as such. Second, look at what happens *after* the flag: the charge counter stops but the current does not — and the charge that no longer fits is now **refused and burnt**, which it did not used to be. The `clamp` readout starts saying `refused 1.150 A`, and `heat` steps from 0.041 W to 4.181 W: a hundredfold, because 1.15 A at this cell's 3.60 V open-circuit ceiling is 4.14 W of side reaction against 41 mW of ohmic loss. Watch the entry step at 5769 s, where it reads `refused 0.822 A` rather than the full 1.15 — only the part that did not fit. The temperature still does not move, and that is this scenario being isothermal rather than the heat being fictional: heat is reported, never integrated. Give a pack a thermal network and this term is what makes an unprotected overcharge dangerous. The next step is the same situation with a BMS in the way, which is what actually prevents it.",
   },
   {
     id: "what-protection-costs",

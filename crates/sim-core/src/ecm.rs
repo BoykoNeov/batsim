@@ -367,7 +367,15 @@ impl CellModel {
         eff_r0_factor: f64,
         eff_capacity_ah: f64,
         soh_capacity: f64,
-    ) -> EventFlags {
+    ) -> Advanced {
+        // Only the equivalent circuit can reject charge, so only its arm carries a
+        // non-zero amount out. The porous-electrode arms are wrapped here rather than
+        // each growing a return type, which keeps `spm::advance`/`dfn::advance`
+        // answering exactly what they answered before.
+        let no_rejection = |flags| Advanced {
+            flags,
+            rejected_as: 0.0,
+        };
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
                 advance_cell(s, chem, i, dt, eff_capacity_ah, soh_capacity)
@@ -376,20 +384,25 @@ impl CellModel {
             // makes the split meaningful to the equivalent circuit. A single-particle
             // cell wants only their product: it has no SOC scale to preserve, just an
             // amount of lithium the geometry has to be reconciled against.
-            CellModel::Spm(s) => chem.spm.as_ref().map_or(EventFlags::empty(), |spm| {
-                spm::advance(s, spm, i, dt, eff_capacity_ah * soh_capacity)
-            }),
-            CellModel::Dfn(s) => Self::dfn_params(chem).map_or(EventFlags::empty(), |(spm, d)| {
-                dfn::advance(
-                    s,
-                    spm,
-                    d,
-                    i,
-                    dt,
-                    eff_r0_factor,
-                    eff_capacity_ah * soh_capacity,
-                )
-            }),
+            CellModel::Spm(s) => {
+                no_rejection(chem.spm.as_ref().map_or(EventFlags::empty(), |spm| {
+                    spm::advance(s, spm, i, dt, eff_capacity_ah * soh_capacity)
+                }))
+            }
+            CellModel::Dfn(s) => no_rejection(Self::dfn_params(chem).map_or(
+                EventFlags::empty(),
+                |(spm, d)| {
+                    dfn::advance(
+                        s,
+                        spm,
+                        d,
+                        i,
+                        dt,
+                        eff_r0_factor,
+                        eff_capacity_ah * soh_capacity,
+                    )
+                },
+            )),
         }
     }
 }
@@ -582,31 +595,64 @@ pub fn rc_update(v_rc: f64, i: f64, r_ohms: f64, c_farad: f64, dt: f64) -> f64 {
     }
 }
 
+/// What one coulomb-counting step did, including the charge it could not account for.
+///
+/// The third field is the whole reason this is a struct rather than a pair: a clamped
+/// step moves less charge than the current that produced it implies, and the difference
+/// has to leave this function or it is destroyed silently (see
+/// `docs/plans/energy-hole.md`).
+#[derive(Clone, Copy, Debug)]
+pub struct CoulombStep {
+    /// New state of charge, clamped to \[0, 1\].
+    pub soc: f64,
+    /// Charge \[As, discharge-positive\] that crossed the terminals over this step
+    /// without changing the stored charge.
+    ///
+    /// Exactly `0.0` on any step that did not clamp. **Negative** at the upper clamp
+    /// (charge pushed in and refused) and **positive** at the lower one (charge
+    /// delivered that the cell did not have), so that
+    /// `stored change = −(i − i_rejected)·dt / capacity_as` holds through a clamp as
+    /// well as away from one.
+    ///
+    /// This is the *rejected fraction*, not the whole step's charge: on the step where
+    /// a clamp is first entered only part of the current is refused, and reporting the
+    /// whole of it would be wrong at every clamp entry while still passing every
+    /// tolerance in the suite.
+    pub rejected_as: f64,
+    /// `SOC_CLAMPED_HIGH`/`_LOW` when the raw update ran past a bound.
+    pub flags: EventFlags,
+}
+
 /// Coulomb-counting SOC advance over `dt` seconds.
 ///
-/// `soc' = soc − I·dt / (3600·capacity_ah·soh_capacity)`, clamped to \[0, 1\].
-/// Returns the new SOC and a flag set (`SOC_CLAMPED_HIGH`/`_LOW`) when the raw
-/// update ran past a bound.
+/// `soc' = soc − I·dt / (3600·capacity_ah·soh_capacity)`, clamped to \[0, 1\], plus the
+/// charge that clamping refused or invented — see [`CoulombStep`].
 #[must_use]
-pub fn coulomb_step(
-    soc: f64,
-    i: f64,
-    dt: f64,
-    capacity_ah: f64,
-    soh_capacity: f64,
-) -> (f64, EventFlags) {
+pub fn coulomb_step(soc: f64, i: f64, dt: f64, capacity_ah: f64, soh_capacity: f64) -> CoulombStep {
     let capacity_as = 3600.0 * capacity_ah * soh_capacity; // amp-seconds
     let raw = soc - i * dt / capacity_as;
-    let mut flags = EventFlags::empty();
     if raw > 1.0 {
-        flags |= EventFlags::SOC_CLAMPED_HIGH;
-        return (1.0, flags);
+        return CoulombStep {
+            soc: 1.0,
+            // Negative: the refused charge was flowing *in*. `(raw − 1)` is the
+            // fraction of the cell's capacity that did not fit.
+            rejected_as: -(raw - 1.0) * capacity_as,
+            flags: EventFlags::SOC_CLAMPED_HIGH,
+        };
     }
     if raw < 0.0 {
-        flags |= EventFlags::SOC_CLAMPED_LOW;
-        return (0.0, flags);
+        return CoulombStep {
+            soc: 0.0,
+            // Positive: the cell sourced this much charge out of nothing.
+            rejected_as: -raw * capacity_as,
+            flags: EventFlags::SOC_CLAMPED_LOW,
+        };
     }
-    (raw, flags)
+    CoulombStep {
+        soc: raw,
+        rejected_as: 0.0,
+        flags: EventFlags::empty(),
+    }
 }
 
 /// Solve the operating current \[A\] for a [`Demand`] against a single Thévenin
@@ -655,6 +701,25 @@ pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f
     (e, r)
 }
 
+/// What advancing one cell by a step produced, beyond the state change itself.
+///
+/// Two fields because the pack needs both and neither is derivable from the other: the
+/// flags it merges into its own set, and the charge the cell could not account for,
+/// which the pack turns into heat and reports as
+/// [`crate::Telemetry::i_rejected_a`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Advanced {
+    /// Flags raised by the advance (currently the SOC clamps).
+    pub flags: EventFlags,
+    /// Charge \[As, discharge-positive\] that crossed the terminals without changing
+    /// stored charge. See [`CoulombStep::rejected_as`].
+    ///
+    /// Always `0.0` for `Spm` and `Dfn`, and that is physics rather than a stub: a
+    /// porous-electrode cell never discards the lithium it was pushed, so there is
+    /// nothing for it to reject. See [`crate::spm::advance`].
+    pub rejected_as: f64,
+}
+
 /// Advance one cell's internal state by `dt` seconds under the current `i`
 /// \[A, discharge-positive\] that the pack solve assigned it.
 ///
@@ -675,12 +740,15 @@ pub(crate) fn advance_cell(
     dt: f64,
     eff_capacity_ah: f64,
     soh_capacity: f64,
-) -> EventFlags {
+) -> Advanced {
     for (k, v_rc) in state.v_rc.iter_mut().enumerate() {
         let pair = chem.rc[k];
         *v_rc = rc_update(*v_rc, i, pair.r_ohms, pair.c_farad, dt);
     }
-    let (soc_new, flags) = coulomb_step(state.soc, i, dt, eff_capacity_ah, soh_capacity);
-    state.soc = soc_new;
-    flags
+    let step = coulomb_step(state.soc, i, dt, eff_capacity_ah, soh_capacity);
+    state.soc = step.soc;
+    Advanced {
+        flags: step.flags,
+        rejected_as: step.rejected_as,
+    }
 }

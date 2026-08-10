@@ -277,6 +277,37 @@ pub struct Telemetry {
     /// `i_actual − i_external_short_a`. The dissipation is outside the pack, so like
     /// the load's share it is already inside `v_terminal · i_actual`.
     pub i_external_short_a: f64,
+    /// Current \[A, discharge-positive\] that crossed the terminals this step without
+    /// changing any cell's stored charge, summed over cells.
+    ///
+    /// Exactly zero on almost every step. It is non-zero only while an
+    /// **equivalent-circuit** cell is against a SOC clamp, and it is the term that
+    /// makes charge conservation writable there:
+    ///
+    /// ```text
+    /// ∫(S·i_actual + i_internal_short_a − i_rejected_a) dt = 3600 · Δ(stored charge)
+    /// ```
+    ///
+    /// summed over every cell, with `S` the series count — each of the `S` groups
+    /// carries the terminal current, while this field and `i_internal_short_a` are
+    /// already per-cell sums.
+    ///
+    /// **Negative at the top of the window**: charge was pushed into a full cell and
+    /// refused. That charge is not lost — its energy is dissipated by side reactions
+    /// and is already inside [`Self::q_gen_w`] at `OCV(1.0)·i_rejected_a`, which is
+    /// what makes an unprotected overcharge heat up.
+    ///
+    /// **Positive at the bottom**: the cell delivered charge it did not have. That
+    /// energy is *fabricated*, and unlike the overcharge case nothing here corrects
+    /// it — burning it as negative heat would cool a cell that is being over-drained
+    /// and suppress the runaway physics. This field is how much the model lied by, and
+    /// `sim-core`'s own property tests pin the residual to `OCV(0.0)` × it rather than
+    /// letting it hide. See `docs/plans/energy-hole.md`.
+    ///
+    /// A porous-electrode cell (`Spm`, `Dfn`) never rejects charge — it keeps the
+    /// lithium it was pushed — so this stays zero on such a pack even while
+    /// `SOC_CLAMPED_HIGH` is raised.
+    pub i_rejected_a: f64,
     /// How many passes the pack's current solve took this step.
     ///
     /// **Exactly `1` on any pack whose cells are all linear**, which is every pack

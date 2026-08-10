@@ -855,6 +855,17 @@ It is not slice D's: it is a change to `coulomb_step`/`cell_heat_w`, the most
 golden-tested path in the tree, and it is a cell-model fix wearing a runaway costume. It
 wants its own commit and its own goldens re-check.
 
+> **Closed, on the charging side, by `docs/plans/energy-hole.md`** — its own commit and
+> its own goldens re-check, as this paragraph asked for. The shape is the one named here:
+> the rejected *fraction*, never a boolean, dissipated at `OCV(1.0)`. Two things this
+> paragraph did not anticipate. The heat is **not a correction but the dominant term** —
+> 41.6× everything the engine reported, on a 1C overcharge — so this scenario's own
+> `CHARGE_A` had to be re-derived from −60 A to −9 A to keep its control between onset
+> and vent. And the **discharge half was deliberately left open**: the term that would
+> close it is a *cooling* one, which would feed the thermal network a wrong-signed drive
+> and suppress the very runaway this slice built. It is reported through
+> `Telemetry::i_rejected_a` and pinned by a property test instead.
+
 ### Perf: what slice D added to the hot loop, for slice E to measure
 
 - **One comparison per cell per step** (`t >= onset_k`) during the temperature-gathering

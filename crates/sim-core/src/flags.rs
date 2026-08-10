@@ -17,8 +17,21 @@ bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
     pub struct EventFlags: u32 {
         /// SOC hit the upper clamp (1.0): an over-charge attempt was truncated.
+        ///
+        /// **This flag means two different things depending on the cell model, and
+        /// the difference is not guessable from the name.** For an equivalent
+        /// circuit, state really was discarded: the charge is gone from the coulomb
+        /// count, and [`crate::Telemetry::i_rejected_a`] says how much. For a
+        /// porous-electrode cell (`Spm`, `Dfn`) nothing is discarded — the particle
+        /// keeps the lithium it was pushed and the flag reports only that the *SOC
+        /// readout* has run past its window, so `i_rejected_a` stays zero. See
+        /// [`crate::spm::advance`].
         const SOC_CLAMPED_HIGH = 1 << 0;
         /// SOC hit the lower clamp (0.0): an over-discharge attempt was truncated.
+        ///
+        /// Same model-dependent split as [`Self::SOC_CLAMPED_HIGH`], and on the
+        /// equivalent circuit the truncation runs the other way: the cell delivered
+        /// charge it did not have. [`crate::Telemetry::i_rejected_a`] measures it.
         const SOC_CLAMPED_LOW  = 1 << 1;
         /// Over-voltage: a group voltage exceeded the chemistry's `v_max`.
         const OV               = 1 << 2;

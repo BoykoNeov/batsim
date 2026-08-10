@@ -43,6 +43,16 @@ judgement call, so the right-hand column is the thing to run if you doubt a row.
 | 6 | the `Spm` porous-electrode cell model — radial solid diffusion, Butler–Volmer kinetics, a nonlinear pack solve, and an extracted LG M50 parameter set | `sim-data/tests/spm_golden.rs`, `spm_exact_bits.rs`, `sim-core/tests/spm_cell.rs` |
 | 7 | the `Dfn` cell model — electrolyte transport solved rather than assumed, an analytic banded Jacobian, and a pack tangent taken as a sensitivity solve | `sim-data/tests/dfn_golden.rs`, `dfn_cell.rs`, `dfn_chemistry.rs` |
 
+Work continues past the phase plan. The most recent is a cell-model fix Phase 3 found
+and deliberately deferred: charge pushed into a cell already at 100 % SOC used to vanish —
+not stored, and generating no heat beyond `I²R0`. It is now refused and dissipated at the
+top of the OCV curve, reported through `Telemetry::i_rejected_a`, and it turns out to
+dominate rather than correct: on a 1C overcharge it is **41× everything the engine
+previously reported**. The over-*discharge* mirror — an empty cell that keeps sourcing at
+`OCV(0)` — is deliberately still open, because the term that would close it is a cooling
+one; it is reported and pinned by a property test instead of being burnt.
+See [`docs/plans/energy-hole.md`](docs/plans/energy-hole.md).
+
 Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
 LG M50 21700. Every constant in them carries a provenance note, **including the ones
 whose note says they are order-of-magnitude placeholders awaiting a fit**; that is the

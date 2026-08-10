@@ -6,8 +6,11 @@
 //!
 //! 1. `bms: None`, so the demand passes through unclamped — a supported mode, not a
 //!    broken pack (`CLAUDE.md` principle 7).
-//! 2. Ohmic heating (`I²·R0 + I·ΣV_rc`) outruns what the pack can shed, so cells climb.
-//!    The interior climbs fastest because a cell with four neighbours keeps none of its
+//! 2. Heating outruns what the pack can shed, so cells climb. Two sources, and on this
+//!    fixture the second dominates by a factor of ~44: ohmic dissipation
+//!    (`I²·R0 + I·ΣV_rc`, 0.24 W per cell here) and the side-reaction heat of charge
+//!    pushed into a cell that is already full (`OCV(1.0)·I`, 10.8 W per cell). The
+//!    interior climbs fastest because a cell with four neighbours keeps none of its
 //!    convective conductance (`thermal::exposure`), which is the Phase 2 gradient.
 //! 3. The hottest cell crosses `t_onset_k` and the exothermic reaction lights.
 //! 4. It vents, and conducts enough heat along the ordinary `k_ij` links that a
@@ -23,32 +26,39 @@
 //! not distinguish propagation from every cell having been cooked in parallel. So:
 //!
 //! * **`runaway_power_w_at_onset = 0.0`** — identical pack, identical demand, no
-//!   reaction. The fixture is tuned so ohmic heating alone plateaus *above* onset (it
-//!   has to, or nothing would ever ignite) and *below* vent. That arm must never vent
-//!   any cell, which makes venting attributable to the reaction rather than to `I²R`.
+//!   reaction. The fixture is tuned so charging heat alone plateaus *above* onset (it
+//!   has to, or nothing would ever ignite) and *below* vent: measured 434.66 K at the
+//!   centre against a 423.15 K onset and a 453.15 K vent. That arm must never vent any
+//!   cell, which makes venting attributable to the reaction rather than to the charger.
 //! * **The same abuse with a BMS** — protection clamps the demand to the chemistry's
-//!   charge window and the pack never leaves room temperature, 124 K below onset. That
-//!   is the pedagogical contrast the phase is built around, and it is also what proves
-//!   the fixture is not simply unsurvivable by construction.
+//!   charge window, and the pack ends up 90 K short of onset instead of on fire. That is
+//!   the pedagogical contrast the phase is built around, and it is also what proves the
+//!   fixture is not simply unsurvivable by construction.
 //!
-//!   Worth noting what that arm does *not* do: the contactor never opens. Graduated
-//!   derating alone is sufficient — 60 A becomes 6.91 A, the pack settles 0.8 K above
-//!   ambient, and the run raises `OC`, `OV`, `SOC_CLAMPED_HIGH` and `BALANCING` but
-//!   never `CONTACTOR_OPEN`. That is the stronger result: the graduated response
-//!   handles an abusive charge without ever reaching for its last resort, and the
+//!   Worth noting what that arm does *not* do: the contactor never opens. The
 //!   external-short scenario in `tests/faults.rs` remains the case where derating
 //!   discovers it can do nothing and the contactor is the only move left.
 //!
-//! # Known modelling gap this scenario drives straight into
+//! # What the protected arm exposes, which is not the protection working
 //!
-//! Charge pushed into a cell already clamped at SOC 1.0 currently **vanishes**: it is
-//! not stored, and it releases no heat beyond `I²·R0`. So the pack here is heated by
-//! ohmic dissipation alone, and a real overcharged cell — which would also be releasing
-//! the energy of the side reactions that charge drives — would get there sooner. The gap
-//! is recorded in `docs/plans/phase-3-aging-faults.md` (slice D) and is a change to
-//! `coulomb_step`/`cell_heat_w` wanting its own commit and a goldens re-check. It does
-//! not weaken the scenario: reaching vent on ohmic heating alone is the *conservative*
-//! path to the same place.
+//! The BMS arm used to settle 0.8 K above ambient. It now climbs to 333.17 K — the
+//! chemistry's `t_max_k` — where the over-temperature rung latches the charge off for
+//! good. The pack is still saved, by a wide margin, but it is saved by `OT` rather than
+//! never being in danger, and the difference is a **pre-existing** behaviour that closing
+//! the energy hole made expensive.
+//!
+//! Protection's over-voltage response is memoryless, so at the top of charge it is a
+//! two-step limit cycle: one step admits the full derated 6.91 A and raises
+//! `SOC_CLAMPED_HIGH`, the voltage jumps above `v_max`, the next step derates to zero,
+//! the voltage falls back with no load, and the cycle repeats — measured, step by step,
+//! and **identical at `1365808` before this fix**. What changed is the price of an
+//! admitted step: 1.32 W of ohmic heat became 73.57 W once refused charge stopped
+//! vanishing, a factor of 55, and a 50 % duty cycle on that is what walks the pack to its
+//! temperature limit.
+//!
+//! So the chatter is not new and is not this commit's to fix — hysteresis on the
+//! protection comparators is its own change. It is recorded here because it stopped being
+//! cosmetic: `docs/plans/energy-hole.md` carries the measurement.
 
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, SafetyParams, ThermalParams,
@@ -67,6 +77,11 @@ const PARALLEL: u16 = 3;
 const AMBIENT_K: f64 = 298.15;
 const ONSET_K: f64 = 423.15;
 const VENT_K: f64 = 453.15;
+
+/// The chemistry's over-temperature limit \[K\], the rung that stops the protected arm.
+/// Shared with [`lfp`]'s `t_max_k` so an edit to the fixture cannot silently decouple the
+/// assertion from the limit it is about.
+const T_MAX_K: f64 = 333.15;
 
 /// Cell capacity \[Ah\], from the shipped LFP file.
 const CAP_AH: f64 = 2.303451;
@@ -131,7 +146,7 @@ fn lfp(runaway_power_w_at_onset: f64) -> ChemistryParams {
             max_charge_c: 1.0,
             max_discharge_c: 3.0,
             t_charge_min_k: 273.15,
-            t_max_k: 333.15,
+            t_max_k: T_MAX_K,
         },
         ocv: OcvTable {
             docv_dt_v_per_k: None,
@@ -207,11 +222,23 @@ fn protective_bms() -> BmsConfig {
 
 /// Charge current \[A\] at the pack terminals, discharge-positive (so this is negative).
 ///
-/// Per cell this is `CHARGE_A / PARALLEL`, and it is chosen so that **ohmic heating
-/// alone** plateaus between onset and vent — see the module docs on why both bounds
-/// matter. The steady state is `Σ q = h·A·Σ exposure·ΔT`, and with `R0 + R_rc ≈ 27 mΩ`
-/// at these temperatures that puts the plateau in the low 430s K.
-const CHARGE_A: f64 = -60.0;
+/// Per cell this is `CHARGE_A / PARALLEL`, and it is chosen so that **heating with the
+/// reaction switched off** plateaus between onset and vent — see the module docs on why
+/// both bounds matter.
+///
+/// **Re-derived when the energy hole was closed** (`docs/plans/energy-hole.md`), and the
+/// old value is worth recording because the difference is the whole point. This was
+/// `-60.0` when a clamped cell's refused charge vanished, so the only heat available was
+/// ohmic: `Σ q = h·A·Σ exposure·ΔT` with `R0 + R_rc ≈ 27 mΩ` needed 20 A per cell to put
+/// the plateau in the low 430s K. Rejected-charge heat is `OCV(1.0)·I` — 3.6 V per amp,
+/// against ohmic's `I·27 mΩ` — so at 20 A/cell the same fixture now runs to 1321 K and
+/// vents on the charger alone. **9 A puts the identical plateau back**: measured 434.66 K
+/// at the centre, 407.05 K at its neighbours, 385.68 K at the corners.
+///
+/// That is 3 A/cell, i.e. 1.3 C against a chemistry whose `max_charge_c` is 1.0 — still
+/// unambiguously abuse, and a far more plausible one than the 8.7 C this fixture used to
+/// need.
+const CHARGE_A: f64 = -9.0;
 
 fn temp(pack: &Pack, s: usize, p: usize) -> f64 {
     pack.cell(s, p).expect("cell in range").temp_k
@@ -262,9 +289,13 @@ fn neighbours(s: usize, p: usize) -> Vec<(usize, usize)> {
 
 /// Steps of the abusive charge each live arm takes.
 ///
-/// The probe that sized this fixture put the centre cell's vent at â‰ˆ 2918 s, its four
-/// neighbours at â‰ˆ 3409 s and the corners at â‰ˆ 3652 s, so 6000 s covers the whole
+/// The probe that re-sized this fixture puts the centre cell's vent at 2921 s, its four
+/// neighbours at 3366 s and the corners at 3599 s, so 6000 s covers the whole
 /// propagation with room to spare while staying cheap in a debug build.
+///
+/// Those are within half a percent of the timings the pre-energy-hole fixture had at
+/// `-60.0` A (2918 / 3409 / 3652 s), which is the point of the re-derivation: the
+/// scenario is the same fire on the same clock, reached with a sixth of the current.
 const LIVE_STEPS: usize = 6_000;
 
 /// Steps the control arm takes. Longer than [`LIVE_STEPS`] on purpose: its claim is
@@ -484,15 +515,22 @@ fn the_fire_spreads_from_the_centre_to_its_neighbours() {
 }
 
 /// **The contrast the phase is built around.** The same abusive demand into the same
-/// pack, with a conventional BMS in front of it, is simply refused: protection clamps
-/// the current to the chemistry's charge window and the pack never leaves room
-/// temperature.
+/// pack, with a conventional BMS in front of it, never gets near the fire: protection
+/// clamps the current to the chemistry's charge window, and when the pack warms anyway
+/// the over-temperature rung latches the charge off at `t_max_k` — 90 K short of onset.
 ///
 /// This is also what stops the fixture above being unfalsifiable. A pack that burned
 /// under every configuration would show only that the scenario was built to burn; this
 /// one burns exactly when the protection that exists to prevent it is absent.
+///
+/// The bound was `ONSET_K - 100.0` when a clamped cell's refused charge vanished, and
+/// the pack then sat 0.8 K above ambient for the whole run. It reaches 333.17 K now, and
+/// the assertion is written against the chemistry's own `t_max_k` rather than a round
+/// number, because *that* is what stops it: see the module docs on the protection
+/// chatter this exposed. `OT` is asserted for the same reason — the rung that saves the
+/// pack should be named by the test, not left implicit in a temperature.
 #[test]
-fn the_same_abuse_through_a_bms_never_gets_warm() {
+fn the_same_abuse_through_a_bms_is_stopped_at_its_temperature_limit() {
     let run = overcharge(
         Pack::new(&config(Some(protective_bms())), lfp(REACTION_W_AT_ONSET))
             .expect("fixture builds"),
@@ -510,11 +548,30 @@ fn the_same_abuse_through_a_bms_never_gets_warm() {
         "protection should have reported the over-current it clamped: {:?}",
         run.flags_seen
     );
+    assert!(
+        run.flags_seen.contains(EventFlags::OT),
+        "the rung that actually stops this charge is over-temperature: {:?}",
+        run.flags_seen
+    );
+    assert!(
+        !run.flags_seen.contains(EventFlags::CONTACTOR_OPEN),
+        "derating alone should have been enough; the contactor is for the cases it is \
+         not: {:?}",
+        run.flags_seen
+    );
 
+    // Protection may overshoot a limit by one step by design (Phase 2), so the bound is
+    // the chemistry's own limit plus a step's worth of the heating that reaches it — not
+    // the limit itself, and not a round number chosen after seeing the answer.
     let (s, p, hot) = hottest(&run.pack);
     assert!(
-        hot < ONSET_K - 100.0,
+        hot < T_MAX_K + 1.0,
+        "the protected pack reached {hot} K at {s}S{p}P; over-temperature protection \
+         should have held it at the chemistry's {T_MAX_K} K limit"
+    );
+    assert!(
+        hot < ONSET_K - 80.0,
         "the protected pack reached {hot} K at {s}S{p}P, far closer to the {ONSET_K} K \
-         onset than a derated charge should take it"
+         onset than a protected charge should take it"
     );
 }

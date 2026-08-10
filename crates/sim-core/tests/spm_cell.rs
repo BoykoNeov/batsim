@@ -627,3 +627,37 @@ fn a_zero_length_diffusion_step_is_exactly_the_identity() {
          a probe step must be an observation, not an edit"
     );
 }
+
+/// **The same flag, a different meaning.** A single-particle cell driven past the top of
+/// its window raises `SOC_CLAMPED_HIGH` and rejects **nothing**, because nothing was
+/// discarded: the lithium is in the particle and a discharge gets it back out.
+///
+/// `Telemetry::i_rejected_a` is the equivalent circuit's conservation defect made
+/// visible (`docs/plans/energy-hole.md`), and the reason this test exists is that the
+/// flag alone does not say which model raised it. A future refactor that made the
+/// porous-electrode arms "consistent" by rejecting charge here would be inventing a
+/// truncation that this model does not perform — and would burn the invented charge as
+/// heat, on a cell that is still holding it.
+#[test]
+fn a_single_particle_clamps_its_readout_without_rejecting_charge() {
+    let mut p = pack(8, 0.98);
+    let mut clamped_steps = 0;
+
+    for _ in 0..400 {
+        let tele = p.step(1.0, Demand::Current(-20.0), &env());
+        if tele.flags.contains(sim_core::EventFlags::SOC_CLAMPED_HIGH) {
+            clamped_steps += 1;
+        }
+        assert_eq!(
+            tele.i_rejected_a, 0.0,
+            "a single-particle cell keeps the lithium it is pushed; it reported {} A \
+             rejected",
+            tele.i_rejected_a
+        );
+    }
+
+    assert!(
+        clamped_steps > 0,
+        "the run never pushed the readout past its window, so this proves nothing"
+    );
+}

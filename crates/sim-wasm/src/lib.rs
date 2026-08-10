@@ -84,7 +84,22 @@ use wasm_bindgen::prelude::*;
 /// `docs/plans/ui-bms-view.md` records why the plan that priced them as a pair was wrong.
 /// `sim_core::SNAPSHOT_VERSION` stays at 10: every accessor this needed was already
 /// public, and no saved pack changed shape.
-pub const WASM_API_VERSION: u32 = 3;
+/// v4 (the energy hole): [`sim_core::Telemetry`] gains `i_rejected_a`, the charge a SOC
+/// clamp refused or invented. That is an *added field*, not a rename, and it crosses
+/// this boundary verbatim inside every telemetry payload the page reads.
+///
+/// An addition, so by `sim_server::API_VERSION`'s rule — which exempts added fields —
+/// that constant stays at 2, and the two part company for the second time. This one
+/// moves anyway, for the reason its v3 paragraph gives and which has nothing to do with
+/// renames: `web/pkg` is a build artifact loaded separately from the JS that calls it,
+/// `web/app.js` now reads `i_rejected_a` in two render paths, and against a v3 bundle
+/// that field is `undefined` — a `TypeError` from inside a draw call, which names
+/// neither the cause nor the fix. The page's `WASM_API_MIN` moves with it, which is what
+/// makes the bump load-bearing rather than decoration.
+///
+/// `sim_core::SNAPSHOT_VERSION` stays at 11: the rejected amount is computed and
+/// consumed inside a step, so no saved pack changed shape.
+pub const WASM_API_VERSION: u32 = 4;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///

@@ -26,7 +26,7 @@ use crate::aging::{Aging, AgingConfig, CellAging};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::dfn;
-use crate::ecm::{solve_current, CellModel};
+use crate::ecm::{ocv_lookup, solve_current, CellModel};
 use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
@@ -1617,6 +1617,11 @@ impl Pack {
         let mut q_balancing_w = 0.0;
         let mut i_balancing_a = 0.0;
         let mut i_internal_short_a = 0.0;
+        let mut i_rejected_a = 0.0;
+        // The OCV a refused charge is being pushed against. Hoisted: it is the same
+        // table lookup for every cell, and on a pack that never clamps it is the whole
+        // cost of this feature.
+        let ocv_full = ocv_lookup(&self.chem.ocv, 1.0);
         for (g, group) in self.groups.iter_mut().enumerate() {
             let (e_gv, r_gv) = group_src[g];
             let v_node = e_gv - i_g * r_gv; // start-of-step shared node voltage
@@ -1679,12 +1684,6 @@ impl Pack {
                     i_internal_short_a += i_shunt;
                     q += v_node * i_shunt;
                 }
-                q_gen_w += q;
-                if thermal_live {
-                    // Series-major, parallel-minor — the index order `thermal`
-                    // expects.
-                    heat_w.push(q);
-                }
                 let soc_before = cell.model.soc(&self.chem);
                 let temp_before = cell.model.temp_k();
                 let eff_cap = cap_ah * cell.capacity_factor;
@@ -1701,9 +1700,43 @@ impl Pack {
                 if plating {
                     flags |= EventFlags::PLATING_RISK;
                 }
-                flags |= cell
+                let advanced = cell
                     .model
                     .advance(&self.chem, i_k, dt, eff_r0, eff_cap, soh_cap);
+                flags |= advanced.flags;
+                // --- charge the clamp refused, and the heat that refusing it makes.
+                //
+                // This is the one term that cannot be evaluated from start-of-step
+                // state: whether a step clamps, and by how much, is only known once
+                // the coulomb count has run. That is why the heat tally below sits
+                // *after* `advance` rather than with the rest of the reporting, and
+                // the ordering is load-bearing rather than stylistic.
+                //
+                // Only the upper clamp contributes heat. At the lower clamp the cell
+                // delivered charge it did not have, and the term that would close the
+                // ledger there is a *cooling* one — a wrong-signed drive into the
+                // thermal network, which would suppress runaway in exactly the regime
+                // that matters. The fabricated charge is reported instead of burned:
+                // see `docs/plans/energy-hole.md`.
+                if advanced.rejected_as != 0.0 && dt > 0.0 {
+                    i_rejected_a += advanced.rejected_as / dt;
+                    if advanced.rejected_as < 0.0 {
+                        // `OCV(1.0)` — the endpoint the charge was being pushed
+                        // against, not the SOC the step started from. On LFP the last
+                        // 2 % of that table climbs 180 mV, so the difference is real.
+                        q -= ocv_full * advanced.rejected_as / dt;
+                    }
+                }
+                // Tallied here, below `advance`, for the reason above. The mutation is
+                // guarded on a non-zero rejection rather than written unconditionally:
+                // `q + 0.0` is bit-identical to `q` for every value except `-0.0`,
+                // which would become `+0.0` and move a trajectory for no physics.
+                q_gen_w += q;
+                if thermal_live {
+                    // Series-major, parallel-minor — the index order `thermal`
+                    // expects.
+                    heat_w.push(q);
+                }
                 if aging_accumulates {
                     // Throughput from the cell's own current, half-cycle direction
                     // from the pack's — see `CellAging::accumulate` for why the two
@@ -2036,6 +2069,7 @@ impl Pack {
             i_balancing_a,
             i_internal_short_a,
             i_external_short_a,
+            i_rejected_a,
             solve_iterations,
             flags,
         }

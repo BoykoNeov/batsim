@@ -48,6 +48,7 @@ fn frame_bits(frame: &Frame) -> Vec<u64> {
         t.i_balancing_a.to_bits(),
         t.i_internal_short_a.to_bits(),
         t.i_external_short_a.to_bits(),
+        t.i_rejected_a.to_bits(),
     ];
     // `u64::MAX` stands in for `None` so a `Some`/`None` change cannot alias a value
     // change.

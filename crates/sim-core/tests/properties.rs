@@ -363,8 +363,14 @@ proptest! {
         let mut v_start = pack.step(0.0, Demand::Current(i), &env()).v_terminal;
         for _ in 0..nsteps {
             let tele = pack.step(dt, Demand::Current(i), &env());
-            // BALANCING is expected here; a SOC clamp is not — it would truncate the
-            // charge that the balance is accounting for.
+            // BALANCING is expected here; a SOC clamp is not. Note what this
+            // exclusion is and is not: it keeps the property to the regime it was
+            // written for, but it is **not** evidence that a clamp would break the
+            // balance. Measured, it does not — this accounting is an identity in the
+            // reported currents and survives a clamp to 4.5e-13 J, which is why
+            // `overcharge_heat_closes_the_energy_ledger` below takes its chemical side
+            // from ground-truth state instead. This strategy cannot reach a clamp
+            // anyway (400 As of a 9000 As cell), so the assertion has never fired.
             prop_assert!(
                 !tele.flags.intersects(EventFlags::SOC_CLAMPED_HIGH | EventFlags::SOC_CLAMPED_LOW),
                 "unexpected SOC clamp: {:?}", tele.flags
@@ -555,6 +561,11 @@ proptest! {
         let mut q_as = 0.0; // amp-seconds out of the cells, terminals + leakage
         for _ in 0..nsteps {
             let tele = pack.step(dt, Demand::Current(i), &env());
+            // Unlike the energy balance above, this ledger genuinely does diverge at
+            // a clamp — by the whole rejected amount — so the exclusion is load-bearing
+            // here rather than defensive. The clamped case is
+            // `charge_conserved_through_a_soc_clamp` below, which carries the
+            // `i_rejected_a` term that closes it.
             prop_assert!(
                 !tele.flags.intersects(EventFlags::SOC_CLAMPED_HIGH | EventFlags::SOC_CLAMPED_LOW),
                 "unexpected clamp: {:?}", tele.flags
@@ -570,6 +581,215 @@ proptest! {
         prop_assert!(
             (q_as - expected).abs() < 1e-6 + 1e-9 * q_as.abs(),
             "charge: ∫(I + I_short) dt = {q_as}, 3600·Δrem = {expected}"
+        );
+    }
+
+    /// **Charge conservation through a clamp**, which is the invariant the SOC clamp
+    /// used to break silently.
+    ///
+    /// The two properties above both open by asserting no clamp occurred. Neither
+    /// exclusion was ever load-bearing — their strategies cannot reach a clamp
+    /// (`CAP_AH` is 9000 As and the widest case moves 400 of them) — so this is not
+    /// those tests with a restriction lifted. It is the case they could not generate,
+    /// driven deliberately, with a coverage assertion so it cannot quietly stop
+    /// clamping.
+    ///
+    /// The ledger is the one on [`sim_core::Telemetry::i_rejected_a`]. Each of the `S`
+    /// series groups carries the terminal current, so the charge that crosses cell
+    /// boundaries is `S·i_actual`, of which `i_rejected_a` never reached the stored
+    /// charge:
+    ///
+    /// ```text
+    /// ∫(S·i_actual − i_rejected_a) dt = 3600 · Δ(stored charge over every cell)
+    /// ```
+    ///
+    /// Exact to rounding, not to a physical tolerance: every term is a sum of the same
+    /// per-cell products the engine itself formed.
+    #[test]
+    fn charge_conserved_through_a_soc_clamp(
+        series in 1u16..=3,
+        parallel in 1u16..=3,
+        // Either end of the window, approached fast enough to arrive inside the run.
+        high in any::<bool>(),
+        // Sized so the clamp is *guaranteed*, not likely: the weakest corner
+        // (40 A over 3 parallel, dt = 0.5, 60 steps) still moves 400 As per cell
+        // against the 270 As that separates `soc0` from the bound.
+        amps in 40.0f64..80.0,
+        dt in 0.5f64..2.0,
+        nsteps in 60usize..200,
+        seed in any::<u64>(),
+        cap_sigma in 0.0f64..0.08,
+    ) {
+        let soc0 = if high { 0.97 } else { 0.03 };
+        let i = if high { -amps } else { amps };
+        let scatter = Scatter { capacity_sigma: cap_sigma, r0_sigma: 0.0 };
+        let mut pack = Pack::new(&cfg(series, parallel, soc0, seed, scatter), chem()).unwrap();
+
+        let rem0 = total_remaining_ah(&pack, series, parallel);
+        let mut q_as = 0.0;
+        let mut clamped_steps = 0usize;
+        for _ in 0..nsteps {
+            let tele = pack.step(dt, Demand::Current(i), &env());
+            if tele.flags.intersects(EventFlags::SOC_CLAMPED_HIGH | EventFlags::SOC_CLAMPED_LOW) {
+                clamped_steps += 1;
+            } else {
+                prop_assert_eq!(
+                    tele.i_rejected_a, 0.0,
+                    "an unclamped step rejected {} A", tele.i_rejected_a
+                );
+            }
+            q_as += (f64::from(series) * tele.i_actual - tele.i_rejected_a) * dt;
+        }
+        let rem1 = total_remaining_ah(&pack, series, parallel);
+
+        // Coverage: without this the property passes on a run that never clamped, and
+        // would be re-proving the two above.
+        prop_assert!(clamped_steps > 0, "the run never reached the clamp it was aimed at");
+
+        let expected = 3600.0 * (rem0 - rem1);
+        prop_assert!(
+            (q_as - expected).abs() < 1e-6 + 1e-9 * q_as.abs(),
+            "charge: ∫(S·I − I_rejected) dt = {q_as}, 3600·Δrem = {expected} \
+             ({clamped_steps} clamped steps)"
+        );
+    }
+
+    /// **The energy ledger at the top of the window closes exactly**, because the charge
+    /// the clamp refused is dissipated rather than destroyed.
+    ///
+    /// Same accounting as `electrical_and_heat_energy_balance` and the same
+    /// one-step-behind pairing, with one change that is the whole point: **the chemical
+    /// side is measured from ground-truth state**, `V0·3600·Δ(remaining Ah)`, not
+    /// assembled from reported currents.
+    ///
+    /// That is not a stylistic preference, and the first draft of this property got it
+    /// wrong. Writing the chemical side as `V0·(S·i_actual − i_rejected_a)·dt` makes the
+    /// assertion **tautological in `i_rejected_a`**: the field then appears on the
+    /// chemical side and inside `q_gen_w`'s rejection term with opposite signs, they
+    /// cancel, and the residual is identically zero for *any* rejected amount. The
+    /// perturbation table proved it — doubling `rejected_as` in `coulomb_step` left this
+    /// property green while four other tests failed. Sourcing the left-hand side from
+    /// state puts `i_rejected_a` on one side only, and a wrong magnitude now shows up as
+    /// heat that does not match the charge the cells actually stored.
+    ///
+    /// A flat OCV keeps the chemical side closed-form; `FLAT_V0` is therefore also
+    /// `OCV(1.0)`. The tolerance is relative rather than at rounding because the two
+    /// sides accumulate differently — one telescopes through the SOC state, the other
+    /// sums a few hundred per-step products — so they agree to floating-point
+    /// *accumulation* error, not to a single rounding.
+    #[test]
+    fn overcharge_heat_closes_the_energy_ledger(
+        series in 1u16..=3,
+        parallel in 1u16..=3,
+        // See `charge_conserved_through_a_soc_clamp` on why these bounds and not
+        // wider ones: the coverage assertion below is only meaningful if every
+        // generated case can actually arrive.
+        amps in 40.0f64..80.0,
+        dt in 0.5f64..2.0,
+        nsteps in 60usize..200,
+        seed in any::<u64>(),
+    ) {
+        let mut pack = Pack::new(
+            &cfg(series, parallel, 0.97, seed, Scatter::default()),
+            flat_chem(),
+        ).unwrap();
+
+        let rem0 = total_remaining_ah(&pack, series, parallel);
+        let mut electrical = 0.0;
+        let mut heat = 0.0;
+        let mut clamped_steps = 0usize;
+        let mut v_start = pack.step(0.0, Demand::Current(-amps), &env()).v_terminal;
+        for _ in 0..nsteps {
+            let tele = pack.step(dt, Demand::Current(-amps), &env());
+            if tele.flags.contains(EventFlags::SOC_CLAMPED_HIGH) {
+                clamped_steps += 1;
+            }
+            prop_assert!(
+                !tele.flags.contains(EventFlags::SOC_CLAMPED_LOW),
+                "a charge should not have reached the bottom of the window"
+            );
+            electrical += v_start * tele.i_actual * dt;
+            heat += tele.q_gen_w * dt;
+            v_start = tele.v_terminal;
+        }
+        prop_assert!(clamped_steps > 0, "the run never reached the clamp it was aimed at");
+        let rem1 = total_remaining_ah(&pack, series, parallel);
+
+        // Ground truth, summed over cells: what the pack actually holds now against what
+        // it held. Negative here, because this run charges.
+        let chemical = FLAT_V0 * 3600.0 * (rem0 - rem1);
+        let imbalance = chemical - electrical - heat;
+        let tol = 1e-9 * chemical.abs().max(1.0);
+        prop_assert!(
+            imbalance.abs() < tol,
+            "chemical {chemical} J vs electrical {electrical} J + heat {heat} J \
+             (imbalance {imbalance} J, tol {tol} J, {clamped_steps} clamped steps)"
+        );
+    }
+
+    /// **The bottom of the window fabricates energy, and this pins how much.**
+    ///
+    /// A cell held at `soc = 0` keeps sourcing current at `OCV(0)`, which is energy from
+    /// nowhere. Unlike the overcharge case that is not corrected: the term that would
+    /// close this ledger is a *cooling* one, and feeding the thermal network a
+    /// wrong-signed drive would suppress runaway in the one regime where it matters (see
+    /// `docs/plans/energy-hole.md`). So the defect is reported instead of burned, and
+    /// this property is what stops it being silent: the ledger residual — with its
+    /// chemical side taken from **ground-truth state**, for the reason
+    /// `overcharge_heat_closes_the_energy_ledger` records at length — must equal
+    /// `OCV(0)·∫i_rejected_a dt`. Both sides of that equation are then measured
+    /// independently, so it is an equation rather than an identity.
+    ///
+    /// **This test fails if the fabrication is fixed properly**, and that is intended:
+    /// a solve-side fix (an empty cell that stops sourcing) makes both sides zero and
+    /// the `fabricated > 0.0` coverage assertion is where it announces itself, rather
+    /// than a golden shifting by an amount nobody can attribute.
+    #[test]
+    fn the_bottom_of_the_window_fabricates_exactly_what_it_reports(
+        series in 1u16..=3,
+        parallel in 1u16..=3,
+        // See `charge_conserved_through_a_soc_clamp` on why these bounds and not
+        // wider ones: the coverage assertion below is only meaningful if every
+        // generated case can actually arrive.
+        amps in 40.0f64..80.0,
+        dt in 0.5f64..2.0,
+        nsteps in 60usize..200,
+        seed in any::<u64>(),
+    ) {
+        let mut pack = Pack::new(
+            &cfg(series, parallel, 0.03, seed, Scatter::default()),
+            flat_chem(),
+        ).unwrap();
+
+        let rem0 = total_remaining_ah(&pack, series, parallel);
+        let mut electrical = 0.0;
+        let mut heat = 0.0;
+        let mut fabricated = 0.0;
+        let mut clamped_steps = 0usize;
+        let mut v_start = pack.step(0.0, Demand::Current(amps), &env()).v_terminal;
+        for _ in 0..nsteps {
+            let tele = pack.step(dt, Demand::Current(amps), &env());
+            if tele.flags.contains(EventFlags::SOC_CLAMPED_LOW) {
+                clamped_steps += 1;
+            }
+            electrical += v_start * tele.i_actual * dt;
+            heat += tele.q_gen_w * dt;
+            // `FLAT_V0` is `OCV(0.0)` on this chemistry as well as `OCV(1.0)`.
+            fabricated += FLAT_V0 * tele.i_rejected_a * dt;
+            v_start = tele.v_terminal;
+        }
+        prop_assert!(clamped_steps > 0, "the run never reached the clamp it was aimed at");
+        prop_assert!(fabricated > 0.0, "the low clamp should report positive rejected charge");
+        let rem1 = total_remaining_ah(&pack, series, parallel);
+
+        let chemical = FLAT_V0 * 3600.0 * (rem0 - rem1);
+        let residual = chemical - electrical - heat;
+        let tol = 1e-9 * fabricated.abs().max(1.0);
+        prop_assert!(
+            (residual + fabricated).abs() < tol,
+            "the ledger's residual should be exactly the fabricated energy: \
+             residual {residual} J, −OCV(0)·∫i_rejected dt {} J (tol {tol} J)",
+            -fabricated
         );
     }
 
