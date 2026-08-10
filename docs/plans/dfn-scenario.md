@@ -81,10 +81,18 @@ is **measure first**. Every number below is unknown today:
 4. **Whether the two arms' `soc_true` traces coincide.** Both are stoichiometry-derived
    rather than coulomb-counted — `dfn::raw_soc` is the negative electrode's bulk stoich
    averaged across x — so "the same charge removed" is an assumption, not an identity.
-   Verify before writing it.
-5. **Cost in wasm.** ~180 µs per cell per step native at the recommended grid, ×2 solve
+   Verify before writing it. In particular **"three-fifths of the charge still in it" is
+   coulomb arithmetic** (1.993 of 5.153198) and the page's readout is not: either quote
+   the readout or say which of the two quantities the sentence means.
+5. **Whether the committed replay numbers transfer to a free run.** The 3.42 V / 2.59 V
+   row is batsim's SPM against *PyBaMM's DFN* on the **reference's clock**. The page shows
+   batsim's SPM against batsim's DFN, free-running, at `dt = 2`. A constant 3C makes the
+   demand identical so they very likely agree — and "very likely" is precisely what the
+   three prior client slices were burned on. No voltage from that table enters an `expect`
+   block until the free-running trace has been read at the shared mark.
+6. **Cost in wasm.** ~180 µs per cell per step native at the recommended grid, ×2 solve
    passes at 1S1P; the browser number has never been taken. It decides `speed_x`.
-6. **The trajectory at the page's `dt`.** See below — this is the one real design
+7. **The trajectory at the page's `dt`.** See below — this is the one real design
    decision.
 
 ## The design decision: run the configuration the golden asserts
@@ -112,6 +120,27 @@ the box, so **both lessons set `dt: 2` and no page change is required** — the 
 and is unused by every current record. Measure the DFN at 0.5 s and at 2.0 s anyway: if
 they agree to a few millivolts the file comment says so, and a reader who changes the box
 is not silently off-golden.
+
+### The consequence nobody has had to think about before: `dt` persists
+
+These are the **first lessons in the path to set `dt` at all**, so the field's persistence
+has never mattered. It matters now: `applyStep` sets the box only
+`if (L.dt !== undefined)`, and its own comment says every other step deliberately "leaves
+the box where the reader left it". So `dt = 2` leaks **in both directions**:
+
+* forward into steps 17 and 18 (the external-short pair, which this slice pushes down two
+  places) — and step 17's `expect` quotes `t = 133.5 s`, `t = 156.0 s`, `39.62 %` and
+  `93.29 A on the first frame after the fault`, every one of them step-resolution
+  dependent and none of them measured at 2 s;
+* backward into step 14, whose ×1.87 / ×6.01 decomposition was measured at the page's
+  default.
+
+**Fix: steps 14, 17 and 18 gain an explicit `dt` pinning what they were measured at.**
+That is three one-line additions and no behaviour change for a reader who walks the path
+in order from a fresh load — but it is what stops a mark set here from silently rewriting
+four committed numbers two steps later. Confirm during implementation that nothing else
+writes the box (`loadScenario` in particular), and re-read steps 14, 17 and 18's numbers
+off the page after the change rather than trusting that pinning restored them.
 
 ## Part A — the two scenario files
 
@@ -156,13 +185,26 @@ new lessons go directly after it, making the external-short pair 17 and 18.
 11, 12 and 13 — all before the insertion point — and the two lessons that move cite only
 steps 5, 10 and 11. Verify with a grep before and after; do not trust this paragraph.
 
+**Both steps share one mark, and the mark is a measurement.** The comparison is "the same
+cell at the same current at the same instant", so a step that runs to the SPM's own
+cut-off and a step that runs to the DFN's would put the reader in front of two different
+x-axes and the effect would be invisible. One `until_s`, used by both, chosen from
+measurement item 3 — what the DFN does after 464 s decides whether the mark sits past its
+cut-off (with the caveat named, the way `pulse_train_spm.toml` names its own) or before it.
+
+The consequence is load-bearing and must be written into step 15's prose rather than
+discovered by the reader: **inside that window the SPM never reaches a cut-off at all.**
+It is still somewhere around 3.4 V with most of its charge showing when the window ends.
+Step 15 therefore cannot promise a cut-off, and should not try to.
+
 * **Step 15 — the SPM at 3C.** `cc_discharge_3c_spm.toml`, `Current` 15.459594 A, 25 °C,
   no BMS, `dt: 2`, `reload: true` (the mark does not ascend from step 14's 1980 s).
   Watch `plot-v`, `plot-soc`. The point of this step is that **the answer looks fine**: a
-  smooth curve, a plausible cut-off, nothing anomalous to see. A reader has no way to know
-  it is wrong from the trace alone. That is the setup, and it must not be spoiled.
+  smooth curve, an unremarkable slope, nothing anomalous to see. A reader has no way to
+  know it is wrong from the trace alone. That is the setup, and it must not be spoiled.
 * **Step 16 — the same discharge, one field different.** `cc_discharge_3c_dfn.toml`, same
-  demand, same `dt`, `reload: true`. The cell is finished in roughly *half* the time, at
+  demand, same `dt`, same mark, `reload: true`. The cell is finished in roughly *half* the
+  time the SPM would need — the whole gap visible inside one window — at
   ~1.99 A·h of 5.15 — three-fifths of the charge still in it — because the electrolyte
   between the particles has been drained faster than it can be replenished, and κ collapses
   with it. Then the instruction that makes it a lesson rather than a demonstration:
@@ -189,6 +231,15 @@ spells:
 * `docs/plans/dfn-aging-gap.md` — the "Still open" bullet this slice closes;
 * `docs/plans/spm-scenario.md` and `docs/plans/phase-7-dfn.md` — anything deferring this.
 
+And one that is not about reachability at all, which is why a capability sweep finds it
+and a literal one does not: **lesson 14's own `expect` ends with "do not run this one to
+empty: past the charge clamp the particle model pins near 0.4 V"** — and step 15 then runs
+that same model at 3C toward empty, on the next screen. Whether it actually reaches the
+clamp is measurement item 2 (at ~13 % SOC at cut-off it probably does not), but *reads as
+contradicting the previous step* is a defect independent of the answer. Either step 15
+says why its run is inside the warning or step 14's warning is qualified. Decide it from
+the measurement, and do not leave the reader to reconcile the two.
+
 ## Verification
 
 1. `cargo test --workspace` — `every_shipped_scenario_parses_builds_and_steps` picks both
@@ -199,9 +250,12 @@ spells:
    or it starves rAF). Every number in every `expect` block is read off the page, never off
    a harness — a `Frame`'s `sim_time_s` is read *after* its step, so the harness and the
    page disagree by one.
-3. **Walk the path in both directions.** A forward-only walk proves nothing about
+3. **Walk the path in both directions**, and read steps 14, 17 and 18's numbers off the
+   page on the way past in each direction. A forward-only walk proves nothing about
    `path-back`; the reload rule is an inequality that holds one way, which is why both new
-   steps carry `reload: true` and why Back must be exercised.
+   steps carry `reload: true` and why Back must be exercised. The `dt` pins are the thing
+   this walk is really testing — a walk that only checks the two new steps would pass over
+   exactly the damage they can do.
 4. Confirm the picker lists both files with no page edit (`GET /scenarios` fills it), and
    that the per-cell grid and readouts render a DFN pack without special-casing.
 5. Rebuild `web/pkg` if anything Rust-side moves. Nothing should.
