@@ -179,12 +179,24 @@ fn over_current_demand_is_derated_to_the_c_rate_limit() {
 /// the pack parks essentially at the limit instead of continuing to fill. Without a
 /// BMS the same demand keeps pushing until the SOC clamp catches it.
 ///
-/// The protection here is a hard window clamp with no hysteresis, so near the
-/// threshold it *chatters*: cut the current, the overpotential relaxes, the reading
-/// drops back under the limit, a little charge is allowed, and round again. That is
-/// what bang-bang control does, and it is why this asserts on the mean current over a
-/// settled window rather than on a single step's value. The observable outcome — the
-/// pack stops filling and sits at `v_max` — is correct.
+/// # This test used to start above its own limit, and asserted nothing
+/// It began at `initial_soc = 0.9`, where this fixture's OCV is 3.52 V against a
+/// `v_max` of 3.50 — so the rung tripped on step 0 and the protected arm admitted
+/// current on **0 of 4000 steps**. Every assertion below was satisfied by a pack that
+/// never charged: `saw_ov` on the first step, a mean tail current of exactly zero, a
+/// final SOC of exactly the 0.9 it was handed, and a `bare_peak > protected_peak`
+/// comparison against a pack that was never loaded. It was found by the probe that
+/// measured the protection chatter — the arm's *absence* of chatter is what gave it
+/// away — and is recorded in `docs/plans/protection-chatter.md`.
+///
+/// 0.7 is below the SOC where this table's OCV crosses `v_max` (0.875), so the pack now
+/// charges into the limit rather than starting past it. That one line is the whole
+/// reason this test's trajectory differs from the one before it.
+///
+/// The docstring this replaced also described the protection as "a hard window clamp
+/// with no hysteresis" that "chatters near the threshold". The rungs carry release
+/// bands now, so it holds instead: the mean-current assertion stands, but it is no
+/// longer averaging over a limit cycle.
 #[test]
 fn over_voltage_on_charge_derates_with_bms_and_runs_away_without() {
     let charge = Demand::Current(-2.0);
@@ -192,16 +204,20 @@ fn over_voltage_on_charge_derates_with_bms_and_runs_away_without() {
     let settled = 200; // final steps considered "settled"
 
     // --- with protection.
-    let mut protected = Pack::new(&config(0.9, 298.15, Some(protecting_bms())), chem()).unwrap();
+    let mut protected = Pack::new(&config(0.7, 298.15, Some(protecting_bms())), chem()).unwrap();
     let mut peak_v: f64 = 0.0;
     let mut saw_ov = false;
     let mut tail_current = 0.0;
     let mut tail_peak_v: f64 = 0.0;
     let mut last = None;
+    let mut charged_steps = 0;
     for step in 0..steps {
         let tele = protected.step(1.0, charge, &env());
         peak_v = peak_v.max(tele.v_terminal);
         saw_ov |= tele.flags.contains(EventFlags::OV);
+        if tele.i_actual.abs() > 1e-12 {
+            charged_steps += 1;
+        }
         if step >= steps - settled {
             tail_current += tele.i_actual;
             tail_peak_v = tail_peak_v.max(tele.v_terminal);
@@ -209,6 +225,21 @@ fn over_voltage_on_charge_derates_with_bms_and_runs_away_without() {
         last = Some(tele);
     }
     let tele = last.unwrap();
+    // The coverage assertion, and the whole reason the `initial_soc` above is 0.7. Every
+    // assertion after this one is also satisfied by a pack that never charged at all,
+    // which is what this test did for its first four years. It is written as a *bound*
+    // rather than `> 0` so that "it charged" cannot mean one step.
+    assert!(
+        charged_steps > steps / 10,
+        "the protected pack only carried current on {charged_steps} of {steps} steps, so \
+         the assertions below are about a pack that never charged rather than about \
+         protection — see this test's docstring"
+    );
+    assert!(
+        tele.soc_true > 0.7,
+        "and it should have gained charge before protection stopped it, got {}",
+        tele.soc_true
+    );
     assert!(saw_ov, "the BMS should have raised OV at some point");
     let bound = V_MAX + one_step_excursion(2.0);
     assert!(
@@ -237,7 +268,7 @@ fn over_voltage_on_charge_derates_with_bms_and_runs_away_without() {
     let protected_peak = peak_v;
 
     // --- same demand, no BMS.
-    let mut bare = Pack::new(&config(0.9, 298.15, None), chem()).unwrap();
+    let mut bare = Pack::new(&config(0.7, 298.15, None), chem()).unwrap();
     let mut bare_peak: f64 = 0.0;
     let mut last = None;
     for _ in 0..steps {

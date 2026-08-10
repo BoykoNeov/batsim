@@ -34,12 +34,25 @@ step 366 i= -6.9104 v_meas=3.6663 q= 73.5965 flags=(SOC_CLAMPED_HIGH | OC | BALA
 That is the plan's 73.57 W and its "50 % duty cycle" — the duty cycle is really 41 %,
 because the tail is 141 admitting steps in 400 rather than 200.
 
-**The 1S1P protection fixture does not chatter at all** and that is worth recording
-before any conclusion is drawn from it: `scenario_protection.rs` starts at `soc = 0.9`
-where its OCV is 3.52 against a `v_max` of 3.50, so the rung trips on step 0 and the pack
-admits current on **0 of 4000** steps. Every assertion in that file's over-voltage test
-is satisfied by a pack that never charges. It is unaffected by this commit for the same
-reason, which is a fact about the fixture and not evidence about the fix.
+**The 1S1P protection fixture did not chatter at all**, and chasing why found a second
+defect. `scenario_protection.rs`'s over-voltage test started at `soc = 0.9`, where its
+OCV is 3.52 against a `v_max` of 3.50 — so the rung tripped on step 0 and the protected
+pack admitted current on **0 of 4000** steps. Every assertion in it was satisfied by a
+pack that never charged: `saw_ov` on the first step, a mean tail current of exactly zero,
+a final SOC of exactly the 0.9 it was handed, and a `bare_peak > protected_peak`
+comparison against a pack that was never loaded.
+
+It is fixed here rather than only noted, because it is one line: `initial_soc` drops to
+0.7, below the 0.875 where that table's OCV crosses `v_max`, and the test gains a
+**coverage assertion** — `charged_steps > steps / 10` — so it cannot go vacuous again.
+That is the same instrument the previous commit needed for its clamp-driven properties,
+and the second time in two commits it has been the thing that turned a green test into a
+test.
+
+**Transferable: a protection threshold outside the pack's own rested voltage range is
+decorative** — the fixture's own comment says exactly that about `v_max` sitting above
+the OCV curve, and the fixture then violated it from the other side by starting the pack
+above the threshold. The band-sizing rule below is the same fact in a third form.
 
 ## The band, and the quantity it is not
 
