@@ -231,7 +231,7 @@ the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
 If you do not already know what to look at, press **Start** under *Guided path*
-instead. It walks eighteen steps — one cell on its own, the same discharge on a
+instead. It walks twenty steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
 with protection on and then off, a pack that wears out while doing nothing at all,
@@ -246,7 +246,11 @@ with no flag raised and the Doyle–Fuller–Newman one is finished at 1.99 with
 on the readout, because the electrolyte an `Spm` holds constant has starved — and two
 shorts across the terminals that separate the two rungs of the protection ladder: a
 dead one the contactor catches in a single step for half a percent, and a weaker one
-that costs fifty because a derate clamps demands and a short is not a demand. Each
+that costs fifty because a derate clamps demands and a short is not a demand. It closes
+by returning to the cell it opened with and not stopping at the knee: past empty the
+terminal falls through zero and then goes flat, while the charge still leaving is
+counted somewhere else entirely — and putting it back takes four minutes in which the
+charge readout does not move by one digit. Each
 step sets the controls for itself and outlines the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step's whole control set,
 so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when

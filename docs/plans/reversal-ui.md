@@ -261,6 +261,31 @@ DOM and clicking its own controls. Four things no Rust gate touches:
 * **The cell-detail line**, on hover: `… soc 0.000 % · … · past empty 6.121 pts · …`,
   and absent on every healthy pack read earlier in the same session.
 
+Step 20's pack is 1S1P, so a second pass drove step 7's 4S2P setup — scenario loaded, BMS
+unchecked, 40 A, `dt` 0.5 — and single-stepped across the crossing with the metric
+selected. This is the case the 1S1P pass cannot reach: eight tiles, seven reading `0.000`
+and one not, which is the ramp's `span > 0` branch and the legend's own min/max.
+
+The tiles light up in this order, and it is the measured order:
+`(0,0)`, `(0,1)`, `(3,0)`, `(3,1)`, `(2,1)`, `(2,0)`, `(1,0)`, `(1,1)` — first at 345.0 s,
+last at 356.5 s, which is what step 7's corrected prose names. The legend reads
+`0.000 pts → 2.856 pts` while part of the pack is still above empty and lifts its low end
+off zero only when the last cell crosses. No exception, `window.__errs` empty.
+
+### One more, outside the instrument's reach
+
+`README.md` describes the guided path in prose, and the harness only walks `LESSONS`, so
+nothing in the diff above could see it. It said the path "walks **eighteen** steps" —
+already wrong before this slice, which found the count at nineteen — and its inventory
+sentence ended at the two external shorts. Both corrected.
+
+Worth naming the near-miss: the first search for this was `grep "19 steps\|nineteen"`,
+which came back empty and was briefly taken as "the README is clean". It was searching
+for the count the file *should* have had rather than for the claim, and the file was
+stale in the other direction. The engine's own capability claims two screens up — the
+`OCV(0)` forever paragraph and the reversal paragraph that replaced it — were checked
+in the same pass and are correct.
+
 ## Versions
 
 `WASM_API_MIN` moves **5 → 6**, and this is the bump `crates/sim-wasm/src/lib.rs`
