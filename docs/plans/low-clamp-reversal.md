@@ -367,10 +367,12 @@ says which of the two things it is doing.
   back for free. The honest coupling is to `soh_capacity` / `soh_resistance` — real
   reversal dissolves the anode current collector — and that is an aging-model change, its
   own slice and its own constants.
-* **No client shows the deficit yet.** `CellView::soc_deficit` is on the wire (see the
-  versions table above for why that stopped being deferrable), but `web/app.js` neither
-  reads it nor offers it as a pack-grid metric, and the guided path has no step about
-  reversal. That is a UI slice, and it is now cheap: the data is already there.
+* ~~**No client shows the deficit yet.**~~ **Done — `docs/plans/reversal-ui.md`.** The
+  page reads `soc_deficit` in three places and the guided path has a twentieth step about
+  reversal. It was as cheap as this bullet says. What it did *not* say, and what cost
+  most of that slice, is that this branch silently falsified prose in four other lesson
+  steps — every one of them green under the whole gate, because none of the path's
+  numbers is an assertion anywhere.
 * **The high clamp keeps its hard cap**, deliberately. A symmetric branch there would
   delete the refused-charge heat term `energy-hole.md` shipped, which on an ECM is now
   *the* runaway path.
