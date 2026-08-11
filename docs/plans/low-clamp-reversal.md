@@ -303,6 +303,51 @@ ramp, and a reader who assumes they do would delete the floor test as redundant.
 the ramp is guarded by is the voltage it produces, which is what
 `the_reversal_floor_bounds_the_voltage` reads.
 
+## Three gaps a review found that the gates could not
+
+All three came from a review of the finished, committed, green tree. None of them was
+visible to `cargo test`, and that is the common thread: each is a claim the suite had no
+way to reach.
+
+**A required section with no default is a runtime break in every file the tests do not
+read.** `[reversal]` has no `#[serde(default)]`, so any chemistry TOML lacking it now
+fails validation at load — and the only reason the Godot demo's copy was caught is that a
+test byte-compares it against the canonical file. Checked exhaustively rather than
+assumed: `git ls-files '*.toml'` plus a grep for `[ocv]` across the whole index finds the
+three canonical files, the one Godot copy, and `CLAUDE.md`'s example. Every scenario
+references a chemistry by id rather than inlining one, and the browser page fetches
+`/chemistries/{id}.toml` from the repo root rather than keeping a copy under `web/`. The
+`[dfn]` template that a `sim-data` test validates is an in-test string, already patched.
+**Clean — but the check that establishes that is an enumeration, not the test suite.**
+
+**`Snapshot` holds `Pack` by value, so `restore(&snapshot())` exercises no serde attribute
+at all** — a fact this repo already recorded once, in `protection-chatter.md`, and which
+bit again here. Every test written for this slice stopped before snapshotting, so
+`#[serde(default)]` on `soc_deficit` was exercised by *nothing* while the field was
+non-zero — the exact claim the v14 bump rests on, asserted in prose and verified nowhere.
+`a_pack_in_reversal_survives_a_serde_round_trip` now drives a pack 20 % of its capacity
+past empty, round-trips it through `bincode`, and compares the continuation bit-for-bit.
+Perturbing the attribute to `#[serde(skip)]` turns it red — and **turns nothing else red**,
+including `snapshot.rs`'s own replay test, whose trajectory never enters reversal. The
+failure it guards is silent: a dropped field restores `0.0` and the pack climbs out of a
+hole it is still in.
+
+**`CLAUDE.md`'s chemistry example was a file that would no longer load.** Known to be a
+shape rather than a source (`ui-explanatory-path.md` recorded that the hard way), but a
+*required* section missing is a different kind of omission from a placeholder value.
+
+## Where a reader can actually see this, measured
+
+Every test in the slice runs `bms: None`, which raised a fair question the doc could not
+answer: is the reversal branch reachable at all on a protected pack? Measured on the
+shipped protected configuration driven at 40 A from `soc = 0.05` — **it is not.**
+Under-voltage trips at 50 s, the protection derates, and over the following fifteen
+minutes the pack settles asymptotically at `soc = 0.0026` without ever raising
+`SOC_CLAMPED_LOW`. Voltage reversal belongs to the unprotected mode `CLAUDE.md` calls "a
+supported, interesting mode, not an error". That is now on the flag's own doc comment,
+because "the pack is absorbing energy" invites a reader to look for it in a place it never
+happens.
+
 ## The version bump that can no longer prove what its predecessors proved
 
 `snapshot_version.rs` exists to separate "the version field rejected this blob" from

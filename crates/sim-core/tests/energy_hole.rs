@@ -32,7 +32,7 @@ use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
 use sim_core::{
-    CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig,
+    CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, Telemetry, ThermalConfig,
 };
 
 /// Cell capacity \[Ah\]: 9000 As exactly, so the arithmetic below is checkable by hand.
@@ -438,6 +438,76 @@ fn the_solve_stays_one_pass_in_reversal() {
                 "step {k} of {demand:?} did not converge"
             );
         }
+    }
+}
+
+/// **A pack in reversal survives being written out and read back.**
+///
+/// `soc_deficit` is what makes `SNAPSHOT_VERSION` 14 a *semantic* bump, and the argument
+/// there is that a blob without it restores `0.0` and continues a different trajectory.
+/// Nothing else in the suite exercises that, for a reason worth naming: `Snapshot` holds
+/// `Pack` **by value**, so `Pack::restore(&pack.snapshot())` is a clone and touches no
+/// serde attribute at all. This goes through `bincode` — the same route
+/// `snapshot.rs`'s replay test takes — so a field that fails to serialize is caught here
+/// rather than believed to be fine.
+///
+/// The failure mode it guards is silent: a dropped or misnamed field restores `0.0`, and
+/// a pack that was 20 % of its capacity past empty simply *climbs out of the hole* and
+/// resumes at `OCV(0)`. No error, no flag, a wrong trajectory — which is why the tail is
+/// compared bit-for-bit rather than to a tolerance.
+///
+/// The vacuity guard comes first: this test proves nothing about the field unless the
+/// field is non-zero at the moment the snapshot is taken.
+#[test]
+fn a_pack_in_reversal_survives_a_serde_round_trip() {
+    const MID: usize = 240;
+    const TAIL: usize = 60;
+    let dt = 0.25;
+    // Discharge past empty, then charge back through the ramp, so the tail exercises the
+    // branch in both directions rather than sitting on the floor.
+    let demand_at = |k: usize| {
+        if k < MID + TAIL / 2 {
+            Demand::Current(40.0)
+        } else {
+            Demand::Current(-40.0)
+        }
+    };
+
+    let mut reference = pack_at(0.05);
+    let mut ref_tail: Vec<Telemetry> = Vec::new();
+    for k in 0..MID + TAIL {
+        let tele = reference.step(dt, demand_at(k), &env());
+        if k >= MID {
+            ref_tail.push(tele);
+        }
+    }
+
+    let mut replay = pack_at(0.05);
+    for k in 0..MID {
+        replay.step(dt, demand_at(k), &env());
+    }
+    let deficit = replay.cell(0, 0).expect("cell exists").soc_deficit;
+    assert!(
+        deficit > 0.1,
+        "the fixture must be deep in reversal when it is snapshotted, or this test is \
+         vacuous; got a deficit of {deficit}"
+    );
+
+    let bytes = bincode::serialize(&replay.snapshot()).expect("the snapshot serializes");
+    let restored_snapshot = bincode::deserialize(&bytes).expect("the snapshot deserializes");
+    let mut restored = Pack::restore(&restored_snapshot).expect("the snapshot restores");
+    assert_eq!(
+        restored.cell(0, 0).expect("cell exists").soc_deficit,
+        deficit,
+        "the deficit must cross the serde boundary unchanged"
+    );
+
+    for (i, expected) in ref_tail.iter().enumerate() {
+        assert_eq!(
+            &restored.step(dt, demand_at(MID + i), &env()),
+            expected,
+            "telemetry diverged at tail index {i} after a round trip"
+        );
     }
 }
 

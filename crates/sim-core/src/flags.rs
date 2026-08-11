@@ -41,7 +41,18 @@ bitflags! {
         /// was discarded" reads like "nothing happened": below this point the cell's
         /// open-circuit voltage is falling toward `reversal.floor_v` and the terminal
         /// voltage goes negative. The pack is not delivering energy any more, it is
-        /// absorbing it. See `docs/plans/low-clamp-reversal.md`.
+        /// absorbing it.
+        ///
+        /// # Expect to see this only with `bms: None`
+        /// A configured BMS trips under-voltage long before a cell empties, and then
+        /// derates: measured on the shipped protected pack driven at 40 A from
+        /// `soc = 0.05`, [`Self::UV`] is raised at 50 s and this flag is **never**
+        /// raised at all — the pack settles asymptotically at `soc = 0.0026` over the
+        /// following fifteen minutes without passing zero. So voltage reversal is a
+        /// property of the unprotected mode, which `CLAUDE.md` calls "a supported,
+        /// interesting mode, not an error", rather than something a protected pack
+        /// reaches. A client that never turns the BMS off will never see this.
+        /// See `docs/plans/low-clamp-reversal.md`.
         const SOC_CLAMPED_LOW  = 1 << 1;
         /// Over-voltage: a group voltage exceeded the chemistry's `v_max`.
         const OV               = 1 << 2;

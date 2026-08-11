@@ -160,6 +160,11 @@ and double as the scenario file format.
   months-long aging fast-forward.
 - SOC by coulomb counting: `soc ← soc − I·dt / (3600·capacity_ah·soh_capacity)`,
   clamped to [0, 1] with a flag when clamping occurs (over/under-charge attempt).
+  The **lower** bound does not truncate: charge drawn past empty is carried in a sibling
+  `soc_deficit` and the cell's OCV falls through the `[reversal]` ramp to its floor, so
+  the external circuit pays instead of the model inventing energy. `soc` itself still
+  never leaves [0, 1], which is what keeps every table and threshold indexed on it
+  unchanged. See `docs/plans/low-clamp-reversal.md`.
 - Health applies as multipliers: effective capacity = nominal × `soh_capacity`;
   effective R0 and RC resistances = nominal × `soh_resistance`.
 
@@ -273,6 +278,10 @@ ohms   = [[0.055, 0.022, 0.018],
 [[rc]]                       # 1..2 pairs
 r_ohms  = 0.010
 c_farad = 2000.0
+
+[reversal]                   # required: how the cell behaves BELOW empty
+v_per_soc = 100.0            # OCV falls this fast per unit of over-discharge [V]
+floor_v   = 0.0              # and stops here. Must be below OCV(soc = 0)
 
 [thermal]
 heat_capacity_j_per_k = 95.0
