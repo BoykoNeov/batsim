@@ -335,7 +335,7 @@
 
   <h2>Guided path</h2>
   <!-- Only what shows before app.js runs; the live label is derived from LESSONS.length. -->
-  <button id="path-start">Start — 19 steps</button>
+  <button id="path-start">Start — 20 steps</button>
   <div class="note">From one cell to a pack with nothing watching it. Each step sets the
     controls below and says what to look at; they all stay live, and stepping back or
     forward re-applies the whole set.</div>
@@ -517,6 +517,9 @@
         <option value="capacity_factor">capacity factor [×]</option>
         <option value="r0_factor">R0 factor [×]</option>
         <option value="internal_short_conductance_s">internal short [S]</option>
+        <!-- Equivalent circuits only, and hidden on the two below's packs rather than the
+             other way round: a particle model has no SOC clamp to be driven past. -->
+        <option value="soc_deficit">past empty [pts]</option>
         <!-- Porous-electrode models only; `syncMetricOptions` hides both on a pack whose
              cells are equivalent circuits, which have no surface to be away from. -->
         <option value="surface_gap_neg">surface gap, negative [pts]</option>

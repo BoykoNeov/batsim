@@ -57,8 +57,17 @@ function clearBanner() {
  * same test as v4: a v4 bundle omits them, so `null` and `undefined` are indistinguishable
  * to the availability check below, and the grid would offer a metric that paints as a flat
  * range over nothing.
+ *
+ * v6 is `CellView::soc_deficit`, and it is the bump `sim-wasm` predicted rather than took:
+ * that crate raised `WASM_API_VERSION` to 6 when the field went on the wire and left this
+ * constant alone, on the grounds that "a page that never touches the field has nothing to
+ * refuse". This page now touches it — the `past empty` readout, the cell detail line and
+ * the `soc_deficit` grid metric all read it — so it has something to refuse. The symptom
+ * without this line is the v4 one and quieter than a throw: a v5 bundle omits the field,
+ * `undefined * 100` is `NaN`, and the row prints `NaN pts`, which is a displayed
+ * measurement of nothing.
  */
-const WASM_API_MIN = 5;
+const WASM_API_MIN = 6;
 
 let wasm = null;
 try {
@@ -1013,13 +1022,40 @@ const READOUTS = [
   // The direction is spelled out because the sign convention alone does not carry it:
   // charge going *in* and being refused is the overcharge case, and it is the one that
   // makes heat.
+  //
+  // Only that case. This row used to print `invented` for a positive reading, from back
+  // when the *bottom* of the window reported here too — a cell delivering charge it did
+  // not have. It no longer does: `Telemetry::i_rejected_a`'s own doc says "Never
+  // positive", because charge drawn past empty is carried as a deficit and repaid rather
+  // than discarded (`docs/plans/low-clamp-reversal.md`). The branch named nothing any
+  // engine could produce, so it is gone; the `past empty` row below is where the bottom
+  // of the window reports now.
   [
     "clamp",
-    (m) =>
-      m.i_rejected_a === 0
-        ? null
-        : `${m.i_rejected_a < 0 ? "refused" : "invented"} ${Math.abs(m.i_rejected_a).toFixed(3)} A`,
+    (m) => (m.i_rejected_a === 0 ? null : `refused ${Math.abs(m.i_rejected_a).toFixed(3)} A`),
     "none",
+  ],
+  // The bottom of the window, in points of state of charge — the units of `soc (true)`
+  // above, and the same units as the surface-gap row below, so all three read against
+  // each other. Quiet on every ordinary step for the same reason `clamp` is.
+  //
+  // The pack's *largest* deficit rather than a mean: cells do not pass empty together
+  // (step 7's eight cross over 11.5 s of each other), and the first one there is the one
+  // in trouble. The grid metric is where the spread lives.
+  [
+    "past empty",
+    (m, f, cells) => {
+      const cs = cells?.cells;
+      if (!cs || cs.length === 0) return null;
+      const d = Math.max(...cs.map((c) => c.soc_deficit));
+      return d > 0 ? `${(d * 100).toFixed(3)} pts` : null;
+    },
+    // Two silences that mean different things, which is why this one is a function.
+    // `none` is a measurement; a particle model has no SOC clamp to pass, so there is
+    // nothing there to measure and saying `none` would be the "measured, and flat" lie
+    // `gapPts` warns about one screen down.
+    (m, f, cells) =>
+      isPorous(cells?.cells?.[0]) ? "particle model — no clamp" : "none",
   ],
   // Points of state of charge, two decimals — the units of `soc (true)` above, on a scale
   // that row cannot resolve. It prints one decimal, and the negative electrode's whole
@@ -1039,7 +1075,7 @@ const READOUTS = [
     "surface gap",
     (m, f, cells) => {
       const c = cells?.cells?.[0];
-      if (!c || c.surface_gap_neg === null || c.surface_gap_neg === undefined) return null;
+      if (!isPorous(c)) return null;
       return `${gapPts(c.surface_gap_neg, 2)} / ${gapPts(c.surface_gap_pos, 2)} pts`;
     },
     "circuit — no electrodes",
@@ -1064,6 +1100,25 @@ function gapPts(x, dp) {
   return (Math.abs(v) < 0.5 * 10 ** -dp ? 0 : v).toFixed(dp);
 }
 
+/**
+ * Is this cell a porous-electrode model (`Spm`, `Dfn`) rather than an equivalent circuit?
+ *
+ * The wire has no model name on it, so this asks the question the fields can answer:
+ * the surface gaps are `null` on a circuit and a number on a particle, and the cell model
+ * is chosen in the *pack* config, so one cell answers for all of them.
+ *
+ * It exists because `soc_deficit` cannot be asked the same way. That field is documented
+ * as a real `0.0` on a porous cell — they have no SOC clamp to pass — so "zero" and "no
+ * such quantity" are the same value there, and everything that has to tell them apart
+ * has to come here.
+ *
+ * `undefined` is folded in with `null` on purpose: a bundle older than the field would
+ * give `undefined`, and `WASM_API_MIN` refuses those long before this runs.
+ */
+function isPorous(cell) {
+  return !!cell && cell.surface_gap_neg !== null && cell.surface_gap_neg !== undefined;
+}
+
 const readoutEls = new Map();
 {
   const host = $("readouts");
@@ -1082,11 +1137,17 @@ function renderReadouts(telemetry, facts, cells) {
   // pack, as distinct from the em dash that means "no telemetry yet". It defaulted to
   // "no BMS" back when `soc (bms)` was the only formatter that could return null; the
   // `clamp` row can too, and "no BMS" is not what an absent clamp means.
+  //
+  // It may also be a *function* of the same three arguments the formatter gets. One row
+  // needs that: `past empty` is silent both when a circuit never went past empty and when
+  // the pack has no clamp to pass at all, and those two silences must not read alike.
+  // Every other row hands in a plain string and is untouched.
   for (const [key, fn, quiet = "no BMS"] of READOUTS) {
     const el = readoutEls.get(key);
     const value = telemetry ? fn(telemetry, facts, cells) : null;
     if (value === null || value === undefined) {
-      el.textContent = telemetry ? quiet : "—";
+      const hush = typeof quiet === "function" ? quiet(telemetry, facts, cells) : quiet;
+      el.textContent = telemetry ? hush : "—";
       el.className = "v none";
     } else {
       el.textContent = value;
@@ -1151,6 +1212,27 @@ const METRICS = {
     get: (c) => c.internal_short_conductance_s,
     dp: 4,
     unit: "S",
+  },
+  // Points of state of charge, so it reads against the `soc` metric directly — and it is
+  // the *other half* of that metric rather than a second opinion about it: a tile showing
+  // `soc 0.00` is either resting at empty or being driven through it, and this is the
+  // only view that tells those apart.
+  //
+  // Equivalent-circuit packs only, and the predicate cannot key on the field: `0.0` is a
+  // real reading on a porous cell (no clamp to pass), not an absence, so the ramp would
+  // paint every tile of a DFN pack identically and say "this pack is uniform" — the
+  // false claim this block's own doc comment is about. `isPorous` asks the wire the
+  // question it *can* answer.
+  //
+  // Flat on an ECM pack that has never been over-discharged, and that is accepted:
+  // `internal_short_conductance_s` above has shipped with the same property since the
+  // pack grid existed, and every tile prints its number rather than only its colour.
+  soc_deficit: {
+    ramp: "warm",
+    get: (c) => c.soc_deficit * 100,
+    dp: 3,
+    unit: "pts",
+    avail: (c) => !isPorous(c),
   },
   // In points of state of charge, so they read against the `soc` metric directly.
   surface_gap_neg: {
@@ -1354,9 +1436,17 @@ function renderCellDetail() {
     `soh cap ${(c.soh_capacity * 100).toFixed(3)} %`,
     `soh res ×${c.soh_resistance.toFixed(4)}`,
   ];
+  // Only while this cell is actually in reversal, which is the rule the internal-short
+  // and exotherm lines below already follow: a field that is zero on every healthy cell
+  // is noise on every healthy cell. Printed next to `soc` because it is the other half
+  // of it — the cell's true position is `soc − past empty`, and `soc` is pinned at zero
+  // for as long as this is non-zero.
+  if (c.soc_deficit > 0) {
+    parts.push(`past empty ${(c.soc_deficit * 100).toFixed(3)} pts`);
+  }
   // Absent on an equivalent circuit rather than printed as zero: a circuit has no
   // electrodes, and a row reading "0.00 pts" would say "measured, and flat".
-  if (c.surface_gap_neg !== null && c.surface_gap_neg !== undefined) {
+  if (isPorous(c)) {
     // "neg"/"pos" and not the − / + signs this first used: rendered, `surface gap −
     // 0.000 pts` reads as a gap of *minus* zero rather than as the negative electrode's,
     // which is the one misreading this field cannot afford — its sign is its meaning.
@@ -2052,9 +2142,11 @@ function draw() {
     { label: "pack", color: "#2ee6a8", values: history.i_actual },
     { label: "int. short", color: "#ff6b6b", values: history.i_internal_short_a },
     // Charge that crossed the terminals and changed nobody's stored charge. It sits at
-    // zero for an ordinary run and rises to meet the pack trace once a cell is against
-    // a SOC clamp — negative while an overcharge is being refused, positive while an
-    // empty cell is sourcing charge it does not have.
+    // zero for an ordinary run and goes negative once a cell is full and an overcharge
+    // is being refused — and only then. It used to go positive at the other end of the
+    // window too, for an empty cell sourcing charge it did not have; that no longer
+    // happens (see the `clamp` readout, and `docs/plans/low-clamp-reversal.md`), so
+    // this trace never leaves the half-plane below zero.
     { label: "refused", color: "#b48ead", values: history.i_rejected_a },
   ]);
   drawPanel(
@@ -2572,7 +2664,7 @@ const LESSONS = [
       "2 A out of this cell is 0.87 C — it holds 2.303 Ah, not a round number, because the figure is the *usable* window fitted to the reference model rather than a marketing capacity. Watch the very first step: the voltage drops instantly by `I·R0`. That step is resistance, not charge — rest the cell and it comes straight back. The slower sag over the following minute is the RC pair filling.",
     ],
     expect:
-      "A long, nearly flat middle. LFP's open-circuit voltage barely moves between 20 % and 80 % charge, which is exactly what will make its charge state so hard to measure three steps from now. Then the knee, at about 69 minutes, where the cell empties — and a `SOC_CLAMPED_LOW` flag, which is the coulomb counter reporting that it was asked for charge the cell no longer had.",
+      "A long, nearly flat middle. LFP's open-circuit voltage barely moves between 20 % and 80 % charge, which is exactly what will make its charge state so hard to measure three steps from now. Then the knee, at about 69 minutes, where the cell empties — and a `SOC_CLAMPED_LOW` flag, which is the coulomb counter reporting that it was asked for charge the cell no longer had. The flag is not a stop: the demand box still says 2 A and nothing here is arranged to obey a flag, so the last 53 seconds of this step are spent below empty and the trace keeps going down, to 0.6387 V at the mark. The `past empty` readout is the one that tells you so. That is the subject of the last step in this path; for now, just notice that the run does not end where the flag is.",
   },
   {
     id: "same-discharge-other-chemistry",
@@ -2595,7 +2687,7 @@ const LESSONS = [
       "This cell holds 3.0 Ah against the LFP cell's 2.303, so the same C-rate is 2.6 A rather than 2. Both empty within eight seconds of each other — 4146.5 s and 4154.0 s — and the shapes are what differ.",
     ],
     expect:
-      "A curve that slopes the whole way down instead of sitting on a plateau. Between 90 % and 20 % charge this cell falls 481 mV — 4.030 V to 3.549 — where the LFP cell fell 168 across the same window. That ratio is the whole difference: on this chemistry, a voltage reading tells you the charge level; on LFP it barely does. Load `cc_discharge_lgm50` from the picker for a third — 620 mV, a 5.15 Ah cell fitted from PyBaMM's Chen2020, but only if you also put the demand box up to 4.47 A, which is the same 0.868 C of a cell twice this size. Leave it at 2.6 A and the fall is much the same (618 mV) while the run takes 5700 s to get there, so this step's mark stops you at 41 %. Then hold onto this — two steps from now an LFP state-of-charge estimator will refuse to correct itself, and this is why. At the end you get the same `SOC_CLAMPED_LOW` as before, and the same silence around it: nothing here is protecting this cell either, so it finishes at 2.92 V against a 3.00 V cutoff with no complaint from anything but the coulomb counter.",
+      "A curve that slopes the whole way down instead of sitting on a plateau. Between 90 % and 20 % charge this cell falls 481 mV — 4.030 V to 3.549 — where the LFP cell fell 168 across the same window. That ratio is the whole difference: on this chemistry, a voltage reading tells you the charge level; on LFP it barely does. Load `cc_discharge_lgm50` from the picker for a third — 620 mV, a 5.15 Ah cell fitted from PyBaMM's Chen2020, but only if you also put the demand box up to 4.47 A, which is the same 0.868 C of a cell twice this size. Leave it at 2.6 A and the fall is much the same (618 mV) while the run takes 5700 s to get there, so this step's mark stops you at 41 %. Then hold onto this — two steps from now an LFP state-of-charge estimator will refuse to correct itself, and this is why. At the end you get the same `SOC_CLAMPED_LOW` as before, and the same silence around it: nothing here is protecting this cell either, and no one stops the discharge at the flag. It empties at 4154 s and the mark is 4200, so it spends the last 46 seconds being pulled *past* empty, and the run finishes at **1.2501 V** — a long way under the 3.00 V a datasheet would call the cutoff. Watch the new `past empty` readout come off zero at the same instant the flag appears: 1.111 points of charge taken out of a cell that had none. That fall is the last step of this path, and step 1's cell does the same thing 53 seconds after its own knee.",
   },
   {
     id: "pack-disagrees",
@@ -2681,7 +2773,7 @@ const LESSONS = [
       "Notice what is *missing* as much as what happens. `OV`, `UV`, `OC` and `OT` are raised in one file — the BMS — and nowhere else. With it gone the pack does not merely fail to stop: it fails to say anything.",
     ],
     expect:
-      "The current readout now obeys the demand exactly. Cell voltage dives well under the 2.0 V the datasheet allows, temperature climbs, and the only flag you will see is `SOC_CLAMPED_LOW` — the coulomb counter hitting its floor. That is ground truth reporting an impossibility, not a warning anyone issued.",
+      "The current readout now obeys the demand exactly. Cell voltage dives well under the 2.0 V the datasheet allows, temperature climbs, and the only flag you will see is `SOC_CLAMPED_LOW` — the coulomb counter hitting its floor. That is ground truth reporting an impossibility, not a warning anyone issued. And the flag is where this run gets interesting rather than where it ends. 40 A for 450 s is more charge than this pack holds, so it does not merely empty — it is pulled *through* empty, and by the mark the pack terminal reads **−2.2619 V** with every cell between −0.57 and −0.56 V. A pack at a negative voltage is the model saying, correctly, that the load has stopped being a load: it is now driving the pack backwards. Two ways to watch it. The `past empty` readout comes off zero at 345.0 s and climbs to 26.18 points of charge by the mark. And put the pack grid on `past empty`: the eight cells do not cross together, they cross over 11.5 seconds — (0,0) first at 345.0 s, (1,1) last at 356.5 — and that spread is the capacity scatter of step 3, seen at the one moment it decides which cell suffers first.",
   },
   {
     id: "wearing-out-while-idle",
@@ -2840,7 +2932,7 @@ const LESSONS = [
       "The question is the one a modeller actually asks: if I know what this cell does at 1 C, do I know what it does at 3 C? For the circuit of step 12 the answer is yes, trivially and by construction — triple the current and every term triples, because every term is a resistance times a current. Its jump goes 132.8 → 397.3 mV and its slow climb 74.8 → 224.3 mV: **×2.99 and ×3.00**.",
     ],
     expect:
-      "The particle gives two different answers to the same question. Its instantaneous jump goes 113.9 → 213.2 mV — **×1.87**, not ×3 — because that part is charge-transfer kinetics, and kinetics saturate: overpotential goes as the *arcsinh* of current, so asking harder buys less each time. Its slow climb goes 17.3 → 103.9 mV, which is **×6.01** — accelerating, because the open-circuit potential is a curved function of surface composition and driving the surface further out of balance costs more than proportionally. One part gentler than the circuit, one part far harsher, from the same three-fold demand. And the total sag, which is the only one of the three you can read off the plot without pausing, lands at ×2.48 — a number that looks like mild sub-linearity and conceals both effects underneath it. **No single resistance can be 1.87 and 6.01 at once**, which is the whole argument for a model with an inside. Two footnotes. This costs about ten times the circuit's arithmetic per step at 20 shells on a 1S1P pack, which is why it is not the default. A ratio and not a duration on purpose: the microseconds move by half again between sessions on one machine, so any absolute here would be a number about a laptop rather than about a model. And there is a floor under this model you should know about before you go looking for it: run it past the **SOC clamp** — not to its cut-off, past empty — and it pins somewhere between 0.3 and 0.5 V while the circuit stops at 1.79, because the surface concentration falls off the bottom of its table. A hole in the model, left visible rather than papered over. It is a long way below the cut-off and you have to keep pressing Run to reach it: the next step discharges this same model from full at 3 C and stops at 2.50 V with 11.67 % still showing, nowhere near it.",
+      "The particle gives two different answers to the same question. Its instantaneous jump goes 113.9 → 213.2 mV — **×1.87**, not ×3 — because that part is charge-transfer kinetics, and kinetics saturate: overpotential goes as the *arcsinh* of current, so asking harder buys less each time. Its slow climb goes 17.3 → 103.9 mV, which is **×6.01** — accelerating, because the open-circuit potential is a curved function of surface composition and driving the surface further out of balance costs more than proportionally. One part gentler than the circuit, one part far harsher, from the same three-fold demand. And the total sag, which is the only one of the three you can read off the plot without pausing, lands at ×2.48 — a number that looks like mild sub-linearity and conceals both effects underneath it. **No single resistance can be 1.87 and 6.01 at once**, which is the whole argument for a model with an inside. Two footnotes. This costs about ten times the circuit's arithmetic per step at 20 shells on a 1S1P pack, which is why it is not the default. A ratio and not a duration on purpose: the microseconds move by half again between sessions on one machine, so any absolute here would be a number about a laptop rather than about a model. And there is a floor under this model you should know about before you go looking for it: run it past the **SOC clamp** — not to its cut-off, past empty — and it pins at **0.3095 V** and stays there, because the surface concentration falls off the bottom of its table. A hole in the model, left visible rather than papered over. It is a long way below the cut-off and you have to keep pressing Run to reach it: the next step discharges this same model from full at 3 C and stops at 2.50 V with 11.67 % still showing, nowhere near it. Load `pulse_train_ecm` and do the same thing to the circuit and you get the opposite kind of floor — one that was *designed*. It lasts 600 s longer before it clamps, at 11 880 s against the particle's 11 280, and then falls straight through zero: under the same pulse each tooth now starts at about **−0.45 V** and reaches **−0.66 V** by the end of its sixty seconds, and every later tooth repeats those two numbers exactly. That is not the model failing to have an answer; it is the model's answer. Below empty an equivalent-circuit cell's open-circuit voltage falls at a rate its chemistry file states and stops at a floor the same file states, so a circuit being driven backwards costs the thing driving it. The particle pins because a table ran out; the circuit pins because someone chose where. The last step of this path is about that choice.",
   },
   {
     id: "looks-fine-from-outside",
@@ -2980,7 +3072,39 @@ const LESSONS = [
       "A clamp on a number the fault does not go through cannot stop the fault. Only the contactor is in the current's way.",
     ],
     expect:
-      "93 amps settling to 86, and **73 seconds of no flags at all**. The groups sag to 2.13 V — above `v_min` itself, so not even a soft under-voltage — while the charge trace falls off a cliff. The first thing the BMS says is `OT` at t = 133.5 s, by which point the pack is already at 51 %. It latches at **t = 156.0 s**, 96 s after the short, at **39.62 %**: against the twin's half a percent, this fault costs **fifty points**, because the rung that caught the bigger short was never in this one's way. Two details worth pausing on. The trip is a *probe* crossing 343.15 K — the two probes sit on corner cells, and the cell that is genuinely hottest is at 344.52 K when it fires, so protection is late by 1.3 K of somebody else's temperature. And the pack peaks at 344.5 K here against 299.1 K in the twin: the weaker short is the more dangerous one, which is not the intuition. Now uncheck the BMS and run it again. The trajectory is identical — the same 93.29 A on the first frame after the fault, the same 87.02 A thirty seconds later — right up to the instant it isn't, and then it simply carries on: `SOC_CLAMPED_LOW` at 235.5 s and 375 K, still climbing. Read that tail with one caveat, honestly: past the clamp the current does not stop, because this engine models no empty electrode and a cell at SOC 0 keeps sourcing at `OCV(0)` forever. It is the discharge face of the same hole step 10 shows on the charging side, and the heat after that is the model's, not the pack's.",
+      "93 amps settling to 86, and **73 seconds of no flags at all**. The groups sag to 2.13 V — above `v_min` itself, so not even a soft under-voltage — while the charge trace falls off a cliff. The first thing the BMS says is `OT` at t = 133.5 s, by which point the pack is already at 51 %. It latches at **t = 156.0 s**, 96 s after the short, at **39.62 %**: against the twin's half a percent, this fault costs **fifty points**, because the rung that caught the bigger short was never in this one's way. Two details worth pausing on. The trip is a *probe* crossing 343.15 K — the two probes sit on corner cells, and the cell that is genuinely hottest is at 344.52 K when it fires, so protection is late by 1.3 K of somebody else's temperature. And the pack peaks at 344.5 K here against 299.1 K in the twin: the weaker short is the more dangerous one, which is not the intuition. Now uncheck the BMS and run it again — and then keep running, because this step's mark is 200 s and everything worth seeing on the unprotected arm happens after it. Press Run at the mark and let it go to about 400 s. The trajectory is identical — the same 93.29 A on the first frame after the fault, the same 87.02 A thirty seconds later — right up to the instant it isn't, and then it simply carries on past the mark: `SOC_CLAMPED_LOW` at 235.5 s, at 375.6 K and still rising, with 58 A flowing. What ends this run is not protection and not the fault being removed. It is the pack running out. Past the clamp the cells keep supplying the short, but their open-circuit voltage is now falling — 58.02 A at the flag, 40.19 A four and a half seconds later, 17.04 A at 250 s, 1.95 A at 300 s, 0.098 A at 400 s — so the short goes on being connected and stops mattering. The temperature turns round with it: it peaks at **376.3 K at 245.5 s**, ten seconds after the flag, and is back to 362 K by 400 s. Nobody intervened. A dead short across an unprotected pack ends when the pack is flat, and the last thing you see is the `past empty` readout climbing while everything else falls.",
+  },
+  {
+    id: "past-empty",
+    title: "Past empty, and the charge you have to put back",
+    // Step 1's file, deliberately: the last step returns to the first cell. This one is
+    // about a voltage, and step 19's shorted pack has a temperature running away at the
+    // same time, which would leave every reading with two possible causes.
+    scenario: "cc_discharge_lfp.toml",
+    demand: { mode: "Current", value: 2 },
+    ambient_c: 25,
+    bms: null,
+    // Slower than step 1's 800x on the same file: the whole event this step is about
+    // takes 83 s, which at 800x is a tenth of a second of watching.
+    speed_x: 100,
+    // Pinned for the reason step 18's comment gives — "the step length stops being
+    // whatever the reader last typed". Every number below was measured at 0.5 s, and
+    // step 18 actively instructs a reader to put this box up to 5 and then 10.
+    dt: 0.5,
+    // 253 s past the knee — far enough for the collapse, the floor, and a stretch of flat
+    // afterwards, and short enough that the collapse is not one pixel wide.
+    until_s: 4400,
+    // The mark is below several earlier steps', and this run has to start from a full
+    // cell whichever direction it is entered from.
+    reload: true,
+    watch: ["plot-v", "readouts"],
+    prose: [
+      "The cell from step 1, the same 2 A, and this time nobody stops at the knee. Nineteen steps have treated `SOC_CLAMPED_LOW` as the end of a run. It is not an end — it is the coulomb counter saying it has been asked for charge that is not there, and the demand box is still asking.",
+      "So what does a cell do when you keep pulling? Not something a charge state confined to `[0, 1]` can express, which is why the engine carries a second number beside it. `soc` stays pinned at 0, which keeps every table and threshold in the model indexed on something in range; the **deficit** — the `past empty` readout — records how far below zero the cell really is, and the open-circuit voltage is read off *that*.",
+      "Watch the voltage trace and that readout together. Everything this step is about happens in the 83 seconds after the knee.",
+    ],
+    expect:
+      "The cell empties at 4146.5 s at 1.9290 V, and then the trace does what no earlier step in this path has shown it doing: it keeps falling, in a straight line. 1.2055 V thirty seconds later, 0.4819 V at sixty, and **through zero at about 4226 s** — eighty seconds past the knee, with 1.94 points of charge owed. A cell at a negative voltage is not sourcing anything; it is being driven, and whatever is driving it is paying. Three seconds later the fall simply stops, at **−0.0640 V**, and stays there for as long as you care to run. Be precise about what that flat line is *not*. The cell has not stopped emptying: `past empty` goes on climbing the whole time — 2.01 points where the voltage flattens, 4.01 at 166 s past the knee, 7.24 at 300 — because 2 A is still leaving. What stopped is the open-circuit voltage, which has reached the floor its chemistry file declares. **A voltage that has stopped falling is not a cell that has stopped emptying**, and anything watching only the terminal would call this pack stable. Both numbers behind the shape are labelled placeholders in `lfp_26650_generic.toml`: the fall is `v_per_soc = 100`, sized so the cell collapses over 2 % of its capacity, and the floor is `floor_v = 0.0`, a declared limit rather than a measurement — a real reversed cell goes on to something like −1 to −2 V while its copper current collector dissolves. Now put the demand box to **−2**, which charges at the same rate, and press Run for the part this step exists for. `soc (true)` reads **0.0000 % for the next fourteen minutes**. Not nearly zero — exactly zero, for 854 seconds, with a charger working the entire time. `past empty` is the only thing moving: it counts down from 20.59 points, and the charge state starts to rise only when it reaches zero. The terminal creeps from 0.026 V to 0.064 V for the first thirteen of those minutes and then snaps back to 2.07 V in the last ninety seconds as the deficit clears the ramp — so on the way back up, too, the voltage tells you almost nothing until it is nearly over. And 854 s at 2 A is 0.4744 A·h, which is exactly what came out below empty. The debt is not an estimate, and that is why it is carried: before this, the engine let an empty cell keep sourcing at its empty voltage forever, inventing energy nobody put in, and this run was a flat line at 1.93 V that never ended.",
   },
 ];
 

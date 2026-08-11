@@ -86,7 +86,9 @@ use wasm_bindgen::prelude::*;
 /// public, and no saved pack changed shape.
 /// v4 (the energy hole): [`sim_core::Telemetry`] gains `i_rejected_a`, the charge a SOC
 /// clamp refused or invented. That is an *added field*, not a rename, and it crosses
-/// this boundary verbatim inside every telemetry payload the page reads.
+/// this boundary verbatim inside every telemetry payload the page reads. (The "or
+/// invented" half is history as of v6: the low clamp stopped discarding charge, so the
+/// field is now never positive. See its own doc, which is the authority.)
 ///
 /// An addition, so by `sim_server::API_VERSION`'s rule — which exempts added fields —
 /// that constant stays at 2, and the two part company for the second time. This one
