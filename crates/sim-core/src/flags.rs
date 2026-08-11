@@ -54,7 +54,15 @@ bitflags! {
         /// Thermal runaway is in progress on at least one cell.
         const THERMAL_RUNAWAY  = 1 << 11;
         /// A nonlinear solve hit its iteration cap without reaching its tolerance;
-        /// the step used the last iterate.
+        /// the step used the last **accepted** iterate.
+        ///
+        /// "Accepted" is load-bearing. The pack's solve takes a pass only if it reduces
+        /// the residual, backtracking towards the last accepted current until it does
+        /// (see `pack::DAMPING_ATTEMPTS`), so the current this flag is raised
+        /// over is bounded by the physics rather than by wherever an extrapolation
+        /// happened to land. Before that existed, an unconverged step could report
+        /// 1e101 A and 1e95 V — flagged, but not a number a client can do anything
+        /// with.
         ///
         /// Only reachable with a nonlinear cell model — an all-equivalent-circuit
         /// pack is solved exactly on the first pass and can never raise this. It is

@@ -133,7 +133,21 @@ fn config(series: u16, parallel: u16, scatter: Scatter, bms: Option<BmsConfig>) 
 /// variants, and a probe step. `Power` and `Voltage` matter most — they are the two
 /// that reach `solve_current`'s non-trivial arms, and `Power`'s quadratic is the one
 /// place a moving tangent could flip a branch.
-fn schedule() -> Vec<(f64, Demand)> {
+///
+/// # Why the voltage targets are scaled by `series`
+/// [`Demand::Voltage`] is a **pack terminal** voltage, and `Pack::step` clamps it to
+/// `series × [v_min, v_max]` — here `[2.90, 3.50]` per cell, so `[11.60, 14.00]` on the
+/// 4S packs five of the six cases below use. Written as bare `3.30`/`3.05` these targets
+/// sat far *below* that window, and what they actually asked a 4S3P pack resting near
+/// 13.76 V for was a 392 A / 26 C discharge — legal, but not a voltage hold, and under
+/// the clamp it would have become the window edge rather than a number this file chose.
+/// Scaling keeps each case asking for the same thing *per cell* that the 1S1P case asks,
+/// which is what the schedule was always reaching for.
+///
+/// The assertion is untouched by this: it is about how many passes the solve takes, and
+/// a linear pack's aggregate is exact at any operating point.
+fn schedule(series: u16) -> Vec<(f64, Demand)> {
+    let s = f64::from(series);
     vec![
         (1.0, Demand::Current(2.5)),
         (1.0, Demand::Current(-2.0)),
@@ -141,15 +155,16 @@ fn schedule() -> Vec<(f64, Demand)> {
         (1.0, Demand::Rest),
         (1.0, Demand::Power(8.0)),
         (1.0, Demand::Power(-6.0)),
-        (1.0, Demand::Voltage(3.30)),
-        (1.0, Demand::Voltage(3.05)),
+        (1.0, Demand::Voltage(3.30 * s)),
+        (1.0, Demand::Voltage(3.05 * s)),
         (0.25, Demand::Current(12.0)), // hard enough that protection derates it
     ]
 }
 
 /// Run `schedule` against `pack` and assert every step took exactly one pass.
 fn assert_single_pass(pack: &mut Pack, case: &str) {
-    for (n, (dt, demand)) in schedule().into_iter().enumerate() {
+    let series = pack.series();
+    for (n, (dt, demand)) in schedule(series).into_iter().enumerate() {
         let tele = pack.step(dt, demand, &env());
         assert_eq!(
             tele.solve_iterations, 1,

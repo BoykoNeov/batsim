@@ -68,7 +68,31 @@ pub enum Demand {
     Current(f64),
     /// Constant power. Positive = discharge \[W\].
     Power(f64),
-    /// Hold terminal voltage (e.g. CV charge phase) \[V\].
+    /// Hold **pack terminal** voltage (e.g. CV charge phase) \[V\].
+    ///
+    /// This is the whole string's voltage, not one cell's: a 4S pack asked to hold
+    /// 3.3 V is being asked for roughly a quarter of its resting voltage, which is a
+    /// deep discharge and not a CV hold.
+    ///
+    /// # The target is clamped to the pack's declared window
+    /// Before the solve, the target is clamped to
+    /// `series × [chemistry.cell.v_min, chemistry.cell.v_max]`. A target already inside
+    /// that window is passed through bit-for-bit, so a CC-CV policy holding exactly
+    /// `v_max` is unaffected; a target outside it is answered *at* the window.
+    ///
+    /// This exists because the answer to an out-of-window hold is arithmetic rather
+    /// than physics. Terminal voltage has no asymptote in either direction, so every
+    /// voltage is technically reachable — but on a single-particle cell it costs a
+    /// fixed 71.23 mV per *doubling* of current, so holding 7 V on a 4.2 V cell means
+    /// 108 megaamps and holding 10 V means more current than the universe has. Clamping
+    /// reports the strongest operating point the pack will actually hold instead.
+    ///
+    /// **This means a voltage demand cannot drive a pack outside its declared window.**
+    /// Use [`Self::Current`] for that — it is unrefusable by every cell model and
+    /// reaches every state this refuses, including overcharge to venting.
+    ///
+    /// No flag is raised: the step reports the voltage it held and the current it drew,
+    /// which is the difference itself.
     Voltage(f64),
     /// Open circuit / rest.
     Rest,

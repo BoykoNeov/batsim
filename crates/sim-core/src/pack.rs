@@ -220,11 +220,76 @@ pub const SOLVE_TOL_V: f64 = 1.0e-9;
 /// Iteration cap for the pack's nonlinear current solve.
 ///
 /// Reaching it raises [`EventFlags::SOLVE_UNCONVERGED`] and the step proceeds on the
-/// last iterate — `step` reports, it does not fail. Set well above the spike's
-/// measured worst case of 3 so that hitting it means something has genuinely gone
-/// wrong (a demand at the max-power knee, a pathological state) rather than that a
-/// hard step needed one pass more than usual.
+/// last **accepted** iterate — `step` reports, it does not fail. Set well above the
+/// spike's measured worst case of 3 so that hitting it means something has genuinely
+/// gone wrong (a demand at the max-power knee, a pathological state) rather than that
+/// a hard step needed one pass more than usual.
 pub const SOLVE_ITER_CAP: u32 = 32;
+
+/// How many step lengths the pack solve's damping line-search may try before giving up
+/// and taking the smallest of them.
+///
+/// # What this is for
+/// Without it the iteration is plain successive substitution: every pass aggregates the
+/// tangents the last pass's probes took and commits to whatever current that predicts.
+/// Where a tangent is shallower than the secant it stands in for, the prediction
+/// overshoots — and the next pass, taking its tangents further out, overshoots by more.
+/// The result is not a slow solve but a runaway one. Measured before this existed, on a
+/// 1S1P LG M50 pack at 50 % SOC and `dt = 1 s`:
+///
+/// | demand | reported current | reported terminal voltage |
+/// | ------ | ---------------- | ------------------------- |
+/// | `Voltage(-100)` on a DFN | 1.6e101 A | -1.7e95 V |
+/// | `Voltage(1e6)` on a DFN | -6.4e105 A | 7.1e99 V |
+/// | `Power(1e12)` on an SPM | 3.4e9 A | -1.66 V |
+///
+/// Each of those raised [`EventFlags::SOLVE_UNCONVERGED`], so the step was never
+/// silently wrong — but "approximate" is not what a client can do anything with at 1e95
+/// volts, and on a `Dfn` the diverged iterate was also written into the cell's own
+/// Newton guess and bricked it (see [`crate::dfn::seed_is_usable`]).
+///
+/// # Why backtracking rather than a fixed relaxation factor
+/// A fixed factor slows every step, including the overwhelming majority that need no
+/// help, and it cannot promise anything: a factor small enough for the worst case is
+/// still an extrapolation. Requiring each accepted pass to *reduce* the residual is a
+/// promise — the sequence of accepted residuals is strictly decreasing, so the iterate
+/// cannot run away, and a solve that stalls stops at a bounded current with the flag up
+/// rather than at 1e101 A with the flag up. It also costs converging steps nothing:
+/// attempts past the accepted one are never made, and the first attempt is the full
+/// step.
+///
+/// # Measured, not chosen
+/// Each attempt halves, so the smallest step considered is `2^-(this-1)` of the full
+/// pass. Sweeping an LG M50 pack's whole in-window voltage band (81 targets from
+/// `v_min` to `v_max`, across five pack states — 1S1P at 2 %, 50 % and 98 % SOC, a
+/// scattered 1S3P, and a 4S2P — under both porous-electrode models, so 810 solves) and
+/// counting the ones that finish on [`EventFlags::SOLVE_UNCONVERGED`]:
+///
+/// | attempts | 1 (off) | 4 | 8 | 12 | 13 | **16** | 20 | 24 |
+/// | -------- | ------- | - | - | -- | -- | ------ | -- | -- |
+/// | unconverged | 55 | 40 | 34 | 12 | 11 | **11** | 13 | 13 |
+///
+/// The knee sits at 13 — the same place `dfn::DAMPING_ATTEMPTS`'s does, which
+/// is worth noting but is not evidence of a shared cause; these are different searches
+/// over different residuals. Set just past it.
+///
+/// **Deeper is not better, and that is the interesting part.** Past 16 the count goes
+/// back *up*. A search allowed more halvings can accept a step small enough to be no
+/// step at all — it satisfies "reduced the residual" while barely moving the iterate,
+/// and the solve then spends its remaining passes creeping and runs
+/// [`SOLVE_ITER_CAP`] out. So this constant is bounded on both sides by measurement,
+/// and raising it is not a free way to buy robustness.
+///
+/// # What the search does not fix
+/// 11 of those 810 solves still finish unconverged, and all 11 are the one
+/// configuration: a scattered 1S3P `Spm` pack asked to hold a voltage on the knee of
+/// its own discharge curve, where a small change in voltage needs a large change in
+/// current and the inverse problem is ill-conditioned. They are **bounded and flagged**
+/// — the worst reports 949 A and 4.207 V, against 2.4e9 A and 7.34 V for the same sweep
+/// before this existed — which is the whole of what this constant promises. Closing
+/// them wants a bracketed root find on a demand residual, which is a different solve;
+/// see `docs/plans/voltage-target-blowup.md` for why that was priced and declined.
+const DAMPING_ATTEMPTS: u32 = 16;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
 /// ohmic resistance across the cells of a pack.
@@ -1341,6 +1406,54 @@ impl Pack {
         let cap_ah = self.chem.cell.capacity_ah;
         let (series, parallel) = (self.series as usize, self.parallel as usize);
 
+        // --- a voltage target outside the pack's declared window is answered at the
+        // window, not chased.
+        //
+        // `V(i)` has no asymptote in either direction, so *every* voltage is reachable
+        // and "unreachable" is not a claim this engine can make. What it costs to get
+        // there is the point. Measured on a 1S1P LG M50 at 50 % SOC: an `Spm`'s terminal
+        // voltage buys a fixed **71.23 mV per doubling of current** — logarithmic, from
+        // the Butler–Volmer `asinh`, and it holds unchanged out past 1e11 A. So a 7 V
+        // target on a 4.2 V cell is met, exactly, at 108 megaamps; a 10 V one needs 1e30.
+        // An `Ecm` and a `Dfn` are asymptotically linear instead and merely need a
+        // proportional current, which is how a 1e30 V target reached 5e31 A.
+        //
+        // Those are not solver failures — the solve converges and the arithmetic is
+        // right. They are the honest answer to a question worth refusing, so it is
+        // refused here, at the demand, rather than papered over in the solve.
+        //
+        // # Why this window
+        // `v_min`/`v_max` are the chemistry's own declared operating limits, required in
+        // every `[cell]` block and carrying provenance (for the shipped LG M50 they are
+        // Chen2020's own cut-offs). Nothing is invented: no constant is added, and a
+        // target already inside the window is passed through untouched — `clamp` on an
+        // in-window value returns it bit-for-bit, so a CC-CV client holding exactly
+        // `v_max` is unaffected to the last ULP. Scaling by `series` is what makes it a
+        // *pack* terminal window, which is what [`Demand::Voltage`] means.
+        //
+        // # What this deliberately gives up
+        // A `Demand::Voltage` can no longer drive a pack outside its declared window —
+        // so it can no longer express "hold this cell above `v_max` until it vents".
+        // That capability is not lost, only moved: [`Demand::Current`] is unrefusable by
+        // any cell model and reaches every one of those states. The trade is deliberate,
+        // because a voltage *hold* outside the window is the one demand whose answer is
+        // dominated by the arithmetic of the overpotential rather than by any physics a
+        // reader could learn from.
+        //
+        // # Why no flag
+        // [`EventFlags::SOLVE_UNCONVERGED`] already carries two meanings and a third
+        // would overload it, and a clamp needs no flag to be visible: the step reports
+        // the voltage it actually held and the current it actually drew, which is
+        // exactly the difference. Hoisted out of the solve loop below so that the
+        // iteration's arithmetic is untouched on every in-window target.
+        let demand = match demand {
+            Demand::Voltage(v) => Demand::Voltage(v.clamp(
+                f64::from(self.series) * self.chem.cell.v_min,
+                f64::from(self.series) * self.chem.cell.v_max,
+            )),
+            other => other,
+        };
+
         // A zero-length step is an observation, not a tick: it must leave the engine
         // exactly as it found it (pinned by `snapshot.rs`, and relied on by the
         // energy-balance property test to read the start-of-step terminal voltage).
@@ -1439,6 +1552,14 @@ impl Pack {
         let mut i_cell: Vec<f64> = Vec::new();
         let mut flags = EventFlags::empty();
         let mut solve_iterations: u32 = 0;
+        // The last *accepted* pass, which the damping line-search below backtracks
+        // towards and measures against. `residual_prev` starts infinite so that the
+        // first pass — which has nothing to improve on — is accepted whatever it
+        // produces; the two currents are not read until a second pass exists, and a
+        // linear pack never reads any of the three.
+        let mut residual_prev = f64::INFINITY;
+        let mut i_g_prev = 0.0;
+        let mut i_short_prev = 0.0;
 
         // --- the pack current solve.
         //
@@ -1557,17 +1678,17 @@ impl Pack {
             // Protection can derate the load but cannot derate a short, which is precisely
             // the lesson — the only thing that stops an external short is opening the
             // contactor, and that disconnects load and short together.
-            let mut i_external_short_a = 0.0;
-            let mut i_g = i_load;
+            let mut i_short_full = 0.0;
+            let mut i_g_full = i_load;
             if self.bms.as_ref().is_some_and(Bms::contactor_open) {
-                i_g = 0.0;
+                i_g_full = 0.0;
             } else if g_ext > 0.0 {
-                i_external_short_a = (e_load - i_load * r_load) * g_ext;
-                i_g += i_external_short_a;
+                i_short_full = (e_load - i_load * r_load) * g_ext;
+                i_g_full += i_short_full;
             }
             solve_iterations += 1;
             if !nonlinear {
-                break (i_g, i_external_short_a, prot_flags);
+                break (i_g_full, i_short_full, prot_flags);
             }
 
             // --- how far is this pass's answer from the physics it linearized?
@@ -1582,43 +1703,106 @@ impl Pack {
             } else {
                 &tangent
             };
-            i_cell.clear();
-            probed.clear();
-            let mut residual_v = 0.0_f64;
-            for (g_idx, group) in self.groups.iter().enumerate() {
-                let (e_gv, r_gv) = group_src[g_idx];
-                let v_node = e_gv - i_g * r_gv;
-                for (k, cell) in group.cells.iter().enumerate() {
-                    let (e_k, r_k) = src[g_idx * parallel + k];
-                    let i_k = (e_k - v_node) / r_k;
-                    // One evaluation of the cell's curve, answering both questions this
-                    // pass has: where the curve is (the residual) and where it is going
-                    // (the next pass's tangent). Asking separately would evaluate twice,
-                    // and for a DFN an evaluation is a nonlinear solve — see
-                    // [`CellModel::probe_at`]. The tangent is kept even on the pass that
-                    // turns out to converge, where it is then discarded; that costs a
-                    // single-particle cell two table-lookup voltage evaluations per cell
-                    // and a DFN one Jacobian factorisation it was doing anyway.
-                    let (v_k, line_k) = cell.model.probe_at(
-                        &self.chem,
-                        cell.eff_r0_factor(),
-                        cell.eff_capacity_ah(cap_ah),
-                        i_k,
-                        dt,
-                    );
-                    probed.push(line_k);
-                    let gap = (v_k - v_node).abs();
-                    // The NaN arm is not defensive noise: `f64::max` *discards* a NaN
-                    // in favour of the other operand, so a pack driven somewhere
-                    // pathological would report a converged solve over a state that
-                    // has none. Letting NaN win instead runs the solve to its cap and
-                    // raises `SOLVE_UNCONVERGED`, which is the true statement.
-                    if gap > residual_v || gap.is_nan() {
-                        residual_v = gap;
-                    }
-                    i_cell.push(i_k);
+
+            // --- the damping line-search, which is what makes the loop above an
+            // iteration rather than a runaway (see `DAMPING_ATTEMPTS`).
+            //
+            // The full step is tried first and, where it reduces the residual, taken
+            // exactly — so a converging solve pays one comparison per pass and nothing
+            // else, and every trajectory in the suite that never backtracks is
+            // bit-for-bit what it was. Where the full step makes things *worse*, the
+            // trial current is walked back towards the last accepted one by halving
+            // until it does not.
+            //
+            // As in [`crate::dfn`]'s Newton, the halving happens at the *top* of each
+            // attempt rather than the bottom. That is what keeps `i_cell`, `probed` and
+            // `residual_v` describing the same current when the search gives up: a
+            // search that halved on the way out would leave those three belonging to a
+            // step twice the size of the one taken, and the reporting pass below —
+            // which re-derives `i_k` from the accepted `i_g` and asserts it matches
+            // `i_cell` — would fire.
+            //
+            // # Damping after protection cannot un-refuse a refused current
+            // The trial is a convex combination of two currents protection already
+            // passed, and `apply_protection`'s *allowance* does not depend on the
+            // iterate — its limits come from the chemistry and the pack's capacity, and
+            // its hard trips read the sensor frame. So both endpoints lie in one
+            // interval and every point between them does too. A latched contactor is
+            // the degenerate case and behaves: both endpoints are exactly `0.0`, so
+            // every trial is exactly `0.0`. The same argument carries the short, which
+            // is affine in `i_load` and so rides the same combination.
+            let mut lambda = 1.0;
+            let mut i_g = i_g_full;
+            let mut i_external_short_a = i_short_full;
+            let mut residual_v = f64::INFINITY;
+            for attempt in 0..DAMPING_ATTEMPTS {
+                if attempt > 0 {
+                    lambda *= 0.5;
+                    i_g = i_g_prev + lambda * (i_g_full - i_g_prev);
+                    i_external_short_a = i_short_prev + lambda * (i_short_full - i_short_prev);
                 }
+                i_cell.clear();
+                probed.clear();
+                residual_v = 0.0_f64;
+                for (g_idx, group) in self.groups.iter().enumerate() {
+                    let (e_gv, r_gv) = group_src[g_idx];
+                    let v_node = e_gv - i_g * r_gv;
+                    for (k, cell) in group.cells.iter().enumerate() {
+                        let (e_k, r_k) = src[g_idx * parallel + k];
+                        let i_k = (e_k - v_node) / r_k;
+                        // One evaluation of the cell's curve, answering both questions
+                        // this attempt has: where the curve is (the residual) and where
+                        // it is going (the next pass's tangent). Asking separately would
+                        // evaluate twice, and for a DFN an evaluation is a nonlinear
+                        // solve — see [`CellModel::probe_at`]. The tangent is kept even
+                        // on the pass that turns out to converge, where it is then
+                        // discarded; that costs a single-particle cell two table-lookup
+                        // voltage evaluations per cell and a DFN one Jacobian
+                        // factorisation it was doing anyway.
+                        let (v_k, line_k) = cell.model.probe_at(
+                            &self.chem,
+                            cell.eff_r0_factor(),
+                            cell.eff_capacity_ah(cap_ah),
+                            i_k,
+                            dt,
+                        );
+                        probed.push(line_k);
+                        let gap = (v_k - v_node).abs();
+                        // The NaN arm is not defensive noise: `f64::max` *discards* a
+                        // NaN in favour of the other operand, so a pack driven somewhere
+                        // pathological would report a converged solve over a state that
+                        // has none. Letting NaN win instead keeps the search backtracking
+                        // and, if that never helps, runs the solve to its cap and raises
+                        // `SOLVE_UNCONVERGED`, which is the true statement.
+                        if gap > residual_v || gap.is_nan() {
+                            residual_v = gap;
+                        }
+                        i_cell.push(i_k);
+                    }
+                }
+                // The first pass is accepted whatever it produces: there is no earlier
+                // residual for it to beat, and refusing it would leave the solve with no
+                // iterate at all. Thereafter an attempt has to be a strict improvement,
+                // which is what makes the accepted residuals a decreasing sequence and
+                // the iterate therefore bounded. A non-finite residual can never be an
+                // improvement, so a pass that produces one always backtracks.
+                if solve_iterations == 1 || (residual_v.is_finite() && residual_v < residual_prev) {
+                    break;
+                }
+                // Whether or not the search succeeds, the smallest step it tried is the
+                // one taken — `dfn::solve`'s rule, for its reason: the next pass's
+                // residual is what decides whether that was recoverable.
             }
+            debug_assert!(
+                solve_iterations == 1 || (0.0..=1.0).contains(&lambda),
+                "damping produced λ = {lambda}, which is not a convex combination of the \
+                 last accepted current and this pass's; the argument that damping cannot \
+                 defeat protection rests on it being one"
+            );
+            residual_prev = residual_v;
+            i_g_prev = i_g;
+            i_short_prev = i_external_short_a;
+
             if residual_v <= SOLVE_TOL_V {
                 break (i_g, i_external_short_a, prot_flags);
             }
