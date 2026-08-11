@@ -82,6 +82,10 @@ fn safety(runaway_power_w_at_onset: f64) -> SafetyParams {
 /// heater alone reaches a finite plateau and the control run means something.
 fn chem(safety: Option<SafetyParams>, h_area_w_per_k: f64) -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety,
         spm: None,

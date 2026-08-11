@@ -16,6 +16,10 @@ use sim_core::{CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalC
 /// have to have distinct, short time constants.
 fn chem(n_rc: usize) -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety: None,
         spm: None,

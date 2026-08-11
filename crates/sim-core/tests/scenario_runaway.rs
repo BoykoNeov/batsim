@@ -109,6 +109,10 @@ fn env() -> Env {
 /// an independent physical claim.
 fn lfp(runaway_power_w_at_onset: f64) -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         spm: None,
         dfn: None,

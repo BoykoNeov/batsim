@@ -86,6 +86,10 @@ fn safety_params(
 /// A sloped-OCV, single-RC chemistry whose `R0` grid reaches down to the cold end.
 fn chem(aging: Option<AgingParams>, safety: Option<SafetyParams>) -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging,
         safety,
         spm: None,

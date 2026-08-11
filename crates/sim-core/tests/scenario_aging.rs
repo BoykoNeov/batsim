@@ -83,6 +83,10 @@ fn lfp_aging(cyc_fade_per_ah: f64) -> AgingParams {
 /// section, and an aging scenario has no business also being a plating or runaway one.
 fn lfp(cyc_fade_per_ah: f64) -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: Some(lfp_aging(cyc_fade_per_ah)),
         safety: None,
         spm: None,

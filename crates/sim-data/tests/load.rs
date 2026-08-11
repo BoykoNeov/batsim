@@ -62,6 +62,10 @@ ohms = [[0.02], [0.02]]
 r_ohms = 0.01
 c_farad = 2000.0
 
+[reversal]
+v_per_soc = 100.0
+floor_v   = 0.0
+
 [thermal]
 heat_capacity_j_per_k = 95.0
 h_area_w_per_k = 0.35

@@ -40,7 +40,7 @@ pub use aging::{Aging, AgingConfig};
 pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
 pub use chem::{
     AgingParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams, DfnSeparator,
-    ElectrodeParams, OcpTable, PowerTerm, SafetyParams, SpmParams, ThermalParams,
+    ElectrodeParams, OcpTable, PowerTerm, ReversalParams, SafetyParams, SpmParams, ThermalParams,
 };
 pub use dfn::DfnState;
 pub use ecm::{CellModel, EcmState};
@@ -321,12 +321,14 @@ pub struct Telemetry {
     /// and is already inside [`Self::q_gen_w`] at `OCV(1.0)·i_rejected_a`, which is
     /// what makes an unprotected overcharge heat up.
     ///
-    /// **Positive at the bottom**: the cell delivered charge it did not have. That
-    /// energy is *fabricated*, and unlike the overcharge case nothing here corrects
-    /// it — burning it as negative heat would cool a cell that is being over-drained
-    /// and suppress the runaway physics. This field is how much the model lied by, and
-    /// `sim-core`'s own property tests pin the residual to `OCV(0.0)` × it rather than
-    /// letting it hide. See `docs/plans/energy-hole.md`.
+    /// **Never positive.** The bottom of the window used to report here too — the cell
+    /// delivered charge it did not have, and this field was how much the model lied by.
+    /// It no longer lies: charge drawn past empty is carried as
+    /// [`crate::EcmState::soc_deficit`] and repaid on the way back up, while the cell's
+    /// open-circuit voltage falls through zero so the external circuit pays for what it
+    /// is forcing out. Nothing is discarded there, so nothing is reported. The
+    /// asymmetry between the two ends of the window is deliberate and is argued in
+    /// `docs/plans/low-clamp-reversal.md`.
     ///
     /// A porous-electrode cell (`Spm`, `Dfn`) never rejects charge — it keeps the
     /// lithium it was pushed — so this stays zero on such a pack even while

@@ -44,6 +44,8 @@ pub struct ChemistryParams {
     pub rc: Vec<RcPair>,
     /// Lumped thermal properties of one cell (`[thermal]`).
     pub thermal: ThermalParams,
+    /// How an equivalent-circuit cell behaves below empty (`[reversal]`).
+    pub reversal: ReversalParams,
     /// Semi-empirical aging coefficients (`[aging]`), or `None` for a chemistry
     /// that carries no aging data.
     ///
@@ -653,6 +655,51 @@ pub struct ThermalParams {
     pub h_area_w_per_k: f64,
 }
 
+/// How an equivalent-circuit cell behaves below empty (`[reversal]`).
+///
+/// A cell driven past `soc = 0` does not stop delivering current — under
+/// [`crate::Demand::Current`] nothing in the engine *can* refuse a demanded current, as
+/// `docs/plans/low-clamp-solve-side.md` measured. What a real cell does instead is go
+/// into **voltage reversal**: its open-circuit voltage falls through zero and the
+/// external circuit starts paying for the current it is forcing. These two numbers are
+/// that fall.
+///
+/// # Required, not optional
+/// Unlike [`AgingParams`] and [`SpmParams`], this section has no `None` meaning. A
+/// chemistry that omitted it would silently inherit a curve from code, and every cell
+/// built from it would fabricate energy at the bottom of its window — which is the
+/// defect this section exists to close. Saying so loudly at load time is the cheaper
+/// failure.
+///
+/// # Conservation does not depend on these values
+/// `OCV_eff` is a single-valued function of the cell's extended position
+/// (`soc − soc_deficit`), so stored energy is a state function of it and the energy
+/// ledger closes for *any* setting here — including a [`Self::floor_v`] above the
+/// chemistry's empty-endpoint OCV, which makes the branch inert. These parameters set
+/// how deep the reversal goes, not whether the books balance. See
+/// `docs/plans/low-clamp-reversal.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReversalParams {
+    /// How steeply open-circuit voltage falls below empty \[V per unit SOC\].
+    ///
+    /// Applied to the deficit, not to `soc`: `OCV(0) − v_per_soc · soc_deficit`, so a
+    /// cell one percent of its capacity past empty has lost `0.01 · v_per_soc` volts.
+    /// Must be `> 0` — a zero or negative slope is a cell that keeps sourcing at its
+    /// empty-endpoint OCV forever, which is the pre-fix behaviour.
+    pub v_per_soc: f64,
+    /// Where the fall stops \[V\].
+    ///
+    /// Without it the ramp is unbounded and a long over-drain reaches voltages that
+    /// dominate every other term in the run — measured at −52 V on an LFP cell in two
+    /// minutes, with a step-size sensitivity worse than the defect being fixed. Must be
+    /// below the chemistry's OCV at `soc = 0`, or the branch never descends into it.
+    ///
+    /// This is a **declared limit** in the sense `docs/plans/voltage-target-blowup.md`
+    /// established, not a measured plateau: a real reversed cell continues to roughly
+    /// −1 to −2 V on copper dissolution before it fails outright.
+    pub floor_v: f64,
+}
+
 /// One RC (Thevenin) pair modelling a diffusion/charge-transfer overpotential.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RcPair {
@@ -865,6 +912,31 @@ impl ChemistryParams {
             return Err(ChemistryError::Negative {
                 what: "thermal.h_area_w_per_k",
                 value: t.h_area_w_per_k,
+            });
+        }
+
+        // --- Reversal ---
+        //
+        // Checked against `ocv.volts[0]` rather than in isolation: the floor's whole job
+        // is to stop a ramp that starts at the empty-endpoint OCV, and a floor at or
+        // above that endpoint is a ramp the cell can never descend into — i.e. silently
+        // the pre-fix behaviour, which is the one outcome this section exists to make
+        // impossible. The OCV table is validated non-empty above, so the index is safe.
+        let rev = &self.reversal;
+        if !rev.v_per_soc.is_finite() || !rev.floor_v.is_finite() {
+            return Err(ChemistryError::BadRange {
+                what: "reversal.v_per_soc and reversal.floor_v must be finite",
+            });
+        }
+        if !is_positive(rev.v_per_soc) {
+            return Err(ChemistryError::NotPositive {
+                what: "reversal.v_per_soc",
+                value: rev.v_per_soc,
+            });
+        }
+        if rev.floor_v >= self.ocv.volts[0] {
+            return Err(ChemistryError::BadRange {
+                what: "reversal.floor_v must be below the OCV at soc = 0",
             });
         }
 

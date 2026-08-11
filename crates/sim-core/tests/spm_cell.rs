@@ -40,6 +40,10 @@ use sim_core::{CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, Snapshot
 /// them; nothing in this file runs them.
 fn spm_chem() -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety: None,
         dfn: None,

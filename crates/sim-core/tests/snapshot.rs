@@ -26,6 +26,10 @@ fn env() -> Env {
 /// two RC pairs — so a broken round-trip of almost any field shows up.
 fn rich_chem() -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety: None,
         spm: None,

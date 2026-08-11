@@ -27,11 +27,21 @@ bitflags! {
         /// readout* has run past its window, so `i_rejected_a` stays zero. See
         /// [`crate::spm::advance`].
         const SOC_CLAMPED_HIGH = 1 << 0;
-        /// SOC hit the lower clamp (0.0): an over-discharge attempt was truncated.
+        /// SOC hit the lower clamp (0.0): the cell is being discharged past empty.
         ///
-        /// Same model-dependent split as [`Self::SOC_CLAMPED_HIGH`], and on the
-        /// equivalent circuit the truncation runs the other way: the cell delivered
-        /// charge it did not have. [`crate::Telemetry::i_rejected_a`] measures it.
+        /// **Unlike [`Self::SOC_CLAMPED_HIGH`], this one now means the same thing for
+        /// every cell model** — the *SOC readout* has run past its window, and nothing
+        /// was discarded. On a porous-electrode cell it always meant that. On an
+        /// equivalent circuit it used to mean state really was destroyed, with
+        /// [`crate::Telemetry::i_rejected_a`] measuring how much; since the reversal
+        /// branch the charge is carried in [`crate::EcmState::soc_deficit`] instead and
+        /// `i_rejected_a` stays zero here.
+        ///
+        /// What the flag is *for* is unchanged and is worth stating, because "nothing
+        /// was discarded" reads like "nothing happened": below this point the cell's
+        /// open-circuit voltage is falling toward `reversal.floor_v` and the terminal
+        /// voltage goes negative. The pack is not delivering energy any more, it is
+        /// absorbing it. See `docs/plans/low-clamp-reversal.md`.
         const SOC_CLAMPED_LOW  = 1 << 1;
         /// Over-voltage: a group voltage exceeded the chemistry's `v_max`.
         const OV               = 1 << 2;

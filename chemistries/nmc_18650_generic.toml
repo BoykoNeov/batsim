@@ -1,6 +1,6 @@
 # Generic NMC 18650 cell parameters.
 #
-# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [thermal], [aging], and
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [thermal], [aging], and
 # [safety]. Within [safety] the plating fields are live; the runaway trio is validated
 # but not yet consumed. Every physical constant carries a provenance note per the
 # project rule: no unlabeled numbers.
@@ -51,6 +51,19 @@ c_farad = 800.0
 [[rc]]
 r_ohms  = 0.006
 c_farad = 8000.0
+
+# How the cell behaves below empty. Driven past soc = 0 a real cell does not stop
+# delivering current -- it goes into voltage reversal, its OCV falls through zero, and the
+# external circuit starts paying. Without this the engine would keep sourcing at OCV(0)
+# forever and fabricate energy; see docs/plans/low-clamp-reversal.md.
+[reversal]
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized so the cell collapses
+# from its empty-endpoint OCV (3.0 V) to the floor over 2 % of capacity.
+v_per_soc = 150.0
+# provenance: placeholder -- a declared limit rather than a measured plateau. A real
+# reversed cell continues to roughly -1 to -2 V on copper dissolution before failing; 0 V
+# is the conservative choice and bounds an otherwise unbounded ramp.
+floor_v   = 0.0
 
 [thermal]
 heat_capacity_j_per_k = 55.0   # provenance: ~m*cp for an 18650 (~45 g, mixed materials); placeholder

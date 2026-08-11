@@ -192,7 +192,33 @@ use crate::{Demand, Env, Telemetry};
 /// the case `snapshot_version.rs` pins. `#[serde(default)]` on the two new fields buys
 /// TOML scenario back-compat and the self-describing JSON path, and buys `bincode`
 /// nothing. See `docs/plans/balancing-chatter.md`.
-pub const SNAPSHOT_VERSION: u32 = 13;
+///
+/// v14 (the reversal branch): [`crate::EcmState`] gained `soc_deficit`, and
+/// [`crate::ChemistryParams`] gained a required `[reversal]` section — and the chemistry
+/// is serialized *inside* the snapshot, so both halves of this bump are in the bytes.
+///
+/// **Semantic, and this one is not an argument about defaults.** The previous three
+/// bumps each turned on a *behaviour* whose config defaulted to zero; here the state
+/// itself is new and unrecoverable. `soc_deficit` records how far past empty a cell was
+/// driven, and everything about what the cell does next — the voltage it sources, the
+/// charge it must repay before its SOC rises again — is read off it. A v13 blob has no
+/// such record for a cell it left sitting on `soc == 0.0`, and `#[serde(default)]` fills
+/// in `0.0`, which is the reading for a cell that stopped *exactly* at empty and the
+/// wrong one for every cell that went past. Restoring one would continue a trajectory
+/// with the fabricated energy back in it — the defect this version exists to remove.
+///
+/// **The structural argument is weaker than v10's through v13's, and saying so is the
+/// point.** Those bumps could each name a configuration whose bytes stayed valid, so that
+/// the version field was demonstrably the thing doing the refusing. This one cannot:
+/// `ChemistryParams::reversal` is required and carries no `#[serde(default)]` — because
+/// the only default available would be an unlabeled physical constant — and the chemistry
+/// is inside every snapshot whatever cell model the pack runs. So a v13 blob fails at
+/// *deserialization* first, in every configuration, self-describing format or not, and
+/// the version check is belt to that braces. `snapshot_version.rs` pins the version
+/// check against a **re-serialized** blob rather than a stale one, which is what
+/// separates "the version field rejected it" from "deserialization rejected it" when the
+/// stale bytes can no longer be parsed at all. See `docs/plans/low-clamp-reversal.md`.
+pub const SNAPSHOT_VERSION: u32 = 14;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -688,6 +714,22 @@ struct ParallelGroup {
 pub struct CellView {
     /// Ground-truth state of charge, in \[0, 1\].
     pub soc: f64,
+    /// How far past empty this cell has been driven, as a fraction of its capacity;
+    /// `0.0` on any cell that is not in voltage reversal, and `0.0` on every
+    /// porous-electrode cell (they have no clamp to pass).
+    ///
+    /// **This is the other half of [`Self::soc`], not a second opinion about it.** The
+    /// cell's true position is `soc − soc_deficit`; the pair is split so that `soc` can
+    /// keep its documented `[0, 1]` range for the tables and thresholds that index on it.
+    /// Non-zero only while `soc` reads exactly `0.0`, so the two never carry information
+    /// at the same time, and a client that ignores this field sees exactly what it saw
+    /// before the field existed.
+    ///
+    /// Reading it is how a client tells a cell that has *stopped* at empty from one that
+    /// is being driven through it — the first is resting, the second has a falling
+    /// open-circuit voltage and is absorbing energy from whatever is driving it. See
+    /// [`crate::EcmState::soc_deficit`] and `docs/plans/low-clamp-reversal.md`.
+    pub soc_deficit: f64,
     /// Cell temperature \[K\].
     pub temp_k: f64,
     /// Total overpotential \[V\] across the cell's internal dynamics,
@@ -1127,6 +1169,7 @@ impl Pack {
             .surface_gap(&self.chem, cell.eff_capacity_ah(self.chem.cell.capacity_ah));
         Some(CellView {
             soc: cell.model.soc(&self.chem),
+            soc_deficit: cell.model.soc_deficit(),
             temp_k: cell.model.temp_k(),
             overpotential_v: cell.model.overpotential_v(
                 &self.chem,
@@ -1983,12 +2026,21 @@ impl Pack {
                 // *after* `advance` rather than with the rest of the reporting, and
                 // the ordering is load-bearing rather than stylistic.
                 //
-                // Only the upper clamp contributes heat. At the lower clamp the cell
-                // delivered charge it did not have, and the term that would close the
-                // ledger there is a *cooling* one — a wrong-signed drive into the
-                // thermal network, which would suppress runaway in exactly the regime
-                // that matters. The fabricated charge is reported instead of burned:
-                // see `docs/plans/energy-hole.md`.
+                // Only the upper clamp reaches this at all. The lower one used to, and
+                // no longer does: a cell driven past empty now carries the charge as a
+                // deficit and pays for it with a falling open-circuit voltage, so there
+                // is nothing left there to reject and `rejected_as` comes back `0.0`.
+                // The sign test below is therefore about a case that cannot occur rather
+                // than a case that is skipped — kept, because "the only value that
+                // reaches here is negative" is a claim about another function, and the
+                // guard costs nothing.
+                //
+                // Booking the reversal work as *heat* was the rival, and it is refused
+                // on purpose: that term grows without bound as the cell is drained
+                // further, feeds the thermal network, and would put `t_onset_k` within
+                // reach of every drive-flat scenario in the repo — emergent physics'
+                // clothes on a modelling artifact. See `docs/plans/low-clamp-reversal.md`
+                // and, for the charge side this mirrors, `docs/plans/energy-hole.md`.
                 if advanced.rejected_as != 0.0 && dt > 0.0 {
                     i_rejected_a += advanced.rejected_as / dt;
                     if advanced.rejected_as < 0.0 {

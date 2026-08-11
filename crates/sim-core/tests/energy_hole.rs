@@ -14,7 +14,19 @@
 //!   not an oversight;
 //! * a zero-length probe step rejects nothing.
 //!
-//! See `docs/plans/energy-hole.md`.
+//! The bottom of the window then stopped being a hole at all. Below `soc = 0` the cell
+//! now goes into voltage reversal — it carries the charge it delivered as a deficit,
+//! drops its open-circuit voltage toward the chemistry's floor, and makes the external
+//! circuit pay — so the second half of this file is about that branch, again each test
+//! against a named rival that would otherwise pass:
+//!
+//! * a closed cycle through reversal conserves energy, at *any* `[reversal]` tuning;
+//! * arriving at empty is continuous, so an empty cell is not a short circuit;
+//! * the floor bounds an otherwise unbounded ramp;
+//! * the cell stays linear, so the pack solve stays one closed-form pass;
+//! * and none of it is visible to a pack that stays inside its window.
+//!
+//! See `docs/plans/energy-hole.md` and `docs/plans/low-clamp-reversal.md`.
 
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
@@ -55,6 +67,10 @@ fn env() -> Env {
 /// `OCV(0.99)` differ by a comfortable 10 mV.
 fn sloped_chem() -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety: None,
         spm: None,
@@ -96,25 +112,26 @@ fn sloped_chem() -> ChemistryParams {
     }
 }
 
-/// A 1S1P pack of [`sloped_chem`] at `soc0`, isothermal, no BMS — so the demanded
-/// current reaches the cell unmodified and the only heat is the cell's own.
+/// A 1S1P config at `soc0`, isothermal, no BMS — so the demanded current reaches the
+/// cell unmodified and the only heat is the cell's own.
+fn pack_config(soc0: f64) -> PackConfig {
+    PackConfig {
+        aging: None,
+        bms: None,
+        thermal: ThermalConfig::Isothermal,
+        series: 1,
+        parallel: 1,
+        initial_soc: soc0,
+        initial_temp_k: 298.15,
+        seed: 1,
+        scatter: Scatter::default(),
+        cell_model: CellModelConfig::Ecm,
+    }
+}
+
+/// [`pack_config`] built against the unmodified [`sloped_chem`].
 fn pack_at(soc0: f64) -> Pack {
-    Pack::new(
-        &PackConfig {
-            aging: None,
-            bms: None,
-            thermal: ThermalConfig::Isothermal,
-            series: 1,
-            parallel: 1,
-            initial_soc: soc0,
-            initial_temp_k: 298.15,
-            seed: 1,
-            scatter: Scatter::default(),
-            cell_model: CellModelConfig::Ecm,
-        },
-        sloped_chem(),
-    )
-    .expect("fixture builds")
+    Pack::new(&pack_config(soc0), sloped_chem()).expect("fixture builds")
 }
 
 /// **The heat is `OCV(1.0)·i_rejected`, not `OCV(soc_start)·i_rejected`.**
@@ -197,15 +214,15 @@ fn only_the_fraction_that_did_not_fit_is_rejected() {
 /// that adding the symmetric term "for consistency" fails a test rather than quietly
 /// changing every hot trajectory in the repo.
 #[test]
-fn the_bottom_of_the_window_adds_no_heat() {
+fn the_bottom_of_the_window_rejects_nothing_and_adds_no_heat() {
     let mut pack = pack_at(0.01);
     let tele = pack.step(1.0, Demand::Current(180.0), &env());
 
     assert!(tele.flags.contains(EventFlags::SOC_CLAMPED_LOW));
-    assert!(
-        (tele.i_rejected_a - 90.0).abs() < 1e-9,
-        "the cell sourced 90 As it did not have, got {} A",
-        tele.i_rejected_a
+    assert_eq!(
+        tele.i_rejected_a, 0.0,
+        "the low clamp carries its shortfall as a deficit and rejects nothing; \
+         the pre-reversal engine reported 90 A here"
     );
 
     let ohmic_w = 180.0 * 180.0 * R0_OHMS;
@@ -214,11 +231,243 @@ fn the_bottom_of_the_window_adds_no_heat() {
         "the low clamp should generate ohmic heat only ({ohmic_w} W), got {}",
         tele.q_gen_w
     );
-    // The symmetric-cooling rival, named so the assertion above is legible.
-    let rival_w = ohmic_w - OCV_EMPTY_V * 90.0;
+    // Two rivals, named so the two assertions above are legible. Both would close the
+    // energy ledger; both are refused, and for different reasons.
+    let cooling_w = ohmic_w - OCV_EMPTY_V * 90.0;
+    let heating_w = ohmic_w + OCV_EMPTY_V * 90.0;
     assert!(
-        (tele.q_gen_w - rival_w).abs() > 0.5,
-        "the symmetric-cooling rival would give {rival_w} W and is not distinguished"
+        (tele.q_gen_w - cooling_w).abs() > 0.5 && (tele.q_gen_w - heating_w).abs() > 0.5,
+        "neither the cooling rival ({cooling_w} W) nor the heating one ({heating_w} W) \
+         is distinguished from {}",
+        tele.q_gen_w
+    );
+}
+
+/// **The energy ledger closes over a closed cycle in state space.**
+///
+/// Discharge a cell far past empty, charge exactly the same charge back, then rest until
+/// the overpotentials have relaxed. The cell is where it started, so the chemical term is
+/// zero *by construction* — no state-function integral appears in the assertion, which is
+/// the whole reason the cycle is the instrument. Whatever the circuit put in must have
+/// come back out as heat: `∫V·I dt + ∫Q dt = 0`.
+///
+/// This is the discriminating test for the reversal branch, and it discriminates twice.
+/// The pre-reversal engine fails it before the energy is even weighed: charge pushed back
+/// into a cell that was clamped at `soc = 0` is not repaying anything, so 2400 As out and
+/// 2400 As in leaves that engine at `soc = 0.267` rather than back at `0.05`. **A cycle
+/// that does not close in state cannot close in energy**, and the ~5.9 kJ it would
+/// fabricate is the second failure rather than the first.
+///
+/// Run at two different `[reversal]` settings, because conservation here is structural
+/// rather than parametric: `OCV_eff` is a single-valued function of the cell's extended
+/// position, so stored energy is a state function of it whatever the ramp and floor are.
+/// A version of this fix that got the ledger to close only for one tuning would pass the
+/// first arm and fail the second.
+#[test]
+fn a_cycle_through_reversal_conserves_energy() {
+    /// One full cycle at step length `dt`, returning `(imbalance, heat)` in joules.
+    fn cycle(v_per_soc: f64, floor_v: f64, dt: f64) -> (f64, f64) {
+        let mut chem = sloped_chem();
+        chem.reversal.v_per_soc = v_per_soc;
+        chem.reversal.floor_v = floor_v;
+        let mut pack = Pack::new(&pack_config(0.05), chem).expect("fixture builds");
+
+        // 450 As stored, 2400 As drawn: 0.2167 of capacity past empty.
+        let (mut elec_j, mut heat_j) = (0.0, 0.0);
+        let mut weigh = |t: &sim_core::Telemetry, dt: f64| {
+            elec_j += t.v_terminal * t.i_actual * dt;
+            heat_j += t.q_gen_w * dt;
+        };
+        let legs = (60.0 / dt).round() as u32;
+        for _ in 0..legs {
+            weigh(&pack.step(dt, Demand::Current(40.0), &env()), dt);
+        }
+        for _ in 0..legs {
+            weigh(&pack.step(dt, Demand::Current(-40.0), &env()), dt);
+        }
+        // 20 RC time constants: the remaining overpotential is ~1e-7 V and the energy it
+        // stands for is far below every tolerance here.
+        for _ in 0..400 {
+            weigh(&pack.step(1.0, Demand::Rest, &env()), 1.0);
+        }
+
+        let view = pack.cell(0, 0).expect("cell exists");
+        assert!(
+            (view.soc - 0.05).abs() < 1e-12,
+            "the cycle must return the cell to where it started, got soc {} at \
+             v_per_soc {v_per_soc}, dt {dt}",
+            view.soc
+        );
+        assert!(
+            view.overpotential_v.abs() < 1e-6,
+            "the rest is meant to relax the overpotentials, {} V left",
+            view.overpotential_v
+        );
+        (elec_j + heat_j, heat_j)
+    }
+
+    for (v_per_soc, floor_v) in [(100.0, 0.0), (12.0, -4.0)] {
+        let (coarse, _) = cycle(v_per_soc, floor_v, 0.5);
+        let (fine, heat) = cycle(v_per_soc, floor_v, 0.25);
+
+        // The assertion that separates a discretisation residue from fabricated energy,
+        // and the reason this test halves the step rather than picking a tolerance. Both
+        // terms are first-order quadrature error on a voltage that moves within the step,
+        // so halving `dt` halves them; the pre-reversal engine's imbalance does not move
+        // with `dt` at all, because it is not error but energy the model made.
+        assert!(
+            fine.abs() < 0.6 * coarse.abs(),
+            "imbalance must shrink with the step: {coarse} J at dt 0.5, {fine} J at \
+             dt 0.25, v_per_soc {v_per_soc}"
+        );
+        assert!(
+            fine.abs() < 0.02 * heat.abs(),
+            "imbalance {fine} J is not small against the {heat} J of heat it sits \
+             beside, at v_per_soc {v_per_soc}, floor {floor_v}"
+        );
+    }
+}
+
+/// **Reaching empty is not a discontinuity.**
+///
+/// The rival here is a real candidate that was spiked and rejected: collapsing the cell's
+/// open-circuit voltage to zero the moment `soc` hits `0`. It closes most of the energy
+/// hole for free, and it makes an ordinary *empty* cell look like a dead short to a
+/// charger. The reversal branch does not, because at the instant the cell empties the
+/// deficit is still zero and the source is still `OCV(0)`.
+///
+/// One step of 90 A for 1 s from `soc = 0.01` lands the cell exactly on empty and leaves
+/// `Σ V_rc = 0.010·90·(1 − e^(−1/20))`. A `Voltage(3.3)` demand then draws
+/// `(OCV(0) − Σ V_rc − 3.3) / R0`, about −17 A. The collapse rival draws −165 A.
+///
+/// The arrival step raises **no** flag, and that is the state this test needs rather than
+/// an accident of the arithmetic: `coulomb_step` clamps on `raw < 0.0`, so a cell that
+/// lands on exactly `0.0` has not gone past anything and its deficit is still zero. This
+/// is the last instant at which the two candidates are distinguishable — one step later
+/// the reversal branch has legitimately begun to fall.
+#[test]
+fn arriving_at_empty_does_not_look_like_a_short() {
+    let mut pack = pack_at(0.01);
+    let arrival = pack.step(1.0, Demand::Current(90.0), &env());
+    assert!(
+        !arrival.flags.contains(EventFlags::SOC_CLAMPED_LOW),
+        "landing exactly on empty is not passing it"
+    );
+    assert_eq!(
+        pack.cell(0, 0).expect("cell exists").soc,
+        0.0,
+        "the fixture is sized to land on exactly 0.0"
+    );
+
+    let v_rc = 0.010 * 90.0 * (1.0 - (-1.0_f64 / 20.0).exp());
+    let expected = (OCV_EMPTY_V - v_rc - 3.3) / R0_OHMS;
+    let tele = pack.step(0.25, Demand::Voltage(3.3), &env());
+    assert!(
+        (tele.i_actual - expected).abs() < 1e-9,
+        "expected {expected} A into a just-emptied cell, got {}",
+        tele.i_actual
+    );
+    let rival = (0.0 - v_rc - 3.3) / R0_OHMS;
+    assert!(
+        (tele.i_actual - rival).abs() > 100.0,
+        "the collapse-at-empty rival draws {rival} A and is not distinguished"
+    );
+}
+
+/// **The floor stops the ramp, and the ramp is what needs stopping.**
+///
+/// Unfloored the reversal voltage is unbounded — the spike measured −52 V on an LFP cell
+/// in two minutes, with a step-size sensitivity worse than the defect being fixed. Here
+/// the cell is driven 2.6 capacities past empty, which is far beyond where
+/// `OCV(0) − v_per_soc·deficit` would have gone, and then driven twice as far again: the
+/// terminal voltage must be *identical*, because both readings sit on the floor.
+#[test]
+fn the_reversal_floor_bounds_the_voltage() {
+    let mut pack = pack_at(0.05);
+    let mut deep = f64::NAN;
+    for k in 0..2400 {
+        let t = pack.step(0.25, Demand::Current(40.0), &env());
+        if k == 1199 {
+            deep = t.v_terminal;
+        }
+        if k == 2399 {
+            // Not bit-equality: the RC overpotential is still relaxing toward its
+            // steady state at 300 s (15 time constants, so ~1.2e-7 V left of the
+            // 0.4 V it is heading for). The floor is what has stopped moving, and
+            // 1e-6 V is below that residue rather than a tolerance for the branch.
+            assert!(
+                (t.v_terminal - deep).abs() < 1e-6,
+                "past the floor the terminal voltage must stop moving: {deep} then {}",
+                t.v_terminal
+            );
+            // Floor 0 V, minus the ohmic drop and the relaxed RC overpotential.
+            let bound = 0.0 - 40.0 * R0_OHMS - 0.010 * 40.0;
+            assert!(
+                (t.v_terminal - bound).abs() < 1e-6,
+                "expected the floored terminal voltage {bound} V, got {}",
+                t.v_terminal
+            );
+        }
+    }
+}
+
+/// **The cell stays linear in reversal, so the pack solve stays one closed-form pass.**
+///
+/// This is the property the three rejected candidates each lost, and the reason the
+/// collapse is a stored deficit read at the start of a step rather than a branch taken
+/// inside one. `Voltage` and `Power` are here as well as `Current` because
+/// `solve_current`'s three arms are three different closed forms, and the limit cycle the
+/// discontinuous rival produced showed up on the latter two only.
+#[test]
+fn the_solve_stays_one_pass_in_reversal() {
+    for demand in [
+        Demand::Current(40.0),
+        Demand::Voltage(1.0),
+        Demand::Power(100.0),
+    ] {
+        let mut pack = pack_at(0.05);
+        for k in 0..400 {
+            let t = pack.step(0.25, demand, &env());
+            assert_eq!(
+                t.solve_iterations, 1,
+                "step {k} of {demand:?} took {} passes",
+                t.solve_iterations
+            );
+            assert!(
+                !t.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+                "step {k} of {demand:?} did not converge"
+            );
+        }
+    }
+}
+
+/// **Nothing the `[reversal]` section says can move a pack that stays inside its window.**
+///
+/// Measured rather than argued: the same 200-step run at two wildly different settings,
+/// asserted bit-identical field by field. The spike's own control made this claim by
+/// pinning 17 digits against a second tree; this makes it without one, and without a
+/// constant that a libm difference could move.
+#[test]
+fn the_reversal_parameters_are_inert_inside_the_window() {
+    let run = |v_per_soc: f64, floor_v: f64| {
+        let mut chem = sloped_chem();
+        chem.reversal.v_per_soc = v_per_soc;
+        chem.reversal.floor_v = floor_v;
+        let mut pack = Pack::new(&pack_config(0.5), chem).expect("fixture builds");
+        let mut out = Vec::new();
+        for _ in 0..200 {
+            let t = pack.step(0.5, Demand::Current(4.0), &env());
+            assert!(!t
+                .flags
+                .intersects(EventFlags::SOC_CLAMPED_HIGH | EventFlags::SOC_CLAMPED_LOW));
+            out.push((t.v_terminal, t.i_actual, t.soc_true, t.q_gen_w));
+        }
+        out
+    };
+    assert_eq!(
+        run(100.0, 0.0),
+        run(1.0e6, -50.0),
+        "a run that never leaves the window must not see the reversal parameters at all"
     );
 }
 

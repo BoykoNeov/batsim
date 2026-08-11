@@ -31,6 +31,10 @@ fn env() -> Env {
 /// property. Nothing here is chemistry-specific; it just needs to be non-trivial.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety: None,
         spm: None,
@@ -158,12 +162,18 @@ fn cfg(series: u16, parallel: u16, soc0: f64, seed: u64, scatter: Scatter) -> Pa
 }
 
 /// Total remaining charge \[Ah\] summed over every cell (ground truth).
+///
+/// **`soc − soc_deficit`, not `soc`.** A cell driven past empty reports `soc == 0.0`
+/// while genuinely holding *less* than nothing, and the deficit is where that goes; using
+/// `soc` alone would make this quantity stop moving at the bottom of the window and every
+/// charge ledger built on it would go quietly non-conserving there. See
+/// [`sim_core::CellView::soc_deficit`].
 fn total_remaining_ah(pack: &Pack, series: u16, parallel: u16) -> f64 {
     let mut ah = 0.0;
     for s in 0..series as usize {
         for p in 0..parallel as usize {
             let c = pack.cell(s, p).unwrap();
-            ah += c.soc * CAP_AH * c.capacity_factor;
+            ah += (c.soc - c.soc_deficit) * CAP_AH * c.capacity_factor;
         }
     }
     ah
@@ -731,25 +741,39 @@ proptest! {
         );
     }
 
-    /// **The bottom of the window fabricates energy, and this pins how much.**
+    /// **The bottom of the window fabricates nothing, and this is the property that used
+    /// to pin how much it did.**
     ///
-    /// A cell held at `soc = 0` keeps sourcing current at `OCV(0)`, which is energy from
-    /// nowhere. Unlike the overcharge case that is not corrected: the term that would
-    /// close this ledger is a *cooling* one, and feeding the thermal network a
-    /// wrong-signed drive would suppress runaway in the one regime where it matters (see
-    /// `docs/plans/energy-hole.md`). So the defect is reported instead of burned, and
-    /// this property is what stops it being silent: the ledger residual — with its
-    /// chemical side taken from **ground-truth state**, for the reason
-    /// `overcharge_heat_closes_the_energy_ledger` records at length — must equal
-    /// `OCV(0)·∫i_rejected_a dt`. Both sides of that equation are then measured
-    /// independently, so it is an equation rather than an identity.
+    /// It was written to fail when the defect was fixed — "a solve-side fix makes both
+    /// sides zero and the `fabricated > 0.0` coverage assertion is where it announces
+    /// itself, rather than a golden shifting by an amount nobody can attribute" — and
+    /// that is exactly how the fix announced itself. The fix was not the solve-side one
+    /// it predicted (no cell model can refuse a demanded current; see
+    /// `docs/plans/low-clamp-solve-side.md`), but the outcome it described is the one
+    /// that arrived: the cell now goes into voltage reversal, the charge is carried as a
+    /// deficit rather than invented, and `i_rejected_a` is zero throughout.
     ///
-    /// **This test fails if the fabrication is fixed properly**, and that is intended:
-    /// a solve-side fix (an empty cell that stops sourcing) makes both sides zero and
-    /// the `fabricated > 0.0` coverage assertion is where it announces itself, rather
-    /// than a golden shifting by an amount nobody can attribute.
+    /// What replaces the old equation is a **closed cycle**: drive the pack far past
+    /// empty, put exactly the same charge back, and rest until the overpotentials have
+    /// relaxed. The chemical term is then zero by construction rather than by an
+    /// integral over a curve this test would have to re-derive, and the whole ledger
+    /// reduces to "whatever the circuit put in came back out as heat".
+    ///
+    /// It discriminates twice, and the first failure is in *state* rather than in energy.
+    /// Charge pushed back into a cell the old engine had clamped at `soc = 0` repaid
+    /// nothing, so an equal-and-opposite pair of legs left it *above* where it started —
+    /// which is why [`total_remaining_ah`] reads `soc − soc_deficit` and why the
+    /// round-trip assertion below comes first.
+    ///
+    /// **The energy tolerance is relative and loose where the other ledger properties are
+    /// exact**, and the difference is physics rather than slack. Those run inside the
+    /// window, where a flat OCV makes every term a closed form. This one crosses the
+    /// reversal ramp, where the source moves *within* a step, so the residue is
+    /// first-order in `dt` — real quadrature error, shrinking with the step. The rival it
+    /// excludes is not a rounding difference: the pre-reversal engine fabricates
+    /// kilojoules here and does not move with `dt` at all.
     #[test]
-    fn the_bottom_of_the_window_fabricates_exactly_what_it_reports(
+    fn the_bottom_of_the_window_fabricates_nothing(
         series in 1u16..=3,
         parallel in 1u16..=3,
         // See `charge_conserved_through_a_soc_clamp` on why these bounds and not
@@ -768,32 +792,68 @@ proptest! {
         let rem0 = total_remaining_ah(&pack, series, parallel);
         let mut electrical = 0.0;
         let mut heat = 0.0;
-        let mut fabricated = 0.0;
         let mut clamped_steps = 0usize;
         let mut v_start = pack.step(0.0, Demand::Current(amps), &env()).v_terminal;
-        for _ in 0..nsteps {
-            let tele = pack.step(dt, Demand::Current(amps), &env());
-            if tele.flags.contains(EventFlags::SOC_CLAMPED_LOW) {
-                clamped_steps += 1;
+        let mut leg = |pack: &mut Pack, i: f64, clamped: &mut usize| -> Result<(), TestCaseError> {
+            for _ in 0..nsteps {
+                let tele = pack.step(dt, Demand::Current(i), &env());
+                if tele.flags.contains(EventFlags::SOC_CLAMPED_LOW) {
+                    *clamped += 1;
+                }
+                prop_assert_eq!(
+                    tele.i_rejected_a, 0.0,
+                    "nothing is rejected at the bottom of the window any more"
+                );
+                electrical += v_start * tele.i_actual * dt;
+                heat += tele.q_gen_w * dt;
+                v_start = tele.v_terminal;
             }
+            Ok(())
+        };
+        leg(&mut pack, amps, &mut clamped_steps)?;
+        let deepest = total_remaining_ah(&pack, series, parallel);
+        leg(&mut pack, -amps, &mut clamped_steps)?;
+        // 20 RC time constants on this chemistry, so the overpotential left is ~1e-9 V.
+        for _ in 0..(400.0 / dt).round() as usize {
+            let tele = pack.step(dt, Demand::Rest, &env());
             electrical += v_start * tele.i_actual * dt;
             heat += tele.q_gen_w * dt;
-            // `FLAT_V0` is `OCV(0.0)` on this chemistry as well as `OCV(1.0)`.
-            fabricated += FLAT_V0 * tele.i_rejected_a * dt;
             v_start = tele.v_terminal;
         }
-        prop_assert!(clamped_steps > 0, "the run never reached the clamp it was aimed at");
-        prop_assert!(fabricated > 0.0, "the low clamp should report positive rejected charge");
-        let rem1 = total_remaining_ah(&pack, series, parallel);
 
-        let chemical = FLAT_V0 * 3600.0 * (rem0 - rem1);
-        let residual = chemical - electrical - heat;
-        let tol = 1e-9 * fabricated.abs().max(1.0);
+        // Coverage, and the two halves are different claims: that the run reached the
+        // clamp at all, and that it went meaningfully *past* it rather than grazing it.
+        prop_assert!(clamped_steps > 0, "the run never reached the clamp it was aimed at");
         prop_assert!(
-            (residual + fabricated).abs() < tol,
-            "the ledger's residual should be exactly the fabricated energy: \
-             residual {residual} J, −OCV(0)·∫i_rejected dt {} J (tol {tol} J)",
-            -fabricated
+            deepest < 0.0,
+            "the discharge leg is meant to end below empty, not at it: {deepest} Ah"
+        );
+
+        let rem1 = total_remaining_ah(&pack, series, parallel);
+        prop_assert!(
+            (rem1 - rem0).abs() < 1e-9 * rem0.abs().max(1.0),
+            "the cycle must return the pack to where it started: {rem0} Ah then {rem1} Ah"
+        );
+        // Δstored = 0, so electrical-out + heat = 0.
+        //
+        // The tolerance is derived rather than tuned, because the residue here has a
+        // known shape. Each step closes *exactly* against the OCV at the state it
+        // started from, so a loop's residue is the rectangle rule's error going round
+        // it: on the ramp that is `v_per_soc · Δx · Δq` per step, and summing it over
+        // the `FLAT_V0 / v_per_soc` width of the ramp telescopes to `S · FLAT_V0 · I ·
+        // dt` — independent of the slope, of the capacity, and of how many steps it
+        // took. Measured at 1.5× that scale, so the factor below is margin over a
+        // derivation, not a number picked to make a case pass.
+        //
+        // It is loose in absolute terms and still nowhere near the rival: the
+        // pre-reversal engine fabricates `FLAT_V0` times the charge delivered past
+        // empty, which on the smallest case here is ~6 kJ against a ~200 J bound.
+        let residual = electrical + heat;
+        let tol = 3.0 * f64::from(series) * FLAT_V0 * amps * dt;
+        prop_assert!(
+            residual.abs() < tol,
+            "cycle imbalance {residual} J against {heat} J of heat (tol {tol} J, \
+             {clamped_steps} clamped steps)"
         );
     }
 

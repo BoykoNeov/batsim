@@ -34,6 +34,10 @@ fn env() -> Env {
 /// A sloped-OCV, single-RC chemistry. Nothing here is chemistry-specific.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety: None,
         spm: None,

@@ -27,6 +27,10 @@ fn env() -> Env {
 /// everywhere, one RC pair. Flatness makes the closed-form current split exact.
 fn flat_chem(v0: f64) -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety: None,
         spm: None,

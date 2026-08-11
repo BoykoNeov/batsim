@@ -49,6 +49,10 @@ fn aging_params() -> AgingParams {
 /// built with and without health coefficients.
 fn chem(aging: Option<AgingParams>) -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging,
         safety: None,
         spm: None,

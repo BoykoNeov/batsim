@@ -143,6 +143,10 @@ const SOC: f64 = 0.6;
 /// nothing in this file is a physical claim.
 fn lfp_like_chem() -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         spm: None,
         dfn: None,
         // Present, like the shipped file's `[aging]` section. A chemistry that cannot

@@ -48,10 +48,16 @@ and deliberately deferred: charge pushed into a cell already at 100 % SOC used t
 not stored, and generating no heat beyond `I²R0`. It is now refused and dissipated at the
 top of the OCV curve, reported through `Telemetry::i_rejected_a`, and it turns out to
 dominate rather than correct: on a 1C overcharge it is **41× everything the engine
-previously reported**. The over-*discharge* mirror — an empty cell that keeps sourcing at
-`OCV(0)` — is deliberately still open, because the term that would close it is a cooling
-one; it is reported and pinned by a property test instead of being burnt.
-See [`docs/plans/energy-hole.md`](docs/plans/energy-hole.md).
+previously reported**. See [`docs/plans/energy-hole.md`](docs/plans/energy-hole.md).
+
+The over-*discharge* mirror stayed open through two attempts and is now closed. An empty
+cell used to keep sourcing at `OCV(0)` forever, which is energy from nowhere; the fix is
+not to refuse the current — nothing in the engine can refuse a demanded current — but to
+let the cell go into **voltage reversal**, carrying what it delivered as a deficit and
+dropping its open-circuit voltage through zero so the external circuit pays. A cell driven
+past empty and charged back now returns to exactly where it started with the books
+balanced, where before it fabricated kilojoules and did not even end up in the same state.
+See [`docs/plans/low-clamp-reversal.md`](docs/plans/low-clamp-reversal.md).
 
 Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
 LG M50 21700. Every constant in them carries a provenance note, **including the ones

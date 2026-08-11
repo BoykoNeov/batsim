@@ -83,6 +83,19 @@ r_ohms  = 0.008
 c_farad = 9000.0
 
 # Both values DERIVED from Chen2020 keys rather than guessed — see the arithmetic below.
+# How the cell behaves below empty. Driven past soc = 0 a real cell does not stop
+# delivering current -- it goes into voltage reversal, its OCV falls through zero, and the
+# external circuit starts paying. Without this the engine would keep sourcing at OCV(0)
+# forever and fabricate energy; see docs/plans/low-clamp-reversal.md.
+[reversal]
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized so the cell collapses
+# from its empty-endpoint OCV (2.5 V) to the floor over 2 % of capacity.
+v_per_soc = 125.0
+# provenance: placeholder -- a declared limit rather than a measured plateau. A real
+# reversed cell continues to roughly -1 to -2 V on copper dissolution before failing; 0 V
+# is the conservative choice and bounds an otherwise unbounded ramp.
+floor_v   = 0.0
+
 [thermal]
 # provenance: sum over Chen2020's five sandwich domains of (electrode area x thickness x
 # density x specific heat capacity), with area = 0.065 m x 1.58 m = 0.1027 m2:

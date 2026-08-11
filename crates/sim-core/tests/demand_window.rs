@@ -44,6 +44,10 @@ fn env() -> Env {
 /// reader can redo: at any SOC the source is `OCV − Σ V_rc` behind `R0`.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        reversal: sim_core::ReversalParams {
+            v_per_soc: 100.0,
+            floor_v: 0.0,
+        },
         aging: None,
         safety: None,
         spm: None,

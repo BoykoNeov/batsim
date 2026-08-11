@@ -38,6 +38,30 @@ use crate::Demand;
 pub struct EcmState {
     /// State of charge, in \[0, 1\].
     pub soc: f64,
+    /// Charge withdrawn beyond empty, as a fraction of today's capacity; `0.0` on any
+    /// cell that has not been over-discharged.
+    ///
+    /// **Invariant: `> 0.0` only while [`Self::soc`] is exactly `0.0`.** The pair is one
+    /// number — the cell's *extended* position `soc − soc_deficit`, which is what the
+    /// coulomb count actually advances — split so that `soc` itself never leaves
+    /// `[0, 1]`. That split is deliberate and is the whole reason this is cheap: the
+    /// `R0` lookup's bracket, aging's SOC-stress table, the BMS estimator, plating and
+    /// [`crate::Telemetry::soc_true`] all keep reading a `soc` in the range their own
+    /// tables and thresholds were written against, and none of them needed a line
+    /// changed. A negative `soc` would put every one of them in play for no physics.
+    ///
+    /// Physically this is how far the cell is into **voltage reversal**. It feeds
+    /// [`cell_source`], which drops the open-circuit voltage by
+    /// `reversal.v_per_soc · soc_deficit` down to `reversal.floor_v`, so an
+    /// over-discharged cell presents a falling and then negative source and the external
+    /// circuit pays for the current it is forcing. Before this field the cell sourced at
+    /// `OCV(0)` forever and the energy was fabricated; see
+    /// `docs/plans/low-clamp-reversal.md`.
+    ///
+    /// It is *state*, not a cache: a restored snapshot without it continues a different
+    /// trajectory, which is what makes it a semantic [`crate::SNAPSHOT_VERSION`] bump.
+    #[serde(default)]
+    pub soc_deficit: f64,
     /// RC-pair overpotentials \[V\], discharge-positive; one entry per RC pair.
     pub v_rc: Vec<f64>,
     /// Cell temperature \[K\]. Advanced by [`crate::thermal`] unless the pack is
@@ -90,6 +114,10 @@ impl CellModel {
     pub(crate) fn new_ecm(n_rc: usize, soc: f64, temp_k: f64) -> Self {
         let state = EcmState {
             soc,
+            // A fresh cell has never been over-discharged. `PackConfig::initial_soc` is
+            // validated into [0, 1], so there is no way to *build* a pack already in
+            // reversal — it has to be driven there.
+            soc_deficit: 0.0,
             v_rc: vec![0.0; n_rc],
             temp_k,
         };
@@ -161,6 +189,21 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc,
             CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| spm::soc(s, spm)),
             CellModel::Dfn(s) => Self::spm_params(chem).map_or(0.0, |spm| dfn::soc(s, spm)),
+        }
+    }
+
+    /// How far past empty this cell has been driven, as a fraction of its capacity.
+    ///
+    /// `0.0` for a porous-electrode model, and that is physics rather than a stub: those
+    /// models never clamp, so there is no truncation for a deficit to record. Their
+    /// lithium simply keeps moving and [`Self::soc`] reports the readout leaving its
+    /// window — which is now what `SOC_CLAMPED_LOW` means for every model. See
+    /// [`EcmState::soc_deficit`].
+    #[must_use]
+    pub fn soc_deficit(&self) -> f64 {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc_deficit,
+            CellModel::Spm(_) | CellModel::Dfn(_) => 0.0,
         }
     }
 
@@ -637,17 +680,26 @@ pub fn rc_update(v_rc: f64, i: f64, r_ohms: f64, c_farad: f64, dt: f64) -> f64 {
 pub struct CoulombStep {
     /// New state of charge, clamped to \[0, 1\].
     pub soc: f64,
+    /// New deficit below empty, as a fraction of capacity. See
+    /// [`EcmState::soc_deficit`], whose invariant this upholds: non-zero only when
+    /// [`Self::soc`] is `0.0`.
+    pub soc_deficit: f64,
     /// Charge \[As, discharge-positive\] that crossed the terminals over this step
     /// without changing the stored charge.
     ///
-    /// Exactly `0.0` on any step that did not clamp. **Negative** at the upper clamp
-    /// (charge pushed in and refused) and **positive** at the lower one (charge
-    /// delivered that the cell did not have), so that
-    /// `stored change = −(i − i_rejected)·dt / capacity_as` holds through a clamp as
+    /// Exactly `0.0` on any step that did not clamp, and **negative** at the upper clamp
+    /// (charge pushed in and refused), so that
+    /// `stored change = −(i − i_rejected)·dt / capacity_as` holds through that clamp as
     /// well as away from one.
     ///
+    /// **The lower clamp no longer contributes to it.** Charge drawn past empty is not
+    /// rejected — it is carried in [`Self::soc_deficit`] and repaid on the way back up,
+    /// which is what stops the cell inventing the energy it delivers there. This field
+    /// is therefore a one-sided quantity now (`<= 0`), and the asymmetry is the
+    /// deliberate one described on [`crate::Telemetry::i_rejected_a`].
+    ///
     /// This is the *rejected fraction*, not the whole step's charge: on the step where
-    /// a clamp is first entered only part of the current is refused, and reporting the
+    /// the clamp is first entered only part of the current is refused, and reporting the
     /// whole of it would be wrong at every clamp entry while still passing every
     /// tolerance in the suite.
     pub rejected_as: f64,
@@ -657,15 +709,30 @@ pub struct CoulombStep {
 
 /// Coulomb-counting SOC advance over `dt` seconds.
 ///
-/// `soc' = soc − I·dt / (3600·capacity_ah·soh_capacity)`, clamped to \[0, 1\], plus the
-/// charge that clamping refused or invented — see [`CoulombStep`].
+/// Runs on the cell's **extended position** `soc − deficit`, not on `soc`:
+/// `x' = (soc − deficit) − I·dt / (3600·capacity_ah·soh_capacity)`. Above zero that is
+/// the ordinary count and `deficit` is `0`; below it the shortfall is carried out as
+/// [`CoulombStep::soc_deficit`] rather than discarded, so the charge a reversed cell
+/// delivers is accounted for and repaid when it is charged again.
+///
+/// The upper bound still clamps hard and still reports what it refused — see
+/// [`CoulombStep::rejected_as`] and `docs/plans/low-clamp-reversal.md` for why the two
+/// ends of the window are deliberately not symmetric.
 #[must_use]
-pub fn coulomb_step(soc: f64, i: f64, dt: f64, capacity_ah: f64, soh_capacity: f64) -> CoulombStep {
+pub fn coulomb_step(
+    soc: f64,
+    deficit: f64,
+    i: f64,
+    dt: f64,
+    capacity_ah: f64,
+    soh_capacity: f64,
+) -> CoulombStep {
     let capacity_as = 3600.0 * capacity_ah * soh_capacity; // amp-seconds
-    let raw = soc - i * dt / capacity_as;
+    let raw = (soc - deficit) - i * dt / capacity_as;
     if raw > 1.0 {
         return CoulombStep {
             soc: 1.0,
+            soc_deficit: 0.0,
             // Negative: the refused charge was flowing *in*. `(raw − 1)` is the
             // fraction of the cell's capacity that did not fit.
             rejected_as: -(raw - 1.0) * capacity_as,
@@ -675,13 +742,18 @@ pub fn coulomb_step(soc: f64, i: f64, dt: f64, capacity_ah: f64, soh_capacity: f
     if raw < 0.0 {
         return CoulombStep {
             soc: 0.0,
-            // Positive: the cell sourced this much charge out of nothing.
-            rejected_as: -raw * capacity_as,
+            // Carried, not rejected. The reported `soc` is still clamped — a client
+            // asking "how full is this cell" gets 0 — but the engine remembers how far
+            // past empty it went, which is what [`cell_source`] turns into a falling
+            // open-circuit voltage.
+            soc_deficit: -raw,
+            rejected_as: 0.0,
             flags: EventFlags::SOC_CLAMPED_LOW,
         };
     }
     CoulombStep {
         soc: raw,
+        soc_deficit: 0.0,
         rejected_as: 0.0,
         flags: EventFlags::empty(),
     }
@@ -729,8 +801,46 @@ pub(crate) fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
 #[must_use]
 pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f64) -> (f64, f64) {
     let r = r0_lookup(&chem.r0, state.soc, state.temp_k) * r0_factor;
-    let e = ocv_lookup(&chem.ocv, state.soc) - state.v_rc.iter().sum::<f64>();
+    let e = open_circuit_v(chem, state) - state.v_rc.iter().sum::<f64>();
     (e, r)
+}
+
+/// Open-circuit voltage \[V\] of a cell that may be below empty: the chemistry's OCV
+/// table above `soc = 0`, and the `[reversal]` ramp under it.
+///
+/// ```text
+/// OCV_eff = max(OCV(soc) − v_per_soc · soc_deficit,  floor_v)
+/// ```
+///
+/// # Why this is a state and not a branch
+/// Three earlier candidates for the bottom of the window each collapsed the cell's
+/// voltage from *within* the step — keyed on the sign of the current, or on a blocking
+/// resistance — and each broke something: a strict diode makes a parallel group's
+/// `Σ 1/R` zero and the aggregation returns `-inf`; a direction-blind collapse draws a
+/// spurious −180 A from a charger; a direction-aware one is a kink that pins the
+/// nonlinear solve at its 32-pass cap. All three are `docs/plans/low-clamp-solve-side.md`.
+///
+/// This reads only `soc_deficit`, which the *previous* step wrote. Within the step the
+/// cell is still a fixed line, so [`crate::CellModel::is_linear`] stays `true`, the pack
+/// solve stays one closed-form pass, and nothing here allocates or iterates. The
+/// non-linearity is spread across steps instead of packed inside one, which is the same
+/// trick the exact RC update uses.
+///
+/// The clamp is `max`, so a `floor_v` at or above `OCV(0)` would make the branch inert;
+/// `ChemistryParams::validate` refuses that configuration rather than shipping a cell
+/// that silently sources forever.
+#[must_use]
+pub(crate) fn open_circuit_v(chem: &ChemistryParams, state: &EcmState) -> f64 {
+    let ocv = ocv_lookup(&chem.ocv, state.soc);
+    if state.soc_deficit == 0.0 {
+        // The overwhelmingly common case, and written as an early return so that a cell
+        // inside its window takes bit-for-bit the expression it took before this
+        // branch existed. `max` of a value against a floor below it is that value, so
+        // the general path would agree — but only for a floor the validator happens to
+        // guarantee, and "agrees today" is not the same as "cannot move a trajectory".
+        return ocv;
+    }
+    (ocv - chem.reversal.v_per_soc * state.soc_deficit).max(chem.reversal.floor_v)
 }
 
 /// What advancing one cell by a step produced, beyond the state change itself.
@@ -748,7 +858,9 @@ pub(crate) struct Advanced {
     ///
     /// Always `0.0` for `Spm` and `Dfn`, and that is physics rather than a stub: a
     /// porous-electrode cell never discards the lithium it was pushed, so there is
-    /// nothing for it to reject. See [`crate::spm::advance`].
+    /// nothing for it to reject. See [`crate::spm::advance`]. Since the reversal branch
+    /// the equivalent circuit no longer discards anything at the *bottom* of its window
+    /// either, so this is non-zero only on an over-charge.
     pub rejected_as: f64,
 }
 
@@ -777,8 +889,16 @@ pub(crate) fn advance_cell(
         let pair = chem.rc[k];
         *v_rc = rc_update(*v_rc, i, pair.r_ohms, pair.c_farad, dt);
     }
-    let step = coulomb_step(state.soc, i, dt, eff_capacity_ah, soh_capacity);
+    let step = coulomb_step(
+        state.soc,
+        state.soc_deficit,
+        i,
+        dt,
+        eff_capacity_ah,
+        soh_capacity,
+    );
     state.soc = step.soc;
+    state.soc_deficit = step.soc_deficit;
     Advanced {
         flags: step.flags,
         rejected_as: step.rejected_as,

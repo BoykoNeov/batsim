@@ -123,7 +123,28 @@ use wasm_bindgen::prelude::*;
 /// is `None` on some models, and the second time the alternative `0.0` was rejected for
 /// the same reason: an absent quantity that plots as a real measurement is worse than no
 /// quantity at all.
-pub const WASM_API_VERSION: u32 = 5;
+///
+/// v6 (the reversal branch): `sim_core::CellView` gains `soc_deficit`, how far past empty
+/// a cell has been driven. `CellView` crosses this boundary verbatim inside [`Cells`], so
+/// it lands in the JSON a page parses.
+///
+/// An addition once more, so `sim_server::API_VERSION` stays at 2 by its own exemption
+/// and the two part for the **fourth** time. Each constant's own doc was read again
+/// rather than the pair bumped as a set.
+///
+/// **This one is a weaker bump than v4 and v5 and is taken anyway.** Those two named a
+/// draw call that would throw against an older bundle. `web/app.js` does not read
+/// `soc_deficit` yet — displaying it is a UI slice — so nothing on the page breaks
+/// against a v5 bundle today. The bump is for the field being *in the contract* from the
+/// moment it is on the wire, because the alternative is a page written later against a
+/// field whose absence has no version to test for. `WASM_API_MIN` is deliberately **not**
+/// moved with it: a page that never touches the field has nothing to refuse.
+///
+/// `sim_core::SNAPSHOT_VERSION` does **not** stay put here, and this is the first
+/// `CellView` addition where it moves — the field is a read of genuine new stored state
+/// rather than a pure function of state that already existed. That bump is v13 → v14 and
+/// is argued at [`sim_core::SNAPSHOT_VERSION`], not here.
+pub const WASM_API_VERSION: u32 = 6;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///
