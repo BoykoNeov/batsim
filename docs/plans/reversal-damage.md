@@ -274,6 +274,20 @@ At ten minutes the run has lost **4.84 % of capacity** and gained **7.26 % resis
 and the health does not recover on the charge leg — it falls very slightly further, from
 ordinary cycle throughput.
 
+**Two near-misses on the same scenario, recorded because neither was caught by a test.**
+Both numbers above were measured at `dt = 0.5 s`, and `aging.rs` states that a partial
+sub-clock period is *carried* — so the trajectory depends on the sequence of `dt` values a
+client feeds, not only on their sum. That `0.5 s` is the browser page's own default is why
+the numbers hold there, and it was luck until it was stated; the description now carries
+its measurement conditions, and says `207.5 s` is the first sample on a 0.5 s grid at which
+the deficit is nonzero rather than an instant the cell passes through. Separately,
+`web/pkg` is gitignored so nothing stale was ever committed — but the local bundle was
+pre-v15, and serde ignores unknown TOML keys, so a browser running it would have read the
+new chemistry file, silently dropped `fade_per_ah`, and shown a reader a description
+promising 4.84 % loss beside a health readout that never moves. Rebuilt. **A page can
+disagree with the engine without either one being wrong**, and the scenario's prose is
+written as a promise about what the reader will see.
+
 ## 5. Perf: no benchmark was run, and the claim was made checkable instead
 
 `Pack::step` sits marginal against its budget (`docs/plans/pack-step-perf.md`), and this
