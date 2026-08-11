@@ -261,7 +261,7 @@ the draft description**:
 
 * "empties in about two minutes" — it is **207.5 s** at **1.9306 V**. The arithmetic was
   right and the unit conversion was not.
-* "the deficit is repaid exactly, to the amp-hour" — it is **not**. 0.2181 A·h came out
+* "the deficit is repaid exactly, to the amp-hour" — it is **not**. 0.2182 A·h came out
   past empty and repaying the deficit takes **0.2128 A·h**, because capacity fell 4.84 %
   while the cell was down there and the deficit is a *fraction* of the capacity the cell
   has now. Charge is conserved against the state, not against the earlier state. That is a

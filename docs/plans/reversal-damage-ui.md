@@ -87,7 +87,7 @@ Discharge leg, 2 A from 5 % SOC, `dt = 0.5`:
 | **`soh cap` at the 600 s mark** | **95.16 %** (95.156970) | **99.96 %** (99.956915) |
 | **`soh res` at the mark** | **1.0726 ×** | 1.0006 × |
 | deficit at the mark | 9.704 pts | 9.475 pts |
-| charge delivered past empty | 0.2183 A·h | 0.2183 A·h |
+| charge delivered past empty (as billed) | 0.2182 A·h | 0.2182 A·h |
 
 So of the **4.82** points of capacity lost after the knee, **4.80 are the reversal** and
 0.018 are calendar and cycle fade. The health readout is *already* off 100.00 % at
@@ -97,7 +97,7 @@ reading before it quotes anything else.
 Two rows in that table are worth more than their line.
 
 **The same amp-hours are a bigger deficit in the damaged arm** — 9.704 points against
-9.475, from an identical 0.2183 A·h. The deficit is a *fraction* of the capacity the cell
+9.475, from an identical 0.2182 A·h. The deficit is a *fraction* of the capacity the cell
 has now, and the shipped arm's cell is 4.8 % smaller. This is the same effect
 `reversal-damage.md` recorded on the repayment side, seen from the other end.
 
@@ -108,11 +108,27 @@ shipped arm does not — it reads −0.0648 V at 300 s and −0.0672 V at the ma
 2 A × 0.022 Ω × 0.0726. It is checkable arithmetic in a lesson, and it is the only place on
 the page where resistance growth shows up as a *voltage*.
 
+### Which amp-hours — the two conventions differ in the fourth decimal
+
+The naive integral, `∫I dt` over every step whose *post*-step deficit is nonzero, reads
+**0.218333 A·h**. It over-counts, by exactly the pre-empty part of the step that crosses
+zero: 2 A × 0.5 s is 0.000278 A·h and only some of it came out past the boundary.
+
+What the engine bills is the deficit's *increase* valued against the capacity it is a
+fraction of — `Δdeficit · eff_cap · soh_cap`, read **before** the step's aging tick, which
+`reversal-damage.md` argues at length and pins with `reversal_ah_matches_current_integral`.
+That reads **0.218179 A·h**, and it is the one quoted: **0.2182**.
+
+This matters because the scenario file's own `description` — which the picker shows —
+already carried this number, as **0.2181**. A reader who loads the file by name and then
+walks the path sees both. Reconciled to 0.2182 in both places, and in
+`reversal-damage.md`'s record of the same measurement.
+
 Recharge leg at −2 A from the mark:
 
 | | |
 | --- | --- |
-| deficit reaches zero | **+383.0 s**, 0.2128 A·h in against 0.2183 A·h out |
+| deficit reaches zero | **+383.0 s**, 0.2128 A·h in against 0.2182 A·h out |
 | `soc (true)` at that instant | 0.0040 % — the row prints **`0.0 %`** |
 | `soc (true)` first prints `0.1 %` | +385.0 s |
 | `soh cap` prints 95.15 % from | +60.0 s |
@@ -125,10 +141,14 @@ Both were in the draft, both were caught by printing the readouts rather than th
 and both are the defect class `docs/plans/path-numbers.md` named: *right about a quantity
 nobody can look at.*
 
-* **"at t = 983.0 s on the clock."** `fmtTime` prints whole minutes above 120 s. The clock
-  goes `10m` … `17m` across the entire recharge and resolves nothing. Replaced with what
-  actually marks the instant — `past empty` ceasing to print a number and reading `none` —
-  and the step now says outright that two of its rows will not tell you when.
+* **"at t = 983.0 s on the clock."** `fmtTime` prints whole minutes above 120 s, so the
+  clock reads `16m` at that instant and `10m` at the mark before it — six characters for
+  383 seconds. Replaced with what actually marks the instant — `past empty` ceasing to
+  print a number and reading `none` — and the step now says outright that two of its rows
+  will not tell you when. (The first draft of the replacement said `17m`, because the
+  browser walk *observed* 17m: the driver polled through the very sampling lag the step
+  warns about two sentences later. `fmtTime(983)` is `16m`. A number read off an instrument
+  you have just documented as lagging is not a measurement of the thing.)
 * **"`soc (true)` leaves zero on that same step."** True of the engine, false of the panel:
   the cell is 0.004 % full when the debt clears, and the row prints `0.0 %` for another two
   seconds. Now stated as the thing it is — a row that is still saying zero after the zero
@@ -140,7 +160,9 @@ nobody can look at.*
 `refreshCells`, throttled to 250 ms of **wall** time, so at this step's speed it can be a
 dozen seconds of *simulation* behind. That is not hypothetical and not calculated: the
 browser walk below caught the row reading **9.438 pts** at the instant the run stopped at
-its mark and **9.704 pts** a quarter-second later. Both numbers are in the step's prose,
+its mark and **9.704 pts** on the next sample after the pause. (A quarter-second is the
+*throttle*, so it is the bound on how long the row can stay wrong once nothing is moving —
+not a measured interval; the driver's own gap was longer.) Both numbers are in the step's prose,
 because the useful lesson is that the lag exists and closes on a pause, not that it does not
 exist. `soh cap` and `soh res` have no such lag.
 

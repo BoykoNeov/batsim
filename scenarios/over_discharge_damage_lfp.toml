@@ -41,7 +41,7 @@ charge back at -2 A: the deficit is repaid in 383 s and the charge state returns
 the health does not. That gap is the point — below empty the cell has no lithium left to \
 give and oxidises the anode's copper current collector instead, and copper in solution is \
 not a debt, it is a loss. One detail worth noticing: repaying costs 0.2128 A·h where \
-0.2181 A·h came out, because the cell that is being refilled is smaller than the one that \
+0.2182 A·h came out, because the cell that is being refilled is smaller than the one that \
 was emptied."""
 
 # Exactly sim_core::PackConfig, serde as it already is.
