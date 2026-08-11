@@ -64,8 +64,20 @@ const CAP_AH: f64 = 5.153_198;
 /// Not a tolerance and not tuned: it is **200 C** on this cell, which is about two
 /// orders of magnitude past anything a scenario in this repo drives and still 7 orders
 /// below the 1e9-and-up currents that motivated the safeguard. Any value in that wide
-/// gap makes the same point, which is what a bound wants to be — the measured worst
-/// case across the sweeps in `docs/plans/voltage-target-blowup.md` is 949 A, or 184 C.
+/// gap makes the same point, which is what a bound wants to be.
+///
+/// # The margin above the measurement is thin, and that is deliberate
+/// The measured worst case across the sweeps in `docs/plans/voltage-target-blowup.md` is
+/// 949 A — **184 C**, against this bound's 200. Sixteen C-rates of headroom on a number
+/// measured on one chemistry at one grid is not much, and a chemistry with a lower
+/// internal resistance could trip this on entirely correct code.
+///
+/// **When it binds, re-measure; do not raise it.** The value's whole job is to sit
+/// between "a current a cell could carry" and "a current that means the solve ran away",
+/// and those are 7 orders apart — so a failure here at, say, 250 C is not a bound that
+/// needs loosening but a solve whose worst case has moved, which is the thing this file
+/// exists to notice. Raising it to accommodate a new measurement would convert the one
+/// assertion that can catch a regression into one that tracks it.
 const ABSURD_A: f64 = 200.0 * CAP_AH;
 
 fn env() -> Env {

@@ -163,8 +163,10 @@ Closing them wants a bracketed root find on a *demand* residual. Declined: brack
 a monotone scalar residual, and what this loop measures is tangent self-consistency, which
 is not that. Adding a demand-satisfaction residual is a different solve, and on a scattered
 parallel group the per-cell split is coupled to `i_g`, so the "1-D monotone" premise is not
-established for the one case that actually fails. It would also trade away the inertness
-proof below, which damping has and a redesign could not.
+established for the one case that actually fails. It would also cost the containment the
+damping has and a redesign could not: the search touches exactly one pre-existing test
+file and no golden at all (see Verification), where replacing the solve would put every
+committed porous-electrode trajectory in scope at once.
 
 ### A window on `Demand::Power`
 
