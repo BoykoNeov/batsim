@@ -272,6 +272,11 @@ Named rather than left inside the sentence above, because each of these was reas
 about, inherited from an earlier slice, or is a claim about the page's behaviour rather
 than about a number the engine produces. None is known to be wrong; none was run here.
 
+- **Step 18's two-button repair — now CHECKED, see [`path-buttons.md`](path-buttons.md).**
+  Three of its four parts hold; the 13.16 V is wrong (13.236 V, and no resting sample in
+  the first 300 s reads 13.16 at all), the second tooth is 184.53 A rather than the first
+  one repeated, and the two buttons commute exactly, so "an order" was never the claim —
+  the Run is. The paragraph below is what it said before that measurement.
 - **Step 18's two-button repair, which is the largest of these and carries numbers.**
   "Press Run and the short, still connected, delivers a *second* 184 A tooth and it
   latches straight back… do it the other way round — **Clear queued** first, then **Clear
