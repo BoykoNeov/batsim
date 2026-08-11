@@ -1,0 +1,64 @@
+# The one scenario in this directory where driving a cell past empty COSTS something.
+#
+# Every other scenario that can reach `SOC_CLAMPED_LOW` leaves `[pack.aging]` off, and a
+# pack that cannot wear out has nowhere to put over-discharge damage — it reverses, sources
+# at a falling voltage, repays its deficit exactly, and ends as new. That is the engine
+# behaving correctly and it is also the whole mechanism made invisible, which is why this
+# file exists. See docs/plans/reversal-damage.md.
+#
+# A scenario is an *initial condition*, not a demand program. What makes this one work is
+# the starting charge: at 5 % SOC the cell is three and a half minutes from empty at 2 A, so
+# the interesting part starts almost at once instead of after an hour of ordinary discharge.
+#
+# Measured on this file, discharging at 2 A: empty at 207.5 s and 1.9306 V, then the
+# open-circuit voltage falls through zero and pins at its declared floor. By t = 600 s the
+# cell is 9.70 points past empty, has lost 4.84 % of its capacity, and its resistance is up
+# 7.26 %. Charging back at -2 A repays the deficit in 383.0 s, and the health does not
+# recover -- it keeps falling very slightly, because the return leg is ordinary cycle
+# throughput and that has its own (much smaller) cost.
+
+chemistry = "lfp_26650_generic"
+
+[meta]
+name = "Over-discharge damage, single LFP cell"
+description = """
+A 1S1P LFP cell at 5 % SOC and 25 degC, isothermal, no BMS, no faults — and \
+UNLIKE every other scenario here, aging is ON. Discharge at 2 A. The cell empties at \
+207.5 s and 1.9306 V, and nothing stops there: `SOC_CLAMPED_LOW` raises, the `past empty` \
+readout comes off zero, and the terminal falls through zero to the floor its chemistry \
+file declares. Watch the health readouts while it does. By ten minutes the cell is 9.70 \
+points past empty and has lost 4.84 % of its capacity, with resistance up 7.26 %. Now \
+charge back at -2 A: the deficit is repaid in 383 s and the charge state returns, while \
+the health does not. That gap is the point — below empty the cell has no lithium left to \
+give and oxidises the anode's copper current collector instead, and copper in solution is \
+not a debt, it is a loss. One detail worth noticing: repaying costs 0.2128 A·h where \
+0.2181 A·h came out, because the cell that is being refilled is smaller than the one that \
+was emptied."""
+
+# Exactly sim_core::PackConfig, serde as it already is.
+[pack]
+series = 1
+parallel = 1
+# Two minutes from empty at 2 A on a 2.303 Ah cell, so the run reaches the mechanism
+# this file is about without a long uneventful lead-in.
+initial_soc = 0.05
+initial_temp_k = 298.15
+# Aging draws no random numbers here — the plating short roll needs plating conditions,
+# and this cell is warm — but the seed is part of the snapshot and every scenario names
+# it rather than inheriting a default.
+seed = 1
+
+# The line that makes this scenario different from every other one in this directory.
+# One aging update per 10 s of simulation time, the shipped default: a coarseness knob,
+# not an accuracy one. Over-discharge damage accumulates every step and is billed at each
+# of these ticks, so a coarser period changes when the health readout moves, never how far.
+[pack.aging]
+sub_clock_period_s = 10.0
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical; one cell, so there is nothing to scatter
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves. Deliberate —
+#                      calendar fade is Arrhenius in temperature, and a fixed 25 degC keeps
+#                      the health readout answering to the over-discharge and nothing else
+#   [pack.bms]      -> no BMS at all; nothing may stop the discharge at the flag
+#   [[faults]]      -> nothing scheduled

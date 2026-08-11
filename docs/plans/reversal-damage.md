@@ -245,6 +245,48 @@ different sections of one file and are conceptually one thing — what this chem
 wear costs — so they are now a `FadeParams` bundle assembled once per aging tick rather than
 once per cell. Six arguments, and the call site reads better than it did before the slice.
 
+## 4. The mechanism was unreachable from every client, and that was nearly filed as a footnote
+
+Written up first as a deferred bullet, then promoted. The engine change was complete and
+tested, and **no path through the server, the wasm client, the guided path, or any of the
+fourteen shipped scenarios exercised a single amp-hour of it** — because the only scenario
+with `[pack.aging]` is a hot-storage run that never approaches empty, and every scenario
+that *does* reach `SOC_CLAMPED_LOW` leaves aging off. A feature no client can reach is
+closer to not landed than to landed-with-a-gap, so `scenarios/over_discharge_damage_lfp.toml`
+ships with the slice: the same LFP cell as the plain discharge scenario, started at 5 % SOC
+with aging on and nothing to protect it.
+
+Its prose is measured rather than predicted, and measuring it **caught two false claims in
+the draft description**:
+
+* "empties in about two minutes" — it is **207.5 s** at **1.9306 V**. The arithmetic was
+  right and the unit conversion was not.
+* "the deficit is repaid exactly, to the amp-hour" — it is **not**. 0.2181 A·h came out
+  past empty and repaying the deficit takes **0.2128 A·h**, because capacity fell 4.84 %
+  while the cell was down there and the deficit is a *fraction* of the capacity the cell
+  has now. Charge is conserved against the state, not against the earlier state. That is a
+  property every fade mechanism already had — calendar and cycle fade shrink capacity
+  mid-run too — and it only became visible here because this is the first scenario where
+  enough capacity is lost in one run to see it. Recorded, not fixed: it is what capacity
+  fade *means*.
+
+At ten minutes the run has lost **4.84 % of capacity** and gained **7.26 % resistance**,
+and the health does not recover on the charge leg — it falls very slightly further, from
+ordinary cycle throughput.
+
+## 5. Perf: no benchmark was run, and the claim was made checkable instead
+
+`Pack::step` sits marginal against its budget (`docs/plans/pack-step-perf.md`), and this
+slice touches the per-cell loop. The bench was **not** run, deliberately: the box is
+recorded as bimodal at ~1.4×, a single absolute is worthless, and a paired run was started
+minutes after a full workspace build — the exact contamination that file warns about.
+
+So the per-cell deficit read was **gated on `aging_accumulates`**, the same flag its only
+consumer is behind. A pack without aging now pays for this slice *not at all* rather than
+*negligibly*, which is a claim about the diff — checkable by reading it, the method Phase 4
+slice E used — instead of a claim about a benchmark. Packs *with* aging pay one field read
+and three arithmetic operations per cell per step, unmeasured and stated as unmeasured.
+
 ## Versions, confirmed
 
 `SNAPSHOT_VERSION` 14 → **15**. `API_VERSION` 2 and `WASM_API_VERSION` 6 do not move: no
@@ -256,12 +298,11 @@ required field with no `#[serde(default)]` inside a struct every snapshot carrie
 
 ## Deferred, with a price
 
-* **No shipped scenario reaches the damage.** This is sharper than the plan's draft admitted:
-  it is not that nothing *names* over-discharge as the cause, it is that the only shipped
-  scenario with aging enabled is a hot-storage run that never approaches empty, so every
-  scenario that goes past empty has aging off and pays nothing. The mechanism is complete,
-  tested, and **currently unreachable from any client** — a distinct kind of gap from an
-  invisible one, and its own slice.
+* ~~**No shipped scenario reaches the damage.**~~ **Fixed inside this slice** —
+  `scenarios/over_discharge_damage_lfp.toml`, see section 4. What remains deferred is
+  narrower and is the ordinary kind of gap: the **guided path** has no step about it, so a
+  reader who does not load that scenario by name still meets over-discharge as a debt that
+  gets repaid. Step 20 is where it would go, and it is a client slice.
 * **The resistance coupling is shared**, and under-reports what over-discharge does to
   impedance. The second coefficient was refused with a measurement (under 5 mV of extra sag
   at 1C, either way), not a preference — but the measurement says it would be *invisible*,

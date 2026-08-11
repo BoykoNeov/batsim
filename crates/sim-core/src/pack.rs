@@ -2027,7 +2027,16 @@ impl Pack {
                 // `CellModel::soc_deficit`, whose doc argues that is physics and not a
                 // stub. Those variants therefore contribute exactly zero here with no
                 // branch arranging it.
-                let deficit_before = cell.model.soc_deficit();
+                //
+                // Gated on the same flag the consumer is, so that a pack without aging
+                // pays for this slice **not at all** rather than "negligibly". That is a
+                // claim about the diff, which is checkable, instead of a claim about a
+                // benchmark on a box `docs/plans/pack-step-perf.md` records as bimodal.
+                let deficit_before = if aging_accumulates {
+                    cell.model.soc_deficit()
+                } else {
+                    0.0
+                };
                 let temp_before = cell.model.temp_k();
                 let eff_cap = cap_ah * cell.capacity_factor;
                 let soh_cap = cell.aging.soh_capacity;
