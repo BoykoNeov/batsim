@@ -146,6 +146,17 @@ why it is bigger; send the reader through **Back** then **Next** before the seco
 ordering; quote 13.236 V drifting to 13.25 V; quote the note's *1 fault*; and state that
 the two presses commute.
 
+**Then amended, because the first draft committed the defect it was fixing.** Both new
+figures are `Step 1` readings, and the draft told the reader to press **Run** — at 10×
+the tooth is gone before the readouts refresh, and a Run from the repaired mark leaves
+13.252 V on screen, not 13.236. That is `path-numbers.md`'s "right but unreachable"
+category, written fresh into the paragraph being corrected. The prose now names **Step 1**
+where a figure needs it and gives 13.25 V as what running on actually leaves. The tell was
+already in this slice's own page transcript — `Step 1 → 13.236`, `after a real Run →
+13.252` — and in this doc's own sentence that "at this step's own 10× no poll can land on
+it". **A measurement's own caveat about the instrument is usually a caveat about the
+reader too.**
+
 ## Verification
 
 - `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`
