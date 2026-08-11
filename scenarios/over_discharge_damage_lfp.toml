@@ -10,6 +10,14 @@
 # the starting charge: at 5 % SOC the cell is three and a half minutes from empty at 2 A, so
 # the interesting part starts almost at once instead of after an hour of ordinary discharge.
 #
+# Every number below was measured at dt = 0.5 s, which is the browser page's default step,
+# and the measurement conditions are part of the numbers rather than trivia: the aging
+# sub-clock is 10 s, and `crates/sim-core/src/aging.rs` states that a partial period is
+# carried rather than dropped, so the trajectory depends on the *sequence* of dt values a
+# client feeds and not only on their sum. A different step size moves WHEN the health
+# readout steps, not how far it ends up. `207.5 s` is likewise the first sample on a 0.5 s
+# grid at which the deficit is nonzero.
+#
 # Measured on this file, discharging at 2 A: empty at 207.5 s and 1.9306 V, then the
 # open-circuit voltage falls through zero and pins at its declared floor. By t = 600 s the
 # cell is 9.70 points past empty, has lost 4.84 % of its capacity, and its resistance is up
@@ -23,10 +31,11 @@ chemistry = "lfp_26650_generic"
 name = "Over-discharge damage, single LFP cell"
 description = """
 A 1S1P LFP cell at 5 % SOC and 25 degC, isothermal, no BMS, no faults — and \
-UNLIKE every other scenario here, aging is ON. Discharge at 2 A. The cell empties at \
-207.5 s and 1.9306 V, and nothing stops there: `SOC_CLAMPED_LOW` raises, the `past empty` \
-readout comes off zero, and the terminal falls through zero to the floor its chemistry \
-file declares. Watch the health readouts while it does. By ten minutes the cell is 9.70 \
+UNLIKE every other scenario here, aging is ON. Discharge at 2 A at the default 0.5 s \
+step. The cell empties at 207.5 s and 1.9306 V, and nothing stops there: \
+`SOC_CLAMPED_LOW` raises, the `past empty` readout comes off zero, and the terminal falls \
+through zero to the floor its chemistry file declares. Watch `soh cap` and `soh res` in \
+the readout row while it does. By ten minutes the cell is 9.70 \
 points past empty and has lost 4.84 % of its capacity, with resistance up 7.26 %. Now \
 charge back at -2 A: the deficit is repaid in 383 s and the charge state returns, while \
 the health does not. That gap is the point — below empty the cell has no lithium left to \
