@@ -317,6 +317,11 @@ required field with no `#[serde(default)]` inside a struct every snapshot carrie
   narrower and is the ordinary kind of gap: the **guided path** has no step about it, so a
   reader who does not load that scenario by name still meets over-discharge as a debt that
   gets repaid. Step 20 is where it would go, and it is a client slice.
+  **Now closed too — `docs/plans/reversal-damage-ui.md`.** It became step *21* rather than
+  a change to step 20, for a reason this bullet could not have known: step 20 runs on
+  `cc_discharge_lfp.toml`, which has aging **off**, so there is no way to show the damage
+  without changing the scenario the step is built on. The two steps are the same experiment
+  with one line of TOML between them, which turned out to be the better lesson.
 * **The resistance coupling is shared**, and under-reports what over-discharge does to
   impedance. The second coefficient was refused with a measurement (under 5 mV of extra sag
   at 1C, either way), not a preference — but the measurement says it would be *invisible*,

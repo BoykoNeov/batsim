@@ -239,7 +239,7 @@ the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
 If you do not already know what to look at, press **Start** under *Guided path*
-instead. It walks twenty steps — one cell on its own, the same discharge on a
+instead. It walks twenty-one steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
 with protection on and then off, a pack that wears out while doing nothing at all,
@@ -258,16 +258,24 @@ that costs fifty because a derate clamps demands and a short is not a demand. It
 by returning to the cell it opened with and not stopping at the knee: past empty the
 terminal falls through zero and then goes flat, while the charge still leaving is
 counted somewhere else entirely — and putting it back takes four minutes in which the
-charge readout does not move by one digit. Each
+charge readout does not move by one digit. Then one last step on the only shipped
+scenario where that same abuse is allowed to *cost* anything, which shows the half that
+does not come back: the charge is repaid to the amp-hour while five percent of the
+cell's capacity is not, because below empty the current comes out of the anode's copper
+current collector rather than out of any lithium. Each
 step sets the controls for itself and outlines the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step's whole control set,
 so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when
 it needs to start from t = 0 and otherwise keeps the run going, which is why steps 12
-to 16 — whose claims are about a *first* pulse or a discharge from full — ask for the
-reload explicitly rather than inheriting whatever the neighbouring step left behind.
-Those five also pin the timestep, for the same class of reason: steps 15 and 16 run at
-the 2 s step their golden asserts at, and without a pin that setting would leak back
-into the pulse steps on the way and quietly move every millivolt they quote. Steps 3 to
+to 17 and the last two — whose claims are about a *first* pulse, a discharge from full,
+or a cell that has to start part-charged — ask for the reload explicitly rather than
+inheriting whatever the neighbouring step left behind. Every step from 12 on also pins
+the timestep, for the same class of reason: steps 15 to 17 run at the 2 s step their
+golden asserts at, and without a pin that setting would leak back into the pulse steps
+on the way and quietly move every millivolt they quote. Step 18 then does the opposite
+and asks you to *change* it, which is why the three steps after it state theirs — one
+of them because a partial aging period is carried rather than dropped, so the sequence
+of step sizes and not just their sum decides where its health readout lands. Steps 3 to
 5 are one continuous run on one pack, because changing what you look at teaches more
 than reloading.
 
