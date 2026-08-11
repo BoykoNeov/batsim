@@ -205,7 +205,7 @@ Measured, and these are the step's numbers:
 | +80 s — crosses 0 V | −0.0004 V | 1.94 pts |
 | +83 s — OCV reaches `floor_v` | −0.0640 V | 2.01 pts |
 | +166 s | −0.0640 V | 4.01 pts |
-| +300 s | −0.0640 V | 7.24 pts |
+| +253.5 s — the step's 4400 s mark | −0.0640 V | 6.121 pts |
 
 The flat −0.0640 V is the whole shape of the model in one number: the open-circuit
 voltage has reached the floor the chemistry file declares (`floor_v = 0.0`), so the
@@ -213,16 +213,26 @@ terminal is the ohmic drop alone and stops moving — while the deficit goes on 
 without bound, because charge is still being taken out. **A voltage that has stopped
 falling is not a cell that has stopped discharging**, which is the lesson.
 
-Then the half worth waiting for. Charging the same cell back at 2 A from a deficit of
-20.59 points (0.4743 A·h drawn past empty):
+Then the half worth waiting for. Charging the same cell back at 2 A **from the step's own
+mark**, where the deficit is 6.121 points (0.14099 A·h drawn past empty):
 
-* `soc (true)` reads **0.0000 % for 854 seconds** — fourteen minutes in which every
-  charge-state readout on the page is frozen and the charger is working the whole time;
-* the terminal sits at the floor plus the ohmic rise, 0.026 → 0.064 V, for the first
-  thirteen of those minutes, and only snaps back to 2.0655 V in the last ninety seconds
-  as the deficit clears the ramp;
-* 854 s at 2 A is 0.4744 A·h, which is what was taken. **The debt is exact**, and that
-  is the conservation property `low-clamp-reversal.md` bought, seen from the client.
+* `soc (true)` reads **0.0 % for 254 seconds** — four minutes in which every charge-state
+  readout on the page is frozen and the charger is working the whole time;
+* the terminal is no more informative: 0.026 V on the first step, 0.062 V a minute in
+  and 0.064 V at two, because the cell is sitting on `floor_v` and the ohmic rise is the
+  whole of it. It starts climbing at about 170 s, when the deficit re-enters the
+  2-point ramp, and reaches 2.0655 V on the step the deficit clears;
+* 254 s at 2 A is 0.1410 A·h, which is what was taken (0.14099 computed). **The debt is
+  exact**, and that is the conservation property `low-clamp-reversal.md` bought, seen
+  from the client.
+
+**The first draft of this step got both of those wrong, and the browser pass is what
+caught it.** The recharge had been measured from `t = 5000 s` — a run the harness had
+carried past the mark — so the prose quoted a 20.59-point deficit and a 854-second
+repayment that no reader stopping where the step stops could ever see. The engine numbers
+were real; they were answers about a different moment. Same defect class as the two
+"right but unreachable" claims `path-numbers.md` records, and it survived a plan doc, a
+commit and every green gate, because nothing but walking the step can catch it.
 
 `dt` is pinned at 0.5 s, which every step from 12 on does and which this one needs for a
 reason of its own: step 18 tells the reader in so many words to put the box up to 5 s and
@@ -233,6 +243,23 @@ the reader last typed.
 The step is 20th and last rather than slotted next to step 10's overcharge, because it
 is the answer to the question step 19 now ends by raising, and because the path's shape
 is "here is an instrument" → "here is what it shows" → "here is where the model stops".
+
+## What the browser pass confirmed
+
+Driven headless over CDP against `sim-server` at `/app/`, reading the shipped page's own
+DOM and clicking its own controls. Four things no Rust gate touches:
+
+* **The function-valued `quiet`.** `past empty` reads `none` on `cc_discharge_lfp`, and
+  `particle model — no clamp` on both `cc_discharge_3c_spm` and `cc_discharge_3c_dfn`,
+  in the same dimmed class the other silent rows use.
+* **The metric gate across a model change.** With `past empty` selected on the ECM pack
+  (surface-gap options hidden), loading the SPM pack hides `soc_deficit` *and* returns
+  the selector to `soc`. No exception out of a draw call; `window.__errs` empty
+  throughout the whole session.
+* **Step 20 at its mark**, walked from the start button through nineteen Nexts:
+  `step 20 of 20`, terminal `-0.064 V`, `soc (true)` `0.0 %`, `past empty` `6.121 pts`.
+* **The cell-detail line**, on hover: `… soc 0.000 % · … · past empty 6.121 pts · …`,
+  and absent on every healthy pack read earlier in the same session.
 
 ## Versions
 
