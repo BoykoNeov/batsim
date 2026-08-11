@@ -216,18 +216,29 @@ until about t = 505 s and `5.81` after. The claim was reworded to the plateau it
 over once halfway through) rather than to a digit that does move, which is both true and
 the thing the sentence was trying to say.
 
-### 9. Step 19 — the peak temperature
+### 9. Step 19 — the peak temperature, and a headline contradicted by its own paragraph
 
 "the pack peaks at **344.6 K**" — measured **344.546 K**, which prints as 344.5. One
 digit, corrected. The cell that is genuinely hottest reads **344.518 K** at the latch
 against the claimed 344.52, and the probe threshold is 343.15, so "late by 1.3 K" is
 1.37 K and stands.
 
+The step also opened with "**86 amps**" while its own later sentence says "the same
+93.29 A on the first frame after the fault" — measured 93.29 → 87.04 at thirty seconds →
+85.90 when `OT` fires. Both numbers are right and the headline is the settled value, but
+this is the same species of defect as step 3's, where a figure is contradicted later in
+its own paragraph, and it was nearly waved through on the grounds that 86 A is a fair
+summary. The twin step leads with its *peak*. Now reads "93 amps settling to 86".
+
 ## What was right
 
 The count matters more than the list, because the next reader needs to know which numbers
-are already checked. **Every other quantity in the path reproduces**, most of them to
-every digit printed. In particular:
+are already checked. **Every trajectory quantity the harness could reach reproduces** —
+that is every voltage, current, charge level, temperature, watt and flag arrival time in
+all nineteen steps — most of them to every digit printed. What that sentence does *not*
+cover is listed under "Not checked" below, and the distinction matters: this document
+exists so the next slice can skip what is done, and an overclaim here would make it skip
+claims nothing has ever touched. In particular, checked and correct:
 
 - **Steps 15 and 16 are exact throughout** — the two hardest steps in the path, every
   voltage, every SOC, every watt, the 535 mV collapse, `SOLVE_UNCONVERGED` at 466 s, the
@@ -255,11 +266,46 @@ every digit printed. In particular:
   of the loop. (My first reading of that loop concluded the opposite; the measurement is
   the reason it is not in the prose.)
 
+## Not checked
+
+Named rather than left inside the sentence above, because each of these was reasoned
+about, inherited from an earlier slice, or is a claim about the page's behaviour rather
+than about a number the engine produces. None is known to be wrong; none was run here.
+
+- **Step 18's two-button repair, which is the largest of these and carries numbers.**
+  "Press Run and the short, still connected, delivers a *second* 184 A tooth and it
+  latches straight back… do it the other way round — **Clear queued** first, then **Clear
+  latched BMS fault** — and the pack simply sits there at 13.16 V." That is a causal claim
+  about button ordering plus a repeat-spike magnitude, and this repo's memory already
+  records one stale belief about the clear-fault wiring. It needs the page, not the
+  harness.
+- **Parameter claims quoted from files and other plan docs**: step 4's current sensor
+  reading "20 mA high with 10 mA of noise" (in `soft_short_under_a_lying_sensor.toml`),
+  steps 12 and 13's RC time constants of 9 s and 72 s, step 14's "the circuit stops at
+  1.79" past the clamp, and step 17's diffusion times of 1040 s and 6812 s (measured by
+  the surface-vs-bulk slice). The harness measured *around* all of these — the behaviour
+  they explain reproduces — but not the constants themselves.
+- **Step 5's "the temperature grid finds a new hottest cell."** The pack does spread from
+  27.2 °C to 29.2 °C after the short, which is consistent with it, but which cell is
+  hottest before and after was not compared.
+- **Page-behaviour claims**: step 3's legend printing both ends of the scale and the
+  click-to-pin, step 17's tile hover at three decimals and the pack grid's metric menu,
+  and the status-line wording in steps 9 and 10. Format claims are checkable by reading
+  the renderer and several were, but none was seen on screen.
+
 ## Verification
 
 - `cargo fmt --all --check` clean, `cargo clippy --workspace --all-targets -- -D warnings`
-  clean, `cargo test --workspace` green. Expected — no Rust changed — and run because the
-  gate is the gate.
+  clean, `cargo test --workspace` green (exit 0, read from `PIPESTATUS`). Expected — no
+  Rust changed — and run because the gate is the gate. The `fmt` check was run **unpiped**
+  the second time: `cargo fmt --all --check | tail -3; echo $?` reports *tail's* status,
+  which is 0 whatever cargo did, and the first version of this line asserted a clean
+  format on a probe that could not fail. Same family as the recorded lesson about reading
+  cargo's exit code rather than splitting its output.
+- `node --check web/app.js` passes. The page is nineteen lessons inside one array of
+  string literals, so a mistyped quote in a prose edit takes out every step and no Rust
+  gate would see it — and the last two edits in this slice were made *after* the browser
+  had loaded the file for the verification below.
 - No version constant moved: `SNAPSHOT_VERSION` 13, `API_VERSION` 2, `WASM_API_VERSION` 5.
   `web/pkg` needs no rebuild, for the same reason.
 - Step 17's corrected numbers were re-read **off the shipped page**, at rest, through the
