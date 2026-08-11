@@ -458,6 +458,15 @@ Qualified here rather than quietly dropped, on `dfn-scenario.md`'s precedent —
 honest version of the criterion for a slice that adds one step is "that step, both
 directions", which is what the next one should say.
 
+**Closed by `docs/plans/path-wedge.md` (2026-08-11).** The clause is now met: 37 of 37
+steps run to their own marks, 19 forward and 18 back, with no page errors. What blocked it
+was not this slice and not that lesson — the wedge was a **renderer crash**, `drawPanel`'s
+tick loop failing to advance on a y-range two ULPs wide and allocating until Chrome killed
+the tab. A resting 4S pack's terminal voltage is what produced the degenerate range, so any
+nearly-flat trace could reach it; the three earlier measurements varied the lesson, and the
+lesson was never the variable. The step-19 attribution above ("belongs to that lesson's
+entry path") is therefore **superseded**: it was as far as varying the lesson could get.
+
 ## Versions, as built
 
 `SNAPSHOT_VERSION` 13 → 13, `API_VERSION` 2 → 2, `WASM_API_VERSION` 4 → **5** with

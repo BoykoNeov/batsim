@@ -636,6 +636,15 @@ const PLOT_BG = "#1c1f26";
 const PLOT_GRID = "#2b303b";
 const PLOT_INK = "#939bab";
 
+/**
+ * Hard ceiling on gridlines per axis.
+ *
+ * Not a layout choice — the doubling in `drawPanel` keeps a real axis to a handful of
+ * ticks. It is the backstop on a range this page did not compute, so that a degenerate
+ * one costs a cluttered panel instead of the tab.
+ */
+const MAX_TICKS = 64;
+
 /** Nice-ish tick step for a range: 1, 2 or 5 times a power of ten. */
 function tickStep(span, target) {
   if (!(span > 0)) return 1;
@@ -705,7 +714,12 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   // zero-length read — has no time span. Widening it by an epsilon and ticking anyway
   // prints the same label six times, which looks like a broken axis rather than an
   // empty one.
-  const spanned = xLast > x0;
+  // Same floor as the y axis below, and for the same reason rather than by analogy: a
+  // bare `xLast > x0` rules out only an exactly repeated timestamp, and two sample times
+  // a couple of ULPs apart would tick an axis whose step is below its own endpoints'
+  // resolution. Under the floor this takes the single-label branch, which is what "no
+  // span" already meant here.
+  const spanned = xLast - x0 > Math.max(Math.abs(xLast) * 1e-12, 1e-9);
   const x1 = spanned ? xLast : x0 + 1;
 
   let y0;
@@ -723,7 +737,29 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
       }
     }
     if (!Number.isFinite(y0)) [y0, y1] = [0, 1];
-    const pad = (y1 - y0) * 0.08 || Math.max(Math.abs(y1) * 0.05, 0.5);
+    // A span of a few ULPs is not a range, it is the same number twice. A resting 4S
+    // pack reports 13.2568 V and 13.256800000000002 V on successive samples — two
+    // floating-point steps apart — and `(y1 - y0) * 0.08` is a *nonzero* pad, so the
+    // `||` below (which only ever caught an exactly equal pair) let it through. The
+    // axis then asked for a tick step of 5e-16 on endpoints whose own resolution is
+    // 1.8e-15, and the tick loop stopped advancing. That took the renderer out of
+    // memory in fifteen seconds; see `docs/plans/path-wedge.md`.
+    //
+    // The floor has to be both relative and absolute, and the relative half alone is
+    // what a first attempt at this got wrong. Relative, because these panels span volts
+    // and kelvin and amps and a percent of new, so no single number is small on all of
+    // them. Absolute, because a trace that straddles zero has no magnitude to be
+    // relative *to*: `y0 = -1e-18, y1 = 1e-18` beats any multiple of its own size and
+    // would sail through a purely relative test into a meaningless axis two attometres
+    // wide. Whichever is larger wins.
+    //
+    // 1e-9 in the panel's own unit is a nanovolt, a nanoamp, a nanokelvin — four orders
+    // below the tens of microvolts a resting pack's cell-voltage panel legitimately
+    // spans, so nothing real is flattened by it.
+    const span = y1 - y0;
+    const mag = Math.max(Math.abs(y0), Math.abs(y1));
+    const flat = !(span > Math.max(mag * 1e-12, 1e-9));
+    const pad = flat ? Math.max(mag * 0.05, 0.5) : span * 0.08;
     y0 -= pad;
     y1 += pad;
   }
@@ -747,7 +783,15 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   // axis that repeats itself is worse than none.
   const decimals = Math.min(6, Math.max(0, Math.ceil(-Math.log10(yStep))));
   const yTicks = [];
-  for (let v = Math.ceil(y0 / yStep) * yStep; v <= y1; v += yStep) {
+  const yFirst = Math.ceil(y0 / yStep) * yStep;
+  // Counted, not accumulated. `v += yStep` is a no-op whenever the step is smaller than
+  // the ULP of `v`, and a loop whose induction variable cannot move is not a slow loop,
+  // it is a memory leak with a `push` in it. Indexing always advances, and the cap
+  // bounds the one range this function does not choose for itself — `yFixed`, which
+  // arrives from the caller. The doubling above already keeps a real axis far under it.
+  const nY = Math.min(MAX_TICKS, Math.max(0, Math.floor((y1 - yFirst) / yStep) + 1));
+  for (let k = 0; k < nY; k++) {
+    const v = yFirst + k * yStep;
     yTicks.push({ v, text: v.toFixed(decimals) });
   }
 
@@ -784,7 +828,13 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   ctx.textAlign = "center";
   if (spanned) {
     const xStep = tickStep(x1 - x0, Math.max(2, Math.round(plotW / 150)));
-    for (let t = Math.ceil(x0 / xStep) * xStep; t <= x1; t += xStep) {
+    // Counted for the same reason as the y ticks above, and it is the same defect
+    // rather than a precaution: `spanned` only rules out `x1 === x0`, so two sample
+    // times a couple of ULPs apart reach here exactly as two voltages did.
+    const xFirst = Math.ceil(x0 / xStep) * xStep;
+    const nX = Math.min(MAX_TICKS, Math.max(0, Math.floor((x1 - xFirst) / xStep) + 1));
+    for (let k = 0; k < nX; k++) {
+      const t = xFirst + k * xStep;
       const x = Math.round(sx(t)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, padT);
