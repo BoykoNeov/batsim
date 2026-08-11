@@ -55,9 +55,17 @@ cell used to keep sourcing at `OCV(0)` forever, which is energy from nowhere; th
 not to refuse the current — nothing in the engine can refuse a demanded current — but to
 let the cell go into **voltage reversal**, carrying what it delivered as a deficit and
 dropping its open-circuit voltage through zero so the external circuit pays. A cell driven
-past empty and charged back now returns to exactly where it started with the books
-balanced, where before it fabricated kilojoules and did not even end up in the same state.
+past empty and charged back now closes its books exactly, where before it fabricated
+kilojoules and did not even end up in the same state.
 See [`docs/plans/low-clamp-reversal.md`](docs/plans/low-clamp-reversal.md).
+
+Balancing the books is not the same as being unharmed, and the next slice made the
+difference. Past empty a real cell has no lithium left to give and oxidises the anode's
+copper current collector instead, which does not come back — so over-discharge is now a
+fourth capacity-fade mechanism alongside calendar, cycle, and plating loss, charged per
+amp-hour delivered below empty and carrying the matching resistance growth. Repayment is
+still exact in charge and no longer free in health. See
+[`docs/plans/reversal-damage.md`](docs/plans/reversal-damage.md).
 
 Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
 LG M50 21700. Every constant in them carries a provenance note, **including the ones

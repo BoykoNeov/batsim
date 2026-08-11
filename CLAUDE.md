@@ -201,7 +201,11 @@ and double as the scenario file format.
 - **Cycle fade**: proportional to charge throughput, weighted by DOD and C-rate
   stress factors (rainflow counting is overkill for v1; throughput + stress
   weights is enough and is transparent to students).
-- Both mechanisms reduce `soh_capacity` **and** increase `soh_resistance`
+- **Over-discharge damage**: charge delivered below empty oxidises the anode current
+  collector, so it is billed per amp-hour past empty (`[reversal] fade_per_ah`) as a
+  fourth mechanism beside calendar, cycle, and plating fade. ECM-only — the porous
+  models never clamp, so they carry no deficit. See `docs/plans/reversal-damage.md`.
+- All mechanisms reduce `soh_capacity` **and** increase `soh_resistance`
   (roughly: each % capacity lost adds a configurable % resistance). Resistance
   growth is pedagogically important — do not model capacity fade alone.
 - All aging coefficients live in the chemistry TOML with provenance comments.
@@ -282,6 +286,9 @@ c_farad = 2000.0
 [reversal]                   # required: how the cell behaves BELOW empty
 v_per_soc = 100.0            # OCV falls this fast per unit of over-discharge [V]
 floor_v   = 0.0              # and stops here. Must be below OCV(soc = 0)
+fade_per_ah = 2.2e-1         # and what it COSTS: capacity fraction lost per Ah
+                             # delivered past empty (anode current-collector
+                             # dissolution). Required; 0 = over-discharge is free.
 
 [thermal]
 heat_capacity_j_per_k = 95.0

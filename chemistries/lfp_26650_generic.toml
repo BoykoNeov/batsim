@@ -63,6 +63,16 @@ v_per_soc = 100.0
 # reversed cell continues to roughly -1 to -2 V on copper dissolution before failing; 0 V
 # is the conservative choice and bounds an otherwise unbounded ramp.
 floor_v   = 0.0
+# What over-discharge costs: capacity fraction lost per Ah delivered past empty. Past
+# empty the anode has no lithium left to give and its copper current collector oxidises
+# instead, which does not come back.
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized against the collapse
+# window above, the same way v_per_soc is sized against OCV(0): one FULL reversal (2 % of
+# capacity past empty, 0.0461 Ah here) costs ~1.0 % of capacity. That puts an amp-hour
+# delivered past empty at ~11000x an ordinary cycle amp-hour and ~220x a plated one, so a
+# single deep over-discharge costs about what a year on the shelf costs -- bad enough to
+# matter on the first event, not so bad that the cell is scrap.
+fade_per_ah = 2.2e-1
 
 [thermal]
 heat_capacity_j_per_k = 95.0   # provenance: ~m*cp for a 26650 (~85 g, mixed materials); placeholder

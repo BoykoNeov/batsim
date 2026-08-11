@@ -22,7 +22,7 @@ use rand_core::SeedableRng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::aging::{Aging, AgingConfig, CellAging};
+use crate::aging::{Aging, AgingConfig, CellAging, FadeParams};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::dfn;
@@ -218,7 +218,29 @@ use crate::{Demand, Env, Telemetry};
 /// check against a **re-serialized** blob rather than a stale one, which is what
 /// separates "the version field rejected it" from "deserialization rejected it" when the
 /// stale bytes can no longer be parsed at all. See `docs/plans/low-clamp-reversal.md`.
-pub const SNAPSHOT_VERSION: u32 = 14;
+///
+/// v15 (over-discharge damage): [`crate::aging::CellAging`] gained `q_reversal` and
+/// `ah_reversed_since_tick`, and [`crate::ReversalParams`] gained a required
+/// `fade_per_ah`.
+///
+/// **Structural, and this one does not pretend otherwise.** v14's argument was that its
+/// new state was unrecoverable — `soc_deficit` defaulting to zero is the wrong reading
+/// for every cell that went past empty, and restoring one would put the fabricated energy
+/// back. Nothing here is like that. Both new accumulators default to the *correct* v14
+/// reading, because a v14 pack accrued no reversal damage: there was none to accrue. The
+/// state half of this bump would restore honestly, and saying so is cheaper than
+/// inventing a semantic story for it.
+///
+/// What forces the bump is the layout rule in `CLAUDE.md`, and what makes the version
+/// check belt-to-braces is the same deserialization argument v14 made:
+/// `ReversalParams::fade_per_ah` is required and carries no `#[serde(default)]` — the
+/// value it would otherwise supply is "over-discharge is free", the defect this version
+/// removes — and the chemistry is serialized inside every snapshot, so a v14 blob fails
+/// at *deserialization* first in every configuration. `snapshot_version.rs` therefore
+/// pins this the way it pinned v14: against a re-serialized blob, which is what separates
+/// "the version field rejected it" from "deserialization rejected it" when the stale bytes
+/// can no longer be parsed at all. See `docs/plans/reversal-damage.md`.
+pub const SNAPSHOT_VERSION: u32 = 15;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -1999,6 +2021,13 @@ impl Pack {
                     q += v_node * i_shunt;
                 }
                 let soc_before = cell.model.soc(&self.chem);
+                // Read *before* `advance`, because the reversal accumulator below is a
+                // difference across it. Structurally `0.0` for the porous-electrode
+                // models, which never clamp and so never carry a deficit — see
+                // `CellModel::soc_deficit`, whose doc argues that is physics and not a
+                // stub. Those variants therefore contribute exactly zero here with no
+                // branch arranging it.
+                let deficit_before = cell.model.soc_deficit();
                 let temp_before = cell.model.temp_k();
                 let eff_cap = cap_ah * cell.capacity_factor;
                 let soh_cap = cell.aging.soh_capacity;
@@ -2061,10 +2090,27 @@ impl Pack {
                     heat_w.push(q);
                 }
                 if aging_accumulates {
+                    // --- charge delivered past empty, which is the third quantity this
+                    // step has to hand the aging layer and the only one that is a
+                    // *difference* rather than a reading.
+                    //
+                    // `eff_cap · soh_cap` is exactly the product `coulomb_step` divided
+                    // by on this step, and using anything else — a post-tick state of
+                    // health, or `cap_ah` without its factors — produces amp-hours that
+                    // do not correspond to charge that crossed the terminals. That is a
+                    // silent leak rather than a visible one, so it is pinned by
+                    // `reversal_damage.rs::reversal_ah_matches_current_integral` instead
+                    // of by this comment.
+                    //
+                    // `max(0, ·)` is what makes repayment free: charging a reversed cell
+                    // shrinks the deficit, and the damage was done on the way down.
+                    let ah_reversed =
+                        (cell.model.soc_deficit() - deficit_before).max(0.0) * eff_cap * soh_cap;
                     // Throughput from the cell's own current, half-cycle direction
                     // from the pack's — see `CellAging::accumulate` for why the two
                     // differ, and what goes wrong if they do not.
-                    cell.aging.accumulate(i_k, i_g, dt, soc_before, plating);
+                    cell.aging
+                        .accumulate(i_k, i_g, dt, soc_before, plating, ah_reversed);
                 }
             }
         }
@@ -2170,12 +2216,19 @@ impl Pack {
                 .expect("aging_accumulates implies aging is configured")
                 .advance(dt);
             if let Some(dt_age) = elapsed {
-                let params = self
-                    .chem
-                    .aging
-                    .as_ref()
-                    .expect("Pack::new rejects aging config without chemistry coefficients");
-                let safety = self.chem.safety.as_ref();
+                // Assembled once per tick rather than once per cell. `reversal` is not an
+                // `Option`: `[reversal]` is required of every chemistry, so unlike the
+                // plating coefficients it is always available and the "costs nothing" case
+                // is a zero coefficient rather than a missing section. See
+                // `docs/plans/reversal-damage.md`.
+                let fade =
+                    FadeParams {
+                        aging: self.chem.aging.as_ref().expect(
+                            "Pack::new rejects aging config without chemistry coefficients",
+                        ),
+                        safety: self.chem.safety.as_ref(),
+                        reversal: &self.chem.reversal,
+                    };
                 // Borrow the two mutable fields once, up front: `groups` and `rng` are
                 // disjoint, and naming them here keeps the plating roll below from
                 // looking like a second mutable borrow of `self`.
@@ -2187,7 +2240,7 @@ impl Pack {
                 for group in &mut self.groups {
                     for cell in &mut group.cells {
                         let (temp_k, soc) = (cell.model.temp_k(), cell.model.soc(&self.chem));
-                        let shorted = cell.aging.tick(params, safety, dt_age, temp_k, soc, rng);
+                        let shorted = cell.aging.tick(&fade, dt_age, temp_k, soc, rng);
                         if shorted {
                             // A plating short is physically the same object an injected
                             // `SoftInternalShort` creates, so it lands the same way:

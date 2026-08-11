@@ -95,6 +95,16 @@ v_per_soc = 125.0
 # reversed cell continues to roughly -1 to -2 V on copper dissolution before failing; 0 V
 # is the conservative choice and bounds an otherwise unbounded ramp.
 floor_v   = 0.0
+# What over-discharge costs: capacity fraction lost per Ah delivered past empty. Past
+# empty the anode has no lithium left to give and its copper current collector oxidises
+# instead, which does not come back.
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized against the collapse
+# window above, the same way v_per_soc is sized against OCV(0): one FULL reversal (2 % of
+# capacity past empty, 0.1031 Ah here) costs ~1.0 % of capacity. Held at ~5700x
+# cyc_fade_per_ah and ~110x plating_fade_per_ah, as in the 18650 set. Note this coefficient
+# is consumed only by the ECM path -- the Spm and Dfn models this file also parameterises
+# never clamp, so they carry no deficit and pay nothing here (see CellModel::soc_deficit).
+fade_per_ah = 1.0e-1
 
 [thermal]
 # provenance: sum over Chen2020's five sandwich domains of (electrode area x thickness x

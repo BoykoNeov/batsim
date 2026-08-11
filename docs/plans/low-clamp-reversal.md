@@ -363,10 +363,13 @@ says which of the two things it is doing.
 
 ## Deferred, with a price
 
-* **Over-discharge is recoverable at 100 %.** A scenario can pump a pack below empty and
-  back for free. The honest coupling is to `soh_capacity` / `soh_resistance` — real
-  reversal dissolves the anode current collector — and that is an aging-model change, its
-  own slice and its own constants.
+* ~~**Over-discharge is recoverable at 100 %.**~~ **Done — `docs/plans/reversal-damage.md`.**
+  It landed as this bullet described: one new coefficient in `[reversal]`, a fourth fade
+  term beside calendar, cycle, and plating, and the shared resistance coupling. What the
+  bullet did not anticipate is that the two obvious readings of "repeat the abuse"
+  disagree — a fixed-*depth* excursion decays geometrically and a fixed-*absolute* draw
+  accelerates, because a shrinking cell reaches empty sooner under an unchanged load.
+  Both are now pinned, because either one alone would have been a half-truth.
 * ~~**No client shows the deficit yet.**~~ **Done — `docs/plans/reversal-ui.md`.** The
   page reads `soc_deficit` in three places and the guided path has a twentieth step about
   reversal. It was as cheap as this bullet says. What it did *not* say, and what cost

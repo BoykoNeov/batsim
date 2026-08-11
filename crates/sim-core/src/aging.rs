@@ -19,6 +19,13 @@
 //! about *the conditions it moved under*, and it is only reachable through this
 //! module's sub-clock — a pack with `aging: None` reports the risk and pays nothing.
 //!
+//! A fourth accumulates here for the same reason and on the same terms: charge a cell
+//! delivers **past empty**, once its own lithium has run out and the anode's copper
+//! current collector is what is being oxidised instead. See
+//! [`reversal_fade_increment`], and [`crate::ecm::coulomb_step`] for the deficit it is
+//! measured from. A pack with `aging: None` still reverses, still sources at a falling
+//! voltage, and still pays nothing — the same contrast plating draws.
+//!
 //! Their sum is the capacity loss. `CLAUDE.md` forbids modelling that loss without
 //! the matching **resistance growth**, so both feed one growth factor:
 //! `soh_resistance = 1 + r_growth_per_capacity_loss · loss`. A pack that has faded
@@ -64,7 +71,7 @@
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::chem::{AgingParams, SafetyParams};
+use crate::chem::{AgingParams, ReversalParams, SafetyParams};
 use crate::noise::uniform_unit;
 use crate::plating::{plating_fade_increment, short_probability};
 
@@ -174,6 +181,24 @@ impl Aging {
     }
 }
 
+/// The chemistry-side coefficients one aging update consumes, bundled.
+///
+/// Four mechanisms now feed [`CellAging::tick`] and they come from three different
+/// sections of the chemistry, one of which is optional. Passing them individually put the
+/// call over clippy's argument-count limit, and the honest fix is the one that also reads
+/// better: they are a single thing — "what this chemistry says wear costs" — assembled
+/// once per aging tick rather than once per cell.
+pub(crate) struct FadeParams<'a> {
+    /// `[aging]`: the calendar and cycle coefficients, and the shared resistance coupling.
+    pub(crate) aging: &'a AgingParams,
+    /// `[safety]`, if the chemistry has one: what plating costs, and its short hazard.
+    pub(crate) safety: Option<&'a SafetyParams>,
+    /// `[reversal]`: what charge delivered past empty costs. Not an `Option` — the section
+    /// is required of every chemistry, so "costs nothing" is a zero coefficient rather than
+    /// an absent section.
+    pub(crate) reversal: &'a ReversalParams,
+}
+
 /// One cell's aging state: its two states of health and the accumulators behind
 /// them.
 ///
@@ -205,6 +230,10 @@ pub(crate) struct CellAging {
     /// reason calendar and cycle fade are kept apart: they integrate differently and
     /// a reader should be able to attribute the damage.
     q_plating: f64,
+    /// Capacity fraction lost to voltage reversal so far — the fourth mechanism, and
+    /// the only one that is not about charge the cell was designed to move. See
+    /// [`reversal_fade_increment`].
+    q_reversal: f64,
     /// Charge throughput \[Ah\] since the last aging update, both directions counted.
     ah_since_tick: f64,
     /// The subset of `ah_since_tick` carried under plating conditions \[Ah\].
@@ -214,6 +243,15 @@ pub(crate) struct CellAging {
     /// adding to this. That is why the short hazard is charged per amp-hour plated
     /// rather than per second spent cold.
     ah_plating_since_tick: f64,
+    /// Charge \[Ah\] delivered past empty since the last aging update.
+    ///
+    /// An integral like `ah_plating_since_tick`, and for the same reason: an interval
+    /// in which the cell entered reversal partway is accounted exactly. It is **not**
+    /// a subset of `ah_since_tick` in the way the plating share is — the two are
+    /// measured differently (see [`CellAging::accumulate`]) — but the charge it counts
+    /// is the same charge, so reversal amp-hours keep paying ordinary cycle fade as
+    /// well. The reversal term is damage on top, not a reclassification.
+    ah_reversed_since_tick: f64,
     /// SOC at the last current reversal — the anchor the depth-of-discharge weight
     /// is measured from.
     soc_ref: f64,
@@ -231,8 +269,10 @@ impl CellAging {
             q_cal: 0.0,
             q_cyc: 0.0,
             q_plating: 0.0,
+            q_reversal: 0.0,
             ah_since_tick: 0.0,
             ah_plating_since_tick: 0.0,
+            ah_reversed_since_tick: 0.0,
             soc_ref: initial_soc,
             // Arbitrary but harmless: whichever way the pack actually starts moving,
             // the first current in the *other* direction re-anchors `soc_ref`, and a
@@ -297,6 +337,17 @@ impl CellAging {
     /// well as* the ordinary one — plating amp-hours are still amp-hours through the
     /// electrodes, so they keep paying ordinary cycle fade; the plating term is
     /// additional damage on top, not a reclassification.
+    ///
+    /// # The reversal share, and why it is passed in rather than derived
+    ///
+    /// `ah_reversed` is the charge this cell delivered **past empty** on this step, and
+    /// unlike the plating share it cannot be recovered from `i_cell` and a boolean. The
+    /// step that crosses `soc = 0` delivers only part of its charge past the boundary,
+    /// and `|i_cell|·dt` would charge the cell for all of it. The exact quantity is the
+    /// *increase in the deficit* times the capacity the coulomb count divided by, which
+    /// only the caller holds — see the call site in [`crate::Pack::step`] and
+    /// `docs/plans/reversal-damage.md`. Repayment is excluded there, not here: charging a
+    /// reversed cell shrinks the deficit, and a shrinking deficit contributes nothing.
     pub(crate) fn accumulate(
         &mut self,
         i_cell: f64,
@@ -304,12 +355,14 @@ impl CellAging {
         dt: f64,
         soc_before: f64,
         plating: bool,
+        ah_reversed: f64,
     ) {
         let ah = i_cell.abs() * dt / 3600.0;
         self.ah_since_tick += ah;
         if plating {
             self.ah_plating_since_tick += ah;
         }
+        self.ah_reversed_since_tick += ah_reversed;
         if i_pack > 0.0 && !self.discharging {
             self.discharging = true;
             self.soc_ref = soc_before;
@@ -340,20 +393,19 @@ impl CellAging {
     /// draw on a pack that never gets cold.
     pub(crate) fn tick(
         &mut self,
-        params: &AgingParams,
-        safety: Option<&SafetyParams>,
+        fade: &FadeParams,
         dt_age: f64,
         temp_k: f64,
         soc: f64,
         rng: &mut ChaCha8Rng,
     ) -> bool {
-        let k = calendar_rate(params, temp_k, soc);
+        let k = calendar_rate(fade.aging, temp_k, soc);
         self.q_cal += calendar_increment(k, self.q_cal, dt_age);
 
         // Depth of the half-cycle in progress: how far SOC has travelled since the
         // last reversal. See `cycle_increment` for what it weights.
         let dod = (soc - self.soc_ref).abs();
-        self.q_cyc += cycle_increment(params, self.ah_since_tick, dod);
+        self.q_cyc += cycle_increment(fade.aging, self.ah_since_tick, dod);
         self.ah_since_tick = 0.0;
 
         // Plating, if this chemistry can say what plating costs. The accumulator is
@@ -361,7 +413,7 @@ impl CellAging {
         // the flag be raised, and letting untaxed plating throughput pile up would
         // mean adding the section later retroactively billed for it.
         let mut shorted = false;
-        if let Some(s) = safety {
+        if let Some(s) = fade.safety {
             let ah_plating = self.ah_plating_since_tick;
             self.q_plating += plating_fade_increment(s, ah_plating);
             let p = short_probability(s, ah_plating);
@@ -371,7 +423,14 @@ impl CellAging {
         }
         self.ah_plating_since_tick = 0.0;
 
-        let loss = self.q_cal + self.q_cyc + self.q_plating;
+        // Reversal. No `Option` to guard on — `[reversal]` is required of every
+        // chemistry — so this is unconditional, and a chemistry that sets
+        // `fade_per_ah = 0` pays nothing through the increment rather than through a
+        // branch here.
+        self.q_reversal += reversal_fade_increment(fade.reversal, self.ah_reversed_since_tick);
+        self.ah_reversed_since_tick = 0.0;
+
+        let loss = self.q_cal + self.q_cyc + self.q_plating + self.q_reversal;
         self.soh_capacity = (1.0 - loss).max(MIN_SOH_CAPACITY);
         // Resistance keeps growing on the *unclamped* loss: a cell past the capacity
         // floor is a wreck, and reporting it as merely 1 % capacity but nominal
@@ -384,9 +443,37 @@ impl CellAging {
         // 1 % to shelf time. Splitting the coupling needs a second coefficient in
         // `[aging]` and a fit to justify it; until then the honest statement is that
         // this model under-reports the resistance cost of plating.
-        self.soh_resistance = 1.0 + params.r_growth_per_capacity_loss * loss;
+        //
+        // Reversal-driven loss is coupled at the same ratio for the same reason, and the
+        // under-report there is worse: over-discharge dissolves the anode's current
+        // collector, so it is a *contact* failure before it is an inventory failure. That
+        // second coefficient was considered and refused with a measurement rather than a
+        // preference — at 1C on the shipped LFP cell the extra sag it would buy is under
+        // 5 mV, so it would add an unfitted number and change nothing a reader can see.
+        // See `docs/plans/reversal-damage.md`.
+        self.soh_resistance = 1.0 + fade.aging.r_growth_per_capacity_loss * loss;
         shorted
     }
+}
+
+/// Capacity fraction lost from `ah_reversed` amp-hours delivered past empty.
+///
+/// `dq = reversal.fade_per_ah · ah_reversed`. Unweighted by depth of discharge, like
+/// [`crate::plating::plating_fade_increment`] and unlike [`cycle_increment`]: the loss
+/// is the anode's current collector going into solution, and how deep the excursion
+/// carrying it happened to be is already accounted for — the amp-hours *are* the depth,
+/// since every one of them is charge that came out below `soc = 0`.
+///
+/// # Why the deficit's depth does not enter twice
+/// A cell 2 % past empty has delivered 2 % of its capacity past the boundary, so a
+/// deeper reversal is a larger `ah_reversed` and is charged more by that alone. Adding a
+/// depth weight on top would square the dependence for no stated physics.
+#[must_use]
+pub fn reversal_fade_increment(params: &ReversalParams, ah_reversed: f64) -> f64 {
+    if !is_positive(ah_reversed) {
+        return 0.0;
+    }
+    params.fade_per_ah * ah_reversed
 }
 
 /// SOC stress factor by clamped linear interpolation over **uniformly spaced**

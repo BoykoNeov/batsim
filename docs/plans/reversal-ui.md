@@ -319,10 +319,11 @@ a historical entry and is marked as one rather than rewritten.
 
 ## Deferred, with a price
 
-* **Over-discharge is still free.** Repayment is exact and the cell is unharmed; real
-  reversal dissolves the anode current collector. Coupling it to `soh_capacity` /
-  `soh_resistance` is an aging-model change with its own constants, named as its own
-  slice in `low-clamp-reversal.md` and not started here.
+* ~~**Over-discharge is still free.**~~ **Done — `docs/plans/reversal-damage.md`.**
+  Repayment is still exact in charge and no longer free in health. One caveat this bullet
+  could not have known: no *shipped scenario* reaches the new damage, because the only one
+  with aging enabled is a hot-storage run that never goes near empty. The engine change is
+  complete and the client-side demonstration is its own deferred item there.
 * **The two reversal constants per chemistry are still labelled placeholders.** Step 20
   quotes a −0.064 V floor and a 2 % collapse window; both are `floor_v` and `v_per_soc`
   read back, and the step says so rather than implying a measurement of a real cell.

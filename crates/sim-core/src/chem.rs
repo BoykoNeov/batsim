@@ -698,6 +698,33 @@ pub struct ReversalParams {
     /// established, not a measured plateau: a real reversed cell continues to roughly
     /// −1 to −2 V on copper dissolution before it fails outright.
     pub floor_v: f64,
+    /// Capacity fraction lost per amp-hour delivered **past empty**. Must be finite and
+    /// `>= 0`; `0` means reversal is survivable at no cost, which is what every version
+    /// before this field did.
+    ///
+    /// The copper dissolution the two fields above only *mention* is what this one
+    /// charges for. It is a third fade mechanism alongside calendar, cycle, and plating
+    /// loss — see [`crate::aging::reversal_fade_increment`] — and like plating it is a
+    /// cost of the *conditions* charge moved under, not of the amount that moved.
+    ///
+    /// # Required, with no `#[serde(default)]`, unlike [`SafetyParams::plating_fade_per_ah`]
+    /// That field may default to zero because `[safety]` is an optional section: a
+    /// chemistry without one is declaring it cannot say what plating costs. `[reversal]`
+    /// is required, so a file that reaches the loader has already declared how its cell
+    /// behaves below empty — a missing damage coefficient there is an omission, and the
+    /// value silently supplied would be "over-discharge is free", the exact defect this
+    /// field exists to remove. See `docs/plans/reversal-damage.md`.
+    ///
+    /// # Resistance
+    /// Loss booked here grows resistance through the shared
+    /// [`AgingParams::r_growth_per_capacity_loss`], at the same ratio as every other
+    /// mechanism. That under-reports it: over-discharge attacks the anode current
+    /// collector, so it is a *contact* failure first and an inventory failure second, and
+    /// a real cell that lost 1 % this way is harder to push current through than one that
+    /// lost 1 % on the shelf. Splitting the coupling needs a second coefficient and a fit
+    /// to justify it; the fit is what is missing, and the measured legibility argument for
+    /// adding the coefficient anyway is refused in the plan.
+    pub fade_per_ah: f64,
 }
 
 /// One RC (Thevenin) pair modelling a diffusion/charge-transfer overpotential.
@@ -926,6 +953,14 @@ impl ChemistryParams {
         if !rev.v_per_soc.is_finite() || !rev.floor_v.is_finite() {
             return Err(ChemistryError::BadRange {
                 what: "reversal.v_per_soc and reversal.floor_v must be finite",
+            });
+        }
+        // Folded finiteness, for the reason the `[aging]` block gives: this number
+        // multiplies into a state of health the whole solve then divides by, so a NaN
+        // here is not a bad reading, it is a dead pack.
+        if !rev.fade_per_ah.is_finite() || rev.fade_per_ah < 0.0 {
+            return Err(ChemistryError::BadRange {
+                what: "reversal.fade_per_ah must be finite and >= 0",
             });
         }
         if !is_positive(rev.v_per_soc) {

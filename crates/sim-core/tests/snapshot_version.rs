@@ -20,30 +20,41 @@
 //! there.
 //!
 //! # The pair moves with the bump, rather than being renumbered
-//! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12 and v12 -> v13, each time
-//! carrying an assertion that a later bump needs its own pair. This is the v13 -> v14
-//! pair, and it was re-argued rather than renamed — because at v14 the argument is
-//! narrower than any of them.
+//! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13 and v13 -> v14,
+//! each time carrying an assertion that a later bump needs its own pair. This is the
+//! v14 -> v15 pair, and it was re-argued rather than renamed.
 //!
-//! # v14 has no structurally-valid stale blob at all, and that is stated rather than
-//! # papered over
+//! # v14 and v15 have no structurally-valid stale blob at all, and that is stated rather
+//! # than papered over
 //! v12 and v13 could each name a configuration — `bms: None` — whose old bytes were, field
 //! for field, what the new build writes, so that the version field was demonstrably the
-//! thing doing the refusing. **v14 cannot.** It adds `soc_deficit` to every `EcmState`
-//! *and* a required `[reversal]` section to `ChemistryParams`, and the chemistry is
-//! serialized inside every snapshot whatever cell model the pack runs. `bincode` writes
-//! struct fields in declaration order with no framing (the same fact [`snapshot_bytes`]
-//! relies on to find the version tag), so there is no arrangement of a v13 pack whose
-//! bytes a v14 build can parse. A genuine v13 blob fails at *deserialization* — the
-//! pre-v10 situation — and the version check never sees it.
+//! thing doing the refusing. **v14 could not**, and **v15 cannot either.** v14 added
+//! `soc_deficit` to every `EcmState` *and* a required `[reversal]` section to
+//! `ChemistryParams`; v15 adds a required `fade_per_ah` to that same section, plus two
+//! accumulators to every cell's aging state. The chemistry is serialized inside every
+//! snapshot whatever cell model the pack runs, and `bincode` writes struct fields in
+//! declaration order with no framing (the same fact [`snapshot_bytes`] relies on to find
+//! the version tag), so a v14 blob is one `f64` short of what a v15 build reads and there
+//! is no arrangement of a v14 pack whose bytes parse here. A genuine v14 blob fails at
+//! *deserialization* — the pre-v10 situation — and the version check never sees it.
+//!
+//! **The v15 argument is inherited on purpose, and the inheritance is checked rather than
+//! assumed.** It is the same *mechanism* as v14's (a required field with no
+//! `#[serde(default)]` inside a struct every snapshot carries), so the conclusion carries;
+//! what does not carry is v14's reason for the field being required. There, a default would
+//! have been an unlabeled physical constant. Here a default of `0.0` exists and is even
+//! semantically harmless for a restore — a v14 pack accrued no over-discharge damage — and
+//! the field is required anyway, because the value it would supply to a *fresh* chemistry
+//! file is "over-discharge is free", which is the defect v15 exists to remove. Same
+//! conclusion, different argument; see `docs/plans/reversal-damage.md`.
 //!
 //! **So what the pair below still proves, and what it no longer does.** It still proves
 //! the check is wired and decides on the outer tag alone: the bytes are this build's own,
 //! retagged, so the two arms differ in nothing else. It does **not** prove that a
-//! real v13 snapshot meets the version check rather than the deserializer — at v14 it
+//! real v14 snapshot meets the version check rather than the deserializer — at v15 it
 //! meets the deserializer, and no fixture can change that. Recorded because the file's
 //! earlier sections claim the stronger thing for the bumps that earned it, and a reader
-//! renumbering this test for v15 needs to know which of the two claims they are
+//! renumbering this test for v16 needs to know which of the two claims they are
 //! inheriting.
 //!
 //! # The fixture is an equivalent-circuit pack, deliberately
@@ -72,6 +83,10 @@ fn chem() -> ChemistryParams {
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
+            // Zero: this file's chemistry pays nothing for over-discharge, so its
+            // trajectories are the ones this slice must not move. See
+            // `docs/plans/reversal-damage.md`.
+            fade_per_ah: 0.0,
         },
         aging: None,
         safety: None,
@@ -156,37 +171,37 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v13-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v14 restore.
+/// A v14-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v15 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// Read the module's v14 section before extending this: the bytes here are this build's,
-/// wearing a v13 label. A snapshot a v13 build actually wrote does not reach the version
+/// Read the module's v15 section before extending this: the bytes here are this build's,
+/// wearing a v14 label. A snapshot a v14 build actually wrote does not reach the version
 /// check at all.
 #[test]
-fn the_version_field_is_what_rejects_a_v13_snapshot() {
+fn the_version_field_is_what_rejects_a_v14_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 14,
-        "this test is written against the v13 -> v14 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 15,
+        "this test is written against the v14 -> v15 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
-         the new layout is a fact about that layout change, and at v14 the answer is \
+         the new layout is a fact about that layout change, and at v15 the answer is \
          'it does not parse at all', which is not something a renumbered assertion can \
          inherit."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 13);
+    let stale = retagged(&bytes, 14);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 13,
+            found: 14,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v13-tagged snapshot must be refused"
+        "a v14-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -211,8 +226,8 @@ fn the_version_field_is_what_rejects_a_v13_snapshot() {
 #[test]
 fn only_the_outer_version_tag_is_consulted() {
     let bytes = snapshot_bytes();
-    // Both blobs carry an inner `Pack.version` of 14, because that is what this
+    // Both blobs carry an inner `Pack.version` of 15, because that is what this
     // build wrote. Only the outer tag differs, and only the outer tag decides.
-    assert!(Pack::restore(&retagged(&bytes, 13)).is_err());
+    assert!(Pack::restore(&retagged(&bytes, 14)).is_err());
     assert!(Pack::restore(&retagged(&bytes, SNAPSHOT_VERSION)).is_ok());
 }

@@ -40,6 +40,10 @@ fn rich_chem() -> ChemistryParams {
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
+            // Zero: this file's chemistry pays nothing for over-discharge, so its
+            // trajectories are the ones this slice must not move. See
+            // `docs/plans/reversal-damage.md`.
+            fade_per_ah: 0.0,
         },
         aging: None,
         safety: None,

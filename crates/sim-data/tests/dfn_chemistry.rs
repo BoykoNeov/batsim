@@ -286,6 +286,9 @@ c_farad = 2000.0
 [reversal]
 v_per_soc = 100.0
 floor_v   = 0.0
+# Zero: this fixture pays nothing for over-discharge, so it exercises the loader without
+# moving any trajectory. See docs/plans/reversal-damage.md.
+fade_per_ah = 0.0
 
 [thermal]
 heat_capacity_j_per_k = 95.0
