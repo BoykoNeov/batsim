@@ -27,6 +27,10 @@
 #                 function of the number behind it, so a drift well inside `tol`
 #                 can still turn `0.0 %` into `0.1 %` or `99.45` into `99.44`.
 #
+# A fifth check stands behind the second rather than beside it: `tol` decides how much
+# of a claim is actually claimed, so it is derived by a declared rule (`tol_from`) and
+# the derivation itself is checked. See "Setting tol" below.
+#
 # The literal is stored as a STRING, exactly as written in the sentence, and is
 # never produced by formatting `value`. That is deliberate: a formatter that has to
 # agree with how a human wrote each sentence generates false failures and then gets
@@ -40,7 +44,17 @@
 #   literal    the exact substring to find in that lesson's prose or expect text
 #   quantity   what to measure — see `measure()` in path_claims.rs
 #   value      what the engine must produce
-#   tol        absolute tolerance, in `value`'s own unit
+#   tol        absolute tolerance, in `value`'s own unit. Not free: see `tol_from`.
+#   tol_from   which rule `tol` follows — `spelled`, `tighter`, or `grid`. Required, and
+#              checked. See "Setting tol" below.
+#   spells     the number in `literal` that states this claim's quantity, written exactly
+#              as the sentence writes it (`"4.030"`, not `4.03`). Required by `spelled`
+#              and `tighter`, forbidden by `grid`. Only its printed places matter, so the
+#              frame need not match: the prose may give a duration where the claim reads
+#              an absolute time, or a magnitude where the value is negative.
+#   spells_pow10  how many powers of ten larger `spells`'s unit is than `value`'s. 2 for a
+#              prose percentage or points-of-a-hundred against a fraction; 0 otherwise,
+#              which is most of them. Default 0.
 #   read_at_s  simulation time the claim is read at; must be <= the step's until_s,
 #              or, with `after_mark`, within the step's charge leg. ALWAYS ABSOLUTE.
 #              The leg prose speaks in time-since-the-mark ("383.0 s later"); the
@@ -75,10 +89,36 @@
 #              claimed literal. Do not read a green `quoted` as an independent result.
 #   note       why this claim is here / what it is about. Free text.
 #
-# Setting `tol` — the rule used here is half a unit in the last printed place of
-# `literal`, so the tolerance is exactly "the prose rounds to this and nothing else".
-# A claim quoted as `0.6387` gets 5e-5. Where the prose says "about", the tolerance
-# is widened and the `note` says so.
+# Setting `tol` — half a unit in the last printed place of the number the sentence
+# spells, so the tolerance is exactly "the prose rounds to this and nothing else". A
+# claim spelling `0.6387` gets 5e-5. This used to be a rule each claim re-derived by
+# hand with its reasoning in `note`, and the reasoning drifted from the number twice in
+# two commits (`04933c5`, `a1b0945` — both times a note citing this rule beside a
+# half-step). `tol_from` makes the derivation a field, and
+# `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
+# else is accepted:
+#
+#   spelled  35 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter   7 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#             given none: a smaller tolerance can only redden the test. Used for a
+#             chemistry constant, for an exactly-1.0 starting point, and for the two
+#             `heat` claims whose stored `value` carries a place the sentence does not.
+#   grid      6 claims. The quantity is a time the engine can only report on the step
+#             grid (`flag_first_s:*`, `deficit_zero_s`) and the prose spells no number
+#             in it — it gives a duration in minutes, or a consequence, or nothing.
+#             `tol` is half a timestep, which for a grid time is the tightest
+#             meaningful bound: the engine hits the claimed step or misses by a whole
+#             one. Fenced hard, because this is the variant that could have re-blessed
+#             the defect it was written after: no `spells`, and no number anywhere in
+#             the literal printed more finely than a half-step. `**383.0 s later**`
+#             returns a grid time too, and half a step there is five times looser than
+#             the tenth it prints — so it is not eligible for `grid` at all.
+#
+# There is no "widened" variant. Nothing in this file needs one today, and a tolerance
+# looser than the sentence's own precision means the sentence is printing more places
+# than the engine has — which the sentence should fix, not the tolerance. Where the
+# prose hedges a round figure ("just under 14 A"), the hedge is already the loosest
+# reading and `tighter` narrows it.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -92,6 +132,8 @@ literal = "0.6387 V at the mark"
 quantity = "v_at_mark"
 value = 0.6387
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "0.6387"
 read_at_s = 4200.0
 display = "terminal"
 shows = "0.639 V"
@@ -113,6 +155,7 @@ literal = "the last 53 seconds"
 quantity = "flag_first_s:SOC_CLAMPED_LOW"
 value = 4146.5
 tol = 0.25
+tol_from = "grid"
 read_at_s = 4146.5
 display = "sim time"
 shows = "69m"
@@ -134,6 +177,8 @@ literal = "**1.2501 V**"
 quantity = "v_at_mark"
 value = 1.2501
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.2501"
 read_at_s = 4200.0
 display = "terminal"
 shows = "1.250 V"
@@ -149,6 +194,7 @@ literal = "It empties at 4154 s"
 quantity = "flag_first_s:SOC_CLAMPED_LOW"
 value = 4154.0
 tol = 0.25
+tol_from = "grid"
 read_at_s = 4154.0
 display = "sim time"
 shows = "69m"
@@ -169,6 +215,8 @@ literal = "4.030 V to 3.549"
 quantity = "v_at_soc_below:0.90"
 value = 4.0299
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "4.030"
 read_at_s = 415.5
 display = "terminal"
 shows = "4.030 V"
@@ -189,6 +237,8 @@ literal = "4.030 V to 3.549"
 quantity = "v_at_soc_below:0.20"
 value = 3.5488
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.549"
 read_at_s = 3323.5
 display = "terminal"
 shows = "3.549 V"
@@ -206,18 +256,25 @@ literal = "just under 14 A"
 quantity = "i_at"
 value = 13.8207
 tol = 0.2
+tol_from = "tighter"
+spells = "14"
 read_at_s = 60.0
 display = "current"
 shows = "13.821 A"
 note = """
-A deliberately loose one. The prose says "just under 14 A" rather than printing the
-figure, so the literal check guards the phrase and the tolerance says what "just
-under 14" is allowed to mean. If the derate ever lands at 12 A or 15 A the phrase is
-wrong and this goes red; small solver drift will not chatter it.
+The prose says "just under 14 A" rather than printing the figure, so the literal
+check guards the phrase and the tolerance says what "just under 14" is allowed to
+mean. If the derate ever lands at 12 A or 15 A the phrase is wrong and this goes red;
+small solver drift will not chatter it.
 
-This is the clearest case for the display half being a separate check rather than a
-tighter tolerance: `tol` here is 0.2 A, two hundred times the last digit the row
-prints, so the value check cannot see the panel change at all.
+Marked `tighter`, which this note used to get backwards — it opened "a deliberately
+loose one", and 0.2 A is not loose against the rule: a bare `14` gives half a unit of
+0.5, so this is under half of what the sentence would license. The looseness it meant
+is against the *row*, which is a different comparison and the one that matters here.
+`tol` is two hundred times the last digit the `current` row prints, so the value check
+cannot see the panel change at all — which makes this the clearest case in the file
+for the display half being a separate check rather than a tighter tolerance, and the
+one claim where it is demonstrably not implied by the value check.
 """
 
 [[claim]]
@@ -226,6 +283,7 @@ literal = "An `OC` flag"
 quantity = "flag_first_s:OC"
 value = 0.5
 tol = 0.25
+tol_from = "grid"
 read_at_s = 0.5
 display = "sim time"
 shows = "1s"
@@ -245,6 +303,9 @@ literal = "0.53 points are gone"
 quantity = "soh_cap_at"
 value = 0.9947106
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "0.53"
+spells_pow10 = 2
 read_at_s = 50000.0
 display = "soh cap"
 shows = "99.47 %"
@@ -264,6 +325,9 @@ literal = "at the mark it is 1.06"
 quantity = "soh_cap_at"
 value = 0.9894213
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.06"
+spells_pow10 = 2
 read_at_s = 200000.0
 display = "soh cap"
 shows = "98.94 %"
@@ -279,6 +343,8 @@ literal = "1.5 points of resistance per point of capacity"
 quantity = "soh_ratio_at"
 value = 1.5
 tol = 1.0e-4
+tol_from = "tighter"
+spells = "1.5"
 read_at_s = 200000.0
 note = """
 Not a trajectory reading but the coupling itself, which CLAUDE.md refuses to let a
@@ -302,6 +368,8 @@ literal = "climbs to 3.6357 V and stops"
 quantity = "v_at"
 value = 3.63565
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "3.6357"
 read_at_s = 6000.0
 display = "terminal"
 shows = "3.636 V"
@@ -322,6 +390,7 @@ literal = "`SOC_CLAMPED_HIGH` at 5769 s"
 quantity = "flag_first_s:SOC_CLAMPED_HIGH"
 value = 5769.0
 tol = 0.25
+tol_from = "grid"
 read_at_s = 5769.0
 display = "sim time"
 shows = "96m"
@@ -337,6 +406,8 @@ literal = "`refused 0.822 A`"
 quantity = "i_rejected_at"
 value = -0.82224
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.822"
 read_at_s = 5769.0
 display = "clamp"
 shows = "refused 0.822 A"
@@ -358,6 +429,8 @@ literal = "`refused 1.150 A`"
 quantity = "i_rejected_at"
 value = -1.15
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.150"
 read_at_s = 6000.0
 display = "clamp"
 shows = "refused 1.150 A"
@@ -374,6 +447,8 @@ literal = "`heat` steps from `0.04 W` to `4.18 W`"
 quantity = "q_gen_at"
 value = 0.041
 tol = 5.0e-4
+tol_from = "tighter"
+spells = "0.04"
 read_at_s = 5000.0
 display = "heat"
 shows = "0.04 W"
@@ -385,10 +460,23 @@ give 0.041 W and 4.181 W, which are the engine's figures to a decimal place the
 `heat` row does not print. It now quotes the row and states the finer figures
 separately.
 
-`value` and `tol` follow this file's own rule — the number as the sentence prints it,
-and half a unit in its last place. The engine reads 0.040715. That tolerance is a
-hundred times coarser than the row's own last digit, which is exactly the case
-`shows` exists for: this pair is guarded loosely by value and exactly by display.
+Marked `tighter`, and this note used to claim otherwise. It said `value` and `tol`
+follow the sentence's number and half a unit in its last place; the sentence prints
+`0.04`, whose rule is 5e-3, and the file holds 5e-4. What `value` and `tol` actually
+follow is the *stored* figure's last place — 0.041, from an engine reading of
+0.040715 — which is ten times tighter than the rule and therefore allowed, but is not
+the rule. Same correction on the sibling claim below. This is the third instance of
+the defect `04933c5` and `a1b0945` were about, and the one that prompted `tol_from`.
+
+The same note also called this tolerance "a hundred times coarser than the row's own
+last digit". It is twenty times finer: the `heat` row prints two decimals, so its last
+digit is 0.01 W. The consequence is worth stating plainly rather than leaving a reader
+to infer coverage that is not there — every value inside ±5e-4 of 0.041 renders as
+`0.04 W`, so on this pair the display check cannot fail unless the value check does
+first. It is kept for the reason `quoted` is: it states the rule where a claim can see
+it, and it starts doing independent work the moment the tolerance or the formatter
+moves. The claim it is genuinely independent on is `just under 14 A`, where `tol` is
+two hundred times the row's last digit.
 """
 
 [[claim]]
@@ -397,6 +485,8 @@ literal = "`heat` steps from `0.04 W` to `4.18 W`"
 quantity = "q_gen_at"
 value = 4.181
 tol = 5.0e-4
+tol_from = "tighter"
+spells = "4.18"
 read_at_s = 6000.0
 display = "heat"
 shows = "4.18 W"
@@ -406,6 +496,10 @@ The same row once every amp is being refused and burnt: a hundredfold step, and 
 reason an unprotected overcharge is dangerous on a pack with a thermal network. The
 two claims share a literal for the same reason step 2's pair does — one sentence
 states both ends. Engine reads 4.180997.
+
+`tighter` for the same reason as its sibling above, and with the same consequence:
+the sentence prints `4.18` (rule 5e-3), the file holds half a unit in the last place
+of the stored 4.181, and every value inside that window renders as `4.18 W`.
 """
 
 # --- step 20: past empty ---------------------------------------------------------
@@ -427,7 +521,9 @@ step = "past-empty"
 literal = "The cell empties at 4146.5 s at 1.9290 V"
 quantity = "flag_first_s:SOC_CLAMPED_LOW"
 value = 4146.5
-tol = 0.25
+tol = 0.05
+tol_from = "spelled"
+spells = "4146.5"
 read_at_s = 4146.5
 display = "sim time"
 shows = "69m"
@@ -436,6 +532,15 @@ The same knee as step 1, on the same file, 200 s before this step's longer mark.
 steps of the path now claim it, which is deliberate: the sentence in step 20 gives
 the time to a tenth of a second and the panel gives whole minutes, so a reader who
 tries to verify it on the clock cannot.
+
+This claim's tolerance was 0.25 — a half-step — until `tol_from` was enforced, and it
+is the one number in the file that rule change moved. Step 1's sibling claims the same
+flag through a sentence that spells no time ("the last 53 seconds"), so it is a `grid`
+claim and stays at a half-step; this sentence prints `4146.5`, a tenth, so the rule
+gives 0.05 and a half-step was five times looser. No false green either way — a flag
+time lands on the grid or a whole step off it — but that is exactly what was said
+about `**383.0 s later**` in `a1b0945`, and it was a defect there too. The difference
+now is that neither can be written the loose way again.
 """
 
 [[claim]]
@@ -444,6 +549,8 @@ literal = "The cell empties at 4146.5 s at 1.9290 V"
 quantity = "v_at"
 value = 1.9290
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.9290"
 read_at_s = 4146.5
 display = "terminal"
 shows = "1.929 V"
@@ -457,6 +564,8 @@ literal = "1.2055 V thirty seconds later, 0.4819 V at sixty"
 quantity = "v_at"
 value = 1.2055
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.2055"
 read_at_s = 4176.5
 display = "terminal"
 shows = "1.205 V"
@@ -476,6 +585,8 @@ literal = "1.2055 V thirty seconds later, 0.4819 V at sixty"
 quantity = "v_at"
 value = 0.4819
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "0.4819"
 read_at_s = 4206.5
 display = "terminal"
 shows = "0.482 V"
@@ -490,6 +601,8 @@ literal = "at **−0.0640 V**"
 quantity = "v_at"
 value = -0.0640
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "-0.0640"
 read_at_s = 4400.0
 display = "terminal"
 shows = "-0.064 V"
@@ -510,6 +623,8 @@ literal = "counts down from 6.121 points"
 quantity = "deficit_pts_at"
 value = 6.1210
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "6.121"
 read_at_s = 4400.0
 note = """
 The debt at the mark, which is where the charge leg starts and what it has to pay off.
@@ -527,6 +642,8 @@ literal = "0.025 V on the first step"
 quantity = "v_at"
 value = 0.024988
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.025"
 read_at_s = 4400.5
 after_mark = true
 display = "terminal"
@@ -550,6 +667,8 @@ literal = "0.062 V a minute in"
 quantity = "v_at"
 value = 0.062009
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.062"
 read_at_s = 4460.0
 after_mark = true
 display = "terminal"
@@ -567,6 +686,8 @@ literal = "0.064 V at two"
 quantity = "v_at"
 value = 0.063901
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.064"
 read_at_s = 4520.0
 after_mark = true
 display = "terminal"
@@ -584,6 +705,8 @@ literal = "0.767 V at 200 s"
 quantity = "v_at"
 value = 0.766713
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.767"
 read_at_s = 4600.0
 after_mark = true
 display = "terminal"
@@ -603,6 +726,8 @@ literal = "2.0655 V on the step where the deficit reaches zero"
 quantity = "v_at"
 value = 2.065518
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "2.0655"
 read_at_s = 4654.0
 after_mark = true
 display = "terminal"
@@ -621,6 +746,8 @@ literal = "1.731 V at 240"
 quantity = "v_at"
 value = 1.731450
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.731"
 read_at_s = 4640.0
 after_mark = true
 display = "terminal"
@@ -643,6 +770,7 @@ literal = "exactly zero, for 254 seconds"
 quantity = "deficit_zero_s"
 value = 4654.0
 tol = 0.25
+tol_from = "grid"
 read_at_s = 4654.0
 after_mark = true
 note = """
@@ -677,6 +805,9 @@ literal = "`soh cap` leaves 100.00 % at t = 10 s"
 quantity = "soh_cap_at"
 value = 1.0
 tol = 1.0e-12
+tol_from = "tighter"
+spells = "100.00"
+spells_pow10 = 2
 read_at_s = 9.5
 display = "soh cap"
 shows = "100.00 %"
@@ -694,6 +825,9 @@ literal = "`soh cap` leaves 100.00 % at t = 10 s"
 quantity = "soh_cap_at"
 value = 0.9999449
 tol = 1.0e-6
+tol_from = "tighter"
+spells = "100.00"
+spells_pow10 = 2
 read_at_s = 10.0
 display = "soh cap"
 shows = "99.99 %"
@@ -712,6 +846,9 @@ literal = "**99.98 %** when the cell empties at **207.5 s and 1.9306 V**"
 quantity = "soh_cap_at"
 value = 0.9997525
 tol = 5.0e-6
+tol_from = "tighter"
+spells = "99.98"
+spells_pow10 = 2
 read_at_s = 207.5
 display = "soh cap"
 shows = "99.98 %"
@@ -729,6 +866,8 @@ literal = "**99.98 %** when the cell empties at **207.5 s and 1.9306 V**"
 quantity = "v_at"
 value = 1.9306
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.9306"
 read_at_s = 207.5
 display = "terminal"
 shows = "1.931 V"
@@ -743,6 +882,9 @@ literal = "99.45 % at 250 s"
 quantity = "soh_cap_at"
 value = 0.9945014
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.45"
+spells_pow10 = 2
 read_at_s = 250.0
 display = "soh cap"
 shows = "99.45 %"
@@ -759,6 +901,9 @@ literal = "98.84 % at 300"
 quantity = "soh_cap_at"
 value = 0.9883636
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "98.84"
+spells_pow10 = 2
 read_at_s = 300.0
 display = "soh cap"
 shows = "98.84 %"
@@ -775,6 +920,9 @@ literal = "95.16 % at the ten-minute mark"
 quantity = "soh_cap_at"
 value = 0.9515697
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "95.16"
+spells_pow10 = 2
 read_at_s = 600.0
 display = "soh cap"
 shows = "95.16 %"
@@ -791,6 +939,8 @@ literal = "**1.0726 ×**"
 quantity = "soh_res_at"
 value = 1.0726455
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.0726"
 read_at_s = 600.0
 display = "soh res"
 shows = "1.0726 ×"
@@ -808,6 +958,8 @@ literal = "down to −0.065 V by 300 s"
 quantity = "v_at"
 value = -0.065024
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "-0.065"
 read_at_s = 300.0
 display = "terminal"
 shows = "-0.065 V"
@@ -824,6 +976,8 @@ literal = "reads **−0.069 V** at the mark"
 quantity = "v_at"
 value = -0.068551
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "-0.069"
 read_at_s = 600.0
 display = "terminal"
 shows = "-0.069 V"
@@ -843,6 +997,8 @@ literal = "counts down from 9.704 points"
 quantity = "deficit_pts_at"
 value = 9.7041
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "9.704"
 read_at_s = 600.0
 note = """
 The debt at the mark. Value-only for the same reason as step 20's: this is the engine's
@@ -857,6 +1013,8 @@ literal = "**383.0 s later**"
 quantity = "deficit_zero_s"
 value = 983.0
 tol = 0.05
+tol_from = "spelled"
+spells = "383.0"
 read_at_s = 983.0
 after_mark = true
 note = """
@@ -881,6 +1039,7 @@ literal = "it goes from `10m` to `16m`"
 quantity = "deficit_zero_s"
 value = 983.0
 tol = 0.25
+tol_from = "grid"
 read_at_s = 983.0
 after_mark = true
 display = "sim time"
@@ -904,6 +1063,9 @@ literal = "*still* printing **0.0 %** at the instant the debt clears"
 quantity = "soc_at"
 value = 0.00003974
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.0"
+spells_pow10 = 2
 read_at_s = 983.0
 after_mark = true
 display = "soc (true)"
@@ -927,6 +1089,9 @@ literal = "the cell is 0.004 % full at that moment"
 quantity = "soc_at"
 value = 0.00003974
 tol = 5.0e-6
+tol_from = "spelled"
+spells = "0.004"
+spells_pow10 = 2
 read_at_s = 983.0
 after_mark = true
 note = """
@@ -942,6 +1107,9 @@ literal = "only reaches 0.1 % two seconds later"
 quantity = "soc_at"
 value = 0.00054673
 tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.1"
+spells_pow10 = 2
 read_at_s = 985.0
 after_mark = true
 display = "soc (true)"
@@ -961,6 +1129,9 @@ literal = "**95.15 % from one minute into the charge**"
 quantity = "soh_cap_at"
 value = 0.95154890
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "95.15"
+spells_pow10 = 2
 read_at_s = 660.0
 after_mark = true
 display = "soh cap"
@@ -979,6 +1150,9 @@ literal = "**95.14 % from 390 s in**"
 quantity = "soh_cap_at"
 value = 0.95144842
 tol = 5.0e-5
+tol_from = "spelled"
+spells = "95.14"
+spells_pow10 = 2
 read_at_s = 990.0
 after_mark = true
 display = "soh cap"

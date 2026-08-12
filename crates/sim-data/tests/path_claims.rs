@@ -43,6 +43,15 @@
 //!   not an independent result. Said plainly here because an uncovered check under a green
 //!   test reads as a covering one.
 //!
+//! Behind the value check sits a fifth, about this file rather than about the page:
+//! [`every_tolerance_follows_its_declared_rule`]. `tol` is what decides how much of a
+//! claim is actually claimed, and it was the one field nothing checked — a careless value
+//! makes the value check pass on anything. Each claim now declares which rule its
+//! tolerance follows ([`TolFrom`]) and the derivation is checked, because the same defect
+//! — a note citing "half a unit in the last printed place" beside a tolerance that was a
+//! half-step — shipped in two consecutive commits, the second on the slice fixing the
+//! first.
+//!
 //! # What this test does NOT cover
 //!
 //! Named here rather than left to be inferred, because an uncovered step under a green
@@ -71,6 +80,16 @@
 //!   set to just cover the furthest claim then "reachable" says only "I ran long enough to
 //!   reach it". The non-circular half is [`every_leg_is_instructed_by_its_own_step`]: the
 //!   sentence telling the reader to make this exact change must be in this step's prose.
+//! * **Whether `value` still agrees with `literal`.** Nothing ties them together. The
+//!   literal check is a substring test against the prose and the value check compares the
+//!   engine to `value`, so re-measuring a drifted `value` without re-wording the sentence
+//!   leaves both green and the prose wrong. `tol_from` narrows this — a claim's `spells`
+//!   must be a number in its own literal — but only pins the *precision* of the prose's
+//!   number, never its magnitude. Closing it needs a vocabulary for how a spelled number
+//!   maps to a value, and the mappings in this file are not all scales: `0.53 points are
+//!   gone` is the complement of `0.9947`, and `refused 0.822 A` is the magnitude of
+//!   `-0.82224`. The tolerance rule is indifferent to sign, offset, and complement, which
+//!   is exactly why `spells` plus a power of ten is enough for it and not enough for this.
 //! * **Page-behaviour claims.** Anything about what a control does, what a legend
 //!   prints, or what a button orders. Those need a browser.
 //! * **The client-side demand programs are mirrored, not shared.** `Pulse` and `CcCv`
@@ -927,6 +946,37 @@ fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
 // The claims
 // ---------------------------------------------------------------------------
 
+/// Which rule a claim's `tol` follows.
+///
+/// Before this existed, `tol` was a free number with its justification in prose, and the
+/// justification drifted from the number twice in two commits (`04933c5`, `a1b0945`) —
+/// both times a note citing "half a unit in the last printed place" beside a tolerance
+/// that was a half-step instead. This turns the citation into a field the test can read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum TolFrom {
+    /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
+    /// number's last printed place. The default shape: 35 of 48 claims.
+    Spelled,
+    /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
+    /// smaller tolerance can only redden the test — so it needs no cap, only proof that
+    /// the rule it beats is still computable. Used where a claim is pinned harder than
+    /// the sentence needs (a chemistry constant, an exactly-1.0 starting point) and where
+    /// the prose hedges a round number the engine misses by more than its last place.
+    Tighter,
+    /// The quantity is a time the engine can only report on the step grid, and the prose
+    /// spells no number in it — it gives a duration in minutes, or a consequence, or
+    /// nothing. `tol` is half a timestep, which for a grid time is the tightest
+    /// meaningful bound: the engine either hits the claimed step or misses by a whole one.
+    ///
+    /// This is the variant that could have re-licensed the defect it was written after,
+    /// so it is fenced three ways in [`every_tolerance_follows_its_declared_rule`]. In
+    /// particular a literal that spells anything finer than a half-step is not eligible:
+    /// `**383.0 s later**` returns a grid time too, and half a step is five times looser
+    /// than the tenth it prints.
+    Grid,
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct Claim {
     step: String,
@@ -934,6 +984,26 @@ struct Claim {
     quantity: String,
     value: f64,
     tol: f64,
+    /// Which rule `tol` follows. Required, with no serde default on purpose: a default
+    /// would hand a new claim a justification nobody chose, which is the "looks like
+    /// coverage" shape this file rejects everywhere else.
+    tol_from: TolFrom,
+    /// The number in `literal` that states this claim's quantity, written exactly as the
+    /// sentence writes it — `"4.030"`, not `4.03`; `"-0.069"` for a prose minus. Required
+    /// by `spelled` and `tighter`, forbidden by `grid`.
+    ///
+    /// It is the *printed places* that matter, so the frame does not have to match: the
+    /// prose may give a duration where the claim reads an absolute time, or a magnitude
+    /// where the value is negative. A tolerance is a precision, and a precision does not
+    /// care about sign or origin. What it does care about is the unit, which is
+    /// `spells_pow10`.
+    #[serde(default)]
+    spells: Option<String>,
+    /// How many powers of ten larger the unit `spells` is written in is than `value`'s.
+    /// `2` for a prose percentage or points-of-a-hundred against a fraction; `0`
+    /// otherwise, which is most of them.
+    #[serde(default)]
+    spells_pow10: i32,
     read_at_s: f64,
     /// The readout row this claim is about, if it is about one at all — a label from
     /// `READOUTS` in `web/app.js`.
@@ -994,6 +1064,83 @@ impl Claim {
             ),
         }
     }
+
+    /// The tolerance this file's rule gives: half a unit in the last printed place of
+    /// `spells`, brought into `value`'s unit by `spells_pow10`.
+    ///
+    /// Computed as one multiply — `5 × 10^e` — rather than as `half_unit / 10^pow10`,
+    /// so a percentage claim's rule is the same float however it is spelled.
+    fn spelled_rule_tol(&self) -> f64 {
+        let spells = self.spells.as_deref().unwrap_or_else(|| {
+            panic!(
+                "claim `{}` on step `{}` is `{:?}` and names no `spells`. Both spelled \
+                 rules are derived from the number the sentence prints; without it there \
+                 is no rule, only a number.",
+                self.literal, self.step, self.tol_from
+            )
+        });
+        assert!(
+            spells.parse::<f64>().is_ok(),
+            "claim `{}` on step `{}` spells `{spells}`, which is not a number.",
+            self.literal,
+            self.step
+        );
+        assert!(
+            self.spells_pow10.abs() <= 12,
+            "claim `{}` on step `{}` sets spells_pow10 = {}. That is a unit conversion of \
+             a thousand billion; it is far likelier to be a typo.",
+            self.literal,
+            self.step,
+            self.spells_pow10
+        );
+        5.0 * 10f64.powi(-(decimals_of(spells) + 1) - self.spells_pow10)
+    }
+}
+
+/// How many digits `s` prints after its decimal point.
+fn decimals_of(s: &str) -> i32 {
+    match s.find('.') {
+        Some(i) => (s.len() - i - 1) as i32,
+        None => 0,
+    }
+}
+
+/// Every number written in `text`, as it is written — `["4146.5", "1.9290"]`.
+///
+/// Only used to fence the `grid` variant, where the question is not what a number means
+/// but how finely it is printed, so this deliberately keeps the digits as characters and
+/// never parses them. Signs are not collected: a tolerance is symmetric.
+fn numeric_tokens(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for c in text.chars() {
+        if c.is_ascii_digit() || (c == '.' && !cur.is_empty()) {
+            cur.push(c);
+        } else if !cur.is_empty() {
+            out.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    // `at 5769.` and `1.2.3` both come out of the scanner above; keep the leading number.
+    out.iter()
+        .map(|t| match t.match_indices('.').nth(1) {
+            Some((i, _)) => t[..i].to_string(),
+            None => t.trim_end_matches('.').to_string(),
+        })
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// Two tolerances agree.
+///
+/// Relative rather than `==` because the rule is computed and the file's is parsed:
+/// `5.0 * 10f64.powi(-5)` and TOML's `5.0e-5` are the same number to fourteen places and
+/// need not be the same bits. The window is far tighter than any authoring mistake and
+/// far looser than the arithmetic.
+fn tol_eq(a: f64, b: f64) -> bool {
+    (a - b).abs() <= 1e-9 * a.abs().max(b.abs())
 }
 
 /// The prose types a typographic minus (U+2212); every formatter on the page emits the
@@ -1267,6 +1414,163 @@ fn every_leg_is_instructed_by_its_own_step() {
              nothing is a longer simulation that looks like coverage.",
             leg.step
         );
+    }
+}
+
+/// The tolerance rule, enforced rather than written down.
+///
+/// `tol` is what decides how much of a claim is actually claimed, and until this test it
+/// was the one field in the file nothing checked: a careless value makes the value check
+/// pass on anything, and the only thing standing behind it was a sentence in the claim's
+/// own `note`. That sentence went wrong twice in two commits — `04933c5` and `a1b0945`
+/// both fixed a tolerance whose note cited "half a unit in the last printed place" while
+/// holding a half-step — and the second time it happened on the very slice fixing the
+/// first. A rule that is re-derived by hand for each claim is a rule that is sometimes
+/// not derived.
+///
+/// The three variants are [`TolFrom`]. What each one asserts:
+///
+/// * `spelled` — `tol` is exactly the rule. Nothing else to say.
+/// * `tighter` — `tol` is strictly under the rule. No upper bound is needed and none is
+///   given: a tolerance smaller than the rule can only make this test redder, never
+///   greener, so the hazard this whole test exists for does not live on that side.
+/// * `grid` — three fences, because this is the variant that could have re-blessed the
+///   defect it was written after. The quantity must be one the engine can only report on
+///   the step grid; the claim must spell nothing (a half-declaration is rejected the way
+///   [`Claim::display_claim`] rejects half a display claim); and **no number in the
+///   literal may be printed more finely than a half-step**. That last one is the fence
+///   that matters. `**383.0 s later**` is a grid time by quantity and would sail through
+///   the first two, and a half-step there is five times looser than the tenth the
+///   sentence prints — which is precisely the shape `a1b0945` corrected. Under this
+///   check it is not eligible for `grid` at all.
+///
+/// Unit-blind on that last fence, and deliberately so: `The cell empties at 4146.5 s at
+/// 1.9290 V` spells a voltage as well as a time, and comparing 0.25 s against 5e-5 V is
+/// not a comparison. It errs toward making the author name the number — which is the
+/// right error, and on that claim the number it forces them to name is the binding one.
+#[test]
+fn every_tolerance_follows_its_declared_rule() {
+    let lessons = lessons();
+    for c in claims() {
+        assert!(
+            c.tol > 0.0,
+            "claim `{}` on step `{}` has tol = {}. A non-positive tolerance is a claim \
+             that can only pass by exact float equality, or one that cannot pass at all.",
+            c.literal,
+            c.step,
+            c.tol
+        );
+
+        match c.tol_from {
+            TolFrom::Spelled => {
+                let rule = c.spelled_rule_tol();
+                let spells = c.spells.as_deref().expect("checked in spelled_rule_tol");
+                assert!(
+                    contains_number(&ascii_minus(&c.literal), &ascii_minus(spells)),
+                    "claim `{}` on step `{}` says it spells `{spells}`, and that number is \
+                     not in its own literal.\n\
+                     The sentence was reworded, or the claim was copied from a sibling and \
+                     its `spells` came with it. Either way the tolerance below is derived \
+                     from a number this claim is not about.",
+                    c.literal,
+                    c.step
+                );
+                assert!(
+                    tol_eq(c.tol, rule),
+                    "claim `{}` on step `{}`:\n  spells `{spells}` (pow10 {})\n  the rule \
+                     gives {rule:.3e} — half a unit in that number's last printed place\n  \
+                     the file says {:.3e}  ({:.3}x)\n\
+                     A tolerance and a rule that disagree is the defect 04933c5 and \
+                     a1b0945 both fixed. Set `tol` to the rule; if the claim needs to be \
+                     pinned harder than the sentence, say `tol_from = \"tighter\"`; if it \
+                     needs to be looser, the sentence is printing more precision than the \
+                     engine has and the sentence is what should change.",
+                    c.literal,
+                    c.step,
+                    c.spells_pow10,
+                    c.tol,
+                    c.tol / rule
+                );
+            }
+            TolFrom::Tighter => {
+                let rule = c.spelled_rule_tol();
+                let spells = c.spells.as_deref().expect("checked in spelled_rule_tol");
+                assert!(
+                    contains_number(&ascii_minus(&c.literal), &ascii_minus(spells)),
+                    "claim `{}` on step `{}` says it spells `{spells}`, and that number is \
+                     not in its own literal.",
+                    c.literal,
+                    c.step
+                );
+                assert!(
+                    c.tol < rule && !tol_eq(c.tol, rule),
+                    "claim `{}` on step `{}` is marked `tighter` and is not: it spells \
+                     `{spells}`, whose rule is {rule:.3e}, and holds {:.3e}.\n\
+                     `tighter` is the variant that needs no upper bound because it can \
+                     only redden this test. A tolerance at or above the rule is the \
+                     ordinary case — mark it `spelled` and set it to the rule.",
+                    c.literal,
+                    c.step,
+                    c.tol
+                );
+            }
+            TolFrom::Grid => {
+                let lesson = lessons
+                    .iter()
+                    .find(|l| l.id == c.step)
+                    .unwrap_or_else(|| panic!("no lesson `{}`", c.step));
+                assert!(
+                    c.spells.is_none() && c.spells_pow10 == 0,
+                    "claim `{}` on step `{}` is marked `grid` and also spells a number \
+                     ({:?}, pow10 {}).\n\
+                     `grid` means the prose gives no number in this quantity. If it does \
+                     give one, that number sets the tolerance — the whole point of the \
+                     split is that a spelled number outranks the step grid.",
+                    c.literal,
+                    c.step,
+                    c.spells,
+                    c.spells_pow10
+                );
+                let grid_quantity =
+                    c.quantity.starts_with("flag_first_s:") || c.quantity == "deficit_zero_s";
+                assert!(
+                    grid_quantity,
+                    "claim `{}` on step `{}` is marked `grid`, and `{}` is not a quantity \
+                     the engine reports on the step grid.\n\
+                     Half a timestep is only a meaningful bound for a time the engine can \
+                     land on exactly. For anything continuous it is a number with no \
+                     justification at all.",
+                    c.literal, c.step, c.quantity
+                );
+                let half_step = lesson.dt / 2.0;
+                assert!(
+                    tol_eq(c.tol, half_step),
+                    "claim `{}` on step `{}` is marked `grid` and holds {:.3e}; the step \
+                     runs at dt = {} s, so half a step is {half_step:.3e}.",
+                    c.literal,
+                    c.step,
+                    c.tol,
+                    lesson.dt
+                );
+                for token in numeric_tokens(&c.literal) {
+                    let implied = 5.0 * 10f64.powi(-(decimals_of(&token) + 1));
+                    assert!(
+                        implied > c.tol || tol_eq(implied, c.tol),
+                        "claim `{}` on step `{}` is marked `grid` and holds a half-step of \
+                         {:.3e}, but its own literal prints `{token}` — half a unit in \
+                         that number's last place is {implied:.3e}, which is tighter.\n\
+                         A sentence printing that finely is a sentence making a finer \
+                         claim than a half-step, and taking the half-step throws the \
+                         difference away. This is the fence that keeps `grid` from \
+                         re-blessing the `383.0 s later` defect: name the number with \
+                         `spells` and take its rule.",
+                        c.literal,
+                        c.step,
+                        c.tol
+                    );
+                }
+            }
+        }
     }
 }
 
