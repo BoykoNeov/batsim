@@ -41,6 +41,13 @@ its dead zone and its end knees. So a voltmeter reading means the same thing eve
 lead-acid, and inside LFP's plateau lead-acid is 4.5× more informative. That — not steepness —
 is the contrast worth teaching, and the guided path must not inherit the wrong version.
 
+> **Do not quote the numbers in this paragraph.** The qualitative claim survived; the
+> quantitative half did not. "Flat to within 2 %", "40×" and "4.5×" are all artifacts of the
+> windows chosen above — 0.45–0.65 straddles LFP table breakpoints at 0.55 and 0.65, so it
+> measures the nodes as much as the curve. Measured decile by decile the figures are **1.7×**,
+> **248×** and **3.2×**. See "Prediction 1 was WRONG in its quantitative half" below; this
+> paragraph is left unedited because it is the registered prediction, not the finding.
+
 ## Prediction 2 — ohmic sag is not where lead-acid's rate penalty comes from
 
 Anchored on real hardware rather than assumed, because the whole rate prediction rests on it.
@@ -258,9 +265,13 @@ have been read as accuracy. The test now brackets instead, and asserts on the wi
 
 The widest bracket is **0.099 % of its own value**, at 3C. Quartering `dt` quarters the
 bracket, which is the direct evidence that its width is the cutoff-crossing quantum and not
-some other error. Taking the upper bound everywhere instead moves the headline from 48 % to
-48 % — so the conclusions are insensitive to the choice, and now demonstrably so rather than
-presumably so.
+some other error.
+
+Recomputing the headline from the bracket's **upper** ends — 6.0540 Ah at 3C against 7.2143 Ah
+at C/20, the two rows the headline is built from — gives a 16.1 % loss against the real 33.6 %,
+i.e. **48 %** again. (Derived from those two endpoint rows, not from re-running the whole sweep
+on upper bounds.) So the conclusion is insensitive to which end of the bracket is quoted, and
+now demonstrably rather than presumably.
 
 ## What this prices
 

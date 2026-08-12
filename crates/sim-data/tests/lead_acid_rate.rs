@@ -137,14 +137,11 @@ fn lead_acid_ocv_is_uniform_not_steep() {
          claim is false end-to-end and must not be written anywhere"
     );
 
-    // Inside LFP's plateau the ordering reverses, and that is the real contrast.
-    let pba_flat = slope(&pba, 0.45, 0.65);
-    let lfp_flat = slope(&lfp, 0.45, 0.65);
-    assert!(
-        pba_flat > 4.0 * lfp_flat,
-        "in LFP's dead zone lead-acid must be several times more informative \
-         (lead-acid {pba_flat:.3} V/soc vs LFP {lfp_flat:.3})"
-    );
+    // The "inside LFP's plateau the ordering reverses" claim is deliberately NOT asserted
+    // over a hand-picked window such as 0.45–0.65: LFP's table has breakpoints at 0.55 and
+    // 0.65, so such a window straddles OCV nodes and measures the nodes as much as the
+    // curve. The node-independent form of the same claim — flattest decile against flattest
+    // decile — is asserted below and is what the plan doc quotes.
 
     // Uniformity is the property being claimed, and it must be measured decile by decile
     // rather than over wide windows: averaging across several table segments hides exactly
