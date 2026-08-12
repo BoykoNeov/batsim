@@ -57,6 +57,7 @@ fn env_at(t_ambient: f64) -> Env {
 /// sit exactly 50 mV outside the rested range and the two directions are symmetric.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        diffusion: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,

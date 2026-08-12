@@ -65,6 +65,7 @@ fn env() -> Env {
 /// does drive the terminal voltage into `v_max` and discharging into `v_min`.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        diffusion: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,

@@ -86,6 +86,7 @@ fn aging_params() -> AgingParams {
 /// built with over-discharge free (every version before this one) and with it costly.
 fn chem(fade_per_ah: f64) -> ChemistryParams {
     ChemistryParams {
+        diffusion: None,
         reversal: ReversalParams {
             // OCV(0) is 3.0 V and the floor is 0, so the collapse spans 3 % of capacity —
             // the same "sized against this cell's own OCV(0)" rule the shipped files use.

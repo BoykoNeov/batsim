@@ -67,6 +67,7 @@ fn env() -> Env {
 /// `OCV(0.99)` differ by a comfortable 10 mV.
 fn sloped_chem() -> ChemistryParams {
     ChemistryParams {
+        diffusion: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,

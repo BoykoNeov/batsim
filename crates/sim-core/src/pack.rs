@@ -278,7 +278,39 @@ use crate::{Demand, Env, Telemetry};
 /// This bump moves alone: `v_rc` reaches no client, since [`CellView`] exposes the *sum*
 /// as `overpotential_v`, so `sim_server::API_VERSION` and `sim-wasm`'s own constant stay
 /// put. See `docs/plans/cell-size.md`.
-pub const SNAPSHOT_VERSION: u32 = 16;
+///
+/// v17 (the diffusion overpotential): [`crate::EcmState`] gained `depletion`, and
+/// [`crate::ChemistryParams`] gained an optional `[diffusion]` section — and the chemistry
+/// is serialized *inside* the snapshot, so both halves of this bump are in the bytes.
+///
+/// **Semantic, and it is v14's argument rather than v15's.** `depletion` is a filtered
+/// history of the current the cell has been carrying, and nothing else in the snapshot
+/// records it. `#[serde(default)]` supplies `0.0`, which is the right reading for a pack
+/// that has been resting and the wrong one for a pack saved under load: the overpotential
+/// it was about to pay is the capacity a hard discharge costs, so a v16 blob restored
+/// mid-discharge would continue a trajectory that delivers more than the one it was saved
+/// from. That is unrecoverable state, not a cache, exactly as `soc_deficit` was at v14.
+///
+/// **The structural argument is v14's and v15's too, and for once it is the *weaker* half
+/// that is reassuring.** `bincode` writes struct fields positionally with no framing, so a
+/// v16 blob is one `f64` short of what v17 reads at every cell and fails at
+/// *deserialization*, loudly, in every configuration — the version check is belt to that
+/// braces. `snapshot_version.rs` therefore pins it against a **re-serialized** blob, the
+/// way v14 and v15 are pinned, which is what separates "the version field rejected it"
+/// from "deserialization rejected it" when the stale bytes cannot be parsed at all. This
+/// is deliberately *not* v16's situation, where the stale blob stayed valid and was
+/// silently reinterpreted; nothing here can be misread, only refused.
+///
+/// **What does not move, and it was checked rather than assumed.** No chemistry shipped
+/// before this version carries a `[diffusion]` section, and the absence is a *path* —
+/// [`crate::ecm::ecm_overpotential_v`] matches on the `Option` and returns `Σ V_rc`
+/// unchanged rather than adding a neutral zero — so every LFP and NMC trajectory in the
+/// repo is bit-identical across this bump, goldens included. `sim_server::API_VERSION`
+/// stays at 2 and `sim-wasm`'s constant at 6: no call signature changes, and
+/// [`CellView::overpotential_v`] keeps its name, its units and its meaning. It gains a
+/// second contributor, on one chemistry, which is what that field was named to allow.
+/// See `docs/plans/diffusion-overpotential.md`.
+pub const SNAPSHOT_VERSION: u32 = 17;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -2746,22 +2778,27 @@ mod cell_footprint {
         // The parts of `Cell`, largest first. The remaining 24 B are three bare `f64`s on
         // `Cell` itself: `capacity_factor`, `r0_factor`, `shunt_g`.
         //
-        //   88 + 48 + 16 + 24 = 176, with no padding left over to hide anything in.
+        //   88 + 56 + 16 + 24 = 184, with no padding left over to hide anything in.
         assert_eq!(size_of::<CellAging>(), 88, "CellAging");
         assert_eq!(
             size_of::<CellModel>(),
-            48,
-            "CellModel = 8 tag + 40 EcmState"
+            56,
+            "CellModel = 8 tag + 48 EcmState"
         );
         assert_eq!(size_of::<CellRunaway>(), 16, "CellRunaway");
-        assert_eq!(size_of::<Cell>(), 176, "Cell");
+        assert_eq!(size_of::<Cell>(), 184, "Cell");
 
         // The states behind the slot. `SpmState` and `DfnState` are boxed, which is what
         // keeps the two lines above independent of these two.
         //
-        // `EcmState` is 40 rather than 48 because `v_rc` is an inline `[f64; 2]` and was a
-        // 24-byte `Vec` — the change SNAPSHOT_VERSION 16 is about.
-        assert_eq!(size_of::<EcmState>(), 40, "EcmState");
+        // `EcmState` is 48: 40 after `v_rc` came off the heap at SNAPSHOT_VERSION 16, plus
+        // the `depletion` f64 at v17. That is the price the diffusion overpotential pays,
+        // and it is priced rather than discovered — this test exists to make an addition
+        // like it show up in a diff. One `f64` per cell is 8 KB on a 1000-cell pack, and
+        // `CellModel` stays inside `no_variant_widens_the_model_slot_beyond_the_equivalent_circuit`'s
+        // budget because that budget is stated as a *relation* to `EcmState` rather than as
+        // a number, which is the property it was written to have.
+        assert_eq!(size_of::<EcmState>(), 48, "EcmState");
         assert_eq!(size_of::<SpmState>(), 64, "SpmState");
         assert_eq!(size_of::<DfnState>(), 136, "DfnState");
     }

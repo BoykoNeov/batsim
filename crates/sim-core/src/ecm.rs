@@ -107,6 +107,33 @@ pub struct EcmState {
     /// It is why [`crate::SNAPSHOT_VERSION`] is 16: a one-pair cell used to serialize as
     /// `[x]` and now serializes as `[x, 0.0]`.
     pub v_rc: [f64; MAX_RC_PAIRS],
+    /// Reactant depletion at the reaction site, as a **filtered C-rate** \[1/h\],
+    /// discharge-positive — or a permanent `0.0` on any chemistry with no
+    /// [`crate::DiffusionParams`] section, which is every chemistry shipped before v17
+    /// and both lithium sets today.
+    ///
+    /// Held at a steady discharge current it settles at exactly that current expressed in
+    /// C; at rest it decays to zero with the chemistry's `τ_d`; on charge it goes
+    /// **negative**, which is a cell whose acid is re-equalising and is the one direction
+    /// of this term nobody has measured. What it costs in volts, and why the cost divides
+    /// by `soc`, is [`crate::DiffusionParams`]; the arithmetic is
+    /// [`diffusion_update`] and [`diffusion_overpotential_v`].
+    ///
+    /// # State, not a cache, and the reason [`crate::SNAPSHOT_VERSION`] is 17
+    /// This is a history of the current the cell has been carrying, and nothing else in
+    /// the snapshot records it. `#[serde(default)]` fills `0.0`, which is the correct
+    /// reading for a pack that has been resting and the wrong one for a pack saved
+    /// mid-discharge: restoring the latter would hand back the capacity the depletion was
+    /// about to cost, and the trajectory would diverge from the one that was saved. That
+    /// is [`EcmState::soc_deficit`]'s argument exactly, one field along.
+    ///
+    /// **On a no-`[diffusion]` chemistry it is never written**, because
+    /// [`advance_cell`] takes the same `None` path [`ecm_overpotential_v`] does. So the
+    /// permanent zero here is structural in the same way `v_rc`'s unused slot is, and with
+    /// the same caveat: deserialization is a writer nobody checks, and only the version
+    /// field stands between a blob that says otherwise and a cell that carries it forever.
+    #[serde(default)]
+    pub depletion: f64,
     /// Cell temperature \[K\]. Advanced by [`crate::thermal`] unless the pack is
     /// configured [`crate::ThermalConfig::Isothermal`], in which case it holds its
     /// initial value.
@@ -177,6 +204,11 @@ impl CellModel {
             // permanent zero `EcmState::v_rc` documents, and seeding it here is what
             // makes the summing sites' "read the whole array" correct.
             v_rc: [0.0; MAX_RC_PAIRS],
+            // A fresh cell has never carried current, so its reactant is uniform and
+            // there is nothing to relax — the same sentence the RC slots above are
+            // seeded on. On a chemistry with no `[diffusion]` section this is the value
+            // it keeps forever.
+            depletion: 0.0,
             temp_k,
         };
         // `ChemistryParams::validate` guarantees 1 or 2 RC pairs, so the `else`

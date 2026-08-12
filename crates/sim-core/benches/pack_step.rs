@@ -191,6 +191,7 @@ const SOC: f64 = 0.6;
 /// nothing in this file is a physical claim.
 fn lfp_like_chem() -> ChemistryParams {
     ChemistryParams {
+        diffusion: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,

@@ -31,6 +31,7 @@ fn env() -> Env {
 /// property. Nothing here is chemistry-specific; it just needs to be non-trivial.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        diffusion: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,

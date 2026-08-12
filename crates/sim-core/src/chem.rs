@@ -46,6 +46,31 @@ pub struct ChemistryParams {
     pub thermal: ThermalParams,
     /// How an equivalent-circuit cell behaves below empty (`[reversal]`).
     pub reversal: ReversalParams,
+    /// Diffusion overpotential (`[diffusion]`), or `None` for a chemistry whose
+    /// equivalent circuit carries no such term.
+    ///
+    /// `None` is the common case and the case for every chemistry shipped before this
+    /// section existed. It is not "this cell has no diffusion limit" — the RC pairs are
+    /// already a diffusion transient — it is "this parameter set does not describe one
+    /// that **depletes**, so a hard discharge costs this cell no capacity beyond the
+    /// ohmic sag". For lithium at the rates these files cover that is a good
+    /// approximation; for lead-acid it is the whole of what the model was missing. See
+    /// [`DiffusionParams`] and `docs/plans/diffusion-overpotential.md`.
+    ///
+    /// Unlike [`Self::aging`] and [`Self::spm`], the absence is **not** diagnosable and
+    /// not an error: nothing in [`crate::PackConfig`] can ask for this term, exactly as
+    /// nothing can ask for plating. It is a property of the chemistry, switched on by the
+    /// chemistry, and a file without it simply never generates one — the same standing
+    /// [`Self::safety`] has.
+    ///
+    /// **The absence is a path, not a multiplier.** [`crate::ecm::ecm_overpotential_v`]
+    /// matches on this `Option` and returns `Σ V_rc` unchanged when it is `None`, rather
+    /// than adding a neutral zero, so no chemistry without the section can move by so much
+    /// as a ULP. That is the same argument [`crate::ecm::open_circuit_v`] makes for a zero
+    /// deficit, and it is what makes "LFP and NMC are bit-identical across this version"
+    /// a structural claim instead of a measurement.
+    #[serde(default)]
+    pub diffusion: Option<DiffusionParams>,
     /// Semi-empirical aging coefficients (`[aging]`), or `None` for a chemistry
     /// that carries no aging data.
     ///
@@ -727,6 +752,123 @@ pub struct ReversalParams {
     pub fade_per_ah: f64,
 }
 
+/// A **depleting** diffusion overpotential (`[diffusion]`) — the voltage a sustained
+/// current costs because the reactant at the reaction site runs down faster than it is
+/// replenished, and which relaxes back when the current stops.
+///
+/// # What this adds that the RC pairs do not
+/// An [`RcPair`] is already a diffusion transient, and it already relaxes at rest. What it
+/// cannot do is *cost capacity*: it is a fixed resistance, so its settled drop is
+/// `R·I` — proportional to current, independent of how full the cell is, and negligible at
+/// low rate against the headroom between a cell's empty-endpoint OCV and its cut-off. A
+/// real lead-acid cell gives up a quarter of its rated capacity between a trickle and a 1C
+/// draw, and `docs/plans/lead-acid-data-only.md` measured the shipped equivalent circuit
+/// reproducing **none** of that below 1C, whatever the resistances were tuned to. The term
+/// here is what closes it, and the closure is measured rather than asserted: worst
+/// leave-one-out error against Peukert `n = 1.1` over 0.05C → 3C goes from 25.9 points to
+/// 3.8. See `docs/plans/diffusion-overpotential.md`.
+///
+/// # The mechanism, in two lines
+/// One extra state per cell — [`crate::EcmState::depletion`], written `D` — advanced by
+/// the same exact exponential update the RC pairs use, and one voltage read off it:
+///
+/// ```text
+/// D  ←  D_ss + (D − D_ss)·e^(−dt/τ_d),     D_ss = I / capacity_ah     [C-rate, 1/h]
+/// η  =  −k · ln(1 − D / (D_lim · soc))                                [V]
+/// ```
+///
+/// `D` is a **filtered C-rate**: left at a steady current long enough it settles at
+/// exactly that current expressed in C, and at rest it decays to zero with time constant
+/// `τ_d`. So the three parameters read as *a rate the cell can sustain when full*
+/// ([`Self::limit_c_rate`]), *how long it takes to get there* ([`Self::tau_s`]), and *what
+/// approaching it costs in volts* ([`Self::scale_v`]).
+///
+/// # Why the `soc` in the denominator is the whole mechanism
+/// Three simpler forms were tried and all three fail, in the same way: they leave the
+/// delivered capacity at 0.05C, 0.1C and 0.2C at **exactly** their no-diffusion values,
+/// because nothing that grows with current alone can lose capacity at a rate where the
+/// current is small. The limit has to *fall as the cell empties* — which for lead-acid is
+/// not a modelling convenience but the chemistry: the acid is a reactant, so a flatter
+/// cell has less of it to move. Dividing by `soc` is that sentence.
+///
+/// # Read from the previous step, like `soc_deficit`
+/// `η` is evaluated in [`crate::ecm::cell_source`] from the **start-of-step** `D`, and `D`
+/// is advanced at the end of [`crate::ecm::advance_cell`]. Within a step the cell is
+/// therefore still a fixed line, [`crate::CellModel::is_linear`] stays `true`, and the
+/// pack's closed-form solve is untouched. The non-linearity is spread across steps rather
+/// than packed inside one — the same trick the exact RC update and the reversal ramp both
+/// use.
+///
+/// # What is fitted, what is measured, and what is neither
+/// All three parameters are **fitted**, against a capacity-versus-rate sweep with the
+/// absolute C/20 delivery in the objective. [`Self::scale_v`] in particular is *not* a
+/// thermodynamic constant despite the Nernstian form — see its own doc. Rest recovery was
+/// never in the objective and is the check the fit is judged by. The **charge direction is
+/// unvalidated**: `D` goes negative on charge and the same expression returns a negative
+/// `η` (a cell that has been resting sources slightly above OCV as its acid re-equalises),
+/// which is the right sign and a plausible magnitude, and nothing here measured it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DiffusionParams {
+    /// Relaxation time `τ_d` \[s\] of the depletion state. Must be finite and `> 0`.
+    ///
+    /// How long a cell must rest before it has recovered, and equally how long a sustained
+    /// current takes to bite. For lead-acid this is **hours**, not the minutes of an
+    /// [`RcPair`] or the seconds of a lithium double layer, because the process is acid
+    /// diffusing through the pore structure of a thick plate.
+    ///
+    /// This is the parameter a rate sweep is least likely to constrain and the one that
+    /// decides the answer: `docs/plans/diffusion-overpotential.md` records three searches
+    /// that returned "this mechanism cannot work" because an approximation adopted for
+    /// speed had quietly removed `τ_d` from the problem. Halving or doubling it from the
+    /// fitted value costs 13 points of accuracy against 1.8 at the fit, so it is sharply
+    /// determined once it is actually varied.
+    pub tau_s: f64,
+    /// The depletion `D_lim` at which the overpotential diverges, **at full charge**
+    /// \[C-rate, i.e. 1/h\]. Must be finite and `> 0`.
+    ///
+    /// The limiting sustained C-rate a full cell could carry if nothing else stopped it;
+    /// at state of charge `soc` the limit is `D_lim · soc`, so a half-empty cell can
+    /// sustain half as much. A physical, checkable quantity — for the shipped AGM cell it
+    /// lands near the rate at which a datasheet stops quoting continuous discharge.
+    ///
+    /// The divergence itself is never reached in normal operation (the cell hits its
+    /// cut-off first), which is why [`Self::max_overpotential_v`] exists as a declared
+    /// bound rather than as a working part of the model.
+    pub limit_c_rate: f64,
+    /// Voltage scale `k` \[V\] of the logarithm. Must be finite and `> 0`.
+    ///
+    /// # This is fitted, and it must not be labelled thermodynamic
+    /// The form `η = −k·ln(1 − x)` is Nernstian, and the temptation is to read `k` as
+    /// `RT/nF` = 25.7 mV. **It is not.** The fitted value for the shipped lead-acid set is
+    /// three to four times that, because this one-state model has no separate charge-
+    /// transfer term and `k` absorbs the electrode kinetics along with the concentration
+    /// thermodynamics. Writing `RT/F` in this field would be a fabricated constant wearing
+    /// a citation, which is the one thing `CLAUDE.md`'s provenance rule forbids outright.
+    pub scale_v: f64,
+    /// Ceiling on `|η|` \[V\] — where the collapse stops. Must be finite and `> 0`.
+    ///
+    /// # A fourth constant the plan did not budget, and why it is data rather than code
+    /// `docs/plans/diffusion-overpotential.md` priced three parameters and measured that
+    /// the divergence is never reached inside the window it swept. It is reached *outside*
+    /// it, and the engine has no such window: `soc` genuinely arrives at `0.0`, where
+    /// `D/(D_lim·0)` is `+∞` for a loaded cell and `0/0 = NaN` for a rested one. Something
+    /// has to answer there, and a bare number in the physics would be exactly the guard
+    /// `docs/plans/phase-7-dfn.md` records as documented-numerical-and-actually-load-bearing.
+    /// So it is declared, per chemistry, with provenance, like [`ReversalParams::floor_v`].
+    ///
+    /// **Derived, not chosen.** Set it to `OCV(soc = 0) − reversal.floor_v`: the depth of
+    /// the reversal ramp, so a saturated cell can cost at most as many volts as being
+    /// driven the whole way past empty costs, and a cell in both states at once presents a
+    /// bounded source. Validation only requires it to be positive and finite — the
+    /// derivation is a sizing rule for whoever writes the file, not a constraint the
+    /// engine can check without deciding what the two sections mean together.
+    ///
+    /// It is symmetric (`η` is clamped to `±this`) because the charge side is the same
+    /// logarithm mirrored, and an unbounded charge-side term would be a hole left open for
+    /// the sake of a direction nobody fitted.
+    pub max_overpotential_v: f64,
+}
+
 /// One RC (Thevenin) pair modelling a diffusion/charge-transfer overpotential.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RcPair {
@@ -977,6 +1119,31 @@ impl ChemistryParams {
             return Err(ChemistryError::BadRange {
                 what: "reversal.floor_v must be below the OCV at soc = 0",
             });
+        }
+
+        // --- Diffusion (optional) ---
+        //
+        // All four are checked positive-and-finite together, and none is checked against
+        // another section. That is deliberate and is the difference from `[reversal]`
+        // above, whose floor is checked against the OCV table: there the cross-check
+        // catches a configuration that makes the *branch inert*, which is a silent
+        // failure. Here nothing goes silent — a badly sized `max_overpotential_v` binds
+        // visibly, in volts, in the telemetry — so the sizing rule stays in the field's
+        // doc where a reader can apply judgement, rather than being frozen into a
+        // validator that would have to decide what `[reversal]` and `[diffusion]` mean
+        // together.
+        if let Some(d) = &self.diffusion {
+            let positive: [(&'static str, f64); 4] = [
+                ("diffusion.tau_s", d.tau_s),
+                ("diffusion.limit_c_rate", d.limit_c_rate),
+                ("diffusion.scale_v", d.scale_v),
+                ("diffusion.max_overpotential_v", d.max_overpotential_v),
+            ];
+            for (what, value) in positive {
+                if !is_positive(value) || !value.is_finite() {
+                    return Err(ChemistryError::NotPositive { what, value });
+                }
+            }
         }
 
         // --- Aging (optional) ---

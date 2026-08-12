@@ -49,6 +49,7 @@ fn env() -> Env {
 /// balancer can actually see.
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        diffusion: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,

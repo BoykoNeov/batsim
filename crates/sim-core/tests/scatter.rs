@@ -12,6 +12,7 @@ use sim_core::{CellModelConfig, Pack, PackConfig, Scatter, ThermalConfig};
 
 fn chem() -> ChemistryParams {
     ChemistryParams {
+        diffusion: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
