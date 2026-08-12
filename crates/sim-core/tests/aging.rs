@@ -383,6 +383,103 @@ fn resistance_grows_in_step_with_capacity_loss() {
     assert!((cell.soh_capacity - tele.soh_capacity).abs() < 1e-12);
 }
 
+/// Aging grows the **slow** resistances too, not only `R0`. `CLAUDE.md`'s physics spec
+/// has said so since Phase 0 and the code did not do it until
+/// `docs/plans/rc-resistance-growth.md`; this is the assertion that keeps it done.
+///
+/// **Asserted on the RC overpotential, not on terminal voltage.** Terminal voltage moves
+/// with `R0` whatever the RC pairs do, so a test on `V` would report success against the
+/// old code. It is also built at the *configuration* level — a pack with `aging: Some(..)`
+/// and an ECM cell model — rather than around the internal multiplier's name, which is a
+/// name no client-visible test would ever mention (see `docs/plans/dfn-aging-gap.md`).
+///
+/// **The comparison is exact rather than toleranced, and the fixture is what buys that.**
+/// Resting for 60 days accumulates calendar fade while leaving the RC overpotential at
+/// exactly zero, so the measurement starts from a known state; and `86_400` is a whole
+/// multiple of the sub-clock period, so the accumulator is at zero and the single
+/// measurement step is too short to tick. The growth factor read *before* the step is
+/// therefore provably the one the step used — asserted below, not assumed.
+#[test]
+fn aging_grows_the_rc_resistance_of_an_ecm_cell() {
+    const PERIOD_S: f64 = 3_600.0;
+    const DAY_S: f64 = 86_400.0;
+    // The fixture's single RC pair: tau = 20 s when new.
+    const R_RC: f64 = 0.01;
+    const C_RC: f64 = 2_000.0;
+    // Three time constants of load — long enough that the resistance dominates the
+    // answer, short enough that the lengthened tau is still visible in it.
+    const DT_S: f64 = 60.0;
+    const I_A: f64 = 2.0;
+
+    let cfg = cfg(
+        1.0,
+        318.15,
+        Some(AgingConfig {
+            sub_clock_period_s: PERIOD_S,
+        }),
+    );
+    let mut pack = Pack::new(&cfg, chem(Some(aging_params()))).expect("pack builds");
+    let e = env(318.15);
+
+    let _ = pack.step(0.0, Demand::Rest, &e);
+    for _ in 0..60 {
+        let _ = pack.step(DAY_S, Demand::Rest, &e);
+    }
+    let before = pack.cell(0, 0).expect("cell exists");
+    let s = before.soh_resistance;
+    assert!(
+        s > 1.0,
+        "need visible resistance growth to test against: {s}"
+    );
+    assert_eq!(
+        before.overpotential_v.to_bits(),
+        0.0f64.to_bits(),
+        "resting leaves the RC pairs empty, so the measurement starts from zero"
+    );
+
+    let _ = pack.step(DT_S, Demand::Current(I_A), &e);
+    let after = pack.cell(0, 0).expect("cell exists");
+    assert_eq!(
+        after.soh_resistance.to_bits(),
+        s.to_bits(),
+        "the measurement step must be too short to tick the sub-clock"
+    );
+
+    // The same expression `ecm::rc_update` evaluates, in the same order, from `v_rc = 0`.
+    let r = R_RC * s;
+    let tau = r * C_RC;
+    let expected = r * I_A * (1.0 - (-DT_S / tau).exp());
+    // Not bit-exact, and the reason is worth stating rather than absorbing into a loose
+    // tolerance: the cell never sees the literal `I_A`. Even on a 1S1P pack the solve
+    // computes a node voltage and hands the cell `(E − V)/R` back, so its current is
+    // `2.0` only to within a few ULP and the RC update inherits that. This bound is
+    // ~1e4 ULP — four orders of magnitude tighter than the ~30 % error that dropping
+    // `s` from either the resistance or the time constant would produce.
+    let rel = (after.overpotential_v - expected).abs() / expected;
+    assert!(
+        rel < 1e-12,
+        "aged RC overpotential {} should be {expected} (rel {rel:e})",
+        after.overpotential_v
+    );
+
+    // What an unworn cell would have shown under the identical drive — the RC pairs
+    // depend on nothing else, so this is a fair counterfactual and not an approximation.
+    let unaged = R_RC * I_A * (1.0 - (-DT_S / (R_RC * C_RC)).exp());
+    let ratio = after.overpotential_v / unaged;
+    assert!(
+        ratio > 1.0,
+        "an aged cell must show more RC overpotential than an unworn one: {ratio}"
+    );
+    // And strictly *less* than the growth factor, which is how this test pins the second
+    // half of the decision: the capacitances were left alone, so `tau = r·c` lengthened
+    // with the resistance and the aged cell is still further from its own steady state
+    // after the same 60 s. Holding tau fixed would put this ratio at exactly `s`.
+    assert!(
+        ratio < s,
+        "tau must lengthen with the resistance: ratio {ratio} vs growth factor {s}"
+    );
+}
+
 /// An aged pack holds less charge at the same SOC — that is what "faded" means. SOC
 /// itself keeps meaning *fraction of present capacity*, so a rested aged cell still
 /// reads the SOC it was left at rather than being silently rescaled.

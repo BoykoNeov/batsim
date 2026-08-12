@@ -780,6 +780,13 @@ pub struct CellView {
     pub soh_capacity: f64,
     /// Resistance growth factor `>= 1`: effective `R0` = nominal ×
     /// [`Self::r0_factor`] × this. Exactly `1.0` without aging.
+    ///
+    /// **It grows the RC pairs too, and the asymmetry is the surprising part:** an
+    /// equivalent circuit's `[[rc]]` resistances are scaled by *this alone*, without
+    /// [`Self::r0_factor`]. A weak or badly-scattered cell has a bigger `R0` and nominal
+    /// RC pairs; an *aged* cell has both bigger, and its RC time constants lengthen with
+    /// them because the capacitances are untouched. See
+    /// `docs/plans/rc-resistance-growth.md` for why the static factor was kept out.
     pub soh_resistance: f64,
     /// Internal-short leakage conductance \[S\] across this cell's terminals; `0.0`
     /// on a healthy cell.
@@ -2052,9 +2059,15 @@ impl Pack {
                 if plating {
                     flags |= EventFlags::PLATING_RISK;
                 }
-                let advanced = cell
-                    .model
-                    .advance(&self.chem, i_k, dt, eff_r0, eff_cap, soh_cap);
+                let advanced = cell.model.advance(
+                    &self.chem,
+                    i_k,
+                    dt,
+                    eff_r0,
+                    eff_cap,
+                    soh_cap,
+                    cell.aging.soh_resistance,
+                );
                 flags |= advanced.flags;
                 // --- charge the clamp refused, and the heat that refusing it makes.
                 //

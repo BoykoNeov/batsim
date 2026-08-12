@@ -430,10 +430,24 @@ impl CellModel {
     /// `eff_r0_factor` is ignored by every arm but the DFN's, and is here on the same
     /// terms `eff_capacity_ah` arrived on one phase earlier: the argument a new model
     /// needs is **added** to the signature rather than the existing arms being rewritten
-    /// around it. A DFN's state update *is* its voltage solve, so unlike an ECM's RC
-    /// update or an SPM's diffusion it genuinely depends on the resistance multiplier —
-    /// which reaches its kinetics and its contact resistance.
+    /// around it. A DFN's state update *is* its voltage solve, so unlike an SPM's
+    /// diffusion it genuinely depends on the resistance multiplier — which reaches its
+    /// kinetics and its contact resistance.
+    ///
+    /// `soh_resistance` arrives **split out** of `eff_r0_factor` rather than folded into
+    /// it, mirroring `soh_capacity` beside `eff_capacity_ah`, and the split carries
+    /// meaning: the equivalent circuit's RC pairs grow with *aging's* resistance factor
+    /// and deliberately **not** with the cell's static `r0_factor`, which is manufacturing
+    /// scatter and the `WeakCell` fault and is named for `R0` in the public config. The
+    /// DFN arm wants the product and takes `eff_r0_factor` unchanged.
+    /// See `docs/plans/rc-resistance-growth.md`.
     #[must_use]
+    // The eighth argument is what trips this, and bundling the four multipliers into a
+    // struct to silence it would hide the one thing this signature exists to say: which
+    // factors arrive combined and which arrive split. Each arm takes a different
+    // combination, deliberately, and the compiler checking that at every call site is
+    // worth more here than an argument count.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn advance(
         &mut self,
         chem: &ChemistryParams,
@@ -442,6 +456,7 @@ impl CellModel {
         eff_r0_factor: f64,
         eff_capacity_ah: f64,
         soh_capacity: f64,
+        soh_resistance: f64,
     ) -> Advanced {
         // Only the equivalent circuit can reject charge, so only its arm carries a
         // non-zero amount out. The porous-electrode arms are wrapped here rather than
@@ -452,9 +467,15 @@ impl CellModel {
             rejected_as: 0.0,
         };
         match self {
-            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
-                advance_cell(s, chem, i, dt, eff_capacity_ah, soh_capacity)
-            }
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => advance_cell(
+                s,
+                chem,
+                i,
+                dt,
+                eff_capacity_ah,
+                soh_capacity,
+                soh_resistance,
+            ),
             // The two multipliers arrive here split, because `soc_true`'s contract
             // makes the split meaningful to the equivalent circuit. A single-particle
             // cell wants only their product: it has no SOC scale to preserve, just an
@@ -872,10 +893,11 @@ pub(crate) struct Advanced {
 /// (nominal × capacity_factor); `soh_capacity` is aging's dynamic multiplier on top,
 /// kept as a separate argument so that SOC keeps meaning "fraction of the capacity
 /// this cell has **today**" — an aged cell empties sooner without its SOC scale
-/// changing. Returns the SOC-clamp flags from the coulomb step. Terminal voltage is
-/// *not* returned here: the pack recomputes each group's shared node voltage from the
-/// end-of-step state via [`cell_source`] so parallel cells report one consistent
-/// voltage.
+/// changing. `soh_resistance` is aging's resistance-growth factor, and grows the RC
+/// pairs exactly as it grows `R0` (see below). Returns the SOC-clamp flags from the
+/// coulomb step. Terminal voltage is *not* returned here: the pack recomputes each
+/// group's shared node voltage from the end-of-step state via [`cell_source`] so
+/// parallel cells report one consistent voltage.
 #[must_use]
 pub(crate) fn advance_cell(
     state: &mut EcmState,
@@ -884,10 +906,28 @@ pub(crate) fn advance_cell(
     dt: f64,
     eff_capacity_ah: f64,
     soh_capacity: f64,
+    soh_resistance: f64,
 ) -> Advanced {
     for (k, v_rc) in state.v_rc.iter_mut().enumerate() {
         let pair = chem.rc[k];
-        *v_rc = rc_update(*v_rc, i, pair.r_ohms, pair.c_farad, dt);
+        // Aging grows the slow resistances along with the instant one, which is what
+        // `CLAUDE.md`'s physics spec has always said and what this line did not do until
+        // `docs/plans/rc-resistance-growth.md`. Three things about the expression:
+        //
+        // * The factor is `soh_resistance` **alone**, not the cell's `eff_r0_factor`.
+        //   Manufacturing scatter and the `WeakCell` fault are `R0` multipliers by name
+        //   in the public config, and folding them in here would move fresh packs — five
+        //   shipped scenarios set `r0_sigma`.
+        // * `c_farad` is left alone, so `tau = r·c` grows with age too: an aged cell
+        //   relaxes slower as well as further. The spec says *resistances* and says
+        //   nothing about capacitance, so this follows from the sentence rather than
+        //   adding a claim to it.
+        // * The multiply is here rather than inside `rc_update`, whose signature is
+        //   `pub` and directly tested. It is also unconditional: at `soh_resistance ==
+        //   1.0` — every pack without aging, and every aged pack before its first
+        //   tick — `x * 1.0` is bit-identical, so a branch would guard nothing and cost
+        //   what the multiply costs.
+        *v_rc = rc_update(*v_rc, i, pair.r_ohms * soh_resistance, pair.c_farad, dt);
     }
     let step = coulomb_step(
         state.soc,

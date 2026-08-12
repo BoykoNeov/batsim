@@ -108,6 +108,14 @@ shipped arm does not — it reads −0.0648 V at 300 s and −0.0672 V at the ma
 2 A × 0.022 Ω × 0.0726. It is checkable arithmetic in a lesson, and it is the only place on
 the page where resistance growth shows up as a *voltage*.
 
+> **Superseded — these three numbers moved.** `rc-resistance-growth.md` made aging grow the
+> RC pairs as well as `R0`, and this is the one paragraph in this document whose
+> measurements it invalidates. The mark now reads **−0.068551 V** (`terminal` prints
+> **−0.069**) and the extra sag is **4.6 mV**, of which 3.2 is still `I·R0·(soh_res − 1)`
+> and 1.5 is the RC pair grown by the same factor. −0.065 at 300 s is unchanged, and so is
+> every other row in this document — nothing else here is a voltage under load. The
+> paragraph is kept as written because it is the measurement that *found* the defect.
+
 ### Which amp-hours — the two conventions differ in the fourth decimal
 
 The naive integral, `∫I dt` over every step whose *post*-step deficit is nonzero, reads
@@ -239,6 +247,22 @@ exactly — in both arms while their terminals differ.
 × `soh_resistance`"*. One of the two is wrong and it is pre-existing, unrelated to this
 slice, and not a client-slice decision — changing the code would move every golden, and
 changing the spec is the owner's call. Recorded here; nothing edited.
+
+**Resolved — the owner took the code side. See
+[`rc-resistance-growth.md`](rc-resistance-growth.md).** Aging's `soh_resistance` now
+multiplies the RC pairs as well as `R0`, so the spec sentence stands and this section
+describes the old behaviour. Two clauses above are worth correcting rather than leaving:
+
+* **"Changing the code would move every golden" was false**, and checkably so before the
+  suite ran. `soh_resistance` is exactly `1.0` until fade accumulates, and `x · 1.0` is
+  bit-identical — so no golden moved, no tolerance changed, and the entire observable
+  blast radius was one new test. That over-pricing is what made this look expensive enough
+  to defer.
+* **The `R0`-only reading was checked in one place, not two.** This section measured the
+  *voltage* path. The heat path (`cell_heat_w` = `i·(i·r0 + Σ v_rc)`) reads the same
+  state, so an aged cell was under-reporting its sag *and* its heat — the code was
+  self-consistent, and the spec sentence was the only outlier. Establishing that is what
+  turned "one of the two is wrong" into a one-line fix.
 
 ## Deferred, with a price
 

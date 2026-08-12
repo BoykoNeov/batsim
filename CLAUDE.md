@@ -166,7 +166,11 @@ and double as the scenario file format.
   never leaves [0, 1], which is what keeps every table and threshold indexed on it
   unchanged. See `docs/plans/low-clamp-reversal.md`.
 - Health applies as multipliers: effective capacity = nominal × `soh_capacity`;
-  effective R0 and RC resistances = nominal × `soh_resistance`.
+  effective R0 and RC resistances = nominal × `soh_resistance`. **Health only** — the
+  *static* multipliers (`Scatter::r0_sigma`, `WeakCell { r0_factor }`) are named for R0
+  and scale R0 alone, so an aged cell's RC pairs grow while a scattered one's do not.
+  Growing an RC resistance lengthens its time constant with it; the capacitances are
+  never scaled. See `docs/plans/rc-resistance-growth.md`.
 
 ### Pack electrical solve (closed form — no iterative solver in v1)
 
