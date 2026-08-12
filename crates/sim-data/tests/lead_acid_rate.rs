@@ -41,9 +41,11 @@ fn pba_ohmic_only() -> ChemistryParams {
 /// move during a 20-hour discharge), and **isothermal** — the rate dependence being
 /// measured must not be tangled with self-heating, which is a separate question.
 ///
-/// Isothermal matters more than it did. The diffusion overpotential roughly doubles the
-/// heat this cell makes at 3C, so a non-isothermal arm would be measuring a rate effect
-/// partly off its own temperature rise.
+/// Isothermal still matters, and by less than a first estimate suggested: the diffusion
+/// overpotential raises this cell's **peak** heat at 3C by 1.20× and its average over a
+/// discharge by 1.07×, and *lowers* the total, because the run ends sooner. Measured by
+/// [`the_term_adds_heat_and_the_peak_is_not_the_average`], after an estimate of "roughly
+/// doubles" was written here and turned out to be four times the truth.
 fn config() -> PackConfig {
     PackConfig {
         aging: None,
@@ -446,12 +448,19 @@ fn tuning_the_resistances_moves_the_knee_but_not_the_flat() {
 /// stripped arm is asserted too — a change that quietly made the *control* better would
 /// otherwise make this test easier to pass while proving less.
 ///
-/// **The tolerance is derived from the hold-out, not chosen.** A three-parameter fit
-/// reported at the rates it was fitted on measures itself, so the number that means
-/// anything is the leave-one-out error the plan doc records. The assertion is set at
-/// roughly twice that, which leaves room for the engine's own step ordering (it reports
-/// the terminal from end-of-step state where the fitting harness tested it at the start)
-/// without leaving room for the term to stop working.
+/// **The tolerance is derived from two measurements, not rounded up from one.** A
+/// three-parameter fit reported at the rates it was fitted on measures itself, so the
+/// number that means anything is the fit's held-out error: **3.28 points**. The engine is
+/// not the harness that produced it — it reports the terminal from end-of-step state where
+/// the harness tested it at the start of one — and that disagreement was measured too, at
+/// **0.02 points** across the whole sweep. So the budget is 3.28 + 0.02, and the assertion
+/// is set at **3.5**, which is that sum with a tenth of a point of headroom.
+///
+/// An earlier draft said 8.0 and justified it as "roughly twice the hold-out, plus room for
+/// step ordering". Both inputs were already measured and neither is anywhere near what the
+/// extra 4.5 points would have covered — which is the granularity fence
+/// `docs/plans/path-tolerance-rule.md` names: a round number quietly re-licensing precision
+/// the slice actually has, and enough slack to stay green with the term half working.
 #[test]
 fn the_diffusion_term_tracks_peukert() {
     let (base_on, rows_on) = sweep(&pba(), 1.0);
@@ -474,8 +483,10 @@ fn the_diffusion_term_tracks_peukert() {
          measuring a Peukert curve that has been made easy to hit"
     );
     assert!(
-        on < 8.0,
-        "the fitted term must track Peukert across 0.05C -> 3C; worst error {on:.1} points"
+        on < 3.5,
+        "the fitted term must track Peukert across 0.05C -> 3C; worst error {on:.2} points \
+         against a budget of 3.28 (the fit's held-out error) + 0.02 (engine-vs-harness step \
+         ordering) + 0.10 headroom"
     );
     assert!(
         on < 0.25 * off,
@@ -593,6 +604,83 @@ fn a_rest_recovers_capacity_and_a_harder_discharge_recovers_more() {
          or rest recovery is coming from the RC pair rather than the new term",
         control * 100.0,
         three_c * 100.0
+    );
+}
+
+/// **How much heat the term actually adds, measured rather than asserted.**
+///
+/// Three places in this repo were about to say "the diffusion term roughly doubles this
+/// cell's heat at 3C" — this file's `config` doc, the chemistry file, and the plan doc —
+/// on an estimate rather than a run. `q_gen_w` is already in telemetry and this sweep
+/// already exists, so it was cheap to stop estimating, and the estimate was **wrong by a
+/// factor of four**: the peak heat goes up by 1.20×, not 2×, and the *average* over a
+/// discharge by 1.07×.
+///
+/// Three quantities, because they disagree and prose has to pick one:
+///
+/// * **Peak** rises most. The depletion builds from zero, so the term contributes nothing
+///   at the start of a run and all of its contribution at the end.
+/// * **Mean** rises barely, for the same reason.
+/// * **Total heat over the discharge goes DOWN**, which is the counter-intuitive one and
+///   the reason a "hotter cell" summary would be false. The term ends the discharge sooner
+///   — 736 s against 1008 s at 3C — so the cell spends less time making heat at all, and
+///   never reaches the low-SOC region where `[r0]` is highest. That last part is why the
+///   peaks are not even being compared at the same cell state.
+///
+/// The measured ratios are printed rather than asserted; what is asserted is the *ordering*
+/// between them, which is the part that makes the three words non-interchangeable.
+#[test]
+fn the_term_adds_heat_and_the_peak_is_not_the_average() {
+    let report = |label: &str, chem: &ChemistryParams| -> (f64, f64, f64) {
+        let i = 3.0 * chem.cell.capacity_ah;
+        let mut pack = Pack::new(&config(), chem.clone()).expect("pack builds");
+        let (mut peak, mut total_j, mut secs) = (0.0f64, 0.0, 0.0);
+        for _ in 0..(30 * 3600) {
+            let t = pack.step(1.0, Demand::Current(i), &env());
+            if t.v_terminal < chem.cell.v_min {
+                break;
+            }
+            peak = peak.max(t.q_gen_w);
+            total_j += t.q_gen_w;
+            secs += 1.0;
+        }
+        println!(
+            "{label:<10} 3C: peak {peak:.2} W, mean {:.2} W over {secs:.0} s, \
+             {total_j:.0} J total",
+            total_j / secs
+        );
+        (peak, total_j / secs, total_j)
+    };
+
+    println!("\nheat at 3C:");
+    let (peak_on, mean_on, total_on) = report("shipped", &pba());
+    let (peak_off, mean_off, total_off) = report("control", &pba_ohmic_only());
+    println!(
+        "  peak {:.2}x, mean {:.2}x, total {:.2}x\n",
+        peak_on / peak_off,
+        mean_on / mean_off,
+        total_on / total_off
+    );
+
+    assert!(
+        peak_on > 1.1 * peak_off,
+        "the term must add real heat and not only volts — energy that leaves the electrical \
+         side has to arrive on the thermal side. Peak went {peak_off:.2} W -> {peak_on:.2} W"
+    );
+    assert!(
+        peak_on / peak_off > 1.05 * (mean_on / mean_off),
+        "the peak ratio ({:.2}x) must exceed the mean ratio ({:.2}x) — the depletion builds \
+         from zero, so a run's average is NOT its peak, and prose quoting one for the other \
+         is wrong. If these ever converge the term has stopped being a slow state.",
+        peak_on / peak_off,
+        mean_on / mean_off
+    );
+    assert!(
+        total_on < total_off,
+        "total heat over the discharge must FALL ({total_on:.0} J against {total_off:.0} J): \
+         the term ends the run sooner, so the cell makes heat for less time. Any summary \
+         that calls this a hotter cell is false, and this assertion is what stops one being \
+         written."
     );
 }
 

@@ -463,9 +463,15 @@ the same errors to five figures.
   expression returns a negative `η`. The sign is right, the magnitude is bounded and
   logarithmic, and `diffusion.rs` pins both — but nothing measured it, and the field doc
   says so rather than letting the form's plausibility stand in for data.
-* **Not thermal.** The sweep is isothermal, as the previous slice's was. Note this now
-  matters more: the diffusion term roughly doubles this cell's heat at 3C, so a
-  non-isothermal arm would be reading a rate effect partly off its own temperature rise.
+* **Not thermal.** The sweep is isothermal, as the previous slice's was — and the reason
+  is now measured rather than estimated, because the estimate was wrong by a factor of
+  four. At 3C the term raises the **peak** heat by 1.20x and the **mean** by 1.07x, and
+  *lowers* the total over a discharge (2709 J against 3457 J) because it ends the run
+  sooner — 736 s against 1008 s, so the cell never reaches the low-SOC region where `[r0]`
+  is highest and spends less time making heat at all. A draft of this bullet said "roughly
+  doubles". Three quantities that disagree, so prose has to pick one, and
+  `the_term_adds_heat_and_the_peak_is_not_the_average` now asserts the ordering between
+  them so that "a hotter cell" cannot be written here.
 * **`[r0]`'s rise toward empty is still a placeholder** and should now be fitted to what it
   actually is — the instantaneous ohmic drop — rather than to a rate curve it was never the
   right shape for.

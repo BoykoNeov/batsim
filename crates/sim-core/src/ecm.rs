@@ -749,8 +749,9 @@ pub fn docv_dt_lookup(table: &OcvTable, soc: f64) -> f64 {
 /// [`ecm_overpotential_v`] now, which on a chemistry with a `[diffusion]` section also
 /// carries that term — and it must, or the energy the depletion costs would leave the
 /// electrical side of the ledger without arriving on the thermal side. On the shipped
-/// lead-acid cell at 3C that term generates rather more heat than the ohmic path does, so
-/// this is not a rounding correction.
+/// lead-acid cell at 3C it raises the peak heat by about a fifth, so this is not a
+/// rounding correction; it is also not the doubling a first estimate claimed, which is why
+/// `lead_acid_rate.rs` measures it rather than asserting it.
 #[must_use]
 pub fn cell_heat_w(
     i: f64,

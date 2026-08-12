@@ -14,7 +14,7 @@
 # than of these numbers, which no choice of [r0] could fix. The section near the bottom of
 # this file is what fixed it, and the fix was a code change: one extra state per cell. See
 # docs/plans/diffusion-overpotential.md. Worst error against Peukert n=1.1 across
-# 0.05C -> 3C went from 25.9 points to 3.3.
+# 0.05C -> 3C went from 25.7 points to 3.3.
 
 [meta]
 id         = "pba_agm_2v_generic"
@@ -24,8 +24,15 @@ provenance = "Assembled from datasheet-class figures for a 12 V 7.2 Ah AGM (UPS 
 [cell]
 # provenance: nominal C20 rating of a 12 V 7.2 Ah AGM (UPS class). Lead-acid capacity is
 # quoted at the 20-hour rate BY CONVENTION, precisely because the delivered capacity falls
-# with rate -- so this number means "7.2 Ah if you take 20 hours over it", and the engine
-# reproduces only part of the fall-off. See the plan doc.
+# with rate -- so on a datasheet this number means "7.2 Ah if you take 20 hours over it".
+#
+# THE ENGINE READS IT AS THE COULOMBIC CAPACITY, and since [diffusion] the two are no
+# longer the same thing: a C/20 discharge to 1.75 V delivers 6.96 Ah, or 96.7 % of this.
+# That gap is a stated model error, not a tuning miss -- the overpotential diverges as soc
+# approaches 0 at ANY current, so the cell always stops a little short of empty, and the
+# ceiling on the delivered fraction was derived algebraically as 96.68 % before the fit was
+# run (it reached 96.72 %). The declared value stays at the nameplate 7.2 so that "1C"
+# means what a user of a 7.2 Ah battery means by it. See docs/plans/diffusion-overpotential.md.
 capacity_ah     = 7.2
 v_max           = 2.45     # provenance: standard AGM absorption/charge cutoff per cell (float is 2.25 V)
 v_min           = 1.75     # provenance: standard end-of-discharge per cell AT THE 20-HOUR RATE. Real datasheets LOWER this to ~1.60 V at high rate; the engine has one fixed cutoff, which is itself part of the gap measured in the plan doc.
@@ -103,14 +110,27 @@ c_farad = 60000.0
 # How the cell behaves below empty. Over-discharge is the classic way to kill a lead-acid
 # battery -- deep discharge drives hard sulfation, and left flat the plates sulfate
 # permanently. See docs/plans/low-clamp-reversal.md for what this section does.
+#
+# READ THIS WITH [diffusion] BELOW, because that section changed what happens here and the
+# two numbers no longer mean on their own what they meant before it existed. A cell that
+# arrives at soc = 0 under load is ALREADY saturated in the diffusion term -- the limit
+# there is limit_c_rate * soc, which is zero -- so it is already sourcing at floor_v when
+# this ramp starts. The ramp therefore runs from 0 V DOWN to -1.95 V rather than from
+# 1.95 V down to 0 V, and the bound on a reversed cell's source is twice this section's
+# depth below OCV(0), not once. That is deliberate and derived: see max_overpotential_v.
 [reversal]
 # provenance: placeholder -- order-of-magnitude only, TODO fit. Sized the same way LFP's
-# is: the cell collapses from its empty-endpoint OCV (1.95 V) to the floor over 2 % of
-# capacity.
+# is: the collapse spans this cell's whole empty-endpoint OCV (1.95 V) over 2 % of
+# capacity. Since [diffusion] that span is travelled BELOW floor_v rather than down to it,
+# so this number sets how fast a reversed cell goes negative rather than how fast it
+# reaches zero. The rate is unchanged; the interval it applies to moved.
 v_per_soc = 97.5
 # provenance: placeholder -- a declared limit rather than a measured plateau, matching the
 # choice made for LFP. A reversed lead-acid cell does go negative (the plates reverse
-# polarity), but 0 V is the conservative bound and stops an otherwise unbounded ramp.
+# polarity), and 0 V is where the RAMP starts from now rather than where it stops: with
+# [diffusion] active this is the source of a cell that is merely empty, and the ramp then
+# carries an over-discharged one below it. What stops the ramp is still this value, applied
+# as a floor to the OCV term alone.
 floor_v   = 0.0
 # What over-discharge costs: capacity fraction lost per Ah delivered past empty.
 # provenance: placeholder -- order-of-magnitude only, TODO fit. Sized against the collapse
@@ -147,8 +167,14 @@ fade_per_ah = 1.39e-1
 # are quoted to three figures and the fourth would be fiction.
 #
 # What the fit achieves, measured in the engine by crates/sim-data/tests/lead_acid_rate.rs:
-# worst error against Peukert 3.3 points across the whole range, against 25.9 points for
+# worst error against Peukert 3.3 points across the whole range, against 25.7 points for
 # the same file with this section deleted (that arm is still run, as the control).
+#
+# Heat, also measured there rather than estimated: at 3C this term raises the PEAK heat by
+# 1.20x and the mean over a discharge by only 1.07x -- the depletion builds from zero, so it
+# contributes nothing early and everything late -- and it LOWERS the total, 2709 J against
+# 3457 J, because it ends the discharge in 736 s instead of 1008 s. This cell is not hotter
+# for having the section; it is briefly hotter and then finished.
 #
 # What it does NOT achieve, stated because it is a real model error: the C/20 discharge
 # delivers about 96.7 % of the 7.2 Ah declared above, not 100 %. The two would be the same
