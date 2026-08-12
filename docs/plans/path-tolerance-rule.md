@@ -219,6 +219,20 @@ changed, so no number a reader sees is different.
   the magnitude of `−0.82224`, and `it goes from 10m to 16m` is a formatter's output.
   The tolerance rule is indifferent to sign, offset, and complement, which is exactly why
   `spells` plus a power of ten is enough for *it* and not enough for this.
+* **`spells` is the new unenforced choice, and on a multi-number sentence it has real
+  leverage.** The check requires `spells` to be *a* number in the claim's literal, never
+  that it is the number stating this claim's quantity. On a sentence with more than one
+  figure an author can name the coarsest and take its tolerance. Measured rather than
+  reasoned: setting the voltage claim on `The cell empties at 4146.5 s at 1.9290 V` to
+  `spells = "4146.5"`, `tol = 0.05` leaves all nine tests green — a voltage pinned a
+  thousand times looser than its own sentence licenses. The same leverage exists on
+  `0.767 V at 200 s`, `1.731 V at 240`, `99.45 % at 250 s`, `**99.98 %** when the cell
+  empties at **207.5 s and 1.9306 V**`, and `` `soh cap` leaves 100.00 % at t = 10 s ``.
+  None of the 48 exploit it. The obvious guard — require the spelled number to be near
+  `value` — was tried on paper and does not survive this file: `0.53 points are gone`
+  states the complement of `0.9947`, `**383.0 s later**` states a duration against an
+  absolute 983.0, and `**0.0 %**` states a zero. It is the same missing mapping
+  vocabulary as the bullet above, reached from the other side.
 * **`spells_pow10` is a power of ten, and one claim's unit is not.** `it goes from `10m`
   to `16m`` states its quantity in minutes. It is a `grid` claim and needs no scale
   today; a future claim that spells a minute figure finely would need a general scale or
@@ -231,5 +245,7 @@ changed, so no number a reader sees is different.
   honest. It errs toward explicitness, which is the right direction, but it is not free.
 * **Fourteen of twenty-one steps still carry no claim**, unchanged by this slice. This
   one adds no claims at all — it makes the 48 that exist mean what they say.
-* **`run_for_s` is still unbounded by anything outside this file**, unchanged. It is the
-  second author-set number with no enforcement; `tol` was the first and is no longer one.
+* **`run_for_s` is still unbounded by anything outside this file**, unchanged. `tol` is
+  no longer a free number beside it — but it is not off the list either, only derived:
+  the freedom moved into `spells`, one bullet up. Two author-set numbers with no
+  enforcement, as before, and one of them now takes a check to reach.
