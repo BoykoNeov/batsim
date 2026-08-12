@@ -222,6 +222,19 @@ test. The one page change is a sentence of prose.
 * **`quoted` is opt-in and nothing suggests where it is missing.** A sentence that tells a
   reader to watch a row and does not quote it is exactly the defect class this slice is
   about, and finding those is still a human reading the prose.
+* **`quoted` also asserts nothing today that `literal` does not.** In all 32 claims
+  `shows` is a substring of `literal`, and `literal` must already appear in the prose, so
+  the quoted check follows from it. The tell is in the reddening table above: case 9 could
+  only be made red by setting `quoted` on a claim that does not have it, a configuration
+  no shipped claim uses. It is kept as a forward guard and as the place the authoring rule
+  is written down, and it starts doing independent work the first time a sentence quotes a
+  row string outside its own claimed literal. Recorded here rather than left for a reader
+  to infer coverage that is not there.
+* **`tol` still has no enforcement**, and this slice instantiated the hazard on its own
+  first new claim: the two `heat` entries were written with a tolerance that matched
+  neither the sentence's precision nor the stored value's. They now follow the file's rule
+  (the sentence's number, half a unit in its last place), but nothing would have caught
+  it — the previous slice named this and it is still true.
 * **The mirror is a second source of truth for thirteen row formatters.** `MIRRORED` makes
   a page-side change fail loudly, which is the whole defence — but a change made on *both*
   sides carelessly still passes, and the mirror cannot notice a row being added.

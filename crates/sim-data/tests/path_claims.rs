@@ -36,7 +36,11 @@
 //!   needs either is a check that does not run.
 //!   With `quoted = true` the claim additionally asserts that `shows` appears verbatim in
 //!   the prose — the authoring rule "when a sentence tells the reader to read a row, it
-//!   quotes what that row prints", made checkable one claim at a time.
+//!   quotes what that row prints", made checkable one claim at a time. On today's claims
+//!   that assertion is *implied* by the literal check, because every `shows` in the file
+//!   sits inside its claim's `literal`; it is a forward guard and a statement of the rule,
+//!   not an independent result. Said plainly here because an uncovered check under a green
+//!   test reads as a covering one.
 //!
 //! # What this test does NOT cover
 //!

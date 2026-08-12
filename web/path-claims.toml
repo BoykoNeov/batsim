@@ -51,6 +51,13 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
+#              Be clear about what this buys TODAY: in every claim below, `shows` is a
+#              substring of `literal`, and `literal` is already required to be in the
+#              prose — so the quoted check currently follows from the literal check
+#              and catches nothing on its own. It is kept because it states the
+#              authoring rule where a claim can see it, and because it does bite the
+#              moment a sentence quotes a row string somewhere other than inside its
+#              claimed literal. Do not read a green `quoted` as an independent result.
 #   note       why this claim is here / what it is about. Free text.
 #
 # Setting `tol` — the rule used here is half a unit in the last printed place of
@@ -350,8 +357,8 @@ is about the state and not about the transition.
 step = "leg-that-is-not-there"
 literal = "`heat` steps from `0.04 W` to `4.18 W`"
 quantity = "q_gen_at"
-value = 0.040715
-tol = 5.0e-6
+value = 0.041
+tol = 5.0e-4
 read_at_s = 5000.0
 display = "heat"
 shows = "0.04 W"
@@ -363,16 +370,18 @@ give 0.041 W and 4.181 W, which are the engine's figures to a decimal place the
 `heat` row does not print. It now quotes the row and states the finer figures
 separately.
 
-`tol` is half a unit in the last place of the *engine* figure quoted in the sentence,
-not of the row's two decimals — the row is guarded by `shows`.
+`value` and `tol` follow this file's own rule — the number as the sentence prints it,
+and half a unit in its last place. The engine reads 0.040715. That tolerance is a
+hundred times coarser than the row's own last digit, which is exactly the case
+`shows` exists for: this pair is guarded loosely by value and exactly by display.
 """
 
 [[claim]]
 step = "leg-that-is-not-there"
 literal = "`heat` steps from `0.04 W` to `4.18 W`"
 quantity = "q_gen_at"
-value = 4.180997
-tol = 5.0e-6
+value = 4.181
+tol = 5.0e-4
 read_at_s = 6000.0
 display = "heat"
 shows = "4.18 W"
@@ -381,7 +390,7 @@ note = """
 The same row once every amp is being refused and burnt: a hundredfold step, and the
 reason an unprotected overcharge is dangerous on a pack with a thermal network. The
 two claims share a literal for the same reason step 2's pair does — one sentence
-states both ends.
+states both ends. Engine reads 4.180997.
 """
 
 # --- step 20: past empty ---------------------------------------------------------
