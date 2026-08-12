@@ -90,11 +90,19 @@ pub struct EcmState {
     /// [`MAX_RC_PAIRS`] pairs — and it reads that limit *from here*, so the two cannot
     /// part. No capacity is wasted on a case that cannot occur.
     ///
-    /// **The unused slot on an [`CellModel::Ecm1Rc`] cell is `0.0` and stays `0.0`.**
-    /// [`CellModel::new_ecm`] zeroes both, [`advance_cell`] writes only as many entries
-    /// as the chemistry has pairs, and nothing else assigns to this field — which is what
-    /// lets every summing site keep reading the whole array and stay correct. That
-    /// invariant is load-bearing rather than incidental, so `cell_model.rs` pins it.
+    /// **The unused slot on an [`CellModel::Ecm1Rc`] cell is `0.0` and stays `0.0`**, which
+    /// is what lets every summing site keep reading the whole array and stay correct. There
+    /// are exactly three writers and all three uphold it: [`CellModel::new_ecm`] zeroes
+    /// both slots, [`advance_cell`] writes only as many as the chemistry has pairs, and
+    /// **deserialization writes both straight from the snapshot** — no constructor is in
+    /// that path, so the invariant holds there only as far as the blob does.
+    ///
+    /// That third writer is why the guarantee is scoped to blobs *this build wrote*, and it
+    /// is stated rather than glossed. A snapshot carrying a non-zero second slot on a
+    /// one-pair cell would keep that value forever: every sum would fold it in and
+    /// [`advance_cell`] would never clear it. What stands between here and there is
+    /// [`crate::SNAPSHOT_VERSION`], and only that — which is one more reason the v16 note
+    /// argues its check at some length.
     ///
     /// It is why [`crate::SNAPSHOT_VERSION`] is 16: a one-pair cell used to serialize as
     /// `[x]` and now serializes as `[x, 0.0]`.
