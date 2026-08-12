@@ -246,9 +246,42 @@ fn parse_demand(block: &str) -> Prog {
 /// check wants the sentence as authored, and JavaScript escapes (`\u00a0`, `\"`) would
 /// have to be undone consistently by both sides to compare parsed text. Taking the
 /// source means the claim literal is matched against exactly what an author typed.
-fn lesson_text(block: &str) -> String {
-    let start = block.find("\n    prose: [").unwrap_or(0);
+fn lesson_text(block: &str, id: &str) -> String {
+    // Deliberately a panic and not a fallback. An earlier draft used `unwrap_or(0)`,
+    // which degrades toward *passing*: slicing from 0 still yields text containing the
+    // prose, so the literal check keeps going green on a scraper that has stopped
+    // knowing what it is reading. A silent pass is the failure mode this whole file
+    // exists to prevent — see the five-green harness in docs/plans/surface-vs-bulk.md.
+    let start = block.find("\n    prose: [").unwrap_or_else(|| {
+        panic!(
+            "lesson `{id}` has no `prose: [` in the shape this scraper expects. The \
+             lesson formatting changed; fix the scraper rather than letting it fall \
+             back to a slice that still happens to contain the sentence."
+        )
+    });
     block[start..].to_string()
+}
+
+/// The `bms` field: `true`/`false` to force, `null` to leave whatever the scenario has.
+///
+/// The three cases are distinguished explicitly, and an unrecognised one panics. A
+/// missing field silently reading as `null` would flip a BMS-on lesson to the
+/// scenario default and move its numbers rather than fail.
+fn parse_bms(block: &str, id: &str) -> Option<bool> {
+    for (literal, value) in [
+        ("\n    bms: true", Some(true)),
+        ("\n    bms: false", Some(false)),
+        ("\n    bms: null", None),
+    ] {
+        if block.contains(literal) {
+            return value;
+        }
+    }
+    panic!(
+        "lesson `{id}` has no `bms:` field this scraper recognises (expected true, \
+         false or null). Treating that as null would quietly change which pack the \
+         lesson builds."
+    )
 }
 
 /// Split `const LESSONS` into one block per step.
@@ -279,16 +312,11 @@ fn lessons() -> Vec<Lesson> {
             demand: parse_demand(block),
             ambient_c: num_field(block, "ambient_c")
                 .unwrap_or_else(|| panic!("lesson {id} has no ambient_c")),
-            // `bms: null` means "leave whatever the scenario loaded".
-            bms: match block.find("\n    bms: ") {
-                Some(_) if block.contains("\n    bms: true") => Some(true),
-                Some(_) if block.contains("\n    bms: false") => Some(false),
-                _ => None,
-            },
+            bms: parse_bms(block, &id),
             dt: num_field(block, "dt").unwrap_or(default),
             until_s: num_field(block, "until_s")
                 .unwrap_or_else(|| panic!("lesson {id} has no until_s")),
-            text: lesson_text(block),
+            text: lesson_text(block, &id),
             id,
         });
     }

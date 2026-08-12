@@ -107,11 +107,36 @@ separately, with the others watched to confirm they stayed green:
 | `0.6387 V at the mark` → `0.6499` in `web/app.js` | literal | red; other four green |
 | `value = 0.6387` → `0.6500` in the claims file | value | red; other four green |
 | `read_at_s = 4200` → `5000` | reachable | red; other four green, **including value** |
+| `step = "protection-on"` → a nonexistent id | step exists | red, with the diagnosis; the other three claim tests cascade |
+
+All five tests have now been driven red. The fourth row was added after the first
+publication of this table, which had described the reddening as complete while omitting
+the one check nobody had perturbed — the same defect class the table is evidence
+against, one level up.
 
 The value failure printed `engine says 0.6387146080532274`. That is the third result and
 the one that was not planned: the in-tree runner reproduces the validated out-of-tree
 instrument's `0.6387` to every digit it printed, so the reimplementation of `applyStep`
 is confirmed against the thing it replaces rather than only against itself.
+
+### The scraper degrades toward failing, not toward passing
+
+Two parses were originally written with fallbacks and have been changed, because both
+degraded the wrong way:
+
+* `lesson_text` used `unwrap_or(0)` when the `prose: [` marker was missing. Slicing from
+  zero still yields text containing the sentence, so the literal check would have gone on
+  passing against a scraper that had stopped knowing what it was reading. It panics now.
+* `bms` treated "field not found" and "field is null" identically. A reformatted field
+  would have silently flipped a BMS-on lesson to the scenario default, moving its numbers
+  rather than failing. The three cases are now distinguished and an unrecognised one
+  panics.
+
+Neither was wrong against today's `app.js` — both required someone to reformat the
+lessons first. They are fixed because "fails quietly in the direction of green" is the
+exact shape of the five-green harness this file's reddening table exists to rule out.
+Because `lessons()` parses all twenty-one steps whether or not they carry claims, the
+suite passing is now also evidence that every lesson still matches the strict shape.
 
 ## Coverage — eleven claims, four steps
 
