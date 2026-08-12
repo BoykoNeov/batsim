@@ -86,7 +86,7 @@ largest per-cell deficit), a `drive` helper so a run is one or two legs of the s
 the leg loader and its checks, a two-directional reachability check, and two quantities:
 `deficit_pts_at` and `deficit_zero_s`.
 
-Coverage goes from **32 claims to 46**, over the same 7 of 21 steps.
+Coverage goes from **32 claims to 48**, over the same 7 of 21 steps.
 
 ### Reachability on a leg is a weaker claim, and it is circular
 
@@ -193,6 +193,30 @@ step-20 leg block deleted, leaving a leg with no claims. It was then hand-valida
 reading the message: `7 passed; 1 failed`, and the failure is
 `step 'past-empty' declares a charge leg and no claim reads it`. That is the one case whose
 output was read rather than counted.
+
+---
+
+## Review follow-ups, none of them a behaviour change
+
+* **This slice repeated the previous one's defect on its own first draft.** The
+  `383.0 s later` claim was given a tolerance of half a step with a note saying that was
+  *tighter* than the file's rule. It is not: the rule is half a unit in the last printed
+  place, `383.0` has a tenth, so the rule gives 0.05 s and half a step is five times
+  looser. Now 0.05, with the note spelling out why its step-20 sibling is a half-step
+  instead (`254 seconds` has no decimal, so there the rule gives 0.5 and a half-step *is*
+  tighter). No false green either way — `deficit_zero_s` returns a grid time — but
+  "a tolerance whose note cited a rule it did not follow" is verbatim what `04933c5` was
+  about, and nothing catches it.
+* **One number was corrected in a three-number sentence and only it was pinned.** The
+  siblings of `1.731 V at 240` — `0.767 V at 200 s` and `2.0655 V on the step where the
+  deficit reaches zero` — were already measured, so they are now claimed too. Without them
+  a re-word of that sentence reddens only the number that happened to have been wrong. The
+  second is deliberately not `quoted`: four decimals in the prose, three on the row.
+* **The header's forward-guard sentence was re-verified, and tightened.** It said `shows`
+  is a substring of `literal` "in every claim below", which is false for 19 unquoted claims
+  and always was — the statement that matters is about the claims that set `quoted`, and
+  that one holds for all 23 of them including this slice's ten. Corrected in both places it
+  is written down.
 
 ---
 

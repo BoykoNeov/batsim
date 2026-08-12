@@ -65,9 +65,10 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in every claim below, `shows` is a
-#              substring of `literal`, and `literal` is already required to be in the
-#              prose — so the quoted check currently follows from the literal check
+#              Be clear about what this buys TODAY: in all 23 claims below that set
+#              `quoted`, `shows` is a substring of that claim's own `literal`, and
+#              `literal` is already required to be in the prose — so the quoted check
+#              currently follows from the literal check
 #              and catches nothing on its own. It is kept because it states the
 #              authoring rule where a claim can see it, and because it does bite the
 #              moment a sentence quotes a row string somewhere other than inside its
@@ -579,6 +580,43 @@ voltage still pinned at its floor. The pair being symmetric is the point of the 
 
 [[claim]]
 step = "past-empty"
+literal = "0.767 V at 200 s"
+quantity = "v_at"
+value = 0.766713
+tol = 5.0e-4
+read_at_s = 4600.0
+after_mark = true
+display = "terminal"
+shows = "0.767 V"
+quoted = true
+note = """
+First of the three readings in "From there it comes up fast", and the step where the
+deficit has fallen back inside the 2-point collapse ramp — which is why the voltage moves
+at all after two minutes of sitting on its floor. Claimed alongside its two sentence-mates
+so that a re-word of the sentence reddens all three rather than the one that happened to
+be wrong.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "2.0655 V on the step where the deficit reaches zero"
+quantity = "v_at"
+value = 2.065518
+tol = 5.0e-5
+read_at_s = 4654.0
+after_mark = true
+display = "terminal"
+shows = "2.066 V"
+note = """
+Third of the three, read at the instant the claim above pins independently. Deliberately
+NOT quoted: the sentence gives four decimals and the row prints three, so `2.0655 V` is a
+string the panel never shows. That is allowed — a sentence may state a measured quantity
+more finely than the panel resolves it — and the display half is here to record what the
+reader actually sees while they read it. Same shape as the `1.2055` claim above.
+"""
+
+[[claim]]
+step = "past-empty"
 literal = "1.731 V at 240"
 quantity = "v_at"
 value = 1.731450
@@ -818,13 +856,19 @@ step = "what-it-cost"
 literal = "**383.0 s later**"
 quantity = "deficit_zero_s"
 value = 983.0
-tol = 0.25
+tol = 0.05
 read_at_s = 983.0
 after_mark = true
 note = """
 The debt clears 383 s after the 600 s mark, so at t = 983 s absolute, which is the number
-stored. Same relative-vs-absolute hazard as step 20's, and the same half-step tolerance
-for the same reason.
+stored. Same relative-vs-absolute hazard as step 20's.
+
+The tolerance is this file's rule and nothing else: half a unit in the last printed place
+of `383.0`. Step 20's sibling claim is a HALF-STEP instead, and the difference is not a
+policy — `254 seconds` has no decimal, so the rule there gives 0.5 s and a half-step is
+tighter, while here the rule gives 0.05 s and a half-step would be five times looser.
+Written out because a tolerance whose note cites a rule it does not follow is the exact
+defect the previous slice shipped and this one repeated on its first draft.
 
 Every other claim on this leg is read at this instant or hangs off it, which is why it is
 measured rather than written down: a hardcoded 983 would quietly become fiction if the
