@@ -304,6 +304,12 @@ A lead-acid **phase**, if one is wanted, is now specified by measurement rather 
   through the existing scenario mechanism (`sim-server` resolves an id against the chemistry
   directory), so nothing blocks it, but a teaching page that presented this cell's rate
   behaviour as accurate would be presenting the half the engine gets wrong.
+  **Both halves of that changed, in order.** `docs/plans/diffusion-overpotential.md` closed
+  the gap in the engine (25.7 → 3.3 points), which removed the objection above; then
+  `docs/plans/lead-acid-client.md` wired it in — one scenario file and guided-path steps 22
+  to 24. The acceptance test this document named for the mechanism and never measured — a
+  hard discharge, a rest, and a second discharge that delivers materially more — is now the
+  subject of step 24, driven through the page's own pulse mode.
 * **Thermal held fixed.** The sweep is isothermal on purpose, so a rate effect is not read off
   a curve that is partly self-heating. At 3C a real lead-acid cell does warm measurably and
   that would *add* to the effect — a separate question, and one worth doing only after the

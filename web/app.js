@@ -3141,6 +3141,95 @@ const LESSONS = [
     expect:
       "The health readout is already moving before anything interesting has happened: `soh cap` leaves 100.00 % at t = 10 s, the first tick of the aging sub-clock, and reads **99.98 %** when the cell empties at **207.5 s and 1.9306 V**. That fraction of a point is three and a half minutes of perfectly ordinary discharge, and it is worth noticing first so that you do not credit it to what happens next. Then nobody stops, the same collapse as the last step runs — straight down, through zero at 287.5 s — and this time the readout beside the trace does not sit still. **99.45 % at 250 s. 98.84 % at 300. 95.16 % at the ten-minute mark**, with `soh res` up from 1.0004 to **1.0726 ×**. On the state-of-health plot the two traces leave 100 in opposite directions and keep going. How much of that is the over-discharge rather than the ordinary wear running alongside it? Measured rather than assumed: the identical run with the over-discharge coefficient set to zero and nothing else touched ends the same ten minutes at **99.96 %**. So of the 4.82 points lost after the knee, **4.80 are the reversal** and about two hundredths of a point are calendar and cycle fade. There is one more place the damage shows and it is easy to walk past. The last step's floor was a flat line at −0.0640 V; this one is not flat. The `terminal` readout is down to −0.065 V by 300 s and reads **−0.069 V** at the mark, where you can stop and check it, and that drift is arithmetic you can check with it. The last step's −0.0640 V is `2 A × 0.032 Ω`, and that 0.032 has two parts: this cell's `R0` is 0.022 Ω at the bottom of its table at 25 °C, and its one RC pair adds 0.010 Ω more once it has filled up. Aging grows **both** by the same 7.26 %, so the extra sag is 2 A × 0.032 Ω × 0.0726 = **4.6 mV** — 3.2 of it from the instant resistance and 1.5 from the slow one — and −0.0640 × 1.0726 = −0.0686 V is the reading, to the three decimals the row prints. The slow half arrives slightly late, and the reason is the other thing growing a resistance does: an RC pair's time constant is its resistance times its capacitance, so lengthening the one lengthens the other. The pair is always a few seconds behind the growth it is chasing — which is about a tenth of a millivolt here, well below what this row can show you. Resistance growth is not a footnote to capacity fade — it is the half of it you can see at the terminals. Now put the demand box to **−2** and press Run, and compare what comes back with what does not. Everything about the charge comes back: `past empty` counts down from 9.704 points and reaches zero **383.0 s later**, and the cell charges on normally from there. Two of the rows will not tell you when. `sim time` prints whole minutes above two, so it goes from `10m` to `16m` and resolves nothing; and `soc (true)` is *still* printing **0.0 %** at the instant the debt clears, because the cell is 0.004 % full at that moment and only reaches 0.1 % two seconds later. The row that marks the moment is `past empty` itself, which stops printing a number and reads `none`. Even the arithmetic is exact: it took **0.2128 A·h** to put back what **0.2182 A·h** took out, less in than came out, because the cell being refilled is 4.8 % smaller than the one that was emptied. Charge is conserved against the cell as it is now, not as it was. `soh cap` does the opposite, and it is the one row on this panel that never turns round: 95.16 % at the mark, **95.15 % from one minute into the charge**, **95.14 % from 390 s in**, and still going down — the return leg is ordinary cycling and that has its own much smaller bill. Nothing in this engine gives capacity back. One caveat about the instrument, since this step asks you to read instants off it. `past empty` does not ride the telemetry frame the rows above it ride; it is a separate sample of every cell taken a few times a second in *wall* time, so at this step's speed it can be a dozen seconds of simulation behind. Measured on this page: the moment the run stopped at its mark that row read 9.438 points, and the next sample after the pause read 9.704, which is the mark's own value — the sampler is throttled to a quarter-second of wall clock, so that is how long the row can stay wrong once nothing is moving. So the numbers at the mark are safe and the ones mid-run are approximate — pause and press **Step 1** if you want an exact instant. `soh cap` and `soh res` have no such lag.",
   },
+  {
+    id: "slow-and-patient",
+    title: "A fourth chemistry, taken slowly",
+    // The first lesson on `pba_agm_2v_generic`, and the first on a chemistry whose
+    // interesting behaviour is a RATE effect rather than a curve shape. One scenario file
+    // serves this step and the two after it; the demand box is the whole difference,
+    // which is what makes anything a reader sees here attributable to the rate.
+    scenario: "cc_discharge_pba.toml",
+    // C/20 = 0.05 x 7.2 Ah. The rate a lead-acid datasheet quotes its capacity at, and
+    // the reference rate of the committed sweep in sim-data/tests/lead_acid_rate.rs.
+    demand: { mode: "Current", value: 0.36 },
+    ambient_c: 25,
+    bms: null,
+    // The slider's maximum, which step 8 already uses. 19.3 hours of simulation.
+    speed_x: 10000,
+    // Pinned, though this cell barely cares: twenty-fold in dt moves the cut-off by 9 s
+    // in 69621 and the charge readout by a hundredth of a point. It is pinned so that
+    // the NEXT two steps, which share this file, are measured on the same grid, and so
+    // that a reader arriving from step 21 (dt 0.5) or leaving toward it changes nothing.
+    dt: 0.5,
+    // The measured cut-off: the first step whose terminal falls below this chemistry's
+    // own v_min of 1.75 V. The mark sits AT it rather than past it, because past the
+    // cut-off this cell collapses — see the scenario file — and that is steps 20 and 21's
+    // subject, not this one's.
+    until_s: 69620.5,
+    // Starts full, and the mark is far above every earlier step's.
+    reload: true,
+    watch: ["plot-v", "readouts"],
+    prose: [
+      "A fourth chemistry, and one you have almost certainly owned: a 2 V lead-acid cell — six of these in series is the 12 V battery in a car or under a desk in a UPS. It is rated 7.2 Ah, and the rating comes with a condition attached that no lithium datasheet bothers with: *7.2 Ah if you take twenty hours over it*.",
+      "This step takes twenty hours over it. 0.36 A is C/20, the rate that condition names. Nothing is protecting the cell and nothing stops at the cutoff, so the run is marked to stop by itself at the moment the terminal reaches this chemistry's own 1.75 V — the voltage a lead-acid datasheet calls empty.",
+      "Watch the voltage trace, and watch `soc (true)` for where it stops. This is the arm that looks unremarkable; it is the reference the next step is measured against.",
+    ],
+    expect:
+      "A long shallow slope rather than a plateau or a knee — lead-acid spans only 180 mV of open-circuit voltage end to end, but it spends it evenly, which is why a resting voltmeter reads charge on this chemistry and cannot on the LFP cell of step 1. The run stops itself at `1.750 V` with **`3.3 %`** still showing on `soc (true)`, having delivered 6.9620 A·h of the 7.2 on the label. Two things about that. First, the panel reads `19.3h`, not twenty: this cell always stops a little short of empty, because the voltage penalty it pays for moving acid grows without limit as the cell empties, at *any* current. The 3.3 % is a stated model error rather than a tuning miss, and the chemistry file derives its ceiling algebraically. Second, and this is the number the next step exists to move: at this rate the cell gives you all but three points of what it holds. Notice how little is happening otherwise — `heat` reads `0.07 W`, which is a cell doing almost nothing strenuously.",
+  },
+  {
+    id: "sixty-times-the-current",
+    title: "The same cell, sixty times the current, and a third of the charge left in it",
+    // The same file, one field different: the demand box. Everything else — chemistry,
+    // topology, starting charge, temperature, dt — is step 22's.
+    scenario: "cc_discharge_pba.toml",
+    // 3C = 3 x 7.2 Ah, the top of the range the [diffusion] parameters were fitted over
+    // and the top of this chemistry's own max_discharge_c.
+    demand: { mode: "Current", value: 21.6 },
+    ambient_c: 25,
+    bms: null,
+    // The whole run is 12 minutes, and the part worth watching is the last two.
+    speed_x: 100,
+    dt: 0.5,
+    // The measured cut-off, same rule as step 22: the first step below 1.75 V.
+    until_s: 737,
+    reload: true,
+    watch: ["plot-v", "plot-soc", "readouts"],
+    prose: [
+      "The same cell, the same file, the same full charge, and one field different: 21.6 A instead of 0.36. That is 3 C, sixty times the last step's current and the top of what this cell is rated for.",
+      "Everything else is held: same chemistry, same 1S1P, same 25 °C, same half-second step. So anything you see is the rate, and nothing else.",
+      "Watch where it stops. Not *when* — of course it is quicker — but at what charge.",
+    ],
+    expect:
+      "The same `1.750 V` cutoff, reached in `12m` instead of `19.3h`. And `soc (true)` reads **`38.6 %`**. More than a third of the cell's charge is still in it, and the cell has just declared itself empty. Nothing was destroyed and nothing leaked — 4.4190 A·h came out against the last step's 6.9620, and the missing 2.5 A·h is *still in there*, which is what the next step is about. This is Peukert's law, the reason lead-acid capacity is quoted at a stated rate, and the reason a car battery that is fine in the driveway will not turn a cold engine. The mechanism is one line: the acid is a reactant, so the cell can only sustain a current proportional to how full it is, and pushing toward that limit costs volts. It is worth naming what you can *not* read off the panel here. The pack tile marked `overpotential` is the sum of two things — a fitted diffusion term and a placeholder RC pair — and at this cutoff the placeholder is 82.39 mV of the 184.29 mV showing, so no reading of that tile is a reading of Peukert. Step 24 finds the place where the two come apart. What you *can* read is `heat`: `6.09 W` here against `0.07 W` at the same state of charge on the last step, 87 times as much from the same cell, because heat is current times the gap between where the cell sits and where it would rest. Finally, do not run past the mark expecting steps 20 and 21. This cell arrives at empty already saturated, and it collapses harder and sooner than the LFP one did.",
+  },
+  {
+    id: "and-it-is-still-in-there",
+    title: "Leave it alone for four hours and it is not empty any more",
+    scenario: "cc_discharge_pba.toml",
+    // The client's Pulse mode, which is a pure function of simulation time: `Current` on
+    // the on-leg and `Rest` otherwise. 737 s is step 23's measured cut-off, so leg 1 IS
+    // step 23 and ends exactly where it ended; 14400 s is four hours.
+    demand: { mode: "Pulse", value: 21.6, on_s: 737, off_s: 14400 },
+    ambient_c: 25,
+    bms: null,
+    // 4.3 hours of simulation, nearly all of it a rest with nothing moving but a voltage.
+    speed_x: 2000,
+    dt: 0.5,
+    // Leg 2's own measured cut-off. The mark is NOT the end of leg 2: at this rate leg 2
+    // reaches 1.75 V after 237.5 s of its 737, and the remaining 500 s would take the
+    // cell far past empty and into the collapse steps 20 and 21 own.
+    until_s: 15374.5,
+    reload: true,
+    watch: ["plot-v", "readouts"],
+    prose: [
+      "The last step ended with a cell at its cutoff and more than a third of its charge still inside. So where is it, and can you have it?",
+      "This runs the same 3 C discharge for the same 737 seconds — leg one is step 23, exactly — then stops asking for four hours, then asks again in the same terms. The demand mode is the pulse train, which is a pure function of simulation time: current on the on-leg, open circuit otherwise.",
+      "Two rows tell the story and they disagree, which is the point. Watch `soc (true)` and the voltage trace through the rest.",
+    ],
+    expect:
+      "Leg one ends where step 23 ended, at `1.750 V` with `38.6 %` showing. Then the load comes off and the terminal jumps to `1.848 V` in a single step — that is the instantaneous resistance, gone the moment the current is — and then it *keeps climbing*: `1.912 V` four minutes in, `1.984 V` at half an hour, `2.005 V` at an hour, `2.030 V` at four. Meanwhile `soc (true)` does not move at all. It reads **`38.6 %` for the entire four hours**, because nothing is being added — no charger, open circuit, not one coulomb in. A cell that has stopped emptying is not a cell that has stopped recovering, which is the mirror image of what step 20 had to say about a voltage that had stopped falling. What is recovering is the acid, working its way back through the plate, and the recovery has two stages two orders of magnitude apart on purpose. Half an hour into the rest the fast one is finished — the RC pair is down to 0.05 mV — and the slow one still has 47.66 mV to give and goes on giving it for hours. That is the one place in this path where the `overpotential` tile is the fitted mechanism and nothing else, and it is why a lead-acid battery seems to come back to life if you walk away from it. Then leg two, the identical demand on the identical cell, and the run stops at the same `1.750 V` again — after **237.5 s**, at `18.8 %`. It delivered 1.4250 A·h, 32.2 % of what the first leg gave, from a cell that had already told you it was empty. That number was never fitted: the parameters were fitted to a capacity-versus-rate curve, the recovery falls out of it, and `a_rest_recovers_capacity_and_a_harder_discharge_recovers_more` asserts it. One thing this path will not show you on this cell: putting charge back. The diffusion term's charge direction is bounded and the right sign, but nothing has measured it, so unlike steps 20 and 21 there is no instruction here to reverse the demand box — and that omission is the honest one.",
+  },
 ];
 
 /** Authored strings, so the escape is belt-and-braces; the backticks are the point. */

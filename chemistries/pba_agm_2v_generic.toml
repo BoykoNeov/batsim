@@ -15,6 +15,15 @@
 # this file is what fixed it, and the fix was a code change: one extra state per cell. See
 # docs/plans/diffusion-overpotential.md. Worst error against Peukert n=1.1 across
 # 0.05C -> 3C went from 25.7 points to 3.3.
+#
+# A client can now reach this cell: scenarios/cc_discharge_pba.toml, and guided-path steps
+# 22-24 (docs/plans/lead-acid-client.md). One thing that slice measured belongs here rather
+# than only there, because it is a property of THIS FILE's parts and not of the page: the
+# per-cell `overpotential` a client reads is `sum(V_rc) + eta`, so it mixes the [[rc]]
+# PLACEHOLDER below with the [diffusion] FIT. At 3C at the 1.75 V cutoff that is 82.39 mV
+# of placeholder against 101.90 mV of fitted term. The two separate cleanly only in a REST,
+# and only because their time constants are two orders of magnitude apart on purpose: at
+# half an hour the RC pair is down to 0.05 mV and the diffusion term still holds 47.66 mV.
 
 [meta]
 id         = "pba_agm_2v_generic"

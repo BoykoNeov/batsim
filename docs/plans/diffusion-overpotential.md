@@ -478,6 +478,14 @@ the same errors to five figures.
 * **Not reachable from any client.** The chemistry is loadable by id, as it was before, and
   no scenario, page or catalogue entry uses it. Presenting this cell in the guided path is
   a UI slice; it is now worth doing, which it was not before.
+  **Done — `docs/plans/lead-acid-client.md`.** `scenarios/cc_discharge_pba.toml` and three
+  guided-path steps. The slice is unusual in having no asymmetry to confess: both of its
+  rate arms and its rest recovery were already fenced by `lead_acid_rate.rs`, so unlike the
+  porous-model slices it quotes no number a committed test does not bound. It also found
+  that the pack's `overpotential` tile is **not** a clean read of this mechanism during a
+  discharge — 82.39 mV of the 184.29 mV at the 3C cut-off is the placeholder RC pair — and
+  that the clean window is the *rest*, where the RC pair is spent at half an hour and the
+  fitted term still has 47.66 mV to give.
 * **Not NiMH, and not resting-voltage memory.** Those need a hysteresis state and their own
   version bump. A dead field costs more than a second small migration, and that judgement
   is unchanged.

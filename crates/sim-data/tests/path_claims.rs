@@ -108,7 +108,7 @@
 //!   sentence telling the reader to make this exact change must be in this step's prose.
 //! * **Sentences no claim is about — which is now the whole of the completeness gap.**
 //!   Check 6 above closed the half of it that lived *inside* a claimed literal; this is
-//!   the other half, and it is the larger one. Fourteen of the twenty-one steps carry no
+//!   the other half, and it is the larger one. Fourteen of the twenty-four steps carry no
 //!   claim at all, so they have no literal for check 6 to scan and nothing here touches
 //!   them. Closing that needs a different instrument — a ledger over each step's whole
 //!   prose rather than over the sentences already claimed — and unlike check 6 it does
@@ -1021,7 +1021,7 @@ fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 36 of 49 claims.
+    /// number's last printed place. The default shape: 52 of 65 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1431,6 +1431,37 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
         // nothing checks.
         "q_gen_at" => run.at(at_s).q_gen_w,
         "i_rejected_at" => run.at(at_s).i_rejected_a,
+        // Amp-hours out of the terminals by `at_s`, `Σ i·dt / 3600`.
+        //
+        // The one quantity in this file that no readout row shows, and it is here because
+        // the lead-acid steps are a comparison OF it: the same cell delivers 6.96 A·h taken
+        // slowly and 4.42 A·h taken hard, which is Peukert's law and is the reason that
+        // chemistry's rating carries a rate. `soc (true)` is the page-visible half of the
+        // same fact — this engine coulomb-counts, so charge out and charge left are one
+        // measurement seen twice — but the sentence a reader is given is in amp-hours,
+        // because that is the unit a battery is sold in. A claim measured here may name no
+        // `display`, for the same reason `deficit_pts_at` may not: there is no row.
+        //
+        // **The row at `at_s` is excluded, and that is not an off-by-one.** Every lead-acid
+        // mark sits on the first step whose terminal has fallen BELOW the cutoff, so that
+        // step is the one that went too far. A real cutoff happens partway through it, and
+        // `crates/sim-data/tests/lead_acid_rate.rs::delivered_bracket` takes the same
+        // conservative bound for the same reason and says so at length: including it
+        // overcounts, excluding it undercounts by at most one step's charge, and the truth
+        // is between. This file quotes the same end of the bracket that test does, so the
+        // two instruments cannot disagree by a step's worth and call it a drift.
+        "delivered_ah" => {
+            let dt = run
+                .rows
+                .windows(2)
+                .next()
+                .map_or(0.0, |w| w[1].t_s - w[0].t_s);
+            run.rows
+                .iter()
+                .filter(|r| r.t_s < at_s - dt * 0.5)
+                .map(|r| r.telemetry.i_actual * dt / 3600.0)
+                .sum()
+        }
         // The debt below empty, in points of charge — the units the prose and the `past
         // empty` row both speak, so a claim reads as the sentence does. Ground truth, and
         // value-only: that row is sampled on a wall clock, so no claim measured here may
@@ -1469,7 +1500,7 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, soc_at, i_at, t_max_at, soh_cap_at, soh_res_at, \
              soh_ratio_at, q_gen_at, i_rejected_at, deficit_pts_at, deficit_zero_s, \
-             flag_first_s:<FLAG>, v_at_soc_below:<fraction>."
+             delivered_ah, flag_first_s:<FLAG>, v_at_soc_below:<fraction>."
         ),
     }
 }
@@ -2103,7 +2134,7 @@ fn accounting_for(token: &str, group: &[&Claim], lesson: &Lesson) -> Option<Acco
 ///   meet it, and the fix is to give both claims the same literal.
 /// * **This says which numbers are claimed, not which sentences are.** A step with no
 ///   claims has no literals to scan and is untouched by this check; fourteen of the
-///   twenty-one still have none. Step-level completeness needs a different instrument —
+///   twenty-four still have none. Step-level completeness needs a different instrument —
 ///   a ledger over each step's whole prose — and that one does need a taxonomy for the
 ///   numbers that are settings, chemistry constants and ordinals rather than
 ///   measurements. See the module docs.

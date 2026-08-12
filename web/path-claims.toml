@@ -98,7 +98,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 23 claims below that set
+#              Be clear about what this buys TODAY: in all 37 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -117,7 +117,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  36 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  52 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  11 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -165,7 +165,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 11 claims.
 #
-#   same        39 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        55 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    2. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A. Fenced to negative values; on a positive one it
@@ -208,8 +208,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Three accountings, and no fourth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 46 of the 55 numbers the
-#            42 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 62 of the 71 numbers the
+#            57 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -224,7 +224,7 @@
 # sitting beside the number, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 42 claimed sentences need none. A future literal printing a control setting or a
+# the 57 claimed sentences need none. A future literal printing a control setting or a
 # chemistry constant will fail loudly, and the answer will be an arm that checks it
 # against the lesson block or the chemistry file — not a waiver.
 #
@@ -238,7 +238,7 @@
 # value check, which is the only place a trajectory exists.
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all. Fourteen of the
-# twenty-one steps have no claim, so they have no literal to scan; see the test's own
+# twenty-four steps have no claim, so they have no literal to scan; see the test's own
 # module docs on why that needs a different instrument.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
@@ -1412,6 +1412,343 @@ And the next digit down, 390 s into the charge — again exactly a transition, a
 t = 990.0. Seven seconds after the debt cleared, so this is the return leg's own ordinary
 cycling bill rather than any more reversal damage: the row is the one thing on this panel
 that never turns round.
+"""
+
+# --- steps 22-24: lead-acid, and the charge that will not come out fast -----------
+#
+# The first claims in this file on a chemistry that is neither lithium nor a placeholder
+# in the part that matters: `[diffusion]` is fitted, and every number below falls out of
+# it. See docs/plans/lead-acid-client.md.
+#
+# Two things are deliberately NOT claimed here and are worth naming, so that a later
+# reader sees decisions rather than gaps:
+#
+#   * the pack grid's `overpotential` tile, which is what a reader would most want pinned.
+#     It is per-cell state rather than telemetry, so it is unclaimable for the same reason
+#     `past empty` is — and it would be the wrong thing to pin anyway: at 3C at the cutoff
+#     it is 82.39 mV of PLACEHOLDER RC pair plus 101.90 mV of fitted term, so it is not a
+#     reading of this mechanism at all. Step 23's prose says so instead of quoting it.
+#   * the 32.2 % of leg 1 that leg 2 delivers, and the 237.5 s it takes. Both are true
+#     and both are in the prose; neither is in a claimed literal, because a duration
+#     measured from the START OF A LEG is a frame `states` does not have, and inventing
+#     one for a single sentence is how this file's earlier holes were opened. The
+#     quantity behind them is fenced elsewhere: `lead_acid_rate.rs` asserts the recovery
+#     and asserts that a harder discharge recovers more.
+
+[[claim]]
+step = "slow-and-patient"
+literal = "stops itself at `1.750 V`"
+quantity = "v_at_mark"
+value = 1.749774
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.750"
+states = "same"
+read_at_s = 69620.5
+display = "terminal"
+shows = "1.750 V"
+quoted = true
+note = """
+The mark is not a round number and is not meant to be: it is the measured instant this
+cell's terminal first falls below the 1.75 V its own chemistry file calls empty. All three
+lead-acid steps mark at their arm's own crossing, which is what makes the three readings
+comparable — the reader is looking at the same row printing the same string each time, and
+only the OTHER rows differ.
+"""
+
+[[claim]]
+step = "slow-and-patient"
+literal = "**`3.3 %`** still showing"
+quantity = "soc_at"
+value = 0.03304861
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.3"
+spells_pow10 = 2
+states = "same"
+read_at_s = 69620.5
+display = "soc (true)"
+shows = "3.3 %"
+quoted = true
+note = """
+The reference the next step moves. Taken over twenty hours this cell gives up all but
+three points of what it holds — and the three points are a stated model error rather than
+a tuning miss, because the voltage penalty for moving acid diverges as the cell empties at
+ANY current. The chemistry file derives the ceiling algebraically (96.68 %) and the fit
+reached 96.72 %.
+"""
+
+[[claim]]
+step = "slow-and-patient"
+literal = "delivered 6.9620 A·h"
+quantity = "delivered_ah"
+value = 6.962
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "6.9620"
+states = "same"
+read_at_s = 69620.5
+note = """
+No display: nothing on the panel shows amp-hours. It is claimed anyway because it is the
+unit a battery is SOLD in, and because the pair of it and step 23's 4.4190 is Peukert's law
+in the form a datasheet states it. The value excludes the marked step's own charge, which
+is the same conservative end of the bracket `lead_acid_rate.rs::delivered_bracket` takes —
+see the comment on `delivered_ah` in path_claims.rs for why neither including nor excluding
+it is exactly right.
+"""
+
+[[claim]]
+step = "slow-and-patient"
+literal = "`heat` reads `0.07 W`"
+quantity = "q_gen_at"
+value = 0.0746
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "0.07"
+states = "same"
+read_at_s = 69620.5
+display = "heat"
+shows = "0.07 W"
+quoted = true
+note = """
+Here so that step 23's 6.09 W has something to be 87 times. Heat is the current times the
+gap between where the cell sits and where it would rest, so it is the same disagreement as
+the voltage seen in a second column — the DFN slice found the same thing and it was free
+there too.
+"""
+
+[[claim]]
+step = "sixty-times-the-current"
+literal = "The same `1.750 V` cutoff"
+quantity = "v_at_mark"
+value = 1.749968
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.750"
+states = "same"
+read_at_s = 737.0
+display = "terminal"
+shows = "1.750 V"
+quoted = true
+note = """
+Same string on the same row as the step before, which is the point of the sentence: the
+cell stops for the same declared reason at sixty times the current, and everything that
+differs is on the other rows.
+"""
+
+[[claim]]
+step = "sixty-times-the-current"
+literal = "`soc (true)` reads **`38.6 %`**"
+quantity = "soc_at"
+value = 0.38583333
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "38.6"
+spells_pow10 = 2
+states = "same"
+read_at_s = 737.0
+display = "soc (true)"
+shows = "38.6 %"
+quoted = true
+note = """
+The headline of the slice, and the one number a reader can look at rather than compute.
+Against step 22's 3.3 % on the identical cell, from the identical file, with the demand box
+as the only difference.
+"""
+
+[[claim]]
+step = "sixty-times-the-current"
+literal = "4.4190 A·h came out"
+quantity = "delivered_ah"
+value = 4.419
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "4.4190"
+states = "same"
+read_at_s = 737.0
+note = """
+63.4 % of step 22's 6.9620, against the 66.3 % Peukert's law predicts at n = 1.1 for this
+rate ratio. That 2.9-point gap is inside the 3.5 points
+`the_diffusion_term_tracks_peukert` fences, and the prose quotes the amp-hours rather than
+the ratio because the ratio is not on any panel.
+"""
+
+[[claim]]
+step = "sixty-times-the-current"
+literal = "`6.09 W` here"
+quantity = "q_gen_at"
+value = 6.08558
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "6.09"
+states = "same"
+read_at_s = 737.0
+display = "heat"
+shows = "6.09 W"
+quoted = true
+note = """
+87x step 22's 0.07 W at the same state of charge on the same cell. The comparison is
+free — both rows are already on the panel — and it is a second, independent channel
+carrying the finding the voltage carries.
+"""
+
+[[claim]]
+step = "and-it-is-still-in-there"
+literal = "at `1.750 V` with `38.6 %` showing"
+quantity = "v_at"
+value = 1.749968
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.750"
+states = "same"
+read_at_s = 737.0
+display = "terminal"
+shows = "1.750 V"
+quoted = true
+note = """
+Leg one of the pulse train IS step 23: same file, same current, and the on-leg is 737 s,
+which is step 23's mark. So this claim and step 23's read the same instant of the same
+trajectory through two different demand programs, and a divergence between them would mean
+the client's pulse mode is not doing what a constant current does on its on-leg.
+"""
+
+[[claim]]
+step = "and-it-is-still-in-there"
+literal = "at `1.750 V` with `38.6 %` showing"
+quantity = "soc_at"
+value = 0.38583333
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "38.6"
+spells_pow10 = 2
+states = "same"
+read_at_s = 737.0
+display = "soc (true)"
+shows = "38.6 %"
+quoted = true
+note = """
+The second number on the same sentence, and the one the rest of the step is about: this is
+where the charge readout arrives, and it does not move again for four hours.
+"""
+
+[[claim]]
+step = "and-it-is-still-in-there"
+literal = "the terminal jumps to `1.848 V`"
+quantity = "v_at"
+value = 1.848076
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.848"
+states = "same"
+read_at_s = 737.5
+display = "terminal"
+shows = "1.848 V"
+quoted = true
+note = """
+One step after the load comes off, and the word `jumps` is doing exact work: 98 mV of this
+is the instantaneous ohmic drop disappearing, which is gone the moment the current is. What
+follows it over the next four hours is everything else.
+"""
+
+[[claim]]
+step = "and-it-is-still-in-there"
+literal = "`1.984 V` at half an hour"
+quantity = "v_at"
+value = 1.98446
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.984"
+states = "same"
+read_at_s = 2537.0
+display = "terminal"
+shows = "1.984 V"
+quoted = true
+note = """
+Half an hour in is the instant the two mechanisms have come apart: the RC pair is down to
+0.05 mV — spent — and the diffusion term still holds 47.66 mV. Everything the terminal does
+after this point is the fitted term alone, which is the one window in this path where that
+is true. The two constants are 240 s and 4218 s and the chemistry file separates them on
+purpose.
+"""
+
+[[claim]]
+step = "and-it-is-still-in-there"
+literal = "`2.030 V` at four"
+quantity = "v_at"
+value = 2.030428
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "2.030"
+states = "same"
+read_at_s = 15136.5
+display = "terminal"
+shows = "2.030 V"
+quoted = true
+note = """
+The end of the rest, 280 mV above where the cell was when it declared itself empty, with
+nothing put in. Read on the last step of the off-leg rather than the first of the on-leg,
+which is a different number entirely.
+"""
+
+[[claim]]
+step = "and-it-is-still-in-there"
+literal = "It reads **`38.6 %` for the entire four hours**"
+quantity = "soc_at"
+value = 0.38583333
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "38.6"
+spells_pow10 = 2
+states = "same"
+read_at_s = 15136.5
+display = "soc (true)"
+shows = "38.6 %"
+quoted = true
+note = """
+The claim the sentence actually makes is that this row has not moved, and pinning it at the
+END of the rest is what says so — it is bit-identical to the same claim at 737 s above, on a
+row that prints to a tenth of a point, four hours later. Charge is conserved and none was
+added; what recovered is where the acid is, which no charge readout can show.
+"""
+
+[[claim]]
+step = "and-it-is-still-in-there"
+literal = "stops at the same `1.750 V` again"
+quantity = "v_at_mark"
+value = 1.749601
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.750"
+states = "same"
+read_at_s = 15374.5
+display = "terminal"
+shows = "1.750 V"
+quoted = true
+note = """
+The third mark in this path to print this string, and the reason the mark is 15374.5 rather
+than the end of the 737 s leg: leg two reaches the cutoff after 237.5 s, and the remaining
+500 s of its leg would drive the cell past empty into the collapse steps 20 and 21 own. A
+reader who sat through that would meet -2.36 V on a step that is not about reversal.
+"""
+
+[[claim]]
+step = "and-it-is-still-in-there"
+literal = "at `18.8 %`"
+quantity = "soc_at"
+value = 0.18791667
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "18.8"
+spells_pow10 = 2
+states = "same"
+read_at_s = 15374.5
+display = "soc (true)"
+shows = "18.8 %"
+quoted = true
+note = """
+38.6 % went in to the rest and 18.8 % comes out of the second leg, so the rest bought
+19.8 points of charge that the first discharge could not reach — from a cell nothing was
+connected to. This is the number that makes the step's title literal rather than figurative.
 """
 
 # =====================================================================================

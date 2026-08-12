@@ -1,0 +1,110 @@
+# The fourth chemistry, and the first whose interesting behaviour is a RATE effect.
+#
+# Same shape as the other three CC discharge scenarios — 1S1P, full, 25 degC, isothermal,
+# nothing protecting it — so the four are comparable by construction. What differs is what
+# you learn by changing the demand box, which on this cell changes not just how fast the
+# charge comes out but HOW MUCH OF IT DOES.
+#
+# A scenario is an *initial condition*, not a demand program. One file serves all three of
+# the guided path's lead-acid steps (22, 23 and 24) because the rate and the pulse train
+# are the client's business; the three differ in the demand box and in nothing else.
+#
+# ## Which parts of the chemistry file this reads, and their provenance
+#
+# `pba_agm_2v_generic.toml` is the only shipped chemistry with a [diffusion] section, and
+# its parts are NOT equally trustworthy:
+#
+#   * [diffusion] is FITTED — three parameters against this cell's own capacity-versus-rate
+#     curve, Peukert n = 1.1 over 0.05C to 3C, with the absolute C/20 delivery in the
+#     objective. Worst error 3.3 points, asserted by crates/sim-data/tests/lead_acid_rate.rs.
+#     Everything this scenario exists to show comes out of that section.
+#   * [ocv] is the conventional lead-acid table from electrolyte specific gravity, not a fit.
+#   * [r0] and [[rc]] are labelled PLACEHOLDERS. Every instantaneous ohmic step and every
+#     RC sag you see here is order-of-magnitude only. That matters more here than in the
+#     other files because the two are not separable on the panel: see below.
+#
+# ## What it shows, measured at dt = 0.5 (the page's default), 25 degC
+#
+# Discharge to this chemistry's own 1.75 V cutoff and read what is LEFT in the cell:
+#
+#     C/20 = 0.360 A   cutoff at 69620.5 s (19.3h)    3.3 % still showing   6.9620 Ah
+#     C/5  = 1.440 A   cutoff at  15694 s ( 4.4h)    12.8 % still showing   6.2772 Ah
+#     1C   = 7.200 A   cutoff at   2527 s (  42m)    29.8 % still showing   5.0520 Ah
+#     3C   = 21.600 A  cutoff at    737 s (  12m)    38.6 % still showing   4.4190 Ah
+#
+# A slow discharge leaves 3 % of the charge unused; a hard one leaves MORE THAN A THIRD.
+# That is Peukert's law, and it is the reason a battery rated 7.2 Ah at the 20-hour rate is
+# quoted at the 20-hour rate. Nothing is destroyed and nothing leaks: the charge is still
+# in the cell, and the acid cannot reach the plate fast enough to deliver it.
+#
+# Rest it and some of it comes back. Guided path step 24 drives this with the client's
+# Pulse mode: 737 s at 3C to the cutoff, four hours off, then the same demand again — which
+# reaches the same 1.750 V after 237.5 s and delivers 1.4250 Ah, 32.2 % of the first leg.
+# `a_rest_recovers_capacity_and_a_harder_discharge_recovers_more` asserts that recovery, and
+# it was never in the fit's objective, which is what makes it evidence rather than a fit.
+#
+# ## Two things about reading the panel here
+#
+# THE OVERPOTENTIAL TILE IS NOT THE MECHANISM. The pack grid's `overpotential [mV]` metric
+# is `sum(V_rc) + eta` — the placeholder RC pair PLUS the fitted diffusion term. At 3C at
+# the cutoff that is 82.39 mV of placeholder against 101.90 mV of fitted term, so 45 % of
+# the number is order-of-magnitude only and no reading of it is a reading of Peukert. On the
+# C/20 arm the placeholder is 1.44 mV of 202.71 and the tile IS the term.
+#
+# The clean place to watch the fitted term alone is the REST, and it works because the two
+# time constants are two orders of magnitude apart on purpose (240 s against 4218 s):
+# half an hour into a rest the RC pair is down to 0.05 mV and the diffusion term still has
+# 47.66 mV to give, and goes on giving it for hours.
+#
+# DO NOT RUN THIS PAST THE CUTOFF EXPECTING THE LAST STEPS' BEHAVIOUR. Nothing here stops
+# at 1.75 V — there is no BMS and `Demand::Current` is unrefusable — and past its cutoff
+# this cell collapses faster than the lithium ones do, because a cell arriving at empty
+# under load is ALREADY saturated in the diffusion term. At 3C it is at -0.201 V by 13.6 %
+# state of charge and -2.36 V by zero. That is the [reversal] section's business
+# (docs/plans/low-clamp-reversal.md) and the subject of path steps 20 and 21; it is not
+# what this file is for, and each lead-acid lesson's mark sits AT its arm's cutoff.
+#
+# ## What it does not do
+#
+#   * NO CHARGE LEG. The diffusion term's charge direction is unvalidated — the sign is
+#     right and the magnitude is bounded, but nothing has measured it, and ecm.rs says so.
+#     Steps 20 and 21 end by telling the reader to charge; the lead-acid steps must not.
+#   * Isothermal, like the sweep the parameters were fitted on. The term raises this cell's
+#     PEAK heat at 3C by 1.20x and its mean by 1.07x, and LOWERS the total over a discharge
+#     because the run ends sooner. So a thermally coupled version would not simply be
+#     "hotter"; it is a separate question and it is measured, not estimated.
+#   * One 2 V cell. A real lead-acid battery is 6S of this, and a series string multiplies
+#     the terminal voltage by six without changing anything this file is about.
+
+chemistry = "pba_agm_2v_generic"
+
+[meta]
+name = "CC discharge, single lead-acid cell"
+description = """
+A 1S1P 2 V AGM cell at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no faults. \
+The only shipped chemistry with a fitted [diffusion] section, so this is the one cell \
+here whose DELIVERED capacity depends on how fast you ask for it: 6.96 Ah at C/20 and \
+4.42 Ah at 3C, from the same cell, with the difference still inside it."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+# Unused here (no scatter, no aging, no plating), but the seed is part of the snapshot
+# and every scenario names it rather than inheriting a default.
+seed = 0
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; demands pass through unclamped
+#   [pack.aging]    -> the pack never wears out
+#   [[faults]]      -> nothing scheduled
+#
+# [pack.bms] is absent for a reason specific to this file rather than by inheritance from
+# its neighbours. Protection would stop the discharge at the undervoltage limit, which
+# sounds like exactly the instrument this lesson wants — but the graduated response
+# DERATES before it opens, a derate clamps the demanded current, and a lower current
+# relaxes the depletion state. The cell would then deliver MORE, and the rate contrast
+# this file exists to show would shrink in precisely the arm meant to show it.

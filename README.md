@@ -86,16 +86,17 @@ value, because the failure being guarded against is prose drifting from a *corre
 the first two, which for a long time passed separately with nothing between them: each
 claim declares which frame its sentence states the quantity in — the value itself, a
 magnitude, a shortfall from one, a duration off the step's mark — and that frame is
-checked at the sentence's own precision. Coverage is forty-eight claims across seven of
-the twenty-one steps and is meant to grow; the uncovered steps are unchecked rather than
+checked at the sentence's own precision. Coverage is sixty-five claims across ten of
+the twenty-four steps and is meant to grow; the uncovered steps are unchecked rather than
 verified, and the test's own docs say which they are — as they say which two readout rows
 cannot be claimed at all.
 See [`docs/plans/path-claims.md`](docs/plans/path-claims.md),
 [`docs/plans/path-display.md`](docs/plans/path-display.md) and
 [`docs/plans/path-prose-value-tie.md`](docs/plans/path-prose-value-tie.md).
 
-Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
-LG M50 21700. Every constant in them carries a provenance note, **including the ones
+Four chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650,
+LG M50 21700, and a 2 V AGM lead-acid cell. Every constant in them carries a provenance
+note, **including the ones
 whose note says they are order-of-magnitude placeholders awaiting a fit**; that is the
 project rule (placeholders are acceptable, unlabeled numbers are not) rather than a claim
 that every number is fitted.
@@ -113,6 +114,19 @@ It also carries a `[dfn]` section — the electrolyte transport fits, porosities
 conductivities a Doyle–Fuller–Newman cell needs, extending `[spm]` rather than replacing
 it. Its two transport properties are stored as the published Nyman 2008 coefficients
 rather than sampled onto a table, so they carry no interpolation error at all.
+
+The lead-acid file is the only one with a `[diffusion]` section, and it is there because
+this chemistry is the one where an equivalent circuit was measurably not enough. A real
+lead-acid cell delivers far less capacity when discharged hard — Peukert's law, the reason
+its rating comes with a stated rate attached — and no choice of resistance reproduced that,
+because ohmic sag is flat-then-knee and Peukert is a power law. The fix was one extra state
+per cell: a filtered discharge rate, and a voltage penalty that grows as the cell empties,
+because the acid is a reactant and a flat cell has less of it to move. Worst error against
+Peukert `n = 1.1` over C/20 to 3C went from 25.7 points to **3.3**. Its three fitted
+constants are the only fitted numbers in any chemistry here that came from neither a
+datasheet nor a PyBaMM set — there is no PyBaMM lead-acid to extract from — and everything
+else in the file is a conventional table or a labelled placeholder. See
+[`docs/plans/diffusion-overpotential.md`](docs/plans/diffusion-overpotential.md).
 
 ## Three cell models
 
@@ -266,7 +280,7 @@ the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
 If you do not already know what to look at, press **Start** under *Guided path*
-instead. It walks twenty-one steps — one cell on its own, the same discharge on a
+instead. It walks twenty-four steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
 with protection on and then off, a pack that wears out while doing nothing at all,
@@ -289,7 +303,14 @@ charge readout does not move by one digit. Then one last step on the only shippe
 scenario where that same abuse is allowed to *cost* anything, which shows the half that
 does not come back: the charge is repaid to the amp-hour while five percent of the
 cell's capacity is not, because below empty the current comes out of the anode's copper
-current collector rather than out of any lithium. Each
+current collector rather than out of any lithium. It then changes chemistry one last
+time, to the 2 V lead-acid cell that is six-sevenths of the battery in a car, for three
+steps in which nothing is wrong with the cell at all and it still refuses to give you
+what it holds: taken over twenty hours it delivers all but three points of its charge,
+taken at sixty times that current it reaches the same cutoff voltage with **more than a
+third still in it**, and left alone for four hours it recovers enough to do it again —
+with the charge readout flat at that same third for the whole rest, because nothing is
+being put back and the recovery is the acid finding its way to the plate. Each
 step sets the controls for itself and outlines the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step's whole control set,
 so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when
