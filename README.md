@@ -67,6 +67,20 @@ amp-hour delivered below empty and carrying the matching resistance growth. Repa
 still exact in charge and no longer free in health. See
 [`docs/plans/reversal-damage.md`](docs/plans/reversal-damage.md).
 
+The browser demo's guided path states hundreds of specific numbers, and until recently
+none of them was checked by anything in the repo — four separate slices found claims in
+it that had drifted from the engine, were never true, or were true about a quantity no
+reader can look at. Each of those was caught by an instrument that lived outside the tree
+and so never ran twice. [`web/path-claims.toml`](web/path-claims.toml) now records claims
+as data and `crates/sim-data/tests/path_claims.rs` checks each one three independent
+ways: the sentence still says it, the engine still produces it, and the reader can
+actually get to it. The literal is stored as authored and never formatted from the value,
+because the failure being guarded against is prose drifting from a *correct* engine — a
+golden-value table would have caught none of the four. Coverage is eleven claims across
+four of the twenty-one steps and is meant to grow; the uncovered steps are unchecked
+rather than verified, and the test's own docs say which they are.
+See [`docs/plans/path-claims.md`](docs/plans/path-claims.md).
+
 Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
 LG M50 21700. Every constant in them carries a provenance note, **including the ones
 whose note says they are order-of-magnitude placeholders awaiting a fit**; that is the

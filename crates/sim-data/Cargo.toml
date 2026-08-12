@@ -27,6 +27,12 @@ serde_json = { workspace = true }
 # of it — and a hand-copied parameter set is a benchmark of a typo waiting to
 # happen. Same flags as sim-core's entry, for the same reasons.
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+# `tests/path_claims.rs` reads web/path-claims.toml. `toml` is already a normal
+# dependency of this crate, but integration tests do not inherit those, so it is named
+# again here — it adds nothing to the dependency graph.
+toml = { workspace = true }
+# The same test deserializes that claims file. Same reasoning as `toml` above.
+serde = { workspace = true }
 
 # Criterion supplies its own harness, so libtest's must be off.
 [[bench]]

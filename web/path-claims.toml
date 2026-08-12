@@ -1,0 +1,190 @@
+# Machine-checkable claims made by the guided path's lesson prose (`web/app.js`,
+# `const LESSONS`).
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The lesson prose states hundreds of specific quantities — millivolts, seconds,
+# SOC points, watts, flag arrival times. Four separate slices have found numbers in
+# it that had drifted from the engine, were never true, or were true about a
+# quantity no reader can look at (`docs/plans/path-numbers.md`, `path-buttons.md`,
+# `reversal-ui.md`, `reversal-damage-ui.md`). Every one of those was found by a
+# measuring instrument that lived outside the repo and therefore never ran again.
+#
+# `crates/sim-data/tests/path_claims.rs` reads this file and checks each entry
+# THREE independent ways. All three matter, and each catches a failure the others
+# cannot:
+#
+#   1. LITERAL  — `literal` must appear verbatim in that step's own prose/expect
+#                 text. Catches: the prose was edited and the claim was not.
+#   2. VALUE    — the engine, driven exactly as the page drives it, must produce
+#                 `value` within `tol`. Catches: the engine moved under the prose.
+#   3. REACHABLE— `read_at_s` must not be past the step's own `until_s`. Catches:
+#                 "right but unreachable" — a number that is true of a trajectory
+#                 the reader is never shown.
+#
+# The literal is stored as a STRING, exactly as written in the sentence, and is
+# never produced by formatting `value`. That is deliberate: a formatter that has to
+# agree with how a human wrote each sentence generates false failures and then gets
+# suppressed. The two halves are checked separately and neither depends on the other.
+#
+# FIELDS
+#   step       `id` of the lesson in `const LESSONS`
+#   literal    the exact substring to find in that lesson's prose or expect text
+#   quantity   what to measure — see `QUANTITIES` in path_claims.rs
+#   value      what the engine must produce
+#   tol        absolute tolerance, in `value`'s own unit
+#   read_at_s  simulation time the claim is read at; must be <= the step's until_s
+#   note       why this claim is here / what it is about. Free text.
+#
+# Setting `tol` — the rule used here is half a unit in the last printed place of
+# `literal`, so the tolerance is exactly "the prose rounds to this and nothing else".
+# A claim quoted as `0.6387` gets 5e-5. Where the prose says "about", the tolerance
+# is widened and the `note` says so.
+
+[[claim]]
+step = "bare-curve"
+literal = "0.6387 V at the mark"
+quantity = "v_at_mark"
+value = 0.6387
+tol = 5.0e-5
+read_at_s = 4200.0
+note = """
+Step 1 runs an LFP cell past empty on purpose and the whole closing paragraph turns
+on this number: the trace does not stop at the SOC_CLAMPED_LOW flag, it keeps
+falling. This is the voltage at the mark, in reversal, and it is the first claim
+wired into this file — the one whose two halves were each deliberately reddened
+before any of the others were written. See docs/plans/path-claims.md.
+"""
+
+[[claim]]
+step = "bare-curve"
+literal = "the last 53 seconds"
+quantity = "flag_first_s:SOC_CLAMPED_LOW"
+value = 4146.5
+tol = 0.25
+read_at_s = 4146.5
+note = """
+Not a number the prose prints — the prose prints its consequence. The step ends at
+4200 s and says the cell spends "the last 53 seconds" below empty, which is only
+true if the flag arrives at 4147 s. Claiming the flag time rather than the phrase
+is what makes the sentence checkable. Tolerance is half a step at dt = 0.5.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "**1.2501 V**"
+quantity = "v_at_mark"
+value = 1.2501
+tol = 5.0e-5
+read_at_s = 4200.0
+note = """
+Step 2 is the step whose numbers have drifted twice (docs/plans/path-numbers.md,
+findings 1 and 2). This is its headline: the NMC cell finishes far under the 3.00 V
+a datasheet calls the cutoff, because nothing here stops the discharge.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "It empties at 4154 s"
+quantity = "flag_first_s:SOC_CLAMPED_LOW"
+value = 4154.0
+tol = 0.25
+read_at_s = 4154.0
+note = """
+Finding 1 of path-numbers.md was exactly this pair of times: the prose used to say
+the two chemistries empty "within two seconds of each other" when the real gap is
+7.5 s. Both ends of that comparison are now claimed — this one and bare-curve's
+4146.5 above — so the comparison cannot drift again without a red test.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "4.030 V to 3.549"
+quantity = "v_at_soc_below:0.90"
+value = 4.0299
+tol = 5.0e-4
+read_at_s = 415.5
+note = """
+The upper end of the 481 mV fall that is this step's whole point: on NMC a voltage
+reading tells you the charge level. Read at the first row at or below 90 % charge.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "4.030 V to 3.549"
+quantity = "v_at_soc_below:0.20"
+value = 3.5488
+tol = 5.0e-4
+read_at_s = 3323.5
+note = """
+The lower end of the same fall. Sharing a literal with the claim above is deliberate:
+one sentence states both numbers, so both claims point at it and either one moving
+reddens the pair.
+"""
+
+[[claim]]
+step = "protection-on"
+literal = "just under 14 A"
+quantity = "i_at"
+value = 13.8207
+tol = 0.2
+read_at_s = 60.0
+note = """
+A deliberately loose one. The prose says "just under 14 A" rather than printing the
+figure, so the literal check guards the phrase and the tolerance says what "just
+under 14" is allowed to mean. If the derate ever lands at 12 A or 15 A the phrase is
+wrong and this goes red; small solver drift will not chatter it.
+"""
+
+[[claim]]
+step = "protection-on"
+literal = "An `OC` flag"
+quantity = "flag_first_s:OC"
+value = 0.5
+tol = 0.25
+read_at_s = 0.5
+note = """
+The over-current flag on the very first step. This is the cheap half of the step's
+lesson — the clamp is immediate, not gradual — and it is the claim that would catch
+protection silently ceasing to trip at all.
+"""
+
+[[claim]]
+step = "wearing-out-while-idle"
+literal = "0.53 points are gone"
+quantity = "soh_cap_at"
+value = 0.9947106
+tol = 5.0e-5
+read_at_s = 50000.0
+note = """
+A quarter of the way into a 200 000 s rest. Paired with the claim below, these two
+are the square-root-of-time curve the step asks the reader to see: twice the damage
+for four times the time.
+"""
+
+[[claim]]
+step = "wearing-out-while-idle"
+literal = "at the mark it is 1.06"
+quantity = "soh_cap_at"
+value = 0.9894213
+tol = 5.0e-5
+read_at_s = 200000.0
+note = """
+The other end of the same curve. Step 8 is one of the nine that had already drifted
+once (path-numbers.md finding 4, about the 3.6x that is now 3.5x), which is why its
+numbers are claimed here rather than trusted.
+"""
+
+[[claim]]
+step = "wearing-out-while-idle"
+literal = "1.5 points of resistance per point of capacity"
+quantity = "soh_ratio_at"
+value = 1.5
+tol = 1.0e-4
+read_at_s = 200000.0
+note = """
+Not a trajectory reading but the coupling itself, which CLAUDE.md refuses to let a
+chemistry model one half of. It is a chemistry constant
+(`r_growth_per_capacity_loss`), so this claim is really "the engine still applies the
+file's coupling, and the file still says 1.5".
+"""
