@@ -40,7 +40,8 @@ pub use aging::{Aging, AgingConfig};
 pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
 pub use chem::{
     AgingParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams, DfnSeparator,
-    ElectrodeParams, OcpTable, PowerTerm, ReversalParams, SafetyParams, SpmParams, ThermalParams,
+    DiffusionParams, ElectrodeParams, OcpTable, PowerTerm, ReversalParams, SafetyParams, SpmParams,
+    ThermalParams,
 };
 pub use dfn::DfnState;
 pub use ecm::{CellModel, EcmState};

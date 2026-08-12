@@ -335,7 +335,7 @@ impl CellModel {
         eff_capacity_ah: f64,
     ) -> f64 {
         match self {
-            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.v_rc.iter().sum(),
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => ecm_overpotential_v(s, chem),
             CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
                 spm::overpotential_v(s, spm, eff_r0_factor, eff_capacity_ah)
             }),
@@ -501,7 +501,12 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_heat_w(
                 i,
                 r,
-                s.v_rc.iter().sum::<f64>(),
+                // The *same* start-of-step overpotential `cell_source` built this step's
+                // current from, which is what makes the pack's energy ledger close
+                // exactly rather than to a tolerance. A diffusion term recomputed from
+                // end-of-step state would be a different number and the balance would
+                // drift by the difference, silently and in one direction.
+                ecm_overpotential_v(s, chem),
                 s.temp_k,
                 docv_dt_lookup(&chem.ocv, s.soc),
             ),
@@ -737,11 +742,24 @@ pub fn docv_dt_lookup(table: &OcvTable, soc: f64) -> f64 {
 ///   and charge cools.
 ///
 /// `r0` must be the cell's *effective* resistance (nominal × factors), and
-/// `v_rc_sum` / `temp_k` its start-of-step values — the same ones that produced
+/// `overpotential_v` / `temp_k` its start-of-step values — the same ones that produced
 /// `i` — so that the reported heat matches the electrical solve exactly.
+///
+/// The third argument was named `v_rc_sum` while `Σ V_rc` was the only thing in it. It is
+/// [`ecm_overpotential_v`] now, which on a chemistry with a `[diffusion]` section also
+/// carries that term — and it must, or the energy the depletion costs would leave the
+/// electrical side of the ledger without arriving on the thermal side. On the shipped
+/// lead-acid cell at 3C that term generates rather more heat than the ohmic path does, so
+/// this is not a rounding correction.
 #[must_use]
-pub fn cell_heat_w(i: f64, r0: f64, v_rc_sum: f64, temp_k: f64, docv_dt_v_per_k: f64) -> f64 {
-    let q_irrev = i * (i * r0 + v_rc_sum);
+pub fn cell_heat_w(
+    i: f64,
+    r0: f64,
+    overpotential_v: f64,
+    temp_k: f64,
+    docv_dt_v_per_k: f64,
+) -> f64 {
+    let q_irrev = i * (i * r0 + overpotential_v);
     let q_rev = -i * temp_k * docv_dt_v_per_k;
     q_irrev + q_rev
 }
@@ -778,6 +796,102 @@ pub fn rc_update(v_rc: f64, i: f64, r_ohms: f64, c_farad: f64, dt: f64) -> f64 {
     } else {
         // Non-positive tau or dt (or NaN): no well-defined exponential update.
         v_rc
+    }
+}
+
+/// Exact exponential update of a cell's [`EcmState::depletion`] for piecewise-constant
+/// current over `dt` seconds. Unconditionally stable at any `dt`.
+///
+/// `D' = D_ss + (D − D_ss)·e^(−dt/τ_d)`, with `D_ss = i / capacity_ah` — the demanded
+/// current expressed as a C-rate, which is the value `D` settles at under a sustained
+/// load. `i` is discharge-positive \[A\], so `D` goes negative on charge. A non-positive
+/// `τ_d`, `dt` or capacity leaves the value unchanged.
+///
+/// Deliberately the same shape as [`rc_update`], and for the same reason: the exponential
+/// is exact for a constant current over the step, so one `dt` of aging fast-forward and
+/// one `dt` of real-time GUI stepping run identical code with no stability bound between
+/// them. `capacity_ah` must be the cell's **effective** capacity — nominal × its static
+/// factor × aging's `soh_capacity` — so that a faded cell sees the same current as a
+/// higher C-rate, which is what it is.
+#[must_use]
+pub fn diffusion_update(depletion: f64, i: f64, capacity_ah: f64, tau_s: f64, dt: f64) -> f64 {
+    if tau_s > 0.0 && dt > 0.0 && capacity_ah > 0.0 {
+        let steady = i / capacity_ah;
+        let decay = (-dt / tau_s).exp();
+        steady + (depletion - steady) * decay
+    } else {
+        // Non-positive tau, dt or capacity (or NaN): no well-defined exponential update.
+        depletion
+    }
+}
+
+/// The voltage \[V, discharge-positive\] a cell's reactant depletion costs it:
+/// `η = −k·ln(1 − D/(D_lim·soc))`, bounded to `±max_overpotential_v`.
+///
+/// See [`crate::DiffusionParams`] for what the three fitted constants mean and why the
+/// `soc` in the denominator is the whole mechanism. This reads the **start-of-step**
+/// depletion, which is what keeps the cell a straight line within the step.
+///
+/// # Every guard here is load-bearing, and one of them is not obvious
+/// * **`depletion == 0.0` returns exactly `0.0`**, with no `ln` call. That is the rested
+///   cell and the never-loaded cell. The test is against zero rather than against
+///   "non-positive": `D` is *negative* on charge and the same expression then returns a
+///   negative `η`, a cell sourcing slightly above its open-circuit voltage as its reactant
+///   re-equalises. That direction is unmeasured but it is not nothing, and a `<= 0.0`
+///   early return would silently delete it.
+/// * **`x.is_nan()` is tested, not implied.** At `soc == 0.0` — which a reversed cell
+///   reaches routinely and every over-discharge test in the tree drives to — `x` is `+∞`
+///   for a loaded cell and `0.0/0.0 = NaN` for a rested one. A bare `x >= 1.0` answers
+///   *false* for the NaN, falls through to `ln(1 − NaN)`, and puts a NaN into the cell's
+///   Thévenin source, from where the parallel aggregation spreads it to every sibling: no
+///   panic, no flag, no failing test. The compact spelling of this guard is `!(x < 1.0)`,
+///   which is the idiom `is_positive` exists to give
+///   [`crate::ChemistryParams::validate`] — but clippy's `neg_cmp_op_on_partial_ord`
+///   refuses it in the open, so the NaN arm is written out. Same comparison, one more
+///   word.
+/// * **Explicit comparisons rather than `f64::clamp`**, which panics on a NaN *bound*.
+///   Validation rejects such a chemistry, but `step` may not panic even against one that
+///   never went through the validator.
+#[must_use]
+pub fn diffusion_overpotential_v(params: &crate::DiffusionParams, depletion: f64, soc: f64) -> f64 {
+    if depletion == 0.0 {
+        return 0.0;
+    }
+    let x = depletion / (params.limit_c_rate * soc);
+    if x.is_nan() || x >= 1.0 {
+        return params.max_overpotential_v;
+    }
+    let raw = -params.scale_v * (1.0 - x).ln();
+    let max = params.max_overpotential_v;
+    if raw > max {
+        max
+    } else if raw < -max {
+        -max
+    } else {
+        raw
+    }
+}
+
+/// A cell's total **non-ohmic** overpotential \[V, discharge-positive\]: `Σ V_rc`, plus
+/// the diffusion term when its chemistry declares one.
+///
+/// The one expression behind all three places that need it — [`cell_source`] (the solve),
+/// [`CellModel::heat_w`] (the energy balance) and [`CellModel::overpotential_v`] (what a
+/// client sees) — so they cannot disagree about what the cell is losing.
+///
+/// # The `None` arm returns the sum, it does not add a zero
+/// Written as a match rather than as `sum + chem.diffusion.map_or(0.0, ..)` on purpose.
+/// Adding an exact `0.0` would in fact be bit-identical here, but only by an argument
+/// about signed zeroes that a future edit could invalidate silently. A path that never
+/// touches the new term at all makes "no chemistry without a `[diffusion]` section moves
+/// by a ULP" structural — the same reason [`open_circuit_v`] returns early on a zero
+/// deficit instead of taking a `max` against a floor it knows to be below.
+#[must_use]
+pub(crate) fn ecm_overpotential_v(state: &EcmState, chem: &ChemistryParams) -> f64 {
+    let v_rc_sum = state.v_rc.iter().sum::<f64>();
+    match &chem.diffusion {
+        None => v_rc_sum,
+        Some(params) => v_rc_sum + diffusion_overpotential_v(params, state.depletion, state.soc),
     }
 }
 
@@ -912,7 +1026,7 @@ pub(crate) fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
 #[must_use]
 pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f64) -> (f64, f64) {
     let r = r0_lookup(&chem.r0, state.soc, state.temp_k) * r0_factor;
-    let e = open_circuit_v(chem, state) - state.v_rc.iter().sum::<f64>();
+    let e = open_circuit_v(chem, state) - ecm_overpotential_v(state, chem);
     (e, r)
 }
 
@@ -1022,6 +1136,27 @@ pub(crate) fn advance_cell(
         //   tick — `x * 1.0` is bit-identical, so a branch would guard nothing and cost
         //   what the multiply costs.
         *v_rc = rc_update(*v_rc, i, pair.r_ohms * soh_resistance, pair.c_farad, dt);
+    }
+    // The depletion, on a chemistry that declares one. `if let` rather than an
+    // unconditional update through a neutral parameter, for the reason
+    // `ecm_overpotential_v` gives: a chemistry with no `[diffusion]` section must not
+    // execute a line of this, so that its trajectories are bit-identical by construction
+    // rather than by an argument about what `exp(0)` returns.
+    //
+    // Aging reaches this only through the capacity — a faded cell reads the same current
+    // as a higher C-rate — and deliberately **not** through `soh_resistance`, which grows
+    // `R0` and the RC pairs. That is an omission and it is stated as one: an aged
+    // lead-acid cell really does have worse rate behaviour than a fresh one, and the
+    // coupling that would express it is a constant nobody has fitted. See
+    // `docs/plans/diffusion-overpotential.md`.
+    if let Some(params) = &chem.diffusion {
+        state.depletion = diffusion_update(
+            state.depletion,
+            i,
+            eff_capacity_ah * soh_capacity,
+            params.tau_s,
+            dt,
+        );
     }
     let step = coulomb_step(
         state.soc,
