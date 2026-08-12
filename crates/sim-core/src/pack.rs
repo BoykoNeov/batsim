@@ -2641,3 +2641,86 @@ fn draw_factors(rng: &mut ChaCha8Rng, scatter: &Scatter) -> (f64, f64) {
     let r0 = (1.0 + scatter.r0_sigma * z1).max(MIN_FACTOR);
     (cap, r0)
 }
+
+/// The per-cell memory footprint, pinned.
+///
+/// # Why a test asserts a `size_of`
+/// [`Cell`] is instantiated once per cell, and a 100S10P pack holds a thousand of them in
+/// one `Vec` that [`Pack::step`] streams several times per step. Its width is therefore a
+/// property of the hot loop, not a curiosity — and it is the one property of that loop
+/// this repo can measure *exactly*, on any machine, in any CPU state. Every timing number
+/// in `docs/plans/pack-step-perf.md` is a ratio hedged against a bimodal box; these are
+/// not.
+///
+/// This exists because the width regressed silently for two whole phases. Adding
+/// [`CellModel::Spm`] (Phase 6) and [`CellModel::Dfn`] (Phase 7) widened the enum to its
+/// largest variant, so every equivalent-circuit cell in every pack began carrying 136
+/// bytes of model slot where [`crate::ecm::EcmState`] needs 48. Both phases measured their
+/// own cost carefully and both correctly found the ECM path unchanged *in instructions* —
+/// enum width is not an instruction, and nothing was looking at it. See
+/// `docs/plans/cell-size.md`.
+///
+/// Pinned only on 64-bit targets: `sim-wasm` builds this crate for `wasm32`, where `usize`
+/// and every `Vec` are half as wide, so a pin that fired there would be asserting the
+/// target rather than the layout.
+#[cfg(all(test, target_pointer_width = "64"))]
+mod cell_footprint {
+    use super::*;
+    use crate::aging::CellAging;
+    use crate::dfn::DfnState;
+    use crate::ecm::EcmState;
+    use crate::spm::SpmState;
+    use std::mem::size_of;
+
+    /// **The load-bearing one**, and every future [`CellModel`] variant has to answer to
+    /// it.
+    ///
+    /// An enum is as wide as its largest variant, so a variant that carries a large state
+    /// inline taxes every cell of every *other* model. Boxing costs that model one
+    /// dependent load per access — nothing against a porous step (≈ 1 µs per cell for
+    /// `Spm` at 20 shells, ≈ 180 µs for `Dfn`), and the entire per-cell budget of an
+    /// equivalent circuit (tens of nanoseconds).
+    ///
+    /// Stated as a *relation*, not a number, so it keeps meaning what it means when
+    /// [`EcmState`] itself changes: the slot may cost what the cheapest model needs plus a
+    /// discriminant, and no more.
+    #[test]
+    fn no_variant_widens_the_model_slot_beyond_the_equivalent_circuit() {
+        let slot = size_of::<CellModel>();
+        let ecm = size_of::<EcmState>();
+        let budget = ecm + size_of::<usize>();
+        assert!(
+            slot <= budget,
+            "CellModel is {slot} B against a budget of {budget} B (EcmState {ecm} B + one \
+             discriminant word). A variant is carrying its state inline and charging it to \
+             every ECM cell in every pack. Box it — see docs/plans/cell-size.md."
+        );
+    }
+
+    /// The exact widths, so growth shows up in a diff instead of being inferred later.
+    ///
+    /// A failure here is not automatically a defect — per-cell state gets added on
+    /// purpose, four times in Phase 3 alone. It is a prompt to price the addition against
+    /// the cell count and to write the new number down.
+    #[test]
+    fn the_per_cell_widths_are_what_the_accounting_says() {
+        // The parts of `Cell`, largest first. The remaining 24 B are three bare `f64`s on
+        // `Cell` itself: `capacity_factor`, `r0_factor`, `shunt_g`.
+        //
+        //   88 + 56 + 16 + 24 = 184, with no padding left over to hide anything in.
+        assert_eq!(size_of::<CellAging>(), 88, "CellAging");
+        assert_eq!(
+            size_of::<CellModel>(),
+            56,
+            "CellModel = 8 tag + 48 EcmState"
+        );
+        assert_eq!(size_of::<CellRunaway>(), 16, "CellRunaway");
+        assert_eq!(size_of::<Cell>(), 184, "Cell");
+
+        // The states behind the slot. `SpmState` and `DfnState` are boxed, which is what
+        // keeps the two lines above independent of these two.
+        assert_eq!(size_of::<EcmState>(), 48, "EcmState");
+        assert_eq!(size_of::<SpmState>(), 64, "SpmState");
+        assert_eq!(size_of::<DfnState>(), 136, "DfnState");
+    }
+}

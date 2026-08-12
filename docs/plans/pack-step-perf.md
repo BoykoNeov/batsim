@@ -1,5 +1,19 @@
 # `Pack::step` performance — four items landed; budget now marginal
 
+> **The `Cell`-size lead recorded below and in `phase-3-aging-faults.md` was STALE, and is
+> now resolved — see `docs/plans/cell-size.md`.** It named `CellAging`'s accumulators as
+> the bulk of `Cell`'s growth. That was true at `Cell` = 160 B and was written *before
+> Phases 6 and 7 existed*: by 2026-08-12 `Cell` was **264 B**, and the largest term was
+> `CellModel` at 136 B, because an enum is as wide as its largest variant and Phase 7's
+> `DfnState` is 136 B. Boxing the two porous variants took `Cell` to **184 B** and the step
+> **−1.4 to −1.9 %** at 100S10P, with **no change at 1S1P** as predicted. The `CellAging`
+> split is now **declined**: it removes nine tenths of what boxing removed, so it is worth
+> under 1.5 % on the same evidence, and it costs a snapshot version bump.
+>
+> The generalisation is worth more than the win: **enum width is not an instruction**, so
+> the Phase 6 and Phase 7 perf legs were right that the ECM path was unchanged and still
+> missed an 88 B/cell tax. `crates/sim-core/src/pack.rs::cell_footprint` now pins it.
+
 **Status:** all four items landed. Items 3 and 4 took the step **−34 to −43 %** against
 the end-of-Phase-2 tree, which put it **inside** the < 50 µs budget for the first
 time — ≈ 36–42 µs baseline, ≈ 39–49 µs fully featured, scaled to the fast-state

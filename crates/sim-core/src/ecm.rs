@@ -100,10 +100,22 @@ pub enum CellModel {
     /// Two RC pairs.
     Ecm2Rc(EcmState),
     /// Single-particle porous-electrode model. See [`crate::spm`].
-    Spm(SpmState),
+    ///
+    /// **Boxed, and every ECM pack is why.** An enum is as wide as its largest variant,
+    /// so an un-boxed `DfnState` (136 B) made *every* cell in *every* pack 136 bytes of
+    /// cell-model slot where [`EcmState`] needs 48 — 88 bytes per cell of padding paid
+    /// by packs that will never build a porous-electrode cell. The indirection costs a
+    /// porous model one dependent load against a step that costs ≈ 1 µs (`Spm`, 20
+    /// shells) to ≈ 180 µs (`Dfn`) **per cell**, which is why the trade goes this way and
+    /// not the other. `Box<T>` is serde-transparent, so no saved pack changed shape and
+    /// [`crate::SNAPSHOT_VERSION`] did not move for it. See `docs/plans/cell-size.md`.
+    Spm(Box<SpmState>),
     /// Doyle–Fuller–Newman model: the single-particle model with the electrolyte solved
     /// for rather than held constant. See [`crate::dfn`].
-    Dfn(DfnState),
+    ///
+    /// Boxed for the reason on [`CellModel::Spm`] — this is the variant that was setting
+    /// the enum's width.
+    Dfn(Box<DfnState>),
 }
 
 impl CellModel {
@@ -137,7 +149,7 @@ impl CellModel {
     /// select this model against a chemistry that has none, so there is no arm here
     /// for a missing section.
     pub(crate) fn new_spm(spm: &SpmParams, shells: usize, soc: f64, temp_k: f64) -> Self {
-        CellModel::Spm(SpmState::new(spm, shells, soc, temp_k))
+        CellModel::Spm(Box::new(SpmState::new(spm, shells, soc, temp_k)))
     }
 
     /// A fresh Doyle–Fuller–Newman cell: `nodes` finite volumes across
@@ -154,7 +166,7 @@ impl CellModel {
         soc: f64,
         temp_k: f64,
     ) -> Self {
-        CellModel::Dfn(DfnState::new(spm, nodes, shells, soc, temp_k))
+        CellModel::Dfn(Box::new(DfnState::new(spm, nodes, shells, soc, temp_k)))
     }
 
     /// The chemistry's `[spm]` block, for the arms that need it.

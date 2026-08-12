@@ -102,6 +102,24 @@
 //! **+50 %** on a step that runs it, which at the shipped 10 s period against this file's
 //! 0.1 s `DT` is one step in a hundred. `docs/plans/phase-3-aging-faults.md` (slice E) has
 //! the full evidence and the reason the `r0_factor · soh_resistance` cache was declined.
+//!
+//! ## Cell footprint (boxing the porous variants)
+//! `Cell` had reached **264 bytes**, and the largest term was not aging but `CellModel`:
+//! an enum is as wide as its largest variant, so Phase 7's `DfnState` (136 B) was being
+//! carried by every ECM cell in every pack. Boxing `Spm` and `Dfn` took `CellModel`
+//! 136 → 56 B and `Cell` 264 → **184 B**, worth **−1.4 to −1.9 %** at `100S10P/current`
+//! over two alternating paired rounds whose base arms agreed to 0.03 %, and **nothing at
+//! `1S1P`** — which is the pre-registered discriminator saying the win is footprint and
+//! not instructions.
+//!
+//! Two things to carry forward. **A 30 % footprint cut bought ≈ 1.6 %**, so this step is
+//! not memory-bound at that size, and the deferred `CellAging` split (72 B/cell) was
+//! declined on that arithmetic rather than attempted. And this box swung **52.3–79.2 µs on
+//! the same binary within one batch**, producing a +26.7 % and a −30.0 % reading of the
+//! same change in consecutive rounds — the widest yet recorded here, and the reason the
+//! alternating order above is load-bearing rather than tidy. See `docs/plans/cell-size.md`.
+//! `crates/sim-core/src/pack.rs::cell_footprint` pins the widths so the enum cannot
+//! silently re-widen; it did so for two whole phases because nothing was looking.
 
 use std::hint::black_box;
 
