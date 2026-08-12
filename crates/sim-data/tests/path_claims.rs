@@ -56,10 +56,20 @@
 //!   is additionally sampled on a *wall*-clock throttle, so what it shows at a given
 //!   simulation time is not a function of that time at all. Neither row is mirrored: a
 //!   claim naming one panics rather than passing. See [`render_row`].
-//! * **Anything a reader has to change the demand box to reach.** Steps 20 and 21 both
-//!   ask for a mid-run reversal to −2 A; this harness drives one demand program per step,
-//!   so every number on those charge legs — including the two the formatter check exists
-//!   because of — is outside what it can reproduce.
+//! * **Any mid-run control change other than the demand box.** A step may declare one
+//!   `[[leg]]` — a second demand the reader is instructed to type in at the mark — and
+//!   claims marked `after_mark` are read on it. That covers steps 20 and 21, whose charge
+//!   legs are where both of the defects the display check exists for lived. It does not
+//!   cover the BMS checkbox, `dt`, Restart, or Clear-latched, which steps 18 and 19 ask
+//!   for; nor a second change part-way along a leg.
+//! * **How far a leg runs is this file's own choice, and the reachability check on a leg
+//!   claim is therefore weaker than the one on a pre-mark claim.** Before the mark the
+//!   page stops at `until_s` whatever the reader does, so "reachable" is a fact about the
+//!   page. After it the page stops for nothing — `pathArrived` sets `path.until = null` —
+//!   so `run_for_s` is bounded only by what the prose asks the reader to do, and if it is
+//!   set to just cover the furthest claim then "reachable" says only "I ran long enough to
+//!   reach it". The non-circular half is [`every_leg_is_instructed_by_its_own_step`]: the
+//!   sentence telling the reader to make this exact change must be in this step's prose.
 //! * **Page-behaviour claims.** Anything about what a control does, what a legend
 //!   prints, or what a button orders. Those need a browser.
 //! * **The client-side demand programs are mirrored, not shared.** `Pulse` and `CcCv`
@@ -777,41 +787,111 @@ fn demand_now(prog: Prog, pack: &Pack, dt: f64, last: Option<&Telemetry>) -> Dem
     }
 }
 
-/// One step's trajectory, sampled every engine step.
+/// One sampled engine step.
+struct Row {
+    /// Simulation time at the *end* of the step \[s\].
+    t_s: f64,
+    telemetry: Telemetry,
+    /// The pack's largest per-cell `soc_deficit`, as a fraction of capacity.
+    ///
+    /// Ground truth, read straight off `Pack::cell` — **not** what the `past empty` row
+    /// shows. That row samples the same quantity on a wall-clock throttle and so lags a
+    /// running simulation by up to a quarter-second of real time; step 21's own prose
+    /// records it reading 9.438 points at an instant the engine was at 9.704. Claims
+    /// measured from this field are therefore value-only and may name no `display`.
+    deficit_max: f64,
+}
+
+/// The pack's largest per-cell deficit, over ground truth.
+///
+/// `Math.max` over every cell, which is what the page's row does — the pack's *worst*
+/// cell rather than a mean, because cells do not pass empty together.
+fn deficit_max(pack: &Pack) -> f64 {
+    let mut worst = 0.0f64;
+    for s in 0..usize::from(pack.series()) {
+        for p in 0..usize::from(pack.parallel()) {
+            let cell = pack
+                .cell(s, p)
+                .unwrap_or_else(|| panic!("pack has no cell at {s}S{p}P"));
+            worst = worst.max(cell.soc_deficit);
+        }
+    }
+    worst
+}
+
+/// One step's trajectory, sampled every engine step — including its charge leg, if the
+/// step has one.
 struct Run {
-    /// `(sim_time_s, telemetry)` after each step.
-    rows: Vec<(f64, Telemetry)>,
+    rows: Vec<Row>,
 }
 
 impl Run {
-    /// The row whose end-of-step time is closest to `t`, with that row's own time.
+    /// The row whose end-of-step time is closest to `t`.
     ///
-    /// The time is returned rather than `t` because the panel's clock renders the frame
-    /// the reader is looking at, not the instant a claim was authored against.
-    fn row_at(&self, t: f64) -> (f64, &Telemetry) {
-        let row = self
-            .rows
+    /// The row carries its own time because the panel's clock renders the frame the
+    /// reader is looking at, not the instant a claim was authored against.
+    ///
+    /// **Appending a leg cannot move what this returns for a pre-mark claim.** Every leg
+    /// row is at `t > until_s` and a pre-mark claim reads at `read_at_s <= until_s`, so
+    /// the nearest leg row is at least as far away as the mark's own row; where the two
+    /// distances tie exactly, `min_by` keeps the earlier. The same holds for `first_flag`
+    /// and for `v_at_soc_below` in [`measure`], which take the *first* match and so can
+    /// only be answered by a leg row for something that never happened before the mark.
+    fn row_at(&self, t: f64) -> &Row {
+        self.rows
             .iter()
-            .min_by(|a, b| (a.0 - t).abs().total_cmp(&(b.0 - t).abs()))
-            .expect("run produced at least one row");
-        (row.0, &row.1)
+            .min_by(|a, b| (a.t_s - t).abs().total_cmp(&(b.t_s - t).abs()))
+            .expect("run produced at least one row")
     }
 
-    /// The row whose end-of-step time is closest to `t`.
+    /// The telemetry of the row whose end-of-step time is closest to `t`.
     fn at(&self, t: f64) -> &Telemetry {
-        self.row_at(t).1
+        &self.row_at(t).telemetry
     }
 
     /// First simulation time a flag was seen at.
     fn first_flag(&self, name: &str) -> Option<f64> {
         self.rows
             .iter()
-            .find(|(_, t)| format!("{:?}", t.flags).contains(name))
-            .map(|(t, _)| *t)
+            .find(|r| format!("{:?}", r.telemetry.flags).contains(name))
+            .map(|r| r.t_s)
     }
 }
 
-fn run(lesson: &Lesson) -> Run {
+/// Step `pack` on one demand program until its own clock reaches `end_s`.
+///
+/// The clock is the pack's, never an accumulator this function keeps, for the reason
+/// [`pulse_on`] gives.
+fn drive(
+    pack: &mut Pack,
+    prog: Prog,
+    dt: f64,
+    end_s: f64,
+    env: &Env,
+    rows: &mut Vec<Row>,
+    last: &mut Option<Telemetry>,
+) {
+    // `<=` because a mark that lands exactly on a step boundary is a mark the page
+    // stops *at*, not one step before it.
+    while pack.sim_time_s() < end_s - dt * 0.5 {
+        let d = demand_now(prog, pack, dt, last.as_ref());
+        let t = pack.step(dt, d, env);
+        *last = Some(t);
+        rows.push(Row {
+            t_s: pack.sim_time_s(),
+            telemetry: t,
+            deficit_max: deficit_max(pack),
+        });
+    }
+}
+
+/// Run a step the way the page runs it, and then its charge leg if it has one.
+///
+/// The leg is the same pack continuing, not a second run: at the mark `pathArrived` sets
+/// `path.until = null` and pauses, the demand box has no change handler at all — `advance`
+/// reads it fresh on the next frame — so pressing Run after typing a new current resumes
+/// the trajectory with nothing rebuilt and `dt` unchanged.
+fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
     let mut pack = build(lesson);
     let env = Env {
         t_ambient: lesson.ambient_c + K,
@@ -819,13 +899,25 @@ fn run(lesson: &Lesson) -> Run {
     };
     let mut rows = Vec::new();
     let mut last: Option<Telemetry> = None;
-    // `<=` because a mark that lands exactly on a step boundary is a mark the page
-    // stops *at*, not one step before it.
-    while pack.sim_time_s() < lesson.until_s - lesson.dt * 0.5 {
-        let d = demand_now(lesson.demand, &pack, lesson.dt, last.as_ref());
-        let t = pack.step(lesson.dt, d, &env);
-        last = Some(t);
-        rows.push((pack.sim_time_s(), t));
+    drive(
+        &mut pack,
+        lesson.demand,
+        lesson.dt,
+        lesson.until_s,
+        &env,
+        &mut rows,
+        &mut last,
+    );
+    if let Some(leg) = leg {
+        drive(
+            &mut pack,
+            Prog::Current(leg.demand_a),
+            lesson.dt,
+            lesson.until_s + leg.run_for_s,
+            &env,
+            &mut rows,
+            &mut last,
+        );
     }
     Run { rows }
 }
@@ -855,6 +947,14 @@ struct Claim {
     /// the reader to go and *look* at the row is not.
     #[serde(default)]
     quoted: bool,
+    /// Is this claim read on the step's charge leg — after the mark, on the demand the
+    /// step's `[[leg]]` says the reader types in?
+    ///
+    /// Explicit rather than inferred from `read_at_s > until_s`, and checked in both
+    /// directions: a leg claim without a leg, or a leg claim reading before the mark, is
+    /// a claim about a trajectory nobody ran.
+    #[serde(default)]
+    after_mark: bool,
     #[allow(
         dead_code,
         reason = "authoring context for a human reader, not asserted"
@@ -907,9 +1007,78 @@ fn ascii_minus(s: &str) -> String {
     s.replace('\u{2212}', "-")
 }
 
+/// A step's charge leg: the one mid-run control change this harness can reproduce.
+///
+/// Steps 20 and 21 both run to their mark on a discharge and then tell the reader to
+/// reverse the demand and press Run again. Everything those sentences claim — including
+/// the two defects the display check was built for — happens on that second leg, and
+/// until this existed none of it could be measured.
+///
+/// Declared here rather than in `web/app.js` because the page does not do it: the reader
+/// does. A `then:` field in the lesson block would be a field the page never reads,
+/// sitting where every other field is one the page acts on. The tie back to the page is
+/// [`every_leg_is_instructed_by_its_own_step`], which requires the sentence that gives
+/// this instruction to be in this step's own prose, and the current to be spelled inside
+/// that sentence.
+#[derive(Debug, serde::Deserialize)]
+struct Leg {
+    /// `id` of the lesson in `const LESSONS`.
+    step: String,
+    /// The sentence in that step's prose that tells the reader to make this change,
+    /// verbatim. Not a paraphrase: it is checked as a substring, like a claim's `literal`.
+    instruction: String,
+    /// The current the reader types into the demand box \[A\], discharge-positive. Must be
+    /// spelled somewhere inside `instruction`, so the number and the sentence cannot drift
+    /// apart.
+    demand_a: f64,
+    /// How long the leg runs past the mark \[s\].
+    ///
+    /// **This is a choice, not a measurement.** The page stops at nothing after the mark,
+    /// so nothing outside this file bounds it; see the module docs on what that costs the
+    /// reachability check. Set it from what the step's prose asks the reader to watch for,
+    /// and say so in `note`.
+    run_for_s: f64,
+    #[allow(
+        dead_code,
+        reason = "authoring context for a human reader, not asserted"
+    )]
+    note: String,
+}
+
+impl Leg {
+    /// The demand current as the prose would spell it — `-2`, not `-2.0`.
+    fn spelled_demand(&self) -> String {
+        if self.demand_a.fract() == 0.0 {
+            format!("{:.0}", self.demand_a)
+        } else {
+            format!("{}", self.demand_a)
+        }
+    }
+}
+
+/// Does `text` contain `number` as a number, rather than as a run of characters inside a
+/// different one?
+///
+/// The sign is why this is not `contains`. Every leg so far is a *reversal*, and a leg
+/// written as `+2` where the prose says `−2` would find its "2" inside the prose's own
+/// `-2` and pass — a leg run in the wrong direction, tied to a sentence that says the
+/// other one. The leg's claims would then all be measured on that wrong trajectory. So a
+/// match may not be flanked by anything that would make it part of another number: a
+/// digit or a decimal point on either side, or a minus in front.
+fn contains_number(text: &str, number: &str) -> bool {
+    let flanker = |c: char| c.is_ascii_digit() || c == '.';
+    text.match_indices(number).any(|(i, _)| {
+        let before = text[..i].chars().next_back();
+        let after = text[i + number.len()..].chars().next();
+        !before.is_some_and(|c| flanker(c) || c == '-') && !after.is_some_and(flanker)
+    })
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct Claims {
     claim: Vec<Claim>,
+    #[serde(default)]
+    leg: Vec<Leg>,
 }
 
 /// The quantities a claim may name, and how each is read off a run.
@@ -931,9 +1100,9 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
         return run
             .rows
             .iter()
-            .find(|(_, t)| t.soc_true <= frac)
+            .find(|r| r.telemetry.soc_true <= frac)
             .unwrap_or_else(|| panic!("the run never fell to soc <= {frac}"))
-            .1
+            .telemetry
             .v_terminal;
     }
     match quantity {
@@ -949,6 +1118,34 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
         // nothing checks.
         "q_gen_at" => run.at(at_s).q_gen_w,
         "i_rejected_at" => run.at(at_s).i_rejected_a,
+        // The debt below empty, in points of charge — the units the prose and the `past
+        // empty` row both speak, so a claim reads as the sentence does. Ground truth, and
+        // value-only: that row is sampled on a wall clock, so no claim measured here may
+        // name a display. See `Row::deficit_max`.
+        "deficit_pts_at" => run.row_at(at_s).deficit_max * 100.0,
+        // When the debt is paid off: the first step at zero deficit after a step that had
+        // one. Measured rather than assumed because it is the instant two of this path's
+        // claims are read at, and a hardcoded time would go quietly stale if the
+        // trajectory moved — the failure mode `read_at_s` already has for a crossing.
+        "deficit_zero_s" => {
+            let owed = run.rows.iter().position(|r| r.deficit_max > 0.0).expect(
+                "the run never went past empty — the claim is about a debt that \
+                         is no longer incurred",
+            );
+            run.rows[owed..]
+                .iter()
+                .find(|r| r.deficit_max == 0.0)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "the run went past empty and never came back: the deficit is \
+                         still {:.6} at t = {} s. The charge leg is too short, or the \
+                         demand does not repay it.",
+                        run.rows.last().expect("rows").deficit_max,
+                        run.rows.last().expect("rows").t_s
+                    )
+                })
+                .t_s
+        }
         // The coupling CLAUDE.md refuses to let a chemistry model one half of: points
         // of resistance growth per point of capacity lost.
         "soh_ratio_at" => {
@@ -958,13 +1155,13 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
         other => panic!(
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, soc_at, i_at, t_max_at, soh_cap_at, soh_res_at, \
-             soh_ratio_at, q_gen_at, i_rejected_at, flag_first_s:<FLAG>, \
-             v_at_soc_below:<fraction>."
+             soh_ratio_at, q_gen_at, i_rejected_at, deficit_pts_at, deficit_zero_s, \
+             flag_first_s:<FLAG>, v_at_soc_below:<fraction>."
         ),
     }
 }
 
-fn claims() -> Vec<Claim> {
+fn parse_claims_file() -> Claims {
     let text = read(&repo_root().join("web").join("path-claims.toml"));
     let parsed: Claims = toml::from_str(&text).expect("web/path-claims.toml parses");
     assert!(
@@ -972,7 +1169,28 @@ fn claims() -> Vec<Claim> {
         "web/path-claims.toml has no claims — an empty claims file passes every check \
          and proves nothing"
     );
-    parsed.claim
+    parsed
+}
+
+fn claims() -> Vec<Claim> {
+    parse_claims_file().claim
+}
+
+/// The declared charge legs, at most one per step.
+///
+/// A second leg on the same step would be silently ignored by `leg_for`, which is the
+/// "looks like coverage" shape this file rejects everywhere else, so it panics instead.
+fn legs() -> Vec<Leg> {
+    let legs = parse_claims_file().leg;
+    for (i, leg) in legs.iter().enumerate() {
+        assert!(
+            !legs[..i].iter().any(|other| other.step == leg.step),
+            "step `{}` declares two `[[leg]]` entries. This harness runs one leg per \
+             step; the second would be ignored and its claims measured on the first.",
+            leg.step
+        );
+    }
+    legs
 }
 
 /// A claim may not name a step that no longer exists.
@@ -989,6 +1207,64 @@ fn every_covered_step_exists() {
              const LESSONS. The lesson was renamed or removed and the claim was left \
              behind.",
             c.step
+        );
+    }
+    for leg in legs() {
+        assert!(
+            lessons.iter().any(|l| l.id == leg.step),
+            "path-claims.toml declares a charge leg on step `{}`, which is not an id in \
+             const LESSONS.",
+            leg.step
+        );
+    }
+}
+
+/// The leg is a change the *reader* makes, so the step must be the thing that asks for it.
+///
+/// Three assertions, and they are the only non-circular content the leg mechanism has.
+/// `run_for_s` is this file's own choice (see the module docs), and the value and display
+/// checks on a leg claim are only as honest as the trajectory being the one a reader would
+/// actually produce. What makes it that trajectory is: the sentence is in the prose, the
+/// current is in the sentence, and the leg is not simulated for nothing.
+#[test]
+fn every_leg_is_instructed_by_its_own_step() {
+    let lessons = lessons();
+    let all = claims();
+    for leg in legs() {
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == leg.step)
+            .unwrap_or_else(|| panic!("no lesson `{}`", leg.step));
+
+        assert!(
+            ascii_minus(&lesson.text).contains(&ascii_minus(&leg.instruction)),
+            "step `{}` declares a charge leg instructed by:\n  {}\nand that sentence is \
+             not in the step's own prose.\n\
+             Either the prose was reworded and the leg was left behind, or this harness \
+             is now running a leg no reader is told to run — which would make every \
+             `after_mark` claim on this step true of a trajectory nobody sees.",
+            leg.step,
+            leg.instruction
+        );
+
+        let spelled = leg.spelled_demand();
+        assert!(
+            contains_number(&ascii_minus(&leg.instruction), &spelled),
+            "step `{}`'s charge leg runs at {} A, but `{spelled}` does not appear as a \
+             number in the instruction it claims to be following:\n  {}\n\
+             The current and the sentence that tells the reader to type it are two \
+             statements of one fact; this is the check that keeps them one. Note that a \
+             sign difference fails here too — see `contains_number`.",
+            leg.step,
+            leg.demand_a,
+            leg.instruction
+        );
+
+        assert!(
+            all.iter().any(|c| c.step == leg.step && c.after_mark),
+            "step `{}` declares a charge leg and no claim reads it. A leg that asserts \
+             nothing is a longer simulation that looks like coverage.",
+            leg.step
         );
     }
 }
@@ -1035,20 +1311,59 @@ fn every_claim_appears_in_its_own_step() {
 #[test]
 fn every_claim_is_reachable_in_its_own_step() {
     let lessons = lessons();
+    let legs = legs();
     for c in claims() {
         let lesson = lessons
             .iter()
             .find(|l| l.id == c.step)
             .unwrap_or_else(|| panic!("no lesson `{}`", c.step));
+        let leg = legs.iter().find(|l| l.step == c.step);
+
+        if !c.after_mark {
+            assert!(
+                c.read_at_s <= lesson.until_s,
+                "step `{}` claims `{}` at t = {} s, but the step stops at its mark of {} \
+                 s. The number may well be true; a reader cannot get to it. This is the \
+                 'right but unreachable' defect this repo has shipped twice.\n\
+                 If the claim is about the charge leg, it needs `after_mark = true` and \
+                 the step needs a `[[leg]]`.",
+                c.step,
+                c.literal,
+                c.read_at_s,
+                lesson.until_s
+            );
+            continue;
+        }
+
+        let leg = leg.unwrap_or_else(|| {
+            panic!(
+                "claim `{}` on step `{}` is marked `after_mark`, and the step declares no \
+                 `[[leg]]`. There is no second demand to read it on.",
+                c.literal, c.step
+            )
+        });
         assert!(
-            c.read_at_s <= lesson.until_s,
-            "step `{}` claims `{}` at t = {} s, but the step stops at its mark of {} s. \
-             The number may well be true; a reader cannot get to it. This is the \
-             'right but unreachable' defect this repo has shipped twice.",
-            c.step,
+            c.read_at_s > lesson.until_s,
+            "claim `{}` on step `{}` is marked `after_mark` but reads at t = {} s, at or \
+             before the mark of {} s. It is measured on the discharge, not on the charge \
+             leg it says it is about — drop the flag or fix the time.",
             c.literal,
+            c.step,
             c.read_at_s,
             lesson.until_s
+        );
+        let end = lesson.until_s + leg.run_for_s;
+        assert!(
+            c.read_at_s <= end,
+            "claim `{}` on step `{}` reads at t = {} s; the charge leg runs to {} s ({} s \
+             past the mark). Lengthen the leg only if the prose still asks the reader to \
+             run that far — `run_for_s` is this file's own choice and stretching it to \
+             cover a claim is how the reachability check on a leg becomes a tautology.",
+            c.literal,
+            c.step,
+            c.read_at_s,
+            end,
+            leg.run_for_s
         );
     }
 }
@@ -1066,12 +1381,16 @@ fn every_claim_matches_the_engine() {
     steps.sort_unstable();
     steps.dedup();
 
+    let legs = legs();
     for step in steps {
         let lesson = lessons
             .iter()
             .find(|l| l.id == step)
             .unwrap_or_else(|| panic!("no lesson `{step}`"));
-        let r = run(lesson);
+        // One run per step still, leg included: the leg is a continuation of this same
+        // pack, so it costs only its own steps and pre-mark claims read the same rows
+        // they read before it existed (see `Run::row_at`).
+        let r = run(lesson, legs.iter().find(|l| l.step == step));
         for c in all.iter().filter(|c| c.step == step) {
             let got = measure(&c.quantity, &r, c.read_at_s);
             assert!(
@@ -1099,7 +1418,8 @@ fn every_claim_matches_the_engine() {
             let Some((row, shows)) = c.display_claim() else {
                 continue;
             };
-            let (row_time_s, telemetry) = r.row_at(c.read_at_s);
+            let row_read = r.row_at(c.read_at_s);
+            let (row_time_s, telemetry) = (row_read.t_s, &row_read.telemetry);
             let printed = render_row(row, telemetry, row_time_s);
             assert_eq!(
                 printed, shows,

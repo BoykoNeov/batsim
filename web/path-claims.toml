@@ -19,7 +19,8 @@
 #                 `value` within `tol`. Catches: the engine moved under the prose.
 #   3. REACHABLE— `read_at_s` must not be past the step's own `until_s`. Catches:
 #                 "right but unreachable" — a number that is true of a trajectory
-#                 the reader is never shown.
+#                 the reader is never shown. WEAKER on a charge leg: see
+#                 `after_mark` below and the CHARGE LEGS section at the foot.
 #   4. DISPLAYED— optional. If the claim names a readout row, that row's own
 #                 formatter must print exactly `shows` at `read_at_s`. Catches:
 #                 true of the engine, and not what the panel says. A row is a step
@@ -40,7 +41,20 @@
 #   quantity   what to measure — see `measure()` in path_claims.rs
 #   value      what the engine must produce
 #   tol        absolute tolerance, in `value`'s own unit
-#   read_at_s  simulation time the claim is read at; must be <= the step's until_s
+#   read_at_s  simulation time the claim is read at; must be <= the step's until_s,
+#              or, with `after_mark`, within the step's charge leg. ALWAYS ABSOLUTE.
+#              The leg prose speaks in time-since-the-mark ("383.0 s later"); the
+#              claim does not, and its note records both readings.
+#   after_mark optional, default false: this claim is read on the step's charge leg —
+#              after the mark, on the demand its `[[leg]]` says the reader types in.
+#              Checked both ways: an `after_mark` claim on a step with no leg, or one
+#              reading at or before the mark, is a claim about a run nobody made.
+#              Be clear about what a leg claim's REACHABLE check is worth. Before the
+#              mark the page stops at `until_s` whatever the reader does, so the check
+#              is a fact about the page. After it the page stops for nothing, so the
+#              leg's length is this file's own choice and a leg long enough to reach a
+#              claim makes that claim reachable by construction. What is not circular
+#              is the leg's `instruction`. See the CHARGE LEGS section at the foot.
 #   display    optional: the readout row this claim is about, labelled as `READOUTS`
 #              in web/app.js labels it (`soh cap`, `terminal`, `sim time`, ...)
 #   shows      optional, and required with `display`: exactly what that row prints
@@ -395,13 +409,17 @@ states both ends. Engine reads 4.180997.
 
 # --- step 20: past empty ---------------------------------------------------------
 #
-# Only the discharge leg is claimable. The step then asks the reader to put the demand
-# box to -2 A and run the debt back off, and this harness drives one demand program per
-# step, so every number on that second leg — including the `soc (true)` row still
-# printing `0.0 %` at the instant the deficit clears, which is one of the two defects
-# the display check exists because of — is outside what it can reproduce. The `past
-# empty` row is out of reach for a second, independent reason: it is per-cell state on
-# a wall-clock throttle.
+# Both legs are claimable. The step runs to its mark on a 2 A discharge and then asks the
+# reader to put the demand box to -2 A and run the debt back off; that leg is declared as
+# this step's `[[leg]]` at the foot of this file and its claims carry `after_mark = true`.
+# The `past empty` row is still out of reach, for the reason that has nothing to do with
+# the demand box: it is per-cell state on a wall-clock throttle. The deficit claims below
+# are therefore value-only and name no display.
+#
+# Two numbers on this leg were wrong when it first became measurable, both in the
+# direction a reader would notice: the voltage on the first step of the charge was given
+# as the second step's, and one of the three readings on the way back up was a millivolt
+# out and printed a different string than the sentence quoted.
 
 [[claim]]
 step = "past-empty"
@@ -482,12 +500,138 @@ single difference the quoted check would forgive — but this claim is not quote
 anyway, because the sentence gives four decimals.
 """
 
+# The charge leg. Everything below is read after the reader has put the demand box to
+# -2 A at the mark; see this step's `[[leg]]` at the foot of the file.
+
+[[claim]]
+step = "past-empty"
+literal = "counts down from 6.121 points"
+quantity = "deficit_pts_at"
+value = 6.1210
+tol = 5.0e-4
+read_at_s = 4400.0
+note = """
+The debt at the mark, which is where the charge leg starts and what it has to pay off.
+Read at the mark, so not an `after_mark` claim itself.
+
+Value-only, deliberately. This is the engine's deficit, NOT the `past empty` row: that
+row samples per-cell state on a quarter-second *wall*-clock throttle, so what it shows
+at a given simulation time is not a function of that time. Do not add a `display` here
+— naming that row panics, and it should.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "0.025 V on the first step"
+quantity = "v_at"
+value = 0.024988
+tol = 5.0e-4
+read_at_s = 4400.5
+after_mark = true
+display = "terminal"
+shows = "0.025 V"
+quoted = true
+note = """
+The first step of the charge, and the first thing this harness measured that the prose
+had wrong. The sentence said 0.026 V, which is the reading one step LATER: the terminal
+goes 0.025 at t = 4400.5 and 0.026 at 4401. Both are true of the run; only one of them
+is "the first step", and a reader who pauses and presses Step 1 once — which is what the
+neighbouring step tells them to do for an exact instant — gets this one.
+
+The value is the RC pair's, not arithmetic on R0: at the mark the pair holds 0.020 V of
+discharge polarisation and it decays with a 20 s time constant, so the first charge step
+is 2 A x 0.022 ohm minus a pair that has only just started to turn round.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "0.062 V a minute in"
+quantity = "v_at"
+value = 0.062009
+tol = 5.0e-4
+read_at_s = 4460.0
+after_mark = true
+display = "terminal"
+shows = "0.062 V"
+quoted = true
+note = """
+Sixty seconds into the charge. The cell is still on its floor, so this is the ohmic rise
+and nothing else — the same 0.032 ohms step 21 takes apart, with the RC pair now most of
+the way through its turn.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "0.064 V at two"
+quantity = "v_at"
+value = 0.063901
+tol = 5.0e-4
+read_at_s = 4520.0
+after_mark = true
+display = "terminal"
+shows = "0.064 V"
+quoted = true
+note = """
+Two minutes in, and the mirror image of the -0.064 V claim above: the same current
+through the same resistance, with the sign of the current reversed and the open-circuit
+voltage still pinned at its floor. The pair being symmetric is the point of the sentence.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "1.731 V at 240"
+quantity = "v_at"
+value = 1.731450
+tol = 5.0e-4
+read_at_s = 4640.0
+after_mark = true
+display = "terminal"
+shows = "1.731 V"
+quoted = true
+note = """
+The second number this leg's first measurement corrected. The sentence said 1.732 V,
+which is outside this file's own tolerance rule (half a unit in the last printed place
+of 1.732 is 5e-4, and the engine is 5.5e-4 below it) and, worse, is not what the row
+prints: the panel says `1.731 V`. A reader told to watch the trace come back up would
+have been checking a string the panel never shows.
+
+Read 240 s into the charge, on the steep part of the ramp — 0.767 V at 200 s and
+2.0655 V at 254 s are the readings either side of it in the same sentence.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "exactly zero, for 254 seconds"
+quantity = "deficit_zero_s"
+value = 4654.0
+tol = 0.25
+read_at_s = 4654.0
+after_mark = true
+note = """
+When the debt clears. **The prose speaks in time-since-the-mark here and the claim is in
+absolute simulation time**: 254 s after the 4400 s mark is t = 4654 s, and that is what
+is stored. Getting this the other way round would be the "measured past the mark" defect
+in a new costume — a number authored against a relative reading, checked against an
+absolute one, and green either way if the two happened to be close.
+
+The tolerance is half a step rather than the half-second the sentence's own precision
+would give: the deficit is a per-step quantity on a 0.5 s grid, so anything that really
+moved this instant moves it by a whole step.
+
+This is also the anchor for the neighbouring claims: `soc (true)` reads exactly zero for
+every step before this one, which is the sentence's point, and the surplus on this step
+is 5.1e-5 of capacity — a cell 0.005 % full that the row still prints as `0.0 %`.
+"""
+
 # --- step 21: what over-discharge costs ------------------------------------------
 #
 # The step the display check was designed against. Its whole method is "read these two
 # rows at these instants", so almost every claim here is quoted: the sentence hands the
-# reader a string and the test now insists the panel produces that string. As with step
-# 20, the charge leg after the demand box is reversed is out of reach.
+# reader a string and the test now insists the panel produces that string. The charge leg
+# after the demand box is reversed is claimable now too, and it is where this step's two
+# original defects lived — a clock reading `16m` at an instant the sentence gave to a
+# tenth of a second, and a charge row still reading `0.0 %` where the prose said the debt
+# had cleared. Both are claimed below, and both are `after_mark`.
 
 [[claim]]
 step = "what-it-cost"
@@ -650,4 +794,199 @@ note = """
 And the same floor 300 s later, 4.6 mV lower. The sentence says the reader can "stop
 and check it", which is exactly the promise this check enforces: the three decimals
 it quotes are the three decimals the row prints.
+"""
+
+# The charge leg. This is the step whose two defects the display check was built for, and
+# until the leg could be run neither of them was asserted anywhere.
+
+[[claim]]
+step = "what-it-cost"
+literal = "counts down from 9.704 points"
+quantity = "deficit_pts_at"
+value = 9.7041
+tol = 5.0e-4
+read_at_s = 600.0
+note = """
+The debt at the mark. Value-only for the same reason as step 20's: this is the engine's
+deficit and not the `past empty` row, which lags it. This step's own prose makes the
+point better than a note can — it records the row reading 9.438 points at the instant the
+run stopped, and 9.704 only on the next sample a quarter-second of wall clock later.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "**383.0 s later**"
+quantity = "deficit_zero_s"
+value = 983.0
+tol = 0.25
+read_at_s = 983.0
+after_mark = true
+note = """
+The debt clears 383 s after the 600 s mark, so at t = 983 s absolute, which is the number
+stored. Same relative-vs-absolute hazard as step 20's, and the same half-step tolerance
+for the same reason.
+
+Every other claim on this leg is read at this instant or hangs off it, which is why it is
+measured rather than written down: a hardcoded 983 would quietly become fiction if the
+trajectory moved, and this way the instant is checked before anything is read at it.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "it goes from `10m` to `16m`"
+quantity = "deficit_zero_s"
+value = 983.0
+tol = 0.25
+read_at_s = 983.0
+after_mark = true
+display = "sim time"
+shows = "16m"
+quoted = true
+note = """
+**Defect one, finally asserted.** The clock prints whole minutes above 120 s, so the
+instant the sentence gives as 383.0 s past a 600 s mark is a row reading `16m` — six
+minutes of resolution for a number quoted to a tenth of a second. The sentence now says
+so, and this claim is what keeps it saying so.
+
+The quantity is the debt-clearing time rather than anything about the clock, because that
+is the instant the claim is about; the display half then asks what the panel shows there.
+The `10m` end of the sentence is not separately measured — it is inside this claim's
+literal, so a prose edit that changes it still reddens the literal check.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "*still* printing **0.0 %** at the instant the debt clears"
+quantity = "soc_at"
+value = 0.00003974
+tol = 5.0e-4
+read_at_s = 983.0
+after_mark = true
+display = "soc (true)"
+shows = "0.0 %"
+quoted = true
+note = """
+**Defect two, finally asserted** — and the clearest case in the file for why the display
+check is not the value check at lower precision. The engine is right, the sentence is
+right about the engine, and the row a reader is watching says `0.0 %` at the moment the
+prose says the debt has cleared.
+
+The tolerance is loose because it comes from the literal, which is a row string with one
+decimal; the claim below reads the same instant against the sentence's own 0.004 % and is
+the tight one. Both are here because they fail differently: this one goes red if the row
+starts printing something else, that one if the charge level moves at all.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "the cell is 0.004 % full at that moment"
+quantity = "soc_at"
+value = 0.00003974
+tol = 5.0e-6
+read_at_s = 983.0
+after_mark = true
+note = """
+The explanation the sentence gives for the row above, at this file's usual tolerance:
+half a unit in the last printed place of 0.004 %. No display — this number is three
+decimal places finer than the row that shows it, which is the whole point of the sentence
+it sits in.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "only reaches 0.1 % two seconds later"
+quantity = "soc_at"
+value = 0.00054673
+tol = 5.0e-4
+read_at_s = 985.0
+after_mark = true
+display = "soc (true)"
+shows = "0.1 %"
+quoted = true
+note = """
+Two seconds after the debt clears, and the first step where the row says anything other
+than `0.0 %` — measured: the transition is at t = 985.0 s exactly. The value check here
+is weak by construction (the tolerance comes from a one-decimal row string and the number
+is a twentieth of it); the display check is the one doing the work, and what it pins is
+that the sentence's "two seconds" is the row's own step and not the engine's.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "**95.15 % from one minute into the charge**"
+quantity = "soh_cap_at"
+value = 0.95154890
+tol = 5.0e-5
+read_at_s = 660.0
+after_mark = true
+display = "soh cap"
+shows = "95.15 %"
+quoted = true
+note = """
+Health on the way back up — which is to say, still going down. The sentence says "from
+one minute", and the transition is exactly there: the row prints `95.16 %` at t = 659.5
+and `95.15 %` at 660.0. That exactness is not asserted (the claim reads one instant, not
+a transition), but it is why the word "from" is honest here.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "**95.14 % from 390 s in**"
+quantity = "soh_cap_at"
+value = 0.95144842
+tol = 5.0e-5
+read_at_s = 990.0
+after_mark = true
+display = "soh cap"
+shows = "95.14 %"
+quoted = true
+note = """
+And the next digit down, 390 s into the charge — again exactly a transition, at
+t = 990.0. Seven seconds after the debt cleared, so this is the return leg's own ordinary
+cycling bill rather than any more reversal damage: the row is the one thing on this panel
+that never turns round.
+"""
+
+# =====================================================================================
+# CHARGE LEGS
+# =====================================================================================
+#
+# A step may declare one `[[leg]]`: a second demand the *reader* is instructed to type
+# into the demand box at the mark, which the harness then runs on the same pack. Claims
+# read on it carry `after_mark = true`.
+#
+# This is safe to model as "the same pack continues" because that is what the page does:
+# `pathArrived` sets `path.until = null` and pauses, the demand input has no change
+# handler at all — `advance` reads its value fresh on the next frame — so pressing Run
+# after typing a new current resumes the trajectory with nothing rebuilt and `dt`
+# unchanged.
+#
+# WHAT A LEG DOES NOT BUY. `run_for_s` is this file's own choice. Before the mark the page
+# stops at `until_s` whatever the reader does, so the reachability check is a fact about
+# the page; after the mark the page stops for nothing, so a leg long enough to reach a
+# claim makes that claim reachable by construction. The non-circular half is
+# `instruction`: the sentence that tells the reader to make this exact change must appear
+# verbatim in the step's own prose, and the current must be spelled inside that sentence.
+# Read a green leg claim as "true of the trajectory a reader following this sentence
+# produces" — not as "a reader will get this far".
+
+[[leg]]
+step = "past-empty"
+instruction = "Now put the demand box to **−2**, which charges at the same rate, and press Run"
+demand_a = -2.0
+run_for_s = 280.0
+note = """
+254 s of that is the debt being repaid, which is the last thing the step's prose points
+at ("2.0655 V on the step where the deficit reaches zero"). The extra 26 s is so the
+furthest claim is not sitting on the final row of the run.
+"""
+
+[[leg]]
+step = "what-it-cost"
+instruction = "Now put the demand box to **−2** and press Run"
+demand_a = -2.0
+run_for_s = 400.0
+note = """
+The furthest thing this step's prose asks a reader to look at on the charge leg is
+`soh cap` reading 95.14 % "from 390 s in", so the leg runs 400 s past the 600 s mark.
 """
