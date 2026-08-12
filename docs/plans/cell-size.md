@@ -194,20 +194,30 @@ compiled unchanged: `&Box<T>` deref-coerces to `&T` in argument position and aut
 for field access, so the boxing is invisible above the enum definition. That is worth
 recording as the reason this trade is cheap to make *and* cheap to reverse.
 
-### Timing: −1.4 to −1.9 % at 1000 cells, and nothing at one cell
+### Timing: ≈ 1.1–1.5 µs at 1000 cells, and nothing at one cell
 
 Two clean paired rounds, alternating order, both cases in one invocation per arm so the
 two topologies are mode-matched to each other:
 
-| round | order | case | base | boxed | Δ |
-| --- | --- | --- | --- | --- | --- |
-| 1 | base first | `100S10P/current` | 79.302 µs | 78.216 µs | **−1.37 %** |
-| 2 | boxed first | `100S10P/current` | 79.279 µs | 77.771 µs | **−1.90 %** |
-| 1 | base first | `1S1P/current` | 219.3 ns | 217.8 ns | −0.67 % |
+| round | order | case | base | boxed | Δ (absolute) | Δ (at this baseline) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | base first | `100S10P/current` | 79.302 µs | 78.216 µs | **−1.086 µs** | −1.37 % |
+| 2 | boxed first | `100S10P/current` | 79.279 µs | 77.771 µs | **−1.508 µs** | −1.90 % |
+| 1 | base first | `1S1P/current` | 219.3 ns | 217.8 ns | −1.5 ns | −0.67 % |
 
 The base arm reproduced to **0.03 %** across the two rounds and every CI above is ≤ 0.4 %,
 so the 1000-cell effect is ~50× the round-to-round scatter and its sign is certain under
 both arm orders — which is what rules out the drift that ruined everything else below.
+
+**The absolute is the column that travels; the percentage is not.** Both rounds ran against
+a 79 µs baseline, and the same two binaries were observed at 52 µs an hour later. If the
+saving is a fixed cost it is ≈ −2.5 % in the fast state; if it is proportional it stays at
+≈ −1.6 % everywhere. **Two rounds inside one CPU state cannot separate those**, so a future
+session comparing its own ratio against "−1.4 to −1.9 %" would be comparing against a
+number that silently carries this session's denominator. `pack-step-perf.md` already states
+the rule for a denominator that moved because the *code* changed; this is the same failure
+with the *machine* as the denominator, and it is the sharper case because nothing in the
+diff warns you.
 
 **Both registered predictions held.**
 
@@ -220,16 +230,22 @@ both arm orders — which is what rules out the drift that ruined everything els
 
 ### What the small win actually tells us, and the change it kills
 
-**A 30 % cut in per-cell footprint bought ≈ 1.6 % of step time.** That is a real win and a
-small one, and the ratio is the useful part: at 264 B/cell the step is **not** memory-bound.
+**A ≈ 30 % cut in per-cell footprint bought ≈ 1.5 % of step time.** That is a real win and
+a small one, and what it establishes is a *bound*: at 264 B/cell the step is **not**
+memory-bound, so no further layout change on this structure can be large.
 
 That retires change 3 without building it. Splitting `CellAging`'s cold accumulators out
-would remove 72 B/cell — nine tenths of what change 1 removed — so on this evidence it is
-worth **under 1.5 %**, and it costs a snapshot-layout change, a `SNAPSHOT_VERSION` bump and
-a fight with the borrow checker. **Declined**, and declined on a measurement rather than on
-the taste that would have declined it anyway. Note this also supersedes the Phase 3 lead
-that pointed at those accumulators in the first place: they were never the big term, and
-now they are not a worthwhile one either.
+removes 72 B/cell — nine tenths of what change 1 removed — so change 1 bounds its benefit
+**small**, and its cost is **certain and large**: a snapshot-layout change, a
+`SNAPSHOT_VERSION` bump and migration, and a borrow-checker fight between
+`group.cells.iter_mut()` and a sibling `Vec` on `self`. **Declined on that asymmetry.**
+
+Deliberately *not* declined on an arithmetic "72/80 × 1.5 % = 1.4 %". That extrapolates a
+single point along a curve which cache behaviour makes a step function, not a line — it
+could be 0 % or it could be 3 %. The decision does not need the number and should not rest
+on it: a certain large cost against a benefit bounded small is enough. Note this also
+supersedes the Phase 3 lead that pointed at those accumulators in the first place — they
+were never the big term, and are not a worthwhile one either.
 
 ### Change 2 is deferred unmeasured, and that is the honest call
 
@@ -240,9 +256,10 @@ doc exists to prevent. This box could not measure a 1–2 % effect today (below)
 measurement that would justify it is unavailable, and it waits.
 
 The predictions for it stand as written and are still the right test: it must move `1S1P`,
-or it is a footprint change wearing a mechanism's label — and change 1 has now shown what
-footprint alone is worth here (≈ 0.16 % for change 2's 8 B/cell), so a `1S1P` null result
-would leave nothing to bank.
+or it is a footprint change wearing a mechanism's label. Change 1 sharpens the stakes
+without supplying a number — it removed ten times as many bytes per cell as change 2 would
+and still landed small, so **footprint alone cannot explain a material win here**. A `1S1P`
+null would therefore leave nothing to bank, whatever the 1000-cell arm said.
 
 ### The box, and why no absolute is claimed
 

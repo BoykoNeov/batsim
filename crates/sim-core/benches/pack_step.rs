@@ -107,17 +107,26 @@
 //! `Cell` had reached **264 bytes**, and the largest term was not aging but `CellModel`:
 //! an enum is as wide as its largest variant, so Phase 7's `DfnState` (136 B) was being
 //! carried by every ECM cell in every pack. Boxing `Spm` and `Dfn` took `CellModel`
-//! 136 → 56 B and `Cell` 264 → **184 B**, worth **−1.4 to −1.9 %** at `100S10P/current`
+//! 136 → 56 B and `Cell` 264 → **184 B**, worth **≈ 1.1–1.5 µs** at `100S10P/current`
 //! over two alternating paired rounds whose base arms agreed to 0.03 %, and **nothing at
 //! `1S1P`** — which is the pre-registered discriminator saying the win is footprint and
 //! not instructions.
 //!
-//! Two things to carry forward. **A 30 % footprint cut bought ≈ 1.6 %**, so this step is
-//! not memory-bound at that size, and the deferred `CellAging` split (72 B/cell) was
-//! declined on that arithmetic rather than attempted. And this box swung **52.3–79.2 µs on
-//! the same binary within one batch**, producing a +26.7 % and a −30.0 % reading of the
-//! same change in consecutive rounds — the widest yet recorded here, and the reason the
-//! alternating order above is load-bearing rather than tidy. See `docs/plans/cell-size.md`.
+//! **Quoted as an absolute on purpose.** Those rounds ran against a 79 µs baseline, so the
+//! same delta is −1.4 to −1.9 % *there* and would read near −2.5 % in the fast state if it
+//! is a fixed cost, or stay at −1.4 % if it is proportional. Two rounds in one CPU state
+//! cannot tell those apart, and the percentage is the half that does not travel — the same
+//! reason `docs/plans/pack-step-perf.md` says to carry absolutes when the denominator
+//! moved, except that here the denominator is the machine.
+//!
+//! Two things to carry forward. **≈ 30 % of the footprint bought ≈ 1.5 % of the step**, so
+//! this step is not memory-bound at that size; the deferred `CellAging` split (72 B/cell)
+//! is declined because its cost is certain and large — a snapshot-layout change and a
+//! version bump — against a benefit that measurement bounds small. And this box swung
+//! **52.3–79.2 µs on the same binary within one batch**, producing a +26.7 % and a −30.0 %
+//! reading of the same change in consecutive rounds — the widest yet recorded here, and
+//! the reason the alternating order above is load-bearing rather than tidy. See
+//! `docs/plans/cell-size.md`.
 //! `crates/sim-core/src/pack.rs::cell_footprint` pins the widths so the enum cannot
 //! silently re-widen; it did so for two whole phases because nothing was looking.
 

@@ -6,9 +6,11 @@
 > Phases 6 and 7 existed*: by 2026-08-12 `Cell` was **264 B**, and the largest term was
 > `CellModel` at 136 B, because an enum is as wide as its largest variant and Phase 7's
 > `DfnState` is 136 B. Boxing the two porous variants took `Cell` to **184 B** and the step
-> **−1.4 to −1.9 %** at 100S10P, with **no change at 1S1P** as predicted. The `CellAging`
-> split is now **declined**: it removes nine tenths of what boxing removed, so it is worth
-> under 1.5 % on the same evidence, and it costs a snapshot version bump.
+> **≈ −1.1 to −1.5 µs** at 100S10P (−1.4 to −1.9 % *against that session's 79 µs baseline*
+> — the absolute is the half that travels, see below), with **no change at 1S1P** as
+> predicted. The `CellAging` split is now **declined**: it removes nine tenths of what
+> boxing removed, so change 1 bounds its benefit small, against the certain cost of a
+> snapshot-layout change and a version bump.
 >
 > The generalisation is worth more than the win: **enum width is not an instruction**, so
 > the Phase 6 and Phase 7 perf legs were right that the ECM path was unchanged and still
