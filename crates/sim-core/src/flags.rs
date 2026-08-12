@@ -106,5 +106,48 @@ bitflags! {
         /// is the ability to tell *which* solve struggled; what it keeps is the only
         /// thing it can act on, which is that some voltage this step is approximate.
         const SOLVE_UNCONVERGED = 1 << 12;
+        /// A [`crate::Demand::Power`] was solved to an operating point outside the
+        /// pack's declared voltage window, `series × [v_min, v_max]`.
+        ///
+        /// Not an error and not a numerical event: the step's arithmetic is exact and
+        /// its energy ledger balances. What the flag reports is that the *place* the
+        /// solve landed is off the map the chemistry declares — a terminal below
+        /// `v_min` or above `v_max` — which is the one thing a client asking for watts
+        /// cannot work out for itself in advance.
+        ///
+        /// # Why only this demand
+        /// A [`crate::Demand::Current`] sags a pack below `v_min` just as easily and
+        /// does **not** raise this. With a current demand the client chose the
+        /// operating point and knows it; with a power demand the engine chose it, and
+        /// asking for 1 kW does not tell you whether you are about to draw 5 A or six
+        /// million. A [`crate::Demand::Voltage`] is clamped to this same window before
+        /// the solve (see `pack::step`) and cannot leave it at all.
+        ///
+        /// # The two sides are not symmetric, and both raise it
+        /// `P = V(i)·i` on a Thévenin source has a **maximum** on the discharge side, at
+        /// `i = e/(2·r0)` where `V = e/2`. Ask for more and no operating point exists;
+        /// `ecm::solve_current` snaps to that maximum, which is correct physics, and the
+        /// flag is what says the demand was not met.
+        ///
+        /// On the charge side there is no maximum at all — `V` grows without bound as
+        /// `i` goes negative — so *any* power is met exactly, at an operating point
+        /// arbitrarily far outside the window. A 1e12 W charge on an LG M50 cell is
+        /// answered with 6.3e6 A at 162 kV, correct to five digits, and before this flag
+        /// existed a short enough step reported it with nothing raised at all:
+        /// [`Self::SOLVE_UNCONVERGED`] cannot reach it (the equivalent circuit runs no
+        /// iteration to fail) and [`Self::SOC_CLAMPED_HIGH`] only fired when the step
+        /// happened to be long enough to fill the cell.
+        ///
+        /// # When the discharge side does *not* fire, which is narrow but real
+        /// The snap lands outside the window whenever `e < 2·v_min`, and
+        /// `e = OCV(soc) − Σ V_rc − η` is at most `OCV(1.0)` for a cell not carrying a
+        /// negative overpotential into the step. Every shipped chemistry satisfies
+        /// `OCV(1.0) < 2·v_min`, most tightly LFP at 3.60 against 4.00. So an LFP cell
+        /// entering a huge discharge-power demand with more than 0.40 V of accumulated
+        /// *charging* overpotential snaps to a max-power point inside its own window and
+        /// this stays down. Deliberately not enforced by `ChemistryParams::validate`:
+        /// the inequality decides when a flag fires, not whether a chemistry is
+        /// physical.
+        const POWER_OUT_OF_WINDOW = 1 << 13;
     }
 }
