@@ -101,22 +101,36 @@ internal name mis-scoped the slice, because a test that exercises this never men
 It asserts the RC overpotential, not the terminal voltage: terminal voltage moves for `R0`
 reasons anyway, so an assertion on `V` alone would pass even if the change had not landed.
 
-The assertion is exact rather than toleranced, and the fixture is arranged to make that
-possible:
+The fixture is arranged so that the growth factor the step used is *provable* rather than
+assumed:
 
-1. Age at **rest** for 60 days of sim time. No current means no cycle fade and, more to the
-   point, an RC overpotential that is still exactly `0.0` when the measurement starts.
-2. Read `s = cell.soh_resistance` — ≈ 1.0298 on this fixture.
-3. Take **one** 1-second step at 2 A. The sub-clock period is 10 s and the aging phase
-   left the accumulator at exactly zero (86400 is a whole multiple of 10), so this step
-   **cannot tick** and `s` is provably the value the step used. The test asserts `s` is
-   bit-unchanged across the step rather than assuming it.
-4. Compare against `r·i·(1 − exp(−dt/(r·c)))` with `r = 0.01·s`, evaluated in the same
-   order `rc_update` evaluates it — bit-identical, not within a tolerance.
+1. **Age at rest** for 60 days of sim time (60 steps of 86 400 s) at 318.15 K and full
+   charge. Rest means no cycle fade and — the part that matters — an RC overpotential still
+   exactly `0.0` when the measurement starts.
+2. **Read `s = cell.soh_resistance`: 1.422175.** That is a big number and it is not a claim
+   about a cell. `aging.rs`'s fixture uses coefficients its own header calls "deliberately
+   faster than anything shipped", so 60 days costs it ≈ 28 % of capacity; at
+   `r_growth_per_capacity_loss = 1.5` that is a 42 % resistance rise. The shipped LFP
+   scenario's 7.26 % is a different fixture and a different exposure — nothing here should
+   be read against it.
+3. **One 60-second step at 2 A.** The sub-clock period is 3 600 s and the ageing phase left
+   the accumulator at exactly zero (86 400 is 24 × 3 600), so this step **cannot tick** and
+   `s` is provably what it ran with — asserted by comparing `soh_resistance`'s *bits* across
+   the step, not assumed. 60 s is three time constants of the unworn pair (`0.010 Ω ×
+   2000 F = 20 s`): long enough that the resistance dominates the answer, short enough that
+   the lengthened time constant is still visible in it.
+4. **Compare against `r·i·(1 − exp(−dt/(r·c)))` with `r = 0.01·s`**, evaluated in the order
+   `rc_update` evaluates it, to a relative `1e-12`. Not bit-identical — that was the
+   intention, and the 4 ULP it missed by are a fact about the pack solve rather than about
+   this change; see "Learned while building".
 
-Step 4 pins both halves at once: the factor is on `r`, and `τ` moved with it. Two guard
-assertions bracket it — the aged overpotential must exceed the unaged closed form (the
-change landed) and by less than 5 % (it is a growth factor, not a different model).
+Two guards bracket the comparison, and the second is the one that does unusual work. The
+measured `0.024993154 V` against the unworn closed form's `0.019004259 V` is a ratio of
+**1.3151**, which must be **greater than 1** (the change landed) and **strictly less than
+`s` = 1.4222**. That second bound is how `τ`'s growth is pinned by an assertion instead of
+by prose: the capacitance was left alone, so the time constant lengthened with the
+resistance and the aged pair is *further from its own steady state* after the same 60 s.
+Had `τ` been held fixed, the ratio would be exactly `s`.
 
 ## The client half: one lesson step was quoting a number this change moved
 
