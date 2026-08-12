@@ -42,10 +42,16 @@ t_max_k         = 323.15   # provenance: 50 degC operating ceiling; AGM life rou
 #
 # The shape is the pedagogical point and it is NOT "steeper than LFP" -- lead-acid spans
 # 180 mV end to end where LFP spans 1600 mV, so LFP moves 8.9x MORE voltage overall. What
-# lead-acid has is UNIFORMITY: 1.76-1.80 mV per 1 % SOC at every charge level, flat to
-# within 2 %, where LFP's slope varies 40x between its plateau and its end knees. Inside
-# LFP's dead zone (soc 0.45-0.65) this cell is 4.5x more informative. That is why a
-# lead-acid state of charge can be read off a resting voltmeter and an LFP one cannot.
+# lead-acid has is UNIFORMITY, measured decile by decile: this cell's slope varies 1.7x
+# between its flattest and steepest tenth (0.128 to 0.220 V per unit soc -- it is concave,
+# steeper when empty, because the electrolyte is a reactant), where LFP's varies 248x. And
+# lead-acid's FLATTEST decile is still 3.2x more informative than LFP's flattest. That is
+# why a lead-acid state of charge can be read off a resting voltmeter and an LFP one cannot.
+#
+# Those figures are the ones crates/sim-data/tests/lead_acid_rate.rs asserts. An earlier
+# version of this comment said "1.76-1.80 mV per 1 %, flat to within 2 %", "40x" and
+# "4.5x"; all three were artifacts of averaging over windows that straddled LFP table
+# breakpoints, and are recorded as a miss in docs/plans/lead-acid-data-only.md.
 [ocv]
 soc   = [0.00, 0.25, 0.50, 0.75, 1.00]
 volts = [1.950, 2.005, 2.055, 2.098, 2.130]
