@@ -240,7 +240,45 @@ use crate::{Demand, Env, Telemetry};
 /// pins this the way it pinned v14: against a re-serialized blob, which is what separates
 /// "the version field rejected it" from "deserialization rejected it" when the stale bytes
 /// can no longer be parsed at all. See `docs/plans/reversal-damage.md`.
-pub const SNAPSHOT_VERSION: u32 = 15;
+///
+/// v16 (`v_rc` inlined): [`crate::EcmState::v_rc`] became `[f64; 2]`, from a `Vec<f64>` of
+/// one or two entries. A one-pair cell therefore serializes as `[x, 0.0]` where it used to
+/// serialize as `[x]`.
+///
+/// **Structural, and like v15 it does not pretend otherwise.** No state is new and none is
+/// lost: the second slot on a one-pair cell is a permanent zero that no code path writes,
+/// so a v15 pack's physics is representable here exactly and a restore that *did* happen
+/// would continue the same trajectory. Nothing about the cell's behaviour changed — the
+/// goldens are bit-identical across this bump, which is the check that says so. What forces
+/// the version is the layout rule in `CLAUDE.md` and nothing grander.
+///
+/// **What is unusual is what a stale blob does, and it runs the opposite way to v14's and
+/// v15's.** Those two could not produce a structurally-valid stale blob at all: a required
+/// chemistry field with no `#[serde(default)]` meant a v13 or v14 snapshot failed at
+/// *deserialization*, loudly, before the version check ever saw it. Here the stale blob is
+/// valid. `bincode` writes a sequence as a `u64` length followed by its elements, so a
+/// one-pair `v_rc` was `[1u64][x]` — sixteen bytes, exactly what `[f64; 2]` reads. A v15
+/// field parses at v16 into a subnormal `5e-324` where the length was, with the real
+/// overpotential slid one slot along. **It is quiet, and the version check is the only
+/// thing that stops it.** That is the v10/v11 situation restored after five bumps, and
+/// sharper than either, because those two would have restored into a *working* pack whose
+/// semantics had moved, and this one would restore into arithmetic on a length prefix.
+///
+/// `snapshot_version.rs` pins both halves, and pins them at different scopes on purpose.
+/// The pair test — the same bytes rejected at 15 and restoring at 16 — proves the check is
+/// wired and decides on the outer tag alone. A second test proves the reinterpretation at
+/// the level of the *field*, because that is the level at which it can be demonstrated:
+/// fabricating a whole v15 snapshot would mean inserting a length prefix at every cell's
+/// `v_rc` offset, and there is no non-guessing way to locate those. **So the claim made
+/// here is that silent reinterpretation is available, not that a particular whole v15 blob
+/// exhibits it.** The two-pair case is loud rather than quiet — twenty-four bytes against
+/// sixteen read desynchronises everything after — but every chemistry this repo ships has
+/// one pair.
+///
+/// This bump moves alone: `v_rc` reaches no client, since [`CellView`] exposes the *sum*
+/// as `overpotential_v`, so `sim_server::API_VERSION` and `sim-wasm`'s own constant stay
+/// put. See `docs/plans/cell-size.md`.
+pub const SNAPSHOT_VERSION: u32 = 16;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -2655,7 +2693,8 @@ fn draw_factors(rng: &mut ChaCha8Rng, scatter: &Scatter) -> (f64, f64) {
 /// This exists because the width regressed silently for two whole phases. Adding
 /// [`CellModel::Spm`] (Phase 6) and [`CellModel::Dfn`] (Phase 7) widened the enum to its
 /// largest variant, so every equivalent-circuit cell in every pack began carrying 136
-/// bytes of model slot where [`crate::ecm::EcmState`] needs 48. Both phases measured their
+/// bytes of model slot where [`crate::ecm::EcmState`] needed 48 (40 today, once `v_rc`
+/// came off the heap at [`SNAPSHOT_VERSION`] 16). Both phases measured their
 /// own cost carefully and both correctly found the ECM path unchanged *in instructions* —
 /// enum width is not an instruction, and nothing was looking at it. See
 /// `docs/plans/cell-size.md`.
@@ -2707,19 +2746,22 @@ mod cell_footprint {
         // The parts of `Cell`, largest first. The remaining 24 B are three bare `f64`s on
         // `Cell` itself: `capacity_factor`, `r0_factor`, `shunt_g`.
         //
-        //   88 + 56 + 16 + 24 = 184, with no padding left over to hide anything in.
+        //   88 + 48 + 16 + 24 = 176, with no padding left over to hide anything in.
         assert_eq!(size_of::<CellAging>(), 88, "CellAging");
         assert_eq!(
             size_of::<CellModel>(),
-            56,
-            "CellModel = 8 tag + 48 EcmState"
+            48,
+            "CellModel = 8 tag + 40 EcmState"
         );
         assert_eq!(size_of::<CellRunaway>(), 16, "CellRunaway");
-        assert_eq!(size_of::<Cell>(), 184, "Cell");
+        assert_eq!(size_of::<Cell>(), 176, "Cell");
 
         // The states behind the slot. `SpmState` and `DfnState` are boxed, which is what
         // keeps the two lines above independent of these two.
-        assert_eq!(size_of::<EcmState>(), 48, "EcmState");
+        //
+        // `EcmState` is 40 rather than 48 because `v_rc` is an inline `[f64; 2]` and was a
+        // 24-byte `Vec` — the change SNAPSHOT_VERSION 16 is about.
+        assert_eq!(size_of::<EcmState>(), 40, "EcmState");
         assert_eq!(size_of::<SpmState>(), 64, "SpmState");
         assert_eq!(size_of::<DfnState>(), 136, "DfnState");
     }

@@ -49,6 +49,15 @@ use tokio::net::TcpListener;
 /// `"spm":null`, which the rule exempts because an added field breaks no client.
 /// [`sim_core::SNAPSHOT_VERSION`] deliberately does **not** move with it: `CellView` is
 /// a view, not stored state, so no saved pack changed shape.
+///
+/// **v2 unmoved at [`sim_core::SNAPSHOT_VERSION`] 16, and recorded because it is the exact
+/// mirror of what v2 was bumped for.** That bump inlined `EcmState::v_rc` — the *vector* of
+/// RC overpotentials — from a `Vec<f64>` into a fixed array, changing every saved pack's
+/// shape. Nothing crosses this boundary: `CellView` has never exposed the vector, only its
+/// **sum**, under the name this constant went to v2 to rename (`overpotential_v`). So a
+/// change to how the summands are stored is invisible here by construction. Read from this
+/// constant's own rule rather than inferred from the engine's move, per
+/// `docs/plans/ui-bms-view.md`.
 pub const API_VERSION: u32 = 2;
 
 /// Build the application router over a session registry.

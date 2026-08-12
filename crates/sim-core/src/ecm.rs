@@ -32,8 +32,20 @@ use crate::flags::EventFlags;
 use crate::spm::{self, SpmState};
 use crate::Demand;
 
+/// Slots in [`EcmState::v_rc`], and therefore the most RC pairs a chemistry may declare.
+///
+/// The two are the same number **by construction rather than by agreement**:
+/// [`crate::ChemistryParams::validate`] rejects a chemistry with more pairs than this, and
+/// this is the array's length, so loosening the validator does not compile until the array
+/// is widened to match. That coupling is what the `Vec<f64>` this array replaced used to
+/// provide for free — a vector sized from the chemistry could hold any count — and it is
+/// worth spelling out because the failure it prevents is quiet: [`advance_cell`] zips the
+/// pairs against the slots, and a zip against a too-short array *truncates* rather than
+/// panicking, so a third RC pair would simply never be integrated.
+pub(crate) const MAX_RC_PAIRS: usize = 2;
+
 /// Per-cell equivalent-circuit state. Opaque to the pack layer; the enclosing
-/// [`CellModel`] variant fixes how many entries `v_rc` carries.
+/// [`CellModel`] variant fixes how many entries of `v_rc` are live.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EcmState {
     /// State of charge, in \[0, 1\].
@@ -62,8 +74,31 @@ pub struct EcmState {
     /// trajectory, which is what makes it a semantic [`crate::SNAPSHOT_VERSION`] bump.
     #[serde(default)]
     pub soc_deficit: f64,
-    /// RC-pair overpotentials \[V\], discharge-positive; one entry per RC pair.
-    pub v_rc: Vec<f64>,
+    /// RC-pair overpotentials \[V\], discharge-positive. Entries beyond the chemistry's
+    /// pair count are permanently `0.0`.
+    ///
+    /// # A fixed array, and the per-cell heap block is why
+    /// This was a `Vec<f64>` of **one or two** entries through v15 — a separate heap
+    /// allocation per cell, so a 1000-cell pack held 1000 independent 8- or 16-byte
+    /// blocks, and every read was a dependent pointer load. It is read on four hot
+    /// passes, not one: [`cell_source`] (the solve), [`advance_cell`] (the advance), and
+    /// [`CellModel::overpotential_v`] and [`CellModel::heat_w`] (reporting). `[f64; 2]`
+    /// puts it inside the cell that is already being streamed and makes the length a
+    /// compile-time constant.
+    ///
+    /// [`ChemistryParams::validate`](crate::ChemistryParams) guarantees 1 or
+    /// [`MAX_RC_PAIRS`] pairs — and it reads that limit *from here*, so the two cannot
+    /// part. No capacity is wasted on a case that cannot occur.
+    ///
+    /// **The unused slot on an [`CellModel::Ecm1Rc`] cell is `0.0` and stays `0.0`.**
+    /// [`CellModel::new_ecm`] zeroes both, [`advance_cell`] writes only as many entries
+    /// as the chemistry has pairs, and nothing else assigns to this field — which is what
+    /// lets every summing site keep reading the whole array and stay correct. That
+    /// invariant is load-bearing rather than incidental, so `cell_model.rs` pins it.
+    ///
+    /// It is why [`crate::SNAPSHOT_VERSION`] is 16: a one-pair cell used to serialize as
+    /// `[x]` and now serializes as `[x, 0.0]`.
+    pub v_rc: [f64; MAX_RC_PAIRS],
     /// Cell temperature \[K\]. Advanced by [`crate::thermal`] unless the pack is
     /// configured [`crate::ThermalConfig::Isothermal`], in which case it holds its
     /// initial value.
@@ -103,7 +138,7 @@ pub enum CellModel {
     ///
     /// **Boxed, and every ECM pack is why.** An enum is as wide as its largest variant,
     /// so an un-boxed `DfnState` (136 B) made *every* cell in *every* pack 136 bytes of
-    /// cell-model slot where [`EcmState`] needs 48 — 88 bytes per cell of padding paid
+    /// cell-model slot where [`EcmState`] needed 48 — 88 bytes per cell of padding paid
     /// by packs that will never build a porous-electrode cell. The indirection costs a
     /// porous model one dependent load against a step that costs ≈ 1 µs (`Spm`, 20
     /// shells) to ≈ 180 µs (`Dfn`) **per cell**, which is why the trade goes this way and
@@ -130,7 +165,10 @@ impl CellModel {
             // validated into [0, 1], so there is no way to *build* a pack already in
             // reversal — it has to be driven there.
             soc_deficit: 0.0,
-            v_rc: vec![0.0; n_rc],
+            // Both slots, whatever `n_rc` is. On a one-pair cell the second is the
+            // permanent zero `EcmState::v_rc` documents, and seeding it here is what
+            // makes the summing sites' "read the whole array" correct.
+            v_rc: [0.0; MAX_RC_PAIRS],
             temp_k,
         };
         // `ChemistryParams::validate` guarantees 1 or 2 RC pairs, so the `else`
@@ -920,8 +958,12 @@ pub(crate) fn advance_cell(
     soh_capacity: f64,
     soh_resistance: f64,
 ) -> Advanced {
-    for (k, v_rc) in state.v_rc.iter_mut().enumerate() {
-        let pair = chem.rc[k];
+    // Zipped against the chemistry rather than indexed by it: the pair count bounds the
+    // iteration, so a one-pair chemistry writes one slot and leaves the second at the
+    // permanent zero [`EcmState::v_rc`] documents. It also drops the `chem.rc[k]` bounds
+    // check, and the loop count is unchanged from the `Vec` this replaced, so no
+    // trajectory moves.
+    for (pair, v_rc) in chem.rc.iter().zip(state.v_rc.iter_mut()) {
         // Aging grows the slow resistances along with the instant one, which is what
         // `CLAUDE.md`'s physics spec has always said and what this line did not do until
         // `docs/plans/rc-resistance-growth.md`. Three things about the expression:

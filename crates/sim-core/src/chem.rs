@@ -868,7 +868,11 @@ impl ChemistryParams {
         }
 
         // --- RC pairs ---
-        if self.rc.is_empty() || self.rc.len() > 2 {
+        // The upper bound is `EcmState::v_rc`'s slot count, read from there rather than
+        // written twice: the overpotentials live in a fixed array, and `advance_cell` zips
+        // the pairs against it, so a chemistry with more pairs than slots would have its
+        // extras silently dropped rather than rejected. See `ecm::MAX_RC_PAIRS`.
+        if self.rc.is_empty() || self.rc.len() > crate::ecm::MAX_RC_PAIRS {
             return Err(ChemistryError::RcCount(self.rc.len()));
         }
         for pair in &self.rc {

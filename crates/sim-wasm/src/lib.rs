@@ -146,6 +146,15 @@ use wasm_bindgen::prelude::*;
 /// `CellView` addition where it moves — the field is a read of genuine new stored state
 /// rather than a pure function of state that already existed. That bump is v13 → v14 and
 /// is argued at [`sim_core::SNAPSHOT_VERSION`], not here.
+///
+/// **v6 unmoved at [`sim_core::SNAPSHOT_VERSION`] 16.** That bump inlined `EcmState`'s
+/// vector of RC overpotentials into a fixed array, so every saved pack changed shape — but
+/// nothing on this boundary did. `CellView` exposes the **sum** (`overpotential_v`), never
+/// the vector, so no field crosses here and no page can tell. [`snapshot_version`] reads
+/// the engine's constant symbolically and so reports 16 with no edit, which is the whole
+/// reason it is a function rather than a copied number. Recorded because these two
+/// constants have parted four times and the rule is to read each one's own doc rather than
+/// move them as a set.
 pub const WASM_API_VERSION: u32 = 6;
 
 /// [`WASM_API_VERSION`], reachable from JS.

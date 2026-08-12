@@ -20,9 +20,28 @@
 //! there.
 //!
 //! # The pair moves with the bump, rather than being renumbered
-//! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13 and v13 -> v14,
-//! each time carrying an assertion that a later bump needs its own pair. This is the
-//! v14 -> v15 pair, and it was re-argued rather than renamed.
+//! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13, v13 -> v14 and
+//! v14 -> v15, each time carrying an assertion that a later bump needs its own pair. This
+//! is the v15 -> v16 pair, and it was re-argued rather than renamed.
+//!
+//! **The v14 -> v15 pair could not be kept alongside this one, and the reason is not just
+//! the assertion that says so.** [`retagged`] fabricates a stale blob by writing *this
+//! build's* bytes under a fake tag, and at v16 this build no longer produces v15-shaped
+//! bytes — [`sim_core::EcmState::v_rc`] is `[f64; 2]` here and was a length-prefixed
+//! `Vec<f64>` there. There is nothing for a v14 -> v15 pair to be built out of any more,
+//! so this is a replacement rather than an addition.
+//!
+//! # v16 is the first bump since v11 whose stale blob stays aligned, and the failure is
+//! # silent rather than loud
+//! v14 and v15 had no structurally-valid stale blob at all (below). v16's is the opposite
+//! case and the more dangerous one: under `bincode` a one-pair `Vec<f64>` is an 8-byte
+//! length followed by one 8-byte value, and `[f64; 2]` is two 8-byte values — **the same
+//! sixteen bytes**. So a v15 field does not fail to parse at v16; it parses, into a
+//! subnormal `5e-324` where the length was and the real overpotential shifted one slot
+//! along. [`the_v15_v_rc_bytes_reinterpret_rather_than_fail`] demonstrates that at the
+//! field level, which is the level it can honestly be demonstrated at: fabricating a whole
+//! v15 *snapshot* would mean inserting a length prefix at four unlocated offsets, so this
+//! file does not claim the whole-blob case and the version note does not either.
 //!
 //! # v14 and v15 have no structurally-valid stale blob at all, and that is stated rather
 //! # than papered over
@@ -171,37 +190,38 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v14-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v15 restore.
+/// A v15-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v16 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// Read the module's v15 section before extending this: the bytes here are this build's,
-/// wearing a v14 label. A snapshot a v14 build actually wrote does not reach the version
-/// check at all.
+/// Read the module's v16 section before extending this: the bytes here are this build's,
+/// wearing a v15 label. What a snapshot a v15 build actually wrote does at v16 is a
+/// separate question, and the part of it that can be checked is checked by
+/// [`the_v15_v_rc_bytes_reinterpret_rather_than_fail`] rather than asserted here.
 #[test]
-fn the_version_field_is_what_rejects_a_v14_snapshot() {
+fn the_version_field_is_what_rejects_a_v15_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 15,
-        "this test is written against the v14 -> v15 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 16,
+        "this test is written against the v15 -> v16 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
-         the new layout is a fact about that layout change, and at v15 the answer is \
-         'it does not parse at all', which is not something a renumbered assertion can \
-         inherit."
+         the new layout is a fact about that layout change, and v16's answer ('it parses, \
+         wrongly and silently') is the opposite of v15's ('it does not parse at all'), \
+         which is exactly why a renumbered assertion cannot inherit either."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 14);
+    let stale = retagged(&bytes, 15);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 14,
+            found: 15,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v14-tagged snapshot must be refused"
+        "a v15-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -212,6 +232,55 @@ fn the_version_field_is_what_rejects_a_v14_snapshot() {
     );
     assert_eq!(restored.series(), 2);
     assert_eq!(restored.parallel(), 2);
+}
+
+/// A v15 `v_rc` field does not fail to parse at v16 — it parses into the wrong numbers.
+///
+/// This is why v16's version check is load-bearing in a way v14's and v15's were not, and
+/// it is asserted rather than reasoned about because the module doc and the
+/// [`SNAPSHOT_VERSION`] note both lean on it. `bincode` writes a sequence as a `u64`
+/// length followed by its elements, so a one-pair `v_rc` was `[1u64][x]` — sixteen bytes,
+/// which is exactly what `[f64; 2]` reads. Nothing runs off the end and nothing errors;
+/// the length is reinterpreted as a subnormal and the real overpotential lands in the
+/// second slot.
+///
+/// **Scope, deliberately narrow.** This is the *field*, not a snapshot. Fabricating a
+/// whole v15 blob would mean inserting a length prefix at every cell's `v_rc` offset, and
+/// this file has no way to locate those offsets that is not a guess — so the wider claim
+/// is not made anywhere. What is proven here is the mechanism: silent reinterpretation is
+/// available at v16, which is the property that makes an unguarded restore dangerous.
+///
+/// The two-pair case is stated for contrast and not asserted: `[2u64][a][b]` is
+/// twenty-four bytes against sixteen read, so it desynchronises everything after it and
+/// fails loudly. It is the one-pair case — every chemistry this repo ships — that is
+/// quiet.
+#[test]
+fn the_v15_v_rc_bytes_reinterpret_rather_than_fail() {
+    // A v15 one-pair `v_rc`, in the bytes a v15 build would have written for it.
+    let v15 = bincode::serialize(&vec![0.012_f64]).expect("a Vec<f64> serializes");
+    assert_eq!(
+        v15.len(),
+        16,
+        "8-byte length prefix plus one 8-byte element"
+    );
+
+    let v16: [f64; 2] = bincode::deserialize(&v15)
+        .expect("the same sixteen bytes are a valid `[f64; 2]` — that is the whole hazard");
+
+    assert_eq!(
+        v16[0],
+        f64::from_bits(1),
+        "the length prefix becomes a subnormal overpotential, not an error"
+    );
+    assert_eq!(
+        v16[1], 0.012,
+        "and the real overpotential has slid one slot along"
+    );
+    assert_ne!(
+        v16[0], 0.0,
+        "if this ever becomes zero the reinterpretation is harmless and this test, the \
+         module's v16 section and the SNAPSHOT_VERSION note all overstate the hazard"
+    );
 }
 
 /// The check reads the snapshot's own tag, and nothing else.
@@ -226,8 +295,8 @@ fn the_version_field_is_what_rejects_a_v14_snapshot() {
 #[test]
 fn only_the_outer_version_tag_is_consulted() {
     let bytes = snapshot_bytes();
-    // Both blobs carry an inner `Pack.version` of 15, because that is what this
+    // Both blobs carry an inner `Pack.version` of 16, because that is what this
     // build wrote. Only the outer tag differs, and only the outer tag decides.
-    assert!(Pack::restore(&retagged(&bytes, 14)).is_err());
+    assert!(Pack::restore(&retagged(&bytes, 15)).is_err());
     assert!(Pack::restore(&retagged(&bytes, SNAPSHOT_VERSION)).is_ok());
 }
