@@ -170,8 +170,15 @@ Flags are recomputed fresh each step and are **not** part of the snapshot, so
 committed golden trajectory is in scope. The affected call sites are all tests:
 `nonlinear_solve.rs:284` (`Power(150·s)`, self-described as at or past the knee),
 `solve_safeguard.rs` (1e3/1e6/1e12), `dfn_cell.rs:809`, `topology.rs:245`,
-`properties.rs:495`. None of them assert on `flags` for a power demand; each is to be
-re-read rather than assumed.
+`properties.rs:495`. None of them assert on `flags` for a power demand; each was re-read
+rather than assumed.
+
+`properties.rs` is the one worth naming, because it is the one that could have passed by
+luck: it is a proptest, and its magnitudes are drawn from `-500.0..500.0` W against a
+fixture whose max-power point is far below that, so it **does** reach past the knee and
+**does** raise the new flag on some draws. It stays green by construction rather than by
+seed — it runs with a BMS configured and asserts on the C-rate window the protection
+enforces, which the flag does not touch.
 
 ## Versions
 
@@ -180,12 +187,20 @@ Read from each constant's own doc, per the standing rule that these have parted 
 * `SNAPSHOT_VERSION` (17): unmoved — no serialized field moves.
 * `API_VERSION` (2) and `WASM_API_VERSION` (6): flags cross the wire as a **joined name
   string** (`"OV | UV | THERMAL_RUNAWAY"`), so a new flag is a new name that can appear
-  there. Precedent is direct: `SOLVE_UNCONVERGED` was added the same way in Phase 6 slice D
-  (44272b5), whose own note reads "API versions stay 2 (added fields, not renames)". What
-  these constants version is names that a client *reads by name*; a client splitting the
-  flag string on `" | "` sees an unfamiliar entry, exactly as it would have at Phase 6.
-  Unmoved, on precedent rather than on a fresh argument — and recorded here so the next
-  reader finds it decided.
+  there — which is neither a method name nor a JSON field name, the two things
+  `WASM_API_VERSION`'s own doc says it versions. Precedent is direct (`SOLVE_UNCONVERGED`
+  was added the same way in Phase 6 slice D, 44272b5, whose note reads "API versions stay 2
+  (added fields, not renames)"), but precedent is not the same as checking, and the rule
+  here is to read each constant's own doc rather than move them as a set.
+
+  **So the client was read instead of assumed, and it does not break.** `web/app.js`'s
+  `parseFlags` splits the string and keeps *every* name; the renderer turns each into a
+  chip, styling it from a `SEVERE` set and falling through to plain for anything else. There
+  is no known-flag list to fall off, so `POWER_OUT_OF_WINDOW` displays on a page built
+  before it existed. The one hardcoded list, `PROTECTION_FLAGS`, answers a different
+  question — which flags mean *the BMS stopped the charge* — and this is correctly not one
+  of them. `sim-godot` names only `THERMAL_RUNAWAY` and `CONTACTOR_OPEN`, for signals, and
+  is untouched. Unmoved, on evidence.
 
 ## Results
 
