@@ -11,7 +11,7 @@
 # measuring instrument that lived outside the repo and therefore never ran again.
 #
 # `crates/sim-data/tests/path_claims.rs` reads this file and checks each entry up to
-# FIVE independent ways. Each catches a failure the others cannot:
+# SIX independent ways. Each catches a failure the others cannot:
 #
 #   1. LITERAL  — `literal` must appear verbatim in that step's own prose/expect
 #                 text. Catches: the prose was edited and the claim was not.
@@ -35,8 +35,15 @@
 #                 the prose wrong — and a drift small enough to hide inside a row's
 #                 rounding (0.6387 V becoming 0.6392) got past check 4 as well. See
 #                 "Stating the value" below.
+#   6. ACCOUNTED— every number a claimed sentence PRINTS must be tied to something, not
+#                 just the one number the claim is about. Catches: the other figures in
+#                 a claimed sentence, which checks 1-5 leave free to drift as long as
+#                 the prose and the literal drift together — the original hole, and it
+#                 survived every slice above on the numbers nobody claimed. Nothing to
+#                 author: the accounting is DERIVED from the claims already on the
+#                 sentence. See "Accounting for the rest of the sentence" below.
 #
-# A sixth check stands behind the second rather than beside it: `tol` decides how much
+# A seventh check stands behind the second rather than beside it: `tol` decides how much
 # of a claim is actually claimed, so it is derived by a declared rule (`tol_from`) and
 # the derivation itself is checked. See "Setting tol" below.
 #
@@ -110,7 +117,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  35 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  36 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  11 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -158,7 +165,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 11 claims.
 #
-#   same        38 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        39 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    2. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A. Fenced to negative values; on a positive one it
@@ -189,6 +196,50 @@
 # multi-number sentence an author could name the coarsest and take its tolerance. Under
 # `same`, pointing the voltage claim on `The cell empties at 4146.5 s at 1.9290 V` at
 # `4146.5` compares 4146.5 against 1.9290 and fails on sight.
+#
+# Accounting for the rest of the sentence — checks 1-5 are all about the number a claim
+# NAMES. A sentence usually prints more than one. `**99.98 %** when the cell empties at
+# **207.5 s and 1.9306 V**` printed three and carried two claims: the percentage and the
+# voltage were each pinned to the engine, and the `207.5` was checked only as characters
+# that had to still be in the prose. Move it to `210 s` in the sentence and in the
+# literal together and every check in this file stayed green — which is the ORIGINAL
+# hole, surviving on the one number in a claimed sentence nobody had claimed.
+#
+# So check 6 scans each claimed literal for numbers and requires every one of them to be
+# accounted for by the claims already on that sentence. Three accountings, and no fourth:
+#
+#   spelled  a claim on this sentence names it in `spells` — 46 of the 55 numbers the
+#            42 claimed sentences print. Signs are ignored on both sides.
+#   read at  it is the instant a claim on this sentence is read at, in that claim's own
+#            frame — absolute before the mark, since the mark on a leg. `99.45 % at
+#            250 s` prints a health and a moment, and the moment is the `read_at_s`.
+#   shown    it is inside a string this file already asserts the panel prints: a claim's
+#            `shows`, or — for a `displayed` claim read on a leg — the clock's rendering
+#            of the mark, which is where the leg begins and the one other instant such a
+#            sentence can mean. ``it goes from `10m` to `16m`` prints both ends.
+#
+# NOTHING IS DECLARED HERE. The three other fields this file grew to close a hole —
+# `tol_from`, `states`, `spells` — are declarations, because each encodes something a
+# machine cannot decide. Every accounting above is an exact numeric fact about a claim
+# sitting beside the number, so a declared one that disagreed with the fact would be a
+# fresh instance of the defect `tol_from` was introduced to kill. And there is no
+# "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
+# the 42 claimed sentences need none. A future literal printing a control setting or a
+# chemistry constant will fail loudly, and the answer will be an arm that checks it
+# against the lesson block or the chemistry file — not a waiver.
+#
+# The `read at` accounting is the weak one and it is fenced. "We measured at 207.5" is a
+# much smaller statement than "the cell empties at 207.5", and the sentence gives the
+# reader the second. Measured rather than argued: deleting the flag claim this check was
+# written to force left the whole suite GREEN, because the other two claims on that
+# sentence read at 207.5 and the arm accounted the number as their read instant. So a
+# `read at` accounting is refused at any instant the run raises a flag it did not have a
+# step earlier — an event a sentence names has to be claimed. That fence lives in the
+# value check, which is the only place a trajectory exists.
+#
+# What check 6 does NOT do is find sentences nobody has claimed at all. Fourteen of the
+# twenty-one steps have no claim, so they have no literal to scan; see the test's own
+# module docs on why that needs a different instrument.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -1016,6 +1067,41 @@ shows = "1.931 V"
 note = """
 The knee on this scenario, which starts at 5 % charge rather than full. Same sentence
 as the claim above.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "**99.98 %** when the cell empties at **207.5 s and 1.9306 V**"
+quantity = "flag_first_s:SOC_CLAMPED_LOW"
+value = 207.5
+tol = 5.0e-2
+tol_from = "spelled"
+spells = "207.5"
+states = "same"
+read_at_s = 207.5
+display = "sim time"
+shows = "3m"
+note = """
+The third number in this sentence, and the one that was the whole reason check 6
+exists. Until it was written, `99.98` and `1.9306` were each pinned to the engine and
+`207.5` was checked only as characters that had to still be present in the prose — so
+the sentence and the literal could have drifted to `210 s` together and every check in
+this file would have stayed green. That is the ORIGINAL hole, surviving on the one
+number in a claimed sentence nobody had claimed.
+
+Measured before it was written rather than copied out of the prose: the flag lands on
+207.5 s exactly, so the sentence was right and only unchecked. The claim is what makes
+it stay that way.
+
+`spelled`, not `grid`: the sentence spells this quantity to a tenth, whose rule is
+0.05 s, and that is FIVE times tighter than the half-step `grid` would give. A grid
+time can only move by a whole step, so nothing is lost by pinning it below one —
+the four claims in this file that were wrongly declared `grid` are the same shape
+seen from the other side.
+
+The display half is the clock, and it says what the clock is worth here: `3m`, which
+resolves neither this instant nor the 250 s one twelve rows further down. The sentence
+gives seconds for exactly that reason.
 """
 
 [[claim]]

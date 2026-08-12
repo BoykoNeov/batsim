@@ -12,7 +12,7 @@
 //! read its header for the four checks and why the literal is stored as a string
 //! rather than formatted from the value.
 //!
-//! # The five checks, and why none of them is redundant
+//! # The six checks, and why none of them is redundant
 //!
 //! * **Literal** — the claim's text appears verbatim in that step's prose. A prose edit
 //!   that changes the number now fails here even though the engine never moved. This is
@@ -51,8 +51,25 @@
 //!   ten more of them; it is a forward guard and a statement of the rule,
 //!   not an independent result. Said plainly here because an uncovered check under a green
 //!   test reads as a covering one.
+//! * **Accounted** — every number a claimed sentence prints is tied to something. The
+//!   five above are all about the number a claim *spells*, and said nothing about the
+//!   other figures in the same sentence: `**99.98 %** when the cell empties at **207.5 s
+//!   and 1.9306 V**` carried three numbers and two claims, and the third was checked only
+//!   as characters that had to still be there — so the prose and the literal could drift
+//!   to `210 s` together with every check green. That is the *original* hole this file was
+//!   built to close, surviving on the one number in a claimed sentence nobody had claimed.
+//!   [`every_number_in_a_claimed_literal_is_accounted_for`] scans each literal and
+//!   requires an [`Accounted`] for every figure in it. The accounting is *derived*, not
+//!   declared — unlike `states` and `tol_from`, each arm is an exact numeric fact, and a
+//!   declaration that could disagree with the fact would be a fresh instance of the very
+//!   defect `tol_from` exists to catch. There is no waiver variant, on purpose.
+//!   One arm needs a trajectory and so is fenced from inside the value check: an instant
+//!   the run raises a *flag* at is an event, and a sentence that names when something
+//!   happens is claiming that moment rather than merely reading a row at it. That fence is
+//!   not decoration — without it, deleting the `207.5 s` claim this check was written to
+//!   force left the whole suite green.
 //!
-//! Behind the value check sits a sixth, about this file rather than about the page:
+//! Behind the value check sits a seventh, about this file rather than about the page:
 //! [`every_tolerance_follows_its_declared_rule`]. `tol` is what decides how much of a
 //! claim is actually claimed, and it was the one field nothing checked — a careless value
 //! makes the value check pass on anything. Each claim now declares which rule its
@@ -89,13 +106,16 @@
 //!   set to just cover the furthest claim then "reachable" says only "I ran long enough to
 //!   reach it". The non-circular half is [`every_leg_is_instructed_by_its_own_step`]: the
 //!   sentence telling the reader to make this exact change must be in this step's prose.
-//! * **Numbers inside a claimed literal that no claim is about.** [`States`] ties the
-//!   number a claim *spells* to the value it measures; it says nothing about the other
-//!   figures in the same sentence. `**99.98 %** when the cell empties at **207.5 s and
-//!   1.9306 V**` carries three numbers and two claims — the percentage and the voltage
-//!   are each pinned, and the 207.5 s is checked only as characters that must still be
-//!   there. That is the completeness direction (which numbers are claimed at all) rather
-//!   than the correctness one this file now covers, and it is not closed.
+//! * **Sentences no claim is about — which is now the whole of the completeness gap.**
+//!   Check 6 above closed the half of it that lived *inside* a claimed literal; this is
+//!   the other half, and it is the larger one. Fourteen of the twenty-one steps carry no
+//!   claim at all, so they have no literal for check 6 to scan and nothing here touches
+//!   them. Closing that needs a different instrument — a ledger over each step's whole
+//!   prose rather than over the sentences already claimed — and unlike check 6 it does
+//!   need a taxonomy for the numbers that are not measurements: control settings the
+//!   reader types, chemistry constants, C-rates, ordinals naming other steps. Check 6
+//!   could refuse a waiver variant because the 42 claimed sentences happen to need none;
+//!   a whole-prose ledger cannot.
 //! * **Page-behaviour claims.** Anything about what a control does, what a legend
 //!   prints, or what a button orders. Those need a browser.
 //! * **The client-side demand programs are mirrored, not shared.** `Pulse` and `CcCv`
@@ -882,6 +902,45 @@ impl Run {
             .find(|r| format!("{:?}", r.telemetry.flags).contains(name))
             .map(|r| r.t_s)
     }
+
+    /// The flags the step ending nearest `t` raises that the step before it did not.
+    ///
+    /// This is what tells an *event* instant from an ordinary read instant, and it is the
+    /// fence on [`Accounted::ReadAt`]: a sentence that names the moment something happens
+    /// is claiming that moment, where a sentence that merely reads a row at 250 s is not.
+    /// Diffed against the previous row rather than taken from [`Run::first_flag`] so it
+    /// needs no list of flag names to ask about.
+    fn flags_arriving_at(&self, t: f64) -> Vec<String> {
+        let names = |r: &Row| -> Vec<String> {
+            let s = format!("{:?}", r.telemetry.flags);
+            let inner = s
+                .split_once('(')
+                .map_or(s.as_str(), |(_, rest)| rest.trim_end_matches(')'))
+                .to_string();
+            inner
+                .split('|')
+                .map(|t| t.trim().to_string())
+                // `EventFlags(0x0)` is how an empty set prints; a name is upper snake.
+                .filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_uppercase() || c == '_'))
+                .collect()
+        };
+        let i = self
+            .rows
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| (a.t_s - t).abs().total_cmp(&(b.t_s - t).abs()))
+            .map(|(i, _)| i)
+            .expect("run produced at least one row");
+        let before = if i == 0 {
+            Vec::new()
+        } else {
+            names(&self.rows[i - 1])
+        };
+        names(&self.rows[i])
+            .into_iter()
+            .filter(|f| !before.contains(f))
+            .collect()
+    }
 }
 
 /// Step `pack` on one demand program until its own clock reaches `end_s`.
@@ -962,7 +1021,7 @@ fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 35 of 48 claims.
+    /// number's last printed place. The default shape: 36 of 49 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -971,12 +1030,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 11 of 48.
+    /// declaration was wrong. 11 of 49.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 2 of 48, both of
+    /// the engine either hits the claimed step or misses by a whole one. 2 of 49, both of
     /// them claims whose [`States`] is `nothing` or `displayed`: a claim that spells its
     /// own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1016,7 +1075,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 38 of 48, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 39 of 49, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -1701,7 +1760,7 @@ fn every_tolerance_follows_its_declared_rule() {
 /// 53 seconds` against a flag 53.5 s before a mark at 4200, where the difference is 0.5
 /// against a rule of 0.5. Both are inside `diff <= rule` as the bits actually fell — the
 /// first just under, the second by exact equality — so `||` short-circuits and the
-/// `tol_eq` arm is never reached on any of the 48. None of the perturbations written
+/// `tol_eq` arm is never reached on any of the 49. None of the perturbations written
 /// against this check reaches it either. It is there because which side of `<=` a
 /// boundary case lands on is a fact about binary and not about the prose, and a claim
 /// should not go red on a rounding of its own rule; a green suite is not evidence that it
@@ -1896,6 +1955,200 @@ fn every_claim_states_the_value_it_measures() {
     }
 }
 
+/// How a number printed inside a claimed literal is accounted for.
+///
+/// Derived, never declared, and that is the whole of the design. The three other fields
+/// this file added to close a hole — `tol_from`, `states`, `spells` — are declarations,
+/// because each encodes something a machine cannot decide: which rule an author meant,
+/// which frame a sentence uses. Every variant here is an exact numeric fact about the
+/// claim beside the token, so a declared `accounts = "read_at"` sitting beside a token
+/// that is really something else would be a fresh instance of the defect `tol_from` was
+/// introduced to kill — a claim citing a rule it does not follow. The test tries all
+/// three and names the ones that failed.
+///
+/// There is deliberately no fourth variant meaning "this number is not a measurement".
+/// Nothing in the file needs one today, and an escape hatch is exactly what re-opens the
+/// hole this check closes: the whole point is that a number a reader is shown, inside a
+/// sentence this file already claims, must be tied to *something*. A future literal
+/// printing a chemistry constant or a control setting will fail here loudly, and the
+/// right answer will be to give it an arm that checks it against the chemistry file or
+/// the lesson block — not a waiver.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Accounted {
+    /// A claim on this sentence names it in `spells`, so checks 5 and 6 already tie it to
+    /// the engine. The sign is ignored on both sides: `numeric_tokens` does not collect
+    /// one, and `**−0.0640 V**` spells `-0.0640` of a negative value.
+    Spelled,
+    /// It is the instant a claim on this sentence is *read at*, written in that claim's
+    /// own frame — absolute before the mark, since the mark on a leg. `99.45 % at 250 s`
+    /// prints the health and the moment, and the moment is the claim's `read_at_s`. The
+    /// payload is that instant made absolute again, for the fence below.
+    ///
+    /// Fenced to one reading per claim, for the reason the two duration frames in
+    /// [`States`] are fenced to opposite sides of the mark: allowing a leg claim to be
+    /// read either absolutely or since the mark would let an author try both and keep
+    /// whichever matched.
+    ///
+    /// **And fenced against events, which is the arm's real hazard.** This was written
+    /// believing that giving `207.5 s` a claim of its own closed the sentence; the
+    /// perturbation that deletes that claim came back *green*, because the two other
+    /// claims on the sentence are read at 207.5 and this arm accounted the number as
+    /// their read instant. "We measured then" is a far weaker statement than "the cell
+    /// empties then", and the second is what the sentence tells a reader. So a
+    /// `ReadAt` accounting is refused at any instant the run raises a flag it did not
+    /// have on the step before — see [`Run::flags_arriving_at`] and the fence in
+    /// [`every_claim_matches_the_engine`], which is the only place a run exists.
+    ReadAt(f64),
+    /// It is inside a string this file already asserts the panel prints — a claim's
+    /// `shows`, which the display check compares against the mirrored formatter.
+    ///
+    /// One extra instant is available to a `displayed` claim read on a leg: the clock's
+    /// rendering of the mark, which is where the leg begins and therefore the one other
+    /// moment such a sentence can be speaking about. ``it goes from `10m` to `16m``
+    /// prints both ends. Only the `sim time` row qualifies, because it is the only row
+    /// that is a function of time alone — every other one would need telemetry, and this
+    /// check runs no engine for the reason [`every_claim_states_the_value_it_measures`]
+    /// runs none: a prose defect should not fail from behind step 8's 400 000 steps.
+    Shown,
+}
+
+/// Every claim on one sentence — a `(step, literal)` pair — in file order.
+fn sentence_group<'a>(all: &'a [Claim], step: &str, literal: &str) -> Vec<&'a Claim> {
+    all.iter()
+        .filter(|c| c.step == step && c.literal == literal)
+        .collect()
+}
+
+/// Every distinct claimed sentence in the file.
+fn sentences(all: &[Claim]) -> Vec<(&str, &str)> {
+    let mut out: Vec<(&str, &str)> = all
+        .iter()
+        .map(|c| (c.step.as_str(), c.literal.as_str()))
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// How this sentence's claims account for one number printed in it, or `None`.
+///
+/// Shared by check 6, which runs the whole scan without an engine, and by the event fence
+/// in [`every_claim_matches_the_engine`], which re-derives it for the one arm that needs a
+/// trajectory to be checked. Derived rather than declared: see [`Accounted`].
+fn accounting_for(token: &str, group: &[&Claim], lesson: &Lesson) -> Option<Accounted> {
+    let spelled = group.iter().any(|c| {
+        c.spells
+            .as_deref()
+            .map(|s| ascii_minus(s).trim_start_matches('-').to_string())
+            .is_some_and(|s| s == token)
+    });
+    if spelled {
+        return Some(Accounted::Spelled);
+    }
+
+    let read_at = group.iter().find_map(|c| {
+        let instant = if c.after_mark {
+            c.read_at_s - lesson.until_s
+        } else {
+            c.read_at_s
+        };
+        token
+            .parse::<f64>()
+            .ok()
+            .filter(|n| (n - instant).abs() < 1e-9)
+            .map(|_| c.read_at_s)
+    });
+    if let Some(absolute_s) = read_at {
+        return Some(Accounted::ReadAt(absolute_s));
+    }
+
+    let shown = group.iter().any(|c| {
+        let own = c
+            .shows
+            .as_deref()
+            .is_some_and(|s| numeric_tokens(s).iter().any(|t| *t == token));
+        // The clock at the mark: the leg's own origin, for a sentence that quotes the
+        // row at both ends of the leg.
+        let at_mark = c.states == States::Displayed
+            && c.after_mark
+            && c.display.as_deref() == Some("sim time")
+            && numeric_tokens(&fmt_time(lesson.until_s))
+                .iter()
+                .any(|t| *t == token);
+        own || at_mark
+    });
+    shown.then_some(Accounted::Shown)
+}
+
+/// Check 6 — every number a claimed sentence prints is tied to something.
+///
+/// Checks 1–5 tie the number a claim *spells* to the value it measures and say nothing
+/// about the other figures in the same sentence. `**99.98 %** when the cell empties at
+/// **207.5 s and 1.9306 V**` carries three numbers and used to carry two claims: the
+/// percentage and the voltage were each pinned, and the `207.5` was checked only as
+/// characters that had to still be there. Prose and literal could drift to `210 s`
+/// together and every check stayed green — which is the *original* hole this file was
+/// built to close, surviving on the one number in the sentence nobody claimed.
+///
+/// So: scan each claimed literal for numbers, and require every one of them to be
+/// accounted for by [`Accounted`]. That found the `207.5`, which now has a claim of its
+/// own against the flag the sentence says arrives there.
+///
+/// Two limits worth stating rather than leaving to be found:
+///
+/// * **A sentence is grouped by `(step, literal)`.** Two claims quoting *different*
+///   substrings of one sentence are two groups, so a number spelled only by the sibling
+///   group goes unaccounted here. That is the fail-toward-red direction and no claim in
+///   the file is written that way today, but the next author to split a sentence will
+///   meet it, and the fix is to give both claims the same literal.
+/// * **This says which numbers are claimed, not which sentences are.** A step with no
+///   claims has no literals to scan and is untouched by this check; fourteen of the
+///   twenty-one still have none. Step-level completeness needs a different instrument —
+///   a ledger over each step's whole prose — and that one does need a taxonomy for the
+///   numbers that are settings, chemistry constants and ordinals rather than
+///   measurements. See the module docs.
+#[test]
+fn every_number_in_a_claimed_literal_is_accounted_for() {
+    let lessons = lessons();
+    let all = claims();
+
+    for (step, literal) in sentences(&all) {
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == step)
+            .unwrap_or_else(|| panic!("no lesson `{step}`"));
+        let group = sentence_group(&all, step, literal);
+
+        for token in numeric_tokens(&ascii_minus(literal)) {
+            assert!(
+                accounting_for(&token, &group, lesson).is_some(),
+                "step `{step}`, sentence `{literal}`:\n  it prints `{token}`, and none of \
+                 the {} claim(s) on it accounts for that number.\n\
+                 Tried, in order:\n  \
+                 - spelled: no claim here names `{token}` in `spells`\n  \
+                 - read at: no claim here is read at that instant \
+                 ({:?} in its own frame)\n  \
+                 - shown:   it is in no `shows` string this sentence's claims assert\n\
+                 A number inside a sentence this file already claims, tied to nothing, is \
+                 the hole checks 1-5 leave open: the prose and the literal can drift \
+                 together and every one of them stays green. Give it a claim of its own \
+                 — that is what `207.5 s` got — or, if it really is not a measurement, \
+                 add an arm to `Accounted` that checks it against whatever does decide \
+                 it. There is no waiver, on purpose.",
+                group.len(),
+                group
+                    .iter()
+                    .map(|c| if c.after_mark {
+                        c.read_at_s - lesson.until_s
+                    } else {
+                        c.read_at_s
+                    })
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+}
+
 /// Check 1 — the claim's text is still in the prose it is a claim about.
 #[test]
 fn every_claim_appears_in_its_own_step() {
@@ -2018,6 +2271,41 @@ fn every_claim_matches_the_engine() {
         // pack, so it costs only its own steps and pre-mark claims read the same rows
         // they read before it existed (see `Run::row_at`).
         let r = run(lesson, legs.iter().find(|l| l.step == step));
+
+        // The fence on `Accounted::ReadAt`, which lives here because this is the only
+        // place a trajectory exists. Check 6 accepts a number in a claimed sentence when
+        // it is the instant that sentence's claims are read at — which says "we measured
+        // then", not "this is when it happened". On `**99.98 %** when the cell empties at
+        // **207.5 s and 1.9306 V**` those are two different statements and the reader is
+        // given the second, so deleting the flag claim from that sentence left check 6
+        // green with the sentence's own event time tied to nothing. An instant where the
+        // run raises a flag it did not have a step earlier is an event, and an event a
+        // sentence names has to be claimed.
+        for (s, literal) in sentences(&all) {
+            if s != step {
+                continue;
+            }
+            let group = sentence_group(&all, s, literal);
+            for token in numeric_tokens(&ascii_minus(literal)) {
+                let Some(Accounted::ReadAt(at_s)) = accounting_for(&token, &group, lesson) else {
+                    continue;
+                };
+                let arriving = r.flags_arriving_at(at_s);
+                assert!(
+                    arriving.is_empty(),
+                    "step `{step}`, sentence `{literal}`:\n  it prints `{token}`, and the \
+                     only thing accounting for that number is that this sentence's claims \
+                     are read at t = {at_s} s — where the run raises {arriving:?}.\n\
+                     A sentence naming the moment something happens is claiming that \
+                     moment. `read at` is the weaker statement that we measured then, and \
+                     it would stay green if the flag moved and the prose and the literal \
+                     moved with it. Add a claim on this sentence against the event \
+                     itself, e.g. `quantity = \"flag_first_s:{}\"`.",
+                    arriving.first().map_or("FLAG", String::as_str),
+                );
+            }
+        }
+
         for c in all.iter().filter(|c| c.step == step) {
             let got = measure(&c.quantity, &r, c.read_at_s);
             assert!(
