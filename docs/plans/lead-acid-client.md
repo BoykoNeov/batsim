@@ -284,6 +284,17 @@ Sampled through step 24's rest: `42m` → `1.984 V`, `72m` → `2.005 V`, `4.2h`
 and `soc (true)` took **exactly one distinct value, `38.6 %`, across every resting sample**
 — the step's central claim, observed rather than asserted.
 
+**The condition on those four, because in this repo the condition is part of the number.**
+The rest was sampled with the speed slider forced to ≈200×, not the shipped `speed_x: 2000`.
+That is not the lesson's configuration, and it is also not as far from it as it looks:
+under `--headless=new` each frame is *driven* by a screenshot, so a forced frame carries
+0.05–0.15 s of wall clock against a real browser's 0.017 s, and ≈200× under the driver
+lands within a factor of two of 2000× at 60 fps (≈33 s of simulation per frame either way).
+The three voltages sit where the curve moves under 1 mV per minute, so they survive that
+factor. **The `38.6 %` is the one that transfers by construction rather than by
+measurement** — SOC cannot move during a rest at any speed, which is exactly why it is the
+claim the step is built on.
+
 ## The stale wasm, and why the usual tell was absent
 
 The lead-acid lessons leave `use-socket` off, so the engine answering them is the wasm
@@ -319,6 +330,17 @@ panel sails past the end of leg one, points at step 23 where the same instant *i
 and is readable, and tells the reader to identify the two sides of the jump by the `current`
 row rather than by the clock. The claims are kept, with the caveat recorded on the one at
 737.5 s.
+
+**And the same defect was one clause further on, unclaimed.** The rewritten sentence went on
+to promise a climb "slow enough to watch", leading with `1.912 V` four minutes in — which is
+the engine's value at 977.0 s and **not** what the panel shows there: the sampled trace reads
+`1.890` at `15m`, `1.904` at `16m`, `1.914` at `17m`. Four minutes into a rest this cell is
+still relaxing at about 14 mV per minute of simulation, so no reader lands on 1.912, where
+the other three figures sit on a curve moving under 1 mV per minute and do check out. An
+8 mV miss — eight times the last printed place, not a rounding difference. The four-minute
+figure is gone and the fast stage is now described as the thing you *cannot* read a number
+off. Worth stating plainly: this one was in the sentence written to repair the previous one,
+it carried no claim, and only re-reading the sampled trace against the new prose found it.
 
 ## Deferred, with a price
 
