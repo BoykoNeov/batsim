@@ -1,0 +1,157 @@
+# Generic AGM lead-acid cell parameters (one 2 V cell; a 12 V battery is 6S).
+#
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [thermal] and
+# [aging]. [safety] is deliberately ABSENT -- see the note at the bottom of this file.
+# Every physical constant carries a provenance note per the project rule: no unlabeled
+# numbers. There is no PyBaMM parameter set behind lead-acid, so almost everything here
+# is anchored on datasheet-class hardware figures rather than fitted, and says so.
+#
+# Read docs/plans/lead-acid-data-only.md before trusting this file for anything
+# rate-dependent: the ECM has no diffusion term, so this parameter set reproduces only
+# about half of the capacity loss a real lead-acid cell shows between a trickle and a
+# hard discharge, and none of it below 1C. That is a property of the model, not of the
+# numbers, and no choice of [r0] fixes it.
+
+[meta]
+id         = "pba_agm_2v_generic"
+name       = "Generic AGM lead-acid 2 V cell"
+provenance = "Assembled from datasheet-class figures for a 12 V 7.2 Ah AGM (UPS class), divided down to one cell: OCV from electrolyte specific gravity, R0 from quoted battery internal resistance cross-checked against cranking voltage. Nothing here is fitted to a reference model; see docs/plans/lead-acid-data-only.md."
+
+[cell]
+# provenance: nominal C20 rating of a 12 V 7.2 Ah AGM (UPS class). Lead-acid capacity is
+# quoted at the 20-hour rate BY CONVENTION, precisely because the delivered capacity falls
+# with rate -- so this number means "7.2 Ah if you take 20 hours over it", and the engine
+# reproduces only part of the fall-off. See the plan doc.
+capacity_ah     = 7.2
+v_max           = 2.45     # provenance: standard AGM absorption/charge cutoff per cell (float is 2.25 V)
+v_min           = 1.75     # provenance: standard end-of-discharge per cell AT THE 20-HOUR RATE. Real datasheets LOWER this to ~1.60 V at high rate; the engine has one fixed cutoff, which is itself part of the gap measured in the plan doc.
+max_charge_c    = 0.3      # provenance: lead-acid charge acceptance is ~0.1-0.3C, an order of magnitude below lithium's -- one of the sharpest practical contrasts in this file
+max_discharge_c = 3.0      # provenance: typical AGM continuous discharge rating (starting batteries burst far higher for seconds)
+# provenance: lead-acid has NO lithium-plating mechanism, so the low-temperature charge
+# inhibit that guards a Li cell does not apply. The real cold limit is electrolyte
+# FREEZING, which depends on state of charge (a full cell freezes near -60 degC, a flat
+# one near -8 degC because it is mostly water). The engine has no SOC-dependent freeze
+# model, so this is set to the flat-cell figure as the conservative single number.
+t_charge_min_k  = 265.15   # -8 degC
+t_max_k         = 323.15   # provenance: 50 degC operating ceiling; AGM life roughly halves per 10 K above 25 degC
+
+# Monotone OCV(soc); linear interpolation, clamped at the ends.
+# provenance: rest voltage from electrolyte specific gravity, the standard lead-acid
+# relation OCV ~ SG + 0.84, with SG running 1.265 full to ~1.12 discharged. Values are
+# the conventional table (2.12-2.13 V full, ~1.95 V empty) rather than a fit.
+#
+# The shape is the pedagogical point and it is NOT "steeper than LFP" -- lead-acid spans
+# 180 mV end to end where LFP spans 1600 mV, so LFP moves 8.9x MORE voltage overall. What
+# lead-acid has is UNIFORMITY: 1.76-1.80 mV per 1 % SOC at every charge level, flat to
+# within 2 %, where LFP's slope varies 40x between its plateau and its end knees. Inside
+# LFP's dead zone (soc 0.45-0.65) this cell is 4.5x more informative. That is why a
+# lead-acid state of charge can be read off a resting voltmeter and an LFP one cannot.
+[ocv]
+soc   = [0.00, 0.25, 0.50, 0.75, 1.00]
+volts = [1.950, 2.005, 2.055, 2.098, 2.130]
+
+# Ohmic resistance R0[soc][temp_k], ohms per CELL. Bilinear interpolation, clamped.
+#
+# provenance: mid-SOC room-temperature value is the quoted ~23 mOhm internal resistance of
+# a 12 V 7.2 Ah AGM divided by its 6 cells = 3.83 mOhm. Cross-checked independently on
+# different hardware: a 60 Ah starting battery at 0.83 mOhm/cell cranking at 400 A gives
+# 10.7 V at the terminals, and real cranking voltage is 9.5-10.5 V.
+#
+# The rise toward empty is placeholder SHAPE, not a fit (TODO: fit from discharge curves).
+# It is the only mechanism this model has for rate-dependent capacity loss, and the plan
+# doc shows it is structurally the wrong shape for the job -- so do not tune it to match a
+# Peukert curve. Fitting one rate with it is easy and meaningless.
+# Low-temperature column: lead-acid resistance roughly doubles at -20 degC (acid viscosity
+# and reduced ion mobility); placeholder factor, order-of-magnitude only.
+[r0]
+soc    = [0.00, 0.10, 0.20, 0.50, 1.00]
+temp_k = [253.15, 298.15, 323.15]
+ohms   = [[0.0306, 0.0153, 0.0138],
+          [0.0184, 0.0092, 0.0083],
+          [0.0108, 0.0054, 0.0049],
+          [0.0080, 0.0040, 0.0036],
+          [0.0076, 0.0038, 0.0034]]
+
+# Single RC (Thevenin) pair. tau = r_ohms * c_farad = 240 s.
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Lead-acid's dominant
+# polarization time constant is MINUTES, not the ~20 s of a small lithium cell, because
+# the process behind it is acid diffusion through the porous plates rather than a surface
+# double layer. The long tau is why a lead-acid battery "recovers" visibly after a heavy
+# load is removed. Note what this pair can and cannot do: it is a FIXED resistance, so it
+# reproduces the relaxation transient but not the SOC-dependent depletion that drives real
+# Peukert behaviour.
+[[rc]]
+r_ohms  = 0.0040
+c_farad = 60000.0
+
+# How the cell behaves below empty. Over-discharge is the classic way to kill a lead-acid
+# battery -- deep discharge drives hard sulfation, and left flat the plates sulfate
+# permanently. See docs/plans/low-clamp-reversal.md for what this section does.
+[reversal]
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized the same way LFP's
+# is: the cell collapses from its empty-endpoint OCV (1.95 V) to the floor over 2 % of
+# capacity.
+v_per_soc = 97.5
+# provenance: placeholder -- a declared limit rather than a measured plateau, matching the
+# choice made for LFP. A reversed lead-acid cell does go negative (the plates reverse
+# polarity), but 0 V is the conservative bound and stops an otherwise unbounded ramp.
+floor_v   = 0.0
+# What over-discharge costs: capacity fraction lost per Ah delivered past empty.
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized against the collapse
+# window above, the same way LFP's is, and set to cost TWICE what LFP's does per full
+# reversal. Note the raw number is SMALLER than LFP's 2.2e-1 and still costs more, because
+# it is per amp-hour on a cell three times the size -- compare the normalised quantity:
+#   LFP:       2 % of 2.303 Ah = 0.0461 Ah past empty x 2.2e-1 = 1.0 % capacity lost
+#   this cell: 2 % of 7.2   Ah = 0.1440 Ah past empty x 1.39e-1 = 2.0 % capacity lost
+# The 2x is the intent: hard sulfation from a deep over-discharge is less recoverable than
+# most lithium abuse, and lead-acid's reputation for dying after being left flat is the
+# single most familiar fact about the chemistry.
+fade_per_ah = 1.39e-1
+
+[thermal]
+# provenance: ~m*cp for one cell of a 12 V 7.2 Ah AGM (~2.6 kg battery, ~430 g per cell,
+# lead plates plus glass mat and acid, cp ~0.35 kJ/kg/K weighted); placeholder.
+heat_capacity_j_per_k = 150.0
+# h*A for a FULLY EXPOSED cell. Inside a pack the engine scales this down per cell by the
+# fraction of surface not blocked by neighbours.
+# provenance: natural-convection h*A placeholder for a bare prismatic cell of this size;
+# larger than a cylindrical lithium cell's because the surface is larger.
+h_area_w_per_k        = 0.55
+
+# No docv_dt_v_per_k column, so entropic heating is disabled for this chemistry.
+# (TODO: lead-acid's dU/dT is small and positive, ~+0.2 mV/K; add if the reversible term
+# ever matters here.)
+
+# Semi-empirical aging. Same model as the lithium files: calendar fade is k(T, soc)*sqrt(t),
+# cycle fade is per Ah of throughput weighted by depth. Every number is a placeholder, but
+# the SET is chosen to put lead-acid where it actually sits relative to lithium: far fewer
+# cycles, and calendar life dominated by grid corrosion which is strongly temperature-driven.
+# Together these give roughly 20 % capacity fade over a year at 25 degC held full, and
+# roughly 20 % over 300 full cycles -- i.e. a few hundred deep cycles rather than lithium's
+# few thousand, which is the honest headline for this chemistry.
+#
+# NOTE ON A SIGN THIS MODEL CANNOT EXPRESS: lead-acid's calendar fade is worst when the cell
+# is left DISCHARGED (sulfation), the opposite of lithium, which is worst held full. The
+# cal_soc_stress table below is written that way -- higher stress at low SOC -- which is a
+# use of the existing knob, not a change to it.
+[aging]
+cal_pre_exp                = 4.0e4    # provenance: placeholder -- order-of-magnitude only, TODO fit
+cal_ea_j_per_mol           = 5.5e4    # provenance: placeholder Arrhenius activation energy for grid corrosion, TODO fit
+cal_soc_stress             = [1.8, 1.0, 1.1]  # provenance: placeholder stress at soc = 0.0/0.5/1.0, INVERTED relative to lithium because a lead-acid cell left flat sulfates
+cyc_fade_per_ah            = 1.0e-4   # provenance: placeholder, set ~5x the LFP file's so a few hundred deep cycles rather than a few thousand, TODO fit
+cyc_dod_stress_exp         = 1.3      # provenance: placeholder DOD stress exponent; lead-acid cycle life is far more depth-sensitive than lithium's, which is why deep-cycle use is rated separately
+r_growth_per_capacity_loss = 2.0      # provenance: placeholder -- resistance growth outruns capacity fade, more so than lithium because grid corrosion attacks the conduction path directly
+
+# [safety] IS DELIBERATELY OMITTED, and the omission is the correct physics.
+#
+# The section is optional. Its live half models LITHIUM PLATING -- charging a cold cell
+# above a C-rate threshold deposits metallic lithium, costing capacity and risking a soft
+# internal short. A lead-acid cell has no lithium and no such mechanism, so every constant
+# in that half would be a fabricated number in a repo whose rule is that there are none.
+#
+# Lead-acid does have a real thermal runaway, but it is a DIFFERENT mechanism from the one
+# the runaway trio models: it happens during constant-voltage charging, when a hot cell
+# draws more current, which makes it hotter, which makes it draw more -- an electrical
+# feedback loop through the charger, not an internal exothermic decomposition with a finite
+# energy budget. Filling in t_onset_k / t_vent_k / runaway_energy_j would describe the wrong
+# failure. Modelling the real one needs the charger in the loop and is out of scope.
