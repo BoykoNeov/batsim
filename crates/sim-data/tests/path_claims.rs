@@ -12,13 +12,22 @@
 //! read its header for the four checks and why the literal is stored as a string
 //! rather than formatted from the value.
 //!
-//! # The four checks, and why none of them is redundant
+//! # The five checks, and why none of them is redundant
 //!
 //! * **Literal** — the claim's text appears verbatim in that step's prose. A prose edit
 //!   that changes the number now fails here even though the engine never moved. This is
 //!   the half that would have caught all four historical failures; a golden-value table
 //!   would have caught none of them.
 //! * **Value** — the engine, driven the way `applyStep` drives it, produces the number.
+//! * **Stated** — the number the *sentence* prints is the number the engine produced,
+//!   read through the frame the sentence uses it in ([`States`]). This is the check that
+//!   joins the two above, and until it existed they were two green halves with nothing
+//!   between them: `literal` is a substring test against the prose and `value` is a
+//!   comparison against the engine, so re-measuring a drifted `value` without re-wording
+//!   the sentence left both passing and the prose wrong. It is not the value check at
+//!   lower precision either — it runs the other way, from the prose's digits to the
+//!   engine's, and the frames are not all scales: `0.53 points are gone` is a
+//!   complement, `refused 0.822 A` a magnitude, `383.0 s later` a duration off the mark.
 //! * **Reachable** — the claim is read at a time the step actually runs to. "Right but
 //!   unreachable" is a defect class this repo has shipped twice.
 //! * **Displayed** — optional, and the newest. A claim may name a readout row; the row's
@@ -43,7 +52,7 @@
 //!   not an independent result. Said plainly here because an uncovered check under a green
 //!   test reads as a covering one.
 //!
-//! Behind the value check sits a fifth, about this file rather than about the page:
+//! Behind the value check sits a sixth, about this file rather than about the page:
 //! [`every_tolerance_follows_its_declared_rule`]. `tol` is what decides how much of a
 //! claim is actually claimed, and it was the one field nothing checked — a careless value
 //! makes the value check pass on anything. Each claim now declares which rule its
@@ -80,16 +89,13 @@
 //!   set to just cover the furthest claim then "reachable" says only "I ran long enough to
 //!   reach it". The non-circular half is [`every_leg_is_instructed_by_its_own_step`]: the
 //!   sentence telling the reader to make this exact change must be in this step's prose.
-//! * **Whether `value` still agrees with `literal`.** Nothing ties them together. The
-//!   literal check is a substring test against the prose and the value check compares the
-//!   engine to `value`, so re-measuring a drifted `value` without re-wording the sentence
-//!   leaves both green and the prose wrong. `tol_from` narrows this — a claim's `spells`
-//!   must be a number in its own literal — but only pins the *precision* of the prose's
-//!   number, never its magnitude. Closing it needs a vocabulary for how a spelled number
-//!   maps to a value, and the mappings in this file are not all scales: `0.53 points are
-//!   gone` is the complement of `0.9947`, and `refused 0.822 A` is the magnitude of
-//!   `-0.82224`. The tolerance rule is indifferent to sign, offset, and complement, which
-//!   is exactly why `spells` plus a power of ten is enough for it and not enough for this.
+//! * **Numbers inside a claimed literal that no claim is about.** [`States`] ties the
+//!   number a claim *spells* to the value it measures; it says nothing about the other
+//!   figures in the same sentence. `**99.98 %** when the cell empties at **207.5 s and
+//!   1.9306 V**` carries three numbers and two claims — the percentage and the voltage
+//!   are each pinned, and the 207.5 s is checked only as characters that must still be
+//!   there. That is the completeness direction (which numbers are claimed at all) rather
+//!   than the correctness one this file now covers, and it is not closed.
 //! * **Page-behaviour claims.** Anything about what a control does, what a legend
 //!   prints, or what a button orders. Those need a browser.
 //! * **The client-side demand programs are mirrored, not shared.** `Pulse` and `CcCv`
@@ -961,13 +967,18 @@ enum TolFrom {
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
     /// the rule it beats is still computable. Used where a claim is pinned harder than
-    /// the sentence needs (a chemistry constant, an exactly-1.0 starting point) and where
-    /// the prose hedges a round number the engine misses by more than its last place.
+    /// the sentence needs (a chemistry constant, an exactly-1.0 starting point), where
+    /// the prose hedges a round number the engine misses by more than its last place, and
+    /// for four grid times whose prose *does* spell them: half a step is tighter than the
+    /// whole second those sentences print, so the number was always right and only the
+    /// declaration was wrong. 11 of 48.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
-    /// spells no number in it — it gives a duration in minutes, or a consequence, or
-    /// nothing. `tol` is half a timestep, which for a grid time is the tightest
-    /// meaningful bound: the engine either hits the claimed step or misses by a whole one.
+    /// spells no number in it — it gives a consequence, or a rendering of the clock.
+    /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
+    /// the engine either hits the claimed step or misses by a whole one. 2 of 48, both of
+    /// them claims whose [`States`] is `nothing` or `displayed`: a claim that spells its
+    /// own number takes that number's rule instead, however coarse the grid is.
     ///
     /// This is the variant that could have re-licensed the defect it was written after,
     /// so it is fenced three ways in [`every_tolerance_follows_its_declared_rule`]. In
@@ -975,6 +986,75 @@ enum TolFrom {
     /// `**383.0 s later**` returns a grid time too, and half a step is five times looser
     /// than the tenth it prints.
     Grid,
+}
+
+/// What the claim's own sentence says about the number the engine produces.
+///
+/// This runs prose → value, which is the direction nothing in this file used to run.
+/// `literal` was a substring test against the page and `value` a comparison against the
+/// engine, and the two never met: re-measure a drifted `value`, leave the sentence
+/// alone, and both halves stay green while the prose is wrong. A drift small enough to
+/// hide inside a readout row's rounding — 0.6387 V becoming 0.6392 — passed the display
+/// check too.
+///
+/// The obvious closing move, "format `value` and require the result in the prose", is
+/// the one this file has refused from the start: a formatter that has to agree with how
+/// a human wrote each sentence generates false failures and then gets suppressed. What
+/// makes the tie possible instead is that English states a number in only a few frames,
+/// and a claim can name which one it is using. Each variant below is one frame, and each
+/// is checked at the *sentence's* own precision — half a unit in the last printed place
+/// of `spells`, the same rule [`TolFrom`] uses, because the question here is exactly
+/// "does the engine's number round to the one the reader is shown".
+///
+/// This also closes the leverage `spells` used to have. It was required to be *a* number
+/// in the claim's literal and never the one stating this claim's quantity, so on a
+/// multi-number sentence an author could name the coarsest and take its tolerance —
+/// pointing the voltage claim on `The cell empties at 4146.5 s at 1.9290 V` at `4146.5`
+/// left every test green with the voltage pinned a thousand times looser than its
+/// sentence licensed. Under `same` that mis-pointing compares 4146.5 against 1.9290 and
+/// fails on sight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum States {
+    /// The sentence prints the quantity itself. 38 of 48, and the shape to prefer: it is
+    /// the only variant with no second reading available to an author.
+    Same,
+    /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
+    /// of a current of −0.82224 A. Fenced to negative values, because on a positive one
+    /// it is a silent alias for `same`.
+    Magnitude,
+    /// The sentence prints how far *below one* the value is: `0.53 points are gone` of a
+    /// `soh cap` of 0.9947106. Health is the only quantity here that is naturally read as
+    /// a shortfall, and the sentences about it say so.
+    Complement,
+    /// The sentence prints a duration since this step's mark — `**383.0 s later**` of an
+    /// absolute 983.0 s on a step whose `until_s` is 600. Fenced to `after_mark` claims:
+    /// before the mark there is nothing to be later than.
+    SinceMark,
+    /// The sentence prints a duration *remaining* to the mark — `the last 53 seconds` of
+    /// a flag at 4146.5 s on a step that ends at 4200. Fenced to pre-mark claims, which
+    /// with the fence above stops an author trying both frames until one fits.
+    UntilEnd,
+    /// The sentence does not print the engine's number at all — it prints what the row
+    /// prints, and the row is a formatter: `it goes from `10m` to `16m`` of 983.0 s. The
+    /// tie is the display check rather than any arithmetic, so this variant asserts the
+    /// chain is complete instead of measuring: the claim must name a row, must be
+    /// `quoted`, and the string that row prints must sit inside *this* claim's literal.
+    /// Then literal ⊇ shows == the rendering of the measured value, end to end. A
+    /// `spells` is forbidden, or the two claims that could be read either way would be
+    /// the author's pick rather than the sentence's.
+    Displayed,
+    /// The sentence names a value the quantity has *left*: the second half of ``soh cap`
+    /// leaves 100.00 % at t = 10 s`, read on the step where it is no longer 100.00.
+    /// Asserts the opposite of `same` — the engine must be further from the spelled
+    /// number than the sentence's own precision — and is the one variant that could be
+    /// satisfied by pointing at any unrelated figure, so it is not allowed to stand
+    /// alone: see the sibling fence in [`every_claim_states_the_value_it_measures`].
+    Departure,
+    /// The sentence prints no number about this quantity — `An `OC` flag` says only that
+    /// it arrived. Checkable rather than declared: the literal must contain no digits at
+    /// all, which is what stops this being the escape hatch that re-opens the hole.
+    Nothing,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1004,6 +1084,10 @@ struct Claim {
     /// otherwise, which is most of them.
     #[serde(default)]
     spells_pow10: i32,
+    /// Which frame the sentence states this claim's quantity in — see [`States`].
+    /// Required, and with no serde default for the reason `tol_from` has none: a default
+    /// would hand a claim a reading of its own sentence that nobody chose.
+    states: States,
     read_at_s: f64,
     /// The readout row this claim is about, if it is about one at all — a label from
     /// `READOUTS` in `web/app.js`.
@@ -1094,6 +1178,28 @@ impl Claim {
             self.spells_pow10
         );
         5.0 * 10f64.powi(-(decimals_of(spells) + 1) - self.spells_pow10)
+    }
+
+    /// The number the sentence spells, brought into `value`'s own unit.
+    ///
+    /// The same `spells_pow10` that scales the tolerance scales the number, so a claim
+    /// whose prose speaks percent against a fraction is compared in one place and in one
+    /// unit. Panics through [`Claim::spelled_rule_tol`]'s message if there is no `spells`
+    /// — every caller has already established that this variant needs one.
+    fn spelled_value(&self) -> f64 {
+        let spells = self.spells.as_deref().unwrap_or_else(|| {
+            panic!(
+                "claim `{}` on step `{}` states `{:?}` and names no `spells`.",
+                self.literal, self.step, self.states
+            )
+        });
+        let n: f64 = spells.parse().unwrap_or_else(|_| {
+            panic!(
+                "claim `{}` on step `{}` spells `{spells}`, which is not a number.",
+                self.literal, self.step
+            )
+        });
+        n * 10f64.powi(-self.spells_pow10)
     }
 }
 
@@ -1567,6 +1673,216 @@ fn every_tolerance_follows_its_declared_rule() {
                         c.literal,
                         c.step,
                         c.tol
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Check 5 — the number the sentence prints is the number the engine produced.
+///
+/// The join between the literal check and the value check, which until this existed were
+/// two green halves with nothing between them. See [`States`] for what each frame means
+/// and why a formatter could not have done this job.
+///
+/// Three things are worth being explicit about.
+///
+/// **The tolerance here is the sentence's, not the claim's.** `tol` bounds engine against
+/// `value`; this bounds `value` against the prose, and the right bound for that is half a
+/// unit in the last printed place of what the prose printed — [`Claim::spelled_rule_tol`],
+/// the same rule [`every_tolerance_follows_its_declared_rule`] enforces from the other
+/// side. A `tighter` claim is deliberately pinned harder than its sentence; asking the
+/// sentence to meet that would fail every hedge in the file (`just under 14 A` is 13.82).
+///
+/// **The comparison forgives the last bit and nothing more.** Two claims land exactly on
+/// their rounding boundary — `3.6357` against a measured 3.63565, and `the last 53
+/// seconds` against a flag 53.5 s before the mark — and on the first of them the
+/// subtraction comes out 4.99999999998e-5 against a rule of 5e-5, which is a coin toss in
+/// binary and not a fact about the prose. `tol_eq`'s relative window decides those, the
+/// same way it decides two spellings of one tolerance.
+///
+/// **No engine is run.** Every frame here is arithmetic on `value` and, for the two
+/// duration frames, on the step's scraped `until_s`. A prose defect should not fail behind
+/// step 8's 400 000 engine steps.
+#[test]
+fn every_claim_states_the_value_it_measures() {
+    let lessons = lessons();
+    let all = claims();
+    for c in &all {
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == c.step)
+            .unwrap_or_else(|| panic!("no lesson `{}`", c.step));
+
+        // The two variants that state no number of their own forbid `spells` outright.
+        // Without that, the claims which could be read either way — `0.1 %` is both the
+        // sentence's figure and the row's rendering — would be the author's pick rather
+        // than the sentence's, which is the freedom this whole check exists to remove.
+        if matches!(c.states, States::Displayed | States::Nothing) {
+            assert!(
+                c.spells.is_none() && c.spells_pow10 == 0,
+                "claim `{}` on step `{}` states `{:?}` and also spells a number ({:?}, \
+                 pow10 {}).\n\
+                 Those two variants mean the sentence prints no figure of its own in this \
+                 quantity. If it does print one, that figure is what this claim is about \
+                 — use the frame it is printed in.",
+                c.literal,
+                c.step,
+                c.states,
+                c.spells,
+                c.spells_pow10
+            );
+        }
+
+        match c.states {
+            States::Nothing => {
+                let tokens = numeric_tokens(&c.literal);
+                assert!(
+                    tokens.is_empty(),
+                    "claim `{}` on step `{}` states `nothing`, and its own literal prints \
+                     {tokens:?}.\n\
+                     `nothing` is the only variant that ties the prose to the engine by \
+                     saying there is nothing to tie, so it is the one place a careless \
+                     claim could re-open the hole this check closes. A literal with a \
+                     digit in it has a figure a reader will read as this quantity — name \
+                     its frame.",
+                    c.literal,
+                    c.step
+                );
+            }
+            States::Displayed => {
+                let (row, shows) = c.display_claim().unwrap_or_else(|| {
+                    panic!(
+                        "claim `{}` on step `{}` states `displayed` and names no readout \
+                         row. The row *is* the tie: there is no arithmetic here, only the \
+                         chain from the sentence to the formatter.",
+                        c.literal, c.step
+                    )
+                });
+                assert!(
+                    c.quoted,
+                    "claim `{}` on step `{}` states `displayed` and is not `quoted`. The \
+                     chain this variant asserts runs literal ⊇ shows == the rendering of \
+                     the measured value; without `quoted` the middle link is missing and \
+                     the sentence is tied to nothing.",
+                    c.literal, c.step
+                );
+                assert!(
+                    ascii_minus(&c.literal).contains(&ascii_minus(shows)),
+                    "claim `{}` on step `{}` states `displayed`, and the `{row}` row's \
+                     string `{shows}` is not inside that literal.\n\
+                     `quoted` only asks for it somewhere in the step's prose, which on a \
+                     step with several rows can be a different sentence entirely. This \
+                     variant needs it in *this* claim's own sentence, because that \
+                     sentence is what it is standing in for.",
+                    c.literal,
+                    c.step
+                );
+            }
+            // Everything else compares a number to a number, in `value`'s unit.
+            _ => {
+                let stated = c.spelled_value();
+                let rule = c.spelled_rule_tol();
+                let mapped = match c.states {
+                    States::Same | States::Departure => c.value,
+                    States::Magnitude => {
+                        assert!(
+                            c.value < 0.0,
+                            "claim `{}` on step `{}` states a `magnitude` of {}, which is \
+                             not negative. On a positive value this variant is a silent \
+                             alias for `same` — say `same`.",
+                            c.literal,
+                            c.step,
+                            c.value
+                        );
+                        c.value.abs()
+                    }
+                    States::Complement => 1.0 - c.value,
+                    States::SinceMark => {
+                        assert!(
+                            c.after_mark,
+                            "claim `{}` on step `{}` states a duration `since_mark` and is \
+                             not an `after_mark` claim. Before the mark there is nothing \
+                             to be later than, and the two duration frames are only \
+                             distinguishable because each is fenced to one side of it.",
+                            c.literal, c.step
+                        );
+                        c.value - lesson.until_s
+                    }
+                    States::UntilEnd => {
+                        assert!(
+                            !c.after_mark,
+                            "claim `{}` on step `{}` states a duration `until_end` and is \
+                             an `after_mark` claim. Past the mark the step has no end to \
+                             count down to — `until_s` is where the page stopped, not \
+                             where the leg does.",
+                            c.literal, c.step
+                        );
+                        lesson.until_s - c.value
+                    }
+                    States::Displayed | States::Nothing => unreachable!("handled above"),
+                };
+
+                let diff = (stated - mapped).abs();
+                let within = diff <= rule || tol_eq(diff, rule);
+
+                if c.states == States::Departure {
+                    // A claim that asserts a *difference* is satisfied by pointing at any
+                    // unrelated figure in the sentence — `t = 10 s` would do — so it is
+                    // not allowed to stand alone. The sentence "leaves 100.00 %" is two
+                    // statements, and this variant is only the second of them.
+                    assert!(
+                        !within,
+                        "claim `{}` on step `{}` states a `departure` from {stated} and \
+                         the value {} is {diff:.3e} away, inside the sentence's own \
+                         precision of {rule:.3e}.\n\
+                         The sentence says the quantity has left that number and at this \
+                         instant it has not — which is a claim about what a reader sees \
+                         change, so it failing means the change moved, not that the \
+                         tolerance is wrong.",
+                        c.literal, c.step, c.value
+                    );
+                    let vouched = all.iter().any(|o| {
+                        o.states == States::Same
+                            && o.step == c.step
+                            && o.literal == c.literal
+                            && o.quantity == c.quantity
+                            && o.spells == c.spells
+                            && o.spells_pow10 == c.spells_pow10
+                            && o.read_at_s < c.read_at_s
+                    });
+                    assert!(
+                        vouched,
+                        "claim `{}` on step `{}` states a `departure` from {stated} and no \
+                         earlier claim on the same sentence and quantity states `same` \
+                         with that number.\n\
+                         Alone, this variant asserts only that the engine is *not* some \
+                         figure, which any unrelated number in the sentence satisfies. It \
+                         is half of a pair: one claim shows the quantity holding the \
+                         value, the next shows it gone. The sibling is what makes the \
+                         number the sentence's rather than the author's.",
+                        c.literal, c.step
+                    );
+                } else {
+                    assert!(
+                        within,
+                        "step `{}`, claim `{}`:\n  the sentence spells {stated} (as \
+                         `{}`, pow10 {})\n  read as `{:?}` of the claimed value {}, that \
+                         is {mapped}\n  difference {diff:.3e}, and the sentence's own \
+                         precision allows {rule:.3e}\n\
+                         The prose and the stored value have come apart. This is the check \
+                         that stops a re-measured `value` sliding under an unchanged \
+                         sentence: if the engine moved, re-word the sentence in web/app.js \
+                         and update `literal`, `spells` and `value` together. If the \
+                         sentence states this quantity in a different frame than the one \
+                         named here, the frame is what is wrong.",
+                        c.step,
+                        c.literal,
+                        c.spells.as_deref().unwrap_or(""),
+                        c.spells_pow10,
+                        c.states,
+                        c.value
                     );
                 }
             }

@@ -11,7 +11,7 @@
 # measuring instrument that lived outside the repo and therefore never ran again.
 #
 # `crates/sim-data/tests/path_claims.rs` reads this file and checks each entry up to
-# FOUR independent ways. Each catches a failure the others cannot:
+# FIVE independent ways. Each catches a failure the others cannot:
 #
 #   1. LITERAL  — `literal` must appear verbatim in that step's own prose/expect
 #                 text. Catches: the prose was edited and the claim was not.
@@ -26,8 +26,17 @@
 #                 true of the engine, and not what the panel says. A row is a step
 #                 function of the number behind it, so a drift well inside `tol`
 #                 can still turn `0.0 %` into `0.1 %` or `99.45` into `99.44`.
+#   5. STATED   — the number the SENTENCE prints must be the number the engine
+#                 produced, read through the frame the sentence uses it in
+#                 (`states`). Catches: checks 1 and 2 passing with nothing between
+#                 them. The literal check is a substring test against the page and
+#                 the value check a comparison against the engine, so re-measuring a
+#                 drifted `value` and leaving the wording alone left both green with
+#                 the prose wrong — and a drift small enough to hide inside a row's
+#                 rounding (0.6387 V becoming 0.6392) got past check 4 as well. See
+#                 "Stating the value" below.
 #
-# A fifth check stands behind the second rather than beside it: `tol` decides how much
+# A sixth check stands behind the second rather than beside it: `tol` decides how much
 # of a claim is actually claimed, so it is derived by a declared rule (`tol_from`) and
 # the derivation itself is checked. See "Setting tol" below.
 #
@@ -55,6 +64,9 @@
 #   spells_pow10  how many powers of ten larger `spells`'s unit is than `value`'s. 2 for a
 #              prose percentage or points-of-a-hundred against a fraction; 0 otherwise,
 #              which is most of them. Default 0.
+#   states     which frame the sentence states this quantity in — `same`, `magnitude`,
+#              `complement`, `since_mark`, `until_end`, `displayed`, `departure` or
+#              `nothing`. Required, and checked. See "Stating the value" below.
 #   read_at_s  simulation time the claim is read at; must be <= the step's until_s,
 #              or, with `after_mark`, within the step's charge leg. ALWAYS ABSOLUTE.
 #              The leg prose speaks in time-since-the-mark ("383.0 s later"); the
@@ -99,26 +111,84 @@
 # else is accepted:
 #
 #   spelled  35 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter   7 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   tighter  11 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
-#             chemistry constant, for an exactly-1.0 starting point, and for the two
-#             `heat` claims whose stored `value` carries a place the sentence does not.
-#   grid      6 claims. The quantity is a time the engine can only report on the step
+#             chemistry constant, for an exactly-1.0 starting point, for the two
+#             `heat` claims whose stored `value` carries a place the sentence does not,
+#             and for four grid times whose prose spells them to the second: half a
+#             step is tighter than half a second, so those four were always pinned
+#             correctly and it was only their declaration that was wrong.
+#   grid      2 claims. The quantity is a time the engine can only report on the step
 #             grid (`flag_first_s:*`, `deficit_zero_s`) and the prose spells no number
-#             in it — it gives a duration in minutes, or a consequence, or nothing.
-#             `tol` is half a timestep, which for a grid time is the tightest
-#             meaningful bound: the engine hits the claimed step or misses by a whole
-#             one. Fenced hard, because this is the variant that could have re-blessed
-#             the defect it was written after: no `spells`, and no number anywhere in
-#             the literal printed more finely than a half-step. `**383.0 s later**`
-#             returns a grid time too, and half a step there is five times looser than
-#             the tenth it prints — so it is not eligible for `grid` at all.
+#             in it — it gives a consequence, or a rendering of the clock. `tol` is
+#             half a timestep, which for a grid time is the tightest meaningful bound:
+#             the engine hits the claimed step or misses by a whole one. Fenced hard,
+#             because this is the variant that could have re-blessed the defect it was
+#             written after: no `spells`, and no number anywhere in the literal printed
+#             more finely than a half-step. `**383.0 s later**` returns a grid time
+#             too, and half a step there is five times looser than the tenth it prints
+#             — so it is not eligible for `grid` at all.
+#             The two survivors are exactly the two claims whose `states` is `nothing`
+#             or `displayed`, and that is not a coincidence: a claim whose sentence
+#             spells its own number takes that number's rule, however coarse the grid
+#             is. Four claims were declared `grid` on the strength of "the prose spells
+#             no number in it" while their own literal printed `4154 s`, `5769 s`,
+#             `254 seconds` and `53 seconds` — the same shape of defect as the two the
+#             `tol_from` field was introduced for, found by writing `states` and having
+#             to say what each sentence states.
 #
 # There is no "widened" variant. Nothing in this file needs one today, and a tolerance
 # looser than the sentence's own precision means the sentence is printing more places
 # than the engine has — which the sentence should fix, not the tolerance. Where the
 # prose hedges a round figure ("just under 14 A"), the hedge is already the loosest
 # reading and `tighter` narrows it.
+#
+# Stating the value — `states` says how the number in the sentence relates to the
+# number in `value`, and it is the check that joins the two halves of this file. Until
+# it existed `literal` was a substring test against the page and `value` a comparison
+# against the engine, and nothing ran between them: re-measure a drifted value, leave
+# the wording alone, and everything here stayed green while the sentence was wrong. A
+# drift small enough to hide inside a row's own rounding got past the display check too.
+#
+# The obvious fix — format `value` and require the result in the prose — is the one
+# this file has refused from the start, for the reason given above about `literal`. What
+# makes the tie possible instead is that English states a number in only a few frames,
+# and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
+# (half a unit in the last printed place of `spells`), because the question is exactly
+# "does the engine's number round to the one the reader is shown" — not `tol`, which
+# bounds the engine against `value` and is deliberately tighter on 11 claims.
+#
+#   same        38 claims. The sentence prints the quantity. Prefer it: it is the only
+#               variant with no second reading available to an author.
+#   magnitude    2. The sentence prints the size and the sign is a word — `refused
+#               0.822 A` of −0.82224 A. Fenced to negative values; on a positive one it
+#               is a silent alias for `same`.
+#   complement   2. The sentence prints how far below one the value is — `0.53 points
+#               are gone` of a `soh cap` of 0.9947106.
+#   since_mark   2. A duration since the step's mark — `**383.0 s later**` of an
+#               absolute 983.0 s on a step marking at 600. Fenced to `after_mark`.
+#   until_end    1. A duration remaining to the mark — `the last 53 seconds` of a flag
+#               at 4146.5 s on a step ending at 4200. Fenced to pre-mark claims, which
+#               with the fence above stops an author trying both frames until one fits.
+#   displayed    1. The sentence prints what the ROW prints, not what the engine
+#               computes: `it goes from `10m` to `16m`` of 983.0 s. No arithmetic — the
+#               tie is the display check, so the claim must name a row, be `quoted`, and
+#               carry that row's string inside its own literal. No `spells` allowed, or
+#               the claims readable either way would be the author's pick.
+#   departure    1. The sentence names a value the quantity has LEFT: the second half of
+#               "`soh cap` leaves 100.00 % at t = 10 s". Asserts the opposite of `same`,
+#               and cannot stand alone — an earlier claim on the same sentence, quantity
+#               and number must state `same`, or "is not 100.00" would be satisfied by
+#               pointing at any figure in the sentence.
+#   nothing      1. The sentence prints no number about this quantity — `An `OC` flag`.
+#               Checked rather than trusted: the literal must contain no digit at all,
+#               which is what stops this being the escape hatch that re-opens the hole.
+#
+# This also closes the leverage `spells` used to have. It was required to be A number in
+# the claim's literal and never the one stating that claim's quantity, so on a
+# multi-number sentence an author could name the coarsest and take its tolerance. Under
+# `same`, pointing the voltage claim on `The cell empties at 4146.5 s at 1.9290 V` at
+# `4146.5` compares 4146.5 against 1.9290 and fails on sight.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -134,6 +204,7 @@ value = 0.6387
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "0.6387"
+states = "same"
 read_at_s = 4200.0
 display = "terminal"
 shows = "0.639 V"
@@ -155,15 +226,28 @@ literal = "the last 53 seconds"
 quantity = "flag_first_s:SOC_CLAMPED_LOW"
 value = 4146.5
 tol = 0.25
-tol_from = "grid"
+tol_from = "tighter"
+spells = "53"
+states = "until_end"
 read_at_s = 4146.5
 display = "sim time"
 shows = "69m"
 note = """
-Not a number the prose prints — the prose prints its consequence. The step ends at
-4200 s and says the cell spends "the last 53 seconds" below empty, which is only
-true if the flag arrives at 4147 s. Claiming the flag time rather than the phrase
-is what makes the sentence checkable. Tolerance is half a step at dt = 0.5.
+The prose does not print this flag time — it prints how long is left after it. The step
+ends at 4200 s and says the cell spends "the last 53 seconds" below empty, so the
+sentence and the claim are one subtraction apart and `until_end` is what performs it.
+Claiming the flag time rather than the phrase is what makes the sentence checkable.
+Tolerance is half a step at dt = 0.5, which is tighter than the half-second `53` would
+give — this claim was declared `grid` on the grounds that its prose spells no number in
+this quantity, and it plainly does.
+
+**This one sits exactly on its rounding boundary and is admitted rather than unnoticed.**
+4200 − 4146.5 is 53.5 s, and half a unit in the last place of `53` is 0.5, so the
+difference is the tolerance to the last bit. 53.5 rounds to 54 under every rule there
+is: the sentence is truncating, not rounding, and the check admits it only because the
+window is symmetric. It could equally say 54. It is left as it reads because 53 is the
+number the reader is given and the point of this file is to check what they are given —
+but a sentence with no margin at all is worth knowing about, and the margin here is zero.
 
 The display half is the clock at that instant, and it is the reason this file has a
 display half at all: the flag lands at 4146.5 s and the panel says `69m`. The step's
@@ -179,6 +263,7 @@ value = 1.2501
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "1.2501"
+states = "same"
 read_at_s = 4200.0
 display = "terminal"
 shows = "1.250 V"
@@ -194,7 +279,9 @@ literal = "It empties at 4154 s"
 quantity = "flag_first_s:SOC_CLAMPED_LOW"
 value = 4154.0
 tol = 0.25
-tol_from = "grid"
+tol_from = "tighter"
+spells = "4154"
+states = "same"
 read_at_s = 4154.0
 display = "sim time"
 shows = "69m"
@@ -207,6 +294,11 @@ the two chemistries empty "within two seconds of each other" when the real gap i
 The clock reads `69m` here too, which is the whole of the panel's opinion on a 7.5 s
 difference. The sentence is doing arithmetic the reader cannot do on the panel, and
 says so by giving seconds rather than pointing at a row.
+
+Declared `grid` until `states` was written, on a variant whose own definition is "the
+prose spells no number in it" — and the literal is `It empties at 4154 s`. The half-step
+is tighter than the half-second `4154` licenses, so the tolerance never moved; only the
+declaration was wrong, which is the defect `tol_from` itself was introduced to stop.
 """
 
 [[claim]]
@@ -217,6 +309,7 @@ value = 4.0299
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "4.030"
+states = "same"
 read_at_s = 415.5
 display = "terminal"
 shows = "4.030 V"
@@ -239,6 +332,7 @@ value = 3.5488
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "3.549"
+states = "same"
 read_at_s = 3323.5
 display = "terminal"
 shows = "3.549 V"
@@ -258,6 +352,7 @@ value = 13.8207
 tol = 0.2
 tol_from = "tighter"
 spells = "14"
+states = "same"
 read_at_s = 60.0
 display = "current"
 shows = "13.821 A"
@@ -284,6 +379,7 @@ quantity = "flag_first_s:OC"
 value = 0.5
 tol = 0.25
 tol_from = "grid"
+states = "nothing"
 read_at_s = 0.5
 display = "sim time"
 shows = "1s"
@@ -306,6 +402,7 @@ tol = 5.0e-5
 tol_from = "spelled"
 spells = "0.53"
 spells_pow10 = 2
+states = "complement"
 read_at_s = 50000.0
 display = "soh cap"
 shows = "99.47 %"
@@ -328,6 +425,7 @@ tol = 5.0e-5
 tol_from = "spelled"
 spells = "1.06"
 spells_pow10 = 2
+states = "complement"
 read_at_s = 200000.0
 display = "soh cap"
 shows = "98.94 %"
@@ -345,6 +443,7 @@ value = 1.5
 tol = 1.0e-4
 tol_from = "tighter"
 spells = "1.5"
+states = "same"
 read_at_s = 200000.0
 note = """
 Not a trajectory reading but the coupling itself, which CLAUDE.md refuses to let a
@@ -370,6 +469,7 @@ value = 3.63565
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "3.6357"
+states = "same"
 read_at_s = 6000.0
 display = "terminal"
 shows = "3.636 V"
@@ -390,7 +490,9 @@ literal = "`SOC_CLAMPED_HIGH` at 5769 s"
 quantity = "flag_first_s:SOC_CLAMPED_HIGH"
 value = 5769.0
 tol = 0.25
-tol_from = "grid"
+tol_from = "tighter"
+spells = "5769"
+states = "same"
 read_at_s = 5769.0
 display = "sim time"
 shows = "96m"
@@ -398,6 +500,10 @@ note = """
 The coulomb counter reaching 100 % on a charge that never reached its voltage limit.
 The clock says `96m` at that instant, so the seconds in the sentence are the engine's
 and not the panel's — the same shape as the two knees in steps 1 and 2.
+
+And declared `grid` for the same wrong reason as those two: the sentence spells `5769 s`
+outright. Half a step is tighter than the half-second that number licenses, so the
+tolerance is unchanged and only the citation moved.
 """
 
 [[claim]]
@@ -408,6 +514,7 @@ value = -0.82224
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "0.822"
+states = "magnitude"
 read_at_s = 5769.0
 display = "clamp"
 shows = "refused 0.822 A"
@@ -431,6 +538,7 @@ value = -1.15
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "1.150"
+states = "magnitude"
 read_at_s = 6000.0
 display = "clamp"
 shows = "refused 1.150 A"
@@ -449,6 +557,7 @@ value = 0.041
 tol = 5.0e-4
 tol_from = "tighter"
 spells = "0.04"
+states = "same"
 read_at_s = 5000.0
 display = "heat"
 shows = "0.04 W"
@@ -487,6 +596,7 @@ value = 4.181
 tol = 5.0e-4
 tol_from = "tighter"
 spells = "4.18"
+states = "same"
 read_at_s = 6000.0
 display = "heat"
 shows = "4.18 W"
@@ -524,6 +634,7 @@ value = 4146.5
 tol = 0.05
 tol_from = "spelled"
 spells = "4146.5"
+states = "same"
 read_at_s = 4146.5
 display = "sim time"
 shows = "69m"
@@ -551,6 +662,7 @@ value = 1.9290
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "1.9290"
+states = "same"
 read_at_s = 4146.5
 display = "terminal"
 shows = "1.929 V"
@@ -566,6 +678,7 @@ value = 1.2055
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "1.2055"
+states = "same"
 read_at_s = 4176.5
 display = "terminal"
 shows = "1.205 V"
@@ -587,6 +700,7 @@ value = 0.4819
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "0.4819"
+states = "same"
 read_at_s = 4206.5
 display = "terminal"
 shows = "0.482 V"
@@ -603,6 +717,7 @@ value = -0.0640
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "-0.0640"
+states = "same"
 read_at_s = 4400.0
 display = "terminal"
 shows = "-0.064 V"
@@ -625,6 +740,7 @@ value = 6.1210
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "6.121"
+states = "same"
 read_at_s = 4400.0
 note = """
 The debt at the mark, which is where the charge leg starts and what it has to pay off.
@@ -644,6 +760,7 @@ value = 0.024988
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "0.025"
+states = "same"
 read_at_s = 4400.5
 after_mark = true
 display = "terminal"
@@ -669,6 +786,7 @@ value = 0.062009
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "0.062"
+states = "same"
 read_at_s = 4460.0
 after_mark = true
 display = "terminal"
@@ -688,6 +806,7 @@ value = 0.063901
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "0.064"
+states = "same"
 read_at_s = 4520.0
 after_mark = true
 display = "terminal"
@@ -707,6 +826,7 @@ value = 0.766713
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "0.767"
+states = "same"
 read_at_s = 4600.0
 after_mark = true
 display = "terminal"
@@ -728,6 +848,7 @@ value = 2.065518
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "2.0655"
+states = "same"
 read_at_s = 4654.0
 after_mark = true
 display = "terminal"
@@ -748,6 +869,7 @@ value = 1.731450
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "1.731"
+states = "same"
 read_at_s = 4640.0
 after_mark = true
 display = "terminal"
@@ -770,7 +892,9 @@ literal = "exactly zero, for 254 seconds"
 quantity = "deficit_zero_s"
 value = 4654.0
 tol = 0.25
-tol_from = "grid"
+tol_from = "tighter"
+spells = "254"
+states = "since_mark"
 read_at_s = 4654.0
 after_mark = true
 note = """
@@ -778,11 +902,16 @@ When the debt clears. **The prose speaks in time-since-the-mark here and the cla
 absolute simulation time**: 254 s after the 4400 s mark is t = 4654 s, and that is what
 is stored. Getting this the other way round would be the "measured past the mark" defect
 in a new costume — a number authored against a relative reading, checked against an
-absolute one, and green either way if the two happened to be close.
+absolute one, and green either way if the two happened to be close. `states =
+"since_mark"` is that subtraction performed instead of narrated: the test does 4654 −
+4400 and requires 254.
 
 The tolerance is half a step rather than the half-second the sentence's own precision
 would give: the deficit is a per-step quantity on a 0.5 s grid, so anything that really
-moved this instant moves it by a whole step.
+moved this instant moves it by a whole step. That reasoning was right and the field
+above it said `grid`, whose definition is "the prose spells no number in it" while this
+literal spells `254 seconds`. Half a step is under half a second, so it is `tighter` —
+the number never moved, the citation did.
 
 This is also the anchor for the neighbouring claims: `soc (true)` reads exactly zero for
 every step before this one, which is the sentence's point, and the surplus on this step
@@ -808,6 +937,7 @@ tol = 1.0e-12
 tol_from = "tighter"
 spells = "100.00"
 spells_pow10 = 2
+states = "same"
 read_at_s = 9.5
 display = "soh cap"
 shows = "100.00 %"
@@ -817,6 +947,11 @@ The step before the first tick of the aging sub-clock: health is still exactly 1
 the row still reads a flat 100.00 %. Paired with the claim below, the two of them are
 the sentence "leaves 100.00 % at t = 10 s" — one shows it has not, one shows it has.
 The tolerance is not a measurement tolerance; nothing has happened yet.
+
+That pairing used to live only in this note. It is the field below now: the claim after
+this one states `departure`, and a `departure` is required to find an earlier claim on
+the same sentence, quantity and number stating `same`. This is that claim, and moving it
+later than its sibling or changing its frame breaks the pair rather than passing.
 """
 
 [[claim]]
@@ -828,6 +963,7 @@ tol = 1.0e-6
 tol_from = "tighter"
 spells = "100.00"
 spells_pow10 = 2
+states = "departure"
 read_at_s = 10.0
 display = "soh cap"
 shows = "99.99 %"
@@ -837,7 +973,11 @@ the sentence is about something a reader can *see*: the row changes on that step
 some steps later. A slower first tick — or a coarser row — would leave `100.00 %`
 standing here and the sentence would be describing the engine rather than the panel.
 
-Not quoted: `99.99 %` is not in the sentence, which is about the value it leaves.
+Not quoted: `99.99 %` is not in the sentence, which is about the value it leaves. That
+is also why this is the file's one `departure`: the sentence's number is 100.00 and this
+claim's value is deliberately *not* it, so the check asserts the difference is bigger
+than the sentence's own precision rather than smaller. Alone that would be satisfied by
+pointing at the `10` in "t = 10 s"; the sibling above is what stops it.
 """
 
 [[claim]]
@@ -849,6 +989,7 @@ tol = 5.0e-6
 tol_from = "tighter"
 spells = "99.98"
 spells_pow10 = 2
+states = "same"
 read_at_s = 207.5
 display = "soh cap"
 shows = "99.98 %"
@@ -868,6 +1009,7 @@ value = 1.9306
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "1.9306"
+states = "same"
 read_at_s = 207.5
 display = "terminal"
 shows = "1.931 V"
@@ -885,6 +1027,7 @@ tol = 5.0e-5
 tol_from = "spelled"
 spells = "99.45"
 spells_pow10 = 2
+states = "same"
 read_at_s = 250.0
 display = "soh cap"
 shows = "99.45 %"
@@ -904,6 +1047,7 @@ tol = 5.0e-5
 tol_from = "spelled"
 spells = "98.84"
 spells_pow10 = 2
+states = "same"
 read_at_s = 300.0
 display = "soh cap"
 shows = "98.84 %"
@@ -923,6 +1067,7 @@ tol = 5.0e-5
 tol_from = "spelled"
 spells = "95.16"
 spells_pow10 = 2
+states = "same"
 read_at_s = 600.0
 display = "soh cap"
 shows = "95.16 %"
@@ -941,6 +1086,7 @@ value = 1.0726455
 tol = 5.0e-5
 tol_from = "spelled"
 spells = "1.0726"
+states = "same"
 read_at_s = 600.0
 display = "soh res"
 shows = "1.0726 ×"
@@ -960,6 +1106,7 @@ value = -0.065024
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "-0.065"
+states = "same"
 read_at_s = 300.0
 display = "terminal"
 shows = "-0.065 V"
@@ -978,6 +1125,7 @@ value = -0.068551
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "-0.069"
+states = "same"
 read_at_s = 600.0
 display = "terminal"
 shows = "-0.069 V"
@@ -999,6 +1147,7 @@ value = 9.7041
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "9.704"
+states = "same"
 read_at_s = 600.0
 note = """
 The debt at the mark. Value-only for the same reason as step 20's: this is the engine's
@@ -1015,6 +1164,7 @@ value = 983.0
 tol = 0.05
 tol_from = "spelled"
 spells = "383.0"
+states = "since_mark"
 read_at_s = 983.0
 after_mark = true
 note = """
@@ -1040,6 +1190,7 @@ quantity = "deficit_zero_s"
 value = 983.0
 tol = 0.25
 tol_from = "grid"
+states = "displayed"
 read_at_s = 983.0
 after_mark = true
 display = "sim time"
@@ -1050,6 +1201,13 @@ note = """
 instant the sentence gives as 383.0 s past a 600 s mark is a row reading `16m` — six
 minutes of resolution for a number quoted to a tenth of a second. The sentence now says
 so, and this claim is what keeps it saying so.
+
+It is also the file's one `displayed` claim, and for the same reason it is its own defect:
+the sentence's two numbers are minutes off a formatter, not seconds off the engine, so
+there is no arithmetic that turns 983.0 into `16m` except `fmtTime` itself. The tie is
+therefore the display check — literal ⊇ `16m` == the clock's rendering of the measured
+instant — and the frame says so instead of inventing a scale for it. This is also why the
+`spells_pow10` field never had to learn about minutes.
 
 The quantity is the debt-clearing time rather than anything about the clock, because that
 is the instant the claim is about; the display half then asks what the panel shows there.
@@ -1066,6 +1224,7 @@ tol = 5.0e-4
 tol_from = "spelled"
 spells = "0.0"
 spells_pow10 = 2
+states = "same"
 read_at_s = 983.0
 after_mark = true
 display = "soc (true)"
@@ -1092,6 +1251,7 @@ tol = 5.0e-6
 tol_from = "spelled"
 spells = "0.004"
 spells_pow10 = 2
+states = "same"
 read_at_s = 983.0
 after_mark = true
 note = """
@@ -1110,6 +1270,7 @@ tol = 5.0e-4
 tol_from = "spelled"
 spells = "0.1"
 spells_pow10 = 2
+states = "same"
 read_at_s = 985.0
 after_mark = true
 display = "soc (true)"
@@ -1132,6 +1293,7 @@ tol = 5.0e-5
 tol_from = "spelled"
 spells = "95.15"
 spells_pow10 = 2
+states = "same"
 read_at_s = 660.0
 after_mark = true
 display = "soh cap"
@@ -1153,6 +1315,7 @@ tol = 5.0e-5
 tol_from = "spelled"
 spells = "95.14"
 spells_pow10 = 2
+states = "same"
 read_at_s = 990.0
 after_mark = true
 display = "soh cap"

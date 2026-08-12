@@ -72,21 +72,27 @@ none of them was checked by anything in the repo — four separate slices found 
 it that had drifted from the engine, were never true, or were true about a quantity no
 reader can look at. Each of those was caught by an instrument that lived outside the tree
 and so never ran twice. [`web/path-claims.toml`](web/path-claims.toml) now records claims
-as data and `crates/sim-data/tests/path_claims.rs` checks each one up to four independent
+as data and `crates/sim-data/tests/path_claims.rs` checks each one up to five independent
 ways: the sentence still says it, the engine still produces it, the reader can actually
-get to it, and — where the claim names a readout row — the panel actually prints it. That
-last one is not the third at lower precision: a row is a step function of the number
-behind it, so a drift well inside a claim's tolerance can still turn `0.0 %` into `0.1 %`
-and leave the sentence beside it wrong. The row formatters are mirrored into the test from
-`web/app.js` and every mirrored line is pinned, so a decimal place moved on the page fails
-here rather than diverging quietly. The literal is stored as authored and never formatted
-from the value, because the failure being guarded against is prose drifting from a
-*correct* engine — a golden-value table would have caught none of the four. Coverage is
-thirty-two claims across seven of the twenty-one steps and is meant to grow; the uncovered
-steps are unchecked rather than verified, and the test's own docs say which they are — as
-they say which two readout rows cannot be claimed at all.
-See [`docs/plans/path-claims.md`](docs/plans/path-claims.md) and
-[`docs/plans/path-display.md`](docs/plans/path-display.md).
+get to it, the panel actually prints it where the claim names a readout row, and the
+number the *sentence* prints is the number the engine produced. The panel check is not the
+engine check at lower precision: a row is a step function of the number behind it, so a
+drift well inside a claim's tolerance can still turn `0.0 %` into `0.1 %` and leave the
+sentence beside it wrong. The row formatters are mirrored into the test from `web/app.js`
+and every mirrored line is pinned, so a decimal place moved on the page fails here rather
+than diverging quietly. The literal is stored as authored and never formatted from the
+value, because the failure being guarded against is prose drifting from a *correct* engine
+— a golden-value table would have caught none of the four. The last check is what joins
+the first two, which for a long time passed separately with nothing between them: each
+claim declares which frame its sentence states the quantity in — the value itself, a
+magnitude, a shortfall from one, a duration off the step's mark — and that frame is
+checked at the sentence's own precision. Coverage is forty-eight claims across seven of
+the twenty-one steps and is meant to grow; the uncovered steps are unchecked rather than
+verified, and the test's own docs say which they are — as they say which two readout rows
+cannot be claimed at all.
+See [`docs/plans/path-claims.md`](docs/plans/path-claims.md),
+[`docs/plans/path-display.md`](docs/plans/path-display.md) and
+[`docs/plans/path-prose-value-tie.md`](docs/plans/path-prose-value-tie.md).
 
 Three chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650, and
 LG M50 21700. Every constant in them carries a provenance note, **including the ones
