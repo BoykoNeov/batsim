@@ -10,9 +10,8 @@
 # `reversal-ui.md`, `reversal-damage-ui.md`). Every one of those was found by a
 # measuring instrument that lived outside the repo and therefore never ran again.
 #
-# `crates/sim-data/tests/path_claims.rs` reads this file and checks each entry
-# THREE independent ways. All three matter, and each catches a failure the others
-# cannot:
+# `crates/sim-data/tests/path_claims.rs` reads this file and checks each entry up to
+# FOUR independent ways. Each catches a failure the others cannot:
 #
 #   1. LITERAL  — `literal` must appear verbatim in that step's own prose/expect
 #                 text. Catches: the prose was edited and the claim was not.
@@ -21,25 +20,49 @@
 #   3. REACHABLE— `read_at_s` must not be past the step's own `until_s`. Catches:
 #                 "right but unreachable" — a number that is true of a trajectory
 #                 the reader is never shown.
+#   4. DISPLAYED— optional. If the claim names a readout row, that row's own
+#                 formatter must print exactly `shows` at `read_at_s`. Catches:
+#                 true of the engine, and not what the panel says. A row is a step
+#                 function of the number behind it, so a drift well inside `tol`
+#                 can still turn `0.0 %` into `0.1 %` or `99.45` into `99.44`.
 #
 # The literal is stored as a STRING, exactly as written in the sentence, and is
 # never produced by formatting `value`. That is deliberate: a formatter that has to
 # agree with how a human wrote each sentence generates false failures and then gets
 # suppressed. The two halves are checked separately and neither depends on the other.
+# `shows` is stored the same way and for the same reason — but unlike `literal` it is
+# compared against a formatter, so it is what the page prints and not what a human
+# would have written.
 #
 # FIELDS
 #   step       `id` of the lesson in `const LESSONS`
 #   literal    the exact substring to find in that lesson's prose or expect text
-#   quantity   what to measure — see `QUANTITIES` in path_claims.rs
+#   quantity   what to measure — see `measure()` in path_claims.rs
 #   value      what the engine must produce
 #   tol        absolute tolerance, in `value`'s own unit
 #   read_at_s  simulation time the claim is read at; must be <= the step's until_s
+#   display    optional: the readout row this claim is about, labelled as `READOUTS`
+#              in web/app.js labels it (`soh cap`, `terminal`, `sim time`, ...)
+#   shows      optional, and required with `display`: exactly what that row prints
+#              at `read_at_s`, including its unit and spacing
+#   quoted     optional, default false: the prose quotes `shows` verbatim, so the
+#              test also requires that string to be in the sentence. Set it wherever
+#              the sentence tells the reader to go and LOOK at the row — that is the
+#              case where the sentence and the panel must agree word for word. A
+#              typographic minus in the prose still matches the ASCII one a
+#              formatter emits; nothing else is normalised.
 #   note       why this claim is here / what it is about. Free text.
 #
 # Setting `tol` — the rule used here is half a unit in the last printed place of
 # `literal`, so the tolerance is exactly "the prose rounds to this and nothing else".
 # A claim quoted as `0.6387` gets 5e-5. Where the prose says "about", the tolerance
 # is widened and the `note` says so.
+#
+# `display` costs nothing to add and is worth adding wherever a row exists, even when
+# the prose does not quote it: it is the only half of this file that knows what the
+# reader can actually see. Two rows cannot be claimed — `past empty` and `surface
+# gap` are formatted from per-cell state rather than telemetry, and the first of them
+# is sampled on a wall clock. Naming either one fails loudly rather than passing.
 
 [[claim]]
 step = "bare-curve"
@@ -48,12 +71,18 @@ quantity = "v_at_mark"
 value = 0.6387
 tol = 5.0e-5
 read_at_s = 4200.0
+display = "terminal"
+shows = "0.639 V"
 note = """
 Step 1 runs an LFP cell past empty on purpose and the whole closing paragraph turns
 on this number: the trace does not stop at the SOC_CLAMPED_LOW flag, it keeps
 falling. This is the voltage at the mark, in reversal, and it is the first claim
 wired into this file — the one whose two halves were each deliberately reddened
 before any of the others were written. See docs/plans/path-claims.md.
+
+Not quoted: the sentence states the engine's figure to four decimals and the row
+prints three, which is a fair thing for a sentence about a *trace* to do. The
+display half records what a reader who looks at the panel instead sees.
 """
 
 [[claim]]
@@ -63,11 +92,18 @@ quantity = "flag_first_s:SOC_CLAMPED_LOW"
 value = 4146.5
 tol = 0.25
 read_at_s = 4146.5
+display = "sim time"
+shows = "69m"
 note = """
 Not a number the prose prints — the prose prints its consequence. The step ends at
 4200 s and says the cell spends "the last 53 seconds" below empty, which is only
 true if the flag arrives at 4147 s. Claiming the flag time rather than the phrase
 is what makes the sentence checkable. Tolerance is half a step at dt = 0.5.
+
+The display half is the clock at that instant, and it is the reason this file has a
+display half at all: the flag lands at 4146.5 s and the panel says `69m`. The step's
+own prose says "the knee, at about 69 minutes", which is the clock's language and
+not the engine's — deliberately, and now checked.
 """
 
 [[claim]]
@@ -77,6 +113,8 @@ quantity = "v_at_mark"
 value = 1.2501
 tol = 5.0e-5
 read_at_s = 4200.0
+display = "terminal"
+shows = "1.250 V"
 note = """
 Step 2 is the step whose numbers have drifted twice (docs/plans/path-numbers.md,
 findings 1 and 2). This is its headline: the NMC cell finishes far under the 3.00 V
@@ -90,11 +128,17 @@ quantity = "flag_first_s:SOC_CLAMPED_LOW"
 value = 4154.0
 tol = 0.25
 read_at_s = 4154.0
+display = "sim time"
+shows = "69m"
 note = """
 Finding 1 of path-numbers.md was exactly this pair of times: the prose used to say
 the two chemistries empty "within two seconds of each other" when the real gap is
 7.5 s. Both ends of that comparison are now claimed — this one and bare-curve's
 4146.5 above — so the comparison cannot drift again without a red test.
+
+The clock reads `69m` here too, which is the whole of the panel's opinion on a 7.5 s
+difference. The sentence is doing arithmetic the reader cannot do on the panel, and
+says so by giving seconds rather than pointing at a row.
 """
 
 [[claim]]
@@ -104,9 +148,17 @@ quantity = "v_at_soc_below:0.90"
 value = 4.0299
 tol = 5.0e-4
 read_at_s = 415.5
+display = "terminal"
+shows = "4.030 V"
+quoted = true
 note = """
 The upper end of the 481 mV fall that is this step's whole point: on NMC a voltage
 reading tells you the charge level. Read at the first row at or below 90 % charge.
+
+Quoted: the sentence prints the row's own three decimals, so a reader who pauses
+there sees the same characters. The other end of the same sentence is not quoted —
+`3.549` is written without its unit, and `shows` carries the unit because the row
+does.
 """
 
 [[claim]]
@@ -116,10 +168,14 @@ quantity = "v_at_soc_below:0.20"
 value = 3.5488
 tol = 5.0e-4
 read_at_s = 3323.5
+display = "terminal"
+shows = "3.549 V"
 note = """
 The lower end of the same fall. Sharing a literal with the claim above is deliberate:
 one sentence states both numbers, so both claims point at it and either one moving
-reddens the pair.
+reddens the pair. The display halves are read at each end's own time, which is also
+what keeps the two recorded `read_at_s` values honest: they are measured crossings,
+and a shifted trajectory would leave the row rendering something else.
 """
 
 [[claim]]
@@ -129,11 +185,17 @@ quantity = "i_at"
 value = 13.8207
 tol = 0.2
 read_at_s = 60.0
+display = "current"
+shows = "13.821 A"
 note = """
 A deliberately loose one. The prose says "just under 14 A" rather than printing the
 figure, so the literal check guards the phrase and the tolerance says what "just
 under 14" is allowed to mean. If the derate ever lands at 12 A or 15 A the phrase is
 wrong and this goes red; small solver drift will not chatter it.
+
+This is the clearest case for the display half being a separate check rather than a
+tighter tolerance: `tol` here is 0.2 A, two hundred times the last digit the row
+prints, so the value check cannot see the panel change at all.
 """
 
 [[claim]]
@@ -143,10 +205,16 @@ quantity = "flag_first_s:OC"
 value = 0.5
 tol = 0.25
 read_at_s = 0.5
+display = "sim time"
+shows = "1s"
 note = """
 The over-current flag on the very first step. This is the cheap half of the step's
 lesson — the clamp is immediate, not gradual — and it is the claim that would catch
 protection silently ceasing to trip at all.
+
+`1s`, not `0s`: the clock is `toFixed(0)` of 0.5, and JavaScript rounds an exact tie
+away from zero where Rust's own formatter rounds to even. The mirror reproduces the
+JavaScript rule, and this claim is the one that would notice if it stopped.
 """
 
 [[claim]]
@@ -156,10 +224,16 @@ quantity = "soh_cap_at"
 value = 0.9947106
 tol = 5.0e-5
 read_at_s = 50000.0
+display = "soh cap"
+shows = "99.47 %"
 note = """
 A quarter of the way into a 200 000 s rest. Paired with the claim below, these two
 are the square-root-of-time curve the step asks the reader to see: twice the damage
 for four times the time.
+
+The prose gives the loss and the row gives what is left, so the sentence's "0.53
+points" is `100.00 − 99.47` done by the reader. Recording the row's string is what
+makes that subtraction checkable.
 """
 
 [[claim]]
@@ -169,6 +243,8 @@ quantity = "soh_cap_at"
 value = 0.9894213
 tol = 5.0e-5
 read_at_s = 200000.0
+display = "soh cap"
+shows = "98.94 %"
 note = """
 The other end of the same curve. Step 8 is one of the nine that had already drifted
 once (path-numbers.md finding 4, about the 3.6x that is now 3.5x), which is why its
@@ -187,4 +263,382 @@ Not a trajectory reading but the coupling itself, which CLAUDE.md refuses to let
 chemistry model one half of. It is a chemistry constant
 (`r_growth_per_capacity_loss`), so this claim is really "the engine still applies the
 file's coupling, and the file still says 1.5".
+
+No display: a ratio of two readouts is not a readout. The two rows it is computed
+from are claimed separately above, at the same instant.
+"""
+
+# --- step 10: the charge that has nowhere to go ----------------------------------
+#
+# The first step claimed here whose demand is the page's CC-CV policy rather than a
+# plain current, so these claims exercise the mirrored controller as well as the
+# engine. They are also the first to claim the `clamp` and `heat` rows.
+
+[[claim]]
+step = "leg-that-is-not-there"
+literal = "climbs to 3.6357 V and stops"
+quantity = "v_at"
+value = 3.63565
+tol = 5.0e-5
+read_at_s = 6000.0
+display = "terminal"
+shows = "3.636 V"
+note = """
+The plateau this step is named for: the cell fills up before the constant-voltage leg
+has anything to do. Read well after the flag, where the voltage has been flat for
+hundreds of seconds, rather than at the mark for its own sake.
+
+`value` is the engine's figure rather than the prose's 3.6357, because 3.63565 sits
+exactly on the rounding boundary and a tolerance either side of the prose's version
+would be a coin toss. Not quoted for the same reason as step 1's: four decimals in
+the sentence, three on the row.
+"""
+
+[[claim]]
+step = "leg-that-is-not-there"
+literal = "`SOC_CLAMPED_HIGH` at 5769 s"
+quantity = "flag_first_s:SOC_CLAMPED_HIGH"
+value = 5769.0
+tol = 0.25
+read_at_s = 5769.0
+display = "sim time"
+shows = "96m"
+note = """
+The coulomb counter reaching 100 % on a charge that never reached its voltage limit.
+The clock says `96m` at that instant, so the seconds in the sentence are the engine's
+and not the panel's — the same shape as the two knees in steps 1 and 2.
+"""
+
+[[claim]]
+step = "leg-that-is-not-there"
+literal = "`refused 0.822 A`"
+quantity = "i_rejected_at"
+value = -0.82224
+tol = 5.0e-4
+read_at_s = 5769.0
+display = "clamp"
+shows = "refused 0.822 A"
+quoted = true
+note = """
+The entry step, where only the part of the current that did not fit is refused. The
+prose quotes the row's whole string in backticks, which is the authoring rule this
+file's `quoted` flag exists to hold: a sentence that tells a reader to watch a
+readout says what the readout says.
+
+Negative because charge going in is negative under this repo's sign convention, and
+the row prints the magnitude. Both halves are claimed: the value with its sign, the
+string as rendered.
+"""
+
+[[claim]]
+step = "leg-that-is-not-there"
+literal = "`refused 1.150 A`"
+quantity = "i_rejected_at"
+value = -1.15
+tol = 5.0e-4
+read_at_s = 6000.0
+display = "clamp"
+shows = "refused 1.150 A"
+quoted = true
+note = """
+And the steady state one step later: the whole demand refused, for as long as the run
+continues. Read at 6000 s rather than immediately after the flag so that this claim
+is about the state and not about the transition.
+"""
+
+[[claim]]
+step = "leg-that-is-not-there"
+literal = "`heat` steps from `0.04 W` to `4.18 W`"
+quantity = "q_gen_at"
+value = 0.040715
+tol = 5.0e-6
+read_at_s = 5000.0
+display = "heat"
+shows = "0.04 W"
+quoted = true
+note = """
+Ohmic loss on an ordinary charge, before the clamp. This claim and the one below are
+where this slice found the prose disagreeing with the panel: the sentence used to
+give 0.041 W and 4.181 W, which are the engine's figures to a decimal place the
+`heat` row does not print. It now quotes the row and states the finer figures
+separately.
+
+`tol` is half a unit in the last place of the *engine* figure quoted in the sentence,
+not of the row's two decimals — the row is guarded by `shows`.
+"""
+
+[[claim]]
+step = "leg-that-is-not-there"
+literal = "`heat` steps from `0.04 W` to `4.18 W`"
+quantity = "q_gen_at"
+value = 4.180997
+tol = 5.0e-6
+read_at_s = 6000.0
+display = "heat"
+shows = "4.18 W"
+quoted = true
+note = """
+The same row once every amp is being refused and burnt: a hundredfold step, and the
+reason an unprotected overcharge is dangerous on a pack with a thermal network. The
+two claims share a literal for the same reason step 2's pair does — one sentence
+states both ends.
+"""
+
+# --- step 20: past empty ---------------------------------------------------------
+#
+# Only the discharge leg is claimable. The step then asks the reader to put the demand
+# box to -2 A and run the debt back off, and this harness drives one demand program per
+# step, so every number on that second leg — including the `soc (true)` row still
+# printing `0.0 %` at the instant the deficit clears, which is one of the two defects
+# the display check exists because of — is outside what it can reproduce. The `past
+# empty` row is out of reach for a second, independent reason: it is per-cell state on
+# a wall-clock throttle.
+
+[[claim]]
+step = "past-empty"
+literal = "The cell empties at 4146.5 s at 1.9290 V"
+quantity = "flag_first_s:SOC_CLAMPED_LOW"
+value = 4146.5
+tol = 0.25
+read_at_s = 4146.5
+display = "sim time"
+shows = "69m"
+note = """
+The same knee as step 1, on the same file, 200 s before this step's longer mark. Two
+steps of the path now claim it, which is deliberate: the sentence in step 20 gives
+the time to a tenth of a second and the panel gives whole minutes, so a reader who
+tries to verify it on the clock cannot.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "The cell empties at 4146.5 s at 1.9290 V"
+quantity = "v_at"
+value = 1.9290
+tol = 5.0e-5
+read_at_s = 4146.5
+display = "terminal"
+shows = "1.929 V"
+note = """
+The voltage at the knee — the last reading before the collapse this step is about.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "1.2055 V thirty seconds later, 0.4819 V at sixty"
+quantity = "v_at"
+value = 1.2055
+tol = 5.0e-5
+read_at_s = 4176.5
+display = "terminal"
+shows = "1.205 V"
+note = """
+Thirty seconds into the collapse. `1.205`, not the `1.206` you get by rounding the
+sentence's own 1.2055: the engine is at 1.205497, and rounding a rounded number is
+how a display claim goes wrong. This one was written that way and the test caught it
+before it was committed, which is the whole argument for formatting the measured
+value rather than the recorded one. The straight line between this and the reading
+below is the reversal ramp, which is a declared shape in the chemistry file rather
+than a fitted one — see docs/plans/low-clamp-reversal.md.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "1.2055 V thirty seconds later, 0.4819 V at sixty"
+quantity = "v_at"
+value = 0.4819
+tol = 5.0e-5
+read_at_s = 4206.5
+display = "terminal"
+shows = "0.482 V"
+note = """
+Sixty seconds in, and still falling in a straight line. Same sentence as the claim
+above, so either end moving reddens the pair.
+"""
+
+[[claim]]
+step = "past-empty"
+literal = "at **−0.0640 V**"
+quantity = "v_at"
+value = -0.0640
+tol = 5.0e-5
+read_at_s = 4400.0
+display = "terminal"
+shows = "-0.064 V"
+note = """
+The floor, at the mark. This is the number step 21 takes apart: it is 2 A across the
+0.032 ohms of a cell whose aging is switched off, so it is flat here and is not flat
+there. The row prints an ASCII minus and the prose a typographic one, which is the
+single difference the quoted check would forgive — but this claim is not quoted
+anyway, because the sentence gives four decimals.
+"""
+
+# --- step 21: what over-discharge costs ------------------------------------------
+#
+# The step the display check was designed against. Its whole method is "read these two
+# rows at these instants", so almost every claim here is quoted: the sentence hands the
+# reader a string and the test now insists the panel produces that string. As with step
+# 20, the charge leg after the demand box is reversed is out of reach.
+
+[[claim]]
+step = "what-it-cost"
+literal = "`soh cap` leaves 100.00 % at t = 10 s"
+quantity = "soh_cap_at"
+value = 1.0
+tol = 1.0e-12
+read_at_s = 9.5
+display = "soh cap"
+shows = "100.00 %"
+quoted = true
+note = """
+The step before the first tick of the aging sub-clock: health is still exactly 1, and
+the row still reads a flat 100.00 %. Paired with the claim below, the two of them are
+the sentence "leaves 100.00 % at t = 10 s" — one shows it has not, one shows it has.
+The tolerance is not a measurement tolerance; nothing has happened yet.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "`soh cap` leaves 100.00 % at t = 10 s"
+quantity = "soh_cap_at"
+value = 0.9999449
+tol = 1.0e-6
+read_at_s = 10.0
+display = "soh cap"
+shows = "99.99 %"
+note = """
+And the tick itself, on the very first sub-clock period. This is the claim that says
+the sentence is about something a reader can *see*: the row changes on that step, not
+some steps later. A slower first tick — or a coarser row — would leave `100.00 %`
+standing here and the sentence would be describing the engine rather than the panel.
+
+Not quoted: `99.99 %` is not in the sentence, which is about the value it leaves.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "**99.98 %** when the cell empties at **207.5 s and 1.9306 V**"
+quantity = "soh_cap_at"
+value = 0.9997525
+tol = 5.0e-6
+read_at_s = 207.5
+display = "soh cap"
+shows = "99.98 %"
+quoted = true
+note = """
+Three and a half minutes of perfectly ordinary discharge, which the step asks the
+reader to notice first so that they do not credit it to the over-discharge that
+follows. The control arm in docs/plans/reversal-damage-ui.md is the other half of
+that attribution.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "**99.98 %** when the cell empties at **207.5 s and 1.9306 V**"
+quantity = "v_at"
+value = 1.9306
+tol = 5.0e-5
+read_at_s = 207.5
+display = "terminal"
+shows = "1.931 V"
+note = """
+The knee on this scenario, which starts at 5 % charge rather than full. Same sentence
+as the claim above.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "99.45 % at 250 s"
+quantity = "soh_cap_at"
+value = 0.9945014
+tol = 5.0e-5
+read_at_s = 250.0
+display = "soh cap"
+shows = "99.45 %"
+quoted = true
+note = """
+Forty-two seconds past the knee, and the health row is already moving a hundred times
+faster than it was. Every one of the three quoted readings in this sentence is a row
+string the reader is told to stop and check.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "98.84 % at 300"
+quantity = "soh_cap_at"
+value = 0.9883636
+tol = 5.0e-5
+read_at_s = 300.0
+display = "soh cap"
+shows = "98.84 %"
+quoted = true
+note = """
+The second of the three. Reading them at 250, 300 and 600 s is the shape of the
+damage: it is billed per amp-hour past empty, so it accrues at a steady rate for as
+long as the discharge continues.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "95.16 % at the ten-minute mark"
+quantity = "soh_cap_at"
+value = 0.9515697
+tol = 5.0e-5
+read_at_s = 600.0
+display = "soh cap"
+shows = "95.16 %"
+quoted = true
+note = """
+The third, at the mark, where a reader can stop and compare it against the control
+figure the sentence gives two lines later. 4.82 points lost after the knee, of which
+4.80 are the reversal.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "**1.0726 ×**"
+quantity = "soh_res_at"
+value = 1.0726455
+tol = 5.0e-5
+read_at_s = 600.0
+display = "soh res"
+shows = "1.0726 ×"
+quoted = true
+note = """
+The other half of the coupling CLAUDE.md will not let a chemistry model alone, read
+at the same instant as 95.16 % above. Quoted including the multiplication sign,
+because that is what the row prints — this claim would notice the row losing its unit
+as readily as it would notice the number moving.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "down to −0.065 V by 300 s"
+quantity = "v_at"
+value = -0.065024
+tol = 5.0e-4
+read_at_s = 300.0
+display = "terminal"
+shows = "-0.065 V"
+quoted = true
+note = """
+The floor that is not flat, because resistance grew under it. Quoted, and the reason
+the quoted check normalises the minus sign: the sentence spells it with a typographic
+minus (U+2212) and every formatter on the page emits the ASCII one.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "reads **−0.069 V** at the mark"
+quantity = "v_at"
+value = -0.068551
+tol = 5.0e-4
+read_at_s = 600.0
+display = "terminal"
+shows = "-0.069 V"
+quoted = true
+note = """
+And the same floor 300 s later, 4.6 mV lower. The sentence says the reader can "stop
+and check it", which is exactly the promise this check enforces: the three decimals
+it quotes are the three decimals the row prints.
 """
