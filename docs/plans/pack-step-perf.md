@@ -15,6 +15,19 @@
 > The generalisation is worth more than the win: **enum width is not an instruction**, so
 > the Phase 6 and Phase 7 perf legs were right that the ECM path was unchanged and still
 > missed an 88 B/cell tax. `crates/sim-core/src/pack.rs::cell_footprint` now pins it.
+>
+> **A second change followed and its timing is unreadable — read that as a warning about
+> this file, not about the change.** `EcmState::v_rc` came off the heap into a `[f64; 2]`
+> (`SNAPSHOT_VERSION` 15 → 16), taking `Cell` to **176 B**, a third below the 264 B this
+> line of work opened at, and removing one heap block and one dependent load per cell per
+> pass on four passes. **Ten paired alternating rounds across two batches measured
+> nothing**: −13.4 % to +8.1 % on the same two binaries, sign flipping inside each batch,
+> and two rounds at 173 µs and 334 µs that are contention rather than CPU state. Batch 2's
+> admissibility rule was registered before it ran and **no round met it**, so it is reported
+> inconclusive with no third batch, and the change is on record as landing on user direction
+> plus a countable mechanism. **The point for anyone quoting a number out of this file: an
+> effect this box resolved to 0.03 % one commit earlier was unmeasurable one commit later.
+> Check that the base arm reproduces before trusting any ratio here.**
 
 **Status:** all four items landed. Items 3 and 4 took the step **−34 to −43 %** against
 the end-of-Phase-2 tree, which put it **inside** the < 50 µs budget for the first

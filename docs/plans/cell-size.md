@@ -463,6 +463,55 @@ invented afterwards is chosen by its answer:
   justification registered before batch 1 — user direction plus a countable mechanism — with
   the sizes as the certain result.
 
+### Timing, batch 2: refused by its own rule, and the rule is what makes this reportable
+
+| round | order | base | inlined | Δ (absolute) | base CI | inlined CI |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | base first | 62.689 µs | 65.303 µs | +2.614 µs | ±1.5 % | ±1.5 % |
+| 2 | inlined first | 61.539 µs | 66.496 µs | +4.957 µs | ±1.9 % | ±1.5 % |
+| 3 | base first | 61.105 µs | 64.774 µs | +3.669 µs | ±1.8 % | ±1.5 % |
+| 4 | inlined first | 67.588 µs | 64.884 µs | −2.704 µs | ±1.8 % | ±1.5 % |
+| 5 | base first | 69.554 µs | **173.030 µs** | +103.5 µs | ±4.4 % | ±17.6 % |
+| 6 | inlined first | 86.128 µs | **333.740 µs** | +247.6 µs | ±3.1 % | ±9.7 % |
+
+**No round is admissible.** The registered bar was both arms' `100S10P` CI ≤ 1.0 %; the best
+round here is ±1.5 %. Rounds 1–4 would also have failed the base-arm agreement test (61.1 to
+67.6 µs, a 10 % spread against the 2 % allowed) and their deltas flip sign anyway. Rounds 5
+and 6 are not CPU state at all — 173 µs and 334 µs are **three to five times** anything this
+bench has ever recorded, on a binary that read 64.9 µs twenty minutes earlier — so the box
+acquired an outright contention failure mode partway through the batch, which is new.
+
+**Verdict: inconclusive, and by the registered rule there is no third batch.** Across both
+batches the same two binaries read anywhere from −13.4 % to +8.1 % with the sign flipping
+inside every batch, and the one thing the two batches agree on is that they disagree: batch
+1 leaned negative, batch 2 leaned positive. That is not a small effect measured badly, it is
+no measurement.
+
+### So what is actually claimed for change 2
+
+**Claimed, and certain:** `EcmState` 48 → 40 B, `CellModel` 56 → 48 B, `Cell` 184 → 176 B —
+a third smaller than the 264 B this slice opened at — and 1000 heap allocations per
+1000-cell pack removed. All three sizes were predicted exactly before the arms were built.
+Trajectories bit-identical, 64 test binaries green.
+
+**Claimed, as a mechanism and not as a measurement:** one heap block and one dependent load
+per cell per pass, at four named sites, is gone. Countable, in the sense
+`pack-step-perf.md` demands of an explanation — but a count of what was removed is not a
+measurement of what it was worth.
+
+**Not claimed:** any timing effect, in either direction. The registered contingency governs:
+this change landed on **user direction plus that mechanism**, with the bench reported as it
+came out. The amended discriminator — under ≈ 0.5 % at 100S10P means footprint alone, at or
+above ≈ 1 % means the indirection — was never reached, because the box never got inside
+±4 % of itself. It remains the right test for a session that can run it.
+
+**And the `1S1P` demotion earned itself.** Under the original registration a `1S1P` null was
+*the* falsifier for this change. `1S1P` read 0.134 µs to 0.492 µs across the two batches on
+the same binaries — a 3.7× spread — and produced deltas of +29.6 %, −9.0 %, +1.5 %, +0.2 %,
++8.7 %, +8.7 %, +6.0 %, +3.3 %, +43.4 %, +104.8 %. Had it stayed the falsifier, this slice
+would have had to read one of those as a verdict. That is the concrete payoff of amending a
+prediction *before* the arms are built rather than after the numbers arrive.
+
 ## Methodology — the traps, all previously paid for
 
 From `pack-step-perf.md` and `crates/sim-core/benches/pack_step.rs`:

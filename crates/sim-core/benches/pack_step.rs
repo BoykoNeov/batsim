@@ -129,6 +129,27 @@
 //! `docs/plans/cell-size.md`.
 //! `crates/sim-core/src/pack.rs::cell_footprint` pins the widths so the enum cannot
 //! silently re-widen; it did so for two whole phases because nothing was looking.
+//!
+//! ## `v_rc` inlined — a size result with no timing result, and that is the whole entry
+//! `EcmState::v_rc` was a `Vec<f64>` of one or two entries: a heap block and a dependent
+//! load **per cell per pass**, on four passes. As `[f64; 2]` it took `EcmState` 48 → 40 B
+//! and `Cell` 184 → **176 B** — a third off the 264 B this line of work started at — and
+//! removed 1000 allocations from a 1000-cell pack. Predicted exactly, before the arms ran.
+//!
+//! **Ten paired alternating rounds across two batches measured nothing.** The same two
+//! binaries read −13.4 % to +8.1 % at `100S10P`, sign flipping *inside* each batch, base
+//! arms spanning 53.8–67.6 µs. Batch 2 ran under a stopping rule registered before it
+//! started (both arms' CI ≤ 1.0 %, base arms agreeing to 2 %, deltas agreeing in sign);
+//! **no round was admissible**, so it is reported inconclusive and no third batch was run.
+//! Two of its rounds read 173 µs and 334 µs — three to five times anything this bench has
+//! recorded — so the box now has a contention failure mode on top of its CPU-state swing.
+//!
+//! **No timing claim is made for it in either direction**, and it is on record as landing
+//! on user direction plus a countable mechanism. Read that as the standing warning it is: a
+//! 30 %-footprint change *was* measurable here one commit earlier at 0.03 % reproducibility,
+//! and an 8 B/cell change on the same box was not measurable at all. Before quoting any
+//! number from this file, check that the box can still reproduce its own base arm. See
+//! `docs/plans/cell-size.md`.
 
 use std::hint::black_box;
 
