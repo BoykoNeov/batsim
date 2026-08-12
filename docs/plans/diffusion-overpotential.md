@@ -26,8 +26,8 @@ model and the engine.
 
 **Yes, and the parameter that makes it work is the one a rate sweep is least likely to
 look at.** A single extra `f64` per cell, advanced by the exact exponential update the RC
-pairs already use, tracks Peukert n = 1.1 across 0.05C → 3C to **6.0 points worst error on
-rates the fit never saw**, against **25.9 points** today. It produces a genuine power law
+pairs already use, tracks Peukert n = 1.1 across 0.05C → 3C to **3.8 points worst
+leave-one-out error**, against **25.9 points** today. It produces a genuine power law
 rather than the right average slope (deviation from its own best power law: **1.9 points**
 against today's 7.8). And **rest recovery falls out for free** — after a hard discharge to
 cutoff and a four-hour rest, the cell delivers 22–29 % more, which is the acceptance test
@@ -66,23 +66,41 @@ Three things about the shape, each load-bearing:
 
 ## The results, checked
 
-Fitted on the **two endpoints only** (0.05C and 3C) and reported at the five interior rates
-the fit never saw. Peukert itself has two free parameters, so this is the comparison at
-matched cost:
+A fit reported at the rates it was fitted on measures itself, so every headline here is a
+**hold-out**. Three designs, because the first one chosen was too loose and saying so is
+part of the result:
 
-| rate | model | Peukert n = 1.1 | error | |
+| hold-out design | what it fits | worst **held-out** error |
+| --- | --- | --- |
+| endpoints only (0.05C, 3C) | one ratio, three parameters | 6.0 pts |
+| fit 4 (0.05, 0.2, 1, 3C), hold 3 | four rates | **1.9 pts** |
+| leave-one-out, each rate in turn | six rates | **3.8 pts** |
+| — *today's model, same measure* | — | *25.9 pts* |
+
+**Leave-one-out at 3.8 points is the number to quote.** It is the most conservative of the
+three that constrain the fit properly, and it is honest in the way the endpoints-only run
+is not: **scoring two rates cannot pin three parameters**, so that run landed in a far
+corner of the degenerate valley and its 6.0 points measured the under-constraint, not the
+mechanism. Fitted on all seven rates the model reaches 1.8 points, which is the
+self-measuring number and is quoted here only to bound the others.
+
+Leave-one-out in full:
+
+| held-out rate | model | Peukert n = 1.1 | error | `τ_d` the other six chose |
 | --- | --- | --- | --- | --- |
-| 0.05C | 100.0 % | 100.0 % | +0.0 | *fitted* |
-| 0.10C | 93.9 % | 93.3 % | **+0.6** | held out |
-| 0.20C | 88.6 % | 87.1 % | **+1.5** | held out |
-| 0.50C | 83.7 % | 79.4 % | **+4.3** | held out |
-| 1.00C | 80.1 % | 74.1 % | **+6.0** | held out |
-| 2.00C | 73.7 % | 69.2 % | **+4.6** | held out |
-| 3.00C | 66.4 % | 66.4 % | −0.0 | *fitted* |
+| 0.10C | 95.2 % | 93.3 % | +1.9 | 1.98 h |
+| 0.20C | 85.6 % | 87.1 % | −1.4 | 3.35 h |
+| 0.50C | 76.8 % | 79.4 % | −2.6 | 1.98 h |
+| 1.00C | 75.4 % | 74.1 % | +1.3 | 3.35 h |
+| 2.00C | 71.3 % | 69.2 % | +2.2 | 2.57 h |
+| 3.00C | 62.6 % | 66.4 % | −3.8 | 2.57 h |
 
-**Worst held-out error 6.0 points, against 25.9 for the model as it ships.** Fitted on all
-seven rates instead it reaches 1.8 points, and that number is *not* the one to quote,
-because a fit reported at the rates it was fitted on measures itself.
+**The errors change sign across the sweep**, which is what a fit tracking a curve looks
+like; a same-signed run is the signature of a missing parameter, and it is what the failed
+searches below all produced. The last column is the useful surprise: **six independent fits,
+each blind to a different rate, agree on the relaxation time to within a factor of 1.7**
+(1.98–3.35 h). Properly constrained, the valley is much narrower than the endpoints-only
+run made it look.
 
 ### Rest recovery, which nothing in the fit scored
 
@@ -113,12 +131,14 @@ the new term.
    appeared to saturate above ~7700 s. It does not: holding `k` and `D_lim` fixed, halving
    `τ_d` costs 13.8 points and doubling it costs 12.6, against 1.8 at the fit. The apparent
    saturation was the search quietly re-fitting the other two parameters at each `τ_d`.
-4. **The parameters are degenerate along a valley.** The all-rates fit lands at
-   `k = 0.114 V, D_lim = 1.23, τ_d = 2.1 h`; the endpoints-only fit at
-   `k = 0.433 V, D_lim = 1.41, τ_d = 5.0 h`. Both fit their own objective; they are not the
-   same cell. **Two rates do not pin this mechanism** — the interior of the curve carries
-   real information, which is an argument for fitting against a full discharge family rather
-   than a headline number.
+4. **The parameters are degenerate, but far less than the first check suggested.** The
+   all-rates fit lands at `k = 0.114 V, D_lim = 1.23, τ_d = 2.1 h`; the endpoints-only fit
+   at `k = 0.433 V, D_lim = 1.41, τ_d = 5.0 h` — a 3.8× spread in `k` that looked alarming.
+   It was an artifact of the under-constrained objective: **once four or more rates are
+   scored, every fit lands at `k = 0.08–0.11 V` and `τ_d = 2.0–3.4 h`.** The mechanism is
+   identifiable; two points on a capacity-versus-rate curve simply are not enough to
+   identify it, which is an argument about the *fitting procedure* rather than about the
+   model.
 
 ---
 
@@ -234,13 +254,23 @@ search reported that; it reported a clean, monotone, believable "no".
   and the no-section path should be an **early return** rather than a multiply by a neutral
   value, exactly as `open_circuit_v` handles a zero deficit. That is a registrable
   prediction: every existing golden and every existing trajectory identical.
-* **A decision this forces, and it is not small.** With the term active the C/20 reference
-  discharge ends on voltage at `soc ≈ 0.05–0.09`, so the cell delivers **91–95 % of the
-  `capacity_ah` its file declares** rather than 100 %. That is physically right — 7.2 Ah is
-  the coulombic capacity and a real cell's C/20 rating is *defined* to a 1.75 V cutoff — but
-  it changes what `capacity_ah` means for this chemistry and it will move any test that
-  assumes a full discharge delivers the declared number. **This has to be settled before the
-  slice, not during it.**
+* **A decision this forces, and it belongs in the fitting objective rather than in a
+  meeting.** With the term active the C/20 reference discharge ends on voltage at
+  `soc ≈ 0.05`, so the cell delivers **≈ 95 % of the `capacity_ah` its file declares**
+  rather than 100 %. That is physically right — 7.2 Ah is the coulombic capacity and a real
+  cell's C/20 rating is *defined* to a 1.75 V cutoff. But note that the figure **moves with
+  the fit**: the under-constrained endpoints-only run gave 91 %, the properly constrained
+  ones give 95.2 %. So "what does `capacity_ah` mean" cannot be settled by fiat beforehand
+  and then fitted around — **the C/20 delivered capacity has to be one of the things the fit
+  targets**, or the answer is whatever the objective happened to imply.
+
+  The blast radius is smaller than that warning suggests, and was measured rather than
+  assumed: **`pba_agm_2v_generic` is referenced by exactly one file in the tree**
+  (`crates/sim-data/tests/lead_acid_rate.rs`), and its only absolute assertion is on the
+  *declared* `capacity_ah` of 7.2, which does not move. Every capacity figure it checks is a
+  **ratio against its own C/20 reference**, so the sweep's assertions survive a reference
+  that shifts. What changes is the prose describing what the model gets wrong, which is the
+  point of the slice.
 * **Provenance for three constants, and one of them cannot be dressed up.** `τ_d ≈ 2–5 h`
   is defensible for lead-acid acid diffusion and is independently checkable against
   rest-recovery data. `D_lim ≈ 1.2–1.4` reads as "the C-rate this cell could sustain at full
