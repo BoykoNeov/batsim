@@ -1633,7 +1633,7 @@ where the charge readout arrives, and it does not move again for four hours.
 
 [[claim]]
 step = "and-it-is-still-in-there"
-literal = "the terminal jumps to `1.848 V`"
+literal = "the terminal is at `1.848 V`"
 quantity = "v_at"
 value = 1.848076
 tol = 5.0e-4
@@ -1645,9 +1645,19 @@ display = "terminal"
 shows = "1.848 V"
 quoted = true
 note = """
-One step after the load comes off, and the word `jumps` is doing exact work: 98 mV of this
-is the instantaneous ohmic drop disappearing, which is gone the moment the current is. What
-follows it over the next four hours is everything else.
+One step after the load comes off: 98 mV of this is the instantaneous ohmic drop
+disappearing, which is gone the moment the current is. What follows it over the next four
+hours is everything else.
+
+REACHABLE, AND NOT READABLE, WHICH ARE DIFFERENT THINGS. This claim and the two at 737.0 s
+above sit inside the run rather than at its mark, so the reachability check passes — the
+page really does step through them. Driving the page showed that a reader cannot CATCH
+them: at this step's speed one frame is minutes of simulation, and the sampled panel went
+straight from 1.790 V still under load to 1.854 V already resting without ever printing
+either 1.750 V or 1.848 V. The prose was rewritten to say so and to point at step 23,
+where the same instant is the mark and is readable. Kept claimed because the trajectory is
+what the sentence is about and the display half still pins the formatter; the sentence no
+longer tells anyone to go and look for it here.
 """
 
 [[claim]]

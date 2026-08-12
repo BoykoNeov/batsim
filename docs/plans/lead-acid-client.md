@@ -258,6 +258,68 @@ Expected to move: **nothing**. `SNAPSHOT_VERSION` 17, `API_VERSION` 2, `WASM_API
 — one TOML file, three JavaScript records, claims and prose. Each constant's own doc gets
 read individually anyway; that pair has parted once (`ui-bms-view`).
 
+---
+
+# What driving the page found
+
+Headless Chrome over CDP against `sim-server` on 8080, page at `/app/`. Three findings,
+two of which changed the slice.
+
+## The picker, the counts, and the walk
+
+`GET /scenarios` lists 16 files including `cc_discharge_pba.toml`, with no page edit. The
+start button reads `Start — 24 steps` (derived from `LESSONS.length`; `index.html`'s
+pre-script fallback was updated to match). Steps 20–24 were walked forward and 23–20 back;
+20 and 21 read `−0.064 V` and `−0.069 V` in both directions, unchanged by the append.
+
+Every mark, read off the panel:
+
+| step | `sim time` | `terminal` | `current` | `soc (true)` | `heat` |
+| ---- | ---------- | ---------- | --------- | ------------ | ------ |
+| 22 | `19.3h` | `1.750 V` | `0.360 A` | `3.3 %` | `0.07 W` |
+| 23 | `12m` | `1.750 V` | `21.600 A` | `38.6 %` | `6.09 W` |
+| 24 | `4.3h` | `1.750 V` | `21.600 A` | `18.8 %` | `5.20 W` |
+
+Sampled through step 24's rest: `42m` → `1.984 V`, `72m` → `2.005 V`, `4.2h` → `2.030 V`,
+and `soc (true)` took **exactly one distinct value, `38.6 %`, across every resting sample**
+— the step's central claim, observed rather than asserted.
+
+## The stale wasm, and why the usual tell was absent
+
+The lead-acid lessons leave `use-socket` off, so the engine answering them is the wasm
+module **in the tab** — and `web/pkg` is an untracked build artifact. It was built before
+`[diffusion]` existed (zero occurrences of `depletion` in the binary), and a persistent
+`--user-data-dir` then cached it *through a rebuild*.
+
+**What makes this worth writing down is how quiet it was.** The walk against the old engine
+produced `19.3h` / `3.3 %` and `12m` / `38.6 %` — every time, charge and clock **exactly
+right**, because the mark is a fixed simulation time and SOC is coulomb-counted, so neither
+depends on the voltage model at all. Only `terminal` and `heat` moved: `1.951 V` / `0.00 W`
+and `1.852 V` / `3.89 W`, which is this cell with `η = 0` — the control arm, arrived at by
+accident. Two of the five rows a lesson quotes were silently from a different engine and
+three were not. `wasm-pack build` plus `Network.setCacheDisabled` fixed it; the driver now
+does both and says why.
+
+## Reachable and readable are different, and one sentence was only the first
+
+Step 24's opening claimed the reader watches leg one end at `1.750 V` with `38.6 %` showing,
+and that the terminal then "jumps to `1.848 V` in a single step". Both instants pass the
+reachability check — the run steps through them, `read_at_s < until_s` — and **neither is
+catchable**. The step covers 4.3 hours, so one frame is minutes of simulation: the sampled
+panel went from `1.790 V` still under load straight to `1.854 V` already resting, printing
+neither claimed value.
+
+This is the defect class the path has paid for twice (`path-numbers.md`,
+`reversal-damage-ui.md`) in a new form — *not* a number past the mark, but a number inside
+the run that the frame rate steps over. The reachability check cannot see it, because
+reachability is a fact about `until_s` and this is a fact about `speed_x`.
+
+Fixed on the prose side rather than by slowing the step: step 24 now says outright that the
+panel sails past the end of leg one, points at step 23 where the same instant *is* the mark
+and is readable, and tells the reader to identify the two sides of the jump by the `current`
+row rather than by the clock. The claims are kept, with the caveat recorded on the one at
+737.5 s.
+
 ## Deferred, with a price
 
 * **A 6S 12 V battery scenario.** The obvious next file — a real lead-acid battery is six of
