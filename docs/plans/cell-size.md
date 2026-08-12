@@ -360,6 +360,22 @@ session, alongside change 2's measurement. Recorded as owed rather than argued a
 analytic bound is exactly the "plausible, not countable" reasoning this repo's perf doc
 rejects.
 
+**Status after 2026-08-12's later session** (see batch 3 below, and the interleaved-null
+rule now in `pack-step-perf.md`):
+
+* **Change 2's timing — closed, as *measured and inconclusive*.** One further batch was
+  spent and produced no admissible round. No claim in either direction; not to be retried.
+* **The DFN/SPM arms — still owed, and now demonstrably blocked on the instrument, not on
+  effort.** No bench cases exist for them at all (`criterion_group!` lists only
+  `bench_single_cell`, `bench_mid_pack`, `bench_large_pack`, `bench_full_pack`,
+  `bench_aging_pack`), so writing them is the first cost. But the blocking evidence is now
+  concrete rather than inferred: on 2026-08-12 this box held **±0.77 % across three
+  readings** of one binary, and **fifteen minutes later**, same case, same protocol, read
+  **±0.99–2.85 % with a 53 % spread on one unchanged binary**. The prediction to be tested
+  is **≤ 1–2 %**. An instrument whose floor moves by an order of magnitude inside one
+  session cannot resolve it, and a future session should not re-litigate this as a question
+  of effort. Write the cases when convenient; run them only behind an *interleaved* null.
+
 ## Results — change 2, `v_rc` inlined
 
 Landed on user direction, which supersedes the deferral above. The deferral's stated reason
@@ -511,6 +527,59 @@ the same binaries — a 3.7× spread — and produced deltas of +29.6 %, −9.0 
 +8.7 %, +8.7 %, +6.0 %, +3.3 %, +43.4 %, +104.8 %. Had it stayed the falsifier, this slice
 would have had to read one of those as a verdict. That is the concrete payoff of amending a
 prediction *before* the arms are built rather than after the numbers arrive.
+
+### Timing, batch 3 — a later session on 2026-08-12, and why it was allowed to run at all
+
+The two batches above closed with **"inconclusive, and by the registered rule there is no
+third batch."** A later session the same day ran one anyway. The justification, registered in
+full before either arm was built and not invented afterwards, is that **new information about
+the instrument had arrived**: an instrument check — three readings of one unchanged binary,
+nothing else varied — came back **72.623 / 70.207 / 71.574 µs, all CIs ≤ ±0.77 %**, the first
+time in six sessions this box reproduced itself. The stopping rule above exists to stop
+re-rolling *the same dice*; a box that has just demonstrated ±2 % reproducibility is not the
+same dice. That reading is defensible, but it is a reading, and it is recorded here as one.
+
+New registration, written before the arms existed: one case (`100S10P/current`), four
+alternating rounds, **one batch and no second**, admissibility inherited unchanged from batch
+2's rule. Prediction restated as a **bound, not a point** — footprint alone puts change 2
+under ≈ 0.5 %, and ≥ 1 % would mean the indirection matters beyond the bytes. The
+registration also stated up front that the measurement was **underpowered** (a sub-0.5 %
+effect on a box reproducing to ±2 %) and that the honest deliverable was therefore an upper
+bound, not a point.
+
+| round | order | base | inlined | Δ | base CI | inlined CI | admissible? |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | base first | 77.843 µs | 64.333 µs | −17.4 % | ±1.14 % | ±1.38 % | no |
+| 2 | inlined first | 55.141 µs | 51.838 µs | −6.0 % | ±2.85 % | ±1.05 % | no |
+| 3 | base first | 51.569 µs | 49.458 µs | −4.1 % | ±1.07 % | ±1.15 % | no |
+| 4 | inlined first | 50.868 µs | 49.385 µs | −2.9 % | ±0.99 % | ±1.08 % | no |
+
+**Zero rounds admissible — one *arm* out of eight qualified.** Four more missed the ±1.0 %
+bar by 0.05–0.15 percentage points, and a near-miss is not a licence. The batch also fails
+the second criterion independently: the base arm alone reads 77.8, 55.1, 51.6, 50.9 µs, a
+**53 % spread** on one unchanged binary against the 2 % allowed.
+
+**All four deltas are negative, and that is not weak confirmation — read it the other way.**
+The registration predicted this change is bounded under ≈ 0.5 %. Every observed delta is
+**six to thirty-five times** that ceiling, and every one sits above the ≈ 1 % line the
+registration set for "the indirection matters". A batch whose smallest reading is six times
+the largest effect it could be measuring has a noise floor wider than its own question. It
+cannot separate *the indirection matters enormously* from *the box moved*, and no re-reading
+of it can. The deltas also shrink monotonically as the baseline falls (−17.4 → −6.0 → −4.1 →
+−2.9 % while the box settles 78 → 50 µs), so any single round quoted would be a number picked
+off a moving box.
+
+Held at observation strength and no higher: **no round showed the change slower**, across
+both arm orders. Alternation was meant to make that meaningful, since monotonic drift flips
+the delta's sign when arm order flips. It is weaker than it reads — four same-sign rounds is
+a one-in-eight coincidence under a fair coin, and the drift is not monotonic at round scale
+anyway (`r1-chg` and `r2-chg` are the same binary thirty seconds apart and differ by 20 %).
+
+**Verdict: inconclusive, again, and no upper bound is recorded either** — the registration
+anticipated delivering "worth no more than X %", but a bound needs an admissible round to sit
+on and there is none. Nothing above the "So what is actually claimed" section changes. The
+question is now **closed rather than owed**: three batches and fourteen rounds have been
+spent, and the outcome of the re-roll is itself the argument for the original stopping rule.
 
 ## Methodology — the traps, all previously paid for
 

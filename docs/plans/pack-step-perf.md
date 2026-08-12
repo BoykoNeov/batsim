@@ -487,6 +487,25 @@ Two things to know before the next re-measure:
   That priced item 3 at exactly zero until it was fixed — the memo is cold on step one
   by definition. `benches/pack_step.rs`'s `warmed()` does this; if a future change makes
   a step depend on prior steps in some other way, check that helper first.
+- **An instrument check licenses the minute it ran in, not the session — so interleave the
+  null, do not front-load it.** On 2026-08-12 a front-loaded check passed cleanly (three
+  readings of one unchanged binary at 72.6 / 70.2 / 71.6 µs, all CIs ≤ ±0.77 % — the first
+  time in six sessions this box reproduced itself). The measurement it licensed ran fifteen
+  minutes later on the same box, same case, same protocol, and produced CIs of ±0.99–2.85 %
+  with a **53 % spread on one unchanged binary**. Both facts are true and they do not
+  contradict each other: reproducibility is a property of the minute. The fix is to make the
+  check and the measurement share conditions instead of merely sharing a session — put an
+  unchanged reference arm *inside* the batch, run partway through, and score the batch
+  against it. A batch that cannot reproduce its own null is unreadable no matter what the
+  pre-flight said. See `docs/plans/cell-size.md`, "Timing, batch 3".
+- **The two worktree builds this protocol needs are themselves the disturbance, and 180 s
+  does not absorb them.** Across that same batch the box got monotonically *faster* —
+  78 → 55 → 52 → 51 µs on the base arm over about fifteen minutes — which is background load
+  draining after the builds, not thermal behaviour. Consequence for round ordering: the
+  earliest rounds are the least trustworthy, and the delta shrank in lockstep with the
+  baseline (−17.4 → −6.0 → −4.1 → −2.9 %), which is exactly the shape a drifting box
+  produces. Either settle far longer than 180 s, or build in a prior session, or accept that
+  round 1 is a warm-up and register it as discarded *before* seeing it.
 
 
 ## Slice A (aging) added overhead; magnitude not established
