@@ -1006,6 +1006,19 @@ pub(crate) fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
         // P = V·i = (e − i·r0)·i  ⇒  r0·i² − e·i + P = 0.
         // Physical (lower-current, higher-voltage) root; snap to the max-power
         // point if the target power is unreachable.
+        //
+        // # Only the discharge side can be unreachable, and the asymmetry matters
+        // `disc <= 0` requires `P > e²/(4·r0)`, which needs `P > 0`. So the snap is a
+        // *discharge* story: past the peak of `V(i)·i` there is no operating point and
+        // the best the cell can do is `e/(2·r0)` at `V = e/2`. On the charge side the
+        // parabola opens the other way and `V` grows without bound as `i` goes negative,
+        // so **every** power is reachable, exactly, at an operating point arbitrarily far
+        // outside the cell's declared window — a 1e12 W charge is met at 6.3e6 A and
+        // 162 kV, and the arithmetic here is right about it.
+        //
+        // Neither case is refused (a demand is not clamped here; see `pack::step`'s window
+        // on `Demand::Voltage` for the one demand that is). Both are *reported*, by
+        // [`crate::EventFlags::POWER_OUT_OF_WINDOW`], which is where the reasoning lives.
         Demand::Power(p) => {
             let disc = e * e - 4.0 * r0 * p;
             if disc <= 0.0 {

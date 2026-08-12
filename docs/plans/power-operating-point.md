@@ -189,4 +189,77 @@ Read from each constant's own doc, per the standing rule that these have parted 
 
 ## Results
 
-*(filled in as the commits land)*
+The headline row moves and nothing else does:
+
+| demand | `dt` | current | terminal | before | after |
+| ------ | ---- | ------- | -------- | ------ | ----- |
+| `Power(-1e12)` | 1e-6 s | -6.32e6 A | 162 440 V | *(none)* | `POWER_OUT_OF_WINDOW` |
+| `Power(-1e6)` | 1 s | -6 250 A | 171.8 V | *(none)* | `POWER_OUT_OF_WINDOW` |
+| `Power(1000)` on ECM | 0 | 75.04 A | 1.78 V | *(none)* | `POWER_OUT_OF_WINDOW` |
+| `Power(1000)` on SPM | 0 | 451.5 A | 1.35 V | *(none)* | `POWER_OUT_OF_WINDOW` |
+| `Power(600)` on SPM | 0 | 235.6 A | 2.52 V | *(none)* | *(none)* — in window |
+| `Power(100)` on ECM | 0 | 34.66 A | 2.84 V | *(none)* | *(none)* — in window |
+
+The last two are the evidence that this is a window test and not an absurdity heuristic:
+600 W on the single-particle cell holds 2.5214 V against a 2.50 V floor and stays down,
+where 1 000 W holds 1.3513 V and fires. The two models' thresholds are in different places
+because their curves are, which is what a predicate on the operating point should do.
+
+**Full workspace suite green: 66 test binaries, 0 failed.** No golden moved, and none
+could — no scenario file issues a power demand. Clippy clean at `-D warnings`, `cargo fmt`
+clean.
+
+## Verification
+
+Nine tests in `sim-core/tests/power_operating_point.rs`, on a fixture whose every
+threshold is derived rather than measured: at 50 % SOC the source is 3.20 V behind
+0.02 Ω, so the in-window band is exactly −52.5 W to +43.5 W and the max-power point is
+80 A at 1.60 V delivering 128 W.
+
+**Both perturbations were run against a real exit code, not a read of the output.** The
+standing rule here is that `start /belownormal` is exit-code-blind — proven twice in this
+repo — so the harness drives `System.Diagnostics.Process` directly and sets
+`BelowNormal` on the object after launch. (`Start-Process -PassThru` was tried first and
+returns a null `ExitCode`, which would have looked exactly like a pass.)
+
+* **Neuter the raise** → exit **101**, 7 of 9 red. The two survivors are
+  `a_voltage_demand_can_never_raise_it` and
+  `the_in_window_band_is_where_the_arithmetic_puts_it` — both assert the flag stays
+  *down*, so they should hold when nothing raises it. They are inertness guards, not flag
+  guards, exactly as `demand_window.rs`'s two survivors are.
+* **Swap the predicate to the NaN-blind spelling** (`v < lo || v > hi`, which is what
+  clippy's `nonminimal_bool` rewrites the honest form into) → exit **101**, and *exactly
+  one* test red: `a_non_finite_power_demand_is_out_of_window_not_in_it`. That is the
+  measurement that makes `within_inclusive` load-bearing rather than decorative — the
+  other eight are indifferent to the spelling, and only a dedicated NaN case can see it.
+
+## Prose this falsified elsewhere
+
+Hunted by capability rather than by string, per the rule the balancing slice left:
+
+* **`voltage-target-blowup.md:171`** — the paragraph declining a power window. Two of its
+  three claims do not survive: "both flagged" was an artefact of probing only the porous
+  models, and "the `UV` flag exists for it" holds only with a BMS configured. Corrected
+  in place with a dated block rather than rewritten, so the original reasoning stays
+  readable. Its *conclusion* stands, for a better reason than it gave.
+* **`solve_safeguard.rs`** — module header and one test doc repeated the same argument and
+  inherited the same defect; every pack in that file is built with `bms: None`, which is
+  the configuration the claim is false for.
+* **`ecm::solve_current`** — its doc said "snap to the max-power point if the target power
+  is unreachable" and was silent about the charge branch having no such point. The
+  asymmetry is now stated where the arithmetic is.
+
+## Deferred, with a price
+
+* **Widening this beyond `Demand::Power`.** A `Demand::Current` leaves the window just as
+  easily and stays unflagged. Defensible as it stands — the client picked that operating
+  point — but "the engine reports when it is operating outside its declared window,
+  whatever it was asked" is a coherent and bigger feature. It would move flags on existing
+  hard-discharge trajectories rather than only on power demands, so it needs its own
+  argument and its own blast-radius measurement.
+* **`i_rejected_a` on the charge side is already right**, and was checked before this slice
+  was scoped rather than assumed: at `Power(-1e6)` the 6 250 A genuinely enters the cell
+  (`soc` 0.500 → 0.837 in one second, nothing rejected), and at `Power(-1e12)` the excess
+  is refused and reported. **This was the finding that kept the slice a flag** — had the
+  ledger been wrong, the priority would have been a conservation fix and the flag
+  secondary.

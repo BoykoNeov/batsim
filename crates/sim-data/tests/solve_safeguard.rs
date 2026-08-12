@@ -30,9 +30,16 @@
 //! The demand window bounds the *input*: no voltage target can ask for an operating
 //! point outside `series × [v_min, v_max]`. The damping bounds the *iteration*: given
 //! any input, including one the window cannot help with, the solve cannot run away.
-//! `Power` has no window — a power demand that sags a pack below `v_min` is ordinary
-//! physics, not a question worth refusing — so it is the demand that isolates damping,
-//! and it is what the last test here uses.
+//! `Power` is still not *clamped* to a window, which is what makes it the demand that
+//! isolates damping, and it is what the last test here uses.
+//!
+//! **The reason originally given for that was half wrong, and is corrected here rather
+//! than left to be inherited.** It read: a power demand that sags a pack below `v_min` is
+//! ordinary physics and the `UV` flag exists for it. `EventFlags::UV` is raised in two
+//! places, both in `bms.rs` — so with `bms: None`, which is how every pack in this file is
+//! built, nothing reported it at all. `EventFlags::POWER_OUT_OF_WINDOW` now does, without
+//! clamping anything: see `docs/plans/power-operating-point.md`. The demand stays
+//! unrefused; what changed is that the step says where it landed.
 
 use sim_core::{
     CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig,
@@ -181,7 +188,10 @@ fn an_out_of_window_target_lands_exactly_on_the_edge() {
 // Power: the damping on its own
 // ---------------------------------------------------------------------------
 
-/// `Power` has no window, so this is the damping line-search with nothing else helping.
+/// `Power` is never clamped to a window, so this is the damping line-search with nothing
+/// else helping. (It now also raises [`EventFlags::POWER_OUT_OF_WINDOW`], which reports
+/// the operating point without moving it — so the currents below are unaffected, and
+/// that is the point of asserting on them here rather than on flags.)
 ///
 /// The two `Spm` cases are the measured ones: `Power(1e6)` reported **-4.16e5 A** and
 /// `Power(1e12)` **3.39e9 A** before the search existed, and both are now a few hundred

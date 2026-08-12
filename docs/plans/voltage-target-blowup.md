@@ -177,6 +177,24 @@ voltage bound) was declined because a power demand that sags a pack below `v_min
 *hold*, whose answer is dominated by the arithmetic of the overpotential. Bounding it would
 cost a real teaching case to fix a demand nobody issues at 1e12 W.
 
+> **Corrected 2026-08-12 by `docs/plans/power-operating-point.md`. Two of the three claims
+> in that paragraph do not survive measurement.**
+>
+> * *"both flagged"* was an accident of which model was probed. The equivalent circuit is
+>   the one that matters and it is **silent**: `Power(-1e12)` over a step short enough that
+>   nothing fills answers 6.3e6 A at 162 kV with an empty flag set. `SOLVE_UNCONVERGED`
+>   cannot reach it — the closed form runs no iteration to fail — and the
+>   `SOC_CLAMPED_HIGH` seen at longer steps is incidental to step length.
+> * *"the `UV` flag exists for it"* is true only of a pack with protection configured.
+>   `EventFlags::UV` is raised in exactly two places, both in `bms.rs`; with `bms: None`
+>   nothing reported an out-of-window operating point at all.
+>
+> The conclusion — **do not bound it** — stands, and for a reason this paragraph did not
+> give: the two directions are not symmetric. Discharge power has a maximum at
+> `V = e/2`, so the closed form's snap is correct physics; charge power has none at all,
+> so any magnitude is met exactly at an unbounded operating point. The fix is therefore a
+> report (`EventFlags::POWER_OUT_OF_WINDOW`), not a clamp, and no capability is lost.
+
 ## Result
 
 Every voltage target on the original sweep now converges, on all three cell models,
