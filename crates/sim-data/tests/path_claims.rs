@@ -1695,12 +1695,18 @@ fn every_tolerance_follows_its_declared_rule() {
 /// side. A `tighter` claim is deliberately pinned harder than its sentence; asking the
 /// sentence to meet that would fail every hedge in the file (`just under 14 A` is 13.82).
 ///
-/// **The comparison forgives the last bit and nothing more.** Two claims land exactly on
-/// their rounding boundary — `3.6357` against a measured 3.63565, and `the last 53
-/// seconds` against a flag 53.5 s before the mark — and on the first of them the
-/// subtraction comes out 4.99999999998e-5 against a rule of 5e-5, which is a coin toss in
-/// binary and not a fact about the prose. `tol_eq`'s relative window decides those, the
-/// same way it decides two spellings of one tolerance.
+/// **The comparison forgives the last bit, and today that arm decides nothing.** Two
+/// claims land exactly on their rounding boundary: `3.6357` against a measured 3.63565,
+/// where the subtraction comes out 4.99999999998e-5 against a rule of 5e-5, and `the last
+/// 53 seconds` against a flag 53.5 s before a mark at 4200, where the difference is 0.5
+/// against a rule of 0.5. Both are inside `diff <= rule` as the bits actually fell — the
+/// first just under, the second by exact equality — so `||` short-circuits and the
+/// `tol_eq` arm is never reached on any of the 48. None of the perturbations written
+/// against this check reaches it either. It is there because which side of `<=` a
+/// boundary case lands on is a fact about binary and not about the prose, and a claim
+/// should not go red on a rounding of its own rule; a green suite is not evidence that it
+/// works. Said plainly rather than left to be inferred, on the same terms as `quoted`
+/// above: a check that catches nothing today reads as a covering one.
 ///
 /// **No engine is run.** Every frame here is arithmetic on `value` and, for the two
 /// duration frames, on the step's scraped `until_s`. A prose defect should not fail behind

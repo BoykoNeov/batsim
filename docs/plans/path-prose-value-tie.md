@@ -222,5 +222,20 @@ changed, so no number a reader sees is different.
   instants are *adjacent* — that the row changes on that step rather than some steps later
   — which is what the sentence "leaves 100.00 % at t = 10 s" actually promises. Today the
   pair reads 9.5 s and 10.0 s, one step apart on a 0.5 s grid, and nothing enforces it.
+* **The boundary slack catches nothing and is not exercised.** The comparison is
+  `diff <= rule || tol_eq(diff, rule)`, and on all 48 claims the first arm decides:
+  `3.6357` lands 4.99999999998e-5 against a rule of 5e-5 (just under), and `the last 53
+  seconds` lands 0.5 against 0.5 (exact equality). `||` short-circuits, so the `tol_eq`
+  arm has never been reached, and none of the eleven perturbations reaches it either. It
+  is there because which side of `<=` a boundary case falls on is a fact about binary
+  rather than about the prose — but it is a forward guard, not a result, and a green
+  suite is not evidence it works. Named here for the same reason the `quoted` check is
+  named in the test's own docs: an unexercised check under a green test reads as a
+  covering one.
+* **`nothing`'s digit test is identifier-blind.** It rejects any literal containing a
+  digit, which is what makes it checkable rather than trusted — but a future claim whose
+  sentence names `lfp_26650` or `Ecm1Rc` would be pushed off `nothing` for a digit that
+  states no quantity. Same trade as `grid`'s unit-blind fence: it errs toward making the
+  author name a frame, which is the right direction, and it is not free.
 * **`run_for_s` is still unbounded by anything outside this file**, unchanged by this
   slice and unchanged by the last one.
