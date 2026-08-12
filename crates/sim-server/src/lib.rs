@@ -58,6 +58,19 @@ use tokio::net::TcpListener;
 /// change to how the summands are stored is invisible here by construction. Read from this
 /// constant's own rule rather than inferred from the engine's move, per
 /// `docs/plans/ui-bms-view.md`.
+///
+/// **v2 unmoved at [`sim_core::SNAPSHOT_VERSION`] 17, and this one is the case the rule's
+/// wording does not quite reach.** That bump added a diffusion overpotential to the
+/// equivalent circuit, which reaches the wire through `CellView::overpotential_v` — a field
+/// that is neither renamed nor added, but whose *value* now has a second contributor on any
+/// chemistry declaring a `[diffusion]` section. The rule is about names, so by its letter
+/// nothing is owed; and by its purpose nothing is owed either, because no client breaks —
+/// the field keeps its name, its unit and its meaning ("everything between the cell's
+/// equilibrium voltage and the terminal that is not the instantaneous ohmic drop"), which
+/// is the meaning it was renamed *to* at v2 precisely so a second contributor would not
+/// need a third name. Recorded rather than passed over, because "the number a field
+/// carries changed" is a real category this constant had not met before, and the next
+/// reader should find it decided rather than undiscussed.
 pub const API_VERSION: u32 = 2;
 
 /// Build the application router over a session registry.

@@ -1,16 +1,20 @@
 # Generic AGM lead-acid cell parameters (one 2 V cell; a 12 V battery is 6S).
 #
-# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [thermal] and
-# [aging]. [safety] is deliberately ABSENT -- see the note at the bottom of this file.
-# Every physical constant carries a provenance note per the project rule: no unlabeled
-# numbers. There is no PyBaMM parameter set behind lead-acid, so almost everything here
-# is anchored on datasheet-class hardware figures rather than fitted, and says so.
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [diffusion],
+# [thermal] and [aging]. [safety] is deliberately ABSENT -- see the note at the bottom of
+# this file. Every physical constant carries a provenance note per the project rule: no
+# unlabeled numbers. There is no PyBaMM parameter set behind lead-acid, so almost
+# everything here is anchored on datasheet-class hardware figures rather than fitted, and
+# says so.
 #
-# Read docs/plans/lead-acid-data-only.md before trusting this file for anything
-# rate-dependent: the ECM has no diffusion term, so this parameter set reproduces only
-# about half of the capacity loss a real lead-acid cell shows between a trickle and a
-# hard discharge, and none of it below 1C. That is a property of the model, not of the
-# numbers, and no choice of [r0] fixes it.
+# THIS IS THE ONLY SHIPPED CHEMISTRY WITH A [diffusion] SECTION, and it is the reason the
+# file is worth reading twice. docs/plans/lead-acid-data-only.md measured this cell
+# reproducing only about half of the capacity a real lead-acid battery loses between a
+# trickle and a hard discharge, and NONE of it below 1C -- a property of the model rather
+# than of these numbers, which no choice of [r0] could fix. The section near the bottom of
+# this file is what fixed it, and the fix was a code change: one extra state per cell. See
+# docs/plans/diffusion-overpotential.md. Worst error against Peukert n=1.1 across
+# 0.05C -> 3C went from 25.9 points to 3.3.
 
 [meta]
 id         = "pba_agm_2v_generic"
@@ -64,9 +68,11 @@ volts = [1.950, 2.005, 2.055, 2.098, 2.130]
 # 10.7 V at the terminals, and real cranking voltage is 9.5-10.5 V.
 #
 # The rise toward empty is placeholder SHAPE, not a fit (TODO: fit from discharge curves).
-# It is the only mechanism this model has for rate-dependent capacity loss, and the plan
-# doc shows it is structurally the wrong shape for the job -- so do not tune it to match a
-# Peukert curve. Fitting one rate with it is easy and meaningless.
+# It USED to be the only mechanism this model had for rate-dependent capacity loss, and the
+# plan doc shows it is structurally the wrong shape for the job -- so do not tune it to
+# match a Peukert curve. Fitting one rate with it is easy and meaningless; that job now
+# belongs to [diffusion], and this table should be fitted to what it actually is, which is
+# the instantaneous ohmic drop.
 # Low-temperature column: lead-acid resistance roughly doubles at -20 degC (acid viscosity
 # and reduced ion mobility); placeholder factor, order-of-magnitude only.
 [r0]
@@ -85,7 +91,11 @@ ohms   = [[0.0306, 0.0153, 0.0138],
 # double layer. The long tau is why a lead-acid battery "recovers" visibly after a heavy
 # load is removed. Note what this pair can and cannot do: it is a FIXED resistance, so it
 # reproduces the relaxation transient but not the SOC-dependent depletion that drives real
-# Peukert behaviour.
+# Peukert behaviour. The [diffusion] section below is that depletion, and the two are
+# deliberately separated by two orders of magnitude in time constant -- 240 s here against
+# 4218 s there -- so a rest of a few minutes clears this pair and leaves the other intact.
+# That separation is what makes lead-acid's two-stage recovery legible: a quick bounce when
+# the load comes off, and then hours of slow further recovery.
 [[rc]]
 r_ohms  = 0.0040
 c_farad = 60000.0
@@ -113,6 +123,66 @@ floor_v   = 0.0
 # most lithium abuse, and lead-acid's reputation for dying after being left flat is the
 # single most familiar fact about the chemistry.
 fade_per_ah = 1.39e-1
+
+# THE DEPLETING DIFFUSION OVERPOTENTIAL -- what makes this cell obey Peukert's law.
+#
+# One extra state per cell, the "depletion" D, which is the discharge current expressed as
+# a C-rate and low-pass filtered with time constant tau_s:
+#
+#     D  <- D_ss + (D - D_ss) * exp(-dt/tau_s),   D_ss = I / capacity_ah
+#     eta = -scale_v * ln(1 - D / (limit_c_rate * soc))
+#
+# Read that second line as: the cell can sustain limit_c_rate when full and proportionally
+# less as it empties, because the ACID IS A REACTANT and a flat cell has less of it to
+# move. Approaching that limit costs volts, and the volts are what trip the cut-off early.
+# Dividing by soc is the whole mechanism -- three simpler forms were tried and all three
+# lose exactly zero capacity below 0.5C, because nothing that grows with current alone can
+# cost capacity at a rate where the current is small. See docs/plans/diffusion-overpotential.md.
+#
+# provenance: FITTED, all three, against this cell's own capacity-versus-rate curve --
+# Peukert n = 1.1 (the AGM class) over 0.05C to 3C, WITH the absolute C/20 delivery in the
+# objective rather than left as a free output. Not extracted from a parameter set, not
+# taken from a paper: there is no PyBaMM lead-acid set to extract from. The fit is a grid
+# search whose spacing is 22 % in scale_v, 18 % in limit_c_rate and 30 % in tau_s, so these
+# are quoted to three figures and the fourth would be fiction.
+#
+# What the fit achieves, measured in the engine by crates/sim-data/tests/lead_acid_rate.rs:
+# worst error against Peukert 3.3 points across the whole range, against 25.9 points for
+# the same file with this section deleted (that arm is still run, as the control).
+#
+# What it does NOT achieve, stated because it is a real model error: the C/20 discharge
+# delivers about 96.7 % of the 7.2 Ah declared above, not 100 %. The two would be the same
+# number only if the cell emptied exactly at the 1.75 V cut-off, and it cannot -- eta
+# diverges as soc -> 0 at ANY current, so the cell always stops a little short. capacity_ah
+# is therefore the COULOMBIC capacity here and the datasheet's 7.2 Ah is a delivery; the
+# 3.3 % between them is the gap this mechanism cannot close.
+[diffusion]
+# provenance: fitted (see above). 1.17 h. Physically this is acid diffusing through the
+# pore structure of a thick plate, which is an HOURS process -- two orders of magnitude
+# slower than the [[rc]] pair above and three above a lithium cell's double layer. It is
+# independently checkable against rest-recovery data, which is the one thing the fit did
+# NOT score: after a 3C discharge to cut-off and a four-hour rest this cell delivers
+# materially more on a second discharge, and that falls out rather than being fitted.
+tau_s        = 4218.0
+# provenance: fitted (see above). The sustained C-rate a FULL cell could carry before the
+# overpotential runs away; at state of charge s the limit is this times s. Compare
+# max_discharge_c = 3.0 above, which is a datasheet continuous rating and not a diffusion
+# limit -- a cell can be rated to deliver a current it cannot deliver for long.
+limit_c_rate = 1.59
+# provenance: fitted (see above), and DO NOT relabel this as thermodynamic. The form is
+# Nernstian and the temptation is to read it as RT/nF = 25.7 mV; it is 2.6x that, because
+# this one-state model has no separate charge-transfer term and this constant absorbs the
+# electrode kinetics along with the concentration thermodynamics. Writing RT/F here would
+# be a fabricated constant wearing a citation.
+scale_v      = 0.0665
+# provenance: DERIVED, not fitted and not chosen -- it is OCV(soc = 0) minus reversal.floor_v
+# above, i.e. 1.950 - 0.0. That makes the two ways this engine can collapse a cell agree on
+# where the bottom is: a saturated cell at rest sources exactly floor_v, the same place the
+# reversal ramp takes a cell driven the whole way past empty. It binds only at soc = 0,
+# where the limit above is zero and any depletion at all exhausts it; the largest
+# overpotential reached anywhere in the 0.05C-3C sweep is a fifth of it, which the test
+# asserts so that the rate fit rests on the mechanism and not on this number.
+max_overpotential_v = 1.950
 
 [thermal]
 # provenance: ~m*cp for one cell of a 12 V 7.2 Ah AGM (~2.6 kg battery, ~430 g per cell,

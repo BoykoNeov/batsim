@@ -294,3 +294,184 @@ search reported that; it reported a clean, monotone, believable "no".
   exists to stop anyone asserting. It gets run, not assumed.
 * **Thermal held fixed**, as in the previous slice, so a rate effect is not read off a curve
   that is partly self-heating.
+
+---
+
+# Landed — 2026-08-12
+
+**`SNAPSHOT_VERSION` 16 → 17.** Three commits, each a green gate, staged so that the one
+claim most worth being able to disprove — *no chemistry without the section moves by a
+ULP* — is checkable in isolation rather than tangled with the physics that motivated it:
+
+1. the `depletion` field, the `[diffusion]` section, the version bump and the no-section
+   early return, **with no physics wired** — 492 tests, none of them different;
+2. the term wired into `cell_source`, `heat_w` and `overpotential_v`, with **still no
+   chemistry declaring the section** — 492 tests, still none of them different, which is
+   the sharpest test the `None` path will ever get;
+3. the fit, the chemistry file, and the tests — 503 tests, and only `lead_acid_rate.rs`
+   and the new `diffusion.rs` moved.
+
+`sim_server::API_VERSION` stays at 2 and `sim-wasm`'s at 6. Both were read from their own
+docs rather than moved as a set, and both notes are extended in place — the interesting
+one is the server's, because this is a case its rule does not quite reach:
+`overpotential_v` is neither renamed nor added, but the *number it carries* now has a
+second contributor. Nothing owed, by the letter and by the purpose, and recorded so the
+next reader finds it decided.
+
+## What the engine measures
+
+Every figure below is the **engine's**, from `crates/sim-data/tests/lead_acid_rate.rs`,
+not the fitting harness's. The two agree to 0.1 points, which is the check that the hand
+model was worth trusting; they are not the same arithmetic (the engine reports its terminal
+from end-of-step state where the harness tested it at the start of one).
+
+| rate | shipped | Peukert n = 1.1 | error | **control arm** | its error |
+| --- | --- | --- | --- | --- | --- |
+| 0.05C | 100.0 % | 100.0 % | +0.0 | 100.0 % | +0.0 |
+| 0.10C | 96.6 % | 93.3 % | **+3.3** | 100.0 % | +6.7 |
+| 0.20C | 90.2 % | 87.1 % | +3.1 | 100.0 % | +12.9 |
+| 0.50C | 78.8 % | 79.4 % | −0.6 | 99.9 % | +20.5 |
+| 1.00C | 72.6 % | 74.1 % | −1.5 | 99.9 % | **+25.7** |
+| 2.00C | 67.8 % | 69.2 % | −1.4 | 92.7 % | +23.6 |
+| 3.00C | 63.4 % | 66.4 % | −3.0 | 83.8 % | +17.4 |
+
+**25.7 points to 3.3.** The control arm is the shipped file with `[diffusion]` deleted —
+i.e. the model exactly as it was — and it is *run*, not remembered. Every finding the
+previous slice paid for survives as a live measurement beside its replacement, which makes
+the comparison a subtraction rather than a claim, and makes the stripped arm a direct check
+that the engine's no-section path is the old path rather than something close to it.
+
+### Rest recovery, still unscored, now measured in the engine
+
+Second discharge to cut-off as a fraction of the first, after a rest:
+
+| | 0 h | 1 h | 4 h |
+| --- | --- | --- | --- |
+| after a 1C discharge | 0.0 % | 16.5 % | **26.2 %** |
+| after a 3C discharge | 0.0 % | 22.0 % | **32.2 %** |
+| *control arm, 3C* | — | — | *7.0 %* |
+
+Never in the objective, right in ordering (a harder discharge recovers more), right in
+timescale (hours), and four times what the RC pair alone produces. The zero-rest column is
+0.0 % by construction rather than by physics — with no rest the cell is still below its
+cut-off and the second run ends on its first step — and it is kept because it says plainly
+that all of the recovery is the rest.
+
+## Three things the paper study could not have found
+
+1. **Check #2 was scoped to a harness that could not reach the case.** The plan reported
+   that the saturation guard "does not fire at any rate", measured on a loop written
+   `while soc > 0`. The engine has no such loop: `soc` genuinely arrives at `0.0`, the
+   limit `D_lim·soc` is zero there, and **any** depletion saturates. So the claim is
+   re-scoped to what was actually measured — *nothing in the swept range comes near it*,
+   0.233 V against 1.950 — and re-measured in the engine, where the test now asserts the
+   sweep stays inside a fifth of the ceiling. That is the load-bearing form: if the ceiling
+   bound inside the sweep, the rate fit would be resting on a declared limit rather than on
+   the mechanism, which is precisely the failure `phase-7-dfn.md` records.
+
+2. **A fourth constant, and the derivation is what makes it not a fudge.** Something has to
+   answer at `soc = 0`, and a bare number in the physics is the
+   guard-documented-as-numerical shape this tree has already paid for once.
+   `max_overpotential_v` is therefore chemistry data with provenance — and it is
+   **derived**: `OCV(0) − reversal.floor_v`. At that value a saturated cell at rest sources
+   exactly `floor_v`, which is where the reversal ramp puts a cell driven the whole way past
+   empty. The two ways this engine can collapse a cell now agree on where the bottom is
+   instead of disagreeing by an arbitrary amount.
+
+   The consequence is worth stating rather than leaving to be discovered: **a chemistry with
+   this section treats `soc = 0` as the end of the cell**, where one without it keeps
+   sourcing at `OCV(0)`. Charging recovers it on the first step that lifts `soc` off zero.
+
+3. **The `0/0`.** At `soc = 0` with a depletion of exactly zero the ratio is `NaN`, a bare
+   `x >= 1.0` guard answers *false* for it, and the `NaN` reaches the cell's Thévenin source
+   and from there every sibling sharing the node — no panic, no flag, no failing test
+   anywhere. `diffusion.rs` walks a scattered 2S3P pack down through empty, rests it there
+   for eight hours, and charges it back out, checking finiteness at every step of all three
+   legs. (In the shipped arrangement the early return on `depletion == 0.0` reaches the
+   rested case first, so the `NaN` is currently unreachable rather than merely handled. The
+   guard stays: "unreachable today" is a fact about the caller, not about the function.)
+
+## What the anchor changed, and the number it cannot reach
+
+The plan's last open question was that the C/20 delivered capacity "moves with the fit"
+(91 % under-constrained, 95.2 % properly), so it had to be **in the objective** rather than
+read off afterwards. It is. The objective is now one number in one unit with no weights:
+
+```text
+worst | error in points of capacity | over
+    {  100·(delivered(C/20)/7.2 − 1)                           <- the anchor
+    U   100·(delivered(r)/delivered(C/20) − peukert(r))  for each rate r  }
+```
+
+Both terms are already percentages of a capacity, so they need no invented relative weight.
+The fit lands at **`τ_d = 4218 s`, `D_lim = 1.59`, `k = 0.0665 V`**, and the anchor at
+**96.7 %** of the declared 7.2 Ah.
+
+**96.7 % is a ceiling, not a shortfall of effort, and the algebra was written before the
+search ran.** `η` diverges as `soc → 0` at any current, so the cell always trips a little
+short of empty:
+
+```text
+delivered(C/20)/7.2  <=  1 − (0.05/D_lim) / (1 − e^(−headroom/k))
+```
+
+At the fitted parameters that predicts **96.68 %** and the search reached **96.72 %** — a
+pre-registered prediction confirmed to 0.04 points, and the reason the residual is reported
+as a model error rather than tuned at. `capacity_ah` is therefore the **coulombic** capacity
+here and the datasheet's 7.2 Ah is a *delivery*; the 3.3 % between them is what this
+mechanism cannot close. The `[cell]` block keeps 7.2 so that "1C" means what a user of a
+7.2 Ah battery means by it.
+
+### The hold-out went degenerate, and that is a result rather than a gap
+
+Leave-one-out was the plan's headline instrument (3.8 points). With the anchor in the
+objective it stops measuring what it measured: **all six subsets select the same
+parameters**, to every figure, so the held-out errors are just the full fit's errors and
+the worst is 3.28 — the same number as the fit. The anchor is a hard constraint that no
+single rate can move, and once it is scored, *no individual rate is load-bearing*. That is
+a stronger statement than "generalises to 3.8 points" and a different one, so it is quoted
+as what it is rather than as a hold-out number.
+
+The fit was also run twice, by two implementations — the reviewed one and a second with the
+two SOC lookups sampled onto a table because the original re-interpolated `R0` five times
+per step and the grid is 207 million steps wide. They select the same parameters and report
+the same errors to five figures.
+
+## What did not move, checked rather than predicted
+
+* **Every LFP and NMC trajectory, bit for bit**, goldens included — the `None` arm of
+  `ecm_overpotential_v` is a match arm returning `Σ V_rc`, not a multiply by a neutral
+  value, so this is structural. Gate 2 above is the isolated proof.
+* `Cell` grew 176 → 184 bytes, `EcmState` 40 → 48. Priced in `pack.rs`'s footprint test
+  rather than discovered later; the model-slot budget is stated as a *relation* to
+  `EcmState`, which is the property that let it absorb the change without an edit.
+* `cell_heat_w`'s third parameter is renamed `v_rc_sum` → `overpotential_v`, because that
+  is what it now is. The heat carries the **same start-of-step** value the voltage did — a
+  term recomputed from end-of-step state would drift the ledger by `∫i·η dt`, in one
+  direction, and nothing else would notice. `diffusion.rs` closes a full discharge/charge/
+  rest cycle to catch exactly that.
+
+## Deliberately not done
+
+* **Aging does not reach the diffusion parameters.** It reaches the term only through the
+  capacity — a faded cell reads the same current as a higher C-rate — and deliberately not
+  through `soh_resistance`, which grows `R0` and the RC pairs. An aged lead-acid cell really
+  does have worse rate behaviour than a fresh one; the coefficient that would express it is
+  one nobody has fitted, so the omission is stated in the code rather than papered with a
+  plausible number.
+* **The charge direction is unvalidated.** `D` goes negative on charge and the same
+  expression returns a negative `η`. The sign is right, the magnitude is bounded and
+  logarithmic, and `diffusion.rs` pins both — but nothing measured it, and the field doc
+  says so rather than letting the form's plausibility stand in for data.
+* **Not thermal.** The sweep is isothermal, as the previous slice's was. Note this now
+  matters more: the diffusion term roughly doubles this cell's heat at 3C, so a
+  non-isothermal arm would be reading a rate effect partly off its own temperature rise.
+* **`[r0]`'s rise toward empty is still a placeholder** and should now be fitted to what it
+  actually is — the instantaneous ohmic drop — rather than to a rate curve it was never the
+  right shape for.
+* **Not reachable from any client.** The chemistry is loadable by id, as it was before, and
+  no scenario, page or catalogue entry uses it. Presenting this cell in the guided path is
+  a UI slice; it is now worth doing, which it was not before.
+* **Not NiMH, and not resting-voltage memory.** Those need a hysteresis state and their own
+  version bump. A dead field costs more than a second small migration, and that judgement
+  is unchanged.

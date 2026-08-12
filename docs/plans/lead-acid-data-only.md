@@ -9,6 +9,17 @@ parameter file using only sections the engine already reads, and measure where i
 No new per-cell state, no `SNAPSHOT_VERSION` bump, no migration. The answer prices the phase
 that `path-wedge.md:386` currently sizes by guesswork.
 
+> **Closed by `docs/plans/diffusion-overpotential.md` (2026-08-12, `SNAPSHOT_VERSION` 17).**
+> The answer to this file's question turned out to be "far, and then it stops at a wall no
+> parameter reaches" — so the phase was priced, then built. One extra state per cell and a
+> `[diffusion]` section took the worst error against Peukert from **25.7 points to 3.3**.
+>
+> Everything measured here is still live rather than superseded:
+> `crates/sim-data/tests/lead_acid_rate.rs` now runs **both** arms, and the control arm is
+> this file's model — the shipped chemistry with `[diffusion]` stripped. Every assertion
+> below still passes against it, and that is also how the engine proves a chemistry without
+> the section is untouched by the term.
+
 ---
 
 ## Everything below the line was written BEFORE the parameter file existed

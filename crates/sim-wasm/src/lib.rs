@@ -155,6 +155,18 @@ use wasm_bindgen::prelude::*;
 /// reason it is a function rather than a copied number. Recorded because these two
 /// constants have parted four times and the rule is to read each one's own doc rather than
 /// move them as a set.
+///
+/// **v6 unmoved again at [`sim_core::SNAPSHOT_VERSION`] 17**, and for a different reason
+/// from the one above, which is why it gets its own paragraph rather than an extra clause.
+/// v16 was invisible here because the thing that changed never crossed the boundary. v17's
+/// *does*: the diffusion overpotential is a second contributor to
+/// `CellView::overpotential_v`, so on a lead-acid pack the number a page reads there is
+/// larger than the RC sum it used to be. What this constant versions is **method names and
+/// JSON field names**, and neither moved — no method, no rename, no addition. A page built
+/// against a v6 bundle reads the same field, in volts, meaning what it always meant; it
+/// simply gets a bigger number from a chemistry that was not reachable from any client
+/// before this slice either. `WASM_API_MIN` in `web/app.js` does not move for the same
+/// reason. Read from this constant's own scope, not from the engine's bump.
 pub const WASM_API_VERSION: u32 = 6;
 
 /// [`WASM_API_VERSION`], reachable from JS.

@@ -856,12 +856,31 @@ pub struct DiffusionParams {
     /// `docs/plans/phase-7-dfn.md` records as documented-numerical-and-actually-load-bearing.
     /// So it is declared, per chemistry, with provenance, like [`ReversalParams::floor_v`].
     ///
-    /// **Derived, not chosen.** Set it to `OCV(soc = 0) − reversal.floor_v`: the depth of
-    /// the reversal ramp, so a saturated cell can cost at most as many volts as being
-    /// driven the whole way past empty costs, and a cell in both states at once presents a
-    /// bounded source. Validation only requires it to be positive and finite — the
-    /// derivation is a sizing rule for whoever writes the file, not a constraint the
-    /// engine can check without deciding what the two sections mean together.
+    /// **Derived, not chosen: `OCV(soc = 0) − reversal.floor_v`.** That is not merely a
+    /// plausible size, it makes the two ways this engine can collapse a cell agree on
+    /// where the bottom is. A saturated cell **at rest** that has *not* been
+    /// over-discharged sources `OCV(0) − this`, which at that value is exactly
+    /// [`ReversalParams::floor_v`] — the
+    /// same place the reversal ramp puts a cell driven the whole way past empty. So
+    /// "the reactant is exhausted" and "the charge is exhausted" land on one voltage
+    /// instead of two, and a cell in both states at once is bounded at twice the ramp's
+    /// depth below `OCV(0)` rather than at anything unbounded.
+    ///
+    /// Validation only requires it to be positive and finite. The derivation is a sizing
+    /// rule for whoever writes the file, not a constraint the engine can check without
+    /// deciding what these two sections mean together — and a file is entitled to mean
+    /// something else by them.
+    ///
+    /// # Where it binds, which is a real place and not a numerical corner
+    /// The limit is `D_lim·soc`, so it falls to zero at `soc = 0` and **any** depletion
+    /// saturates there. A discharge never sees this: the cell reaches its cut-off with
+    /// several percent of charge left (that is the mechanism), so on the shipped lead-acid
+    /// set the largest overpotential reached anywhere in a 0.05C → 3C sweep is 0.22 V
+    /// against a ceiling of 1.95. Below empty it binds immediately, and the consequence is
+    /// worth stating plainly rather than leaving to be discovered: **a chemistry with this
+    /// section treats `soc = 0` as the end of the cell**, where one without it would keep
+    /// sourcing at `OCV(0)`. Charging recovers it on the first step that lifts `soc` off
+    /// zero, because the depletion has meanwhile decayed and the ratio collapses with it.
     ///
     /// It is symmetric (`η` is clamped to `±this`) because the charge side is the same
     /// logarithm mirrored, and an unbounded charge-side term would be a hole left open for
