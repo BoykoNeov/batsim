@@ -307,6 +307,64 @@ not the engine's — deliberately, and now checked.
 """
 
 [[claim]]
+step = "bare-curve"
+literal = "`OPERATING_POINT_OUT_OF_WINDOW` at 4138 s"
+quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
+value = 4138.0
+tol = 0.25
+tol_from = "tighter"
+spells = "4138"
+states = "same"
+read_at_s = 4138.0
+display = "sim time"
+shows = "69m"
+note = """
+The first flag anyone walking this path ever sees, and it was unannounced until the
+widening that produced it was measured across all twenty-four steps rather than sampled.
+It arrives 8.5 s before the `SOC_CLAMPED_LOW` the claim above pins, which is the whole
+reason the sentence had to change: a reader met an unexplained name before the explained
+one.
+
+Half a step at dt = 0.5, which is tighter than the 0.5 s the bare `4138` would license.
+The engine can only land this flag on a step boundary, so the looser rule would admit an
+answer the grid cannot produce.
+
+The sibling claim on this step spells its flag time as a duration (`the last 53 seconds`)
+and this one spells it outright. Both read the same trajectory; only the sentence differs.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "at 4111.5 s"
+quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
+value = 4111.5
+tol = 0.05
+tol_from = "spelled"
+spells = "4111.5"
+states = "same"
+read_at_s = 4111.5
+display = "sim time"
+shows = "69m"
+note = """
+The sentence this claim sits in used to say the empty-battery flag arrived with "the same
+silence around it". That stopped being true when a current demand started reporting its
+own operating point: this flag now precedes the counter by 42.5 s.
+
+The lead is the lesson, not an accident of the number. Both cells cross their declared
+floor before their coulomb counter reaches zero, but this one is still falling steeply
+when it gets there and the LFP cell is on its plateau — 42.5 s against 8.5 for exactly the
+reason the rest of the step is about. The two flag claims sit on the two steps so a
+change to either trajectory breaks the comparison rather than quietly rescaling it.
+
+`spelled`, not `tighter`: the sentence prints a tenth, so the rule it licenses (0.05 s) is
+already inside half a step (0.25 s) and there is nothing to tighten.
+
+Both this instant and step 1's render `69m` on the clock — the same minute, three quarters
+of a minute apart. A reader comparing the two runs on the clock alone cannot see the gap,
+which is why the sentence gives the seconds.
+"""
+
+[[claim]]
 step = "same-discharge-other-chemistry"
 literal = "**1.2501 V**"
 quantity = "v_at_mark"

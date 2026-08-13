@@ -142,6 +142,20 @@ bitflags! {
         /// mode per `CLAUDE.md`, and the one every measurement behind this flag was
         /// taken in — no `UV`/`OV` exists at all and this is the only report.
         ///
+        /// # Where the pack *went*, not what was asked for
+        /// The predicate reads the node voltage the solve produced, which is downstream of
+        /// everything the BMS did to the demand on the way in. So a demand that asks for
+        /// somewhere unreachable and is **derated back inside the window raises nothing at
+        /// all** — the client's ask was impossible, and this flag will not be the thing
+        /// that says so; [`Self::OC`] and the returned `i_actual` are. Measured on one
+        /// scenario and one demand, with only the BMS switched between the two runs:
+        /// `Current(40.0)` on `soft_short_under_a_lying_sensor.toml` raises this at
+        /// 335.0 s with protection off, and never raises it with protection on.
+        ///
+        /// That is the useful reading rather than a limitation of it. A flag on the
+        /// *request* would fire on every demand a protected pack successfully talked down,
+        /// which is the ordinary business of a BMS and not an event.
+        ///
         /// # Per group, not on the series sum
         /// The predicate is each group's own node voltage, because the pack terminal
         /// cannot see imbalance: one group at 2.4 V and another at 3.4 V sum to a
