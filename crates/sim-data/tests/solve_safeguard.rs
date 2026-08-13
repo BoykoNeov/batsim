@@ -37,9 +37,11 @@
 //! than left to be inherited.** It read: a power demand that sags a pack below `v_min` is
 //! ordinary physics and the `UV` flag exists for it. `EventFlags::UV` is raised in two
 //! places, both in `bms.rs` — so with `bms: None`, which is how every pack in this file is
-//! built, nothing reported it at all. `EventFlags::POWER_OUT_OF_WINDOW` now does, without
-//! clamping anything: see `docs/plans/power-operating-point.md`. The demand stays
-//! unrefused; what changed is that the step says where it landed.
+//! built, nothing reported it at all. `EventFlags::OPERATING_POINT_OUT_OF_WINDOW` now
+//! does, without clamping anything: see `docs/plans/power-operating-point.md`, and
+//! `docs/plans/operating-point-window.md` for the widening that made the same report
+//! answer a `Demand::Current` too. The demand stays unrefused; what changed is that the
+//! step says where it landed.
 
 use sim_core::{
     CellModelConfig, Demand, Env, EventFlags, Pack, PackConfig, Scatter, ThermalConfig,
@@ -189,9 +191,9 @@ fn an_out_of_window_target_lands_exactly_on_the_edge() {
 // ---------------------------------------------------------------------------
 
 /// `Power` is never clamped to a window, so this is the damping line-search with nothing
-/// else helping. (It now also raises [`EventFlags::POWER_OUT_OF_WINDOW`], which reports
-/// the operating point without moving it — so the currents below are unaffected, and
-/// that is the point of asserting on them here rather than on flags.)
+/// else helping. (It now also raises [`EventFlags::OPERATING_POINT_OUT_OF_WINDOW`], which
+/// reports the operating point without moving it — so the currents below are unaffected,
+/// and that is the point of asserting on them here rather than on flags.)
 ///
 /// The two `Spm` cases are the measured ones: `Power(1e6)` reported **-4.16e5 A** and
 /// `Power(1e12)` **3.39e9 A** before the search existed, and both are now a few hundred

@@ -194,6 +194,12 @@ cost a real teaching case to fix a demand nobody issues at 1e12 W.
 > `V = e/2`, so the closed form's snap is correct physics; charge power has none at all,
 > so any magnitude is met exactly at an unbounded operating point. The fix is therefore a
 > report (`EventFlags::POWER_OUT_OF_WINDOW`), not a clamp, and no capability is lost.
+>
+> **Renamed 2026-08-13 to `EventFlags::OPERATING_POINT_OUT_OF_WINDOW`** when the same
+> report was widened to answer a `Demand::Current` as well — see
+> `docs/plans/operating-point-window.md`. Nothing above changes but the spelling: the
+> asymmetry argument is about the power arm and is untouched by a demand that has no
+> maximum to snap to.
 
 ## Result
 

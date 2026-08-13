@@ -1959,32 +1959,31 @@ impl Pack {
         };
         flags |= prot_flags;
 
-        // --- did a power demand land anywhere a client can use?
+        // --- did this step land anywhere a client can use?
         //
-        // Only [`Demand::Power`] asks this question, and the reason is in
-        // [`EventFlags::POWER_OUT_OF_WINDOW`]: it is the one demand whose operating
-        // point the *engine* chooses. A current demand sags a pack below `v_min` just
-        // as easily and stays unflagged, because there the client picked the point and
-        // knows it; a voltage demand was clamped into this same window above and cannot
-        // leave it.
+        // Both demands that name a *load* ask it, and the reasoning is in
+        // [`EventFlags::OPERATING_POINT_OUT_OF_WINDOW`]. [`Demand::Voltage`] cannot:
+        // it was clamped into this same window above, and a hold that lands where it
+        // was told is not news. [`Demand::Rest`] deliberately does not either — a
+        // rested pack below `v_min` is a reversed cell, and
+        // [`EventFlags::SOC_CLAMPED_LOW`] already reports exactly that state.
         //
-        // Read from the converged solve rather than from `v_terminal` below, which is an
-        // **end-of-step** value: a step that ran six million amps has moved the SOC
+        // The predicate itself lives in the per-cell loop below, on each group's own
+        // node voltage rather than on the series sum, because the sum cannot see
+        // imbalance: one group at 2.4 V and another at 3.4 V average to a perfectly
+        // in-window 2.9 V. That mattered little while only [`Demand::Power`] asked —
+        // an engine-chosen operating point misses the window by orders of magnitude,
+        // not by a scatter's worth — and matters a great deal now that an ordinary
+        // current demand asks it too, which is precisely the regime a pack layer
+        // exists to represent.
+        //
+        // Read from the converged solve rather than from `v_terminal` below, which is
+        // an **end-of-step** value: a step that ran six million amps has moved the SOC
         // underneath it, and the question here is where the solve committed, not where
-        // the cell ended up. `E_pack − i_g·R_pack` is the terminal voltage of the
-        // aggregate by construction — the same identity the external short relies on
-        // above — so this needs no second solve, only the sums the last pass left.
-        if matches!(demand, Demand::Power(_)) {
-            let v_solved = group_src.iter().map(|&(e, _)| e).sum::<f64>()
-                - i_g * group_src.iter().map(|&(_, r)| r).sum::<f64>();
-            if !within_inclusive(
-                v_solved,
-                f64::from(self.series) * self.chem.cell.v_min,
-                f64::from(self.series) * self.chem.cell.v_max,
-            ) {
-                flags |= EventFlags::POWER_OUT_OF_WINDOW;
-            }
-        }
+        // the cell ended up. The loop's `v_node` is exactly that — `E_g − i_g·R_g` off
+        // the same sources the split uses — so this costs no second solve and no
+        // second pass.
+        let window_asked = matches!(demand, Demand::Power(_) | Demand::Current(_));
 
         // The sources the *converged* pass aggregated from — the ones the per-cell
         // split below has to agree with, or the group node voltage and the cell
@@ -2077,6 +2076,17 @@ impl Pack {
                 i_balancing_a += v_node * g_bleed;
                 q_balancing_w += v_node * v_node * g_bleed;
                 flags |= EventFlags::BALANCING;
+            }
+
+            // The operating-point window, on this group's own node voltage. Written as
+            // the negation of in-window rather than as `v < lo || v > hi`, because a NaN
+            // node voltage answers `false` to both of those and would leave the flag
+            // down — the trap the diffusion slice paid for at `soc = 0`.
+            // `Demand::check_finite` is a check the *caller* opts into, so `step` can
+            // still be handed a NaN.
+            if window_asked && !within_inclusive(v_node, self.chem.cell.v_min, self.chem.cell.v_max)
+            {
+                flags |= EventFlags::OPERATING_POINT_OUT_OF_WINDOW;
             }
             for (k, cell) in group.cells.iter_mut().enumerate() {
                 let (e_k, r_k) = solved_src[g * parallel + k];

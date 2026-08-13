@@ -1,10 +1,19 @@
-//! A power demand reports whether the operating point it landed on is on the map.
+//! A demand naming a load reports whether the operating point it landed on is on the map.
 //!
-//! `Demand::Power` is the one demand where the *engine* picks the operating point: asking
-//! for 1 kW does not tell you whether you are about to draw 5 A or six million. Before
-//! `EventFlags::POWER_OUT_OF_WINDOW` existed there was nothing that said which. On the
-//! shipped LG M50, a `Power(-1e12)` step of 0.001 s answered with 6.3e6 A at 162 440 V and
-//! raised **nothing at all** — `SOLVE_UNCONVERGED` cannot reach it, because an equivalent
+//! `Demand::Power` is the demand where the *engine* picks the operating point: asking for
+//! 1 kW does not tell you whether you are about to draw 5 A or six million. Before
+//! `EventFlags::OPERATING_POINT_OUT_OF_WINDOW` existed there was nothing that said which.
+//!
+//! It shipped answering a power demand *only*, on the reasoning that a client naming a
+//! current has chosen the operating point and knows it. That was wrong — `Current(80.0)`
+//! fixes the current and says nothing about where the terminal lands — and
+//! `docs/plans/operating-point-window.md` records the widening. `Demand::Current` now
+//! raises the same flag on the same predicate, evaluated per parallel group rather than
+//! on the series sum; `Demand::Voltage` still cannot reach it at all; `Demand::Rest` is
+//! excluded deliberately, because `SOC_CLAMPED_LOW` already owns that state.
+//!
+//! On the shipped LG M50, a `Power(-1e12)` step of 0.001 s answered with 6.3e6 A at
+//! 162 440 V and raised **nothing at all** — `SOLVE_UNCONVERGED` cannot reach it, because an equivalent
 //! circuit solves `r0·i² − e·i + P = 0` in closed form and runs no iteration to fail, and
 //! the `SOC_CLAMPED_HIGH` visible at longer steps fires only because the step happened to
 //! be long enough to fill the cell.
@@ -144,7 +153,7 @@ fn flagged(series: u16, watts: f64) -> bool {
     pack(series)
         .step(0.0, Demand::Power(watts), &env())
         .flags
-        .contains(EventFlags::POWER_OUT_OF_WINDOW)
+        .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW)
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +231,8 @@ fn past_the_max_power_point_the_demand_is_short_and_says_so() {
              about demands the cell cannot meet"
         );
         assert!(
-            tele.flags.contains(EventFlags::POWER_OUT_OF_WINDOW),
+            tele.flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
             "Power({asked}) delivered only {delivered} W at {} V and raised {:?}; an \
              unmet power demand must not be silent",
             tele.v_terminal,
@@ -246,7 +256,8 @@ fn an_absurd_charge_is_met_exactly_and_still_flagged() {
              must be met exactly"
         );
         assert!(
-            tele.flags.contains(EventFlags::POWER_OUT_OF_WINDOW),
+            tele.flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
             "Power({asked}) held {} V on a {V_MAX} V cell and raised {:?}",
             tele.v_terminal,
             tele.flags
@@ -265,7 +276,8 @@ fn the_step_length_no_longer_decides_whether_anything_is_reported() {
     for dt in [1.0, 0.1, 0.001, 1.0e-6] {
         let tele = pack(1).step(dt, Demand::Power(-1.0e12), &env());
         assert!(
-            tele.flags.contains(EventFlags::POWER_OUT_OF_WINDOW),
+            tele.flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
             "a 1e12 W charge over {dt} s raised {:?}",
             tele.flags
         );
@@ -289,21 +301,31 @@ fn the_step_length_no_longer_decides_whether_anything_is_reported() {
 }
 
 // ---------------------------------------------------------------------------
-// Only this demand
+// Which demands ask, and which do not
 // ---------------------------------------------------------------------------
 
-/// The same operating point, reached by a current demand, is **not** flagged — and this
-/// is deliberate rather than an oversight. With a current demand the client chose the
-/// point and knows it; with a power demand the engine chose it.
+/// The same operating point flags identically whichever demand reached it.
 ///
-/// The comparison is exact: the current is read off the power probe and handed straight
-/// back, so the two steps solve the identical point and differ only in what was asked.
+/// **This test is the inversion of the one it replaces.** That one asserted the current
+/// demand stayed silent, on the reasoning that a client naming a current has chosen the
+/// operating point and knows it. It has not: `Current(80.0)` fixes the current and says
+/// nothing whatever about where the terminal lands, which depends on the resistance, the
+/// state of charge, and the accumulated overpotential. See
+/// `docs/plans/operating-point-window.md`.
+///
+/// It is also a strictly stronger assertion than either half on its own, because it pins
+/// the flag to the *point* rather than to the *ask*: the current is read off the power
+/// probe and handed straight back, so the two steps solve the identical point and differ
+/// only in what was asked. Nothing about the demand can enter the predicate without this
+/// going red.
 #[test]
-fn the_same_operating_point_from_a_current_demand_is_not_flagged() {
+fn the_same_operating_point_flags_from_either_demand() {
     for watts in [1.0e3, -1.0e12, P_MAX_W * 2.0] {
         let from_power = pack(1).step(0.0, Demand::Power(watts), &env());
         assert!(
-            from_power.flags.contains(EventFlags::POWER_OUT_OF_WINDOW),
+            from_power
+                .flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
             "Power({watts}) should be out of window for this comparison to mean anything"
         );
         let from_current = pack(1).step(0.0, Demand::Current(from_power.i_actual), &env());
@@ -314,13 +336,157 @@ fn the_same_operating_point_from_a_current_demand_is_not_flagged() {
             from_power.v_terminal
         );
         assert!(
-            !from_current.flags.contains(EventFlags::POWER_OUT_OF_WINDOW),
-            "Current({}) reached the same {} V and must stay unflagged; only a power \
-             demand raises this",
+            from_current
+                .flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
+            "Current({}) reached the same {} V as Power({watts}) and must be flagged the \
+             same; the predicate is on the operating point, not on the demand",
             from_power.i_actual,
             from_current.v_terminal
         );
     }
+}
+
+/// A current demand *inside* the band stays silent, which is what makes the flag a report
+/// rather than a decoration.
+///
+/// The band is arithmetic, not a measurement: at `e = 3.20 V` behind `R0 = 0.02 Ω`, the
+/// terminal reaches `v_min = 2.90` at `i = +15 A` and `v_max = 3.50` at `i = −15 A`, so
+/// the in-window band is `i ∈ [−15, +15]`.
+///
+/// Probed a tenth of an amp either side of each edge rather than exactly on it, which is
+/// the same convention `the_edges_are_inclusive_and_a_step_past_them_flags` uses one watt
+/// of, for the same reason: `(E − V_MIN)/R0` is `15.000000000000012` in binary and
+/// multiplying it back lands 4e-16 V outside the window on the charge side — a statement
+/// about the edge current not being representable, not about the predicate. 0.1 A moves
+/// the terminal 2 mV, far above that slop and far below the band's 0.6 V.
+#[test]
+fn a_current_demand_inside_the_band_is_silent_and_outside_it_is_not() {
+    let edge = (E - V_MIN) / R0;
+    for amps in [0.0, 1.0, -1.0, edge - 0.1, -(edge - 0.1)] {
+        let tele = pack(1).step(0.0, Demand::Current(amps), &env());
+        assert!(
+            !tele
+                .flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
+            "Current({amps}) lands at {} V, inside [{V_MIN}, {V_MAX}], and must stay down",
+            tele.v_terminal
+        );
+    }
+    for amps in [edge + 0.1, -(edge + 0.1), 1.0e6, -1.0e6] {
+        let tele = pack(1).step(0.0, Demand::Current(amps), &env());
+        assert!(
+            tele.flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
+            "Current({amps}) lands at {} V, outside [{V_MIN}, {V_MAX}], and must say so",
+            tele.v_terminal
+        );
+    }
+}
+
+/// A NaN *current* is out of window, for the same reason a NaN power is: the predicate is
+/// the negation of in-window, so a comparison that answers `false` both ways lands on the
+/// flagged side rather than sliding through.
+#[test]
+fn a_non_finite_current_demand_is_out_of_window_not_in_it() {
+    for amps in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let tele = pack(1).step(0.0, Demand::Current(amps), &env());
+        assert!(
+            tele.flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
+            "Current({amps}) produced {} V and raised {:?}; a non-finite operating point \
+             is not an in-window one",
+            tele.v_terminal,
+            tele.flags
+        );
+    }
+}
+
+/// `Demand::Rest` never raises it, however far below the window the pack has been driven.
+///
+/// Excluded deliberately, not by omission: an open-circuit pack below `v_min` is a
+/// reversed cell and `SOC_CLAMPED_LOW` already reports that state. The test drives the
+/// fixture past empty on a current demand first — so the pack really is out of window
+/// when the rest step is taken, and the assertion is about the demand rather than about a
+/// pack that happened to be fine.
+#[test]
+fn a_rest_demand_never_raises_it_even_below_the_window() {
+    let mut p = pack(1);
+    for _ in 0..600 {
+        p.step(1.0, Demand::Current(20.0), &env());
+    }
+    let resting = p.step(0.0, Demand::Rest, &env());
+    assert!(
+        resting.v_terminal < V_MIN,
+        "the pack must actually be below the window for this to test anything: {} V",
+        resting.v_terminal
+    );
+    assert!(
+        !resting
+            .flags
+            .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
+        "Rest at {} V raised {:?}; SOC_CLAMPED_LOW owns this state",
+        resting.v_terminal,
+        resting.flags
+    );
+    assert!(
+        p.step(0.0, Demand::Current(20.0), &env())
+            .flags
+            .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
+        "and the same pack under a current demand must still say so, or the rest \
+         assertion above is passing because the pack is in window"
+    );
+}
+
+/// The series sum cannot see imbalance and the per-group predicate can — on a pack built
+/// so that the sum averages the offence away.
+///
+/// Every number here is derived from the fixture rather than measured. Two groups in
+/// series, the first given ten times the resistance, both sourcing `e = 3.20 V`. At a
+/// shared `i = 2.5 A`:
+///
+/// * weak group: `3.20 − 2.5·0.20 = 2.70 V` — **below `v_min = 2.90`**,
+/// * sound group: `3.20 − 2.5·0.02 = 3.15 V` — comfortably inside,
+/// * pack terminal: `6.40 − 2.5·0.22 = 5.85 V`, and the pack window is
+///   `2 × [2.90, 3.50] = [5.80, 7.00]`, so **the aggregate predicate stays down** while a
+///   cell sits 200 mV under its floor.
+///
+/// The imbalance is set with `set_cell_factors` rather than drawn from scatter, so it is
+/// chosen rather than sampled.
+#[test]
+fn the_predicate_sees_a_group_the_series_sum_averages_away() {
+    const I: f64 = 2.5;
+    const WEAK_FACTOR: f64 = 10.0;
+
+    let v_weak = E - I * R0 * WEAK_FACTOR;
+    let v_sound = E - I * R0;
+    let v_pack = v_weak + v_sound;
+    assert!(
+        v_weak < V_MIN && v_sound > V_MIN,
+        "fixture: exactly one group must be under the floor, {v_weak} V and {v_sound} V"
+    );
+    assert!(
+        (2.0 * V_MIN..=2.0 * V_MAX).contains(&v_pack),
+        "fixture: the pack terminal must stay inside 2 × the window, or the aggregate \
+         predicate would have caught this too — {v_pack} V"
+    );
+
+    let mut p = pack(2);
+    p.set_cell_factors(0, 0, 1.0, WEAK_FACTOR)
+        .expect("the fixture pack has a cell 0,0");
+
+    let tele = p.step(0.0, Demand::Current(I), &env());
+    assert!(
+        (tele.v_terminal - v_pack).abs() < 1.0e-12,
+        "the pack must actually land where the arithmetic says: {} V against {v_pack}",
+        tele.v_terminal
+    );
+    assert!(
+        tele.flags
+            .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
+        "one group at {v_weak} V is out of window even though the {v_pack} V terminal is \
+         not; the flag reads groups, not the sum"
+    );
 }
 
 /// A `Demand::Voltage` cannot leave the window at all — it is clamped into it before the
@@ -330,7 +496,9 @@ fn a_voltage_demand_can_never_raise_it() {
     for target in [1.0e30, -1.0e30, 0.0, f64::MAX] {
         let tele = pack(1).step(0.0, Demand::Voltage(target), &env());
         assert!(
-            !tele.flags.contains(EventFlags::POWER_OUT_OF_WINDOW),
+            !tele
+                .flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
             "Voltage({target}) raised {:?}; the demand window already fences this path",
             tele.flags
         );
@@ -355,7 +523,8 @@ fn a_non_finite_power_demand_is_out_of_window_not_in_it() {
     for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let tele = pack(1).step(0.0, Demand::Power(bad), &env());
         assert!(
-            tele.flags.contains(EventFlags::POWER_OUT_OF_WINDOW),
+            tele.flags
+                .contains(EventFlags::OPERATING_POINT_OUT_OF_WINDOW),
             "Power({bad}) reported {:?} at {} V; a point that cannot be shown to be \
              inside the window must be reported as outside it",
             tele.flags,

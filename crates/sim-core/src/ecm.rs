@@ -1018,7 +1018,9 @@ pub(crate) fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
         //
         // Neither case is refused (a demand is not clamped here; see `pack::step`'s window
         // on `Demand::Voltage` for the one demand that is). Both are *reported*, by
-        // [`crate::EventFlags::POWER_OUT_OF_WINDOW`], which is where the reasoning lives.
+        // [`crate::EventFlags::OPERATING_POINT_OUT_OF_WINDOW`], which is where the
+        // reasoning lives — and which a `Demand::Current` through this same function now
+        // raises on the same terms, without any of the asymmetry above applying to it.
         Demand::Power(p) => {
             let disc = e * e - 4.0 * r0 * p;
             if disc <= 0.0 {

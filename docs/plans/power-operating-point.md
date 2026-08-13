@@ -144,6 +144,27 @@ when it is operating outside its declared window, whatever it was asked" — but
 move flags on existing hard-discharge trajectories rather than only on power demands, and
 it is not this one.
 
+> **Reversed 2026-08-13 by `docs/plans/operating-point-window.md`, and the whole of this
+> section is what was wrong.** The premise does not hold: a client naming a current chose
+> the *current*, and the window is about the *voltage*, which it neither chose nor can
+> predict. `Demand::Current` now raises the same flag on the same predicate.
+>
+> Three consequences for everything above:
+>
+> * The flag is renamed **`OPERATING_POINT_OUT_OF_WINDOW`** (same bit), because its old
+>   name asserted the distinction this section drew.
+> * The predicate is now each **parallel group's** node voltage rather than the pack
+>   terminal against `series × [v_min, v_max]`. The series sum cannot see imbalance, which
+>   mattered little for engine-chosen extremes and matters a great deal for an ordinary
+>   current demand.
+> * `Demand::Rest` is the one demand that stayed out, and not for the reason given here —
+>   `SOC_CLAMPED_LOW` already reports the state a rested pack below `v_min` is in.
+>
+> The blast radius this section predicted was real and was measured: the flag now arrives
+> **8.5 s before `SOC_CLAMPED_LOW`** on the shipped over-discharge scenario. What it cost
+> was not a golden but a *lesson* — the guided path's `protection-off` step said an
+> unprotected pack "fails to say anything", and nothing in the suite could catch that.
+
 ## Implementation
 
 Three commits, following the staging that `diffusion-overpotential.md` established, so

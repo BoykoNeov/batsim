@@ -106,24 +106,49 @@ bitflags! {
         /// is the ability to tell *which* solve struggled; what it keeps is the only
         /// thing it can act on, which is that some voltage this step is approximate.
         const SOLVE_UNCONVERGED = 1 << 12;
-        /// A [`crate::Demand::Power`] was solved to an operating point outside the
-        /// pack's declared voltage window, `series × [v_min, v_max]`.
+        /// At least one parallel group was solved to a node voltage outside the
+        /// chemistry's declared window, `[v_min, v_max]`.
         ///
         /// Not an error and not a numerical event: the step's arithmetic is exact and
         /// its energy ledger balances. What the flag reports is that the *place* the
-        /// solve landed is off the map the chemistry declares — a terminal below
-        /// `v_min` or above `v_max` — which is the one thing a client asking for watts
-        /// cannot work out for itself in advance.
+        /// solve landed is off the map the chemistry declares, which is the one thing
+        /// a client naming a load cannot work out for itself in advance.
         ///
-        /// # Why only this demand
-        /// A [`crate::Demand::Current`] sags a pack below `v_min` just as easily and
-        /// does **not** raise this. With a current demand the client chose the
-        /// operating point and knows it; with a power demand the engine chose it, and
-        /// asking for 1 kW does not tell you whether you are about to draw 5 A or six
-        /// million. A [`crate::Demand::Voltage`] is clamped to this same window before
-        /// the solve (see `pack::step`) and cannot leave it at all.
+        /// # Which demands ask, and which do not
+        /// [`crate::Demand::Power`] and [`crate::Demand::Current`] both raise it: both
+        /// name a load and let the voltage fall where it falls. The power case is the
+        /// starker one — asking for 1 kW does not tell you whether you are about to
+        /// draw 5 A or six million — but a current demand is not the informed choice
+        /// the first version of this flag assumed. `Current(40.0)` says what the
+        /// *current* will be and nothing about where the terminal ends up, and on the
+        /// shipped over-discharge scenario it puts an LFP cell below `v_min` at
+        /// **199.0 s**, eight and a half seconds before [`Self::SOC_CLAMPED_LOW`] says
+        /// anything at all.
         ///
-        /// # The two sides are not symmetric, and both raise it
+        /// [`crate::Demand::Voltage`] is clamped to this same window before the solve
+        /// (see `pack::step`) and cannot leave it. [`crate::Demand::Rest`] is excluded
+        /// deliberately rather than by omission: an open-circuit pack below `v_min` is
+        /// a reversed cell, [`Self::SOC_CLAMPED_LOW`] is raised for exactly that state
+        /// and its own doc explains the terminal going negative, and a second flag on
+        /// one condition is the overload this crate pays for elsewhere.
+        ///
+        /// # It is ground truth, and [`Self::UV`]/[`Self::OV`] are not
+        /// On a protected pack this co-fires with `UV` or `OV`, and they are different
+        /// statements rather than a duplicate. `UV` and `OV` are the BMS's verdict on
+        /// what its *sensors* reported — one voltage per group, sampled a step late,
+        /// with whatever offset or fault is injected into them. This flag is the
+        /// engine's own view of where the solve put each group. They can disagree, and
+        /// on a pack with a lying sensor they will. With `bms: None` — a supported
+        /// mode per `CLAUDE.md`, and the one every measurement behind this flag was
+        /// taken in — no `UV`/`OV` exists at all and this is the only report.
+        ///
+        /// # Per group, not on the series sum
+        /// The predicate is each group's own node voltage, because the pack terminal
+        /// cannot see imbalance: one group at 2.4 V and another at 3.4 V sum to a
+        /// terminal that divides back to a perfectly in-window 2.9 V. On a 1S pack the
+        /// two readings are the same number.
+        ///
+        /// # On a power demand the two sides are not symmetric, and both raise it
         /// `P = V(i)·i` on a Thévenin source has a **maximum** on the discharge side, at
         /// `i = e/(2·r0)` where `V = e/2`. Ask for more and no operating point exists;
         /// `ecm::solve_current` snaps to that maximum, which is correct physics, and the
@@ -147,7 +172,10 @@ bitflags! {
         /// *charging* overpotential snaps to a max-power point inside its own window and
         /// this stays down. Deliberately not enforced by `ChemistryParams::validate`:
         /// the inequality decides when a flag fires, not whether a chemistry is
-        /// physical.
-        const POWER_OUT_OF_WINDOW = 1 << 13;
+        /// physical. It bounds only the *power* arm: a current demand large enough to
+        /// pull any cell below `v_min` raises this whatever the chemistry, because
+        /// there is no snap and no maximum — the client named the current and the
+        /// voltage went where the resistance put it.
+        const OPERATING_POINT_OUT_OF_WINDOW = 1 << 13;
     }
 }
