@@ -105,9 +105,36 @@ make them:
    at, and only an event forces a sentence's moment to be claimed. The sentence says the
    charge *stops* at 6210, which is a great deal more than "we measured then", and the only
    thing making that the checked statement is the claim being there.
-3. **Steps 12, 13 and 14's own-pack half.** One new family of quantities for a pulse
-   train's decomposition, all keyed off the leg boundaries the `Pulse` program already
-   defines.
+3. **Steps 12 and 13, the pulse decomposition.** Nineteen claims and five new quantities —
+   `pulse_sag_mv`, `pulse_jump_mv`, `pulse_rebound_mv`, `pulse_lost_mv` and
+   `pulse_rebound_arrived`, each taking a tooth number — all keyed off the leg boundaries
+   the `Pulse` program already defines, and all resting on `Row::rest_v`.
+
+   **This is where the third defect turned up.** Step 13's tooth decomposition says
+   *"135.7 mV of sag: 113.9 mV back instantly, 17.3 mV climbing, and 4.5 mV that has not
+   returned"*. The engine says the last part is **4.559 mV**, which rounds to 4.6. The
+   reason is visible in the sentence's own arithmetic: 135.7 − 113.9 − 17.3 is exactly 4.5,
+   so that figure was subtracted from the three *rounded* parts instead of being read off
+   the run. The unrounded parts do add up — 135.723 − 113.895 − 17.269 = 4.559 — and the
+   sibling sentence on step 12 shows what a measured decomposition looks like: its four
+   parts round to 212.8, 132.8, 74.8 and 5.3, which do *not* add up (132.8 + 74.8 + 5.3 =
+   212.9), precisely because each was taken off the engine separately. Prose corrected
+   to 4.6. A number that makes its sentence's arithmetic come out exactly right is worth a
+   second look; the one that doesn't was the honest one.
+
+   Two smaller shaping facts. `I·R0` in step 12's prose contains the numeral `0`, which
+   nothing can account for, so that decomposition is claimed as two literals rather than
+   one — and both carry a claim on the 74.8 mV rebound, which is the sanctioned cost of
+   splitting a sentence. And `pulse_rebound_arrived` is stored as a fraction rather than a
+   percentage so that `states = complement` does the work for step 13's *"8 % arrives in
+   its final five minutes"*: it is the same measurement as "92 % had already arrived", and
+   `complement` is how this file already spells the other side of a number.
+
+   The perturbation that matters here replaces the zero-length `Rest` read with the stepped
+   row's own terminal voltage — the reading a naive harness takes — and the suite reddens.
+   Without that, the whole `rest_v` mechanism would be decoration.
+
+4. **Step 14's own-pack half**, and the scanner change it needs first.
 
 ## The measurement, and the one thing it settled
 

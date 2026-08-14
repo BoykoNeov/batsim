@@ -79,7 +79,7 @@
 //! A ledgered step is digits-closed, which is less than closed. Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all when
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
-//! step 14 that never existed survived, both under a fully green suite. Five steps are
+//! step 14 that never existed survived, both under a fully green suite. Three steps are
 //! still in that position. Coverage is opt-in per step
 //! (`[ledger]` in `path-claims.toml`) and today it is three steps and fourteen numbers,
 //! all of them scenario constants. One arm exists, the scenario file; the rest of the
@@ -163,9 +163,9 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed three whole steps — but only three. Three steps carry neither a claim
-//!   nor a ledger entry and are untouched by anything here; the other eighteen have their
-//!   claimed sentences checked and the rest of their prose free. `[ledger].unledgered`
+//!   has now closed three whole steps — but only three. Steps here carrying neither a
+//!   claim nor a ledger entry: one. The other twenty have their claimed sentences checked
+//!   and the rest of their prose free. `[ledger].unledgered`
 //!   names all twenty-one, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is arms the ledger has not got — chemistry constants,
 //!   ordinals naming other steps, and figures derived from other figures in the same
@@ -1039,6 +1039,29 @@ struct Row {
     /// read off the engine's own state; this one is read off the only thing the protection
     /// logic is allowed to see, which is CLAUDE.md's eighth principle made measurable.
     sensed: Option<Sensed>,
+    /// A **zero-length `Rest` read** taken at this instant \[V\] — what the cell's terminal
+    /// would say with the current switched off and nothing given any time to relax.
+    ///
+    /// `Some` only on the leg boundaries of a pulse train (and on the probe row of a pulse
+    /// step), because that is the only place anything reads it and a `dt = 0` step on a DFN
+    /// is a whole Newton solve. `None` everywhere else, and every pulse quantity in
+    /// [`measure`] refuses rather than falling back to `v_terminal`.
+    ///
+    /// **Why the decomposition needs it.** Steps 12 and 13 break one tooth into the part
+    /// that returns the instant the current stops and the part that climbs back slowly, and
+    /// the boundary between those two is the voltage at the moment the current goes away —
+    /// which no stepped row holds. The first rest sample is already one `dt` into the
+    /// relaxation, so a harness reading it gets *every* figure in both decompositions
+    /// slightly low: the circuit's rebound comes out 71.8 mV against the 74.8 the prose
+    /// states, which looks exactly like plausible drift and is not. Read this way all ten
+    /// figures across the two steps reproduce to the digit. `docs/plans/path-prose-ledger.md`
+    /// found this by hand; this is it made standing.
+    ///
+    /// Sound because `Pack::step(0.0, ..)` mutates nothing — the contract
+    /// [`a_zero_length_probe_moves_nothing`] asserts, and the same one the page's `readNow`
+    /// turns on. What it is *not* is a reading the page takes by itself: see the module
+    /// docs on what a reader would have to do to see this number.
+    rest_v: Option<f64>,
 }
 
 /// The sensor channels this file reads, with the frame's own clock beside them.
@@ -1182,6 +1205,30 @@ impl Run {
         &self.row_at(t).telemetry
     }
 
+    /// The zero-length `Rest` read taken at exactly `t` \[V\].
+    ///
+    /// Exactly, not nearest, and that is the difference between this and [`Self::at`]. A
+    /// leg boundary is one specific row and the row beside it is a whole step of relaxation
+    /// away — the very quantity the read exists to separate — so a nearest match here would
+    /// answer with the wrong side of the boundary and look right. Two failures are
+    /// distinguished because they mean different things: the run never reached this
+    /// instant, or it did and took no read there.
+    fn rest_read_at(&self, t: f64) -> f64 {
+        let row = self.row_at(t);
+        assert!(
+            (row.t_s - t).abs() < 1e-9,
+            "no row at t = {t} s: the nearest is {} s. The run does not reach this tooth, \
+             or the leg boundaries do not fall on the step grid.",
+            row.t_s
+        );
+        row.rest_v.unwrap_or_else(|| {
+            panic!(
+                "the row at t = {t} s carries no zero-length rest read. Those are taken \
+                 only on a pulse train's leg boundaries, so this instant is not one."
+            )
+        })
+    }
+
     /// First simulation time a flag was seen at.
     fn first_flag(&self, name: &str) -> Option<f64> {
         self.rows
@@ -1303,6 +1350,19 @@ fn drive(
         let t = pack.step(dt, d, env);
         *last = Some(t);
         let (deficit_min, deficit_max) = deficit_range(pack);
+        // The zero-length `Rest` read, and only where something reads it: a pulse train's
+        // leg boundaries. `Pack::step(0.0, ..)` mutates nothing, so this cannot disturb the
+        // trajectory — but it is a full solve on a porous model, which is why it is not
+        // taken on every row. See [`Row::rest_v`].
+        let rest_v = match prog {
+            Prog::Pulse { on_s, off_s, .. } => {
+                let now = pack.sim_time_s();
+                let boundary =
+                    pulse_on(now, on_s, off_s, dt) != pulse_on(now - dt, on_s, off_s, dt);
+                boundary.then(|| pack.step(0.0, Demand::Rest, env).v_terminal)
+            }
+            _ => None,
+        };
         rows.push(Row {
             t_s: pack.sim_time_s(),
             telemetry: t,
@@ -1310,6 +1370,7 @@ fn drive(
             deficit_min,
             surface_gap: surface_gap(pack),
             sensed: sensed(pack),
+            rest_v,
         });
     }
 }
@@ -1367,6 +1428,12 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
         deficit_min: probe_deficit_min,
         surface_gap: surface_gap(&pack),
         sensed: sensed(&pack),
+        // The open-circuit end of the first tooth's sag, and the only place to get it: at
+        // t = 0 a pulse train is already on its first ON leg, so the probe above is taken
+        // under load and there is no row before it. Pulse steps only, for the reason
+        // [`Row::rest_v`] gives.
+        rest_v: matches!(lesson.demand, Prog::Pulse { .. })
+            .then(|| pack.step(0.0, Demand::Rest, &env).v_terminal),
     };
     let mut rows = Vec::new();
     let mut last: Option<Telemetry> = None;
@@ -1447,7 +1514,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 121 of 142 claims.
+    /// number's last printed place. The default shape: 141 of 162 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1456,12 +1523,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 17 of 142.
+    /// declaration was wrong. 17 of 162.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 142, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 162, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1501,7 +1568,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 127 of 142, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 146 of 162, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2249,6 +2316,66 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
 ///
 /// Kept as an explicit match rather than a registry so an unknown quantity is a
 /// compile-time-shaped failure with a list in the message, not a silent skip.
+/// One tooth of a pulse train, located from the program and read off the trajectory.
+///
+/// The three instants are arithmetic — `on_s` and `off_s` are the page's, and the leg a
+/// pulse is on is a pure function of `sim_time_s`, which is the whole reason that demand
+/// mode exists — and the five voltages are looked up, never interpolated. A tooth the run
+/// does not reach panics rather than returning a partial one.
+struct Tooth {
+    /// When the current stops \[s\]: the last row of the loaded leg.
+    stop_s: f64,
+    /// When the rest ends \[s\]: the last row before the next leg starts.
+    rest_end_s: f64,
+    /// Open-circuit voltage at the instant the tooth begins \[V\].
+    rest_at_start: f64,
+    /// Terminal voltage at the bottom of the loaded leg \[V\].
+    v_at_stop: f64,
+    /// Open-circuit voltage at that same instant \[V\] — the zero-length read, and the
+    /// boundary between the part that returns at once and the part that climbs back.
+    rest_at_stop: f64,
+    /// Terminal voltage at the end of the rest \[V\]. The current is already zero here, so
+    /// this needs no zero-length read of its own.
+    v_at_rest_end: f64,
+}
+
+impl Tooth {
+    fn of(run: &Run, n: usize) -> Self {
+        let Prog::Pulse { on_s, off_s, .. } = run.prog else {
+            panic!(
+                "a claim reads a pulse quantity on a step whose demand is not the page's \
+                 `Pulse` program. There are no teeth to count."
+            )
+        };
+        assert!(
+            n >= 1,
+            "teeth are counted from one; this claim asks for {n}"
+        );
+        let period = on_s + off_s;
+        let start_s = (n - 1) as f64 * period;
+        let stop_s = start_s + on_s;
+        let rest_end_s = start_s + period;
+        // The tooth's opening open-circuit voltage. For the first tooth there is no row
+        // before it at all — a pulse train is already on its loaded leg at t = 0 — so the
+        // only reading is the probe's, which is why [`run`] takes one there.
+        let rest_at_start = if n == 1 {
+            run.probe.rest_v.expect(
+                "the probe row carries no zero-length rest read, so this is not a pulse step",
+            )
+        } else {
+            run.rest_read_at(start_s)
+        };
+        Self {
+            stop_s,
+            rest_end_s,
+            rest_at_start,
+            v_at_stop: run.at(stop_s).v_terminal,
+            rest_at_stop: run.rest_read_at(stop_s),
+            v_at_rest_end: run.at(rest_end_s).v_terminal,
+        }
+    }
+}
+
 fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
     if let Some(v) = measure_row(quantity, run.read(at_s, probe)) {
         return v;
@@ -2320,6 +2447,83 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
                 )
             })
             .t_s;
+    }
+    // The pulse-train family. Five quantities, all `<name>:<tooth>` with the tooth counted
+    // from one, and all of them differences between two instants the `Pulse` program
+    // defines rather than readings at `read_at_s`. Steps 12, 13 and 14 are built on the
+    // decomposition of one tooth and nothing in this file could express it before.
+    if let Some((name, n)) = quantity
+        .strip_prefix("pulse_")
+        .and_then(|rest| rest.split_once(':'))
+    {
+        let n: usize = n
+            .parse()
+            .unwrap_or_else(|_| panic!("`{n}` is not a tooth number"));
+        let legs = Tooth::of(run, n);
+        // `read_at_s` is asserted rather than decorative, on the same terms as
+        // `soc_gap_pts_min`: these quantities have their own instants and a claim carrying
+        // a different one would be pointing at a moment nothing measured.
+        let want = |expect: f64, what: &str| {
+            assert!(
+                (at_s - expect).abs() < run.dt * 0.5,
+                "a claim reads `{quantity}` at t = {at_s} s. That quantity is measured {what}, \
+                 which for tooth {n} of this train is t = {expect} s. A whole-tooth \
+                 measurement has to name the instant it belongs to, or `read_at_s` says \
+                 nothing."
+            );
+        };
+        let mv = 1000.0;
+        return match name {
+            // The whole drop from the open-circuit voltage the tooth starts at to the
+            // bottom of the loaded leg.
+            "sag_mv" => {
+                want(legs.stop_s, "at the instant the current stops");
+                (legs.rest_at_start - legs.v_at_stop) * mv
+            }
+            // The part that comes back the instant the current goes away: `I·R0` on a
+            // circuit, charge-transfer kinetics on a particle. This is the one that needs
+            // the zero-length read — no stepped row sits at this instant with no current.
+            "jump_mv" => {
+                want(legs.stop_s, "at the instant the current stops");
+                (legs.rest_at_stop - legs.v_at_stop) * mv
+            }
+            // The part that climbs back slowly over the rest: the RC pairs on a circuit, a
+            // concentration profile levelling out on a particle. The number both steps tell
+            // the reader to watch.
+            "rebound_mv" => {
+                want(legs.rest_end_s, "at the end of the tooth's rest");
+                (legs.v_at_rest_end - legs.rest_at_stop) * mv
+            }
+            // The part that never comes back — charge that has actually left, and the
+            // open-circuit voltage itself stepping down.
+            "lost_mv" => {
+                want(legs.rest_end_s, "at the end of the tooth's rest");
+                (legs.rest_at_start - legs.v_at_rest_end) * mv
+            }
+            // How much of that rest's rebound has arrived by `read_at_s`, as a fraction.
+            //
+            // A fraction and not a percentage so `states = complement` reads naturally: the
+            // sentence that says 8 % arrives in the last five minutes is the same
+            // measurement as the one that says 92 % had already arrived, and `complement`
+            // is how this file already spells "the sentence prints the other side of it".
+            "rebound_arrived" => {
+                assert!(
+                    at_s > legs.stop_s && at_s <= legs.rest_end_s,
+                    "a claim reads `{quantity}` at t = {at_s} s, which is not inside tooth \
+                     {n}'s rest ({} s to {} s). A fraction of a rebound has no meaning \
+                     outside the rest it is a fraction of.",
+                    legs.stop_s,
+                    legs.rest_end_s
+                );
+                let full = legs.v_at_rest_end - legs.rest_at_stop;
+                (run.at(at_s).v_terminal - legs.rest_at_stop) / full
+            }
+            other => panic!(
+                "path-claims.toml names a pulse quantity this test cannot measure: \
+                 `pulse_{other}`. Known: pulse_sag_mv, pulse_jump_mv, pulse_rebound_mv, \
+                 pulse_lost_mv, pulse_rebound_arrived — each `:<tooth>`, counted from one."
+            ),
+        };
     }
     match quantity {
         // Amp-hours out of the terminals by `at_s`, `Σ i·dt / 3600`.
@@ -2497,7 +2701,7 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, soc_at, i_at, \
              t_max_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
-             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, cccv_taper_s, \
+             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, cccv_taper_s,              pulse_sag_mv:<tooth>, pulse_jump_mv:<tooth>, pulse_rebound_mv:<tooth>,              pulse_lost_mv:<tooth>, pulse_rebound_arrived:<tooth>, \
              soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, \
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>."
@@ -4532,6 +4736,7 @@ fn flattened(prose: Prose) -> String {
 /// render a header sentence would redden a test about the lesson prose. Where the two
 /// overlap they are asserted to agree, in the test below.
 const HEADER_WORDS: &[(usize, &str)] = &[
+    (0, "none"),
     (1, "one"),
     (2, "two"),
     (3, "three"),
@@ -4954,9 +5159,13 @@ const TALLIES: &[Tally] = &[
         phrase: "{w} steps, {w} numerals, all of them scenario constants",
         of: &[n_ledgered, n_ledgered_numerals],
     },
+    // Phrased as a count of what is LEFT rather than "the remaining N steps", which was
+    // the earlier wording and which reads as bad English at one and as nonsense at zero.
+    // A tally has to survive its own count going to zero, or it forces a rewrite at the
+    // exact moment the work it describes is finished.
     Tally {
         prose: Prose::ClaimsFile,
-        phrase: "The remaining {w} unclaimed steps need arms",
+        phrase: "carry no claim at all and need arms this file has not got: {w}",
         of: &[n_unledgered_unclaimed],
     },
     Tally {
@@ -4966,12 +5175,12 @@ const TALLIES: &[Tally] = &[
     },
     Tally {
         prose: Prose::ClaimsFile,
-        phrase: "{W} of these carry claims",
+        phrase: "carry claims: {w} of them",
         of: &[n_unledgered_claimed],
     },
     Tally {
         prose: Prose::ClaimsFile,
-        phrase: "the other {w} are unchecked entirely",
+        phrase: "Unchecked entirely: {w}.",
         of: &[n_unledgered_unclaimed],
     },
     // --- and what this test's own docs say -------------------------------------
@@ -5008,8 +5217,12 @@ const TALLIES: &[Tally] = &[
     // sentence is not itself derived.
     Tally {
         prose: Prose::ThisTest,
-        phrase: "{W} steps carry neither a claim nor a ledger entry and are untouched by \
-                 anything here; the other {w} have their claimed sentences checked",
+        // Phrased so the count is never the subject of a verb. "{W} steps carry" was the
+        // first wording and it breaks at one and reads as nonsense at zero — which is
+        // exactly the moment the work it describes is finished, so a tally that cannot
+        // survive its own count reaching zero forces a rewrite at the worst time.
+        phrase: "carrying neither a claim nor a ledger entry: {w}. The other {w} have \
+                 their claimed sentences checked",
         of: &[n_unledgered_unclaimed, n_unledgered_claimed],
     },
     Tally {
