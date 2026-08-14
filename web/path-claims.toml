@@ -131,8 +131,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  53 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  14 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  102 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  17 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -180,13 +180,14 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 14 claims.
+# bounds the engine against `value` and is deliberately tighter on 17 claims.
 #
-#   same        59 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        110 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
-#   magnitude    2. The sentence prints the size and the sign is a word — `refused
-#               0.822 A` of −0.82224 A. Fenced to negative values; on a positive one it
-#               is a silent alias for `same`.
+#   magnitude    3. The sentence prints the size and the sign is a word — `refused
+#               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
+#               −1.31397. Fenced to negative values; on a positive one it is a silent
+#               alias for `same`.
 #   complement   2. The sentence prints how far below one the value is — `0.53 points
 #               are gone` of a `soh cap` of 0.9947106.
 #   since_mark   2. A duration since the step's mark — `**383.0 s later**` of an
@@ -3083,7 +3084,7 @@ is claimed there.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "the cell that is genuinely hottest is at 344.52 K when it fires"
+literal = "the cell that is genuinely hottest is at 344.52 K when it fires, so protection is late by 1.3 K of somebody else's temperature"
 quantity = "t_max_at"
 value = 344.520151
 tol = 5e-3
@@ -3093,16 +3094,64 @@ states = "same"
 read_at_s = 156.0
 note = """
 Ground truth at the instant the trip fires, against a probe that decided from a corner
-cell. The gap between them is what the sentence calls "1.3 K of somebody else's
-temperature", and THAT number is not claimed here: it is the difference between this
-reading and a SENSOR reading, and no quantity in this file reads a sensor.
+cell. The claim below reads that probe, and the two are now one sentence group rather than
+two: until `t_gap_k_at` existed, the literal had to stop before the word "so", because the
+1.3 was the difference between this reading and a SENSOR reading and no quantity in this
+file read a sensor.
 
-NAMED RATHER THAN LEFT: 344.52 minus the 343.15 K threshold is 1.37, so a reader
-reconstructing the sentence's 1.3 from the two numbers it prints gets 1.4. What would have
-to be true for 1.3 to be right is statable — the sentence is about the probe's own reading,
-and a probe crosses by landing at or just above the threshold, so it would have to sit in
-roughly [343.17, 343.27] K, an overshoot of 0.02 to 0.12 K in one step. That is plausible
-on a pack heating this fast. It is not established, and this harness cannot establish it.
+`343.15` is still outside the literal, and for the standing reason: it is a threshold this
+step's scenario declares, and the accounting has no arm for a configured constant. That arm
+is designed in docs/plans/path-prose-ledger.md and is one of the two still missing.
+
+A PREDICTION THAT WAS REGISTERED AND THEN CONFIRMED. The note this replaces said the
+sentence's 1.3 could only be right if the probe sat "in roughly [343.17, 343.27] K, an
+overshoot of 0.02 to 0.12 K in one step", and that the harness could not establish it. It
+now can: the probe crosses at t = 155.5 s reading 343.2458 K, an overshoot of 0.0958 K,
+inside the predicted interval. The reader who reconstructs 1.37 from the two numbers the
+sentence prints — and gets 1.4 — is subtracting the threshold, not the reading; the prose
+is right and the reconstruction is what is wrong.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "the cell that is genuinely hottest is at 344.52 K when it fires, so protection is late by 1.3 K of somebody else's temperature"
+quantity = "t_gap_k_at"
+value = -1.313971
+tol = 5e-2
+tol_from = "spelled"
+spells = "1.3"
+states = "magnitude"
+read_at_s = 156.0
+note = """
+THE FIRST CLAIM IN THIS FILE THAT READS A SENSOR RATHER THAN THE TRUTH, and the sentence it
+settles is the one CLAUDE.md's eighth principle is about: the BMS acts on what it measured,
+and what it measured is not what is so. Belief minus truth — 343.20618 K at the hottest
+probe against 344.52015 K at the hottest cell — so the value is negative and the sentence
+prints the magnitude with the sign in the word *late*, which is `magnitude`.
+
+WHICH FRAME, AND WHY THE NUMBER CANNOT SAY. Three readings were measured before this was
+written, because another step's prose states the mechanism: protection decides from the
+frame sampled at the end of the PREVIOUS step.
+
+  * both at the trip row (156.0):                       1.31397   <- claimed
+  * truth at the trip, the frame that caused it (155.5): 1.27435
+  * both at the deciding frame (155.5):                  1.30297
+
+All three print 1.3, and the spread between them (0.04 K) sits inside the tolerance the
+sentence's own precision licenses (0.05 K). So neither the prose nor this claim's tolerance
+discriminates the frame, and a tolerance tight enough to separate the first from the third
+would be pinning a distinction of 0.011 K on a sentence that gives one decimal — the "right
+but unreachable" defect this file exists to keep out. The frame is chosen on meaning
+instead: "when it fires" is the instant, both readings are taken there, and that subtraction
+is the one the page itself performs — `fmtSigned(probeMax - t.t_max, 2, "K")` in the BMS
+panel, contemporaneous by construction. NAMED RATHER THAN LEFT: nothing here would redden if
+the two frames swapped.
+
+NO `display`, and the reason is narrower than `soc_gap_pts_at`'s. That gap is on a panel
+that prints no gap row at all; this one prints `-1.31 K` in the BMS panel's `temperature`
+row, and a reader can see it. What is missing is the mirror: this file asserts the strings
+of `READOUTS` and the BMS panel is not in it. The day that panel is mirrored, this is the
+claim that gains a display.
 """
 
 [[claim]]
@@ -3417,7 +3466,7 @@ unledgered = [
                                     # rest of its numbers are measurements, not constants
   "one-step-that-got-through",      # claims: 9, on five arms. Its headline sentence is
                                     # claimed now — `Accounted::Setting` was the blocker
-  "nothing-to-clamp",               # claims: 18, on both halves of the step now
+  "nothing-to-clamp",               # claims: 19, on both halves of the step now
   "past-empty",                     # claims: 14
   "what-it-cost",                   # claims: 20
   "slow-and-patient",               # claims: 4

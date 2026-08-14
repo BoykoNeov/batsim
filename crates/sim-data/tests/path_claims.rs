@@ -111,6 +111,15 @@
 //!   `surface gap` stood here beside it until the probe slice and no longer does. It is
 //!   per-cell in the same way, but it carries no throttle, so it does have a value at a
 //!   given simulation time — [`Row`] carries the pair and [`render_row`] prints it.
+//! * **The BMS panel's strings, though not its numbers any more.** [`Row`] now carries what
+//!   the BMS *measured* as well as what is true ([`Sensed`]), so a claim can read a sensor —
+//!   `t_gap_k_at` is the panel's `temperature` gap, belief minus truth, and it is what
+//!   settles "protection is late by 1.3 K of somebody else's temperature". What is not
+//!   mirrored is that panel's rendering: [`render_row`] covers `READOUTS` and nothing else,
+//!   so a claim measured on a sensor may name no `display` and the truth-beside-belief
+//!   columns are checked by nothing. Only the temperature channel is carried, because it is
+//!   the only one a claim reads — the current and charge channels would be fields with no
+//!   consulting code, which is the shape this file rejects everywhere else.
 //! * **The ambient slider, and a sentence needing two packs.** A step may declare any
 //!   number of `[[arm]]`s — an instructed control change and the trajectory that follows —
 //!   covering the demand box, the `dt` box, the BMS checkbox, **Restart**, **Clear
@@ -1000,6 +1009,44 @@ struct Row {
     /// `(0, 0)` because the page's readout reads `cells[0]` — the packs that have this
     /// quantity are 1S1P, which is a fact the readout's own doc comment turns on.
     surface_gap: Option<(f64, f64)>,
+    /// What the BMS had **measured** as of the end of this step — `None` on a pack with no
+    /// BMS, which has no sensors at all.
+    ///
+    /// The first thing in this file that is not ground truth. Every other field here is
+    /// read off the engine's own state; this one is read off the only thing the protection
+    /// logic is allowed to see, which is CLAUDE.md's eighth principle made measurable.
+    sensed: Option<Sensed>,
+}
+
+/// The sensor channels this file reads, with the frame's own clock beside them.
+///
+/// A cut-down [`sim_core::bms::SensorFrame`] rather than a clone of one, on the rule the
+/// rest of this file follows: a field nothing reads is a pinned constant with no consulting
+/// code, so only the channel a claim measures is carried. The frame's **time** is carried
+/// whether or not a claim reads it, because it is what tells a measurement from a stale
+/// one — see the refusal in [`measure_row`].
+struct Sensed {
+    /// Highest measured probe temperature \[K\], or `None` on a BMS with no probes.
+    ///
+    /// The hottest *instrumented* cell, which is not the hottest cell. That difference is
+    /// the whole subject of the sentence this was built for.
+    probe_max_k: Option<f64>,
+    /// Simulation time this frame was sampled at \[s\].
+    ///
+    /// Sampling is gated on `dt > 0` inside `Pack::step`, so a zero-length probe does not
+    /// refresh it and a paused pack's frame is legitimately old. The page renders exactly
+    /// this comparison — `lag = simTime - sensors.sampled_at_s` — and greys its own panel
+    /// when it is non-zero.
+    sampled_at_s: f64,
+}
+
+/// The sensor frame a pack's BMS is holding, cut down to what this file reads.
+fn sensed(pack: &Pack) -> Option<Sensed> {
+    let frame = pack.bms()?.sensors();
+    Some(Sensed {
+        probe_max_k: frame.max_probe_k(),
+        sampled_at_s: frame.sampled_at_s,
+    })
 }
 
 /// The `surface gap` row's pair, off the cell the page's readout reads.
@@ -1225,6 +1272,7 @@ fn drive(
             deficit_max,
             deficit_min,
             surface_gap: surface_gap(pack),
+            sensed: sensed(pack),
         });
     }
 }
@@ -1276,6 +1324,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
         deficit_max: probe_deficit_max,
         deficit_min: probe_deficit_min,
         surface_gap: surface_gap(&pack),
+        sensed: sensed(&pack),
     };
     let mut rows = Vec::new();
     let mut last: Option<Telemetry> = None;
@@ -2063,6 +2112,74 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
         // nearest row, and a message naming the instant an author wanted rather than the
         // one that was read sends them to the wrong place.
         "soc_gap_pts_at" => gap_pts(t, row.t_s),
+        // The temperature channel of that same panel: what the hottest **probe** reads
+        // minus what the hottest **cell** is, in kelvin. Belief minus truth, the same
+        // subtraction and the same order as `soc_gap_pts_at` one channel up, and the same
+        // string the page builds — `fmtSigned(probeMax - t.t_max, 2, "K")`.
+        //
+        // Negative on a pack whose hot cell is not instrumented, which is the interesting
+        // case and the only one this path has a sentence about: "protection is late by
+        // 1.3 K of somebody else's temperature" prints the magnitude and puts the sign in
+        // the word *late*, so a claim on it states `magnitude` — the variant that exists
+        // for exactly this and is fenced to negative values.
+        //
+        // No `display` may be named on a claim measured here. The number is on the screen,
+        // in the BMS panel's `temperature` row, but that panel is not in this file's
+        // [`render_row`] mirror — `READOUTS` is — so there is no asserted string to quote.
+        // That is a narrower reason than `soc_gap_pts_at`'s, whose panel prints no gap at
+        // all, and it is the one that would change first if the mirror grew.
+        "t_gap_k_at" => {
+            let sensed = row.sensed.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "a claim reads the BMS's temperature sensors at t = {} s on a step \
+                     that runs with no BMS. Such a pack has no sensors to read — the \
+                     page's own panel says so instead of printing a number — so the \
+                     quantity does not exist there rather than being zero.",
+                    row.t_s
+                )
+            });
+            // The page's two gates on this comparison, in its own order, and neither is a
+            // detail: `booted` first, then `lag`. A pack that has never advanced has never
+            // *sampled*, so the frame it carries is the construction-time open-circuit
+            // read — every probe at the initial temperature, on a pack that is uniform
+            // anyway. Reading a gap off it would report an exact zero and call it a
+            // measurement, which is the false-agreement half of the false-accusation
+            // `web/app.js` documents at the same gate.
+            assert!(
+                row.t_s > 0.0,
+                "a claim reads `t_gap_k_at` off the zero-length probe. A `dt = 0` step \
+                 samples no sensors, so the frame there is the boot read the page labels \
+                 `the sensors have not sampled yet` — every probe at the pack's initial \
+                 temperature. The gap it would report is an artefact of construction, not \
+                 a measurement. Give the claim an instant on the run."
+            );
+            // A FORWARD GUARD, AND MEASURED TO BE ONE. Deleting this assertion reddens
+            // nothing in the file today: sampling is gated on `dt > 0`, so every *stepped*
+            // row carries a frame sampled at its own instant, and the one row that does not
+            // — the probe — is already refused above. It is kept, and labelled, because a
+            // stale frame is the one way this quantity stops being a subtraction of two
+            // readings of one instant, and the page carries the same comparison for the
+            // same reason. Said plainly rather than left to be assumed, because an
+            // unreachable assertion under a green test reads as a covering one.
+            assert!(
+                (sensed.sampled_at_s - row.t_s).abs() <= 1e-9,
+                "the sensor frame at t = {} s was sampled at {} s — {} s behind. The page \
+                 greys its own panel on exactly this comparison rather than showing the \
+                 two side by side, so a claim measured here would be subtracting readings \
+                 of two different instants.",
+                row.t_s,
+                sensed.sampled_at_s,
+                row.t_s - sensed.sampled_at_s
+            );
+            let probe_max = sensed.probe_max_k.unwrap_or_else(|| {
+                panic!(
+                    "a claim reads `t_gap_k_at` at t = {} s on a BMS with no temperature \
+                     probes. The panel prints `no probes` there rather than a temperature.",
+                    row.t_s
+                )
+            });
+            probe_max - t.t_max
+        }
         _ => return None,
     })
 }
@@ -2223,7 +2340,7 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
              Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, soc_at, i_at, \
              t_max_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
              deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, \
-             soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, \
+             soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, \
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>."
         ),
