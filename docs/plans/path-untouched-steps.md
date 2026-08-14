@@ -50,14 +50,13 @@ make them:
 
    *Two things the perturbation pass turned up.* First, `464` cannot be accounted for as
    "the instant this sentence's claims are read at": `OPERATING_POINT_OUT_OF_WINDOW`
-   arrives on that step, and the `ReadAt` fence refuses an accounting at an instant a flag
-   arrives. So the number needed a claim of its own, which is what `t_at_v_below:` is for —
-   and deleting that claim reddens check 6 by name. Second, the threshold in that quantity
-   is barely pinned: moving it from 2.5 V to 2.6 V changes nothing, because the collapse is
-   216 mV in one 2 s step and every threshold in (2.4218, 2.6381] lands on the same row.
-   What the claim pins is the step the voltage falls off on. Written into the claim's note
-   rather than left to be discovered, because a check nobody has perturbed is a check
-   nobody knows the strength of.
+   arrives on that step, and the fence refuses a `read at` accounting at an instant a flag
+   arrives. So the number needed a claim of its own, which is what `t_at_v_below:` is for.
+   Second, the threshold in that quantity is barely pinned: moving it from 2.5 V to 2.6 V
+   changes nothing, because the collapse is 216 mV in one 2 s step and every threshold in
+   (2.4218, 2.6381] lands on the same row. What the claim pins is the step the voltage falls
+   off on. Written into the claim's note rather than left to be discovered, because a check
+   nobody has perturbed is a check nobody knows the strength of.
 
    *And two stale counts it exposed.* Adding a first claim to a previously unclaimed step
    moves every tally, which is the derived self-counts working as intended — but two
@@ -65,9 +64,47 @@ make them:
    derived twin: `2 of 69` grid claims in this test's docs (four, of 134) and `Five steps
    carry neither a claim nor a ledger entry ... the other sixteen` (four and seventeen).
    Both are now tallies. A count next to a derived count is not thereby derived.
-2. **Step 9, the first CC-CV taper claims.** One new quantity, `cccv_taper_s`, with an
-   invariant under it that decides whether the page's stop is a fact about the simulation
-   or a fact about the browser's frame schedule.
+2. **Step 9, the first CC-CV taper claims.** Eight of them. One new quantity,
+   `cccv_taper_s`, with an invariant under it that decides whether the page's stop is a
+   fact about the simulation or a fact about the browser's frame schedule.
+
+   The page's completion test is evaluated at the end of each chopped chunk, and a chunk
+   ends at a decision-window boundary *or* wherever the frame's step budget ran out — so in
+   general the instant the page stops is somewhere between the crossing and the next
+   boundary, and which is a fact about the browser. That is why `drive` did not model it and
+   why no claim had ever read past a taper. It is claimable on this step for a reason
+   particular to this trajectory: the crossing lands **on** a boundary (6210 s is step 12420
+   at `dt = 0.5`, and 20 steps is the window), a chunk never crosses one, so the test is
+   certainly evaluated there and the step before is still over the taper. The quantity
+   asserts that property and **panics rather than answering** anywhere else. Perturbing the
+   page's taper from 0.15 A to 0.152 moves the crossing to 6205 s, off the grid, and it
+   refuses — which is the perturbation that makes the invariant a fact rather than a
+   paragraph.
+
+   ### Where the deletion pass corrected me
+
+   The right way to ask whether a claim is load-bearing is to delete the whole claim and
+   report *every* test that reddens. Replacing its `literal` with a placeholder — the first
+   thing tried here — also reddens the literal check, so "check 6 caught it" cannot be told
+   apart from "check 1 caught the placeholder". With whole blocks removed and the
+   claim-counting tallies set aside, the answer is:
+
+   | deleted claim | what notices |
+   | --- | --- |
+   | step 16's `t_at_v_below:2.5` | `every_claim_matches_the_engine` — the flag fence, **not** check 6 |
+   | step 9's `cccv_taper_s` | **nothing** |
+   | step 16's collapse voltage | check 6 |
+   | step 9's charge at the end of the CC leg | check 6 |
+
+   Two corrections fall out. The flag fence lives inside the engine test, because that is
+   the only place a trajectory exists — a flag's arrival is not knowable from the prose —
+   so deleting step 16's instant claim reddens *that*, and check 6 stays green on its own.
+   And step 9's stop claim is required by nothing: `6210` falls straight back to being the
+   instant the charge-level claim beside it is read at, because no flag arrives there to
+   make the fence refuse. The `read at` accounting reaches every instant the run is quiet
+   at, and only an event forces a sentence's moment to be claimed. The sentence says the
+   charge *stops* at 6210, which is a great deal more than "we measured then", and the only
+   thing making that the checked statement is the claim being there.
 3. **Steps 12, 13 and 14's own-pack half.** One new family of quantities for a pulse
    train's decomposition, all keyed off the leg boundaries the `Pulse` program already
    defines.

@@ -123,7 +123,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 61 claims below that set
+#              Be clear about what this buys TODAY: in all 63 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -142,7 +142,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  113 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  121 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  17 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -193,9 +193,9 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 17 claims.
 #
-#   same        121 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        127 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
-#   magnitude    3. The sentence prints the size and the sign is a word — `refused
+#   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
 #               −1.31397. Fenced to negative values; on a positive one it is a silent
 #               alias for `same`.
@@ -239,8 +239,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Four accountings, and no fifth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 126 of the 150 numbers the
-#            94 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 134 of the 161 numbers the
+#            96 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -260,7 +260,7 @@
 # sitting beside the number, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 94 claimed sentences need none. A future literal printing a control setting or a
+# the 96 claimed sentences need none. A future literal printing a control setting or a
 # chemistry constant will fail loudly, and the answer will be an arm that checks it
 # against the lesson block or the chemistry file — not a waiver.
 #
@@ -2615,7 +2615,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: three
 # steps, fourteen numerals, all of them scenario constants. Those three were picked
 # because the same measuring pass found they carry no measurement-shaped figure at all,
-# so they can be closed before a single number is measured. The remaining four
+# so they can be closed before a single number is measured. The remaining three
 # unclaimed steps need arms this file has not got — see the plan.
 #
 # NUMERAL, NOT NUMBER, and the difference is load-bearing. The scan finds digits, so a
@@ -3735,11 +3735,19 @@ display = "sim time"
 shows = "8m"
 note = """
 THE INSTANT, CLAIMED RATHER THAN ACCOUNTED. The sentence says the cell is finished at 464 s,
-and a `ReadAt` accounting would have said only "we measured then" — a far weaker statement,
+and a `read at` accounting would have said only "we measured then" — a far weaker statement,
 and one this file has already been caught making: the perturbation that deletes step 20's
 `207.5 s` claim came back green under exactly that reading. Here the fence forces the issue
-by itself, because `OPERATING_POINT_OUT_OF_WINDOW` arrives on this step and a `ReadAt` is
-refused at an instant a flag arrives.
+by itself, because `OPERATING_POINT_OUT_OF_WINDOW` arrives on this step and a `read at`
+accounting is refused at an instant a flag arrives.
+
+MEASURED, and it is worth naming the check that bites because it is not the obvious one:
+deleting this whole claim block reddens `every_claim_matches_the_engine`, not check 6. The
+fence lives inside the engine test because that is the only place a trajectory exists — a
+flag's arrival is not knowable from the prose — so what fails is the flag fence, saying that
+`464` is now accounted only as the moment two other claims are read at, on a step where the
+run raises a flag. Check 6 stays green on its own, which is exactly why the fence was put
+where it is.
 
 `t_at_v_below:2.5` and not the flag, although the flag prints the same digit. The sentence's
 claim is that the run went past its cut-off; the flag's claim is that the demand left the
@@ -3877,6 +3885,225 @@ cut-off cost — which is what makes "flat shelf" the right words and what a cla
 that an adjective cannot.
 """
 
+# --- step 9: putting it back, and the two legs of a charge -------------------------
+#
+# THE FIRST CLAIMS THAT READ PAST A CC-CV TAPER. Step 10 is a CC-CV step and has been
+# claimed since the charge-legs slice, but its cell fills up before it ever reaches its
+# voltage limit — that is the whole lesson of step 10 — so it is on constant current for
+# its entire run and no claim on it has ever seen the second leg. This step is the one
+# where the leg actually changes, and the one whose sentence says when the charge STOPS.
+#
+# WHAT MADE THAT SENTENCE CLAIMABLE, because it was not before. `ccCvDone` is evaluated at
+# the end of each chopped chunk, and a chunk ends at a decision-window boundary OR wherever
+# the frame's step budget ran out — so in general the instant the page stops is somewhere
+# between the crossing and the next window boundary, and which is a fact about the browser.
+# `drive` says so and no claim was allowed to read past a taper.
+#
+# It is claimable here for a reason particular to this trajectory: the crossing lands ON a
+# window boundary. 6210 s is step 12420 at dt = 0.5, and 20 steps is the window, so 12420 is
+# a multiple of it. A chunk never crosses a boundary, so every boundary is a chunk end and
+# the test is certainly evaluated there — and the step before is still over the taper. The
+# page stops at 6210 whatever the frame rate. `cccv_taper_s` asserts that boundary property
+# rather than assuming it, and refuses to answer at all if the crossing ever moves off the
+# grid. See the note on the claim itself.
+#
+# WHAT IS NOT CLAIMED HERE:
+#   * "**The last leg is 13 % of the time for 5 % of the charge**" — the step's headline,
+#     and both figures are ratios of other numbers in the prose. That is the `Derived`
+#     accounting arm and it does not exist. It is the third slice running to be blocked on
+#     that arm, which is worth knowing when it is finally built.
+#   * The prose paragraphs' `0.15 A` cutoff, `20 %` starting charge and `10 s` decision
+#     window: a control setting, a scenario field and a mirrored constant. Only the
+#     `expect` sentences are claimed, so check 6 never scans them — a claim on any of them
+#     would need an accounting arm apiece.
+
+[[claim]]
+step = "two-legs"
+literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
+quantity = "i_at"
+value = -1.5
+tol = 0.05
+tol_from = "spelled"
+spells = "-1.5"
+states = "same"
+read_at_s = 5420.0
+display = "current"
+shows = "-1.500 A"
+note = """
+The constant-current leg, read on its LAST step — 5420 s is the final instant the demand is
+still `Current(-1.5)`, and the step after it is the first voltage hold. Reading it here
+rather than at the start is what lets `5420` be accounted as this sentence's own instant.
+
+Negative because positive is discharge everywhere in this engine and on this page, which
+the step's own first line tells the reader. `states = same` and not `magnitude`: the
+sentence prints the sign, so it is stating the value and not its size. The prose writes a
+typographic minus and `spells` writes an ASCII one; the comparison normalises.
+
+Not quoted — the row prints three decimals where the sentence prints one.
+"""
+
+[[claim]]
+step = "two-legs"
+literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
+quantity = "v_at"
+value = 3.656836
+tol = 5e-3
+tol_from = "spelled"
+spells = "3.66"
+states = "same"
+read_at_s = 0.5
+display = "terminal"
+shows = "3.657 V"
+note = """
+Where the climb starts: the first stepped row, at 20 % charge under a 1.5 A charge current.
+
+NOT the zero-length probe, although the page does show one and it reads 3.6558 V — also
+3.66 to the two decimals the sentence prints. This step does not set `reload: true`, so
+`every_probe_claim_is_taken_before_the_run` refuses a probe claim on it: `run` always builds
+a fresh pack, and on a step that may inherit its pack from its predecessor the probe row is
+a reading the page might never have shown. The stepped row is the conservative half and it
+is what a reader watching the trace actually sees first.
+"""
+
+[[claim]]
+step = "two-legs"
+literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
+quantity = "v_at"
+value = 4.199136
+tol = 5e-3
+tol_from = "spelled"
+spells = "4.20"
+states = "same"
+read_at_s = 5420.0
+display = "terminal"
+shows = "4.199 V"
+note = """
+Where the climb ends. 0.9 mV under the 4.20 V the controller is aiming for, which is exactly
+why the leg changes on the next step: `ccCvDemand` holds constant current while the terminal
+is more than a 1 mV per-cell band below the target, and this is the last step that is.
+
+`4.20` is also the number in the demand box, and it is claimed rather than accounted as a
+setting on purpose — the sentence is about a voltage the cell REACHED, and the only
+accounting arm for a control is `dt`. That the two agree to a millivolt is the lesson, not
+a coincidence to lean on.
+"""
+
+[[claim]]
+step = "two-legs"
+literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
+quantity = "soc_at"
+value = 0.95277778
+tol = 5e-4
+tol_from = "spelled"
+spells = "95.3"
+spells_pow10 = 2
+states = "same"
+read_at_s = 5420.0
+display = "soc (true)"
+shows = "95.3 %"
+quoted = true
+note = """
+What the constant-current leg bought: 75.3 points of charge in 5420 s, from a start of 20 %.
+The whole of the rest of the run adds 4.2 more, which is the contrast the step's headline is
+about and the one figure on this step no claim can pin.
+"""
+
+[[claim]]
+step = "two-legs"
+literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
+quantity = "i_at"
+value = -0.653487
+tol = 5e-3
+tol_from = "spelled"
+spells = "0.65"
+states = "magnitude"
+read_at_s = 5700.0
+display = "current"
+shows = "-0.653 A"
+note = """
+280 s into the voltage hold and the current has already more than halved, with nothing on
+the page having moved. `magnitude`, because this half of the sentence drops the sign the
+first half was careful about — the reader has been told which way current flows and the
+sentence is now talking about how much.
+"""
+
+[[claim]]
+step = "two-legs"
+literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
+quantity = "i_at"
+value = -0.274678
+tol = 5e-3
+tol_from = "spelled"
+spells = "0.27"
+states = "magnitude"
+read_at_s = 6000.0
+display = "current"
+shows = "-0.275 A"
+note = """
+Five more minutes and it has halved again. Note the row and the sentence disagree in the
+last place — the panel prints `-0.275 A` and the prose says `0.27` — which is rounding at
+two different precisions of the same number and is why this claim is not `quoted`.
+"""
+
+[[claim]]
+step = "two-legs"
+literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
+quantity = "cccv_taper_s"
+value = 6210.0
+tol = 0.5
+tol_from = "spelled"
+spells = "6210"
+states = "same"
+read_at_s = 6210.0
+display = "sim time"
+shows = "104m"
+note = """
+WHEN THE PAGE STOPS, and the first claim in this file entitled to say it.
+
+The current is -0.150038 A at 6209.5 and -0.149821 at 6210, so the taper is crossed on the
+step at 6210. That instant is step 12420 at this step's 0.5 s timestep and the decision
+window is 20 steps, so it is a window boundary — which is what makes the page's stop a
+property of the simulation here rather than of the browser. `cccv_taper_s` asserts that and
+panics rather than answering if a future trajectory moves the crossing off the grid, because
+the number would then be the earliest of a range the page could show and not a number at
+all. See the quantity's own comment in `path_claims.rs`.
+
+The margin is thin and worth knowing: the crossing beats the boundary by half a step. Move
+this trajectory by one step and the claim does not go subtly wrong, it refuses. Perturbing
+the page's taper from 0.15 A to 0.152 puts the crossing at 6205 s, which is not a window
+boundary, and the quantity panics with that message instead of answering 6205.
+
+WHAT NOTHING WOULD NOTICE IF THIS CLAIM WERE DELETED: nothing. Measured, not assumed —
+removing this block leaves the whole suite green apart from the tallies that count claims.
+`6210` falls back to being accounted as the instant the charge-level claim beside it is read
+at, and unlike step 16's `464` there is no flag arriving here to make the fence refuse that.
+So this is an addition rather than a requirement, and the difference between the two steps
+is worth stating plainly: the `read at` accounting reaches every instant the run is quiet
+at, and only an event forces a sentence's moment to be claimed. The sentence says the charge
+STOPS at 6210, which is a good deal more than "we measured then", and the only thing making
+that the checked statement is this claim being here.
+"""
+
+[[claim]]
+step = "two-legs"
+literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
+quantity = "soc_at"
+value = 0.99519515
+tol = 5e-4
+tol_from = "spelled"
+spells = "99.5"
+spells_pow10 = 2
+states = "same"
+read_at_s = 6210.0
+display = "soc (true)"
+shows = "99.5 %"
+quoted = true
+note = """
+Where the charge ends. The step's mark is at 6300 s, 90 s further on, so the run this claim
+is measured on carries past the stop — the page would have halted at 6210 and the harness
+does not, which costs nothing here because nothing reads past it.
+"""
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -3884,15 +4111,16 @@ steps = [
                      # two claims on its estimator gap, which the prose spells in words
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
 ]
-# Not scanned, and why. Seventeen of these carry claims, so their claimed sentences are
-# checked and the rest of their prose is not; the other four are unchecked entirely.
+# Not scanned, and why. Eighteen of these carry claims, so their claimed sentences are
+# checked and the rest of their prose is not; the other three are unchecked entirely.
 unledgered = [
   "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
   "protection-on",                  # claims: 2
   "protection-off",                 # claims: 9
   "wearing-out-while-idle",         # claims: 3
-  "two-legs",                       # measured, no claim yet
+  "two-legs",                       # claims: 8, on both legs. Its headline ratios are
+                                    # the `Derived` accounting arm
   "leg-that-is-not-there",          # claims: 6
   "what-protection-costs",          # claims: 3, on two ambient arms. Also two perf
                                     # ratios no trajectory can settle

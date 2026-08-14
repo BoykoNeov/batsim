@@ -79,7 +79,7 @@
 //! A ledgered step is digits-closed, which is less than closed. Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all when
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
-//! step 14 that never existed survived, both under a fully green suite. Six steps are
+//! step 14 that never existed survived, both under a fully green suite. Five steps are
 //! still in that position. Coverage is opt-in per step
 //! (`[ledger]` in `path-claims.toml`) and today it is three steps and fourteen numbers,
 //! all of them scenario constants. One arm exists, the scenario file; the rest of the
@@ -163,8 +163,8 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed three whole steps — but only three. Four steps carry neither a claim
-//!   nor a ledger entry and are untouched by anything here; the other seventeen have their
+//!   has now closed three whole steps — but only three. Three steps carry neither a claim
+//!   nor a ledger entry and are untouched by anything here; the other eighteen have their
 //!   claimed sentences checked and the rest of their prose free. `[ledger].unledgered`
 //!   names all twenty-one, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is arms the ledger has not got — chemistry constants,
@@ -1137,6 +1137,15 @@ struct Run {
     /// compared field by field so the comparison is over everything the snapshot carries —
     /// including the RNG, which is the half a hand-written equality would forget.
     end_snapshot: String,
+    /// The demand program the buttons were pressed under, and the step length they were
+    /// pressed at — an arm's overrides already applied.
+    ///
+    /// Carried because one quantity is about the *program* rather than about the rows:
+    /// `cccv_taper_s` needs the taper current the page is comparing against, and the
+    /// decision grid `CCCV_PERIOD_S / dt` sets, and neither is recoverable from telemetry.
+    /// Everything else in [`measure`] reads the trajectory alone.
+    prog: Prog,
+    dt: f64,
 }
 
 impl Run {
@@ -1259,9 +1268,14 @@ fn cccv_window_steps(dt: f64) -> u64 {
 /// stops the run when the current falls under the taper. It is checked at the end of each
 /// *chopped chunk* rather than each window, so how long a finished charge keeps running
 /// depends on how the browser scheduled its frames — the one place the page's CC-CV
-/// behaviour is not a function of the simulation alone. No claim reads past a taper
-/// today; a claim that wanted to would need the page's frame schedule, not just its
-/// sub-clock.
+/// behaviour is not a function of the simulation alone. So a run here does not stop where
+/// the page would; it runs to the step's mark and a claim about the taper reads the
+/// crossing off the rows.
+///
+/// That is enough to claim *when the page stops* only in the case where the crossing lands
+/// on a decision-window boundary, because a chunk never crosses one — see the invariant in
+/// [`measure`]'s `cccv_taper_s`, which refuses to answer anywhere else rather than
+/// returning the earliest of several instants the page could show.
 fn drive(
     pack: &mut Pack,
     prog: Prog,
@@ -1409,6 +1423,13 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
         rows,
         probe,
         end_snapshot,
+        // The program the trajectory's last stretch ran under, which for an arm that typed
+        // a current into the box is that current and not the step's own. Same rule the
+        // stepping loop above uses, because it is the same fact.
+        prog: arm
+            .and_then(|a| a.demand_a)
+            .map_or(lesson.demand, Prog::Current),
+        dt,
     }
 }
 
@@ -1426,7 +1447,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 113 of 134 claims.
+    /// number's last printed place. The default shape: 121 of 142 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1435,12 +1456,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 17 of 134.
+    /// declaration was wrong. 17 of 142.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 134, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 142, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1480,7 +1501,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 121 of 134, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 127 of 142, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2407,6 +2428,65 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
         // distinction, which is the one that keeps this from being a declaration.
         "soc_lost_pts_at" => (run.probe.telemetry.soc_true - run.at(at_s).soc_true) * 100.0,
         "t_rise_k_at" => run.at(at_s).t_max - run.probe.telemetry.t_max,
+        // When a CC-CV charge finishes \[s\]: the first row whose current has fallen to the
+        // taper the page is comparing against.
+        //
+        // `ccCvDone` is the one piece of the page's CC-CV behaviour that `drive` does not
+        // model, and its own doc says why — the test is evaluated at the end of each
+        // *chopped chunk*, and a chunk ends either at a decision-window boundary or wherever
+        // the frame's step budget ran out. So the instant the page STOPS is bounded below by
+        // the crossing and above by the next window boundary, and where inside that it lands
+        // is a fact about how the browser scheduled the run.
+        //
+        // **Unless the crossing is itself a window boundary, and then there is no window.**
+        // A chunk never crosses a boundary, so every boundary the run reaches is a chunk
+        // end and `ccCvDone` is evaluated there; if the current is already under the taper
+        // at that step and was not at the one before, the page stops exactly there whatever
+        // the frame rate. That is the case on step 9 — 6210 s is step 12420 at dt = 0.5,
+        // and 12420 is a multiple of the 20-step window — so "it stops at 6210 s" is a
+        // statement about the simulation after all.
+        //
+        // The assertion below is what keeps that true rather than assumed. If the trajectory
+        // ever moves the crossing off a boundary, this quantity refuses to answer instead of
+        // returning a number that is only the earliest of several the page could show. An
+        // invariant rather than a tolerance: the alternative is a claim that is right about
+        // one frame schedule and silent about the rest.
+        "cccv_taper_s" => {
+            let Prog::CcCv { taper, .. } = run.prog else {
+                panic!(
+                    "a claim reads `cccv_taper_s` on a step whose demand is not the page's \
+                     CC-CV policy. There is no taper to cross."
+                )
+            };
+            let k = cccv_window_steps(run.dt);
+            let crossed = run
+                .rows
+                .iter()
+                .position(|r| r.telemetry.i_actual.abs() <= taper)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "the run never fell to |i| <= {taper} A — its smallest current is \
+                         {:.6} A. The claim is about a charge that no longer terminates.",
+                        run.rows
+                            .iter()
+                            .map(|r| r.telemetry.i_actual.abs())
+                            .fold(f64::MAX, f64::min)
+                    )
+                });
+            let t_s = run.rows[crossed].t_s;
+            let index = (t_s / run.dt).round() as u64;
+            assert!(
+                index.is_multiple_of(k),
+                "the current first falls under the {taper} A taper at t = {t_s} s, which is \
+                 step {index} and NOT a multiple of the {k}-step decision window. \
+                 `ccCvDone` is evaluated at the end of each chopped chunk, so on this \
+                 trajectory the instant the page stops depends on how the browser scheduled \
+                 the frames: anywhere from here to the next window boundary. There is no \
+                 single number to claim. Either the trajectory moved, or a claim reading \
+                 this quantity was never entitled to."
+            );
+            t_s
+        }
         // The coupling CLAUDE.md refuses to let a chemistry model one half of: points
         // of resistance growth per point of capacity lost.
         "soh_ratio_at" => {
@@ -2417,7 +2497,7 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, soc_at, i_at, \
              t_max_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
-             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, \
+             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, cccv_taper_s, \
              soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, \
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>."
