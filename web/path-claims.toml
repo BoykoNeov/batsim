@@ -19,8 +19,8 @@
 #                 `value` within `tol`. Catches: the engine moved under the prose.
 #   3. REACHABLE— `read_at_s` must not be past the step's own `until_s`. Catches:
 #                 "right but unreachable" — a number that is true of a trajectory
-#                 the reader is never shown. WEAKER on a charge leg: see
-#                 `after_mark` below and the CHARGE LEGS section at the foot.
+#                 the reader is never shown. WEAKER on an arm: see `arm` below and
+#                 the ARMS section at the foot.
 #   4. DISPLAYED— optional. If the claim names a readout row, that row's own
 #                 formatter must print exactly `shows` at `read_at_s`. Catches:
 #                 true of the engine, and not what the panel says. A row is a step
@@ -84,19 +84,24 @@
 #              `complement`, `since_mark`, `until_end`, `displayed`, `departure` or
 #              `nothing`. Required, and checked. See "Stating the value" below.
 #   read_at_s  simulation time the claim is read at; must be <= the step's until_s,
-#              or, with `after_mark`, within the step's charge leg. ALWAYS ABSOLUTE.
-#              The leg prose speaks in time-since-the-mark ("383.0 s later"); the
-#              claim does not, and its note records both readings.
-#   after_mark optional, default false: this claim is read on the step's charge leg —
-#              after the mark, on the demand its `[[leg]]` says the reader types in.
-#              Checked both ways: an `after_mark` claim on a step with no leg, or one
-#              reading at or before the mark, is a claim about a run nobody made.
-#              Be clear about what a leg claim's REACHABLE check is worth. Before the
+#              or, with `arm`, within that arm's own span. ALWAYS ABSOLUTE — including
+#              on an arm that restarts, whose clock starts again at zero. A charge
+#              leg's prose speaks in time-since-the-mark ("383.0 s later"); the claim
+#              does not, and its note records both readings.
+#   arm        optional: the name of one of this step's `[[arm]]`s — an instructed
+#              control change the reader makes, and the trajectory that follows. Absent
+#              means the step as configured, run to its mark and no further.
+#              NOT inferable from `read_at_s`: an arm that restarts covers the same
+#              instants as the step's own run and reports different numbers there.
+#              Checked both ways — an `arm` naming nothing, or reading at an instant
+#              that arm never reaches, is a claim about a run nobody made.
+#              Be clear about what an arm claim's REACHABLE check is worth. Before the
 #              mark the page stops at `until_s` whatever the reader does, so the check
-#              is a fact about the page. After it the page stops for nothing, so the
-#              leg's length is this file's own choice and a leg long enough to reach a
-#              claim makes that claim reachable by construction. What is not circular
-#              is the leg's `instruction`. See the CHARGE LEGS section at the foot.
+#              is a fact about the page. After it the page stops for nothing, so how far
+#              an arm runs is this file's own choice and an arm long enough to reach a
+#              claim makes that claim reachable by construction. What is not circular is
+#              the arm's `instruction`, and every control it overrides has to be anchored
+#              in that sentence. See the ARMS section at the foot.
 #   display    optional: the readout row this claim is about, labelled as `READOUTS`
 #              in web/app.js labels it (`soh cap`, `terminal`, `sim time`, ...)
 #   shows      optional, and required with `display`: exactly what that row prints
@@ -185,7 +190,9 @@
 #   complement   2. The sentence prints how far below one the value is — `0.53 points
 #               are gone` of a `soh cap` of 0.9947106.
 #   since_mark   2. A duration since the step's mark — `**383.0 s later**` of an
-#               absolute 983.0 s on a step marking at 600. Fenced to `after_mark`.
+#               absolute 983.0 s on a step marking at 600. Fenced to claims read on an
+#               arm that CONTINUES past the mark — on one that restarts, the mark is not
+#               an origin.
 #   until_end    1. A duration remaining to the mark — `the last 53 seconds` of a flag
 #               at 4146.5 s on a step ending at 4200. Fenced to pre-mark claims, which
 #               with the fence above stops an author trying both frames until one fits.
@@ -795,11 +802,357 @@ the sentence prints `4.18` (rule 5e-3), the file holds half a unit in the last p
 of the stored 4.181, and every value inside that window renders as `4.18 W`.
 """
 
+# --- step 18: the one step that got through --------------------------------------
+#
+# The first step whose claims are all on ARMS — trajectories the reader produces by
+# pressing something. Three of them are claimed here and a fourth pair asserts the one
+# sentence in this step that is not about a number at all.
+#
+# WHAT IS NOT CLAIMED, and why, because this step's headline sentence is the obvious
+# target and it is still out of reach: "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at
+# 10 s, where the cell ends 19 K hotter instead of 1". The trajectories now exist — the
+# base run gives 0.55719 points and the `dt 5` arm gives 5.57188, both exact — so the
+# harness is no longer the blocker. Check 6 is: that sentence prints `0.5`, `5` and `10`
+# as CONTROL SETTINGS, and the accounting check has no arm for a setting. It knows
+# `spelled`, `read at` and `shown`, and a step length is none of the three. Claiming the
+# sentence would mean either leaving three of its numbers tied to nothing (which check 6
+# refuses, on purpose) or inventing a waiver (which it also refuses). The arm that fixes
+# this is `Setting` in docs/plans/path-prose-ledger.md, and it belongs to whoever builds
+# the ledger's taxonomy, not here.
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "The spike is the same 183.84 A"
+quantity = "i_at"
+arm = "dt 5"
+value = 183.84181
+tol = 5e-3
+tol_from = "spelled"
+spells = "183.84"
+states = "same"
+read_at_s = 65.0
+note = """
+The whole point of the `dt 5` arm, and the one number on it that can be claimed today.
+The sentence says the spike does not care how long you look at it, and that is only
+checkable against a run at a different step length: at dt = 0.5 the tooth is the step
+ending at 60.5 s and at dt = 5 it is the step ending at 65 s, and both report 183.84181 A
+to every digit the engine has. A resistive sag is instantaneous; the step length decides
+how long it is integrated for, not how deep it is.
+
+Reachable because the arm RESTARTS: the reader types 5 into the `dt` box and presses
+**Restart**, which rebuilds from the same file without re-applying the step's controls.
+Back-then-Next would put `dt` back to 0.5, which is what the prose warns about, and is
+why `start = "restart"` rather than a mid-run change.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "**184.53 A** with no flag raised"
+quantity = "i_at"
+arm = "unlatched"
+value = 184.52987
+tol = 5e-3
+tol_from = "spelled"
+spells = "184.53"
+states = "same"
+read_at_s = 90.5
+note = """
+The second tooth: clear the latched fault, do not clear the short, and step once. The
+contactor closes, the short is still there, and 184.53 A flows for one step before the
+next frame latches it again.
+
+It is 0.7 A BIGGER than the first tooth's 183.84 with half a percent less charge in the
+pack, which is the sentence's teaching point and is why both numbers are claimed on
+different arms rather than one being taken as read.
+
+Not claimed: "then zero with `UV` and `CONTACTOR_OPEN`", the step after this one. `UV`
+arrived once already on this trajectory — at 61 s, on the first tooth — so `first_flag`
+answers 61 and there is no quantity here for "arrives AGAIN at". That sentence prints no
+digits, so check 6 does not reach it either; it is unclaimed, not covered.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "**13.236 V** with nothing flowing and no flag at all"
+quantity = "v_at"
+arm = "cleared, then run"
+value = 13.23609
+tol = 5e-4
+tol_from = "spelled"
+spells = "13.236"
+states = "same"
+read_at_s = 90.5
+display = "terminal"
+shows = "13.236 V"
+quoted = true
+note = """
+The repair. **Clear queued** takes the short out — it removes faults that have already
+fired, not just queued ones, which is why the step calls it a repair and why its note
+counts 1 fault — then **Clear latched BMS fault** closes the contactor, and one **Step 1**
+now draws nothing at all.
+
+Same instant as the tooth above, on an arm that differs by one button. That is the whole
+experiment and it is why these are two arms rather than one longer one.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "drifts up to **13.255 V** over the following minute"
+quantity = "v_at"
+arm = "cleared, then run"
+value = 13.255344
+tol = 5e-4
+tol_from = "spelled"
+spells = "13.255"
+states = "same"
+read_at_s = 150.5
+display = "terminal"
+shows = "13.255 V"
+quoted = true
+note = """
+CORRECTED BY THE SLICE THAT WROTE THIS CLAIM. The sentence said **13.25 V**. The engine
+says 13.255344 at 150.5 s — a minute after the Step 1 above — which the `terminal` row
+prints as `13.255 V` and which rounds to 13.26 at the two decimals the old wording used.
+Wrong in both readings: not the row's string, and not the correct rounding of the value
+either. The sibling number in the same sentence is given to three decimals because that
+is what the row prints, and this one had been written to two.
+
+The instant is the sentence's own "the following minute", measured from the Step 1 at
+90.5 s. The arm stops there, so this claim reads its last row — which is the shape the
+step-20 leg note warns about, and is tolerable here because the sentence names the
+duration rather than asking the reader to keep going.
+"""
+
+# --- step 19: the same short, three times weaker ----------------------------------
+#
+# Every claim here is on the `bms off` arm: the reader unchecks the BMS, which rebuilds
+# the pack at t = 0, and then keeps pressing Run past the step's own 200 s mark. Nothing
+# in this step's prose about the unprotected run was claimable before arms existed, and
+# the cost of that is on the record — six of these numbers went stale under a fully green
+# suite when aging began growing the RC resistances, and were found only by a measurement
+# pass that ran once and was thrown away. See docs/plans/path-prose-ledger.md.
+#
+# The protected arm is the step as configured and is NOT claimed here. Its numbers
+# (`OT` at 133.5 s, the latch at 156.0 s, 39.62 %, 344.5 K) are the other half of this
+# step and are still unclaimed.
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "the same 93.29 A on the first frame after the fault, the same 87.02 A thirty seconds later"
+quantity = "i_at"
+arm = "bms off"
+value = 93.28560
+tol = 5e-3
+tol_from = "spelled"
+spells = "93.29"
+states = "same"
+read_at_s = 60.5
+note = """
+"The trajectory is identical" is a claim about two runs, and this is half of the evidence
+for it: the same instant on the protected run reports the same current to every digit,
+because until the BMS acts there is nothing between the two packs. Claimed on the
+unprotected arm because that is the one the sentence is describing.
+
+Tight: the rule allows 5e-3 and the engine is 4.4e-3 away. 93.28560 rounds to 93.29 and
+would round to 93.28 if the fifth digit moved by two in the last place. That is the
+sentence's own precision, not a margin this file chose.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "the same 93.29 A on the first frame after the fault, the same 87.02 A thirty seconds later"
+quantity = "i_at"
+arm = "bms off"
+value = 87.01934
+tol = 5e-3
+tol_from = "spelled"
+spells = "87.02"
+states = "same"
+read_at_s = 90.5
+note = """
+The other half of the same sentence, thirty seconds on. The short is sagging as the pack
+warms and empties; both packs are still doing the same thing.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.6 K and still rising"
+quantity = "flag_first_s:SOC_CLAMPED_LOW"
+arm = "bms off"
+value = 235.5
+tol = 5e-2
+tol_from = "spelled"
+spells = "235.5"
+states = "same"
+read_at_s = 235.5
+note = """
+What ends this run: not protection and not the fault being removed, but the pack running
+out. 35.5 s past the step's own mark, which is why the prose tells the reader to keep
+pressing Run and why this is an arm claim rather than a step claim.
+
+`spelled` and not `grid`: the sentence prints the instant to a tenth, which is tighter
+than the half-step (0.25 s) a grid time would license. Same argument as the four grid
+times already in this file that take their sentence's rule instead.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.6 K and still rising"
+quantity = "t_max_at"
+arm = "bms off"
+value = 375.58672
+tol = 5e-2
+tol_from = "spelled"
+spells = "375.6"
+states = "same"
+read_at_s = 235.5
+note = """
+The hottest cell at the instant the charge runs out. "Still rising" is not claimed — it
+is a statement about the next ten seconds, and the peak that follows is claimed below.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+quantity = "i_at"
+arm = "bms off"
+value = 58.04371
+tol = 5e-3
+tol_from = "spelled"
+spells = "58.04"
+states = "same"
+read_at_s = 235.5
+note = """
+FIRST OF THE FIVE THAT WENT STALE. All five were exact when written and drifted at
+`2e306b2`, where over-discharge damage began growing the RC resistances as well as R0 —
+this run is pulled deep past empty, so its `soh_resistance` moves and every current on
+this sentence moves with it. The slice that made that change registered a bit-exact
+prediction of its own blast radius and checked it against the suite; this step was not in
+it and could not have been, because it had no claims to redden. Third documented instance
+of the same failure. These five claims are what stops a fourth.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+quantity = "i_at"
+arm = "bms off"
+value = 40.32749
+tol = 5e-3
+tol_from = "spelled"
+spells = "40.33"
+states = "same"
+read_at_s = 240.0
+note = """
+"Four and a half seconds later" than the flag at 235.5 s. The duration is spelled in
+letters and is invisible to the numeric scan, so `read_at_s` carries it and this note
+records the arithmetic: 235.5 + 4.5 = 240.0.
+
+This is the one of the five that moved most — 40.186 before the aging change, 40.327
+after.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+quantity = "i_at"
+arm = "bms off"
+value = 17.02921
+tol = 5e-3
+tol_from = "spelled"
+spells = "17.03"
+states = "same"
+read_at_s = 250.0
+note = """
+The `250` in this sentence is accounted for by being this claim's own read instant, which
+is the weaker "we measured then" reading — sound here because no flag arrives at 250 s,
+which the event fence in `every_claim_matches_the_engine` checks rather than assumes.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+quantity = "i_at"
+arm = "bms off"
+value = 1.94428
+tol = 5e-3
+tol_from = "spelled"
+spells = "1.94"
+states = "same"
+read_at_s = 300.0
+note = """
+Tight, like the 93.29 above: 4.3e-3 of an allowed 5e-3. The sentence prints two decimals
+of a number that is falling fast, and this is what that precision is worth.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+quantity = "i_at"
+arm = "bms off"
+value = 0.10339
+tol = 5e-4
+tol_from = "spelled"
+spells = "0.103"
+states = "same"
+read_at_s = 400.0
+note = """
+The last of the five, and the furthest the arm runs. "The short goes on being connected
+and stops mattering" is what a tenth of an amp means.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "it peaks at **376.4 K at 245.5 s**, ten seconds after the flag, and is back to 362 K by 400 s"
+quantity = "t_max_at"
+arm = "bms off"
+value = 376.37083
+tol = 5e-2
+tol_from = "spelled"
+spells = "376.4"
+states = "same"
+read_at_s = 245.5
+note = """
+THE PEAK VALUE IS CLAIMED; THE PEAK INSTANT IS NOT, and the difference is deliberate.
+The trajectory is flat across the two steps either side of it — 376.37081 K at 245.0 s
+against 376.37083 at 245.5 — so the engine's argmax is 245.5 by two parts in 10^8, and a
+reader watching a panel that prints one decimal cannot tell the two apart. Claiming the
+argmax would be pinning something no reader can check, which is the "right but
+unreachable" defect this file exists to keep out.
+
+So `245.5` is accounted for as this claim's read instant instead: we measured then, which
+is exactly as much as the panel can support. What is NOT guarded is the peak moving to a
+different step while the reading at 245.5 stays inside 0.05 K — a hole this note names
+rather than leaves to be found. See docs/plans/path-prose-ledger.md, which recorded the
+instant as unresolved.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "it peaks at **376.4 K at 245.5 s**, ten seconds after the flag, and is back to 362 K by 400 s"
+quantity = "t_max_at"
+arm = "bms off"
+value = 362.26141
+tol = 5e-1
+tol_from = "spelled"
+spells = "362"
+states = "same"
+read_at_s = 400.0
+note = """
+The turn-round. Nobody intervened and the pack is cooling because the current that was
+heating it has nowhere left to come from. `362` prints no decimals, so the rule gives half
+a kelvin — the coarsest tolerance in this step, and the sentence's own.
+
+The `400` here is this claim's read instant. It is also the read instant of the 0.103 A
+claim above, on a different sentence and therefore a different group; both are sound for
+the same reason, which the event fence checks.
+"""
+
 # --- step 20: past empty ---------------------------------------------------------
 #
 # Both legs are claimable. The step runs to its mark on a 2 A discharge and then asks the
 # reader to put the demand box to -2 A and run the debt back off; that leg is declared as
-# this step's `[[leg]]` at the foot of this file and its claims carry `after_mark = true`.
+# this step's `charge leg` arm at the foot of this file, and its claims name it.
 # The `past empty` row is still out of reach, for the reason that has nothing to do with
 # the demand box: it is per-cell state on a wall-clock throttle. The deficit claims below
 # are therefore value-only and name no display.
@@ -927,7 +1280,7 @@ states = "same"
 read_at_s = 4400.0
 note = """
 The debt at the mark, which is where the charge leg starts and what it has to pay off.
-Read at the mark, so not an `after_mark` claim itself.
+Read at the mark, so it names no arm itself.
 
 Value-only, deliberately. This is the engine's deficit, NOT the `past empty` row: that
 row samples per-cell state on a quarter-second *wall*-clock throttle, so what it shows
@@ -945,7 +1298,7 @@ tol_from = "spelled"
 spells = "0.025"
 states = "same"
 read_at_s = 4400.5
-after_mark = true
+arm = "charge leg"
 display = "terminal"
 shows = "0.025 V"
 quoted = true
@@ -971,7 +1324,7 @@ tol_from = "spelled"
 spells = "0.062"
 states = "same"
 read_at_s = 4460.0
-after_mark = true
+arm = "charge leg"
 display = "terminal"
 shows = "0.062 V"
 quoted = true
@@ -991,7 +1344,7 @@ tol_from = "spelled"
 spells = "0.064"
 states = "same"
 read_at_s = 4520.0
-after_mark = true
+arm = "charge leg"
 display = "terminal"
 shows = "0.064 V"
 quoted = true
@@ -1011,7 +1364,7 @@ tol_from = "spelled"
 spells = "0.767"
 states = "same"
 read_at_s = 4600.0
-after_mark = true
+arm = "charge leg"
 display = "terminal"
 shows = "0.767 V"
 quoted = true
@@ -1033,7 +1386,7 @@ tol_from = "spelled"
 spells = "2.0655"
 states = "same"
 read_at_s = 4654.0
-after_mark = true
+arm = "charge leg"
 display = "terminal"
 shows = "2.066 V"
 note = """
@@ -1054,7 +1407,7 @@ tol_from = "spelled"
 spells = "1.731"
 states = "same"
 read_at_s = 4640.0
-after_mark = true
+arm = "charge leg"
 display = "terminal"
 shows = "1.731 V"
 quoted = true
@@ -1079,7 +1432,7 @@ tol_from = "tighter"
 spells = "254"
 states = "since_mark"
 read_at_s = 4654.0
-after_mark = true
+arm = "charge leg"
 note = """
 When the debt clears. **The prose speaks in time-since-the-mark here and the claim is in
 absolute simulation time**: 254 s after the 4400 s mark is t = 4654 s, and that is what
@@ -1109,7 +1462,7 @@ is 5.1e-5 of capacity — a cell 0.005 % full that the row still prints as `0.0 
 # after the demand box is reversed is claimable now too, and it is where this step's two
 # original defects lived — a clock reading `16m` at an instant the sentence gave to a
 # tenth of a second, and a charge row still reading `0.0 %` where the prose said the debt
-# had cleared. Both are claimed below, and both are `after_mark`.
+# had cleared. Both are claimed below, and both read the `charge leg` arm.
 
 [[claim]]
 step = "what-it-cost"
@@ -1384,7 +1737,7 @@ tol_from = "spelled"
 spells = "383.0"
 states = "since_mark"
 read_at_s = 983.0
-after_mark = true
+arm = "charge leg"
 note = """
 The debt clears 383 s after the 600 s mark, so at t = 983 s absolute, which is the number
 stored. Same relative-vs-absolute hazard as step 20's.
@@ -1410,7 +1763,7 @@ tol = 0.25
 tol_from = "grid"
 states = "displayed"
 read_at_s = 983.0
-after_mark = true
+arm = "charge leg"
 display = "sim time"
 shows = "16m"
 quoted = true
@@ -1444,7 +1797,7 @@ spells = "0.0"
 spells_pow10 = 2
 states = "same"
 read_at_s = 983.0
-after_mark = true
+arm = "charge leg"
 display = "soc (true)"
 shows = "0.0 %"
 quoted = true
@@ -1471,7 +1824,7 @@ spells = "0.004"
 spells_pow10 = 2
 states = "same"
 read_at_s = 983.0
-after_mark = true
+arm = "charge leg"
 note = """
 The explanation the sentence gives for the row above, at this file's usual tolerance:
 half a unit in the last printed place of 0.004 %. No display — this number is three
@@ -1490,7 +1843,7 @@ spells = "0.1"
 spells_pow10 = 2
 states = "same"
 read_at_s = 985.0
-after_mark = true
+arm = "charge leg"
 display = "soc (true)"
 shows = "0.1 %"
 quoted = true
@@ -1513,7 +1866,7 @@ spells = "95.15"
 spells_pow10 = 2
 states = "same"
 read_at_s = 660.0
-after_mark = true
+arm = "charge leg"
 display = "soh cap"
 shows = "95.15 %"
 quoted = true
@@ -1535,7 +1888,7 @@ spells = "95.14"
 spells_pow10 = 2
 states = "same"
 read_at_s = 990.0
-after_mark = true
+arm = "charge leg"
 display = "soh cap"
 shows = "95.14 %"
 quoted = true
@@ -1930,7 +2283,7 @@ connected to. This is the number that makes the step's title literal rather than
 # answered from the stepped rows behind the claim's back.
 #
 # THREE FENCES, in `every_probe_claim_is_taken_before_the_run`: `read_at_s` must be 0, the
-# claim may not also be `after_mark`, and the step must set `reload: true`. The last is the
+# claim may not name an `arm`, and the step must set `reload: true`. The last is the
 # one worth naming — the harness always builds a fresh pack, which a stepped trajectory
 # mostly absorbs, but the probe IS the fresh pack. On a step that inherits its pack from
 # whichever step the reader arrived from, there is no fresh reading to claim.
@@ -2052,47 +2405,174 @@ a temperature) would not show up in the probe's own telemetry at all. The real g
 """
 
 # =====================================================================================
-# CHARGE LEGS
+# ARMS — WHAT THE READER DOES NEXT
 # =====================================================================================
 #
-# A step may declare one `[[leg]]`: a second demand the *reader* is instructed to type
-# into the demand box at the mark, which the harness then runs on the same pack. Claims
-# read on it carry `after_mark = true`.
+# An `[[arm]]` is an instructed control change: a sentence in a step's prose telling the
+# reader to type a current, put `dt` up, uncheck the BMS, clear a fault, press Step 1, or
+# simply press Run again — plus the trajectory that follows from doing it. A claim names
+# the arm it is read on; a claim with no `arm` reads the step as configured, to its mark.
 #
-# This is safe to model as "the same pack continues" because that is what the page does:
-# `pathArrived` sets `path.until = null` and pauses, the demand input has no change
-# handler at all — `advance` reads its value fresh on the next frame — so pressing Run
-# after typing a new current resumes the trajectory with nothing rebuilt and `dt`
-# unchanged.
+# `start` says which pack the arm begins from, and the two are not interchangeable:
 #
-# WHAT A LEG DOES NOT BUY. `run_for_s` is this file's own choice. Before the mark the page
-# stops at `until_s` whatever the reader does, so the reachability check is a fact about
-# the page; after the mark the page stops for nothing, so a leg long enough to reach a
-# claim makes that claim reachable by construction. The non-circular half is
-# `instruction`: the sentence that tells the reader to make this exact change must appear
-# verbatim in the step's own prose, and the current must be spelled inside that sentence.
-# Read a green leg claim as "true of the trajectory a reader following this sentence
-# produces" — not as "a reader will get this far".
+#   mark      the step's own pack, run to its mark and then continued. That is what the
+#             page leaves in front of a reader: `pathArrived` sets `path.until = null` and
+#             pauses, the demand input has no change handler at all — `advance` reads its
+#             value fresh on the next frame — so pressing Run after typing a new current
+#             resumes the trajectory with nothing rebuilt and `dt` unchanged.
+#   restart   a fresh pack at t = 0 under this arm's controls. The page's **Restart**
+#             button rebuilds from the same scenario file, fault queue and all, WITHOUT
+#             re-applying the step's own controls — which is exactly why step 18 tells the
+#             reader to press it rather than Back-then-Next, and why `dt` and `bms`
+#             overrides live here. The BMS checkbox is a restart too: `$("bms").onchange`
+#             clicks Reset, so unchecking it puts the run back to t = 0.
+#
+# `actions` are the buttons, in the order they are pressed. What separates them is the one
+# thing step 18 is about: whether the pack advances. `clear_queued` and `clear_latched`
+# change the pack without stepping it; `step_1` and `run` step it.
+#
+# WHAT AN ARM DOES NOT BUY. How far a `run` action goes is this file's own choice. Before
+# the mark the page stops at `until_s` whatever the reader does, so the reachability check
+# is a fact about the page; after it the page stops for nothing, so an arm long enough to
+# reach a claim makes that claim reachable by construction. The non-circular half is
+# `instruction`, and it is stricter than a leg's was: the sentence must appear verbatim in
+# the step's own prose AND every control the arm overrides must be anchored in it — the
+# current spelled, the timestep spelled, the BMS named — and every override must be a real
+# change from what the step configures. Read a green arm claim as "true of the trajectory
+# a reader following this sentence produces", not as "a reader will get this far".
 
-[[leg]]
-step = "past-empty"
-instruction = "Now put the demand box to **−2**, which charges at the same rate, and press Run"
-demand_a = -2.0
-run_for_s = 280.0
+[[arm]]
+step = "one-step-that-got-through"
+name = "dt 5"
+instruction = "Put `dt` up to 5 s and press **Restart**, which rebuilds this pack at t = 0 from the same file — fault and all — without touching the controls you just set, and then Run."
+start = "restart"
+dt = 5.0
+actions = [{ do = "run", to_s = 90.0 }]
 note = """
-254 s of that is the debt being repaid, which is the last thing the step's prose points
-at ("2.0655 V on the step where the deficit reaches zero"). The extra 26 s is so the
-furthest claim is not sitting on the final row of the run.
+The arm `start = "restart"` exists for. The reader types 5 into the `dt` box and presses
+**Restart**, which rebuilds the pack from the scenario — fault queue and all — and leaves
+the controls alone. Back-then-Next would re-apply the step and put `dt` back to 0.5, which
+the prose says in so many words, so the two are not interchangeable and this is the one
+the sentence names.
+
+Runs to the step's own 90 s mark, because that is where the page stops: `until_s` is a
+property of the step, not of the trajectory, so a restarted run stops there too.
 """
 
-[[leg]]
-step = "what-it-cost"
-instruction = "Now put the demand box to **−2** and press Run"
+[[arm]]
+step = "one-step-that-got-through"
+name = "unlatched"
+instruction = "**Clear latched BMS fault** on its own only unlatches: Run, and the short, still connected, delivers a *second* tooth and it latches straight back one step later. At this step's 10× that tooth is one spike on the current plot and the readouts have moved past it before you can read it — press **Step 1** twice instead and it holds still"
+start = "mark"
+actions = [{ do = "clear_latched" }, { do = "step_1" }, { do = "step_1" }]
+note = """
+One button and two steps. The instruction spans two sentences because the arm does what
+both of them say: the first tells the reader to clear the latch and warns that Run makes
+the tooth unreadable, the second tells them to press Step 1 twice instead.
+
+Neither button advances the clock, which is why this arm's first row is at 90.5 s and not
+at 90.0: the clear happens at the mark and the pack has not moved when it does.
+"""
+
+[[arm]]
+step = "one-step-that-got-through"
+name = "cleared, then run"
+instruction = "this time press **Clear queued** first — despite its name it is a repair, and its note counts the short it removed as *1 fault* — before clearing the latch. One **Step 1** now reads"
+start = "mark"
+actions = [
+  { do = "clear_queued" },
+  { do = "clear_latched" },
+  { do = "step_1" },
+  { do = "run", to_s = 150.5 },
+]
+note = """
+The repaired pack. Same mark, same two buttons, one extra: **Clear queued** removes the
+short itself, so the Step 1 that follows draws nothing and the contactor stays closed.
+
+`to_s = 150.5` is the sentence's own "over the following minute", counted from the Step 1
+at 90.5 s. That is this file's own choice in the sense the ARMS section warns about — the
+page stops for nothing here — but it is the duration the prose names rather than a length
+picked to reach a claim.
+"""
+
+[[arm]]
+step = "one-step-that-got-through"
+name = "buttons"
+instruction = "this time press **Clear queued** first — despite its name it is a repair, and its note counts the short it removed as *1 fault* — before clearing the latch."
+start = "mark"
+actions = [{ do = "clear_queued" }, { do = "clear_latched" }]
+note = """
+The two buttons and nothing else — no Step 1, no Run. It carries no claim and is not
+meant to: it exists to be the thing `buttons reversed` is compared against, which is the
+only way to state the sentence below.
+"""
+
+[[arm]]
+step = "one-step-that-got-through"
+name = "buttons reversed"
+instruction = "Press those same two buttons in the other order, still without running, and you get an identical pack"
+start = "mark"
+actions = [{ do = "clear_latched" }, { do = "clear_queued" }]
+identical_to = "buttons"
+note = """
+THE ONE SENTENCE IN THIS STEP THAT IS NOT ABOUT A NUMBER. No `quantity` says "you get an
+identical pack", and picking one that happens to match — the terminal voltage, say — would
+be asserting a weaker thing than the reader is told. So the assertion is the pair: both
+arms stop at the buttons, "still without running", and their serialised snapshots must be
+equal.
+
+Stopping at the buttons is load-bearing. Comparing after an identical Step 1 and a minute
+of running would be green if the two orders left different packs and the run washed the
+difference out, which is exactly the failure the sentence is warning about — "the move you
+cannot take back is the Run".
+"""
+
+[[arm]]
+step = "nothing-to-clamp"
+name = "bms off"
+instruction = "Now uncheck the BMS and run it again — and then keep running, because this step's mark is 200 s and everything worth seeing on the unprotected arm happens after it. Press Run at the mark and let it go to about 400 s."
+start = "restart"
+bms = false
+actions = [{ do = "run", to_s = 400.0 }]
+note = """
+`start = "restart"` because the page has no other way to do this: `$("bms").onchange`
+clicks Reset, so unchecking the box rebuilds the pack from the scenario and the run goes
+back to t = 0. The fault queue comes back with it, which is what makes this the same
+experiment as the protected arm rather than a different one.
+
+`to_s = 400` is the prose's own "let it go to about 400 s", and the furthest number on
+this arm — 0.103 A and 362 K — is read exactly there.
+
+One thing this arm does NOT reproduce: the step declares `transport: "wasm"`, because the
+BMS toggle needs an in-page rebuild that a socket session cannot do. Nothing here reads
+`transport` — this harness drives `sim_core::Pack` directly — so the arm is the same
+trajectory either way. The field is about which backend the reader must be on, not about
+what the engine computes.
+"""
+
+[[arm]]
+step = "past-empty"
+name = "charge leg"
+instruction = "Now put the demand box to **−2**, which charges at the same rate, and press Run"
+start = "mark"
 demand_a = -2.0
-run_for_s = 400.0
+actions = [{ do = "run", to_s = 4680.0 }]
+note = """
+280 s past the 4400 s mark. 254 s of that is the debt being repaid, which is the last
+thing the step's prose points at ("2.0655 V on the step where the deficit reaches zero").
+The extra 26 s is so the furthest claim is not sitting on the final row of the run.
+"""
+
+[[arm]]
+step = "what-it-cost"
+name = "charge leg"
+instruction = "Now put the demand box to **−2** and press Run"
+start = "mark"
+demand_a = -2.0
+actions = [{ do = "run", to_s = 1000.0 }]
 note = """
 The furthest thing this step's prose asks a reader to look at on the charge leg is
-`soh cap` reading 95.14 % "from 390 s in", so the leg runs 400 s past the 600 s mark.
+`soh cap` reading 95.14 % "from 390 s in", so the arm runs 400 s past the 600 s mark.
 """
 
 # =====================================================================================
@@ -2189,8 +2669,11 @@ unledgered = [
   "the-electrolyte-starves",        # three perf ratios; needs a 1 C rerun
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
-  "one-step-that-got-through",      # needs two step lengths and both buttons
-  "nothing-to-clamp",               # needs a BMS toggle and an ambient change
+  "one-step-that-got-through",      # claims: 4, on four arms. Its headline sentence is
+                                    # blocked on check 6, not on the harness — see the
+                                    # step's own comment above the claims
+  "nothing-to-clamp",               # claims: 11, all on the unprotected arm. The
+                                    # protected half of the step is still unclaimed
   "past-empty",                     # claims: 14
   "what-it-cost",                   # claims: 20
   "slow-and-patient",               # claims: 4

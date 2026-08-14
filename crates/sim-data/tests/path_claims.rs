@@ -110,20 +110,24 @@
 //!   `surface gap` stood here beside it until the probe slice and no longer does. It is
 //!   per-cell in the same way, but it carries no throttle, so it does have a value at a
 //!   given simulation time — [`Row`] carries the pair and [`render_row`] prints it.
-//! * **Any mid-run control change other than the demand box.** A step may declare one
-//!   `[[leg]]` — a second demand the reader is instructed to type in at the mark — and
-//!   claims marked `after_mark` are read on it. That covers steps 20 and 21, whose charge
-//!   legs are where both of the defects the display check exists for lived. It does not
-//!   cover the BMS checkbox, `dt`, Restart, or Clear-latched, which steps 18 and 19 ask
-//!   for; nor a second change part-way along a leg.
-//! * **How far a leg runs is this file's own choice, and the reachability check on a leg
+//! * **The ambient slider, and a sentence needing two packs.** A step may declare any
+//!   number of `[[arm]]`s — an instructed control change and the trajectory that follows —
+//!   covering the demand box, the `dt` box, the BMS checkbox, **Restart**, **Clear
+//!   queued**, **Clear latched BMS fault**, **Step 1** and **Run**. What is left out is
+//!   `ambient_c`, because the only steps whose prose instructs it are not claimed yet and
+//!   an override with no caller is the shape this file rejects; and a sentence comparing
+//!   two *scenario files* (step 16's 1 C rerun of both porous models), which is a second
+//!   pack rather than a second trajectory — [`run`] builds one pack per arm.
+//! * **How far an arm runs is this file's own choice, and the reachability check on an arm
 //!   claim is therefore weaker than the one on a pre-mark claim.** Before the mark the
 //!   page stops at `until_s` whatever the reader does, so "reachable" is a fact about the
 //!   page. After it the page stops for nothing — `pathArrived` sets `path.until = null` —
-//!   so `run_for_s` is bounded only by what the prose asks the reader to do, and if it is
-//!   set to just cover the furthest claim then "reachable" says only "I ran long enough to
-//!   reach it". The non-circular half is [`every_leg_is_instructed_by_its_own_step`]: the
-//!   sentence telling the reader to make this exact change must be in this step's prose.
+//!   so an arm's `run` length is bounded only by what the prose asks the reader to do, and
+//!   if it is set to just cover the furthest claim then "reachable" says only "I ran long
+//!   enough to reach it". The non-circular half is
+//!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
+//!   this exact change must be in this step's prose, and every control the arm overrides
+//!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
 //!   has now closed three whole steps — but only three. Eleven steps carry neither a claim
@@ -132,12 +136,14 @@
 //!   names all twenty-one, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is arms the ledger has not got — control settings the
 //!   reader types, chemistry constants, ordinals naming other steps, and figures derived
-//!   from other figures in the same sentence — plus two things the harness cannot do at
-//!   all: read the engine's zero-length probe (about a fifth of those steps quote a
-//!   reading taken with the clock stopped) and reproduce an instructed continuation or
-//!   control change other than one demand-box edit. Check 6 could refuse a waiver variant
-//!   because its 42 claimed sentences happen to need none; a whole-prose ledger cannot,
-//!   and it still refuses one.
+//!   from other figures in the same sentence. Both of the *harness* capabilities that
+//!   list used to name have now landed: the zero-length probe, and instructed control
+//!   changes. **The binding constraint has moved to the accounting taxonomy**, and step
+//!   18's headline sentence is the worked example — both of its trajectories exist and are
+//!   exact, and it still cannot be claimed because `0.5`, `5` and `10` are control
+//!   settings and [`Accounted`] has no arm for a setting. Check 6 could refuse a waiver
+//!   variant because its claimed sentences happen to need none; a whole-prose ledger
+//!   cannot, and it still refuses one.
 //! * **Page-behaviour claims.** Anything about what a control does, what a legend
 //!   prints, or what a button orders. Those need a browser.
 //! * **The client-side demand programs are mirrored, not shared.** `Pulse` and `CcCv`
@@ -240,6 +246,13 @@ const MIRRORED: &[(&str, &str, &str)] = &[
         "app.js",
         r#"["terminal", (m) => `${m.v_terminal.toFixed(3)} V`],"#,
     ),
+    // The **Step 1** button takes exactly one step, which is the whole of what
+    // `Action::Step1` models. Pinned after a perturbation that made the action advance
+    // two steps and left the suite GREEN: the claims on those arms read an instant one
+    // step past the mark, and an extra row after it changes nothing they look at. The
+    // number of steps a button takes is a fact about the page, so this is where it is
+    // held — the same argument as `pulsePhase` and the readout formatters.
+    ("the `Step 1` button", "app.js", "await advance(1);"),
     (
         "the `current` row",
         "app.js",
@@ -891,6 +904,24 @@ fn build(lesson: &Lesson) -> Pack {
     pack
 }
 
+/// The pack the BMS checkbox builds — the same file, with the protection grown on or off.
+///
+/// `$("bms").onchange` clicks Reset, which calls `SimEngine::restart(enabled)`, which
+/// rebuilds from the scenario exactly as the first load did. It is not a running pack with
+/// its BMS switched off: the run restarts at t = 0, which is what the page's own note under
+/// the checkbox says it does.
+///
+/// The fault queue comes back with it — that rebuild reads the same scenario — which is
+/// what makes step 19's unprotected arm the *same experiment*, short and all, rather than
+/// a different one.
+fn build_with_bms(lesson: &Lesson, enabled: bool) -> Pack {
+    let (scenario, chem) = load(&lesson.scenario);
+    let (pack, _dropped) = scenario
+        .build_pack_with_bms(chem, enabled)
+        .expect("pack builds");
+    pack
+}
+
 /// `pulsePhase`: the on-leg iff `round(t/dt) % (kOn + kOff) < kOn`.
 ///
 /// The phase is counted in **steps** off the pack's own `sim_time_s`, never off an
@@ -1006,9 +1037,17 @@ struct Run {
     ///   claim's minimum and moved its instant from 0.5 s to 0.0 without any prose
     ///   changing. See `docs/plans/path-probe-row.md`.
     ///
-    /// So a claim *declares* that it reads the probe, exactly as `after_mark` is declared
+    /// So a claim *declares* that it reads the probe, exactly as its `arm` is declared
     /// rather than inferred from `read_at_s`.
     probe: Row,
+    /// The pack's serialised snapshot when the run ends.
+    ///
+    /// Carried for one assertion and no claim reads it: step 18 says that clearing the
+    /// queue and clearing the latch in either order leaves *an identical pack*, which is a
+    /// statement about state rather than about any quantity. Serialised rather than
+    /// compared field by field so the comparison is over everything the snapshot carries —
+    /// including the RNG, which is the half a hand-written equality would forget.
+    end_snapshot: String,
 }
 
 impl Run {
@@ -1169,14 +1208,31 @@ fn drive(
     }
 }
 
-/// Run a step the way the page runs it, and then its charge leg if it has one.
+/// Run a step the way the page runs it — and then, on an arm, the buttons the step's prose
+/// tells the reader to press.
 ///
-/// The leg is the same pack continuing, not a second run: at the mark `pathArrived` sets
-/// `path.until = null` and pauses, the demand box has no change handler at all — `advance`
-/// reads it fresh on the next frame — so pressing Run after typing a new current resumes
-/// the trajectory with nothing rebuilt and `dt` unchanged.
-fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
-    let mut pack = build(lesson);
+/// Three shapes, and which one this is comes off the arm rather than out of this function:
+///
+/// * **No arm.** The step as configured, run to its mark. What every claim without an
+///   `arm` reads.
+/// * **[`Start::Mark`].** The same trajectory to the mark, then the actions. The pack is
+///   the same one continuing, not a second run: at the mark `pathArrived` sets
+///   `path.until = null` and pauses, the demand box has no change handler at all —
+///   `advance` reads it fresh on the next frame — so pressing Run after typing a new
+///   current resumes with nothing rebuilt and `dt` unchanged.
+/// * **[`Start::Restart`].** A fresh pack under this arm's controls, then the actions. The
+///   page's Restart button rebuilds from the scenario and leaves the controls alone, which
+///   is why `dt` and `bms` overrides belong to the pack from t = 0 here.
+///
+/// Every arm drives its own pack from scratch. It costs a re-run of the pre-mark
+/// trajectory for each continuation arm, and it buys the thing step 18 needs: four arms
+/// branching off one mark, none of them able to see another's buttons.
+fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
+    let dt = arm.and_then(|a| a.dt).unwrap_or(lesson.dt);
+    let mut pack = match arm.and_then(|a| a.bms) {
+        Some(bms) => build_with_bms(lesson, bms),
+        None => build(lesson),
+    };
     let env = Env {
         t_ambient: lesson.ambient_c + K,
         t_coolant: None,
@@ -1193,33 +1249,66 @@ fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
     // then this one — reproducible by modelling only the second.
     let probe = Row {
         t_s: pack.sim_time_s(),
-        telemetry: pack.step(0.0, demand_now(lesson.demand, &pack, lesson.dt, None), &env),
+        telemetry: pack.step(0.0, demand_now(lesson.demand, &pack, dt, None), &env),
         deficit_max: deficit_max(&pack),
         surface_gap: surface_gap(&pack),
     };
     let mut rows = Vec::new();
     let mut last: Option<Telemetry> = None;
-    drive(
-        &mut pack,
-        lesson.demand,
-        lesson.dt,
-        lesson.until_s,
-        &env,
-        &mut rows,
-        &mut last,
-    );
-    if let Some(leg) = leg {
+
+    // A continuation arm, and a step with no arm at all, both run the step as configured
+    // first. A restart arm does not: its pack is the rebuilt one and its clock starts at
+    // zero, so the actions are the whole trajectory.
+    if arm.is_none_or(|a| a.start == Start::Mark) {
         drive(
             &mut pack,
-            Prog::Current(leg.demand_a),
-            lesson.dt,
-            lesson.until_s + leg.run_for_s,
+            lesson.demand,
+            dt,
+            lesson.until_s,
             &env,
             &mut rows,
             &mut last,
         );
     }
-    Run { rows, probe }
+
+    if let Some(arm) = arm {
+        // The demand box as it stands while the buttons are pressed: the arm's own current
+        // if it typed one in, else whatever the step dialled in. Note that typing a current
+        // replaces the step's *program* — a reader who types a number into the box on a
+        // `Pulse` step has left the pulse train, which is what the box does.
+        let prog = arm.demand_a.map_or(lesson.demand, Prog::Current);
+        for action in &arm.actions {
+            match action {
+                // Neither button advances the clock, which is the whole of the step-18
+                // sentence they exist for. Nothing is pushed to `rows`: there is no frame,
+                // because the page renders no frame — "nothing advances while the page is
+                // paused".
+                Action::ClearQueued => {
+                    pack.clear_faults();
+                }
+                Action::ClearLatched => {
+                    pack.clear_bms_fault();
+                }
+                // One step, expressed as a `drive` to one `dt` away rather than as a
+                // second stepping loop, so a `Step 1` on a windowed CC-CV program cannot
+                // diverge from what a `Run` of the same length would do.
+                Action::Step1 => {
+                    let to_s = pack.sim_time_s() + dt;
+                    drive(&mut pack, prog, dt, to_s, &env, &mut rows, &mut last);
+                }
+                Action::Run { to_s } => {
+                    drive(&mut pack, prog, dt, *to_s, &env, &mut rows, &mut last);
+                }
+            }
+        }
+    }
+
+    let end_snapshot = serde_json::to_string(&pack.snapshot()).expect("a pack snapshot serialises");
+    Run {
+        rows,
+        probe,
+        end_snapshot,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1302,8 +1391,9 @@ enum States {
     /// a shortfall, and the sentences about it say so.
     Complement,
     /// The sentence prints a duration since this step's mark — `**383.0 s later**` of an
-    /// absolute 983.0 s on a step whose `until_s` is 600. Fenced to `after_mark` claims:
-    /// before the mark there is nothing to be later than.
+    /// absolute 983.0 s on a step whose `until_s` is 600. Fenced to claims read on an arm
+    /// that *continues* the step's own run: before the mark there is nothing to be later
+    /// than, and on an arm that restarts the pack the mark is not an origin at all.
     SinceMark,
     /// The sentence prints a duration *remaining* to the mark — `the last 53 seconds` of
     /// a flag at 4146.5 s on a step that ends at 4200. Fenced to pre-mark claims, which
@@ -1381,14 +1471,17 @@ struct Claim {
     /// the reader to go and *look* at the row is not.
     #[serde(default)]
     quoted: bool,
-    /// Is this claim read on the step's charge leg — after the mark, on the demand the
-    /// step's `[[leg]]` says the reader types in?
+    /// Which of the step's `[[arm]]`s this claim is read on — the name of one — or absent
+    /// for the step's own trajectory, run to its mark and no further.
     ///
-    /// Explicit rather than inferred from `read_at_s > until_s`, and checked in both
-    /// directions: a leg claim without a leg, or a leg claim reading before the mark, is
-    /// a claim about a trajectory nobody ran.
+    /// Explicit rather than inferred from `read_at_s`, and for a sharper reason than the
+    /// one `after_mark` had: a restart arm covers the *same* instants as the step's own run
+    /// (step 18's `dt = 5` arm ends at the mark, like the step) and reports different
+    /// numbers there. Time cannot name the trajectory. Checked in both directions — a claim
+    /// naming an arm that does not exist, or reading at an instant that arm never reaches,
+    /// is a claim about a trajectory nobody ran.
     #[serde(default)]
-    after_mark: bool,
+    arm: Option<String>,
     /// Is this claim read on the **zero-length probe** — what the panel shows before the
     /// reader presses Run, rather than on any step of the trajectory?
     ///
@@ -1658,37 +1751,124 @@ fn ascii_minus(s: &str) -> String {
     s.replace('\u{2212}', "-")
 }
 
-/// A step's charge leg: the one mid-run control change this harness can reproduce.
+/// Where an arm's pack comes from — the two things a reader can be holding when they
+/// start pressing buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Start {
+    /// The step's own pack, run to its mark and then continued. `pathArrived` sets
+    /// `path.until = null` and pauses without rebuilding anything, so this is literally
+    /// what is in front of a reader when the run stops on its own.
+    ///
+    /// Step 18 reaches it a second way and the prose says so — "press **Back** then
+    /// **Next** to put the pack back at the mark" re-applies the whole step and runs it
+    /// again, which lands on this same trajectory because nothing before the mark was
+    /// touched. Each arm drives its own copy, so two arms branching off one mark cannot
+    /// see each other's buttons.
+    Mark,
+    /// A fresh pack at t = 0 — the page's **Restart**, which rebuilds from the same
+    /// scenario file, fault queue and all, *without re-applying the step's controls*.
+    ///
+    /// That second half is the whole of step 18's instruction rather than a detail:
+    /// Back-then-Next would put `dt` back to 0.5, and Restart holds the 5 the reader just
+    /// typed. So an arm's `dt` and `bms` overrides survive here, and `SimEngine::restart`
+    /// is the same shape — it rebuilds the pack and then `$("reset").onclick` pushes the
+    /// ambient slider back through `applyEnv`.
+    Restart,
+}
+
+/// One thing the reader does on an arm, in order.
 ///
-/// Steps 20 and 21 both run to their mark on a discharge and then tell the reader to
-/// reverse the demand and press Run again. Everything those sentences claim — including
-/// the two defects the display check was built for — happens on that second leg, and
-/// until this existed none of it could be measured.
+/// Every variant is a control on the page rather than an operation on the engine, and the
+/// names are the button captions. What separates them is the one thing step 18 is about:
+/// **whether the pack advances**. `ClearQueued` and `ClearLatched` change the pack without
+/// stepping it; `Step1` and `Run` step it. "The move you cannot take back is the Run" is a
+/// statement about exactly this list.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(tag = "do", rename_all = "snake_case")]
+enum Action {
+    /// **Clear queued** — `Pack::clear_faults`. Despite the caption it removes faults that
+    /// have already fired as well as queued ones, which is why step 18 calls it a repair
+    /// and why its note counts the short it took out.
+    ClearQueued,
+    /// **Clear latched BMS fault** — `Pack::clear_bms_fault`. Unlatches and nothing else;
+    /// the contactor closes again only if the pack is fit for it on the next step.
+    ClearLatched,
+    /// **Step 1** — exactly one engine step under this arm's standing demand.
+    ///
+    /// Spelled `step_1` in the file rather than taking the `snake_case` rule's `step1`,
+    /// so it reads as the button's caption like every other action here.
+    #[serde(rename = "step_1")]
+    Step1,
+    /// **Run** until the pack's own clock reaches `to_s` \[s\].
+    ///
+    /// **`to_s` is a choice, not a measurement**, and it is the weak joint in the whole
+    /// mechanism: past a step's mark the page stops for nothing, so nothing outside this
+    /// file bounds how far a run goes. Set it from what the step's prose asks the reader
+    /// to watch for and say so in the arm's `note`; the module docs record what it costs
+    /// the reachability check.
+    Run { to_s: f64 },
+}
+
+/// An instructed control change: what the reader is told to do next, and the trajectory
+/// that follows from doing it.
 ///
-/// Declared here rather than in `web/app.js` because the page does not do it: the reader
-/// does. A `then:` field in the lesson block would be a field the page never reads,
-/// sitting where every other field is one the page acts on. The tie back to the page is
-/// [`every_leg_is_instructed_by_its_own_step`], which requires the sentence that gives
-/// this instruction to be in this step's own prose, and the current to be spelled inside
-/// that sentence.
+/// This began as `[[leg]]`, which could express exactly one thing — a second demand typed
+/// into the box at the mark. That covered steps 20 and 21, where both of the defects the
+/// display check exists for lived, and covered nothing else. Four steps' worth of prose
+/// instructs a reader to uncheck the BMS, put `dt` up to 5 and press **Restart**, clear a
+/// latched fault, clear the fault queue, press **Step 1**, or simply press **Run** again —
+/// and every number that follows those sentences was unclaimable while a leg was all there
+/// was. `docs/plans/path-prose-ledger.md` named this as one of the two capabilities the
+/// harness was missing; the other was the zero-length probe.
+///
+/// Declared here rather than in `web/app.js` because the page does not do any of it: the
+/// reader does. A `then:` field in the lesson block would be a field the page never reads,
+/// sitting where every other field is one the page acts on.
+///
+/// **The tie back to the page is [`every_arm_is_instructed_by_its_own_step`], and it is
+/// stricter than the leg's was.** A leg only had to cite a sentence in the step's prose and
+/// spell its current inside it. An arm carries three controls, so *each* one has to be
+/// anchored in the sentence it claims to be following: the current spelled, the timestep
+/// spelled, the BMS named — and every override has to be a genuine change from what the
+/// step configures. Without that an arm whose instruction says "uncheck the BMS" could
+/// quietly also run at `dt = 5`, and its claims would be true of a trajectory nobody is
+/// told to produce.
 #[derive(Debug, serde::Deserialize)]
-struct Leg {
+struct Arm {
     /// `id` of the lesson in `const LESSONS`.
     step: String,
+    /// What a claim writes in its own `arm` field. Unique within the step.
+    name: String,
     /// The sentence in that step's prose that tells the reader to make this change,
     /// verbatim. Not a paraphrase: it is checked as a substring, like a claim's `literal`.
     instruction: String,
-    /// The current the reader types into the demand box \[A\], discharge-positive. Must be
-    /// spelled somewhere inside `instruction`, so the number and the sentence cannot drift
-    /// apart.
-    demand_a: f64,
-    /// How long the leg runs past the mark \[s\].
+    /// Whether the reader is continuing the run or rebuilding it. See [`Start`].
+    start: Start,
+    /// The current the reader types into the demand box \[A\], discharge-positive, if this
+    /// arm changes it. Must be spelled inside `instruction`.
+    #[serde(default)]
+    demand_a: Option<f64>,
+    /// The step length the reader types into the `dt` box \[s\], if this arm changes it.
+    /// Must be spelled inside `instruction`, and must differ from the step's own.
+    #[serde(default)]
+    dt: Option<f64>,
+    /// The BMS checkbox, if this arm changes it. `instruction` must name the BMS, and the
+    /// value must differ from what the step configures — an override that changes nothing
+    /// is a declaration with no fact under it.
+    #[serde(default)]
+    bms: Option<bool>,
+    /// The buttons, in the order the reader presses them. Never empty: an arm that does
+    /// nothing is a second copy of the step wearing a name.
+    actions: Vec<Action>,
+    /// Another arm on the same step whose **end state this one must equal, bit for bit**.
     ///
-    /// **This is a choice, not a measurement.** The page stops at nothing after the mark,
-    /// so nothing outside this file bounds it; see the module docs on what that costs the
-    /// reachability check. Set it from what the step's prose asks the reader to watch for,
-    /// and say so in `note`.
-    run_for_s: f64,
+    /// The one thing in step 18's prose that is not a number: "press those same two
+    /// buttons in the other order, still without running, and you get an identical pack".
+    /// A claim states a quantity, and no quantity says that — so it is asserted here, over
+    /// the serialised snapshot, by [`every_identical_arm_really_is_identical`].
+    #[serde(default)]
+    identical_to: Option<String>,
     #[allow(
         dead_code,
         reason = "authoring context for a human reader, not asserted"
@@ -1696,13 +1876,45 @@ struct Leg {
     note: String,
 }
 
-impl Leg {
-    /// The demand current as the prose would spell it — `-2`, not `-2.0`.
-    fn spelled_demand(&self) -> String {
-        if self.demand_a.fract() == 0.0 {
-            format!("{:.0}", self.demand_a)
+impl Arm {
+    /// A control value as the prose would spell it — `-2`, not `-2.0`; `5`, not `5.0`.
+    fn spelled(v: f64) -> String {
+        if v.fract() == 0.0 {
+            format!("{v:.0}")
         } else {
-            format!("{}", self.demand_a)
+            format!("{v}")
+        }
+    }
+
+    /// The simulation time this arm's trajectory ends at \[s\], without running anything.
+    ///
+    /// Pure arithmetic over the actions, so [`every_claim_is_reachable_in_its_own_step`]
+    /// stays engine-free — a prose defect should not have to fail from behind a long run.
+    fn end_s(&self, lesson: &Lesson) -> f64 {
+        let dt = self.dt.unwrap_or(lesson.dt);
+        let mut clock = match self.start {
+            Start::Mark => lesson.until_s,
+            Start::Restart => 0.0,
+        };
+        for action in &self.actions {
+            match action {
+                Action::Step1 => clock += dt,
+                Action::Run { to_s } => clock = clock.max(*to_s),
+                Action::ClearQueued | Action::ClearLatched => {}
+            }
+        }
+        clock
+    }
+
+    /// The earliest time a claim on this arm may read at \[s\].
+    ///
+    /// On a continuation that is the mark — a claim reading at or before it is measured on
+    /// the trajectory every other claim on the step already reads, not on the change this
+    /// arm is about. On a restart the arm has its own timeline from zero.
+    fn earliest_s(&self, lesson: &Lesson) -> f64 {
+        match self.start {
+            Start::Mark => lesson.until_s,
+            Start::Restart => 0.0,
         }
     }
 }
@@ -1740,7 +1952,7 @@ fn contains_number(text: &str, number: &str) -> bool {
 struct Claims {
     claim: Vec<Claim>,
     #[serde(default)]
-    leg: Vec<Leg>,
+    arm: Vec<Arm>,
     /// Which steps have their whole prose scanned. Required, with no serde default: an
     /// absent `[ledger]` would read as "no step is ledgered and none needs listing", which
     /// is the state this contract exists to end.
@@ -1990,21 +2202,62 @@ fn ledger() -> Ledger {
     parse_claims_file().ledger
 }
 
-/// The declared charge legs, at most one per step.
+/// The declared arms. A step may have several; their names must differ.
 ///
-/// A second leg on the same step would be silently ignored by `leg_for`, which is the
-/// "looks like coverage" shape this file rejects everywhere else, so it panics instead.
-fn legs() -> Vec<Leg> {
-    let legs = parse_claims_file().leg;
-    for (i, leg) in legs.iter().enumerate() {
+/// A step used to be allowed one leg and no more, because a claim pointed at it with a
+/// bare `after_mark = true` and a second leg would have been silently ignored. An arm is
+/// named and a claim names it, so several per step is now the normal case — step 18 has
+/// four. What must stay unique is the name: two arms sharing one would hand every claim
+/// on that step whichever was parsed first, which is the same silent-wrong-trajectory
+/// failure one level down.
+fn arms() -> Vec<Arm> {
+    let arms = parse_claims_file().arm;
+    for (i, arm) in arms.iter().enumerate() {
         assert!(
-            !legs[..i].iter().any(|other| other.step == leg.step),
-            "step `{}` declares two `[[leg]]` entries. This harness runs one leg per \
-             step; the second would be ignored and its claims measured on the first.",
-            leg.step
+            !arms[..i]
+                .iter()
+                .any(|other| other.step == arm.step && other.name == arm.name),
+            "step `{}` declares two arms called `{}`. A claim names its arm, so the second \
+             would be unreachable and its claims measured on the first.",
+            arm.step,
+            arm.name
+        );
+        assert!(
+            !arm.actions.is_empty(),
+            "arm `{}` on step `{}` lists no actions. An arm that presses nothing is the \
+             step's own trajectory wearing a name — and any claim on it would be checked \
+             against a run no reader has to do anything to reach.",
+            arm.name,
+            arm.step
         );
     }
-    legs
+    arms
+}
+
+/// The arm a claim reads, or `None` for the step's own trajectory to its mark.
+fn arm_of<'a>(all: &'a [Arm], claim: &Claim) -> Option<&'a Arm> {
+    let name = claim.arm.as_deref()?;
+    Some(
+        all.iter()
+            .find(|a| a.step == claim.step && a.name == name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "claim `{}` on step `{}` reads arm `{name}`, and that step declares no \
+                     such arm.",
+                    claim.literal, claim.step
+                )
+            }),
+    )
+}
+
+/// Does this claim read a continuation of the step's own run, past its mark?
+///
+/// The question `after_mark` used to answer directly. It is now derived, because an arm
+/// that *restarts* has its own timeline from zero and "after the mark" is not a thing that
+/// can be said about it — a claim on step 18's `dt = 5` arm reads at t = 90 s, which is the
+/// mark, on a trajectory that is nonetheless not the step's.
+fn reads_past_the_mark(all: &[Arm], claim: &Claim) -> bool {
+    arm_of(all, claim).is_some_and(|a| a.start == Start::Mark)
 }
 
 /// A claim may not name a step that no longer exists.
@@ -2023,62 +2276,213 @@ fn every_covered_step_exists() {
             c.step
         );
     }
-    for leg in legs() {
+    for arm in arms() {
         assert!(
-            lessons.iter().any(|l| l.id == leg.step),
-            "path-claims.toml declares a charge leg on step `{}`, which is not an id in \
+            lessons.iter().any(|l| l.id == arm.step),
+            "path-claims.toml declares the arm `{}` on step `{}`, which is not an id in \
              const LESSONS.",
-            leg.step
+            arm.name,
+            arm.step
         );
     }
 }
 
-/// The leg is a change the *reader* makes, so the step must be the thing that asks for it.
+/// An arm is a change the *reader* makes, so the step must be the thing that asks for it.
 ///
-/// Three assertions, and they are the only non-circular content the leg mechanism has.
-/// `run_for_s` is this file's own choice (see the module docs), and the value and display
-/// checks on a leg claim are only as honest as the trajectory being the one a reader would
-/// actually produce. What makes it that trajectory is: the sentence is in the prose, the
-/// current is in the sentence, and the leg is not simulated for nothing.
+/// This is the only non-circular content the whole mechanism has. How far an arm runs is
+/// this file's own choice (see [`Action::Run`] and the module docs), so the value and
+/// display checks on an arm claim are worth exactly as much as the trajectory being one a
+/// reader would actually produce.
+///
+/// The leg this grew out of asserted three things: the sentence is in the prose, the
+/// current is in the sentence, and the leg is not simulated for nothing. An arm carries
+/// three controls rather than one, and **that is where a leg's fence would have gone
+/// slack**: the instruction only had to exist, so an arm citing "uncheck the BMS" could
+/// also have moved `dt` and run at a different current with nothing to say so. Every
+/// override therefore needs its own anchor in the sentence, and every override has to be a
+/// real change from what the step configures — a `bms = true` beside a step that already
+/// has one is a declaration with no fact under it, which is the shape `tol_from` exists to
+/// catch one level down.
 #[test]
-fn every_leg_is_instructed_by_its_own_step() {
+fn every_arm_is_instructed_by_its_own_step() {
     let lessons = lessons();
     let all = claims();
-    for leg in legs() {
+    let arms = arms();
+    for arm in &arms {
         let lesson = lessons
             .iter()
-            .find(|l| l.id == leg.step)
-            .unwrap_or_else(|| panic!("no lesson `{}`", leg.step));
+            .find(|l| l.id == arm.step)
+            .unwrap_or_else(|| panic!("no lesson `{}`", arm.step));
 
         assert!(
-            ascii_minus(&lesson.text).contains(&ascii_minus(&leg.instruction)),
-            "step `{}` declares a charge leg instructed by:\n  {}\nand that sentence is \
+            ascii_minus(&lesson.text).contains(&ascii_minus(&arm.instruction)),
+            "step `{}` declares the arm `{}`, instructed by:\n  {}\nand that sentence is \
              not in the step's own prose.\n\
-             Either the prose was reworded and the leg was left behind, or this harness \
-             is now running a leg no reader is told to run — which would make every \
-             `after_mark` claim on this step true of a trajectory nobody sees.",
-            leg.step,
-            leg.instruction
+             Either the prose was reworded and the arm was left behind, or this harness \
+             is now running an arm no reader is told to run — which would make every \
+             claim on it true of a trajectory nobody sees.",
+            arm.step,
+            arm.name,
+            arm.instruction
         );
 
-        let spelled = leg.spelled_demand();
+        let instruction = ascii_minus(&arm.instruction);
+
+        if let Some(demand_a) = arm.demand_a {
+            let spelled = Arm::spelled(demand_a);
+            assert!(
+                contains_number(&instruction, &spelled),
+                "arm `{}` on step `{}` types {demand_a} A into the demand box, but \
+                 `{spelled}` does not appear as a number in the instruction it claims to \
+                 be following:\n  {}\n\
+                 The current and the sentence that tells the reader to type it are two \
+                 statements of one fact; this is the check that keeps them one. Note that \
+                 a sign difference fails here too — see `contains_number`.",
+                arm.name,
+                arm.step,
+                arm.instruction
+            );
+        }
+
+        if let Some(dt) = arm.dt {
+            let spelled = Arm::spelled(dt);
+            assert!(
+                contains_number(&instruction, &spelled),
+                "arm `{}` on step `{}` runs at dt = {dt} s, and `{spelled}` does not \
+                 appear as a number in its instruction:\n  {}\n\
+                 A step length is not a detail here — it is the quantity step 18's own \
+                 headline is about, and every number on this arm scales with it.",
+                arm.name,
+                arm.step,
+                arm.instruction
+            );
+            assert!(
+                (dt - lesson.dt).abs() > f64::EPSILON,
+                "arm `{}` on step `{}` declares dt = {dt} s, which is what the step \
+                 already sets. An override that changes nothing is a control the reader \
+                 was never asked to touch.",
+                arm.name,
+                arm.step
+            );
+            assert!(
+                arm.start == Start::Restart,
+                "arm `{}` on step `{}` changes dt on a continuation. The page's `dt` box \
+                 is read fresh on every frame, so that is reachable — but step 18's own \
+                 instruction is to press **Restart**, and a mid-run change would make \
+                 every number on the arm depend on how far the reader had already got. If \
+                 a step ever really instructs one, this assertion is the thing to revisit \
+                 deliberately.",
+                arm.name,
+                arm.step
+            );
+        }
+
+        if let Some(bms) = arm.bms {
+            assert!(
+                arm.instruction.contains("BMS"),
+                "arm `{}` on step `{}` sets the BMS checkbox to {bms}, and its instruction \
+                 does not mention the BMS:\n  {}",
+                arm.name,
+                arm.step,
+                arm.instruction
+            );
+            let (scenario, _) = load(&lesson.scenario);
+            let as_configured = lesson.bms.unwrap_or(scenario.pack.bms.is_some());
+            assert!(
+                bms != as_configured,
+                "arm `{}` on step `{}` sets the BMS to {bms}, which is what the step is \
+                 already configured with. The arm is then the step's own run under a \
+                 second name, and its claims say nothing about unchecking anything.",
+                arm.name,
+                arm.step
+            );
+            assert!(
+                arm.start == Start::Restart,
+                "arm `{}` on step `{}` toggles the BMS on a continuation. The page cannot \
+                 do that: `$(\"bms\").onchange` clicks Reset, so the pack is rebuilt and \
+                 the run goes back to t = 0. See `build_with_bms`.",
+                arm.name,
+                arm.step
+            );
+        }
+
+        // An arm has to assert something. A claim is the usual way; being one half of an
+        // `identical_to` pair is the other, and it is not a loophole — that pair asserts
+        // the sentence no quantity can state, and both halves are needed to state it. What
+        // this still refuses is the arm that neither carries a claim nor is compared to
+        // anything, which is a longer simulation that looks like coverage.
+        let read_by_a_claim = all
+            .iter()
+            .any(|c| c.step == arm.step && c.arm.as_deref() == Some(arm.name.as_str()));
+        let in_an_identity_pair = arm.identical_to.is_some()
+            || arms
+                .iter()
+                .any(|a| a.step == arm.step && a.identical_to.as_deref() == Some(&arm.name));
         assert!(
-            contains_number(&ascii_minus(&leg.instruction), &spelled),
-            "step `{}`'s charge leg runs at {} A, but `{spelled}` does not appear as a \
-             number in the instruction it claims to be following:\n  {}\n\
-             The current and the sentence that tells the reader to type it are two \
-             statements of one fact; this is the check that keeps them one. Note that a \
-             sign difference fails here too — see `contains_number`.",
-            leg.step,
-            leg.demand_a,
-            leg.instruction
+            read_by_a_claim || in_an_identity_pair,
+            "step `{}` declares the arm `{}`, and nothing reads it: no claim names it and \
+             no other arm is compared against it.",
+            arm.step,
+            arm.name
         );
 
-        assert!(
-            all.iter().any(|c| c.step == leg.step && c.after_mark),
-            "step `{}` declares a charge leg and no claim reads it. A leg that asserts \
-             nothing is a longer simulation that looks like coverage.",
-            leg.step
+        if let Some(twin) = arm.identical_to.as_deref() {
+            assert!(
+                arms.iter().any(|a| a.step == arm.step && a.name == twin),
+                "arm `{}` on step `{}` says it ends identical to `{twin}`, and that step \
+                 declares no such arm.",
+                arm.name,
+                arm.step
+            );
+            assert_ne!(
+                twin, arm.name,
+                "arm `{}` on step `{}` says it ends identical to itself.",
+                arm.name, arm.step
+            );
+        }
+    }
+}
+
+/// The one thing step 18 claims that is not a quantity: two button orders, one pack.
+///
+/// > Press those same two buttons in the other order, still without running, and you get an
+/// > identical pack: the move you cannot take back is the Run.
+///
+/// No `quantity` states that. Reading it as "the voltage matches" would be the weaker
+/// sentence and a picked one — the reader is told the *pack* is the same, and the way to
+/// assert that is over everything the snapshot carries, RNG included.
+///
+/// It is also the assertion that would fail loudest if the two clear buttons ever stopped
+/// commuting, which is a property of `sim-core` rather than of the page: `clear_faults` and
+/// `clear_bms_fault` touch different state today, and nothing but this says they must.
+#[test]
+fn every_identical_arm_really_is_identical() {
+    let lessons = lessons();
+    let arms = arms();
+    for arm in &arms {
+        let Some(twin_name) = arm.identical_to.as_deref() else {
+            continue;
+        };
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == arm.step)
+            .unwrap_or_else(|| panic!("no lesson `{}`", arm.step));
+        let twin = arms
+            .iter()
+            .find(|a| a.step == arm.step && a.name == twin_name)
+            .unwrap_or_else(|| panic!("no arm `{twin_name}` on step `{}`", arm.step));
+
+        let mine = run(lesson, Some(arm));
+        let theirs = run(lesson, Some(twin));
+        assert_eq!(
+            mine.end_snapshot, theirs.end_snapshot,
+            "step `{}`: arms `{}` and `{twin_name}` are declared to end on an identical \
+             pack, and their snapshots differ.\n\
+             The prose says the order of these buttons does not matter. Either it now \
+             does — in which case the sentence is wrong and so is the teaching point about \
+             what you cannot take back — or the two arms differ in something other than \
+             the order, which makes this assertion say nothing.",
+            arm.step, arm.name
         );
     }
 }
@@ -2298,6 +2702,7 @@ fn every_word_numeral_is_spelled_by_a_claim() {
 fn every_claim_states_the_value_it_measures() {
     let lessons = lessons();
     let all = claims();
+    let arms = arms();
     for c in &all {
         let lesson = lessons
             .iter()
@@ -2390,23 +2795,27 @@ fn every_claim_states_the_value_it_measures() {
                     States::Complement => 1.0 - c.value,
                     States::SinceMark => {
                         assert!(
-                            c.after_mark,
+                            reads_past_the_mark(&arms, c),
                             "claim `{}` on step `{}` states a duration `since_mark` and is \
-                             not an `after_mark` claim. Before the mark there is nothing \
-                             to be later than, and the two duration frames are only \
-                             distinguishable because each is fenced to one side of it.",
-                            c.literal, c.step
+                             not read on an arm that continues past the mark. Before the \
+                             mark there is nothing to be later than; on an arm that \
+                             restarts the pack the mark is not an origin at all. The two \
+                             duration frames are only distinguishable because each is \
+                             fenced to one side of it.",
+                            c.literal,
+                            c.step
                         );
                         c.value - lesson.until_s
                     }
                     States::UntilEnd => {
                         assert!(
-                            !c.after_mark,
+                            !reads_past_the_mark(&arms, c),
                             "claim `{}` on step `{}` states a duration `until_end` and is \
-                             an `after_mark` claim. Past the mark the step has no end to \
+                             read past the mark. Past the mark the step has no end to \
                              count down to — `until_s` is where the page stopped, not \
-                             where the leg does.",
-                            c.literal, c.step
+                             where the continuation does.",
+                            c.literal,
+                            c.step
                         );
                         lesson.until_s - c.value
                     }
@@ -2559,7 +2968,12 @@ fn sentences(all: &[Claim]) -> Vec<(&str, &str)> {
 /// Shared by check 6, which runs the whole scan without an engine, and by the event fence
 /// in [`every_claim_matches_the_engine`], which re-derives it for the one arm that needs a
 /// trajectory to be checked. Derived rather than declared: see [`Accounted`].
-fn accounting_for(token: &str, group: &[&Claim], lesson: &Lesson) -> Option<Accounted> {
+fn accounting_for(
+    token: &str,
+    group: &[&Claim],
+    lesson: &Lesson,
+    arms: &[Arm],
+) -> Option<Accounted> {
     let spelled = group.iter().any(|c| {
         c.spells
             .as_deref()
@@ -2571,7 +2985,9 @@ fn accounting_for(token: &str, group: &[&Claim], lesson: &Lesson) -> Option<Acco
     }
 
     let read_at = group.iter().find_map(|c| {
-        let instant = if c.after_mark {
+        // A continuation's instants are naturally written since the mark; a restart arm's
+        // are absolute on its own clock, like the step's own.
+        let instant = if reads_past_the_mark(arms, c) {
             c.read_at_s - lesson.until_s
         } else {
             c.read_at_s
@@ -2591,10 +3007,10 @@ fn accounting_for(token: &str, group: &[&Claim], lesson: &Lesson) -> Option<Acco
             .shows
             .as_deref()
             .is_some_and(|s| numeric_tokens(s).iter().any(|t| *t == token));
-        // The clock at the mark: the leg's own origin, for a sentence that quotes the
-        // row at both ends of the leg.
+        // The clock at the mark: a continuation's own origin, for a sentence that quotes
+        // the row at both ends of it.
         let at_mark = c.states == States::Displayed
-            && c.after_mark
+            && reads_past_the_mark(arms, c)
             && c.display.as_deref() == Some("sim time")
             && numeric_tokens(&fmt_time(lesson.until_s))
                 .iter()
@@ -2635,6 +3051,7 @@ fn accounting_for(token: &str, group: &[&Claim], lesson: &Lesson) -> Option<Acco
 fn every_number_in_a_claimed_literal_is_accounted_for() {
     let lessons = lessons();
     let all = claims();
+    let arms = arms();
 
     for (step, literal) in sentences(&all) {
         let lesson = lessons
@@ -2645,7 +3062,7 @@ fn every_number_in_a_claimed_literal_is_accounted_for() {
 
         for token in numeric_tokens(&ascii_minus(literal)) {
             assert!(
-                accounting_for(&token, &group, lesson).is_some(),
+                accounting_for(&token, &group, lesson, &arms).is_some(),
                 "step `{step}`, sentence `{literal}`:\n  it prints `{token}`, and none of \
                  the {} claim(s) on it accounts for that number.\n\
                  Tried, in order:\n  \
@@ -2662,7 +3079,7 @@ fn every_number_in_a_claimed_literal_is_accounted_for() {
                 group.len(),
                 group
                     .iter()
-                    .map(|c| if c.after_mark {
+                    .map(|c| if reads_past_the_mark(&arms, c) {
                         c.read_at_s - lesson.until_s
                     } else {
                         c.read_at_s
@@ -3222,59 +3639,65 @@ fn every_claim_appears_in_its_own_step() {
 #[test]
 fn every_claim_is_reachable_in_its_own_step() {
     let lessons = lessons();
-    let legs = legs();
+    let arms = arms();
     for c in claims() {
         let lesson = lessons
             .iter()
             .find(|l| l.id == c.step)
             .unwrap_or_else(|| panic!("no lesson `{}`", c.step));
-        let leg = legs.iter().find(|l| l.step == c.step);
 
-        if !c.after_mark {
+        let Some(arm) = arm_of(&arms, &c) else {
             assert!(
                 c.read_at_s <= lesson.until_s,
                 "step `{}` claims `{}` at t = {} s, but the step stops at its mark of {} \
                  s. The number may well be true; a reader cannot get to it. This is the \
                  'right but unreachable' defect this repo has shipped twice.\n\
-                 If the claim is about the charge leg, it needs `after_mark = true` and \
-                 the step needs a `[[leg]]`.",
+                 If the claim is about something the reader does next — a demand typed in, \
+                 the BMS unchecked, a button pressed — it needs an `[[arm]]` and an `arm` \
+                 naming it.",
                 c.step,
                 c.literal,
                 c.read_at_s,
                 lesson.until_s
             );
             continue;
-        }
+        };
 
-        let leg = leg.unwrap_or_else(|| {
-            panic!(
-                "claim `{}` on step `{}` is marked `after_mark`, and the step declares no \
-                 `[[leg]]`. There is no second demand to read it on.",
-                c.literal, c.step
-            )
-        });
+        let earliest = arm.earliest_s(lesson);
         assert!(
-            c.read_at_s > lesson.until_s,
-            "claim `{}` on step `{}` is marked `after_mark` but reads at t = {} s, at or \
-             before the mark of {} s. It is measured on the discharge, not on the charge \
-             leg it says it is about — drop the flag or fix the time.",
+            c.read_at_s >= earliest,
+            "claim `{}` on step `{}` reads arm `{}` at t = {} s, which is before that arm \
+             begins at {earliest} s. On a continuation that means it is measured on the \
+             step's own run rather than on the change the arm is about — drop the `arm` or \
+             fix the time.",
             c.literal,
             c.step,
+            arm.name,
             c.read_at_s,
-            lesson.until_s
         );
-        let end = lesson.until_s + leg.run_for_s;
+        // A continuation must read *strictly* past the mark. The mark's own row is the
+        // step's, and a claim reading it through an arm would be a claim about a
+        // trajectory the reader has not started yet.
+        assert!(
+            arm.start == Start::Restart || c.read_at_s > earliest,
+            "claim `{}` on step `{}` reads the continuation `{}` at the mark itself \
+             ({earliest} s). That row belongs to the step's own run — it is the same \
+             number every claim without an arm reads there.",
+            c.literal,
+            c.step,
+            arm.name,
+        );
+        let end = arm.end_s(lesson);
         assert!(
             c.read_at_s <= end,
-            "claim `{}` on step `{}` reads at t = {} s; the charge leg runs to {} s ({} s \
-             past the mark). Lengthen the leg only if the prose still asks the reader to \
-             run that far — `run_for_s` is this file's own choice and stretching it to \
-             cover a claim is how the reachability check on a leg becomes a tautology.",
+            "claim `{}` on step `{}` reads at t = {} s; the arm `{}` runs to {end} s. \
+             Lengthen it only if the prose still asks the reader to run that far — how far \
+             an arm goes is this file's own choice and stretching it to cover a claim is \
+             how the reachability check on an arm becomes a tautology.",
             c.literal,
             c.step,
             c.read_at_s,
-            end,
-            leg.run_for_s
+            arm.name,
         );
     }
 }
@@ -3368,8 +3791,10 @@ fn a_zero_length_probe_moves_nothing() {
 ///   other instant. A probe claim carrying a decorative time would be the shape
 ///   `soc_gap_pts_min` was fenced against a slice ago, with the added trap that the number
 ///   *looks* addressed by time and is not.
-/// * **It cannot also be `after_mark`.** The two say opposite things about when a reader
-///   sees the number: before the run was armed, and after it passed the mark.
+/// * **It cannot name an `arm`.** Every arm is something the reader does *next*, and the
+///   probe is the panel before they have done anything. A restart arm does take a probe of
+///   its own — the page shows one after Restart — and no sentence quotes it, so claiming it
+///   is refused here rather than half-supported.
 /// * **The step must reload.** [`run`] builds a fresh pack for every step, which a stepped
 ///   trajectory mostly absorbs — but the probe *is* the fresh pack, so on a step that
 ///   inherits its pack from its predecessor the harness would be mirroring a reading the
@@ -3394,10 +3819,13 @@ fn every_probe_claim_is_taken_before_the_run() {
             c.literal, c.step, c.read_at_s
         );
         assert!(
-            !c.after_mark,
-            "claim `{}` on step `{}` is both `probe` and `after_mark`. Those are opposite \
-             instants — before the reader arms the run, and after it passed the mark.",
-            c.literal, c.step
+            c.arm.is_none(),
+            "claim `{}` on step `{}` is a `probe` claim and reads the arm `{}`. Those are \
+             opposite instants — before the reader arms the run, and after they have \
+             pressed something.",
+            c.literal,
+            c.step,
+            c.arm.as_deref().unwrap_or_default()
         );
         assert!(
             lesson.reload,
@@ -3417,23 +3845,34 @@ fn every_claim_matches_the_engine() {
     let lessons = lessons();
     let all = claims();
 
-    // Group by step and run each lesson once. Not a micro-optimisation: step 8 is a
+    // Group by *trajectory* and run each one once. Not a micro-optimisation: step 8 is a
     // 200 000 s rest at dt = 0.5 — 400 000 engine steps — and it carries three claims.
     // Re-running it per claim tripled this test's cost for nothing.
-    let mut steps: Vec<&str> = all.iter().map(|c| c.step.as_str()).collect();
-    steps.sort_unstable();
-    steps.dedup();
+    //
+    // A trajectory is a step and one of its arms, or a step and none. Arms cannot share a
+    // run the way a leg used to share its step's: a leg only appended rows to the step's
+    // own trajectory, where an arm can rebuild the pack under different controls and
+    // report *different numbers at the same instant* — which is the whole of step 18's
+    // `dt = 5` contrast.
+    let arms = arms();
+    let mut trajectories: Vec<(&str, Option<&str>)> = all
+        .iter()
+        .map(|c| (c.step.as_str(), c.arm.as_deref()))
+        .collect();
+    trajectories.sort_unstable();
+    trajectories.dedup();
 
-    let legs = legs();
-    for step in steps {
+    for (step, arm_name) in trajectories {
         let lesson = lessons
             .iter()
             .find(|l| l.id == step)
             .unwrap_or_else(|| panic!("no lesson `{step}`"));
-        // One run per step still, leg included: the leg is a continuation of this same
-        // pack, so it costs only its own steps and pre-mark claims read the same rows
-        // they read before it existed (see `Run::row_at`).
-        let r = run(lesson, legs.iter().find(|l| l.step == step));
+        let arm = arm_name.map(|name| {
+            arms.iter()
+                .find(|a| a.step == step && a.name == name)
+                .unwrap_or_else(|| panic!("no arm `{name}` on step `{step}`"))
+        });
+        let r = run(lesson, arm);
 
         // The fence on `Accounted::ReadAt`, which lives here because this is the only
         // place a trajectory exists. Check 6 accepts a number in a claimed sentence when
@@ -3444,13 +3883,21 @@ fn every_claim_matches_the_engine() {
         // green with the sentence's own event time tied to nothing. An instant where the
         // run raises a flag it did not have a step earlier is an event, and an event a
         // sentence names has to be claimed.
+        //
+        // Scoped to the sentences whose claims are read on *this* trajectory: a flag
+        // arriving on the unprotected arm says nothing about a sentence read on the
+        // protected one, and asking the wrong run would be a false red.
         for (s, literal) in sentences(&all) {
             if s != step {
                 continue;
             }
             let group = sentence_group(&all, s, literal);
+            if !group.iter().any(|c| c.arm.as_deref() == arm_name) {
+                continue;
+            }
             for token in numeric_tokens(&ascii_minus(literal)) {
-                let Some(Accounted::ReadAt(at_s)) = accounting_for(&token, &group, lesson) else {
+                let Some(Accounted::ReadAt(at_s)) = accounting_for(&token, &group, lesson, &arms)
+                else {
                     continue;
                 };
                 let arriving = r.flags_arriving_at(at_s);
@@ -3469,7 +3916,10 @@ fn every_claim_matches_the_engine() {
             }
         }
 
-        for c in all.iter().filter(|c| c.step == step) {
+        for c in all
+            .iter()
+            .filter(|c| c.step == step && c.arm.as_deref() == arm_name)
+        {
             let got = measure(&c.quantity, &r, c.read_at_s, c.probe);
             assert!(
                 (got - c.value).abs() <= c.tol,
