@@ -185,6 +185,15 @@ the thing a step-wide one would not.
   (a `12 V` that is six 2 V cells, a `C/20` that is capacity over demand, and a `19.3h` the
   clock prints).
 
+* **Two *claims* covering one number is resolved silently, where every other double
+  reading is refused.** Two rules covering one number panics; a rule and a claim covering
+  one number panics; but if two claimed sentences on the same step overlapped — one
+  literal a substring of another's — `claimed_accounting` would take whichever came first
+  in sorted order. Not reachable today, and check 6's own docs already record that no claim
+  in the file quotes a substring of another's literal. Written down rather than fixed,
+  because the fix has nothing to fire on: it is the one member of that family this slice
+  neither refuses nor prices, and the next author to split a literal meets it.
+
 * **No step closes without at least four arms**, which is the honest sizing of what is left:
   the ledger is expensive by design, one step at a time, and the twenty steps still
   unledgered are named one line each in `[ledger].unledgered` so the gap cannot go quiet.
