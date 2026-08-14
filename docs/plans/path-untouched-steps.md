@@ -134,7 +134,46 @@ make them:
    row's own terminal voltage — the reading a naive harness takes — and the suite reddens.
    Without that, the whole `rest_v` mechanism would be decoration.
 
-4. **Step 14's own-pack half**, and the scanner change it needs first.
+4. **Step 14's own-pack half.** Six claims and one arm — and a change to the number
+   scanner, which is the finding this commit is really about.
+
+   `11 880 s` was **two numbers** to `written_numbers`: `11` and `880`. Nothing could spell
+   either, no accounting arm could tie either to anything, and so any sentence containing
+   one was unclaimable. That was silent, and it had been shaping the file for seven slices.
+   The lesson prose contains exactly four space-separated numbers — `10 000`, `11 280`,
+   `11 880`, `200 000` — and **not one of them appeared in any claimed literal** before this
+   commit. Authors met the blocker, wrote a shorter literal, and moved on; nothing recorded
+   why.
+
+   `join_thousands` fixes it, narrowly. A group joins only when the separator is exactly one
+   ASCII space, the group is exactly three digits, and neither side carries a decimal point,
+   so `at 2 s, 464 s` and `11 880.5` are untouched. The narrowness is the point and it is
+   what `the_scanner_joins_thousands_groups_and_nothing_else` asserts: joining two numbers a
+   sentence wrote separately would make check 6 demand an accounting for a figure nobody
+   printed, which no author could ever satisfy. Reverting the rule reddens check 6 by name,
+   which is what shows the `11 880` claim really depends on it.
+
+   The joined token keeps its space, so `spells = "11 880"` stays "written exactly as the
+   sentence writes it"; everything that turns a token into a number now goes through one
+   `number_of` helper that strips separators.
+
+   The arm is a plain "keep pressing Run" continuation to 13 920 s — eight marks' worth
+   past where the page stops — and it carries the floor claims. *"It pins at 0.3095 V and
+   stays there"* is asserted as two claims at instants one whole tooth apart, both reading
+   0.309467 V bit for bit, on the same principle as step 11's "at the same instant": two
+   pins are what an equality looks like when the instrument cannot say "equal".
+
+## Where this leaves the file
+
+Every one of the twenty-one steps in `[ledger].unledgered` now carries at least one measured
+claim. Two steps in the repo still carry none, and they are both **ledgered** ones — scanned
+end to end for numerals and measured nowhere, which is the opposite gap and a smaller one.
+
+Two tally phrases had to be reworded during this arc because their counts were heading for
+zero. `"{W} steps carry neither a claim nor a ledger entry"` breaks at one and reads as
+nonsense at zero — which is precisely the moment the work it describes is finished. A tally
+that cannot survive its own count reaching zero forces a rewrite at the worst possible time,
+so both now put the count last, and `HEADER_WORDS` learned to say "none".
 
 ## The measurement, and the one thing it settled
 

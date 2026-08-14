@@ -79,7 +79,7 @@
 //! A ledgered step is digits-closed, which is less than closed. Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all when
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
-//! step 14 that never existed survived, both under a fully green suite. Three steps are
+//! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
 //! (`[ledger]` in `path-claims.toml`) and today it is three steps and fourteen numbers,
 //! all of them scenario constants. One arm exists, the scenario file; the rest of the
@@ -164,8 +164,8 @@
 //! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
 //!   has now closed three whole steps — but only three. Steps here carrying neither a
-//!   claim nor a ledger entry: one. The other twenty have their claimed sentences checked
-//!   and the rest of their prose free. `[ledger].unledgered`
+//!   claim nor a ledger entry: none. The other twenty-one have their claimed sentences
+//!   checked and the rest of their prose free. `[ledger].unledgered`
 //!   names all twenty-one, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is arms the ledger has not got — chemistry constants,
 //!   ordinals naming other steps, and figures derived from other figures in the same
@@ -688,6 +688,40 @@ fn to_fixed_matches_javascript() {
     // Rust's own formatter rounds that to 70; the page shows 71.
     assert_eq!(format!("{:.0}", 4230.0 / 60.0), "70");
     assert_eq!(fmt_time(4230.0), "71m");
+}
+
+/// The number scanner's thousands rule, and every near miss around it.
+///
+/// The cases that matter are the ones that must **not** join. Joining two numbers that the
+/// sentence wrote separately makes check 6 demand an accounting for a figure nobody printed,
+/// and no author can satisfy that — so the rule is narrow and the narrowness is what is
+/// asserted here. `at 2 s, 464 s` is the case this was written against: a comma and a space
+/// between two numbers, the second of them three digits.
+#[test]
+fn the_scanner_joins_thousands_groups_and_nothing_else() {
+    for (text, want) in [
+        // Joins: exactly one space, exactly three digits, no decimal point either side.
+        ("clamp at 11 880 s", vec!["11 880"]),
+        ("over the next 200 000 s", vec!["200 000"]),
+        ("watching at 10 000×", vec!["10 000"]),
+        ("1 234 567 of them", vec!["1 234 567"]),
+        // Does not join: a comma, or any other character, sits between.
+        ("at 2 s, 464 s", vec!["2", "464"]),
+        ("0.5 s, 5 s, 10 s", vec!["0.5", "5", "10"]),
+        ("3.66 V to 4.20", vec!["3.66", "4.20"]),
+        // Does not join: two spaces, a group of the wrong size, or a decimal point.
+        ("5  880", vec!["5", "880"]),
+        ("5 1234", vec!["5", "1234"]),
+        ("5 88", vec!["5", "88"]),
+        ("1.5 880", vec!["1.5", "880"]),
+        ("11 880.5", vec!["11", "880.5"]),
+    ] {
+        assert_eq!(
+            numeric_tokens(text),
+            want,
+            "the scanner read `{text}` wrongly"
+        );
+    }
 }
 
 /// The clock's four branches, at and around each boundary.
@@ -1514,7 +1548,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 141 of 162 claims.
+    /// number's last printed place. The default shape: 147 of 168 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1523,12 +1557,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 17 of 162.
+    /// declaration was wrong. 17 of 168.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 162, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 168, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1568,7 +1602,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 146 of 162, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 152 of 168, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -1825,7 +1859,7 @@ const WORD_NUMERALS: &[(&str, f64)] = &[("three", 3.0), ("fifty", 50.0)];
 /// call `parse` themselves, and a second resolution site is how a word could come to be a
 /// number for the tolerance and not for the value.
 fn spells_as_number(spells: &str) -> Option<f64> {
-    spells.parse::<f64>().ok().or_else(|| {
+    number_of(spells).or_else(|| {
         WORD_NUMERALS
             .iter()
             .find(|(w, _)| *w == spells)
@@ -1897,7 +1931,8 @@ fn written_numbers(text: &str) -> Vec<Written> {
         });
     }
     // `at 5769.` and `1.2.3` both come out of the loop above; keep the leading number.
-    runs.into_iter()
+    let runs: Vec<Written> = runs
+        .into_iter()
         .filter_map(|w| {
             let token = match w.token.match_indices('.').nth(1) {
                 Some((i, _)) => w.token[..i].to_string(),
@@ -1905,7 +1940,61 @@ fn written_numbers(text: &str) -> Vec<Written> {
             };
             (!token.is_empty()).then_some(Written { token, ..w })
         })
-        .collect()
+        .collect();
+    join_thousands(text, runs)
+}
+
+/// Join digit runs a **space is separating into thousands groups**: `11 880` is one number.
+///
+/// The path's prose writes large numbers this way and the scanner did not know it, so
+/// `11 880` came out as `11` and `880` — two numbers, neither of which any claim could
+/// spell and neither of which any accounting arm could tie to anything. The effect was
+/// silent and it shaped seven slices of authoring: of the four such numbers in the lesson
+/// prose (`10 000`, `11 280`, `11 880`, `200 000`), **not one appeared in any claimed
+/// literal**. Sentences containing them could not be claimed, so they were not, and nothing
+/// said why.
+///
+/// The rule is deliberately narrow, because the failure direction matters: joining two
+/// numbers that are not one would make check 6 demand an accounting for a number the
+/// sentence never printed, and no author could satisfy it. A group joins only when the
+/// separator is exactly one ASCII space, the group is exactly three digits, and neither
+/// side carries a decimal point — so `at 2 s, 464 s` (a space and a comma between) and
+/// `0.5 s, 5 s` are untouched. Chains join left to right, which is what makes `200 000`
+/// and a hypothetical `1 234 567` both come out whole.
+///
+/// The joined token **keeps its space**, so `spells` can still be "written exactly as the
+/// sentence writes it". Everything that turns a token into a number goes through
+/// [`number_of`], which strips it.
+fn join_thousands(text: &str, runs: Vec<Written>) -> Vec<Written> {
+    let mut out: Vec<Written> = Vec::with_capacity(runs.len());
+    for w in runs {
+        let joins = out.last().is_some_and(|prev: &Written| {
+            let gap = prev.at + prev.len;
+            w.token.len() == 3
+                && !w.token.contains('.')
+                && !prev.token.contains('.')
+                && gap < w.at
+                && text.get(gap..w.at) == Some(" ")
+        });
+        if joins {
+            let prev = out.last_mut().expect("checked above");
+            prev.token.push(' ');
+            prev.token.push_str(&w.token);
+            prev.len = w.at + w.len - prev.at;
+        } else {
+            out.push(w);
+        }
+    }
+    out
+}
+
+/// A prose token as a number, with any thousands separators removed.
+///
+/// The one place a token becomes an `f64`. Every caller had its own `parse` before
+/// [`join_thousands`] existed, and a second conversion site is how `11 880` could be one
+/// number to the scanner and two to the accounting.
+fn number_of(token: &str) -> Option<f64> {
+    token.replace(' ', "").parse::<f64>().ok()
 }
 
 /// Every number written in `text`, as it is written — `["4146.5", "1.9290"]`.
@@ -3627,9 +3716,7 @@ fn accounting_for(
     // this one has to be able to refuse them. See the fence under `shown`.
     let setting = group.iter().find_map(|c| {
         let dt = arm_of(arms, c).and_then(|a| a.dt).unwrap_or(lesson.dt);
-        token
-            .parse::<f64>()
-            .ok()
+        number_of(token)
             .filter(|n| (n - dt).abs() < 1e-9)
             .map(|_| dt)
     });
@@ -3688,9 +3775,7 @@ fn accounting_for(
             );
             instants.push(c.read_at_s - lesson.until_s);
         }
-        token
-            .parse::<f64>()
-            .ok()
+        number_of(token)
             .filter(|n| instants.iter().any(|i| (n - i).abs() < 1e-9))
             .map(|_| c.read_at_s)
     });

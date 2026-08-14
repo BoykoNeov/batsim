@@ -142,7 +142,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  141 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  147 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  17 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -193,7 +193,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 17 claims.
 #
-#   same        146 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        152 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -239,8 +239,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Four accountings, and no fifth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 151 of the 178 numbers the
-#            104 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 156 of the 183 numbers the
+#            109 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -260,7 +260,7 @@
 # sitting beside the number, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 104 claimed sentences need none. A future literal printing a control setting or a
+# the 109 claimed sentences need none. A future literal printing a control setting or a
 # chemistry constant will fail loudly, and the answer will be an arm that checks it
 # against the lesson block or the chemistry file — not a waiver.
 #
@@ -2616,7 +2616,11 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # steps, fourteen numerals, all of them scenario constants. Those three were picked
 # because the same measuring pass found they carry no measurement-shaped figure at all,
 # so they can be closed before a single number is measured. Of the steps below, those that
-# carry no claim at all and need arms this file has not got: one. See the plan.
+# carry no claim at all and need arms this file has not got: none. Every step in this list
+# now carries at least one measured number, which was not true five slices ago. (Two steps
+# in the repo still carry none, and they are both LEDGERED ones — scanned end to end for
+# numerals and measured nowhere, which is the opposite gap.) What the list still lacks is a
+# scan over its whole prose, and that is what needs the arms. See the plan.
 #
 # NUMERAL, NOT NUMBER, and the difference is load-bearing. The scan finds digits, so a
 # quantity spelled in English goes straight past it — and two of these three steps state
@@ -4476,6 +4480,193 @@ how much is still to come. The same frame `soh cap` sentences use for "0.53 poin
 gone", one unit over: 1 − 0.9171 = 0.0829, which the sentence rounds to 8 %.
 """
 
+# --- step 14: three times the current, and the floor under the model ----------------
+#
+# THE LAST OF THE FIVE STEPS THAT CARRIED NO CLAIM AT ALL. Its own pack is the same
+# single-particle file as step 13 with the pulse current tripled, so its two tooth figures
+# need nothing new — and its floor figures need a continuation, because they are eight
+# marks' worth of simulation past where the page stops.
+#
+# AND IT NEEDED THE SCANNER TAUGHT ABOUT THOUSANDS SEPARATORS. "11 880 s" was two numbers
+# to `written_numbers` — `11` and `880` — so no claim could spell it and no arm could
+# account for it, and any literal containing it was unclaimable. That was silent, and it
+# had shaped the file: of the four space-separated numbers in the whole of the lesson prose
+# (`10 000`, `11 280`, `11 880`, `200 000`), not one appeared in a claimed literal before
+# this section. `join_thousands` fixes it, narrowly, and
+# `the_scanner_joins_thousands_groups_and_nothing_else` pins the near misses — because
+# joining two numbers a sentence wrote separately would demand an accounting for a figure
+# nobody printed, which no author could ever satisfy.
+#
+# WHAT IS NOT CLAIMED, and it is most of the step's numbers, because most of them compare
+# this pack against another one:
+#   * `×1.87`, `×6.01`, `×2.48` and the `113.9 →` / `17.3 →` figures they divide — step
+#     13's 1 C run, which is a different trajectory on the same file. Nothing lets a claim
+#     on one step read a run built for another.
+#   * `132.8 → 397.3`, `74.8 → 224.3`, `×2.99`, `×3.00`, the circuit's `1.84 V` at the same
+#     instant, and the `−0.45` / `−0.66 V` teeth below empty — `pulse_train_ecm`, a second
+#     scenario file. The prose does instruct that swap ("Load `pulse_train_ecm` and do the
+#     same thing"), so the sentence is waiting for a `scenario` override on `[[arm]]`.
+#   * `2.50 V` and `11.67 %` — step 15's numbers, quoted here.
+#   * "about ten times the circuit's arithmetic per step" — a cost ratio, deliberately not
+#     a duration, for the reason the step's own prose gives.
+
+[[claim]]
+step = "three-times-the-current"
+literal = "→ 213.2 mV"
+quantity = "pulse_jump_mv:1"
+value = 213.220
+tol = 0.05
+tol_from = "spelled"
+spells = "213.2"
+states = "same"
+read_at_s = 60.0
+note = """
+The instantaneous part of the first tooth at 3 C. Step 13's is 113.9 mV at 1 C, so this is
+×1.87 rather than ×3 — the sentence's point, and the half of it this file can check.
+
+The literal starts at the arrow because the number before it is step 13's trajectory. That
+is the cost of a sentence built as a comparison: the fragment carries the measurement and
+the comparison itself is not checked by anything here.
+"""
+
+[[claim]]
+step = "three-times-the-current"
+literal = "→ 103.9 mV"
+quantity = "pulse_rebound_mv:1"
+value = 103.906
+tol = 0.05
+tol_from = "spelled"
+spells = "103.9"
+states = "same"
+read_at_s = 660.0
+note = """
+The slow part of the same tooth, ×6.01 against step 13's 17.3 mV — accelerating where the
+jump saturates, because the open-circuit potential is a curved function of surface
+composition and driving the surface further out of balance costs more than proportionally.
+
+Two claims on one tooth, going in opposite directions from the same three-fold demand. That
+is the whole argument for a model with an inside, and it is now two pins rather than a
+paragraph.
+"""
+
+[[arm]]
+step = "three-times-the-current"
+name = "past the clamp"
+instruction = "you have to keep pressing Run to reach it"
+start = "mark"
+actions = [{ do = "run", to_s = 13920.0 }]
+note = """
+No control changes at all — the reader presses Run and keeps pressing it. The step's mark is
+at 1980 s and the floor this arm is about is at 12 600, so this is a little over eight more
+marks' worth of simulation: 23 880 further steps at `dt = 0.5`, on a single-particle model,
+which is about a second of test time.
+
+`to_s` runs one whole tooth past the furthest claim (13 260) rather than stopping on it. An
+arm that ends exactly where its last claim reads makes `reachable` mean only "I ran long
+enough to reach it", and here there is a second reason: the two claims on the pinned voltage
+are 660 s apart precisely to assert that it STAYS, so the run has to be visibly longer than
+the thing it is asserting about.
+"""
+
+[[claim]]
+step = "three-times-the-current"
+literal = "clamp at the same instant — 11 880 s"
+quantity = "flag_first_s:SOC_CLAMPED_LOW"
+arm = "past the clamp"
+value = 11880.5
+tol = 0.5
+tol_from = "spelled"
+spells = "11 880"
+states = "same"
+read_at_s = 11880.5
+note = """
+THE FIRST CLAIM IN THIS FILE TO SPELL A NUMBER WITH A SPACE IN IT. `11 880` is one number
+to the scanner now; before `join_thousands` it was `11` and `880`, and this sentence could
+not be claimed at all.
+
+The coulomb counter reaching zero, which is arithmetic neither cell model is asked about —
+which is why the sentence says both models clamp together. That half is not checked here:
+the circuit is a second scenario file. What is checked is this model's own instant, and the
+sentence's `11 880` against an engine that says 11 880.5, which is half a step and exactly
+the precision the sentence commits to.
+
+This replaced a claim that was FALSE when written. The prose used to say the circuit "lasts
+600 s longer before it clamps, at 11 880 s against the particle's 11 280" — a contrast that
+never existed at any commit, found by the measuring pass in
+`docs/plans/path-prose-ledger.md` and repaired there. It is the one never-true number in
+fourteen steps, and it is a claim about a CONTRAST, which is the kind a table of golden
+values could not catch even if one existed. The sentence that replaced it is now pinned.
+"""
+
+[[claim]]
+step = "three-times-the-current"
+literal = "the particle is down to **0.61 V**"
+quantity = "v_at"
+arm = "past the clamp"
+value = 0.612147
+tol = 5e-3
+tol_from = "spelled"
+spells = "0.61"
+states = "same"
+read_at_s = 11280.0
+display = "terminal"
+shows = "0.612 V"
+note = """
+Ten minutes before the clamp, at the end of the tooth finishing at 11 280 s. This is what
+actually separates the two models down here — not when they clamp, which is the same
+instant, but where the voltage has already got to: the circuit is still at 1.84 V (a second
+pack, not claimed).
+
+Not quoted: the row prints three decimals and the sentence gives two.
+"""
+
+[[claim]]
+step = "three-times-the-current"
+literal = "it pins at **0.3095 V** and stays there"
+quantity = "v_at"
+arm = "past the clamp"
+value = 0.309467
+tol = 5e-5
+tol_from = "spelled"
+spells = "0.3095"
+states = "same"
+read_at_s = 12600.0
+display = "terminal"
+shows = "0.309 V"
+note = """
+The floor, reached at the bottom of the first tooth after the clamp. The surface
+concentration has fallen off the bottom of its table and the model has nothing further to
+say — a hole, left visible rather than papered over.
+
+Note what the panel does with it: the `terminal` row prints `0.309 V`, and the sentence
+gives a fourth decimal the row does not have. That is the sentence being about the model
+rather than about the readout, so this claim is not `quoted`.
+"""
+
+[[claim]]
+step = "three-times-the-current"
+literal = "it pins at **0.3095 V** and stays there"
+quantity = "v_at"
+arm = "past the clamp"
+value = 0.309467
+tol = 5e-5
+tol_from = "spelled"
+spells = "0.3095"
+states = "same"
+read_at_s = 13260.0
+display = "terminal"
+shows = "0.309 V"
+note = """
+"AND STAYS THERE", made checkable the only way this file can: the same number pinned at a
+second instant, one whole tooth later. Not approximately the same — the two readings are
+0.309467 V both times, bit for bit, because the floor is a table's last entry and not a
+trajectory.
+
+The same shape as step 11's "at the same instant", where two claims on two arms pin one
+number because nothing here compares one measurement against another. Two pins is what an
+equality looks like when the instrument cannot say "equal".
+"""
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -4483,9 +4674,9 @@ steps = [
                      # two claims on its estimator gap, which the prose spells in words
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: twenty of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: twenty-one of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
-# entirely: one.
+# entirely: none.
 unledgered = [
   "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
@@ -4501,7 +4692,9 @@ unledgered = [
                                     # comparison needs two accounting arms
   "particle-remembers",             # claims: 10, on five rebounds and one tooth. Its
                                     # comparisons against the circuit are a second pack
-  "three-times-the-current",        # measured, no claim yet
+  "three-times-the-current",        # claims: 6, on one tooth and the floor below empty.
+                                    # Its ratios need step 13's run; its circuit figures a
+                                    # second scenario file
   "looks-fine-from-outside",        # claims: 11, on both sides of one continuation
   "the-electrolyte-starves",        # claims: 10, all on its own pack. Its twin readings
                                     # and its 1 C boundary need a second pack; three perf
