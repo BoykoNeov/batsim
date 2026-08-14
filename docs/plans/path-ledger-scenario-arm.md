@@ -54,6 +54,12 @@ is named `every_numeral_…` for that reason. Two of them are also the cheapest 
 available anywhere in the remaining eleven steps: the estimator gap needs no zero-length
 probe and no instructed continuation, only a run to the mark and the `claimed` arm.
 
+**Since resolved, for one of the four.** The estimator gap was measured and claimed in
+`docs/plans/path-estimator-gap.md` — twice, at the mark and at its narrowest — which is
+what took `spells` from digits to words. It did *not* need the `claimed` arm in the end,
+and it did not get one: the quantity is spelled in letters, so the scan never sees it and
+the arm would have been reached zero times. The other three are still checked by nothing.
+
 ## The design question, and the answer that cost the most
 
 The arm has to name the field. The generous version — "this number appears somewhere in the
@@ -175,6 +181,9 @@ nothing reads is the shape that hid a wrong CC-CV mirror for six slices.
   so the arm would be untested code, and a ledgered step *with* claims would fail confusingly
   instead. So the test refuses to ledger a claimed step and says why. This is the first thing
   the next slice needs.
+  *(The next slice removed that refusal without building the arm — `belief-drifts` carries
+  two claims now, on a quantity spelled in letters that the scan cannot see, so there is
+  still no numeral for the arm to account. It goes in when a number needs it.)*
 * **The `setting`, `chemistry`, `ordinal` and `derived` arms**, designed in
   `path-prose-ledger.md`. `derived` is still the one with no precedent: it checks a token
   against other tokens in the same sentence, which needs the sentence parsed as an

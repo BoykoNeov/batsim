@@ -74,7 +74,9 @@
 //! requires every numeral in it to be tied to something, claimed or not. Numeral, not
 //! number: a quantity spelled in English is invisible to it, and two ledgered steps state
 //! four measurements that way ("about half a point across the whole grid", "a gap of about
-//! three points"). A ledgered step is digits-closed, which is less than closed. Check 6 can only
+//! three points" — the last of which now carries two claims of its own, through
+//! [`WORD_NUMERALS`], while remaining invisible to this scan).
+//! A ledgered step is digits-closed, which is less than closed. Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all —
 //! which is how six figures in step 19 went stale, and how a contrast in step 14 that
 //! never existed survived, both under a fully green suite. Coverage is opt-in per step
@@ -1096,7 +1098,7 @@ fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 52 of 65 claims.
+    /// number's last printed place. The default shape: 53 of 69 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1105,12 +1107,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 11 of 49.
+    /// declaration was wrong. 14 of 69.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 2 of 49, both of
+    /// the engine either hits the claimed step or misses by a whole one. 2 of 69, both of
     /// them claims whose [`States`] is `nothing` or `displayed`: a claim that spells its
     /// own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1150,7 +1152,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 39 of 49, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 59 of 69, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -1205,6 +1207,11 @@ struct Claim {
     /// The number in `literal` that states this claim's quantity, written exactly as the
     /// sentence writes it — `"4.030"`, not `4.03`; `"-0.069"` for a prose minus. Required
     /// by `spelled` and `tighter`, forbidden by `grid`.
+    ///
+    /// "Exactly as the sentence writes it" includes writing it in letters: a sentence that
+    /// says "about **three** points" spells `"three"`, resolved through [`WORD_NUMERALS`].
+    /// A word commits to no decimal place, so the rule it licenses is half a unit of the
+    /// unit it is written in — half a point, here.
     ///
     /// It is the *printed places* that matter, so the frame does not have to match: the
     /// prose may give a duration where the claim reads an absolute time, or a magnitude
@@ -1298,8 +1305,9 @@ impl Claim {
             )
         });
         assert!(
-            spells.parse::<f64>().is_ok(),
-            "claim `{}` on step `{}` spells `{spells}`, which is not a number.",
+            spells_as_number(spells).is_some(),
+            "claim `{}` on step `{}` spells `{spells}`, which is neither digits nor a word \
+             in WORD_NUMERALS.",
             self.literal,
             self.step
         );
@@ -1311,7 +1319,7 @@ impl Claim {
             self.step,
             self.spells_pow10
         );
-        5.0 * 10f64.powi(-(decimals_of(spells) + 1) - self.spells_pow10)
+        5.0 * 10f64.powi(-(spelled_places(spells) + 1) - self.spells_pow10)
     }
 
     /// The number the sentence spells, brought into `value`'s own unit.
@@ -1327,9 +1335,10 @@ impl Claim {
                 self.literal, self.step, self.states
             )
         });
-        let n: f64 = spells.parse().unwrap_or_else(|_| {
+        let n: f64 = spells_as_number(spells).unwrap_or_else(|| {
             panic!(
-                "claim `{}` on step `{}` spells `{spells}`, which is not a number.",
+                "claim `{}` on step `{}` spells `{spells}`, which is neither digits nor a \
+                 word in WORD_NUMERALS.",
                 self.literal, self.step
             )
         });
@@ -1342,6 +1351,55 @@ fn decimals_of(s: &str) -> i32 {
     match s.find('.') {
         Some(i) => (s.len() - i - 1) as i32,
         None => 0,
+    }
+}
+
+/// The numbers this path's prose spells in letters rather than in digits.
+///
+/// A sentence is entitled to write a round quantity as a word — "a gap of about **three
+/// points**" — and until this table existed such a sentence could not be claimed at all:
+/// `spells` is the number as the sentence writes it, and every reader of it parsed the
+/// string as a float. The choice was then between a claim that lies about its own wording
+/// and no claim, which is how that sentence went four slices unchecked.
+///
+/// **One entry, and it is required to be used.** A word nothing spells is the
+/// `CCCV_PERIOD_S` shape this file rejects everywhere else, so
+/// [`every_word_numeral_is_spelled_by_a_claim`] fails on a table entry no claim consults —
+/// the same guard [`every_ledger_rule_is_a_phrase_and_is_used`] keeps over the ledger's
+/// vocabulary. Add the next word when the next claim needs it, not before.
+///
+/// **This is the claim side only.** The ledger's scanner still finds *digits*
+/// ([`written_numbers`]), so a word quantity in a ledgered step's prose is invisible to it
+/// whether or not a claim spells it — see the note in
+/// [`every_numeral_in_a_ledgered_step_is_accounted_for`].
+const WORD_NUMERALS: &[(&str, f64)] = &[("three", 3.0)];
+
+/// The number `spells` names, in the unit the sentence writes it in, or `None` if the
+/// string is neither digits nor a word this file knows.
+///
+/// The one place words are resolved. `spelled_rule_tol` and `spelled_value` both used to
+/// call `parse` themselves, and a second resolution site is how a word could come to be a
+/// number for the tolerance and not for the value.
+fn spells_as_number(spells: &str) -> Option<f64> {
+    spells.parse::<f64>().ok().or_else(|| {
+        WORD_NUMERALS
+            .iter()
+            .find(|(w, _)| *w == spells)
+            .map(|(_, v)| *v)
+    })
+}
+
+/// How many places `spells` prints after its decimal point — the precision the sentence
+/// commits to, which is what both spelled tolerance rules are half a unit of.
+///
+/// A word prints none: "three points" is a claim to the point, and half a unit of it is
+/// half a point. Written as its own branch rather than left to [`decimals_of`] finding no
+/// `.` in `three` and returning 0 by accident.
+fn spelled_places(spells: &str) -> i32 {
+    if WORD_NUMERALS.iter().any(|(w, _)| *w == spells) {
+        0
+    } else {
+        decimals_of(spells)
     }
 }
 
@@ -1496,12 +1554,23 @@ impl Leg {
 /// other one. The leg's claims would then all be measured on that wrong trajectory. So a
 /// match may not be flanked by anything that would make it part of another number: a
 /// digit or a decimal point on either side, or a minus in front.
+///
+/// A number spelled in letters ([`WORD_NUMERALS`]) is bounded the same way and by the
+/// same argument, one alphabet over: `three` inside `threefold` is not this number, so a
+/// word match may not be flanked by a letter or a digit either.
 fn contains_number(text: &str, number: &str) -> bool {
-    let flanker = |c: char| c.is_ascii_digit() || c == '.';
+    let word = number.starts_with(|c: char| c.is_ascii_alphabetic());
+    let flanker = move |c: char| {
+        if word {
+            c.is_alphanumeric()
+        } else {
+            c.is_ascii_digit() || c == '.'
+        }
+    };
     text.match_indices(number).any(|(i, _)| {
         let before = text[..i].chars().next_back();
         let after = text[i + number.len()..].chars().next();
-        !before.is_some_and(|c| flanker(c) || c == '-') && !after.is_some_and(flanker)
+        !before.is_some_and(|c| flanker(c) || (!word && c == '-')) && !after.is_some_and(flanker)
     })
 }
 
@@ -1612,6 +1681,45 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
                 })
                 .t_s
         }
+        // What the BMS believes minus what is true, in points of charge — the gap
+        // CLAUDE.md's eighth principle exists to expose, and the subject of step 4's whole
+        // closing paragraph.
+        //
+        // No `display` may be named on a claim measured here, and the reason is different
+        // from `deficit_pts_at`'s: the panel has no gap row at all. It prints `soc (true)`
+        // and `soc (bms)` a tenth of a point each and the reader does the subtraction, so
+        // the gap is a quantity the page shows without ever printing. That is also what
+        // sets the tolerance the two claims on it take — see their notes.
+        "soc_gap_pts_at" => gap_pts(run.at(at_s), at_s),
+        // The smallest that gap ever gets over the whole run, which is how "simply never
+        // closes" is made checkable. The mark reading alone cannot say it: an estimator
+        // that closed the gap at 300 s and re-opened it by 600 would pass the mark claim
+        // and fail this one.
+        //
+        // **`read_at_s` is asserted rather than ignored.** A reduction over every row has
+        // no natural instant, and a claim carrying a decorative one is the shape this file
+        // rejects — so the claim has to name where the minimum is, and it moving is a
+        // change in the trajectory's shape that an author should look at. Measured, not
+        // assumed: the gap on this step is NOT monotone (the current sensor's noise wobbles
+        // it), so "the minimum is the first row" is a fact about the run rather than an
+        // arithmetic consequence of the gap growing.
+        "soc_gap_pts_min" => {
+            let (best, at) = run
+                .rows
+                .iter()
+                .map(|r| (gap_pts(&r.telemetry, r.t_s), r.t_s))
+                .fold((f64::MAX, f64::NAN), |a, b| if b.0 < a.0 { b } else { a });
+            let claimed = run.row_at(at_s);
+            assert!(
+                (claimed.t_s - at).abs() < f64::EPSILON,
+                "the smallest BMS gap on this run is {best} points at t = {at} s, and the \
+                 claim reads at t = {at_s} s (the row at {}). A whole-run minimum has to \
+                 name the instant it happens at, or `read_at_s` says nothing and the shape \
+                 of the run can change under a green claim.",
+                claimed.t_s
+            );
+            best
+        }
         // The coupling CLAUDE.md refuses to let a chemistry model one half of: points
         // of resistance growth per point of capacity lost.
         "soh_ratio_at" => {
@@ -1622,9 +1730,26 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, soc_at, i_at, t_max_at, soh_cap_at, soh_res_at, \
              soh_ratio_at, q_gen_at, i_rejected_at, deficit_pts_at, deficit_zero_s, \
-             delivered_ah, flag_first_s:<FLAG>, v_at_soc_below:<fraction>."
+             delivered_ah, soc_gap_pts_at, soc_gap_pts_min, flag_first_s:<FLAG>, \
+             v_at_soc_below:<fraction>."
         ),
     }
+}
+
+/// `soc_bms − soc_true` at one row, in points of charge.
+///
+/// The BMS's estimate is an `Option` because a step may run with no BMS at all, and on
+/// such a step this quantity does not exist rather than being zero — a claim naming it
+/// there is a claim about a panel row the reader is not shown.
+fn gap_pts(telemetry: &Telemetry, t_s: f64) -> f64 {
+    let bms = telemetry.soc_bms.unwrap_or_else(|| {
+        panic!(
+            "a claim reads the BMS's charge estimate at t = {t_s} s on a step that runs \
+             with no BMS. The `soc (bms)` row is blank there and the gap is not a \
+             quantity; the claim is on the wrong step, or the step's `bms:` was turned off."
+        )
+    });
+    (bms - telemetry.soc_true) * 100.0
 }
 
 fn parse_claims_file() -> Claims {
@@ -1893,6 +2018,29 @@ fn every_tolerance_follows_its_declared_rule() {
                 }
             }
         }
+    }
+}
+
+/// Every word in [`WORD_NUMERALS`] is spelled by some claim.
+///
+/// The table is a translation from English to a number, and a translation nothing consults
+/// is coverage-shaped: it reads as "this file understands written numbers" while the one
+/// word it was added for could have been deleted from the claim beside it. Same guard, same
+/// argument, as [`every_ledger_rule_is_a_phrase_and_is_used`] keeps over the ledger's
+/// vocabulary — and the same history behind it, `CCCV_PERIOD_S` sitting pinned and unread
+/// for six slices while the mirror it was meant to guard was wrong.
+#[test]
+fn every_word_numeral_is_spelled_by_a_claim() {
+    let all = claims();
+    for (word, value) in WORD_NUMERALS {
+        assert!(
+            all.iter().any(|c| c.spells.as_deref() == Some(*word)),
+            "WORD_NUMERALS translates `{word}` to {value} and no claim in \
+             web/path-claims.toml spells it. Either the sentence it was added for was \
+             reworded — in which case its claim is failing elsewhere and this entry is why \
+             that is hard to see — or the word was never used. Add words when a claim needs \
+             them; a table read by nothing is the `CCCV_PERIOD_S` shape."
+        );
     }
 }
 
@@ -2581,15 +2729,32 @@ fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usi
 /// engine measurement, and they are the sentences a reader leans on. A green ledger here says
 /// the step's *digits* are tied to something — it does not say the step is checked.
 ///
-/// **There is one arm, and a step with claims on it may not be ledgered yet.** The arm a
-/// claimed sentence needs is check 6's own accounting, and wiring it in with no ledgered
-/// step to exercise it would be a second `CCCV_PERIOD_S`: pinned, plausible, and consulted
-/// by nothing. The fence below says so out loud rather than letting the next author meet it
-/// as a confusing failure.
+/// One of those four now has claims on it — the estimator gap, checked at the mark and at
+/// its narrowest — but they are *claims*, and this scan is still blind to the sentence
+/// they are about. The blindness is what keeps the two things separate: a green ledger on
+/// `belief-drifts` says its three digits are scenario constants, and the two claims say
+/// what the gap is. Neither says the other. A scanner that saw word numerals would have to
+/// see "half a point" and "a quarter of a point" too, which are step 3's per-cell spreads
+/// and a measurement this file has not made — so the vocabulary, the `claimed` arm and
+/// those two spread claims are one future slice and not three.
+///
+/// **There is still one arm, and a ledgered step may now carry claims.** This test used to
+/// refuse the combination outright, on the grounds that a number a claim ties to the engine
+/// has no accounting here. That fence came down when `belief-drifts` was given the two
+/// claims on its estimator gap: the numbers those claims are about are spelled in *letters*
+/// ("about three points"), the scan finds digits, and this step's three digits are the
+/// scenario constants they always were. So the combination the fence forbade is now in the
+/// tree and the scan is unchanged by it.
+///
+/// What the fence was really guarding is the first *numeral* in a ledgered step that only a
+/// claim decides, and that is still not buildable-for-free: the accounting a claimed number
+/// needs is check 6's [`accounting_for`], which is written and tested — but wiring it in
+/// with nothing to account would be a second `CCCV_PERIOD_S`, pinned and consulted by
+/// nothing. It is deferred until a number needs it, and the panic below already routes an
+/// author there in the words they will need. See `docs/plans/path-estimator-gap.md`.
 #[test]
 fn every_numeral_in_a_ledgered_step_is_accounted_for() {
     let lessons = lessons();
-    let all = claims();
     let ledger = ledger();
 
     for step in &ledger.steps {
@@ -2597,14 +2762,6 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
             .iter()
             .find(|l| l.id == *step)
             .unwrap_or_else(|| panic!("no lesson `{step}`"));
-        assert!(
-            !all.iter().any(|c| c.step == *step),
-            "step `{step}` is ledgered and also carries claims. The ledger has one arm — \
-             the scenario file — and no way to account for a number a claim already ties \
-             to the engine. Build the `claimed` arm (check 6's `accounting_for`, which is \
-             already written) before ledgering a claimed step, or the ledger will demand a \
-             vocabulary rule for a measurement."
-        );
 
         let text = ascii_minus(&lesson.text);
         let numbers = written_numbers(&text);

@@ -72,6 +72,11 @@
 #              and `tighter`, forbidden by `grid`. Only its printed places matter, so the
 #              frame need not match: the prose may give a duration where the claim reads
 #              an absolute time, or a magnitude where the value is negative.
+#              A sentence may spell its number in LETTERS — "about three points" spells
+#              `"three"` — and one does. `WORD_NUMERALS` in path_claims.rs is the
+#              translation, one entry, and a word in it that no claim spells fails the
+#              test. A word commits to no decimal place, so the rule it licenses is half
+#              a unit of the unit it is written in: half a point, for that one.
 #   spells_pow10  how many powers of ten larger `spells`'s unit is than `value`'s. 2 for a
 #              prose percentage or points-of-a-hundred against a fraction; 0 otherwise,
 #              which is most of them. Default 0.
@@ -121,14 +126,17 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  52 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  11 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  53 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  14 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
 #             and for four grid times whose prose spells them to the second: half a
 #             step is tighter than half a second, so those four were always pinned
-#             correctly and it was only their declaration that was wrong.
+#             correctly and it was only their declaration that was wrong. And for the
+#             two claims on step 4's estimator gap, where the sentence's own word
+#             ("three") licenses half a point and the tolerance taken is half of the
+#             last place a reader could compute the gap to from the two rows behind it.
 #   grid      2 claims. The quantity is a time the engine can only report on the step
 #             grid (`flag_first_s:*`, `deficit_zero_s`) and the prose spells no number
 #             in it — it gives a consequence, or a rendering of the clock. `tol` is
@@ -167,9 +175,9 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 11 claims.
+# bounds the engine against `value` and is deliberately tighter on 14 claims.
 #
-#   same        55 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        59 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    2. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A. Fenced to negative values; on a positive one it
@@ -212,8 +220,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Three accountings, and no fourth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 62 of the 71 numbers the
-#            57 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 64 of the 73 numbers the
+#            60 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -228,7 +236,7 @@
 # sitting beside the number, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 57 claimed sentences need none. A future literal printing a control setting or a
+# the 60 claimed sentences need none. A future literal printing a control setting or a
 # chemistry constant will fail loudly, and the answer will be an arm that checks it
 # against the lesson block or the chemistry file — not a waiver.
 #
@@ -455,6 +463,68 @@ one sentence states both numbers, so both claims point at it and either one movi
 reddens the pair. The display halves are read at each end's own time, which is also
 what keeps the two recorded `read_at_s` values honest: they are measured crossings,
 and a shifted trajectory would leave the row rendering something else.
+"""
+
+[[claim]]
+step = "belief-drifts"
+literal = "A gap of about three points that simply never closes — the estimate sits above the truth from the first step to the last."
+quantity = "soc_gap_pts_at"
+value = 3.0651004
+tol = 0.05
+tol_from = "tighter"
+spells = "three"
+states = "same"
+read_at_s = 600.0
+note = """
+The first claim in this file whose sentence spells its number in letters, and the reason
+`spells` may now hold a word: "about three points" is the whole of what step 4 gives a
+reader about the gap between what the BMS believes and what is true, and the choice until
+now was between a claim that lies about its own wording and no claim at all. It went four
+slices unchecked as the cheapest measurement left in the path — one run to the mark, no
+reading taken with the clock stopped, no continuation.
+
+Read at the mark, where the gap is at its widest: 3.0651 points, of which 3.0 is the boot
+error the scenario file hands the BMS (`initial_soc_error = 0.03`) and the rest is the
+sensor offset integrating. Its sibling below reads the other end.
+
+Tolerance, and it is not the sentence's. Half a unit in "three" is half a point, which is
+what the phrase licenses and far more than this claim needs. The panel has no gap row —
+the reader subtracts `soc (bms)` from `soc (true)`, and each prints a tenth of a point —
+so 0.05 is half a unit in the last place a reader can compute this quantity to at all: at
+the mark the two rows read 66.2 % and 63.2 %, so the gap a reader gets is 3.0. That is
+also why no `display` is named: there is no row to render, and the two rows behind it
+belong to two other quantities.
+"""
+
+[[claim]]
+step = "belief-drifts"
+literal = "A gap of about three points that simply never closes — the estimate sits above the truth from the first step to the last."
+quantity = "soc_gap_pts_min"
+value = 3.0181816
+tol = 0.05
+tol_from = "tighter"
+spells = "three"
+states = "same"
+read_at_s = 0.5
+note = """
+"Simply never closes", made checkable: the smallest the gap ever gets over the whole run,
+which is 3.0182 points on the first sampled step. The claim above cannot say this — an
+estimator that closed the gap at 300 s and re-opened it by the mark would pass a reading
+taken at 600 s and fail this one. It is also the half that checks the rest of the
+sentence, "the estimate sits above the truth from the first step to the last": a minimum
+of three points is a statement about every step, not about one.
+
+**The minimum being the first row is measured, not arithmetic.** The gap is not monotone
+— the BMS's current sensor carries 10 mA of noise, so it wobbles from step to step — and
+what the run shows is that the wobble never takes it below where it started. The estimate
+lags the truth by a step, which is why the first row reads 3.0182 rather than the exact
+3.0 of the boot error.
+
+`read_at_s` is the instant the minimum happens at, and `measure()` asserts that rather
+than ignoring it: a reduction over every row has no natural instant, and a decorative one
+would let the shape of the run change under a green claim.
+
+Tolerance and the missing `display` are the sibling's, for the sibling's reasons.
 """
 
 [[claim]]
@@ -1894,8 +1964,16 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # quantity spelled in English goes straight past it — and two of these three steps state
 # four that way: "about half a point across the whole grid" and "a quarter of a point"
 # between the two cells of a group (step 3), "a gap of about three points" and "a fraction
-# of a point" of sensor drift (step 4). All four are engine measurements and none is
-# checked by anything. A ledgered step is digits-closed, which is less than closed.
+# of a point" of sensor drift (step 4). All four are engine measurements. Three of them
+# are still checked by nothing; the estimator gap now has two claims, at the mark and at
+# its narrowest, and they are claims rather than ledger entries — this scan cannot see the
+# sentence they are about. A ledgered step is digits-closed, which is less than closed.
+#
+# Teaching the scan to read those words is one slice with three parts and not one part: a
+# vocabulary that sees "three points" sees "half a point" too, which is step 3's per-cell
+# spread, which needs the measurement and the `claimed` arm behind it. Drawing the
+# vocabulary anywhere short of that would be drawing it exactly where the claims that
+# already pass happen to sit.
 #
 # ONE ARM, and the vocabulary that makes it honest. The arm says "this number is the
 # value of a NAMED FIELD of the step's scenario file". Naming the field is the whole
@@ -1911,10 +1989,15 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # the number. It was existential first, and that let step 5's "in the same instant" pass
 # with the two faults 100 s apart — measured, not argued.
 #
-# A LEDGERED STEP MAY NOT CARRY CLAIMS YET. The arm a claimed sentence needs is check 6's
-# own accounting, and wiring it in with no ledgered step to exercise it would be a second
-# `CCCV_PERIOD_S`: pinned, plausible, and read by nothing. The test says so rather than
-# letting the next author meet it as a confusing failure.
+# A LEDGERED STEP MAY NOW CARRY CLAIMS, and `belief-drifts` is the first that does. The
+# fence used to refuse the combination outright, because a number a claim ties to the
+# engine has no accounting in the scan. What went in is a pair of claims on a quantity the
+# sentence spells in LETTERS — "about three points" — so the scan, which finds digits, is
+# unchanged by them: this step's three digits are the scenario constants they always were.
+# The arm a claimed NUMERAL would need is check 6's own accounting, which is written and
+# tested, and it stays deferred until a number needs it, for the reason that has decided
+# every arm here: a `CCCV_PERIOD_S` is what you get from wiring one in with nothing to
+# account. The ledger's failure message already routes an author to it.
 #
 # BOTH LISTS ARE REQUIRED. An opt-in list on its own would let a twenty-fifth lesson join
 # the unchecked majority in silence, which is how the fourteen came to exist. Every
@@ -1925,7 +2008,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
-  "belief-drifts",   # 3: what the BMS's own current sensor is wrong by
+  "belief-drifts",   # 3: what the BMS's own current sensor is wrong by. Also claimed —
+                     # two claims on its estimator gap, which the prose spells in words
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
 ]
 # Not scanned, and why. Ten of these carry claims, so their claimed sentences are checked
