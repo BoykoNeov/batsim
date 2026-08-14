@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Four steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Five steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -142,7 +142,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  147 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  153 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  18 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -193,7 +193,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 18 claims.
 #
-#   same        153 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        159 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -239,8 +239,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Four accountings, and no fifth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 157 of the 184 numbers the
-#            110 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 163 of the 191 numbers the
+#            111 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -260,7 +260,7 @@
 # sitting beside the number, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 110 claimed sentences need none. A future literal printing a control setting or a
+# the 111 claimed sentences need none. A future literal printing a control setting or a
 # chemistry constant will fail loudly, and the answer will be an arm that checks it
 # against the lesson block or the chemistry file — not a waiver.
 #
@@ -275,7 +275,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — four steps of the twenty-four so far.
+# of this file — five steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -2642,8 +2642,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: four
-# steps, twenty-two numerals, and no longer all of them scenario constants. The first
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: five
+# steps, forty-two numerals, and no longer all of them scenario constants. The first
 # three were picked because the same measuring pass found they carry no
 # measurement-shaped figure at all, so they could be closed before a single number was
 # measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's
@@ -4182,17 +4182,30 @@ does not, which costs nothing here because nothing reads past it.
 # These claims name no `display` for that reason, on the same terms as `delivered_ah`: they
 # are about the model, and no row shows a difference between two instants anyway.
 #
-# WHAT IS NOT CLAIMED ON THESE TWO STEPS:
-#   * Step 12's "teeth 4 and 5 are 9 mV deeper than teeth 1 to 3" — ordinals and a
-#     difference of two sags, so two accounting arms that do not exist.
-#   * Step 12's `[ocv]` node at 85 % charge, and step 13's 9 s and 72 s RC time constants
-#     and 20 shells: chemistry and scenario constants.
-#   * Step 13's comparisons against the circuit — "where the circuit's was 74.8" and
-#     "against the circuit's 0.5 %" — which are a second pack.
-#   * `I·R0` is why step 12's decomposition is split across two literals rather than
-#     claimed as one sentence: the `0` in `R0` is a numeral to the scanner and nothing can
-#     account for it. The two halves therefore both carry a claim on the 74.8 mV rebound,
-#     which is the sanctioned cost of splitting a sentence — see check 6's own docs.
+# STEP 12 IS LEDGERED, so everything below is the whole of its prose and not a selection.
+# Two sentences of it were rewritten to get there, and both are worth recording because
+# each is a different answer to the same question — what do you do with a number that
+# means nothing?
+#
+#   * `I·R0` was a numeral to the scanner and there is NO honest arm for it. The `0` names
+#     no field, measures nothing and is not a quantity; it is a subscript that lost its
+#     typography. The sentence now says "the current times the cell's series resistance"
+#     and the symbol is gone from this step. It survives in steps 2 and 21, which are not
+#     ledgered — whoever ledgers those meets this, and the answer is the same one.
+#   * "teeth 4 and 5 are 9 mV deeper than teeth 1 to 3" was DELETED IN FAVOUR OF THE
+#     MEASUREMENTS. It read as one number and was three: the shallowest late tooth against
+#     the deepest early one is 8.48 mV, the two group means are 8.74, and the step from
+#     tooth 3 to tooth 4 is 8.99 — and a tolerance spelled by `9` admits the last two and
+#     refuses the first. Choosing among them after seeing which rounds to 9 is the
+#     declaration hazard `docs/plans/path-ledger-fourth-step.md` names; so the sentence now
+#     prints the five sags themselves, one claim each, and the reader gets the numbers the
+#     plot actually shows instead of a summary of them. The ordinals went with it.
+#
+# WHAT IS NOT CLAIMED ON STEP 13 (which is not ledgered):
+#   * Its 9 s and 72 s RC time constants and its 20 shells: chemistry and scenario
+#     constants.
+#   * Its comparisons against the circuit — "where the circuit's was 74.8" and "against the
+#     circuit's 0.5 %" — which are a second pack.
 
 [[claim]]
 step = "circuit-repeats-itself"
@@ -4275,7 +4288,7 @@ Fifth tooth, read at the step's own mark — the last instant the page reaches o
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "and 99.5 % of it has arrived"
+literal = "and 99.5 % of it has arrived within the first 300 s"
 quantity = "pulse_rebound_arrived:1"
 value = 0.995238
 tol = 5e-4
@@ -4289,15 +4302,18 @@ How much of the first rebound has happened 300 s into the 600 s rest: nearly all
 the second half of every rest is a flat line. Two RC time constants of 9 s and 72 s put
 five of the longer one inside 300 s, which is what makes the fraction this close to one.
 
-The literal stops before "within the first 300 s". `300` is a duration since the current
-stopped and this claim is read at an absolute 360 s; no frame in `states` converts between
-them and no accounting arm ties a number to a leg boundary, so including it would leave a
-number in the sentence tied to nothing. The fragment is honest about what is checked.
+The literal used to stop before "within the first 300 s", because `300` is a duration since
+the current stopped where this claim is read at an absolute 360 s, and nothing converted
+between them. The ledger has no use for a fragment — it scans the whole sentence either
+way — so the frame now exists: a rest is a leg with an origin of its own, exactly as a
+continuation is, and `Accounted::ReadAt` reads a `pulse_rebound_arrived` claim's instant
+from the moment its tooth's current went off. 360 − 60 = 300, and the sentence is claimed
+whole.
 """
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops"
+literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops (pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
 quantity = "pulse_sag_mv:1"
 value = 212.815
 tol = 0.05
@@ -4312,7 +4328,7 @@ zero-length rest read at t = 0) to the bottom of the loaded leg (3.883885 V at 6
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops"
+literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops (pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
 quantity = "pulse_jump_mv:1"
 value = 132.776
 tol = 0.05
@@ -4332,7 +4348,7 @@ quantity on a different model. Two ways to be wrong that print the same digits.
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
+literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops (pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
 quantity = "pulse_rebound_mv:1"
 value = 74.767
 tol = 0.05
@@ -4341,15 +4357,19 @@ spells = "74.8"
 states = "same"
 read_at_s = 660.0
 note = """
-The same measurement as the first claim in this section, on a second literal. Check 6 groups
-by `(step, literal)`, so the two halves of this decomposition are two sentences as far as it
-is concerned and each has to account for its own numbers. The split is forced by `I·R0`:
-the `0` in it is a numeral to the scanner and no arm can tie it to anything.
+The same measurement as the first claim in this section, on a second sentence — the rebound
+is stated once as the thing to watch and again as one part of the tooth, and check 6 groups
+by `(step, literal)`, so each sentence has to account for its own numbers.
+
+This decomposition WAS two literals, split around `I·R0` because the `0` in it was a numeral
+no arm could tie to anything. The symbol is gone from the prose and the halves are one
+sentence again, which is what a claim on the whole of it looks like: four claims, four
+numbers, nothing between them unaccounted.
 """
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
+literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops (pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
 quantity = "pulse_lost_mv:1"
 value = 5.272
 tol = 0.05
@@ -4366,6 +4386,107 @@ MEASURED, not derived from the other three. 212.8 − 132.8 − 74.8 is 5.2, and
 says 5.3 — so this number came off the engine (5.272) rather than out of the sentence's own
 arithmetic, which is the right way round and is not true of its twin on step 13. See that
 claim's note.
+"""
+
+[[claim]]
+step = "circuit-repeats-itself"
+literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
+quantity = "pulse_sag_mv:1"
+value = 212.815
+tol = 0.05
+tol_from = "spelled"
+spells = "212.8"
+states = "same"
+read_at_s = 60.0
+note = """
+Tooth 1, and the shallowest of the first three. The same measurement as the decomposition
+above, on the sentence that compares the five: `sag` is the drop from the open-circuit
+voltage the tooth starts at to the bottom of its loaded leg, so a tooth sitting lower on the
+OCV curve than its predecessor sags further for the same current.
+"""
+
+[[claim]]
+step = "circuit-repeats-itself"
+literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
+quantity = "pulse_sag_mv:2"
+value = 212.64
+tol = 0.05
+tol_from = "spelled"
+spells = "212.6"
+states = "same"
+read_at_s = 720.0
+note = """
+Tooth 2. The first three fall by about 0.17 mV each, which is the OCV curve's own slope
+between nodes and is what the reader should NOT mistake for the step below.
+"""
+
+[[claim]]
+step = "circuit-repeats-itself"
+literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
+quantity = "pulse_sag_mv:3"
+value = 212.468
+tol = 0.05
+tol_from = "spelled"
+spells = "212.5"
+states = "same"
+read_at_s = 1380.0
+note = """
+Tooth 3, the last one above the node. It ends at soc 0.850002 — two millionths of a point
+clear of the `[ocv]` table's node at 0.85, which is why this tooth is still on the shallow
+level and the next one is not. Rounds up to 212.5 from 212.468.
+"""
+
+[[claim]]
+step = "circuit-repeats-itself"
+literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
+quantity = "pulse_sag_mv:4"
+value = 221.462
+tol = 0.05
+tol_from = "spelled"
+spells = "221.5"
+states = "same"
+read_at_s = 2040.0
+note = """
+Tooth 4, the first one BELOW the node, and the whole point of the sentence: 9 mV deeper than
+its predecessor for no change in the current, the model or the coefficients. The OCV table
+is steeper below 0.85 than above it, so the same 1.667 points of charge cost more volts.
+"""
+
+[[claim]]
+step = "circuit-repeats-itself"
+literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
+quantity = "pulse_sag_mv:5"
+value = 221.291
+tol = 0.05
+tol_from = "spelled"
+spells = "221.3"
+states = "same"
+read_at_s = 2700.0
+note = """
+Tooth 5, on the deep level with tooth 4 and shallower than it by the same ordinary slope
+that separates teeth 1, 2 and 3 from each other.
+
+The five together are what replaced "teeth 4 and 5 are 9 mV deeper than teeth 1 to 3": that
+figure was 8.48, 8.74 or 8.99 mV depending on which pair of teeth you compared, and a
+tolerance spelled by `9` admits two of the three. See this section's header.
+"""
+
+[[claim]]
+step = "circuit-repeats-itself"
+literal = "Hold onto 74.8 mV"
+quantity = "pulse_rebound_mv:1"
+value = 74.767
+tol = 0.05
+tol_from = "spelled"
+spells = "74.8"
+states = "same"
+read_at_s = 660.0
+note = """
+The step's closing line, and the third sentence to state this one measurement -- it is
+said as the thing to watch, again as one part of the tooth, and here as the number the
+next two steps are about. A claim rather than nothing, because the ledger scans the whole
+of a ledgered step: an unclaimed sentence is not a smaller claim, it is a number tied to
+nothing at all.
 """
 
 [[claim]]
@@ -4726,8 +4847,12 @@ steps = [
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
   "protection-on",   # 8: the pack, the cell's rating, the demand — and the clamped
                      # current, which is the first ledgered numeral a CLAIM decides
+  "circuit-repeats-itself", # 20: the pulse program, the cell's own name, the step it was
+                     # introduced in, the charge it starts at, a node of the OCV table —
+                     # six of the twenty. The other fourteen are measurements, which
+                     # makes this the first ledgered step that is mostly claims
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: twenty of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: nineteen of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
@@ -4740,8 +4865,6 @@ unledgered = [
   "leg-that-is-not-there",          # claims: 6
   "what-protection-costs",          # claims: 3, on two ambient arms. Also two perf
                                     # ratios no trajectory can settle
-  "circuit-repeats-itself",         # claims: 10, on the tooth decomposition. Its depth
-                                    # comparison needs two accounting arms
   "particle-remembers",             # claims: 10, on five rebounds and one tooth. Its
                                     # comparisons against the circuit are a second pack
   "three-times-the-current",        # claims: 6, on one tooth and the floor below empty.

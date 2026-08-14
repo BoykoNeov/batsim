@@ -81,7 +81,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is four steps and twenty-two numbers.
+//! (`[ledger]` in `path-claims.toml`) and today it is five steps and forty-two numbers.
 //! Five arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those, and a claim whose literal contains the number
 //! ([`claimed_accounting`], which is check 6's own accounting asked about a number the
@@ -165,15 +165,15 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the nineteen steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed three whole steps — but only three. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other twenty have their claimed sentences
+//!   has now closed five whole steps — but only five. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other nineteen have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all twenty-one, one line each, so this list cannot go quietly out of date.
-//!   What the remaining steps need is arms the ledger has not got — chemistry constants,
-//!   ordinals naming other steps, and figures derived from other figures in the same
-//!   sentence. Both of the *harness* capabilities that list used to name have landed — the
+//!   names all nineteen, one line each, so this list cannot go quietly out of date.
+//!   What the remaining steps need is arms the ledger has not got — the last of them being
+//!   a figure derived from other figures in the same sentence. Chemistry constants,
+//!   ordinals naming other steps, part numbers and table nodes all have one now. Both of the *harness* capabilities that list used to name have landed — the
 //!   zero-length probe, and instructed control changes — and so has the first of the
 //!   accounting arms: [`Accounted::Setting`], which is what let step 18's headline be
 //!   claimed after three slices of being the worked example of a sentence blocked on this
@@ -1557,7 +1557,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 147 of 169 claims.
+    /// number's last printed place. The default shape: 153 of 175 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1566,12 +1566,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 18 of 169.
+    /// declaration was wrong. 18 of 175.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 169, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 175, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1611,7 +1611,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 153 of 169, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 159 of 175, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -3778,6 +3778,37 @@ fn accounting_for(
         // that is genuinely one of the two true readings of the instant their claim is
         // measured at, which is the arm's whole statement.
         let mut instants = vec![c.read_at_s];
+        // And a third reading, on one quantity: **since the current stopped**.
+        //
+        // A rest is a leg with an origin of its own, exactly as a continuation is, and a
+        // sentence about what happens *during* one counts from where it began — step 12's
+        // "99.5 % of it has arrived within the first 300 s" is the claim's own 360 s read
+        // against a tooth whose current went off at 60.
+        //
+        // **Restricted to `pulse_rebound_arrived`, and the restriction is the fence.**
+        // Every other pulse quantity is read at a leg boundary, where this reading would
+        // return the leg length itself — a number the prose writes as the demand program
+        // and that has a vocabulary rule of its own. Two readings of one number is what
+        // this taxonomy is arranged against, so the frame is given only to the one quantity
+        // that is measured at an arbitrary instant inside the rest, which is also the only
+        // one whose sentence has any reason to say how far into it we are.
+        if let (Some(n), Prog::Pulse { on_s, off_s, .. }) = (
+            c.quantity
+                .strip_prefix("pulse_rebound_arrived:")
+                .and_then(|n| n.parse::<usize>().ok()),
+            lesson.demand,
+        ) {
+            let stopped_s = (n.max(1) - 1) as f64 * (on_s + off_s) + on_s;
+            // The same fence the mark carries below: the two readings differ by exactly
+            // this, so no token can match both — asserted, not assumed.
+            assert!(
+                on_s > 0.0,
+                "step `{}` runs a pulse program whose loaded leg is {on_s} s long, so \
+                 \"since the current stopped\" and \"on the clock\" are the same number.",
+                lesson.id,
+            );
+            instants.push(c.read_at_s - stopped_s);
+        }
         if reads_past_the_mark(arms, c) {
             assert!(
                 lesson.until_s > 0.0,
@@ -3997,6 +4028,58 @@ enum Tie {
     /// make "which of them" the author's pick, which is the hazard the strict wildcard above
     /// exists to close.
     Product(&'static [Tie]),
+    /// A digit that is part of a **name**, read out of a named *string* field of the
+    /// chemistry — `meta.name`, and so far only that.
+    ///
+    /// Step 12 calls its cell "the LG M50", and the `50` in it is not a quantity at all: it
+    /// is four fifths of a part number. Nothing measures it and no numeric field holds it,
+    /// so before this arm the sentence could not be ledgered — the same position the `0` of
+    /// `R0` was in, and that one had no field to point at and was reworded away instead.
+    ///
+    /// **The `prefix` is what makes it exact rather than a search.** The tie collects only
+    /// the digit runs that follow `prefix` in the field's value, so `M{n}` against
+    /// `"LG M50 21700 (NMC811/graphite)"` resolves to `[50]` and not to the format code or
+    /// the cathode ratio sitting beside it. Without it, a rule would account any token that
+    /// appeared anywhere in the string, which is the generous match the whole table refuses
+    /// — and that string is long enough to hold three of them.
+    ///
+    /// Swap the scenario's chemistry and the field says something else, so the sentence
+    /// fails on sight. That is the property that makes this a tie and not a waiver.
+    Name {
+        /// Dotted key path to a string field of the chemistry file.
+        field: &'static str,
+        /// The characters the digits follow in that string.
+        prefix: &'static str,
+    },
+    /// The **position of another lesson** in the path, counted from one.
+    ///
+    /// "The cell is the LG M50 from step 2's aside" prints a number that no file holds and
+    /// no engine produces: it is where a *different* lesson sits in `const LESSONS`. The arm
+    /// names that lesson by id and derives the ordinal from the array, so inserting a step
+    /// ahead of it turns every cross-reference to it red — which is the whole failure this
+    /// is for. A path this long acquires steps, and a sentence pointing at "step 2" is one
+    /// insertion away from pointing at the wrong one, silently.
+    ///
+    /// The id is declared and the number never is, the same contract [`LedgerRule`] keeps
+    /// for a field name: an author says *which step they mean*, and the file says where it
+    /// is.
+    Ordinal(&'static str),
+    /// The number is **a node of a table** the chemistry declares — a value in the array at
+    /// this path, not a particular one.
+    ///
+    /// **The one existential tie, and it is existential because the sentence is.** Step 12
+    /// says the depth of its teeth steps "because the `[ocv]` table's node at 85 % charge
+    /// passed under the pulse", which is a claim that 0.85 is *a* node — not that it is the
+    /// twenty-first, which is a fact about the table's layout that no reader is shown and
+    /// that a re-fit would change without making the sentence wrong. [`Tie::Scenario`]'s
+    /// wildcard is strict for the opposite reason: `faults.*.at_s` carries a sentence
+    /// saying two faults land together, and there "some fault" was a fail-toward-green.
+    ///
+    /// The cost is stated rather than discovered: on a table this dense — thirty-four nodes
+    /// between 0 and 1 — a mistyped node has a real chance of being some *other* node and
+    /// passing. What it cannot do is pass when the table no longer has a node there at all,
+    /// which is what a re-fit does and what the sentence is really resting on.
+    Member(&'static str),
 }
 
 /// A number the lesson block sets and the page acts on.
@@ -4008,12 +4091,21 @@ enum Tie {
 /// field of the block happened to hold that number would be right off the wrong field —
 /// green, and still green the day one of the two moves.
 ///
-/// One variant, because one sentence needs one. The next control a ledgered step prints is
-/// where the second one gets added.
+/// Three variants, one per control a ledgered step has so far printed. The next one a
+/// ledgered step prints is where the fourth gets added.
 #[derive(Debug, Clone, Copy)]
 enum Control {
     /// The demand box, in the unit the box takes — amps, discharge-positive.
     DemandValue,
+    /// How long the pulse program holds the current on \[s\].
+    ///
+    /// Not a demand the engine has: the page runs the train on top of it, which is why
+    /// step 12's own prose introduces the leg lengths as the program rather than as
+    /// anything the scenario file decides. `pulse_train_ecm.toml` is an initial condition
+    /// and says nothing about legs — read its header, which says so at length.
+    PulseOn,
+    /// How long it then rests \[s\].
+    PulseOff,
 }
 
 /// The vocabulary, one entry per way a ledgered step names a number some file decides.
@@ -4143,6 +4235,47 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Setting(Control::DemandValue)],
         pow10: 0,
     },
+    // Step 12 — the pulse train. Its two leg lengths are the demand program the PAGE runs,
+    // its cell is named rather than measured, its starting charge is the scenario's, and
+    // the node it steps over is the chemistry's. Nothing in the first sentence is a number
+    // the engine produces, and every one of them decides what the reader sees.
+    LedgerRule {
+        // Both legs in one rule, because the sentence introduces the program in one breath
+        // and neither number means anything without the other.
+        phrase: "for {n} s, `Rest` for {n}, repeat",
+        ties: &[
+            Tie::Setting(Control::PulseOn),
+            Tie::Setting(Control::PulseOff),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The part number. See `Tie::Name` for why the `M` is carried in the tie as well as
+        // in the phrase: here it keeps the arm off the `21700` and the `811` beside it.
+        phrase: "the LG M{n} from",
+        ties: &[Tie::Name {
+            field: "meta.name",
+            prefix: "M",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "from step {n}'s aside",
+        ties: &[Tie::Ordinal("same-discharge-other-chemistry")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // `initial_soc`, and the scenario's own comment says why it is 0.90 rather than
+        // 1.00 — a node of the same [ocv] table the rule below is about.
+        phrase: "at {n} % charge, running",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        phrase: "table's node at {n} % charge",
+        ties: &[Tie::Member("ocv.soc.*")],
+        pow10: 2,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -4211,6 +4344,14 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
             Prog::Pulse { i, .. } => Some(i),
             Prog::Rest => None,
         },
+        Control::PulseOn => match lesson.demand {
+            Prog::Pulse { on_s, .. } => Some(on_s),
+            _ => None,
+        },
+        Control::PulseOff => match lesson.demand {
+            Prog::Pulse { off_s, .. } => Some(off_s),
+            _ => None,
+        },
     }
 }
 
@@ -4219,17 +4360,18 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
 fn tie_values(
     tie: &Tie,
     lesson: &Lesson,
+    lessons: &[Lesson],
     scenario: &toml::Value,
     chemistry: &toml::Value,
 ) -> Vec<f64> {
     match tie {
         Tie::Scenario(path) => numbers_at_path(scenario, path),
-        Tie::Chemistry(path) => numbers_at_path(chemistry, path),
+        Tie::Chemistry(path) | Tie::Member(path) => numbers_at_path(chemistry, path),
         Tie::Setting(control) => control_value(*control, lesson).into_iter().collect(),
         Tie::Product(factors) => {
             let mut product = 1.0;
             for factor in *factors {
-                let values = tie_values(factor, lesson, scenario, chemistry);
+                let values = tie_values(factor, lesson, lessons, scenario, chemistry);
                 // Exactly one, never "the first of several": a wildcard under a product
                 // would make which value it used the author's pick rather than the file's.
                 let [only] = values[..] else {
@@ -4239,7 +4381,43 @@ fn tie_values(
             }
             vec![product]
         }
+        Tie::Name { field, prefix } => digits_after(&string_at_path(chemistry, field), prefix),
+        Tie::Ordinal(step) => lessons
+            .iter()
+            .position(|l| l.id == *step)
+            .map(|i| vec![(i + 1) as f64])
+            .unwrap_or_default(),
     }
+}
+
+/// One string field at a dotted key path, or `None` — the string twin of
+/// [`numbers_at_path`], and deliberately not a wildcard walk: a name is one field.
+fn string_at_path(value: &toml::Value, path: &str) -> Option<String> {
+    let mut here = value;
+    for seg in path.split('.') {
+        here = here.as_table()?.get(seg)?;
+    }
+    here.as_str().map(str::to_string)
+}
+
+/// Every digit run in `text` that immediately follows `prefix`.
+///
+/// `("LG M50 21700 (NMC811/graphite)", "M")` is `[50.0]` — the `21700` follows a space and
+/// the `811` follows `NMC`, so neither is reachable. That narrowing is the whole of
+/// [`Tie::Name`]'s honesty; see its docs.
+fn digits_after(text: &Option<String>, prefix: &str) -> Vec<f64> {
+    let Some(text) = text else {
+        return Vec::new();
+    };
+    text.match_indices(prefix)
+        .filter_map(|(at, _)| {
+            let rest = &text[at + prefix.len()..];
+            let end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            rest[..end].parse().ok()
+        })
+        .collect()
 }
 
 /// What a tie reads, in words, for the message an author gets when it reads nothing.
@@ -4253,15 +4431,22 @@ fn tie_describe(tie: &Tie) -> String {
             .map(tie_describe)
             .collect::<Vec<_>>()
             .join(" times "),
+        Tie::Name { field, prefix } => {
+            format!("the digits after `{prefix}` in the chemistry's `{field}`")
+        }
+        Tie::Ordinal(step) => format!("the position of the lesson `{step}` in the path"),
+        Tie::Member(path) => format!("the nodes of the chemistry's `{path}`"),
     }
 }
 
 /// Does what this tie reads agree with the number the prose printed?
 ///
-/// Two comparisons, and which one is used is a property of the tie rather than a per-rule
+/// Three comparisons, and which one is used is a property of the tie rather than a per-rule
 /// choice. A constant is compared exactly — the prose either prints the file's number or is
 /// wrong about it. A [`Tie::Product`] is compared at the prose's own precision, because the
-/// sentence is doing arithmetic and no author would print `4.606902`.
+/// sentence is doing arithmetic and no author would print `4.606902`. A [`Tie::Member`] asks
+/// whether *any* value is the number, because "a node of that table" is what its sentence
+/// says; every other tie requires all of them.
 fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
     let written = token.replace(' ', "");
     let scale = 10f64.powi(pow10);
@@ -4270,6 +4455,10 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
             let places = decimals_of(&written).max(0) as usize;
             to_fixed(v * scale, places) == written
         }),
+        Tie::Member(_) => match number_of(token) {
+            Some(spelled) => values.iter().any(|v| tol_eq(v * scale, spelled)),
+            None => false,
+        },
         _ => {
             let Some(spelled) = number_of(token) else {
                 return false;
@@ -4519,7 +4708,7 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
             };
             let rule = &LEDGER_VOCABULARY[r];
             let tie = &rule.ties[p];
-            let found = tie_values(tie, lesson, &scenario, &chemistry);
+            let found = tie_values(tie, lesson, &lessons, &scenario, &chemistry);
             assert!(
                 !found.is_empty(),
                 "step `{step}`: the rule `{}` reads {}, and that resolves to no number \
@@ -5131,6 +5320,16 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (23, "twenty-three"),
     (24, "twenty-four"),
     (25, "twenty-five"),
+    // The ledger's numeral count passed twenty-five with its fifth step and will keep
+    // going; the tens are here so the next one does not have to stop and add a word.
+    (30, "thirty"),
+    (40, "forty"),
+    (41, "forty-one"),
+    (42, "forty-two"),
+    (43, "forty-three"),
+    (44, "forty-four"),
+    (45, "forty-five"),
+    (50, "fifty"),
 ];
 
 /// The same, for the counts a sentence writes as a position rather than a size — "and no
