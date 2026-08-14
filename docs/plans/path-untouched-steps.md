@@ -105,7 +105,7 @@ make them:
    at, and only an event forces a sentence's moment to be claimed. The sentence says the
    charge *stops* at 6210, which is a great deal more than "we measured then", and the only
    thing making that the checked statement is the claim being there.
-3. **Steps 12 and 13, the pulse decomposition.** Nineteen claims and five new quantities —
+3. **Steps 12 and 13, the pulse decomposition.** Twenty claims and five new quantities —
    `pulse_sag_mv`, `pulse_jump_mv`, `pulse_rebound_mv`, `pulse_lost_mv` and
    `pulse_rebound_arrived`, each taking a tooth number — all keyed off the leg boundaries
    the `Pulse` program already defines, and all resting on `Row::rest_v`.
@@ -170,7 +170,39 @@ claim. Two steps in the repo still carry none, and they are both **ledgered** on
 end to end for numerals and measured nowhere, which is the opposite gap and a smaller one.
 
 Two tally phrases had to be reworded during this arc because their counts were heading for
-zero. `"{W} steps carry neither a claim nor a ledger entry"` breaks at one and reads as
+zero.
+
+### Three things a review caught that nothing here could
+
+Named rather than quietly fixed, because two of them are about the shape of this arc's own
+checks.
+
+* **`join_thousands` had a false-join the unit test did not cover.** The gap between two
+  digit runs was measured from the *untrimmed* run, which on `at 5769. 880 s` covers the
+  full stop — so the gap landed on the space and joined `5769` to `880`, a figure the
+  sentence never printed. The test's must-not-join list had a decimal point on the right
+  (`11 880.5`) and none on the left. Latent, not live: the suite was green with it in.
+  The fence is now measured from the trimmed token's own end, and the case is in the test.
+* **The plan doc said "Nineteen claims" where the derived count says twenty** — a
+  hand-maintained number going stale inside the arc whose immediately preceding commit was
+  about freezing plan-doc numbers so they cannot rot. Corrected. The lesson is the one that
+  commit already drew and this one re-earned: a count in a plan doc is not derived, and
+  writing one is choosing to maintain it.
+* **The corrected 4.5 mV was stated in a second place.** `scenarios/pulse_train_spm.toml`'s
+  header describes its own tooth at length and repeated the figure, unchecked, under the
+  provenance rule. Corrected there too, with the reason. There is precedent for exactly
+  this — the `60.8 %` figure lives in a `ccCvDone` doc comment nothing checks — and the
+  general point is that a prose fix has to be a repo-wide grep and not a file-wide one.
+
+### Deferred, with a price (added by this arc)
+
+* **The ledger scan is the one consumer of `written_numbers` the new unit test does not
+  reach.** `cover_by_rule` matches tokens against scenario and chemistry field values, and
+  none of the three ledgered steps contains a spaced thousands group, so the joined-token
+  path is untested there. It fails toward red — a token carrying a space will not match a
+  file number formatted without one — which is the safe direction, but the first author to
+  ledger `wearing-out-while-idle` will meet it, because that step's prose carries both
+  `10 000` and `200 000`. `"{W} steps carry neither a claim nor a ledger entry"` breaks at one and reads as
 nonsense at zero — which is precisely the moment the work it describes is finished. A tally
 that cannot survive its own count reaching zero forces a rewrite at the worst possible time,
 so both now put the count last, and `HEADER_WORDS` learned to say "none".

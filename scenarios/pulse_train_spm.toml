@@ -31,8 +31,12 @@
 #   * first pulse — 135.7 mV of sag: 113.9 mV returns the instant the current stops
 #     (the kinetic overpotential, which is zero at zero current; this parameter set's
 #     `contact_resistance_ohm` is Chen2020's own 0, so there is no ohmic term at all),
-#     17.3 mV climbs back slowly as the concentration gradient flattens, and 4.5 mV has
-#     not returned when the rest ends. That last figure is NOT the clean open-circuit
+#     17.3 mV climbs back slowly as the concentration gradient flattens, and 4.6 mV has
+#     not returned when the rest ends. (4.6 and not the 4.5 this file and the guided path
+#     both used to say: 135.7 - 113.9 - 17.3 is exactly 4.5, so that figure had been
+#     subtracted from the three ROUNDED parts instead of measured. The engine says 4.559.
+#     Corrected in both places by crates/sim-data/tests/path_claims.rs, which now pins it.)
+#     That last figure is NOT the clean open-circuit
 #     step its sibling file's 5.3 mV is: this rest is still climbing at 600 s, so it is
 #     charge that has left *and* gradient that has not finished flattening, mixed. Which
 #     is the whole point of the next line;

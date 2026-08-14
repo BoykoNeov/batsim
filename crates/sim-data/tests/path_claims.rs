@@ -715,6 +715,11 @@ fn the_scanner_joins_thousands_groups_and_nothing_else() {
         ("5 88", vec!["5", "88"]),
         ("1.5 880", vec!["1.5", "880"]),
         ("11 880.5", vec!["11", "880.5"]),
+        // The trailing dot the scanner trims off `at 5769.` is still in the SOURCE, so the
+        // gap to the next run has to be measured from the trimmed token's own end. Measured
+        // from the untrimmed one it lands on the space and joins two numbers a sentence
+        // wrote as one figure and a sentence boundary.
+        ("at 5769. 880 s", vec!["5769", "880"]),
     ] {
         assert_eq!(
             numeric_tokens(text),
@@ -1969,7 +1974,12 @@ fn join_thousands(text: &str, runs: Vec<Written>) -> Vec<Written> {
     let mut out: Vec<Written> = Vec::with_capacity(runs.len());
     for w in runs {
         let joins = out.last().is_some_and(|prev: &Written| {
-            let gap = prev.at + prev.len;
+            // From the TRIMMED token's end, never from `len`. `len` is the untrimmed run,
+            // so on `at 5769. 880 s` it already covers the full stop — and the gap then
+            // measures from after it, lands on the space, and joins `5769` to `880` into a
+            // figure the sentence never printed. Caught by the unit test's own case, and
+            // only because the case was written; the suite was green with it live.
+            let gap = prev.at + prev.token.len();
             w.token.len() == 3
                 && !w.token.contains('.')
                 && !prev.token.contains('.')
@@ -1980,7 +1990,7 @@ fn join_thousands(text: &str, runs: Vec<Written>) -> Vec<Written> {
             let prev = out.last_mut().expect("checked above");
             prev.token.push(' ');
             prev.token.push_str(&w.token);
-            prev.len = w.at + w.len - prev.at;
+            prev.len = w.at + w.token.len() - prev.at;
         } else {
             out.push(w);
         }
