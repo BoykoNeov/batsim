@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Three steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Four steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -143,7 +143,7 @@
 # else is accepted:
 #
 #   spelled  147 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  17 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   tighter  18 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -191,9 +191,9 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 17 claims.
+# bounds the engine against `value` and is deliberately tighter on 18 claims.
 #
-#   same        152 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        153 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -239,8 +239,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Four accountings, and no fifth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 156 of the 183 numbers the
-#            109 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 157 of the 184 numbers the
+#            110 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -260,7 +260,7 @@
 # sitting beside the number, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 109 claimed sentences need none. A future literal printing a control setting or a
+# the 110 claimed sentences need none. A future literal printing a control setting or a
 # chemistry constant will fail loudly, and the answer will be an arm that checks it
 # against the lesson block or the chemistry file — not a waiver.
 #
@@ -275,7 +275,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — three steps of the twenty-four so far.
+# of this file — four steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -598,6 +598,36 @@ protection silently ceasing to trip at all.
 `1s`, not `0s`: the clock is `toFixed(0)` of 0.5, and JavaScript rounds an exact tie
 away from zero where Rust's own formatter rounds to even. The mirror reproduces the
 JavaScript rule, and this claim is the one that would notice if it stopped.
+"""
+
+[[claim]]
+step = "protection-on"
+literal = "pinned near 14 A"
+quantity = "i_at"
+value = 13.8207
+tol = 0.2
+tol_from = "tighter"
+spells = "14"
+states = "same"
+read_at_s = 60.0
+display = "current"
+shows = "13.821 A"
+note = """
+The same current as the claim two above, and deliberately a second claim rather than a
+second reading of that one. This step states its clamped current TWICE — once as the
+limit the chemistry implies ("the discharge limit lands just under 14 A") and once as
+the readout a reader is looking at ("the current readout pinned near 14 A while the
+demand box still reads 40") — and the ledger's `claimed` arm is positional: a number is
+accounted only inside the literal of a sentence some claim quotes. So the second
+sentence's `14` was tied to nothing, which is exactly the prose the ledger exists to
+reach, and the honest close was to claim it.
+
+The literal stops at `14 A` and does not run on to the demand box. That is not
+tidiness: the `40` in the rest of that sentence is a control setting, check 6's
+accounting knows only `spelled`, `read at`, `shown` and a step length, and pulling it
+inside this literal would fail there. The ledger accounts it instead, against the
+lesson's own demand box — which is the difference between the two scans, stated where
+the next author will meet it.
 """
 
 [[claim]]
@@ -2612,10 +2642,14 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: three
-# steps, fourteen numerals, all of them scenario constants. Those three were picked
-# because the same measuring pass found they carry no measurement-shaped figure at all,
-# so they can be closed before a single number is measured. Of the steps below, those that
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: four
+# steps, twenty-two numerals, and no longer all of them scenario constants. The first
+# three were picked because the same measuring pass found they carry no
+# measurement-shaped figure at all, so they could be closed before a single number was
+# measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's
+# capacity, the cell's rating and the demand in one breath, and its expect prints the
+# clamped current and the demand box again — four different kinds of number in eight
+# numerals, which is why it cost three arms and one claim. Of the steps below, those that
 # carry no claim at all and need arms this file has not got: none. Every step in this list
 # now carries at least one measured number, which was not true five slices ago. (Two steps
 # in the repo still carry none, and they are both LEDGERED ones — scanned end to end for
@@ -2637,29 +2671,46 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# ONE ARM, and the vocabulary that makes it honest. The arm says "this number is the
-# value of a NAMED FIELD of the step's scenario file". Naming the field is the whole
-# point: a generous arm — "the number appears somewhere in the scenario" — accounts for
-# a third of the path's numbers and means nothing, because a scenario file has enough
-# integers in it that a `2` finds `series = 2` by accident. So something has to say which
-# field a sentence is talking about, and that something is the phrase around the number:
-# `SCENARIO_VOCABULARY` in path_claims.rs maps "`{n}` in series" to `pack.series`.
-# The vocabulary is a declaration; the NUMBER never is. It is read out of the scenario
-# file and compared, so a rule pointed at the wrong field fails on sight — the same way a
-# mis-pointed `spells` does. There is no waiver variant, for the reason check 6 has none.
-# A `*` in a path walks an array and is read STRICTLY: every value it reaches has to be
-# the number. It was existential first, and that let step 5's "in the same instant" pass
-# with the two faults 100 s apart — measured, not argued.
+# FOUR ARMS, and the vocabulary that makes three of them honest. An arm says what decides
+# a number: a NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that
+# scenario names, a CONTROL on the lesson's own block, or the sentence's own arithmetic
+# over those. Naming the field is the whole point: a generous arm — "the number appears
+# somewhere in the scenario" — accounts for a third of the path's numbers and means
+# nothing, because a scenario file has enough integers in it that a `2` finds `series = 2`
+# by accident. So something has to say which field a sentence is talking about, and that
+# something is the phrase around the number: `LEDGER_VOCABULARY` in path_claims.rs maps
+# "`{n}` in series" to `pack.series` and "the chemistry is rated `{n}` C continuous" to
+# `cell.max_discharge_c`. The vocabulary is a declaration; the NUMBER never is. It is read
+# out of the file and compared, so a rule pointed at the wrong field fails on sight — the
+# same way a mis-pointed `spells` does. There is no waiver variant, for the reason check 6
+# has none. A `*` in a path walks an array and is read STRICTLY: every value it reaches has
+# to be the number. It was existential first, and that let step 5's "in the same instant"
+# pass with the two faults 100 s apart — measured, not argued.
 #
-# A LEDGERED STEP MAY NOW CARRY CLAIMS, and `belief-drifts` is the first that does. The
-# fence used to refuse the combination outright, because a number a claim ties to the
-# engine has no accounting in the scan. What went in is a pair of claims on a quantity the
-# sentence spells in LETTERS — "about three points" — so the scan, which finds digits, is
-# unchanged by them: this step's three digits are the scenario constants they always were.
-# The arm a claimed NUMERAL would need is check 6's own accounting, which is written and
-# tested, and it stays deferred until a number needs it, for the reason that has decided
-# every arm here: a `CCCV_PERIOD_S` is what you get from wiring one in with nothing to
-# account. The ledger's failure message already routes an author to it.
+# THE ARITHMETIC ARM IS THE ONE THAT ROUNDS, and it is the only one that does. A constant
+# printed in prose either is the file's number or is wrong about it, so it is compared
+# exactly. A product is computed — step 6's "4.61 Ah at pack level" is the cell's
+# 2.303451 Ah times the pack's 2 in parallel, which is 4.606902 — and no sentence would
+# print that, so it is compared at the precision the sentence itself commits to, through
+# the same rounding rule the page uses. Each factor has to resolve to exactly one number:
+# a wildcard under a product would make "which of them" the author's pick.
+#
+# THE FIFTH ARM IS A CLAIM, and it is check 6's accounting reused whole rather than a
+# second reading of the same claims. If the number sits INSIDE the literal of a sentence
+# some claim quotes, that sentence's own claims account for it — spelled, read at, shown,
+# or a step length — and the ledger asks `accounting_for` the same question check 6 asks.
+# Positional, not step-wide, and that is the strength of it: "some claim on this step
+# spells 14" would account for a `14` in a sentence no claim is about, which is exactly
+# the prose the ledger exists to reach. Step 6 states its clamped current in two
+# sentences, and closing the second one meant claiming it. A number accounted BOTH ways —
+# by a rule and by a claim — is refused rather than resolved, on the same terms as two
+# rules covering one number.
+#
+# A LEDGERED STEP MAY CARRY CLAIMS, and `belief-drifts` was the first that did. The fence
+# used to refuse the combination outright, because a number a claim ties to the engine had
+# no accounting in the scan. It came down for a pair of claims on a quantity the sentence
+# spells in LETTERS — "about three points" — which the digit scan cannot see at all; the
+# arm above is what closes the case those two only stepped around.
 #
 # BOTH LISTS ARE REQUIRED. An opt-in list on its own would let a twenty-fifth lesson join
 # the unchecked majority in silence, which is how the fourteen came to exist. Every
@@ -4673,14 +4724,15 @@ steps = [
   "belief-drifts",   # 3: what the BMS's own current sensor is wrong by. Also claimed —
                      # two claims on its estimator gap, which the prose spells in words
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
+  "protection-on",   # 8: the pack, the cell's rating, the demand — and the clamped
+                     # current, which is the first ledgered numeral a CLAIM decides
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: twenty-one of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: twenty of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
   "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
-  "protection-on",                  # claims: 2
   "protection-off",                 # claims: 9
   "wearing-out-while-idle",         # claims: 3
   "two-legs",                       # claims: 8, on both legs. Its headline ratios are

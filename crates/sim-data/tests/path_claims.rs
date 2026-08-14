@@ -81,9 +81,13 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is three steps and fourteen numbers,
-//! all of them scenario constants. One arm exists, the scenario file; the rest of the
-//! design is in `docs/plans/path-prose-ledger.md`.
+//! (`[ledger]` in `path-claims.toml`) and today it is four steps and twenty-two numbers.
+//! Five arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! the sentence's own arithmetic over those, and a claim whose literal contains the number
+//! ([`claimed_accounting`], which is check 6's own accounting asked about a number the
+//! ledger found). Two are still missing, an ordinal naming another step and the general
+//! figure-derived-from-its-siblings; the rest of the design is in
+//! `docs/plans/path-prose-ledger.md`.
 //!
 //! Behind the value check sits a seventh, about this file rather than about the page:
 //! [`every_tolerance_follows_its_declared_rule`]. `tol` is what decides how much of a
@@ -103,7 +107,7 @@
 //! and none was checked, so they drifted: a slice found the header's tallies wrong by
 //! five slices' worth, re-derived them by hand, and left the same hole open behind it.
 //! Now the *phrase* is declared and the *number* is derived, which is the contract
-//! [`ScenarioRule`] and `spells` both keep. It is opt-in per sentence, like the ledger,
+//! [`LedgerRule`] and `spells` both keep. It is opt-in per sentence, like the ledger,
 //! so the counts it does not derive are written down in [`NOT_DERIVED`] with the reason
 //! and the sentence they excuse.
 //!
@@ -164,7 +168,7 @@
 //! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
 //!   has now closed three whole steps — but only three. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other twenty-one have their claimed sentences
+//!   claim nor a ledger entry: none. The other twenty have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
 //!   names all twenty-one, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is arms the ledger has not got — chemistry constants,
@@ -1553,7 +1557,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 147 of 168 claims.
+    /// number's last printed place. The default shape: 147 of 169 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1562,12 +1566,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 17 of 168.
+    /// declaration was wrong. 18 of 169.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 168, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 169, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1607,7 +1611,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 152 of 168, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 153 of 169, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -3660,7 +3664,7 @@ enum Accounted {
     /// that accounted a token against *any* numeric field of the block would tie this
     /// sentence's `10` to the speed multiplier — the right answer off the wrong field,
     /// green, and still green the day one of the two moves. It is the same defect
-    /// [`ScenarioRule`] refuses when it insists a rule name its field rather than search
+    /// [`LedgerRule`] refuses when it insists a rule name its field rather than search
     /// the file.
     ///
     /// **That trap is reasoned rather than measured**, and the distinction is this file's
@@ -3914,7 +3918,7 @@ struct Ledger {
     unledgered: Vec<String>,
 }
 
-/// One phrase the lesson prose uses to print a number its scenario file decides.
+/// One phrase the lesson prose uses to print a number some file already decides.
 ///
 /// This table is the ledger's honest cost. A generous arm — "the number appears somewhere
 /// in the scenario file" — accounts for a third of the path's numbers and means nothing: a
@@ -3924,114 +3928,220 @@ struct Ledger {
 ///
 /// What is declared here is only the *vocabulary* — that "`{n}` in series" is the page's
 /// way of saying `pack.series`. The number itself is never declared: it is read out of the
-/// scenario file and compared, so a rule pointed at the wrong field fails on sight, the
-/// same way a mis-pointed `spells` does. Keep the phrases specific for that reason. A bare
+/// file and compared, so a rule pointed at the wrong field fails on sight, the same way a
+/// mis-pointed `spells` does. Keep the phrases specific for that reason. A bare
 /// `"{n} mV"` would match any millivolt figure in any ledgered step and account it against
 /// the sensor offset, which passes silently the day one of them happens to be 120.
-struct ScenarioRule {
+struct LedgerRule {
     /// The sentence shape, with `{n}` where each number sits. Matched literally against
     /// the prose, so it is written the way the prose writes it.
     phrase: &'static str,
-    /// One dotted key path into the step's scenario TOML per `{n}`, in order. `*` walks an
-    /// array, so `faults.*.at_s` does not care which order the file lists its faults in.
-    ///
-    /// **A wildcard is read strictly: *every* value it reaches must be the number.** It was
-    /// existential first — some fault at 600 — and that is a fail-toward-green on the one
-    /// relational thing this step's prose says. `lying-sensor` claims the short and the
-    /// sensor lie land "in the same instant"; measured, with the second fault moved to
-    /// 700 s, the existential arm stayed green and the sentence was false. Strict makes the
-    /// arm say what the sentence says.
-    ///
-    /// The cost is stated rather than discovered: a *third* fault scheduled at some other
-    /// time would fail this rule even though the sentence — which names two — would still
-    /// be true. That is the fail-toward-red direction, and the answer then is a path that
-    /// selects the fault the sentence names, which this walker cannot express.
-    paths: &'static [&'static str],
+    /// What decides each `{n}`, in order — one [`Tie`] per placeholder.
+    ties: &'static [Tie],
     /// How many powers of ten larger the unit the *prose* writes is than the unit the
     /// *file* writes — 2 for a percentage against a fraction, 3 for mA against A. Same
     /// convention as a claim's `spells_pow10`.
     pow10: i32,
 }
 
-/// The vocabulary, one entry per way the ledgered steps name a scenario constant.
+/// What decides one number a ledgered step prints.
+///
+/// Every variant is a *derived numeric fact*: a value read out of a file in the tree, or
+/// computed from values read out of files in the tree. None of them is a declaration, which
+/// is the design constraint carried over from [`Accounted`] — a declared "this number is a
+/// setting" beside a token that is really a measurement is a fresh instance of the defect
+/// `tol_from` exists to catch.
+///
+/// The taxonomy is `docs/plans/path-prose-ledger.md`'s, built one arm at a time as a
+/// sentence needs it. Two of its six are still missing (`Ordinal`, and the general
+/// `Derived` over a sentence's own siblings), and they stay missing until a ledgered step
+/// prints one: an arm with nothing to account is the `CCCV_PERIOD_S` shape this file has
+/// already been caught by once.
+enum Tie {
+    /// A named field of the step's scenario file — a dotted key path, with `*` walking an
+    /// array so `faults.*.at_s` does not care what order the file lists its faults in.
+    ///
+    /// **A wildcard is read strictly: *every* value it reaches must be the number.** It was
+    /// existential first — some fault at 600 — and that is a fail-toward-green on the one
+    /// relational thing step 5's prose says. `lying-sensor` claims the short and the sensor
+    /// lie land "in the same instant"; measured, with the second fault moved to 700 s, the
+    /// existential arm stayed green and the sentence was false. Strict makes the arm say
+    /// what the sentence says.
+    ///
+    /// The cost is stated rather than discovered: a *third* fault scheduled at some other
+    /// time would fail this rule even though the sentence — which names two — would still
+    /// be true. That is the fail-toward-red direction, and the answer then is a path that
+    /// selects the fault the sentence names, which this walker cannot express.
+    Scenario(&'static str),
+    /// A named field of the *chemistry* that scenario names — same path syntax, read out
+    /// of `chemistries/<id>.toml`.
+    ///
+    /// A separate arm rather than a second path root, because the two files answer
+    /// different questions: a scenario is what this pack is, a chemistry is what this cell
+    /// can do. Step 6's "rated 3 C continuous" is a property of every LFP cell in the repo
+    /// and would still be 3 C if the pack were one cell.
+    Chemistry(&'static str),
+    /// A control on the lesson's own block — a number the *page acts on*. See [`Control`].
+    Setting(Control),
+    /// The sentence's own arithmetic: the product of the ties below it.
+    ///
+    /// **The one arm that rounds.** Every other tie compares exactly, because a constant
+    /// printed in prose is either the file's number or a defect. A product is a *computed*
+    /// quantity and its exactness is spurious — `2.303451 Ah × 2` is `4.606902`, and no
+    /// sentence would print that — so it is compared at the precision the prose itself
+    /// commits to: the token's own decimal places, through the page's rounding rule
+    /// ([`to_fixed`], ties away from zero, which is also the schoolbook rule a human
+    /// author uses).
+    ///
+    /// Each factor must resolve to exactly one number. A `*` wildcard under a product would
+    /// make "which of them" the author's pick, which is the hazard the strict wildcard above
+    /// exists to close.
+    Product(&'static [Tie]),
+}
+
+/// A number the lesson block sets and the page acts on.
+///
+/// Deliberately an enum of *named controls* rather than "any numeric field of the block",
+/// and the reason is the same one [`Accounted::Setting`] gives for tying itself to a
+/// trajectory: step 18's prose prints a `10` that is a step length, and the block beside it
+/// carries `speed_x: 10000` and `dt: 0.5`. An arm that accounted a token against whatever
+/// field of the block happened to hold that number would be right off the wrong field —
+/// green, and still green the day one of the two moves.
+///
+/// One variant, because one sentence needs one. The next control a ledgered step prints is
+/// where the second one gets added.
+#[derive(Debug, Clone, Copy)]
+enum Control {
+    /// The demand box, in the unit the box takes — amps, discharge-positive.
+    DemandValue,
+}
+
+/// The vocabulary, one entry per way a ledgered step names a number some file decides.
 ///
 /// Every rule is required to match something ([`every_ledger_rule_is_a_phrase_and_is_used`]),
 /// so a rule left behind by a prose edit fails here instead of sitting in the list looking
 /// like coverage.
-const SCENARIO_VOCABULARY: &[ScenarioRule] = &[
+const LEDGER_VOCABULARY: &[LedgerRule] = &[
     // Step 3 — the pack's topology and its manufacturing spread.
-    ScenarioRule {
+    LedgerRule {
         phrase: "{n} in series",
-        paths: &["pack.series"],
+        ties: &[Tie::Scenario("pack.series")],
         pow10: 0,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "{n} in parallel",
-        paths: &["pack.parallel"],
+        ties: &[Tie::Scenario("pack.parallel")],
         pow10: 0,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "with {n} % capacity",
-        paths: &["pack.scatter.capacity_sigma"],
+        ties: &[Tie::Scenario("pack.scatter.capacity_sigma")],
         pow10: 2,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "and {n} % resistance scatter",
-        paths: &["pack.scatter.r0_sigma"],
+        ties: &[Tie::Scenario("pack.scatter.r0_sigma")],
         pow10: 2,
     },
     // Step 4 — what the BMS's own instrument is wrong by. The whole lesson is that these
     // are the errors it cannot know about, so they are the scenario's numbers and not
     // anything the engine produces.
-    ScenarioRule {
+    LedgerRule {
         phrase: "current sensor reads {n} mA high",
-        paths: &["pack.bms.current_offset_a"],
+        ties: &[Tie::Scenario("pack.bms.current_offset_a")],
         pow10: 3,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "with {n} mA of noise",
-        paths: &["pack.bms.current_noise_sigma_a"],
+        ties: &[Tie::Scenario("pack.bms.current_noise_sigma_a")],
         pow10: 3,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "started {n} % wrong",
-        paths: &["pack.bms.initial_soc_error"],
+        ties: &[Tie::Scenario("pack.bms.initial_soc_error")],
         pow10: 2,
     },
     // Step 5 — the two scheduled faults. The prose's whole first paragraph is a reading of
     // the `[[faults]]` tables, which is what makes this step free to ledger.
-    ScenarioRule {
+    LedgerRule {
         phrase: "At t = {n} s this scenario springs",
-        paths: &["faults.*.at_s"],
+        ties: &[Tie::Scenario("faults.*.at_s")],
         pow10: 0,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "a {n} \u{3a9} internal short",
-        paths: &["faults.*.fault.SoftInternalShort.ohms"],
+        ties: &[Tie::Scenario("faults.*.fault.SoftInternalShort.ohms")],
         pow10: 0,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "on cell ({n},{n})",
-        paths: &[
-            "faults.*.fault.SoftInternalShort.s",
-            "faults.*.fault.SoftInternalShort.p",
+        ties: &[
+            Tie::Scenario("faults.*.fault.SoftInternalShort.s"),
+            Tie::Scenario("faults.*.fault.SoftInternalShort.p"),
         ],
         pow10: 0,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "a +{n} mV offset",
-        paths: &["faults.*.fault.SensorOffset.offset"],
+        ties: &[Tie::Scenario("faults.*.fault.SensorOffset.offset")],
         pow10: 3,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "Group {n}'s sensed voltage",
-        paths: &["faults.*.fault.SensorOffset.sensor.GroupVoltage"],
+        ties: &[Tie::Scenario(
+            "faults.*.fault.SensorOffset.sensor.GroupVoltage",
+        )],
         pow10: 0,
     },
-    ScenarioRule {
+    LedgerRule {
         phrase: "by {n} mV and stays there",
-        paths: &["faults.*.fault.SensorOffset.offset"],
+        ties: &[Tie::Scenario("faults.*.fault.SensorOffset.offset")],
         pow10: 3,
+    },
+    // Step 6 — the first ledgered step whose numbers are not all scenario constants. Its
+    // opening sentence prints the pack, the pack's capacity, the cell's rating and the
+    // demand in one breath, which is why it took three arms to close.
+    LedgerRule {
+        // Not `"{n}S{n}P"`: a phrase has to carry words (see the rule check below), and
+        // this is the sentence those two digits sit in. Step 3 writes the same topology as
+        // "4 in series, 2 in parallel" and is covered by the two rules at the top — one
+        // topology, two vocabularies, because two sentences say it two ways.
+        phrase: "cells in {n}S{n}P is",
+        ties: &[Tie::Scenario("pack.series"), Tie::Scenario("pack.parallel")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The sentence's own arithmetic, and the whole reason `Product` rounds: cells in
+        // parallel add capacity, so pack Ah is the cell's `capacity_ah` times `parallel` —
+        // 4.606902, which the prose prints as 4.61.
+        phrase: "is {n} Ah at pack level",
+        ties: &[Tie::Product(&[
+            Tie::Chemistry("cell.capacity_ah"),
+            Tie::Scenario("pack.parallel"),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the chemistry is rated {n} C continuous",
+        ties: &[Tie::Chemistry("cell.max_discharge_c")],
+        pow10: 0,
+    },
+    // The demand, stated twice: once as what the reader asks for and once as what the box
+    // still says while the BMS refuses it. Two rules rather than one loose one, on the
+    // same terms as the two topology vocabularies above.
+    LedgerRule {
+        // No full stop after the `{n}`, though the sentence ends there. A number's `len`
+        // covers the run the scanner *trimmed* — `40.` is scanned as `40` and still spans
+        // three bytes — so a phrase can never put a literal part immediately after a number
+        // that ends a sentence. The prefix is what makes this rule specific anyway.
+        phrase: "We are asking for {n}",
+        ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the demand box still reads {n}",
+        ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
     },
 ];
 
@@ -4071,6 +4181,102 @@ fn numbers_at_path<'a>(value: &'a toml::Value, path: &str) -> Vec<f64> {
             _ => None,
         })
         .collect()
+}
+
+/// The chemistry file the step's scenario names, as that file writes it.
+///
+/// Raw TOML for the reason [`scenario_toml`] is: a rule's path should be the key an author
+/// reads in `chemistries/*.toml`, not a field name `sim-data` chose for the parsed struct.
+fn chemistry_toml(scenario_file: &str) -> toml::Value {
+    let scenario = scenario_toml(scenario_file);
+    let id = scenario
+        .get("chemistry")
+        .and_then(toml::Value::as_str)
+        .unwrap_or_else(|| panic!("scenarios/{scenario_file} still names a `chemistry`"))
+        .to_string();
+    let path = repo_root().join("chemistries").join(format!("{id}.toml"));
+    let text = read(&path);
+    toml::from_str(&text).unwrap_or_else(|e| panic!("chemistries/{id}.toml parses as TOML: {e}"))
+}
+
+/// The value a lesson's control box carries, or `None` if that lesson has no such box.
+///
+/// `Rest` has no demand value at all, so a rule reading one on a resting step resolves to
+/// nothing and fails as a broken rule rather than matching by accident.
+fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
+    match control {
+        Control::DemandValue => match lesson.demand {
+            Prog::Current(i) => Some(i),
+            Prog::CcCv { i, .. } => Some(i),
+            Prog::Pulse { i, .. } => Some(i),
+            Prog::Rest => None,
+        },
+    }
+}
+
+/// Every number a tie resolves to. Empty means it resolves to nothing at all, which the
+/// caller reports as a broken rule rather than as a disagreement.
+fn tie_values(
+    tie: &Tie,
+    lesson: &Lesson,
+    scenario: &toml::Value,
+    chemistry: &toml::Value,
+) -> Vec<f64> {
+    match tie {
+        Tie::Scenario(path) => numbers_at_path(scenario, path),
+        Tie::Chemistry(path) => numbers_at_path(chemistry, path),
+        Tie::Setting(control) => control_value(*control, lesson).into_iter().collect(),
+        Tie::Product(factors) => {
+            let mut product = 1.0;
+            for factor in *factors {
+                let values = tie_values(factor, lesson, scenario, chemistry);
+                // Exactly one, never "the first of several": a wildcard under a product
+                // would make which value it used the author's pick rather than the file's.
+                let [only] = values[..] else {
+                    return Vec::new();
+                };
+                product *= only;
+            }
+            vec![product]
+        }
+    }
+}
+
+/// What a tie reads, in words, for the message an author gets when it reads nothing.
+fn tie_describe(tie: &Tie) -> String {
+    match tie {
+        Tie::Scenario(path) => format!("the scenario's `{path}`"),
+        Tie::Chemistry(path) => format!("the chemistry's `{path}`"),
+        Tie::Setting(control) => format!("the lesson's {control:?} control"),
+        Tie::Product(factors) => factors
+            .iter()
+            .map(tie_describe)
+            .collect::<Vec<_>>()
+            .join(" times "),
+    }
+}
+
+/// Does what this tie reads agree with the number the prose printed?
+///
+/// Two comparisons, and which one is used is a property of the tie rather than a per-rule
+/// choice. A constant is compared exactly — the prose either prints the file's number or is
+/// wrong about it. A [`Tie::Product`] is compared at the prose's own precision, because the
+/// sentence is doing arithmetic and no author would print `4.606902`.
+fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
+    let written = token.replace(' ', "");
+    let scale = 10f64.powi(pow10);
+    match tie {
+        Tie::Product(_) => values.iter().all(|v| {
+            let places = decimals_of(&written).max(0) as usize;
+            to_fixed(v * scale, places) == written
+        }),
+        _ => {
+            let Some(spelled) = number_of(token) else {
+                return false;
+            };
+            values.iter().all(|v| tol_eq(v * scale, spelled))
+        }
+    }
 }
 
 /// Where a rule's phrase matches, as indices into `numbers` — one per `{n}`, in order.
@@ -4116,7 +4322,7 @@ fn rule_matches(text: &str, numbers: &[Written], phrase: &str) -> Vec<Vec<usize>
 /// whichever one passes, and then the check is about the author rather than the prose.
 fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usize, usize)>> {
     let mut out: Vec<Option<(usize, usize)>> = vec![None; numbers.len()];
-    for (r, rule) in SCENARIO_VOCABULARY.iter().enumerate() {
+    for (r, rule) in LEDGER_VOCABULARY.iter().enumerate() {
         for hit in rule_matches(text, numbers, rule.phrase) {
             for (p, &i) in hit.iter().enumerate() {
                 if let Some((r0, p0)) = out[i] {
@@ -4127,7 +4333,7 @@ fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usi
                          check is about which rule an author tried first. Make the \
                          phrases specific enough to disagree.",
                         numbers[i].token,
-                        SCENARIO_VOCABULARY[r0].phrase,
+                        LEDGER_VOCABULARY[r0].phrase,
                         rule.phrase,
                     );
                 }
@@ -4136,6 +4342,49 @@ fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usi
         }
     }
     out
+}
+
+/// The `claimed` arm — how a claim on this step accounts for a number *inside its own
+/// sentence*, if one does.
+///
+/// This is check 6's [`accounting_for`] reused whole rather than a second reading of the
+/// same claims: the ledger asks the question about a number found by scanning the step's
+/// prose, and check 6 asks it about a number found by scanning a literal, and those are the
+/// same question when the number lies inside the literal. Sharing the function is what
+/// stops the two answering differently while both stay green — the defect this whole file
+/// is arranged around.
+///
+/// **Positional, not step-wide, and that is the whole strength of it.** "Some claim on this
+/// step spells 14" would account for the `14` in *any* sentence of the step, including one
+/// no claim is about — which is exactly the prose the ledger exists to reach. So the
+/// number has to sit inside the literal of the sentence whose claims account for it. The
+/// cost is visible in this slice: step 6 states its clamped current in two sentences, and
+/// closing the second one meant claiming it, not waiving it.
+fn claimed_accounting(
+    number: &Written,
+    text: &str,
+    step: &str,
+    all: &[Claim],
+    lesson: &Lesson,
+    arms: &[Arm],
+) -> Option<&'static str> {
+    for (owner, literal) in sentences(all) {
+        if owner != step {
+            continue;
+        }
+        let quoted = ascii_minus(literal);
+        for (at, _) in text.match_indices(&quoted) {
+            let inside = number.at >= at && number.at + number.len <= at + quoted.len();
+            if !inside {
+                continue;
+            }
+            let group = sentence_group(all, step, literal);
+            if let Some(accounted) = accounting_for(&number.token, &group, lesson, arms) {
+                return Some(accounted.arm_name());
+            }
+        }
+    }
+    None
 }
 
 /// The ledger — every numeral in a ledgered step's whole prose is tied to something.
@@ -4148,17 +4397,20 @@ fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usi
 /// both introduced by slices that ran a fully green suite. Nothing could have reddened:
 /// there was no claim to redden.
 ///
-/// So this scans a step's prose end to end. Three steps are ledgered today, chosen because
-/// every *numeral* in them is a scenario constant: `docs/plans/path-prose-ledger.md` measured
-/// all fourteen steps and found these three carry no measurement-shaped figure at all, so
-/// they can be closed before a single number is measured. That is the whole of what this
-/// check covers, and the rest of the design — arms for control settings, chemistry
-/// constants, ordinals naming other steps, and figures derived from other figures in the
-/// same sentence — is written up in that plan and not built.
+/// So this scans a step's prose end to end. The first three steps ledgered were chosen
+/// because every *numeral* in them is a scenario constant:
+/// `docs/plans/path-prose-ledger.md` measured all fourteen steps and found those three carry
+/// no measurement-shaped figure at all, so they could be closed before a single number was
+/// measured. The fourth, `protection-on`, is the first that could not be — it prints its
+/// pack, its cell's rating, its demand box and the current the BMS clamps it to — and it is
+/// what [`Tie::Chemistry`], [`Tie::Setting`], [`Tie::Product`] and [`claimed_accounting`]
+/// were built for. Two arms of the taxonomy are still missing and are written up in that
+/// plan: an ordinal naming another step, and a figure derived from its siblings in the same
+/// sentence.
 ///
 /// **Numeral is the operative word, and it is a real limit rather than pedantry.**
 /// [`written_numbers`] finds digits. A quantity spelled in English is invisible to it, and
-/// two of the three ledgered steps state four of them: "about half a point across the whole
+/// two of the ledgered steps state four of them: "about half a point across the whole
 /// grid" and "a quarter of a point" between the cells of one group in step 3, "a gap of about
 /// three points" and "a fraction of a point" of sensor drift in step 4. Every one is an
 /// engine measurement, and they are the sentences a reader leans on. A green ledger here says
@@ -4173,24 +4425,27 @@ fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usi
 /// and a measurement this file has not made — so the vocabulary, the `claimed` arm and
 /// those two spread claims are one future slice and not three.
 ///
-/// **There is still one arm, and a ledgered step may now carry claims.** This test used to
-/// refuse the combination outright, on the grounds that a number a claim ties to the engine
-/// has no accounting here. That fence came down when `belief-drifts` was given the two
-/// claims on its estimator gap: the numbers those claims are about are spelled in *letters*
-/// ("about three points"), the scan finds digits, and this step's three digits are the
-/// scenario constants they always were. So the combination the fence forbade is now in the
-/// tree and the scan is unchanged by it.
+/// **A ledgered step may carry claims, and one of its numerals may now be decided by one.**
+/// This test used to refuse the combination outright, on the grounds that a number a claim
+/// ties to the engine has no accounting here. That fence came down for `belief-drifts`,
+/// whose two claims are on a quantity the sentence spells in *letters* ("about three
+/// points") — invisible to a digit scan, so the step's three digits stayed the scenario
+/// constants they always were and the fence was never really tested.
 ///
-/// What the fence was really guarding is the first *numeral* in a ledgered step that only a
-/// claim decides, and that is still not buildable-for-free: the accounting a claimed number
-/// needs is check 6's [`accounting_for`], which is written and tested — but wiring it in
-/// with nothing to account would be a second `CCCV_PERIOD_S`, pinned and consulted by
-/// nothing. It is deferred until a number needs it, and the panic below already routes an
-/// author there in the words they will need. See `docs/plans/path-estimator-gap.md`.
+/// `protection-on` is what tests it: its clamped current is a numeral, in two sentences, and
+/// only a claim decides it. [`claimed_accounting`] is check 6's [`accounting_for`] asked
+/// about a number this scan found rather than one a literal scan found — the same question,
+/// so the same function, which is what stops the two answering differently while both stay
+/// green. It is **positional**: the number must sit inside the literal of the sentence whose
+/// claims account for it, or "some claim on this step spells 14" would cover the `14` in a
+/// sentence no claim is about — which is the prose this whole scan exists to reach.
+/// See `docs/plans/path-ledger-fourth-step.md`.
 #[test]
 fn every_numeral_in_a_ledgered_step_is_accounted_for() {
     let lessons = lessons();
     let ledger = ledger();
+    let all = claims();
+    let arms = arms();
 
     for step in &ledger.steps {
         let lesson = lessons
@@ -4207,6 +4462,7 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
              and say so in `unledgered`."
         );
         let scenario = scenario_toml(&lesson.scenario);
+        let chemistry = chemistry_toml(&lesson.scenario);
         let cover = cover_by_rule(&text, &numbers, step);
 
         for (w, covered) in numbers.iter().zip(&cover) {
@@ -4226,49 +4482,67 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
                     .map_or(text.len(), |(i, _)| after + i);
                 text[a..b].split_whitespace().collect::<Vec<_>>().join(" ")
             };
+            let claimed = claimed_accounting(w, &text, step, &all, lesson, &arms);
+            if let (Some((r, _)), Some(arm)) = (*covered, claimed) {
+                panic!(
+                    "step `{step}`: the number `{}` is accounted for twice — by the \
+                     vocabulary rule `{}`, and as `{arm}` by a claim whose literal \
+                     contains it:\n  …{context}…\n\
+                     Two readings of one number means the accounting is decided by \
+                     which arm this check tried first rather than by the sentence. It \
+                     is the same hazard `cover_by_rule`'s double-cover panic and check \
+                     6's `clash` both exist for. Narrow the rule's phrase, or shorten \
+                     the claim's literal so it stops before the number the rule is \
+                     about.",
+                    w.token, LEDGER_VOCABULARY[r].phrase,
+                );
+            }
+            if claimed.is_some() {
+                continue;
+            }
             let Some((r, p)) = *covered else {
                 panic!(
                     "step `{step}` prints `{}` and nothing accounts for it:\n  \
                      …{context}…\n\
-                     No vocabulary rule spells that position, so this file cannot say \
-                     what decides the number. If a scenario field does, add a rule to \
-                     `SCENARIO_VOCABULARY` naming the field. If the engine does, it needs \
-                     a claim in web/path-claims.toml and the `claimed` arm. If it is a \
-                     control setting, a chemistry constant, an ordinal or an arithmetic \
-                     consequence of another number in the sentence, it needs the arm for \
-                     that — see docs/plans/path-prose-ledger.md. There is no waiver.",
+                     No vocabulary rule spells that position and no claim's literal \
+                     covers it, so this file cannot say what decides the number. If a \
+                     scenario or chemistry field does, add a rule to \
+                     `LEDGER_VOCABULARY` naming the field; if a control on the lesson \
+                     block does, add one tied to a `Control`. If the engine does, it \
+                     needs a claim in web/path-claims.toml quoting the sentence it is \
+                     printed in. If it is an ordinal naming another step, or a figure \
+                     derived from its siblings in the same sentence, it needs the arm \
+                     for that — see docs/plans/path-prose-ledger.md. There is no \
+                     waiver.",
                     w.token,
                 );
             };
-            let rule = &SCENARIO_VOCABULARY[r];
-            let path = rule.paths[p];
-            let found = numbers_at_path(&scenario, path);
+            let rule = &LEDGER_VOCABULARY[r];
+            let tie = &rule.ties[p];
+            let found = tie_values(tie, lesson, &scenario, &chemistry);
             assert!(
                 !found.is_empty(),
-                "step `{step}`: the rule `{}` reads `{path}`, and scenarios/{} has no \
-                 number there. The scenario was restructured; the rule has to follow it.",
+                "step `{step}`: the rule `{}` reads {}, and that resolves to no number \
+                 for this step. The file it names was restructured — or, on a product, \
+                 one factor reached several values and none of them can be the one the \
+                 sentence means. The rule has to follow the file.",
                 rule.phrase,
-                lesson.scenario,
+                tie_describe(tie),
             );
-            let spelled: f64 = w
-                .token
-                .parse()
-                .unwrap_or_else(|_| panic!("`{}` scanned as a number", w.token));
             assert!(
-                found
-                    .iter()
-                    .all(|v| tol_eq(v * 10f64.powi(rule.pow10), spelled)),
-                "step `{step}` says `{}` where scenarios/{} says {found:?} at \
-                 `{path}`:\n  …{context}…\n\
-                 The prose and the scenario file have parted. One of them moved; the \
-                 sentence is what a reader is shown, so fix whichever is wrong rather \
-                 than the rule.\n\
-                 Note that a `*` in the path is read strictly — EVERY value it reaches \
+                tie_agrees(tie, &found, &w.token, rule.pow10),
+                "step `{step}` says `{}` where {} says {found:?}:\n  …{context}…\n\
+                 The prose and the file have parted. One of them moved; the sentence is \
+                 what a reader is shown, so fix whichever is wrong rather than the \
+                 rule.\n\
+                 Note that a `*` in a path is read strictly — EVERY value it reaches \
                  has to be this number, which is what lets `faults.*.at_s` carry \
                  \"in the same instant\". If the sentence really is about one of \
-                 several, it needs a path that says which.",
+                 several, it needs a path that says which. A product is the one tie \
+                 compared at the prose's own precision, so this fires there only when \
+                 the sentence's own arithmetic no longer rounds to what it prints.",
                 w.token,
-                lesson.scenario,
+                tie_describe(tie),
             );
         }
     }
@@ -4337,7 +4611,7 @@ fn every_ledger_rule_is_a_phrase_and_is_used() {
     let lessons = lessons();
     let ledger = ledger();
 
-    let mut used = vec![0usize; SCENARIO_VOCABULARY.len()];
+    let mut used = vec![0usize; LEDGER_VOCABULARY.len()];
     for step in &ledger.steps {
         let lesson = lessons
             .iter()
@@ -4345,12 +4619,12 @@ fn every_ledger_rule_is_a_phrase_and_is_used() {
             .unwrap_or_else(|| panic!("no lesson `{step}`"));
         let text = ascii_minus(&lesson.text);
         let numbers = written_numbers(&text);
-        for (r, rule) in SCENARIO_VOCABULARY.iter().enumerate() {
+        for (r, rule) in LEDGER_VOCABULARY.iter().enumerate() {
             used[r] += rule_matches(&text, &numbers, rule.phrase).len();
         }
     }
 
-    for (r, rule) in SCENARIO_VOCABULARY.iter().enumerate() {
+    for (r, rule) in LEDGER_VOCABULARY.iter().enumerate() {
         let parts: Vec<&str> = rule.phrase.split("{n}").collect();
         assert!(
             parts.len() > 1,
@@ -4359,12 +4633,12 @@ fn every_ledger_rule_is_a_phrase_and_is_used() {
         );
         assert_eq!(
             parts.len() - 1,
-            rule.paths.len(),
-            "vocabulary rule `{}` has {} `{{n}}` and {} path(s). Each number in the \
-             phrase needs the field that decides it.",
+            rule.ties.len(),
+            "vocabulary rule `{}` has {} `{{n}}` and {} tie(s). Each number in the \
+             phrase needs the thing that decides it.",
             rule.phrase,
             parts.len() - 1,
-            rule.paths.len(),
+            rule.ties.len(),
         );
         for (p, pair) in parts.windows(2).enumerate() {
             assert!(
@@ -4877,7 +5151,7 @@ const HEADER_ORDINALS: &[(usize, &str)] = &[
 /// One count a file states about its **own contents**, and the derivation that produces
 /// it.
 ///
-/// The phrase is declared and the number never is — the same contract [`ScenarioRule`]
+/// The phrase is declared and the number never is — the same contract [`LedgerRule`]
 /// keeps for the ledger and `spells` keeps for a claim. A tally that stored the number
 /// would be a second copy of the thing it is meant to guard.
 struct Tally {
@@ -5251,7 +5525,10 @@ const TALLIES: &[Tally] = &[
     },
     Tally {
         prose: Prose::ClaimsFile,
-        phrase: "{w} steps, {w} numerals, all of them scenario constants",
+        // "all of them scenario constants" until step 6 joined, which is the sentence
+        // moving because the fact did. A tally's phrase is allowed to follow its prose;
+        // what it may never do is carry the number.
+        phrase: "{w} steps, {w} numerals, and no longer all of them scenario constants",
         of: &[n_ledgered, n_ledgered_numerals],
     },
     // Phrased as a count of what is LEFT rather than "the remaining N steps", which was
