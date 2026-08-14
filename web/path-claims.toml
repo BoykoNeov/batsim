@@ -47,6 +47,10 @@
 # of a claim is actually claimed, so it is derived by a declared rule (`tol_from`) and
 # the derivation itself is checked. See "Setting tol" below.
 #
+# All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
+# scans a step's whole prose and requires every number in it to be tied to something,
+# whether a claim quotes the sentence or not. Three steps so far. See "THE LEDGER".
+#
 # The literal is stored as a STRING, exactly as written in the sentence, and is
 # never produced by formatting `value`. That is deliberate: a formatter that has to
 # agree with how a human wrote each sentence generates false failures and then gets
@@ -237,9 +241,9 @@
 # step earlier — an event a sentence names has to be claimed. That fence lives in the
 # value check, which is the only place a trajectory exists.
 #
-# What check 6 does NOT do is find sentences nobody has claimed at all. Fourteen of the
-# twenty-four steps have no claim, so they have no literal to scan; see the test's own
-# module docs on why that needs a different instrument.
+# What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
+# claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
+# of this file — three steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -1862,3 +1866,80 @@ note = """
 The furthest thing this step's prose asks a reader to look at on the charge leg is
 `soh cap` reading 95.14 % "from 390 s in", so the leg runs 400 s past the 600 s mark.
 """
+
+# =====================================================================================
+# THE LEDGER
+# =====================================================================================
+#
+# Checks 1-6 are all about a sentence some claim already quotes. A step with no claim has
+# no literal to scan, so nothing in this file touches it — and fourteen of the
+# twenty-four steps were in exactly that position. `docs/plans/path-prose-ledger.md`
+# measured all fourteen by hand and found two defects in about 145 measurement-shaped
+# numbers: six figures in step 19 that went stale when aging began growing the RC
+# resistances, and a 600-second contrast in step 14 between two models that has never
+# existed. Both were introduced by slices that ran a fully green suite. Nothing could
+# have reddened, because there was no claim to redden.
+#
+# The ledger is the other axis: a step named in `steps` below has its prose scanned end
+# to end, and EVERY number in it must be tied to something. Not the sentences that are
+# claimed — all of them.
+#
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: three
+# steps, fourteen numbers, all of them scenario constants. Those three were picked
+# because the same measuring pass found they carry no measurement-shaped figure at all,
+# so they can be closed before a single number is measured. The remaining eleven
+# unclaimed steps need arms this file has not got — see the plan.
+#
+# ONE ARM, and the vocabulary that makes it honest. The arm says "this number is the
+# value of a NAMED FIELD of the step's scenario file". Naming the field is the whole
+# point: a generous arm — "the number appears somewhere in the scenario" — accounts for
+# a third of the path's numbers and means nothing, because a scenario file has enough
+# integers in it that a `2` finds `series = 2` by accident. So something has to say which
+# field a sentence is talking about, and that something is the phrase around the number:
+# `SCENARIO_VOCABULARY` in path_claims.rs maps "`{n}` in series" to `pack.series`.
+# The vocabulary is a declaration; the NUMBER never is. It is read out of the scenario
+# file and compared, so a rule pointed at the wrong field fails on sight — the same way a
+# mis-pointed `spells` does. There is no waiver variant, for the reason check 6 has none.
+#
+# A LEDGERED STEP MAY NOT CARRY CLAIMS YET. The arm a claimed sentence needs is check 6's
+# own accounting, and wiring it in with no ledgered step to exercise it would be a second
+# `CCCV_PERIOD_S`: pinned, plausible, and read by nothing. The test says so rather than
+# letting the next author meet it as a confusing failure.
+#
+# BOTH LISTS ARE REQUIRED. An opt-in list on its own would let a twenty-fifth lesson join
+# the unchecked majority in silence, which is how the fourteen came to exist. Every
+# lesson must appear in exactly one list, so adding a step is a decision someone writes
+# down. That is the contract `every_covered_step_exists` keeps for claims, kept in both
+# directions.
+
+[ledger]
+steps = [
+  "pack-disagrees",  # 4 numbers: the topology and the scatter
+  "belief-drifts",   # 3: what the BMS's own current sensor is wrong by
+  "lying-sensor",    # 7: the two scheduled faults, read straight off the file
+]
+# Not scanned, and why. Ten of these carry claims, so their claimed sentences are checked
+# and the rest of their prose is not; the other eleven are unchecked entirely.
+unledgered = [
+  "bare-curve",                     # claims: 3
+  "same-discharge-other-chemistry", # claims: 5
+  "protection-on",                  # claims: 2
+  "protection-off",                 # measured 2026-08-13, no claim yet
+  "wearing-out-while-idle",         # claims: 3
+  "two-legs",                       # measured, no claim yet
+  "leg-that-is-not-there",          # claims: 6
+  "what-protection-costs",          # two perf ratios no trajectory can settle
+  "circuit-repeats-itself",         # needs the zero-length probe row
+  "particle-remembers",             # needs the zero-length probe row
+  "three-times-the-current",        # measured, no claim yet
+  "looks-fine-from-outside",        # needs an instructed continuation
+  "the-electrolyte-starves",        # three perf ratios; needs a 1 C rerun
+  "the-gradient-itself",            # needs the zero-length probe row
+  "one-step-that-got-through",      # needs two step lengths and both buttons
+  "nothing-to-clamp",               # needs a BMS toggle and an ambient change
+  "past-empty",                     # claims: 14
+  "what-it-cost",                   # claims: 20
+  "slow-and-patient",               # claims: 4
+  "sixty-times-the-current",        # claims: 4
+  "and-it-is-still-in-there",       # claims: 8
+]
