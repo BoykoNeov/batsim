@@ -943,10 +943,47 @@ impl Run {
     }
 }
 
+/// How many steps one CC-CV decision lasts.
+///
+/// `advance` does not ask [`demand_now`] per step for a CC-CV run: it chops each frame's
+/// steps at multiples of `CCCV_PERIOD_S / dt` and holds **one** demand across the whole
+/// window, so which step the legs change on is a property of the simulation rather than
+/// of how the browser scheduled a frame. `CCCV_PERIOD_S` was pinned in [`MIRRORED`] from
+/// the day this file was written and nothing here read it — the mirror decided every
+/// step, which is the page's *inner* function without the loop around it, and a pinned
+/// constant no code consults is the "looks like coverage" shape this file rejects
+/// everywhere else.
+///
+/// Measured cost of the gap on `two-legs`, the step where the CV leg actually engages:
+/// the switch lands one step late (5420.5 s rather than 5420.0). Nothing in
+/// `path-claims.toml` moved, because the only claimed CC-CV step is
+/// `leg-that-is-not-there`, whose LFP cell never reaches the band at all and is therefore
+/// on a constant current under either rule. That is why this was invisible, not why it
+/// was harmless.
+fn cccv_window_steps(dt: f64) -> u64 {
+    // `Math.max(1, Math.round(CCCV_PERIOD_S / dt))`.
+    let k = (10.0 / dt).round();
+    if k < 1.0 {
+        1
+    } else {
+        k as u64
+    }
+}
+
 /// Step `pack` on one demand program until its own clock reaches `end_s`.
 ///
 /// The clock is the pack's, never an accumulator this function keeps, for the reason
-/// [`pulse_on`] gives.
+/// [`pulse_on`] gives — and, for a CC-CV run, for the reason [`cccv_window_steps`] gives:
+/// the decision grid is anchored to `sim_time_s` on the page too, which is what makes a
+/// restore land back on the same decision points.
+///
+/// **What this still does not model** is `ccCvDone`, the page's completion test, which
+/// stops the run when the current falls under the taper. It is checked at the end of each
+/// *chopped chunk* rather than each window, so how long a finished charge keeps running
+/// depends on how the browser scheduled its frames — the one place the page's CC-CV
+/// behaviour is not a function of the simulation alone. No claim reads past a taper
+/// today; a claim that wanted to would need the page's frame schedule, not just its
+/// sub-clock.
 fn drive(
     pack: &mut Pack,
     prog: Prog,
@@ -956,10 +993,21 @@ fn drive(
     rows: &mut Vec<Row>,
     last: &mut Option<Telemetry>,
 ) {
+    let windowed = matches!(prog, Prog::CcCv { .. });
+    let k = cccv_window_steps(dt);
+    let mut held: Option<Demand> = None;
     // `<=` because a mark that lands exactly on a step boundary is a mark the page
     // stops *at*, not one step before it.
     while pack.sim_time_s() < end_s - dt * 0.5 {
-        let d = demand_now(prog, pack, dt, last.as_ref());
+        let d = if windowed {
+            let index = (pack.sim_time_s() / dt).round() as u64;
+            if index.is_multiple_of(k) || held.is_none() {
+                held = Some(demand_now(prog, pack, dt, last.as_ref()));
+            }
+            held.expect("a window's demand is decided before it is used")
+        } else {
+            demand_now(prog, pack, dt, last.as_ref())
+        };
         let t = pack.step(dt, d, env);
         *last = Some(t);
         rows.push(Row {
