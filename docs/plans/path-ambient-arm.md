@@ -93,6 +93,16 @@ once before running, at below-normal priority through `subprocess.run`. The ambi
 | set the arm to `start = "mark"` | the restart-only refusal (and reachability, since the arm then begins at the mark) |
 | cut the temperature out of the instruction | the anchor check: `-5` is not a number in that sentence |
 | move the plating arrival to 1495.5 s | the value check, on that claim alone |
+| move the temperature to −10 °C (prose, instruction and field together) | `UT` at **978.5 s** instead of 1494.5 |
+
+**That last row is the only one that proves the arm's number reaches `Env`**, and it needed
+three coordinated edits — the page's sentence, the arm's copy of it, and the field — because
+the anchor and genuine-change fences refuse anything less. Every other ambient case is
+consistent with the override being parsed and then discarded: dropping it leaves the lesson's
+value, which is what a wiring bug would also use, and setting it to 25 °C trips the
+genuine-change fence in `every_arm_is_instructed_by_its_own_step` *before* any trajectory
+runs. The sensor half has no equivalent hole — `no-bms-arm` panicked from inside `measure`,
+which is proof the arm's `bms` reached `build_with_bms`.
 
 The typographic-minus trap was real and was designed out rather than hit: the prose writes
 `−5 °C` with U+2212, the arm's field is `-5.0`, and the instruction is normalised through the
@@ -109,6 +119,12 @@ a minus.
 * **Both arrivals moving together is invisible**, as above.
 * **The step's two performance ratios (140× and 500×) are still unclaimable** by anything
   that runs a trajectory. Unchanged, and the reason this step stays on the unledgered list.
+* **The coverage counts in both headers are hand-maintained and nothing asserts them.**
+  `every_lesson_is_ledgered_or_named_as_not` guards the `unledgered` *list*, not the prose
+  numbers beside it — and this slice found the claims-file tallies stale by five slices
+  (`same 59` against an actual 110, `spelled 53` against 102). They were re-derived by
+  counting rather than by trusting, and the module docs' step counts (seven / five /
+  sixteen) were too. The next slice should re-derive rather than adjust.
 * **The other sentence in the same paragraph is unclaimed**: "ask for 6 A and the BMS derates
   it to exactly 4.2 A — 0.7 C, its charge rating". That is a demand arm, which has existed
   for three slices; what stops it is `0.7 C`, a figure derived from `4.2` and the pack's
