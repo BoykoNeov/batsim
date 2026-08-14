@@ -51,6 +51,17 @@
 # scans a step's whole prose and requires every number in it to be tied to something,
 # whether a claim quotes the sentence or not. Three steps so far. See "THE LEDGER".
 #
+# And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
+# stated here about the file's contents (how many claims take each `tol_from`, how many
+# numbers check 6 scans, how many steps the ledger covers, how many claims sit beside each
+# entry it does not scan) is derived from the file by
+# `every_count_these_files_state_about_themselves_is_derived` and required to appear in
+# the sentence that states it. Every one of them was hand-maintained until then, and they
+# drifted: the tallies below were once five slices out of date, re-derived by hand, and
+# left unchecked again. The phrase is declared and the number never is, which is the same
+# contract `spells` keeps for a claim. Opt-in per sentence, like the ledger — the counts
+# it does not derive are listed in `NOT_DERIVED` in path_claims.rs with the reason.
+#
 # The literal is stored as a STRING, exactly as written in the sentence, and is
 # never produced by formatting `value`. That is deliberate: a formatter that has to
 # agree with how a human wrote each sentence generates false failures and then gets
@@ -74,7 +85,7 @@
 #              an absolute time, or a magnitude where the value is negative.
 #              A sentence may spell its number in LETTERS — "about three points" spells
 #              `"three"` — and one does. `WORD_NUMERALS` in path_claims.rs is the
-#              translation, one entry, and a word in it that no claim spells fails the
+#              translation, two entries, and a word in it that no claim spells fails the
 #              test. A word commits to no decimal place, so the rule it licenses is half
 #              a unit of the unit it is written in: half a point, for that one.
 #   spells_pow10  how many powers of ten larger `spells`'s unit is than `value`'s. 2 for a
@@ -112,7 +123,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 37 claims below that set
+#              Be clear about what this buys TODAY: in all 53 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -226,10 +237,10 @@
 # hole, surviving on the one number in a claimed sentence nobody had claimed.
 #
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
-# accounted for by the claims already on that sentence. Three accountings, and no fourth:
+# accounted for by the claims already on that sentence. Four accountings, and no fifth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 64 of the 73 numbers the
-#            60 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 116 of the 139 numbers the
+#            86 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -237,6 +248,11 @@
 #            `shows`, or — for a `displayed` claim read on a leg — the clock's rendering
 #            of the mark, which is where the leg begins and the one other instant such a
 #            sentence can mean. ``it goes from `10m` to `16m`` prints both ends.
+#   setting  it is a CONTROL the reader dials in, and one of this sentence's own claims is
+#            read on the trajectory that control produces — the step length in the `dt`
+#            box, tied to a run rather than to the lesson block, so `speed_x: 10` sitting
+#            beside it cannot be the thing a `10` matches. Step 18's headline is the
+#            sentence it was built for and today the only one that needs it.
 #
 # NOTHING IS DECLARED HERE. The three other fields this file grew to close a hole —
 # `tol_from`, `states`, `spells` — are declarations, because each encodes something a
@@ -244,7 +260,7 @@
 # sitting beside the number, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 60 claimed sentences need none. A future literal printing a control setting or a
+# the 86 claimed sentences need none. A future literal printing a control setting or a
 # chemistry constant will fail loudly, and the answer will be an arm that checks it
 # against the lesson block or the chemistry file — not a waiver.
 #
@@ -2599,7 +2615,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: three
 # steps, fourteen numerals, all of them scenario constants. Those three were picked
 # because the same measuring pass found they carry no measurement-shaped figure at all,
-# so they can be closed before a single number is measured. The remaining eleven
+# so they can be closed before a single number is measured. The remaining five
 # unclaimed steps need arms this file has not got — see the plan.
 #
 # NUMERAL, NOT NUMBER, and the difference is load-bearing. The scan finds digits, so a
@@ -3584,8 +3600,8 @@ steps = [
                      # two claims on its estimator gap, which the prose spells in words
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
 ]
-# Not scanned, and why. Twelve of these carry claims, so their claimed sentences are
-# checked and the rest of their prose is not; the other nine are unchecked entirely.
+# Not scanned, and why. Sixteen of these carry claims, so their claimed sentences are
+# checked and the rest of their prose is not; the other five are unchecked entirely.
 unledgered = [
   "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
@@ -3604,11 +3620,11 @@ unledgered = [
   "the-electrolyte-starves",        # three perf ratios; needs a 1 C rerun
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
-  "one-step-that-got-through",      # claims: 9, on five arms. Its headline sentence is
+  "one-step-that-got-through",      # claims: 9, on six arms. Its headline sentence is
                                     # claimed now — `Accounted::Setting` was the blocker
   "nothing-to-clamp",               # claims: 19, on both halves of the step now
-  "past-empty",                     # claims: 14
-  "what-it-cost",                   # claims: 20
+  "past-empty",                     # claims: 13
+  "what-it-cost",                   # claims: 19
   "slow-and-patient",               # claims: 4
   "sixty-times-the-current",        # claims: 4
   "and-it-is-still-in-there",       # claims: 8

@@ -94,6 +94,19 @@
 //! half-step — shipped in two consecutive commits, the second on the slice fixing the
 //! first.
 //!
+//! One more check is about *prose* rather than about any claim, and it is the one that
+//! keeps the paragraphs you are reading honest:
+//! [`every_count_these_files_state_about_themselves_is_derived`]. Both this file and
+//! `path-claims.toml` describe their own contents in numbers — how many claims take each
+//! tolerance rule, how many sentences check 6 scans, how many steps the ledger covers,
+//! how many claims sit on each step it does not. Every one of those was hand-maintained
+//! and none was checked, so they drifted: a slice found the header's tallies wrong by
+//! five slices' worth, re-derived them by hand, and left the same hole open behind it.
+//! Now the *phrase* is declared and the *number* is derived, which is the contract
+//! [`ScenarioRule`] and `spells` both keep. It is opt-in per sentence, like the ledger,
+//! so the counts it does not derive are written down in [`NOT_DERIVED`] with the reason
+//! and the sentence they excuse.
+//!
 //! # What this test does NOT cover
 //!
 //! Named here rather than left to be inferred, because an uncovered step under a green
@@ -1413,7 +1426,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 53 of 69 claims.
+    /// number's last printed place. The default shape: 103 of 124 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1422,7 +1435,7 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 14 of 69.
+    /// declaration was wrong. 17 of 124.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
@@ -1467,7 +1480,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 59 of 69, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 111 of 124, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2414,7 +2427,7 @@ fn ledger() -> Ledger {
 /// A step used to be allowed one leg and no more, because a claim pointed at it with a
 /// bare `after_mark = true` and a second leg would have been silently ignored. An arm is
 /// named and a claim names it, so several per step is now the normal case — step 18 has
-/// four. What must stay unique is the name: two arms sharing one would hand every claim
+/// six. What must stay unique is the name: two arms sharing one would hand every claim
 /// on that step whichever was parsed first, which is the same silent-wrong-trajectory
 /// failure one level down.
 fn arms() -> Vec<Arm> {
@@ -4332,6 +4345,815 @@ fn every_claim_matches_the_engine() {
                  the sentence: if it quotes the old string it is now wrong on the page.",
                 c.step, c.literal, row_time_s
             );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The file's account of itself
+// ---------------------------------------------------------------------------
+
+/// Which file a self-count is written in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Prose {
+    /// `web/path-claims.toml` — its header, its section notes and its foot.
+    ClaimsFile,
+    /// This test's own module and item documentation.
+    ThisTest,
+}
+
+impl Prose {
+    fn path(self) -> PathBuf {
+        match self {
+            Prose::ClaimsFile => repo_root().join("web").join("path-claims.toml"),
+            Prose::ThisTest => repo_root()
+                .join("crates")
+                .join("sim-data")
+                .join("tests")
+                .join("path_claims.rs"),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Prose::ClaimsFile => "web/path-claims.toml",
+            Prose::ThisTest => "crates/sim-data/tests/path_claims.rs",
+        }
+    }
+}
+
+/// One file's prose, comment markers removed and every run of whitespace collapsed.
+///
+/// A sentence in either file is broken over three lines and padded into a column, and
+/// neither of those is something a tally should be asserting. Flattening leaves exactly
+/// the words and the digits, which is what the counts below are about.
+fn flattened(prose: Prose) -> String {
+    let text = read(&prose.path());
+    let mut out = String::new();
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let stripped = match prose {
+            Prose::ClaimsFile => trimmed.strip_prefix('#').unwrap_or(trimmed),
+            Prose::ThisTest => trimmed
+                .strip_prefix("//!")
+                .or_else(|| trimmed.strip_prefix("///"))
+                .or_else(|| trimmed.strip_prefix("//"))
+                .unwrap_or(trimmed),
+        };
+        out.push(' ');
+        out.push_str(stripped);
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The English for the counts these files spell in letters.
+///
+/// Separate from [`WORD_NUMERALS`] on purpose, and it is not a second vocabulary by
+/// accident: that table is the *prose's* words, and every entry in it must be spelled by
+/// a claim ([`every_word_numeral_is_spelled_by_a_claim`]), so putting "twelve" there to
+/// render a header sentence would redden a test about the lesson prose. Where the two
+/// overlap they are asserted to agree, in the test below.
+const HEADER_WORDS: &[(usize, &str)] = &[
+    (1, "one"),
+    (2, "two"),
+    (3, "three"),
+    (4, "four"),
+    (5, "five"),
+    (6, "six"),
+    (7, "seven"),
+    (8, "eight"),
+    (9, "nine"),
+    (10, "ten"),
+    (11, "eleven"),
+    (12, "twelve"),
+    (13, "thirteen"),
+    (14, "fourteen"),
+    (15, "fifteen"),
+    (16, "sixteen"),
+    (17, "seventeen"),
+    (18, "eighteen"),
+    (19, "nineteen"),
+    (20, "twenty"),
+    (21, "twenty-one"),
+    (22, "twenty-two"),
+    (23, "twenty-three"),
+    (24, "twenty-four"),
+    (25, "twenty-five"),
+];
+
+/// The same, for the counts a sentence writes as a position rather than a size — "and no
+/// fifth" is a statement about how many there are.
+const HEADER_ORDINALS: &[(usize, &str)] = &[
+    (1, "first"),
+    (2, "second"),
+    (3, "third"),
+    (4, "fourth"),
+    (5, "fifth"),
+    (6, "sixth"),
+    (7, "seventh"),
+    (8, "eighth"),
+    (9, "ninth"),
+    (10, "tenth"),
+];
+
+/// One count a file states about its **own contents**, and the derivation that produces
+/// it.
+///
+/// The phrase is declared and the number never is — the same contract [`ScenarioRule`]
+/// keeps for the ledger and `spells` keeps for a claim. A tally that stored the number
+/// would be a second copy of the thing it is meant to guard.
+struct Tally {
+    /// Which file the sentence is in.
+    prose: Prose,
+    /// The sentence, with `{n}` where a digit-written count sits, `{w}` where one is
+    /// written in letters, `{W}` where it opens a sentence and `{o}` where the sentence
+    /// counts by position ("no fifth"). Matched against the flattened file, so line
+    /// breaks and column padding are not part of it.
+    phrase: &'static str,
+    /// One derivation per placeholder, in order.
+    of: &'static [fn(&Facts) -> usize],
+}
+
+/// A count these files state about themselves that this check does **not** derive, and
+/// why.
+///
+/// Without this, "which tallies are covered" would be whatever happens to be in the table
+/// above, and a green run would read as "every number this file states about itself is
+/// checked" — which is false, and is exactly the shape the ledger's `unledgered` list
+/// exists to stop. The phrase is required to still be in the file, so rewording or
+/// deleting the sentence reddens the waiver instead of silently retiring it.
+struct NotDerived {
+    prose: Prose,
+    /// The sentence, verbatim (flattened). No placeholder: nothing renders it.
+    phrase: &'static str,
+    /// Why no derivation exists.
+    #[allow(
+        dead_code,
+        reason = "the reason is for a human reader; the phrase is what is asserted"
+    )]
+    because: &'static str,
+}
+
+/// Everything a self-count can be derived from, parsed once.
+struct Facts {
+    claims: Vec<Claim>,
+    arms: Vec<Arm>,
+    ledger: Ledger,
+    lessons: Vec<Lesson>,
+}
+
+impl Facts {
+    fn gather() -> Facts {
+        let parsed = parse_claims_file();
+        Facts {
+            claims: parsed.claim,
+            arms: arms(),
+            ledger: parsed.ledger,
+            lessons: lessons(),
+        }
+    }
+
+    fn lesson(&self, step: &str) -> &Lesson {
+        self.lessons
+            .iter()
+            .find(|l| l.id == step)
+            .unwrap_or_else(|| panic!("no lesson `{step}`"))
+    }
+
+    fn claims_on(&self, step: &str) -> usize {
+        self.claims.iter().filter(|c| c.step == step).count()
+    }
+
+    /// How many numerals that step's whole prose prints — what the ledger scans.
+    fn numerals_in(&self, step: &str) -> usize {
+        written_numbers(&ascii_minus(&self.lesson(step).text)).len()
+    }
+
+    /// `(numbers accounted as `spelled`, numbers printed, claimed sentences)`.
+    ///
+    /// Run through [`accounting_for`] and [`sentences`] rather than re-scanned here. A
+    /// second scan of the same prose could disagree with check 6 while both stayed green,
+    /// which is the defect this whole file is built around.
+    fn accounting(&self) -> (usize, usize, usize) {
+        let sents = sentences(&self.claims);
+        let (mut spelled, mut printed) = (0, 0);
+        for (step, literal) in &sents {
+            let lesson = self.lesson(step);
+            let group = sentence_group(&self.claims, step, literal);
+            for token in numeric_tokens(&ascii_minus(literal)) {
+                printed += 1;
+                if let Some(Accounted::Spelled) = accounting_for(&token, &group, lesson, &self.arms)
+                {
+                    spelled += 1;
+                }
+            }
+        }
+        (spelled, printed, sents.len())
+    }
+
+    /// How many of check 6's arms the claims in this file actually use.
+    ///
+    /// Derived from use rather than from the enum, and that is the honest reading of the
+    /// sentence it pins: this file's rule is that an arm nobody accounts anything with
+    /// does not get built. An unused variant would leave the count where it was, and the
+    /// author would find out when the arm's first number needed it.
+    fn accounting_arms(&self) -> usize {
+        let mut used: Vec<&'static str> = Vec::new();
+        for (step, literal) in sentences(&self.claims) {
+            let lesson = self.lesson(step);
+            let group = sentence_group(&self.claims, step, literal);
+            for token in numeric_tokens(&ascii_minus(literal)) {
+                if let Some(a) = accounting_for(&token, &group, lesson, &self.arms) {
+                    let name = a.arm_name();
+                    if !used.contains(&name) {
+                        used.push(name);
+                    }
+                }
+            }
+        }
+        used.len()
+    }
+}
+
+impl Accounted {
+    /// The name the header gives this arm. Exhaustive on purpose: a fifth variant does
+    /// not compile until it is named here, so [`Facts::accounting_arms`] cannot go stale
+    /// by omission.
+    fn arm_name(&self) -> &'static str {
+        match self {
+            Accounted::Spelled => "spelled",
+            Accounted::ReadAt(_) => "read at",
+            Accounted::Shown => "shown",
+            Accounted::Setting(_) => "setting",
+        }
+    }
+}
+
+fn n_claims(f: &Facts) -> usize {
+    f.claims.len()
+}
+fn n_lessons(f: &Facts) -> usize {
+    f.lessons.len()
+}
+fn n_quoted(f: &Facts) -> usize {
+    f.claims.iter().filter(|c| c.quoted).count()
+}
+fn n_spelled(f: &Facts) -> usize {
+    f.claims
+        .iter()
+        .filter(|c| matches!(c.tol_from, TolFrom::Spelled))
+        .count()
+}
+fn n_tighter(f: &Facts) -> usize {
+    f.claims
+        .iter()
+        .filter(|c| matches!(c.tol_from, TolFrom::Tighter))
+        .count()
+}
+fn n_grid(f: &Facts) -> usize {
+    f.claims
+        .iter()
+        .filter(|c| matches!(c.tol_from, TolFrom::Grid))
+        .count()
+}
+fn n_states(f: &Facts, want: fn(&Claim) -> bool) -> usize {
+    f.claims.iter().filter(|c| want(c)).count()
+}
+fn n_same(f: &Facts) -> usize {
+    n_states(f, |c| matches!(c.states, States::Same))
+}
+fn n_magnitude(f: &Facts) -> usize {
+    n_states(f, |c| matches!(c.states, States::Magnitude))
+}
+fn n_complement(f: &Facts) -> usize {
+    n_states(f, |c| matches!(c.states, States::Complement))
+}
+fn n_since_mark(f: &Facts) -> usize {
+    n_states(f, |c| matches!(c.states, States::SinceMark))
+}
+fn n_until_end(f: &Facts) -> usize {
+    n_states(f, |c| matches!(c.states, States::UntilEnd))
+}
+fn n_displayed(f: &Facts) -> usize {
+    n_states(f, |c| matches!(c.states, States::Displayed))
+}
+fn n_departure(f: &Facts) -> usize {
+    n_states(f, |c| matches!(c.states, States::Departure))
+}
+fn n_nothing(f: &Facts) -> usize {
+    n_states(f, |c| matches!(c.states, States::Nothing))
+}
+fn n_word_numerals(_: &Facts) -> usize {
+    WORD_NUMERALS.len()
+}
+fn n_ledgered(f: &Facts) -> usize {
+    f.ledger.steps.len()
+}
+fn n_ledgered_numerals(f: &Facts) -> usize {
+    f.ledger.steps.iter().map(|s| f.numerals_in(s)).sum()
+}
+fn n_unclaimed_steps(f: &Facts) -> usize {
+    f.lessons.iter().filter(|l| f.claims_on(&l.id) == 0).count()
+}
+fn n_unledgered_claimed(f: &Facts) -> usize {
+    f.ledger
+        .unledgered
+        .iter()
+        .filter(|s| f.claims_on(s) > 0)
+        .count()
+}
+fn n_unledgered_unclaimed(f: &Facts) -> usize {
+    f.ledger.unledgered.len() - n_unledgered_claimed(f)
+}
+fn n_accounting_arms(f: &Facts) -> usize {
+    f.accounting_arms()
+}
+fn n_accounting_arms_plus_one(f: &Facts) -> usize {
+    f.accounting_arms() + 1
+}
+fn n_spelled_accountings(f: &Facts) -> usize {
+    f.accounting().0
+}
+fn n_numbers_in_claimed_sentences(f: &Facts) -> usize {
+    f.accounting().1
+}
+fn n_claimed_sentences(f: &Facts) -> usize {
+    f.accounting().2
+}
+fn n_claims_on_belief_drifts(f: &Facts) -> usize {
+    f.claims_on("belief-drifts")
+}
+fn n_arms_on_step_18(f: &Facts) -> usize {
+    f.arms
+        .iter()
+        .filter(|a| a.step == "one-step-that-got-through")
+        .count()
+}
+fn n_mark_arms_on_step_18(f: &Facts) -> usize {
+    f.arms
+        .iter()
+        .filter(|a| a.step == "one-step-that-got-through" && matches!(a.start, Start::Mark))
+        .count()
+}
+fn n_claims_on_step_18(f: &Facts) -> usize {
+    f.claims_on("one-step-that-got-through")
+}
+fn n_ambient_arms(f: &Facts) -> usize {
+    f.arms
+        .iter()
+        .filter(|a| a.step == "what-protection-costs")
+        .count()
+}
+fn n_claims_on_what_protection_costs(f: &Facts) -> usize {
+    f.claims_on("what-protection-costs")
+}
+
+/// Every count these two files state about their own contents that is derivable from
+/// them.
+///
+/// Opt-in, like the ledger and for the same reason: nothing can decide automatically
+/// whether a number in a paragraph is *about this file*. So the gap is written down —
+/// [`NOT_DERIVED`] — rather than left to be inferred from a green run.
+const TALLIES: &[Tally] = &[
+    // --- what the header says about its own claims -----------------------------
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "in all {n} claims below that set `quoted`",
+        of: &[n_quoted],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "spelled {n} claims. `tol` is exactly the rule",
+        of: &[n_spelled],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "tighter {n} claims. `tol` is strictly under the rule",
+        of: &[n_tighter],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "grid {n} claims. The quantity is a time",
+        of: &[n_grid],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "deliberately tighter on {n} claims",
+        of: &[n_tighter],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "same {n} claims. The sentence prints the quantity",
+        of: &[n_same],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "magnitude {n}. The sentence prints the size",
+        of: &[n_magnitude],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "complement {n}. The sentence prints how far below one",
+        of: &[n_complement],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "since_mark {n}. A duration since the step's mark",
+        of: &[n_since_mark],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "until_end {n}. A duration remaining to the mark",
+        of: &[n_until_end],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "displayed {n}. The sentence prints what the ROW prints",
+        of: &[n_displayed],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "departure {n}. The sentence names a value the quantity has LEFT",
+        of: &[n_departure],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "nothing {n}. The sentence prints no number about this quantity",
+        of: &[n_nothing],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "is the translation, {w} entries",
+        of: &[n_word_numerals],
+    },
+    // --- what it says about check 6 --------------------------------------------
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "{W} accountings, and no {o}:",
+        of: &[n_accounting_arms, n_accounting_arms_plus_one],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "the {n} claimed sentences need none",
+        of: &[n_claimed_sentences],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "names it in `spells` — {n} of the {n} numbers the {n} claimed sentences \
+                 print",
+        of: &[
+            n_spelled_accountings,
+            n_numbers_in_claimed_sentences,
+            n_claimed_sentences,
+        ],
+    },
+    // --- what it says about the ledger -----------------------------------------
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "{W} steps so far. See \"THE LEDGER\"",
+        of: &[n_ledgered],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "{w} steps of the {w} so far",
+        of: &[n_ledgered, n_lessons],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "{w} steps, {w} numerals, all of them scenario constants",
+        of: &[n_ledgered, n_ledgered_numerals],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "The remaining {w} unclaimed steps need arms",
+        of: &[n_unledgered_unclaimed],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "{w} claims on its estimator gap",
+        of: &[n_claims_on_belief_drifts],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "{W} of these carry claims",
+        of: &[n_unledgered_claimed],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "the other {w} are unchecked entirely",
+        of: &[n_unledgered_unclaimed],
+    },
+    // --- and what this test's own docs say -------------------------------------
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "`const LESSONS` is {n} teaching steps",
+        of: &[n_lessons],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "The default shape: {n} of {n} claims",
+        of: &[n_spelled, n_claims],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "only the declaration was wrong. {n} of {n}.",
+        of: &[n_tighter, n_claims],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "The sentence prints the quantity itself. {n} of {n}, and the shape to \
+                 prefer",
+        of: &[n_same, n_claims],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "{W} steps are still in that position",
+        of: &[n_unclaimed_steps],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "today it is {w} steps and {w} numbers",
+        of: &[n_ledgered, n_ledgered_numerals],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "so several per step is now the normal case — step 18 has {w}.",
+        of: &[n_arms_on_step_18],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "it buys the thing step 18 needs: {w} arms branching off one mark",
+        of: &[n_mark_arms_on_step_18],
+    },
+    // --- and what the ledger's own entries say about their steps ----------------
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "claims: {n}, on {w} arms.",
+        of: &[n_claims_on_step_18, n_arms_on_step_18],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "claims: {n}, on {w} ambient arms.",
+        of: &[n_claims_on_what_protection_costs, n_ambient_arms],
+    },
+];
+
+/// The self-counts left out of [`TALLIES`], each with the reason no derivation exists.
+///
+/// Each phrase is required to still be in its file, which is what stops this being a
+/// free-text waiver: reword the sentence and the entry reddens, so retiring one is a
+/// decision somebody writes down.
+const NOT_DERIVED: &[NotDerived] = &[
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "reads this file and checks each entry up to SIX independent ways",
+        because: "the number of checks is a property of the test code, not of any data \
+                  this file parses. Counting `#[test]` functions would not give it \
+                  either: two of the six run inside another test's loop.",
+    },
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "Four separate slices have found numbers in it",
+        because: "a count of past slices, settled by git history rather than by the file.",
+    },
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "fourteen of the twenty-four steps were in exactly that position",
+        because: "past tense: how many steps had no claim when the ledger was written. \
+                  The present-tense version of it IS derived, in this test's own docs.",
+    },
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "measured all fourteen by hand and found two defects in about 145 \
+                 measurement-shaped numbers",
+        because: "a hand measurement recorded in docs/plans/path-prose-ledger.md, and \
+                  `about 145` is an estimate no scan reproduces.",
+    },
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "accounts for a third of the path's numbers and means nothing",
+        because: "an estimate about a generous rule that was never built, so there is \
+                  nothing to count it against.",
+    },
+    NotDerived {
+        prose: Prose::ThisTest,
+        phrase: "fourteen steps had no claim at all when this was written",
+        because: "past tense, as above.",
+    },
+    NotDerived {
+        prose: Prose::ThisTest,
+        phrase: "two ledgered steps state four measurements that way",
+        because: "a count of quantities spelled in ENGLISH, which is precisely what the \
+                  ledger's numeral scan cannot see. Deriving it needs the word \
+                  vocabulary the ledger deliberately has not got.",
+    },
+];
+
+/// Render one tally's phrase with its derived numbers in place.
+fn render(tally: &Tally, facts: &Facts) -> String {
+    let mut out = String::new();
+    let mut rest = tally.phrase;
+    let mut next = tally.of.iter();
+    while let Some(open) = rest.find('{') {
+        let close = open
+            + rest[open..]
+                .find('}')
+                .unwrap_or_else(|| panic!("tally `{}` has an unclosed `{{`", tally.phrase));
+        out.push_str(&rest[..open]);
+        let of = next.next().unwrap_or_else(|| {
+            panic!(
+                "tally `{}` has more placeholders than derivations",
+                tally.phrase
+            )
+        });
+        let n = of(facts);
+        out.push_str(&match &rest[open..=close] {
+            "{n}" => n.to_string(),
+            "{w}" => word(n, HEADER_WORDS, tally.phrase),
+            "{o}" => word(n, HEADER_ORDINALS, tally.phrase),
+            "{W}" => {
+                let w = word(n, HEADER_WORDS, tally.phrase);
+                let mut c = w.chars();
+                match c.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+                    None => w,
+                }
+            }
+            other => panic!(
+                "tally `{}` uses `{other}`, which is not a placeholder this check knows. \
+                 Use `{{n}}` for digits, `{{w}}` for letters, `{{W}}` to open a \
+                 sentence, `{{o}}` for a position.",
+                tally.phrase
+            ),
+        });
+        rest = &rest[close + 1..];
+    }
+    out.push_str(rest);
+    assert!(
+        next.next().is_none(),
+        "tally `{}` gives more derivations than it has placeholders",
+        tally.phrase
+    );
+    out
+}
+
+fn word(n: usize, table: &[(usize, &'static str)], phrase: &str) -> String {
+    table
+        .iter()
+        .find(|(v, _)| *v == n)
+        .unwrap_or_else(|| {
+            panic!(
+                "the tally `{phrase}` derives {n}, and this check has no English for that \
+                 number. Add it to HEADER_WORDS / HEADER_ORDINALS, or write the sentence \
+                 in digits."
+            )
+        })
+        .1
+        .to_string()
+}
+
+/// Every count these files state about themselves is derived from their contents.
+///
+/// The measurements in this file age the moment they are taken, and its own prose is no
+/// exception: `docs/plans/path-ambient-arm.md` found the header's tallies stale by five
+/// slices, re-derived them by hand, and left the same hole behind — nothing asserts them,
+/// so the next slice starts the drift again. That is what this closes. The phrase is
+/// declared, the number is derived, and a count that moves without its sentence moving
+/// fails here by name.
+#[test]
+fn every_count_these_files_state_about_themselves_is_derived() {
+    let facts = Facts::gather();
+
+    // One vocabulary, not two: where the header's words and the prose's overlap, they
+    // have to mean the same number.
+    for (n, w) in HEADER_WORDS {
+        if let Some((_, v)) = WORD_NUMERALS.iter().find(|(word, _)| word == w) {
+            assert_eq!(
+                *v, *n as f64,
+                "HEADER_WORDS says `{w}` is {n} and WORD_NUMERALS says it is {v}. Two \
+                 tables spelling one word two ways is how a number comes to mean \
+                 different things in the prose and in the check."
+            );
+        }
+    }
+
+    for prose in [Prose::ClaimsFile, Prose::ThisTest] {
+        let text = flattened(prose);
+
+        for tally in TALLIES.iter().filter(|t| t.prose == prose) {
+            let expected = render(tally, &facts);
+            let hits = text.matches(expected.as_str()).count();
+            assert_eq!(
+                hits,
+                1,
+                "{}: this file's own prose should say\n  `{expected}`\nand {}.\n\
+                 The number is derived from the file's contents, so a mismatch means the \
+                 contents moved and the sentence describing them did not — or the \
+                 sentence was reworded and this tally's phrase (`{}`) has to follow it. \
+                 Fix the prose, not the derivation: the derivation is the fact.",
+                prose.name(),
+                match hits {
+                    0 => "it does not".to_string(),
+                    n => format!("it says it {n} times, which pins none of them"),
+                },
+                tally.phrase,
+            );
+        }
+
+        for waived in NOT_DERIVED.iter().filter(|w| w.prose == prose) {
+            // A phrase quoted in this table is itself in this test's source, so when the
+            // sentence lives here the table's own copy is one of the matches.
+            let own = usize::from(prose == Prose::ThisTest);
+            let hits = flattened(prose).matches(waived.phrase).count();
+            assert!(
+                hits > own,
+                "{}: NOT_DERIVED says this file states `{}` and it does not (any more).\n\
+                 That entry is the written-down reason a self-count here is NOT checked, \
+                 so it may not outlive the sentence it excuses. If the sentence is gone, \
+                 drop the entry; if it was reworded, follow it; if it became derivable, \
+                 move it to TALLIES.",
+                prose.name(),
+                waived.phrase,
+            );
+        }
+    }
+}
+
+/// The comment beside one step's entry in a `[ledger]` list.
+fn ledger_note<'a>(raw: &'a str, step: &str) -> &'a str {
+    let entry = format!("\"{step}\",");
+    let line = raw
+        .lines()
+        .find(|l| l.trim_start().starts_with(&entry))
+        .unwrap_or_else(|| {
+            panic!(
+                "web/path-claims.toml's `[ledger]` lists `{step}`, and no line in the file \
+                 starts with `{entry}`. The list was reformatted onto one line, and the \
+                 per-step counts beside each entry cannot be read any more."
+            )
+        });
+    line.split_once('#').map_or("", |(_, note)| note)
+}
+
+/// The first whole number in some text, if it has one.
+fn first_count(text: &str) -> Option<usize> {
+    written_numbers(text)
+        .first()
+        .and_then(|w| w.token.parse().ok())
+}
+
+/// Every per-step count in the ledger's two lists is derived too.
+///
+/// These are the tallies that go stale first, because each one moves whenever a claim is
+/// added to the step beside it — and two of them were wrong when this was written, both
+/// off by exactly the arms on those steps. Nothing here is declared: the comment says a
+/// number, the file says a number, and they have to be the same one.
+#[test]
+fn every_count_beside_a_ledger_entry_is_derived() {
+    let facts = Facts::gather();
+    let raw = read(&Prose::ClaimsFile.path());
+
+    for step in &facts.ledger.steps {
+        let note = ledger_note(&raw, step);
+        let stated = first_count(note).unwrap_or_else(|| {
+            panic!(
+                "ledgered step `{step}` has no count beside it. A ledgered step's whole \
+                 prose is scanned, so how many numerals that is belongs next to the \
+                 entry: write `# {} numbers: …`.",
+                facts.numerals_in(step)
+            )
+        });
+        assert_eq!(
+            stated,
+            facts.numerals_in(step),
+            "web/path-claims.toml: the `[ledger]` entry for `{step}` says {stated}, and \
+             that step's prose prints {} numerals. The scan reads the prose, so the \
+             comment is what is wrong — unless a number left the lesson, in which case \
+             this is the notice that it did.",
+            facts.numerals_in(step),
+        );
+    }
+
+    for step in &facts.ledger.unledgered {
+        let note = ledger_note(&raw, step);
+        let actual = facts.claims_on(step);
+        match note.split_once("claims:").and_then(|(_, n)| first_count(n)) {
+            Some(stated) => assert_eq!(
+                stated, actual,
+                "web/path-claims.toml: the `unledgered` entry for `{step}` says it \
+                 carries {stated} claims and it carries {actual}.\n\
+                 This is the count that moves every time a claim is added, and it is the \
+                 file's only per-step statement of how much of an unledgered step is \
+                 checked at all. Note that ARMS are not claims: a step with an arm on it \
+                 has one more `step = ` line in this file than it has claims."
+            ),
+            None => assert_eq!(
+                actual, 0,
+                "web/path-claims.toml: the `unledgered` entry for `{step}` says nothing \
+                 about claims, and the step carries {actual}. Every entry that carries \
+                 claims says how many — write `# claims: {actual}` beside it, so the one \
+                 statement this file makes about a step it does not scan stays true."
+            ),
         }
     }
 }
