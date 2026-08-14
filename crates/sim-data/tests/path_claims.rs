@@ -980,6 +980,14 @@ struct Row {
     /// records it reading 9.438 points at an instant the engine was at 9.704. Claims
     /// measured from this field are therefore value-only and may name no `display`.
     deficit_max: f64,
+    /// The pack's *smallest* per-cell `soc_deficit`, as a fraction of capacity.
+    ///
+    /// The other end of a spread no readout row prints. `past empty` shows the worst cell
+    /// alone, and step 7's sentence is about the range — "the eight cells sit between 23.5
+    /// and 27.8 points of charge past empty" — which is the pack grid on `past empty`
+    /// rather than the row. Value-only for the same reason [`Self::deficit_max`] is, and
+    /// one reason more: the grid is per-cell, so no single string renders it.
+    deficit_min: f64,
     /// The `surface gap` row's two numbers, bulk minus surface on each electrode, as
     /// fractions — `None` on an equivalent circuit, which has no electrodes.
     ///
@@ -997,21 +1005,29 @@ fn surface_gap(pack: &Pack) -> Option<(f64, f64)> {
     Some((cell.surface_gap_neg?, cell.surface_gap_pos?))
 }
 
-/// The pack's largest per-cell deficit, over ground truth.
+/// The pack's largest and smallest per-cell deficit, over ground truth.
 ///
-/// `Math.max` over every cell, which is what the page's row does — the pack's *worst*
-/// cell rather than a mean, because cells do not pass empty together.
-fn deficit_max(pack: &Pack) -> f64 {
+/// The maximum is `Math.max` over every cell, which is what the page's row does — the
+/// pack's *worst* cell rather than a mean, because cells do not pass empty together. The
+/// minimum is the other end of that same disagreement, and it is the number step 7's
+/// sentence needs: a pack whose cells all cross empty together has a range of zero, and
+/// the whole point of the sentence is that this one does not.
+///
+/// Both walk the same loop rather than being two functions, so the pair can never be read
+/// off two different sets of cells.
+fn deficit_range(pack: &Pack) -> (f64, f64) {
     let mut worst = 0.0f64;
+    let mut best = f64::INFINITY;
     for s in 0..usize::from(pack.series()) {
         for p in 0..usize::from(pack.parallel()) {
             let cell = pack
                 .cell(s, p)
                 .unwrap_or_else(|| panic!("pack has no cell at {s}S{p}P"));
             worst = worst.max(cell.soc_deficit);
+            best = best.min(cell.soc_deficit);
         }
     }
-    worst
+    (best, worst)
 }
 
 /// One step's trajectory, sampled every engine step — including its charge leg, if the
@@ -1199,10 +1215,12 @@ fn drive(
         };
         let t = pack.step(dt, d, env);
         *last = Some(t);
+        let (deficit_min, deficit_max) = deficit_range(pack);
         rows.push(Row {
             t_s: pack.sim_time_s(),
             telemetry: t,
-            deficit_max: deficit_max(pack),
+            deficit_max,
+            deficit_min,
             surface_gap: surface_gap(pack),
         });
     }
@@ -1247,10 +1265,13 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
     // the first and `snapshot()` is unchanged across both. That is what makes the page's
     // *two* probes on a reloading step — one under the stale demand box in `loadScenario`,
     // then this one — reproducible by modelling only the second.
+    let probe_telemetry = pack.step(0.0, demand_now(lesson.demand, &pack, dt, None), &env);
+    let (probe_deficit_min, probe_deficit_max) = deficit_range(&pack);
     let probe = Row {
         t_s: pack.sim_time_s(),
-        telemetry: pack.step(0.0, demand_now(lesson.demand, &pack, dt, None), &env),
-        deficit_max: deficit_max(&pack),
+        telemetry: probe_telemetry,
+        deficit_max: probe_deficit_max,
+        deficit_min: probe_deficit_min,
         surface_gap: surface_gap(&pack),
     };
     let mut rows = Vec::new();
@@ -1627,7 +1648,7 @@ fn decimals_of(s: &str) -> i32 {
 /// ([`written_numbers`]), so a word quantity in a ledgered step's prose is invisible to it
 /// whether or not a claim spells it — see the note in
 /// [`every_numeral_in_a_ledgered_step_is_accounted_for`].
-const WORD_NUMERALS: &[(&str, f64)] = &[("three", 3.0)];
+const WORD_NUMERALS: &[(&str, f64)] = &[("three", 3.0), ("fifty", 50.0)];
 
 /// The number `spells` names, in the unit the sentence writes it in, or `None` if the
 /// string is neither digits nor a word this file knows.
@@ -1970,6 +1991,17 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
     let t = &row.telemetry;
     Some(match quantity {
         "v_at_mark" | "v_at" => t.v_terminal,
+        // The two ends of the `cell v` row, which is one string printing both. A group in
+        // parallel has one node voltage and every cell in it sits at that voltage, so
+        // these are per-*group* readings and a sentence naming "the weakest group" and one
+        // naming "every cell" are asking for the same number. See `Pack::step`, where both
+        // are folded from `v_g`.
+        //
+        // Separate quantities rather than a pair, on the same terms as the surface gap
+        // below: a claim states one number, and step 7's sentence about a pack driven
+        // backwards is about the *spread* between them.
+        "v_cell_min_at" => t.v_cell_min,
+        "v_cell_max_at" => t.v_cell_max,
         "soc_at" => t.soc_true,
         "i_at" => t.i_actual,
         "t_max_at" => t.t_max,
@@ -1986,6 +2018,9 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
         // value-only: that row is sampled on a wall clock, so no claim measured here may
         // name a display. See `Row::deficit_max`.
         "deficit_pts_at" => row.deficit_max * 100.0,
+        // The shallow end of the same spread. No row prints it — see `Row::deficit_min` —
+        // so a claim measured here may name no `display` either.
+        "deficit_pts_min_at" => row.deficit_min * 100.0,
         // The two halves of the `surface gap` row, each in points of charge — the units
         // the row prints and the prose speaks. Separate quantities and not a pair, because
         // a claim states one number: step 18's whole argument is that these two do
@@ -2151,6 +2186,29 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
             );
             best
         }
+        // What the run has *cost* by `at_s`, against what the panel showed before the
+        // reader pressed Run: points of charge gone, and kelvin gained by the hottest cell.
+        //
+        // Both are differences from the zero-length probe, and that reference is the whole
+        // reason they are here rather than in `measure_row`. Two of this path's sentences
+        // state a cost rather than a level — "0.56 points at 0.5 s, 5.57 at 5 s, 11.14 at
+        // 10 s, where the cell ends 19 K hotter instead of 1", and "this fault costs fifty
+        // points" — and neither is any single reading. Claiming the level instead (89.44 %,
+        // 316.85 K) would be claiming a number the sentence does not print, which is the
+        // mis-pointing `States` exists to refuse.
+        //
+        // The probe is the right origin and not merely a convenient one: it is what
+        // `applyStep` reads after the step's controls are dialled in and before the run is
+        // armed, so it is literally the panel the reader is looking at when they press Run.
+        // A claim may not read either quantity *on* the probe — `measure` has already
+        // refused that above — because the difference there is zero by construction.
+        //
+        // **A subtraction of two engine readings is still not a `Derived` arm.** Nothing
+        // here reads the prose: the origin comes off the run, not off another number in the
+        // sentence. See the accounting arms in `docs/plans/path-prose-ledger.md` for the
+        // distinction, which is the one that keeps this from being a declaration.
+        "soc_lost_pts_at" => (run.probe.telemetry.soc_true - run.at(at_s).soc_true) * 100.0,
+        "t_rise_k_at" => run.at(at_s).t_max - run.probe.telemetry.t_max,
         // The coupling CLAUDE.md refuses to let a chemistry model one half of: points
         // of resistance growth per point of capacity lost.
         "soh_ratio_at" => {
@@ -2159,10 +2217,12 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
         }
         other => panic!(
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
-             Known: v_at_mark, v_at, soc_at, i_at, t_max_at, soh_cap_at, soh_res_at, \
-             soh_ratio_at, q_gen_at, i_rejected_at, deficit_pts_at, deficit_zero_s, \
-             delivered_ah, soc_gap_pts_at, soc_gap_pts_min, surface_gap_neg_pts, \
-             surface_gap_pos_pts, flag_first_s:<FLAG>, v_at_soc_below:<fraction>."
+             Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, soc_at, i_at, \
+             t_max_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
+             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, \
+             soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, \
+             surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
+             v_at_soc_below:<fraction>."
         ),
     }
 }
@@ -2900,15 +2960,25 @@ fn every_claim_states_the_value_it_measures() {
 /// claim beside the token, so a declared `accounts = "read_at"` sitting beside a token
 /// that is really something else would be a fresh instance of the defect `tol_from` was
 /// introduced to kill — a claim citing a rule it does not follow. The test tries all
-/// three and names the ones that failed.
+/// four and names the ones that failed.
 ///
-/// There is deliberately no fourth variant meaning "this number is not a measurement".
-/// Nothing in the file needs one today, and an escape hatch is exactly what re-opens the
-/// hole this check closes: the whole point is that a number a reader is shown, inside a
-/// sentence this file already claims, must be tied to *something*. A future literal
-/// printing a chemistry constant or a control setting will fail here loudly, and the
-/// right answer will be to give it an arm that checks it against the chemistry file or
-/// the lesson block — not a waiver.
+/// **The fourth arm is [`Self::Setting`], and it arrived the way this doc said it would.**
+/// What stood here was that there were three arms, that no literal in the file needed a
+/// fourth, and that "a future literal printing a chemistry constant or a control setting
+/// will fail here loudly — and the right answer will be to give it an arm that checks it
+/// against whatever decides it, not a waiver." Step 18's headline is that literal: it
+/// prints three step lengths beside three measurements, and `docs/plans/path-arms.md`
+/// established that this check, not the harness, was what stopped the sentence being
+/// claimed. `Setting` is the arm, and like the other three it decides nothing by
+/// declaration — it ties the token to the step length of a trajectory a claim on the same
+/// sentence is really measured on.
+///
+/// There is still deliberately no variant meaning "this number is not a measurement". An
+/// escape hatch is exactly what re-opens the hole this check closes: a number a reader is
+/// shown, inside a sentence this file already claims, must be tied to *something*. A
+/// literal printing a chemistry constant still fails here loudly, and the answer is still
+/// an arm that checks it against the chemistry file — `docs/plans/path-prose-ledger.md`
+/// sizes that one and the rest.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Accounted {
     /// A claim on this sentence names it in `spells`, so checks 5 and 6 already tie it to
@@ -2920,10 +2990,15 @@ enum Accounted {
     /// prints the health and the moment, and the moment is the claim's `read_at_s`. The
     /// payload is that instant made absolute again, for the fence below.
     ///
-    /// Fenced to one reading per claim, for the reason the two duration frames in
-    /// [`States`] are fenced to opposite sides of the mark: allowing a leg claim to be
-    /// read either absolutely or since the mark would let an author try both and keep
-    /// whichever matched.
+    /// **Both readings of one instant are accepted on a continuation, and that is a
+    /// widening.** It was the since-mark reading alone, on the reasoning that the two
+    /// duration frames in [`States`] are fenced to opposite sides of the mark — but that
+    /// fence is about the *quantity*, where the two frames give different numbers, and
+    /// this is about the moment, where they are one moment written two ways. Step 15's
+    /// continuation falsified the assumption behind the narrow version: it writes "2.502 V
+    /// at 1058 s", on the clock, because the clock is what a reader watches keep running.
+    /// The two readings differ by exactly the mark, so no token can match both, and
+    /// [`accounting_for`] asserts the mark is positive rather than assuming it.
     ///
     /// **And fenced against events, which is the arm's real hazard.** This was written
     /// believing that giving `207.5 s` a claim of its own closed the sentence; the
@@ -2946,6 +3021,45 @@ enum Accounted {
     /// check runs no engine for the reason [`every_claim_states_the_value_it_measures`]
     /// runs none: a prose defect should not fail from behind step 8's 400 000 steps.
     Shown,
+    /// It is a **control the reader dials in**, and the trajectory it produces is one that
+    /// a claim on this sentence is read on. Step 18's headline is the sentence this was
+    /// written for and today the only one that needs it:
+    ///
+    /// > 0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K
+    /// > hotter instead of 1.
+    ///
+    /// Five of those eight numbers are measurements and three are `dt` — the step length
+    /// the reader types into the box. A step length is not read at, not shown by any row
+    /// and not spelled by any claim, so before this arm existed the sentence could not be
+    /// claimed at all without leaving three of its numbers tied to nothing. That is the
+    /// blocker `docs/plans/path-arms.md` found had moved onto this check once both
+    /// trajectories existed, and it is what this closes.
+    ///
+    /// **The derivation is what makes it an arm rather than a waiver, and the generous
+    /// version is a real trap.** Step 18's lesson block also carries `speed_x: 10`. An arm
+    /// that accounted a token against *any* numeric field of the block would tie this
+    /// sentence's `10` to the speed multiplier — the right answer off the wrong field,
+    /// green, and still green the day one of the two moves. It is the same defect
+    /// [`ScenarioRule`] refuses when it insists a rule name its field rather than search
+    /// the file.
+    ///
+    /// So the tie is to a **trajectory**: the token must equal the step length of a run
+    /// that a claim in this sentence group actually reads — the step's own `dt` for a
+    /// claim with no arm, that arm's `dt` for a claim with one. `speed_x` is then
+    /// unreachable by construction, and an author cannot declare a setting without
+    /// building the arm whose numbers it produces. The payload is that step length \[s\].
+    ///
+    /// **A token that is also spelled, read at, or shown is refused rather than resolved.**
+    /// See [`accounting_for`]: two readings of one number is the hazard the `ReadAt` fence
+    /// and `cover_by_rule`'s double-cover panic both exist for, and a new arm is exactly
+    /// where it would come back.
+    ///
+    /// **Ambient, demand and the mark are deliberately not here.** `dt` is the only
+    /// control an arm can override that a sentence in this path also prints, and an arm
+    /// for a control nothing reads would be `CCCV_PERIOD_S` again: pinned, and consulted
+    /// by nothing. The next sentence that prints an ambient temperature is where that arm
+    /// gets built — `docs/plans/path-prose-ledger.md` sizes the rest of the taxonomy.
+    Setting(f64),
 }
 
 /// Every claim on one sentence — a `(step, literal)` pair — in file order.
@@ -2977,6 +3091,38 @@ fn accounting_for(
     lesson: &Lesson,
     arms: &[Arm],
 ) -> Option<Accounted> {
+    // A step length one of this sentence's own claims is measured at. Compared as a
+    // number rather than as text, so a sentence writing `5.0` where the box takes 5 is
+    // the same setting — the token is the reader's, the tie is to the run.
+    //
+    // Taken first although it is tried last, because the three arms below return early and
+    // this one has to be able to refuse them. See the fence under `shown`.
+    let setting = group.iter().find_map(|c| {
+        let dt = arm_of(arms, c).and_then(|a| a.dt).unwrap_or(lesson.dt);
+        token
+            .parse::<f64>()
+            .ok()
+            .filter(|n| (n - dt).abs() < 1e-9)
+            .map(|_| dt)
+    });
+    // Two readings of one number, which is the hazard this whole taxonomy is arranged
+    // against. Refused rather than resolved by trial order: with an order, an author who
+    // meant a measurement and wrote a step length gets whichever arm happens to be tried
+    // first, and the check becomes a fact about this function.
+    let clash = |other: &str| {
+        assert!(
+            setting.is_none(),
+            "step `{}`, sentence `{}`:\n  it prints `{token}`, which is both {other} and \
+             the step length of a trajectory this sentence's claims read ({} s).\n\
+             Two readings of one number means the accounting is decided by which arm was \
+             tried first rather than by the sentence. Reword the sentence, or split the \
+             literal so the two readings sit in different groups.",
+            group.first().map_or("", |c| c.step.as_str()),
+            group.first().map_or("", |c| c.literal.as_str()),
+            setting.unwrap_or(f64::NAN),
+        );
+    };
+
     let spelled = group.iter().any(|c| {
         c.spells
             .as_deref()
@@ -2984,24 +3130,44 @@ fn accounting_for(
             .is_some_and(|s| s == token)
     });
     if spelled {
+        clash("spelled by a claim on it");
         return Some(Accounted::Spelled);
     }
 
     let read_at = group.iter().find_map(|c| {
-        // A continuation's instants are naturally written since the mark; a restart arm's
-        // are absolute on its own clock, like the step's own.
-        let instant = if reads_past_the_mark(arms, c) {
-            c.read_at_s - lesson.until_s
-        } else {
-            c.read_at_s
-        };
+        // Both renderings of the one instant. A continuation's are often written since the
+        // mark — `383.0 s later` — and step 15's are written on the clock, because the
+        // clock is what keeps running while the reader watches: "2.502 V at 1058 s". A
+        // restart arm and the step's own run have only the absolute reading.
+        //
+        // This used to be `since the mark` alone for a continuation, which was an
+        // assumption about how prose is written rather than a fact, and step 15's sentence
+        // falsifies it. Widening cannot let an author try both until one fits, which is
+        // what the single reading was for: the two differ by exactly `until_s`, so no
+        // token can match both — asserted below rather than assumed, because the whole
+        // widening rests on it. What an author gains is the ability to account a number
+        // that is genuinely one of the two true readings of the instant their claim is
+        // measured at, which is the arm's whole statement.
+        let mut instants = vec![c.read_at_s];
+        if reads_past_the_mark(arms, c) {
+            assert!(
+                lesson.until_s > 0.0,
+                "step `{}` has a mark at t = {} s, so a continuation's two readings of one \
+                 instant — on the clock, and since the mark — are the same number. The \
+                 fence that lets both be accounted is that they cannot be.",
+                lesson.id,
+                lesson.until_s
+            );
+            instants.push(c.read_at_s - lesson.until_s);
+        }
         token
             .parse::<f64>()
             .ok()
-            .filter(|n| (n - instant).abs() < 1e-9)
+            .filter(|n| instants.iter().any(|i| (n - i).abs() < 1e-9))
             .map(|_| c.read_at_s)
     });
     if let Some(absolute_s) = read_at {
+        clash("an instant a claim on it is read at");
         return Some(Accounted::ReadAt(absolute_s));
     }
 
@@ -3020,7 +3186,12 @@ fn accounting_for(
                 .any(|t| *t == token);
         own || at_mark
     });
-    shown.then_some(Accounted::Shown)
+    if shown {
+        clash("a number a row this sentence's claims assert prints");
+        return Some(Accounted::Shown);
+    }
+
+    setting.map(Accounted::Setting)
 }
 
 /// Check 6 — every number a claimed sentence prints is tied to something.
@@ -3072,7 +3243,9 @@ fn every_number_in_a_claimed_literal_is_accounted_for() {
                  - spelled: no claim here names `{token}` in `spells`\n  \
                  - read at: no claim here is read at that instant \
                  ({:?} in its own frame)\n  \
-                 - shown:   it is in no `shows` string this sentence's claims assert\n\
+                 - shown:   it is in no `shows` string this sentence's claims assert\n  \
+                 - setting: it is not the step length of any trajectory this sentence's \
+                 claims read\n\
                  A number inside a sentence this file already claims, tied to nothing, is \
                  the hole checks 1-5 leave open: the prose and the literal can drift \
                  together and every one of them stays green. Give it a claim of its own \

@@ -808,17 +808,16 @@ of the stored 4.181, and every value inside that window renders as `4.18 W`.
 # pressing something. Three of them are claimed here and a fourth pair asserts the one
 # sentence in this step that is not about a number at all.
 #
-# WHAT IS NOT CLAIMED, and why, because this step's headline sentence is the obvious
-# target and it is still out of reach: "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at
-# 10 s, where the cell ends 19 K hotter instead of 1". The trajectories now exist — the
-# base run gives 0.55719 points and the `dt 5` arm gives 5.57188, both exact — so the
-# harness is no longer the blocker. Check 6 is: that sentence prints `0.5`, `5` and `10`
-# as CONTROL SETTINGS, and the accounting check has no arm for a setting. It knows
-# `spelled`, `read at` and `shown`, and a step length is none of the three. Claiming the
-# sentence would mean either leaving three of its numbers tied to nothing (which check 6
-# refuses, on purpose) or inventing a waiver (which it also refuses). The arm that fixes
-# this is `Setting` in docs/plans/path-prose-ledger.md, and it belongs to whoever builds
-# the ledger's taxonomy, not here.
+# THE HEADLINE SENTENCE IS NOW CLAIMED, at the bottom of this file with the `dt 10` arm
+# it needed. What stood here was that the trajectories existed and check 6 was the
+# blocker — the sentence prints `0.5`, `5` and `10` as CONTROL SETTINGS and the accounting
+# knew only `spelled`, `read at` and `shown`. `Accounted::Setting` is that fourth arm.
+#
+# What is still not claimed on this step: "It is 0.7 A *bigger* than the first tooth even
+# though the pack now holds half a percent less charge", and the three-way decomposition
+# that follows it. The 0.7 is a difference between two teeth on two trajectories, and the
+# decomposition is a counterfactual — hold the charge fixed, hold the temperature fixed —
+# which is not a trajectory a reader can produce at all.
 
 [[claim]]
 step = "one-step-that-got-through"
@@ -2647,6 +2646,746 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # down. That is the contract `every_covered_step_exists` keeps for claims, kept in both
 # directions.
 
+# --- step 18's headline, now that a step length can be accounted for ---------------
+#
+# The sentence three slices have named and none could claim. What blocked it was never
+# the trajectories — `docs/plans/path-arms.md` built the `dt 5` arm and measured both
+# halves exact — it was check 6: the sentence prints `0.5`, `5` and `10` as CONTROL
+# SETTINGS, and the accounting knew only `spelled`, `read at` and `shown`. A step length
+# is none of the three, so claiming the sentence meant leaving three of its numbers tied
+# to nothing. `Accounted::Setting` is the fourth arm and it ties each of them to the step
+# length of a trajectory a claim here really reads: 0.5 to the step's own run, 5 to the
+# `dt 5` arm, 10 to the `dt 10` arm below.
+#
+# The five measurements are a COST rather than a level — points of charge gone and kelvin
+# gained since the panel the reader was looking at when they pressed Run — so they are
+# read with `soc_lost_pts_at` and `t_rise_k_at`, both differences from the zero-length
+# probe. Claiming the levels instead (89.44 %, 316.85 K) would be claiming numbers this
+# sentence does not print.
+
+[[arm]]
+step = "one-step-that-got-through"
+name = "dt 10"
+instruction = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1."
+start = "restart"
+dt = 10.0
+actions = [{ do = "run", to_s = 90.0 }]
+note = """
+The third of the step's three step lengths, and the one whose instruction is WEAKER than
+its sibling's — said here rather than left to be noticed. The `dt 5` arm cites a sentence
+that tells the reader what to type and what to press. This one cites the headline itself,
+which names 10 s and reports what happens at it without repeating the procedure. The
+procedure is the one spelled out two sentences earlier and nothing else in the step
+mentions 10 s at all, so a reader who wants to check this number has exactly one way to
+produce it — but the sentence does not say "now do it again at 10", and a stricter fence
+than `contains_number` would refuse this arm.
+
+Runs to the step's own 90 s mark for the same reason `dt 5` does: that is where the page
+stops, so it is not this file's choice. At 10 s a mark of 90 is nine steps, and the fault
+at 60 s lands on the seventh.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1"
+quantity = "soc_lost_pts_at"
+value = 0.55719
+tol = 5e-3
+tol_from = "spelled"
+spells = "0.56"
+states = "same"
+read_at_s = 90.0
+note = """
+The step's own run, and the number the earlier sentence states as "90.00 % ... 89.44 %".
+This claim is the same fact read as the difference the headline prints, which is why it
+is `soc_lost_pts_at` and not a second `soc_at`.
+
+It is also what accounts the `0.5` beside it: the step's own dt, tied to this claim's
+trajectory rather than matched against the lesson block, where `speed_x: 10` sits waiting
+to account the sentence's `10` off the wrong field.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1"
+quantity = "t_rise_k_at"
+value = 0.92491
+tol = 5e-3
+tol_from = "tighter"
+spells = "1"
+states = "same"
+read_at_s = 90.0
+note = """
+"instead of 1" — the base run's cell ends 0.92 K above where it started. `tighter`, and
+this is the variant's clearest use in the file: the sentence rounds to a whole kelvin, so
+its own rule is half a kelvin, and a claim carrying that tolerance would sit green through
+half a kelvin of drift on a quantity printed to five decimals. The rule still decides
+whether the PROSE is right (0.92491 against 1 is inside 0.5); `tol` decides whether the
+ENGINE moved.
+
+Note this is the rise at the mark, not the peak. The step's other temperature sentence —
+"0.96 K, is the whole cost of a dead short" — is the same trajectory read at 60.5 s, where
+the tooth has just landed. Both are true and they are not the same number.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1"
+quantity = "soc_lost_pts_at"
+arm = "dt 5"
+value = 5.57188
+tol = 5e-3
+tol_from = "spelled"
+spells = "5.57"
+states = "same"
+read_at_s = 90.0
+note = """
+Ten times the step length, ten times the damage, to three digits: 0.55719 against 5.57188
+is a factor of 10.0000, because the spike is the same 183.84 A and it is held for ten
+times as long. That proportionality is the sentence's whole argument and it is now two
+claims rather than a sentence.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1"
+quantity = "soc_lost_pts_at"
+arm = "dt 10"
+value = 11.14376
+tol = 5e-3
+tol_from = "spelled"
+spells = "11.14"
+states = "same"
+read_at_s = 90.0
+note = """
+And twenty times, on the arm this slice built. 11.14376 is 2.0000x the `dt 5` arm's
+5.57188 — the proportionality holds across both doublings, which is more than the
+sentence claims and is worth having on the record.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1"
+quantity = "t_rise_k_at"
+arm = "dt 10"
+value = 18.69933
+tol = 5e-3
+tol_from = "tighter"
+spells = "19"
+states = "same"
+read_at_s = 90.0
+note = """
+"19 K hotter" is the TEN-second arm, not the five-second one, and the sentence does not
+say so in words — the clause attaches to the last number before it. Measured: the `dt 10`
+arm ends 18.70 K up, the `dt 5` arm 9.30 K, the base 0.92 K. Only one of the three rounds
+to 19, so the reading is forced rather than chosen.
+
+`tighter` for the same reason its sibling above is, and here the gap is wider: the
+sentence's own rule is half a kelvin and the engine misses the round number by 0.30 K.
+That is a hedge the rule licenses and `tol` does not.
+
+Note the heat is NOT proportional to the step length the way the charge is. Twenty times
+the damage is twenty times 0.92 K only if nothing cools in between, and 18.70 against
+0.92 is 20.2x — close, because 90 s is short against this pack's thermal time constant,
+and not exact, which is the physics rather than a rounding.
+"""
+
+# --- step 7: the same demand with nothing watching ---------------------------------
+#
+# The step's numbers were measured whole by `docs/plans/path-prose-ledger.md` and left
+# unclaimed; two slices before that its five headline figures had been repaired after
+# going stale. It is the step with the most documented drift in the path and until now it
+# had nothing guarding it. Everything here is the step AS CONFIGURED — `bms: false` is in
+# the lesson block — so none of it needs an arm.
+#
+# WHAT IS STILL NOT CLAIMED, and why: "(0,0) first at 345.0 s, (1,1) last at 356.5". The
+# cell indices are numbers in the sentence and no accounting arm reaches them — they are
+# neither measurements, nor instants, nor settings, nor anything a row prints. Claiming
+# that sentence would mean either splitting a literal down to fragments that do not read
+# as sentences, or a fifth arm for "an address in the pack". The crossing times are real
+# and reproduce; the sentence stays unclaimed until something can account for a coordinate.
+
+[[claim]]
+step = "protection-off"
+literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **335.0 s**, when the weakest group reaches **1.9731 V** and the pack still shows 3.7 % charge"
+quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
+value = 335.0
+tol = 0.05
+tol_from = "spelled"
+spells = "335.0"
+states = "same"
+read_at_s = 335.0
+note = """
+The flag CLAUDE.md's eighth principle is about, arriving from the solved voltages rather
+than from any sensor. `spelled` rather than `grid` even though this is a grid time: the
+sentence prints 335.0 to a tenth, and half a tenth is five times tighter than half a
+0.5 s step, so the sentence's own rule is the binding one.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **335.0 s**, when the weakest group reaches **1.9731 V** and the pack still shows 3.7 % charge"
+quantity = "v_cell_min_at"
+value = 1.973068
+tol = 5e-5
+tol_from = "spelled"
+spells = "1.9731"
+states = "same"
+read_at_s = 335.0
+display = "cell v"
+shows = "1.973 / 2.225 V"
+note = """
+"The weakest group" is `v_cell_min`, and on this pack the two words are one number: every
+cell in a parallel group sits at the group's node voltage, so the minimum over cells and
+the minimum over groups are the same read.
+
+The display half is asserted without `quoted`, because the sentence gives the number to
+four decimals and the row prints three. A reader looking at `cell v` sees `1.973`, and
+the sentence's `1.9731` is the engine's number rather than the panel's — which is allowed,
+and is the reason both halves are here.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **335.0 s**, when the weakest group reaches **1.9731 V** and the pack still shows 3.7 % charge"
+quantity = "soc_at"
+value = 0.037452
+tol = 5e-4
+tol_from = "spelled"
+spells = "3.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 335.0
+display = "soc (true)"
+shows = "3.7 %"
+quoted = true
+note = """
+"still shows 3.7 % charge" — a sentence that tells the reader what the row reads, so the
+display half is quoted. 3.7452 points against a sentence printing a tenth: inside the
+rule by 0.0048 of a point, which is 10 % of it. Not a hedge and not a drift, but the
+narrowest margin of the three numbers on this sentence.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "`SOC_CLAMPED_LOW` follows ten seconds later at **345.0 s**"
+quantity = "flag_first_s:SOC_CLAMPED_LOW"
+value = 345.0
+tol = 0.05
+tol_from = "spelled"
+spells = "345.0"
+states = "same"
+read_at_s = 345.0
+note = """
+The coulomb counter reaching its floor, ten seconds after the voltage said so. "ten
+seconds later" is a word rather than a digit, so the scan does not see it; the two flag
+claims either side of it are what make the arithmetic checkable at all.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "the pack terminal reads **−2.6355 V**"
+quantity = "v_at"
+value = -2.635467
+tol = 5e-5
+tol_from = "spelled"
+spells = "-2.6355"
+states = "same"
+read_at_s = 450.0
+display = "terminal"
+shows = "-2.635 V"
+note = """
+A pack at a negative terminal voltage: the load has stopped being a load and is driving
+the pack backwards. Four groups each about -0.66 V, summing to -2.64.
+
+Not `quoted` — the sentence prints four decimals and the row three, the same split as the
+1.9731 V claim above. Worth noticing that the row's `-2.635` is a truncation of what the
+sentence says rather than a rounding of it: -2.635467 rounds to -2.635, and the prose's
+-2.6355 is the engine's own number one place further out.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "with every cell between −0.671 and −0.651 V"
+quantity = "v_cell_min_at"
+value = -0.671305
+tol = 5e-4
+tol_from = "spelled"
+spells = "-0.671"
+states = "same"
+read_at_s = 450.0
+display = "cell v"
+shows = "-0.671 / -0.651 V"
+note = """
+The deep end of the spread, and the same row as its twin below — one string printing both
+numbers, which is why the two claims share a `shows`. Here the row and the sentence agree
+to the digit, so the panel really does read what the reader is told.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "with every cell between −0.671 and −0.651 V"
+quantity = "v_cell_max_at"
+value = -0.650910
+tol = 5e-4
+tol_from = "spelled"
+spells = "-0.651"
+states = "same"
+read_at_s = 450.0
+display = "cell v"
+shows = "-0.671 / -0.651 V"
+note = """
+The shallow end. 20 mV of spread across four groups after 100 s below empty, which is the
+capacity scatter of step 3 arriving where it does the most damage.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "the eight cells sit between **23.5 and 27.8 points** of charge past empty"
+quantity = "deficit_pts_min_at"
+value = 23.548131
+tol = 0.05
+tol_from = "spelled"
+spells = "23.5"
+states = "same"
+read_at_s = 450.0
+note = """
+The cell that owes least. Value-only: no row prints this end of the spread — `past empty`
+shows the worst cell alone — and the pair is visible only on the pack grid, which is what
+the step's own prose tells the reader to switch on.
+
+23.5481 against a sentence printing a tenth is 0.0481 of a point inside a rule of 0.05,
+which is the tightest margin in this step. It is a real number rather than a hedge: the
+sentence rounds down where its sibling below rounds down too, and both are within their
+own last place.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "the eight cells sit between **23.5 and 27.8 points** of charge past empty"
+quantity = "deficit_pts_at"
+value = 27.837769
+tol = 0.05
+tol_from = "spelled"
+spells = "27.8"
+states = "same"
+read_at_s = 450.0
+note = """
+The cell that owes most — the number `past empty` would print if that row were readable at
+a named instant, which it is not: it is sampled on a wall clock. Value-only for that
+reason, stated in `Row::deficit_max`.
+
+4.3 points of spread between the two ends, on a pack whose cells started within a fraction
+of a point of each other. This is step 3's scatter multiplied by 100 s of being driven
+backwards.
+"""
+
+# --- step 19's protected half ------------------------------------------------------
+#
+# Eleven claims on this step already, every one of them on the `bms off` arm. What the
+# BMS DOES here — the two flags it raises and the charge the fault costs before the
+# contactor opens — was measured and left unclaimed. It needs no arm: it is the step as
+# configured.
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "The first thing the BMS says is `OT` at t = 133.5 s, by which point the pack is already at 51 %"
+quantity = "flag_first_s:OT"
+value = 133.5
+tol = 0.05
+tol_from = "spelled"
+spells = "133.5"
+states = "same"
+read_at_s = 133.5
+note = """
+73.5 s after the short lands, and the first thing the protection layer says about a fault
+it has no rung for. The step's whole argument is the LENGTH of that silence, and the
+sentence writes it as "73 seconds of no flags at all" — a duration from the fault, which is
+neither of the two frames `States` has, so that sentence stays unclaimed and this flag
+claim is what pins the far end of it.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "The first thing the BMS says is `OT` at t = 133.5 s, by which point the pack is already at 51 %"
+quantity = "soc_at"
+value = 0.510153
+tol = 5e-3
+tol_from = "spelled"
+spells = "51"
+spells_pow10 = 2
+states = "same"
+read_at_s = 133.5
+display = "soc (true)"
+shows = "51.0 %"
+note = """
+Half the pack's charge gone into a short nobody asked for, before anything was said. Not
+`quoted`: the sentence writes `51 %` and the row prints `51.0 %`.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "It latches at **t = 156.0 s**"
+quantity = "flag_first_s:CONTACTOR_OPEN"
+value = 156.0
+tol = 0.05
+tol_from = "spelled"
+spells = "156.0"
+states = "same"
+read_at_s = 156.0
+note = """
+THE LITERAL IS A FRAGMENT OF ITS SENTENCE, ON PURPOSE. The sentence continues ", 96 s
+after the short, at **39.62 %**", and that 96 is a subtraction over two other numbers in
+the same paragraph — the `Derived` arm in docs/plans/path-prose-ledger.md, which is not
+built. Taking the whole sentence as one literal would leave 96 tied to nothing and check 6
+would refuse it, correctly. Split, each half accounts for its own numbers; the cost is
+that the two halves are two sentence groups and neither knows about the other.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "at **39.62 %**: against the twin's half a percent, this fault costs **fifty points**"
+quantity = "soc_at"
+value = 0.396189
+tol = 5e-5
+tol_from = "spelled"
+spells = "39.62"
+spells_pow10 = 2
+states = "same"
+read_at_s = 156.0
+display = "soc (true)"
+shows = "39.6 %"
+note = """
+Where the charge stops falling, because the contactor is finally open. Not `quoted` — the
+sentence gives two decimals and the row prints one.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "at **39.62 %**: against the twin's half a percent, this fault costs **fifty points**"
+quantity = "soc_lost_pts_at"
+value = 50.381100
+tol = 0.5
+tol_from = "spelled"
+spells = "fifty"
+states = "same"
+read_at_s = 156.0
+note = """
+The second word numeral in the file, and the second sentence to state a COST rather than a
+level: 90.00 % at the probe against 39.62 % when the contactor opens. A word commits to no
+decimal place, so the rule is half a point — which 50.3811 clears comfortably, and which
+is as much precision as "fifty points" asks for.
+
+"against the twin's half a percent" is the other half of the contrast and prints no digits
+at all, so the scan does not see it. The twin's half a percent is step 18's 0.55719, which
+is claimed there.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "the cell that is genuinely hottest is at 344.52 K when it fires"
+quantity = "t_max_at"
+value = 344.520151
+tol = 5e-3
+tol_from = "spelled"
+spells = "344.52"
+states = "same"
+read_at_s = 156.0
+note = """
+Ground truth at the instant the trip fires, against a probe that decided from a corner
+cell. The gap between them is what the sentence calls "1.3 K of somebody else's
+temperature", and THAT number is not claimed here: it is the difference between this
+reading and a SENSOR reading, and no quantity in this file reads a sensor. Naming it
+rather than leaving it: 344.52 minus the 343.15 K threshold is 1.37, so a reader
+reconstructing the sentence's 1.3 from the numbers it prints gets 1.4. The sentence is
+about the probe's own reading, which is below the threshold it just crossed and is not
+1.37 above this one.
+"""
+
+[[claim]]
+step = "nothing-to-clamp"
+literal = "the pack peaks at 344.5 K here"
+quantity = "t_max_at"
+value = 344.548772
+tol = 5e-3
+tol_from = "tighter"
+spells = "344.5"
+states = "same"
+read_at_s = 155.5
+note = """
+A READ INSTANT, NOT AN ARGMAX, and the distinction is the one `docs/plans/path-arms.md`
+drew for the twin's 376.4 K peak. This file has no quantity for "the largest value over
+the run", and inventing one would pin the step the maximum lands on — which a panel
+printing one decimal cannot resolve when the trajectory is flat across two steps. What is
+claimed is that the hottest cell reads 344.55 K half a second before the contactor opens,
+which is what the reader can check.
+
+WHAT IS NOT GUARDED: the peak moving to a different step while the reading here stays put.
+Named rather than left to be found, on the same terms as the twin's.
+
+`tighter` because the sentence's own rule is nearly exhausted: 344.548772 against 344.5 is
+0.0488 of a half-tenth rule of 0.05. The prose is right to a tenth by 2 % of its margin,
+so `tol` is what would catch the trajectory moving; the rule would not.
+
+"against 299.1 K in the twin" is the rest of the sentence and is step 18's pack, which no
+claim on this step can measure. Hence the fragment.
+"""
+
+# --- step 15: a hard discharge, and a model that sees nothing wrong -----------------
+#
+# The first of the fourteen unclaimed steps to be claimed whole. Every number in its two
+# measurement sentences is here, including the three the page shows BEFORE the reader
+# presses Run — the zero-length probe — and the two on the continuation the step
+# instructs.
+#
+# WHAT IS NOT CLAIMED: "Not one flag is raised on any step of the run", which is true of
+# the run to its mark and has no quantity behind it — this file can say when a flag
+# arrives and cannot say that none did. And "15.46 A for 1060 s is **4.55 A·h** — 88 % of
+# this cell's 5.15", where 5.15 is a chemistry constant and 88 a percentage of it: two
+# accounting arms that do not exist. Both are named in the plan doc.
+
+[[arm]]
+step = "looks-fine-from-outside"
+name = "carries on"
+instruction = "Press **Run** again when it stops and it simply carries on, just as smoothly"
+start = "mark"
+actions = [{ do = "run", to_s = 1080.0 }]
+note = """
+The plainest arm in the file: no control changes, one button, and the pack simply keeps
+going from where `pathArrived` left it. It is the shape `docs/plans/path-arms.md` listed
+as cheap and deferred for scope.
+
+Runs 20 s past the furthest claim on it, which is deliberate — an arm that stops exactly
+where its last claim reads makes "reachable" mean only "I ran long enough to reach it".
+The 20 s also carries the run past t = 1062, where `OPERATING_POINT_OUT_OF_WINDOW`
+arrives: the step says "not one flag is raised" of its own run to 500 s, and two steps
+past the last number it quotes there is one. No claim reads it, and the arm runs through
+it rather than stopping short of it, so a reader following this sentence meets what the
+harness meets.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+quantity = "v_at"
+value = 3.926673
+tol = 5e-4
+tol_from = "spelled"
+spells = "3.927"
+states = "same"
+read_at_s = 0.0
+probe = true
+display = "terminal"
+shows = "3.927 V"
+quoted = true
+note = """
+"The panel reads 3.927 V at rest" — the zero-length probe, before the reader presses
+anything. The step reloads, so the pack this is read on is the fresh one the page builds.
+
+Note what "at rest" means here and does not: the probe is taken under THIS step's demand,
+which is 15.459594 A, so it is not an open-circuit read. It is 3.927 V because a probe is
+`dt = 0` and the RC pairs have not been given any time to respond — the ohmic drop is
+already in it and nothing else is. One step later the same pack reads 3.918.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+quantity = "v_at"
+value = 3.918015
+tol = 5e-4
+tol_from = "spelled"
+spells = "3.918"
+states = "same"
+read_at_s = 2.0
+display = "terminal"
+shows = "3.918 V"
+quoted = true
+note = """
+The first stepped row, at this step's 2 s timestep. 8.7 mV below the probe, which is the
+particle's surface concentration starting to move — the difference the probe row exists to
+keep separate from the ohmic drop.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+quantity = "v_at"
+value = 3.470594
+tol = 5e-4
+tol_from = "spelled"
+spells = "3.471"
+states = "same"
+read_at_s = 400.0
+display = "terminal"
+shows = "3.471 V"
+quoted = true
+note = """
+Where the fall stops being steady. This claim also accounts for the `400` beside it — the
+instant it is read at — which is what lets the whole sentence be one literal rather than
+five fragments.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+quantity = "v_at"
+value = 3.449121
+tol = 5e-4
+tol_from = "spelled"
+spells = "3.449"
+states = "same"
+read_at_s = 440.0
+display = "terminal"
+shows = "3.449 V"
+quoted = true
+note = """
+First of the two readings that establish the plateau: 21 mV over the 40 s before it, and
+10 mV over the 20 s after.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+quantity = "v_at"
+value = 3.438645
+tol = 5e-4
+tol_from = "spelled"
+spells = "3.439"
+states = "same"
+read_at_s = 460.0
+display = "terminal"
+shows = "3.439 V"
+note = """
+Not `quoted`, and it is the one number in this sentence that is not: the prose writes
+"3.439 at 460" without the unit, so the row's `3.439 V` is not a substring of it. The
+display half is still asserted — the row really does print that string — which is the
+distinction `quoted` exists to make.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+quantity = "v_at"
+value = 3.417777
+tol = 5e-4
+tol_from = "spelled"
+spells = "3.418"
+states = "same"
+read_at_s = 500.0
+display = "terminal"
+shows = "3.418 V"
+quoted = true
+note = """
+The mark, and the reading the step tells the reader to hold onto for the next one. Step 16
+is the same cell at the same current at the same instant with one block different, so this
+number is half of the path's sharpest comparison.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+quantity = "soc_at"
+value = 0.583333
+tol = 5e-4
+tol_from = "spelled"
+spells = "58.3"
+spells_pow10 = 2
+states = "same"
+read_at_s = 500.0
+display = "soc (true)"
+shows = "58.3 %"
+quoted = true
+note = """
+The other half of what the reader is told to hold onto. Exactly 7/12 of the pack, because
+coulomb counting at a constant current is arithmetic: 500 s at 3 C is a sixth of an hour
+at three times the rated rate, so half the charge minus the sixth already gone.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+quantity = "q_gen_at"
+value = 6.330133
+tol = 5e-3
+tol_from = "spelled"
+spells = "6.33"
+states = "same"
+read_at_s = 500.0
+display = "heat"
+shows = "6.33 W"
+quoted = true
+note = """
+The last number in the sentence, and the one that makes the trace look most ordinary: 6.3 W
+out of a cell being pulled at three times its rated rate, rising slowly as the resistance
+does. Nothing about it says the model is running out of anything.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "2.502 V at 1058 s and **2.495 V at 1060 s**"
+quantity = "v_at"
+arm = "carries on"
+value = 2.502017
+tol = 5e-4
+tol_from = "spelled"
+spells = "2.502"
+states = "same"
+read_at_s = 1058.0
+display = "terminal"
+shows = "2.502 V"
+quoted = true
+note = """
+The first of the two numbers on the continuation, and the pair that made this file widen
+what a continuation's read instant can account for. The sentence writes 1058 and 1060 on
+the CLOCK, because the clock is what a reader watches keep running past the mark; the
+harness used to account a continuation's instants only as durations SINCE the mark, which
+would have left both numbers tied to nothing. See `Accounted::ReadAt`.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "2.502 V at 1058 s and **2.495 V at 1060 s**"
+quantity = "v_at"
+arm = "carries on"
+value = 2.495319
+tol = 5e-4
+tol_from = "spelled"
+spells = "2.495"
+states = "same"
+read_at_s = 1060.0
+display = "terminal"
+shows = "2.495 V"
+quoted = true
+note = """
+Two seconds later, and 6.7 mV lower — the step either side of the 2.50 V cut-off. The
+cut-off itself is not in this literal: it is a chemistry constant and no arm accounts for
+one, so the sentence is claimed as far as its measurements go and the fragment naming the
+constant is left out.
+"""
+
+[[claim]]
+step = "looks-fine-from-outside"
+literal = "with 11.7 % left on the readout"
+quantity = "soc_at"
+arm = "carries on"
+value = 0.116667
+tol = 5e-4
+tol_from = "spelled"
+spells = "11.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1060.0
+display = "soc (true)"
+shows = "11.7 %"
+quoted = true
+note = """
+"on the readout" is the sentence telling the reader where to look, so the display half is
+quoted. What makes it worth claiming rather than obvious: the cell is at its voltage
+cut-off with an eighth of its rated charge still counted, which is the whole subject of
+the step after next.
+"""
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -2654,13 +3393,13 @@ steps = [
                      # two claims on its estimator gap, which the prose spells in words
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
 ]
-# Not scanned, and why. Ten of these carry claims, so their claimed sentences are checked
-# and the rest of their prose is not; the other eleven are unchecked entirely.
+# Not scanned, and why. Twelve of these carry claims, so their claimed sentences are
+# checked and the rest of their prose is not; the other nine are unchecked entirely.
 unledgered = [
   "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
   "protection-on",                  # claims: 2
-  "protection-off",                 # measured 2026-08-13, no claim yet
+  "protection-off",                 # claims: 9
   "wearing-out-while-idle",         # claims: 3
   "two-legs",                       # measured, no claim yet
   "leg-that-is-not-there",          # claims: 6
@@ -2669,15 +3408,13 @@ unledgered = [
                                     # blocked on whether a reader can take one mid-run
   "particle-remembers",             # same as step 12: the probe exists, the instant does not
   "three-times-the-current",        # measured, no claim yet
-  "looks-fine-from-outside",        # needs an instructed continuation
+  "looks-fine-from-outside",        # claims: 11, on both sides of one continuation
   "the-electrolyte-starves",        # three perf ratios; needs a 1 C rerun
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
-  "one-step-that-got-through",      # claims: 4, on four arms. Its headline sentence is
-                                    # blocked on check 6, not on the harness — see the
-                                    # step's own comment above the claims
-  "nothing-to-clamp",               # claims: 11, all on the unprotected arm. The
-                                    # protected half of the step is still unclaimed
+  "one-step-that-got-through",      # claims: 9, on five arms. Its headline sentence is
+                                    # claimed now — `Accounted::Setting` was the blocker
+  "nothing-to-clamp",               # claims: 18, on both halves of the step now
   "past-empty",                     # claims: 14
   "what-it-cost",                   # claims: 20
   "slow-and-patient",               # claims: 4
