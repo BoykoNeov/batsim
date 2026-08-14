@@ -2366,12 +2366,15 @@ fn every_arm_is_instructed_by_its_own_step() {
             );
             assert!(
                 arm.start == Start::Restart,
-                "arm `{}` on step `{}` changes dt on a continuation. The page's `dt` box \
-                 is read fresh on every frame, so that is reachable — but step 18's own \
-                 instruction is to press **Restart**, and a mid-run change would make \
-                 every number on the arm depend on how far the reader had already got. If \
-                 a step ever really instructs one, this assertion is the thing to revisit \
-                 deliberately.",
+                "arm `{}` on step `{}` changes dt on a continuation. **This is a scoping \
+                 refusal, not a fidelity one**, and the distinction matters to whoever \
+                 reads it next: the page's `dt` box is read fresh on every frame, so a \
+                 mid-run change is perfectly reachable and this harness could model it. \
+                 What it would cost is that every number on the arm becomes a function of \
+                 how far the reader had already got when they typed — and no step in the \
+                 path instructs one. Step 18, the only step that changes `dt` at all, \
+                 tells the reader to press **Restart**. Relaxing this is a decision to \
+                 support a control change nobody is asked to make, not a bug fix.",
                 arm.name,
                 arm.step
             );

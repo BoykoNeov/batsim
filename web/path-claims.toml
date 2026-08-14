@@ -2483,16 +2483,18 @@ actions = [
   { do = "clear_queued" },
   { do = "clear_latched" },
   { do = "step_1" },
-  { do = "run", to_s = 150.5 },
+  { do = "run", to_s = 160.0 },
 ]
 note = """
 The repaired pack. Same mark, same two buttons, one extra: **Clear queued** removes the
 short itself, so the Step 1 that follows draws nothing and the contactor stays closed.
 
-`to_s = 150.5` is the sentence's own "over the following minute", counted from the Step 1
-at 90.5 s. That is this file's own choice in the sense the ARMS section warns about — the
-page stops for nothing here — but it is the duration the prose names rather than a length
-picked to reach a claim.
+The claim on this arm reads 150.5 s, which is the sentence's own "over the following
+minute" counted from the Step 1 at 90.5. The arm runs ten seconds further, for the reason
+step 20's charge leg runs 26 s past its own furthest claim: an arm that stops exactly
+where its last claim reads makes "reachable" mean only "I ran long enough to reach it",
+which is the tautology the ARMS section warns about. Ten seconds of a pack doing nothing
+is not a length picked to reach anything.
 """
 
 [[arm]]
@@ -2533,15 +2535,17 @@ name = "bms off"
 instruction = "Now uncheck the BMS and run it again — and then keep running, because this step's mark is 200 s and everything worth seeing on the unprotected arm happens after it. Press Run at the mark and let it go to about 400 s."
 start = "restart"
 bms = false
-actions = [{ do = "run", to_s = 400.0 }]
+actions = [{ do = "run", to_s = 420.0 }]
 note = """
 `start = "restart"` because the page has no other way to do this: `$("bms").onchange`
 clicks Reset, so unchecking the box rebuilds the pack from the scenario and the run goes
 back to t = 0. The fault queue comes back with it, which is what makes this the same
 experiment as the protected arm rather than a different one.
 
-`to_s = 400` is the prose's own "let it go to about 400 s", and the furthest number on
-this arm — 0.103 A and 362 K — is read exactly there.
+The furthest numbers on this arm — 0.103 A and 362 K — are read at 400 s, which is the
+prose's own "let it go to about 400 s". The arm runs twenty seconds further, so that the
+last claim is not sitting on the last row; "about 400 s" covers it, and the currents out
+there are hundredths of an amp.
 
 One thing this arm does NOT reproduce: the step declares `transport: "wasm"`, because the
 BMS toggle needs an in-page rebuild that a socket session cannot do. Nothing here reads

@@ -230,10 +230,23 @@ every mirrored formatter in the file and is recorded as such in the module docs.
   need no arm — they are the step as configured — and they were simply not this slice's
   subject.
 * **An arm's `run` length is still this file's own choice**, exactly as a leg's was, and
-  there are now five of them rather than two. The non-circular half is unchanged and is now
+  there are now six of them rather than two. The non-circular half is unchanged and is now
   stricter (the override anchors above), but a reader following the prose is not guaranteed
   to run as far as an arm does. Read a green arm claim as "true of the trajectory a reader
   following this sentence produces", never as "a reader will get this far".
+
+  Two arms were first written stopping exactly where their furthest claim reads, which
+  makes "reachable" mean only "I ran long enough to reach it" — the tautology the module
+  docs name, arrived at by accident. Both now run past it (the repaired pack to 160 s
+  against a claim at 150.5, the unprotected arm to 420 s against claims at 400), following
+  step 20's charge leg, whose note says it runs 26 s further "so the furthest claim is not
+  sitting on the final row of the run". Extending changed no value, which is itself worth
+  having checked.
+* **The event fence now runs per trajectory rather than per step**, because a flag arriving
+  on the unprotected arm says nothing about a sentence read on the protected one. Verified
+  that this cost no existing sentence its check: of the 69 claimed sentences, **none** has
+  claims split across two trajectories, so every one is scanned against exactly the run it
+  is read on, exactly as before.
 * **A `Step 1` on a windowed CC-CV program is untested.** It is expressed as a `drive` of
   one `dt` rather than as a second stepping loop, precisely so it cannot diverge from a
   `run` of the same length — but no arm exercises it, and the CC-CV window state resets per
