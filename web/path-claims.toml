@@ -1993,6 +1993,14 @@ page's guard exists to hide from a reader and this pair records.
 
 No `display`: its sibling names the row, and the row prints both numbers. Two display
 claims on one row would assert the same string twice.
+
+NOTHING FORCES THIS CLAIM TO EXIST, and that was measured rather than assumed: deleting it
+leaves the whole suite green. The sentence prints `0.00` twice and both claims spell
+`"0.00"`, so check 6 — which asks whether SOME claim on the sentence spells a number, not
+whether each printed number is spoken for once — is satisfied for both tokens by the
+sibling alone. Deleting the `3.927 V` claim from the same sentence reddens check 6 at once,
+which is the contrast that says this is the arm's shape and not this sentence's. Read the
+green suite as "this claim is true", never as "this claim is required".
 """
 
 [[claim]]
@@ -2032,10 +2040,15 @@ display = "soc (true)"
 shows = "100.0 %"
 quoted = true
 note = """
-A full cell, and the claim is worth making rather than obvious: it is what says the probe
-did not move the pack. A `dt = 0` step that coulomb-counted anything at all would land
-here first, and it would show up as a charge readout that is no longer exactly 100.0 %
-before the reader has pressed anything.
+A full cell, and what this claim asserts is exactly that and no more: the pack the reader
+arrives on is at 100 % and the `soc (true)` row says so before anything has been pressed.
+
+It is deliberately NOT the guard that the probe did not move the pack, and an earlier
+draft of this note said it was. Coulomb counting is `I·dt / (3600·capacity)`, which at
+`dt = 0` is zero by arithmetic whatever the code does — so the mechanism that note named
+cannot move this number, and a mutation that surfaced only on the NEXT step (an RC state,
+a temperature) would not show up in the probe's own telemetry at all. The real guard is
+`a_zero_length_probe_moves_nothing`, which compares whole snapshots across two probes.
 """
 
 # =====================================================================================

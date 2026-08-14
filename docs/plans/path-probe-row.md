@@ -86,7 +86,8 @@ the claim's own.
 > Both numbers read **0.00 / 0.00** before you press Run, beside 3.927 V and 100.0 %.
 
 Four claims, all `probe = true`, all reading at t = 0. Every number in the sentence is
-claimed, which is what the accounting check wants of a claimed sentence.
+claimed — though only three of the four are *forced* to be, and the difference is measured
+below.
 
 **The zero is not a hard zero, and the page knows it.** The negative electrode's gap reads
 `-1.11e-16` on a particle nobody has asked for a current: the bulk side of the difference
@@ -115,6 +116,9 @@ test reddened rather than only that something did.
 | `probe = true` on a whole-run reduction | the probe fence, and `measure`'s refusal |
 | a probe claim given a `read_at_s` of 100 | the probe fence |
 | `reload: true` taken off step 18 | the probe fence |
+| the probe made to advance the pack by one `dt` | the probe invariant |
+| DELETION: the `3.927 V` claim removed | accounting, cleanly |
+| DELETION: the positive-electrode claim removed | **nothing — green** |
 | CONTROL: a surface-gap claim moved to a circuit step | the no-electrodes refusal |
 | CONTROL: the `soc (true)` probe claim reads 99.9 % | value and stated |
 
@@ -131,6 +135,26 @@ the case that says the probe channel is doing work rather than decorating one.
 `the smallest BMS gap on this run is 3.000000000000025 points at t = 0 s, and the claim
 reads at t = 0.5 s`. That assertion was written one slice ago for an unrelated reason — a
 reduction with a decorative instant — and it is what caught this.
+
+## Found on the way: the accounting arm matches tokens, it does not count them
+
+`path-accounting.md` records that its own check "did not force the claim it was written
+for until a deletion perturbation exposed it". The same instrument, pointed at this
+sentence, finds the same shape.
+
+Deleting the `3.927 V` claim reddens the accounting check cleanly, naming the number and
+the three arms it tried. Deleting the **positive-electrode** claim reddens nothing at all.
+The sentence prints `0.00` twice and both claims spell `"0.00"`, so one of them satisfies
+both tokens: what the arm asks is "does some claim on this sentence spell this number",
+not "is each printed number spoken for once".
+
+The positive claim is real coverage — it is the only thing in the tree that says the
+positive electrode starts flat, and step 18's whole argument is that the two electrodes
+differ. But nothing *forces* it to exist, and a future author deleting it would meet a
+green suite. Making the arm count occurrences rather than match them is a change to a check
+shared by every claim in the file and belongs to whoever takes the accounting arm next, not
+here. It is named in `path-claims.toml` on the claim itself so the next reader of that
+claim meets the limitation rather than inferring coverage from it.
 
 ## Found on the way: a hand mirror is only as good as what ties it to the page
 
@@ -168,6 +192,13 @@ Two general lessons, and the second is the one that generalises:
   the right number) and calling that "reachable" is a stretch. The honest outcome may be a
   corrected sentence rather than a green claim, and this repo has shipped
   "right but unreachable" twice. Do not write those claims before answering it.
+
+  One thing to pin rather than rely on incidentally when that slice runs: the toggle path
+  reads `pulsePhase` off `sim_time_s`, and whether it lands on the rest leg is decided by a
+  strict comparison. `pulse_on` is `phase < k_on`, so at t = 60.0 with `dt = 0.5` the index
+  is 120 and `k_on` is 120, and `120 < 120` is false — the rest leg, which is the reading
+  wanted. Inclusive instead of strict and the probe would be taken under the current that
+  has just stopped, giving a number 132.8 mV away from the one the sentence quotes.
 * **Step 16's three-model probe sentence needs three packs.** "3.798 V for the circuit,
   3.927 for the particle, 2.808 here" quotes probes from three different scenario files in
   one sentence, and `run()` builds one pack per step. The 3.927 is claimed here because it

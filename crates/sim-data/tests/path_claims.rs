@@ -102,11 +102,14 @@
 //!   partial by design and grows one measured claim at a time. A step with no entry is
 //!   an unchecked step, not a passing one; [`every_covered_step_exists`] guards the
 //!   reverse direction only (no claim may name a step that is gone).
-//! * **The two readout rows that read per-cell state.** `past empty` and `surface gap`
-//!   are formatted from `Pack::cell` output rather than from telemetry, and `past empty`
-//!   is additionally sampled on a *wall*-clock throttle, so what it shows at a given
-//!   simulation time is not a function of that time at all. Neither row is mirrored: a
-//!   claim naming one panics rather than passing. See [`render_row`].
+//! * **One readout row: `past empty`.** It is formatted from `Pack::cell` output rather
+//!   than from telemetry *and* sampled on a 250 ms **wall**-clock throttle, so what it
+//!   shows at a given simulation time is not a function of that time at all. It is not
+//!   mirrored: a claim naming it panics rather than passing. See [`render_row`].
+//!
+//!   `surface gap` stood here beside it until the probe slice and no longer does. It is
+//!   per-cell in the same way, but it carries no throttle, so it does have a value at a
+//!   given simulation time — [`Row`] carries the pair and [`render_row`] prints it.
 //! * **Any mid-run control change other than the demand box.** A step may declare one
 //!   `[[leg]]` — a second demand the reader is instructed to type in at the mark — and
 //!   claims marked `after_mark` are read on it. That covers steps 20 and 21, whose charge
@@ -3272,6 +3275,86 @@ fn every_claim_is_reachable_in_its_own_step() {
             c.read_at_s,
             end,
             leg.run_for_s
+        );
+    }
+}
+
+/// The engine contract every `probe` claim rests on: a zero-length step moves nothing.
+///
+/// Not a test about a claim, and it is here rather than in `sim-core` because it is *this*
+/// file that depends on it. [`run`] takes the probe and then drives the same pack, so a
+/// probe that advanced anything would corrupt every stepped row behind it — and the page
+/// takes **two** probes on a reloading step (`loadScenario` under the stale demand box,
+/// then `applyStep` under the step's own), of which this harness reproduces only the
+/// second. Both of those are only sound because probing is a read.
+///
+/// Written because the invariant has been broken before: `docs/plans/phase-3-aging-faults.md`
+/// records end-of-step temperature reported with no `dt > 0` gate, where a zero-length
+/// probe on a pack did move something. A doc comment saying "probes do not mutate" is the
+/// thing that was true until it wasn't.
+///
+/// Three lessons rather than one, because the models differ in what they *have* to carry
+/// across a step: a particle with 20 shells of diffusion state, a pack with a BMS holding
+/// its own estimate and a noisy current sensor, and an equivalent circuit with RC pairs.
+#[test]
+fn a_zero_length_probe_moves_nothing() {
+    let lessons = lessons();
+    for id in [
+        "the-gradient-itself",
+        "belief-drifts",
+        "circuit-repeats-itself",
+    ] {
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == id)
+            .unwrap_or_else(|| panic!("no lesson `{id}`"));
+        let mut pack = build(lesson);
+        let env = Env {
+            t_ambient: lesson.ambient_c + K,
+            t_coolant: None,
+        };
+        let json = |p: &Pack| serde_json::to_string(&p.snapshot()).expect("a snapshot serialises");
+
+        let before = json(&pack);
+        let d = demand_now(lesson.demand, &pack, lesson.dt, None);
+        let first = pack.step(0.0, d, &env);
+        let between = json(&pack);
+        let second = pack.step(0.0, d, &env);
+        let after = json(&pack);
+
+        // The snapshot is the whole of the state, so this is the strong half: nothing
+        // moved, including the parts no telemetry field reports.
+        assert_eq!(
+            before, between,
+            "`{id}`: one zero-length probe changed the pack's snapshot. Every `probe` \
+             claim in web/path-claims.toml is a claim about the pack as it stands before \
+             the first step, and this harness probes that pack and then drives it — so a \
+             probe that mutates makes those claims wrong AND corrupts every stepped row \
+             behind them."
+        );
+        assert_eq!(
+            before, after,
+            "`{id}`: two zero-length probes changed the snapshot."
+        );
+
+        // And the weak half stated separately, because it is the one an author reads off
+        // the panel: the same probe answers the same way however many times it is taken.
+        // Bit-identical, not within a tolerance — there is no arithmetic between them.
+        assert_eq!(
+            (
+                first.v_terminal,
+                first.soc_true,
+                first.t_max,
+                first.i_actual
+            ),
+            (
+                second.v_terminal,
+                second.soc_true,
+                second.t_max,
+                second.i_actual
+            ),
+            "`{id}`: two zero-length probes on an unchanged pack reported different \
+             telemetry."
         );
     }
 }
