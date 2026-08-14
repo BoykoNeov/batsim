@@ -175,9 +175,12 @@ perturbation that reaches them.
   the same run: sixteen numerals, twelve unaccounted, and nothing blocked. Five are nearly
   free (`7.2` is `cell.capacity_ah` three times over, `1.75` is `cell.v_min`, `0.36` is the
   demand box), two need only a claim (`19.3h` off the clock row, and a second `3.3 %`), and
-  the ordinal arm this slice built covers its "the LFP cell of step 1". What it needs beyond
-  that: a quotient tie for `C/20`, a table-span tie for its `180 mV`, and the `Derived` arm
-  for `12 V`.
+  two more are covered by arms this slice built: the ordinal arm takes its "the LFP cell of
+  step 1", and the name tie takes the `2` of "a 2 V lead-acid cell" — `meta.name` on that
+  chemistry is `"Generic AGM lead-acid 2 V cell"`, so the digits follow `lead-acid `.
+  What it needs beyond that: a quotient tie for `C/20` (the chemistry has no rated-hours
+  field — the 20-hour rate is in a *comment*, so the number is `capacity_ah / demand`), a
+  table-span tie for its `180 mV`, and the `Derived` arm for `12 V`.
 
 * **The one number this slice measured and did not use.** Tooth 4 is 8.9935 mV deeper than
   tooth 3 — the actual size of the step at the node, and a perfectly good figure for a

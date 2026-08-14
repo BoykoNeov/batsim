@@ -4839,6 +4839,22 @@ fn every_ledger_rule_is_a_phrase_and_is_used() {
                 p + 1,
             );
         }
+        // A name tie's prefix is what keeps it off the digits beside the one it means, so
+        // an empty one is the generous match `Tie::Name`'s own docs say it exists to
+        // prevent: `digits_after` would match at every position and collect every run in
+        // the field. Refused rather than priced — unlike the existential `Tie::Member`,
+        // nothing here needs it and there is no sentence to weigh against.
+        for tie in rule.ties {
+            if let Tie::Name { field, prefix } = tie {
+                assert!(
+                    !prefix.is_empty(),
+                    "vocabulary rule `{}` reads `{field}` with an empty prefix, so it \
+                     accounts for a number that appears ANYWHERE in that string. The \
+                     prefix is the whole of this tie's specificity.",
+                    rule.phrase
+                );
+            }
+        }
         let words: String = parts.concat();
         assert!(
             words.chars().any(|c| c.is_ascii_alphabetic()) && words.trim().len() >= 4,
