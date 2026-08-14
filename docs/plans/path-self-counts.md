@@ -32,9 +32,14 @@ Two tests in `path_claims.rs`:
   unledgered entry's `claims: N` is the claims on that step, and an entry with no count
   must have no claims.
 
-Thirty-four tallies (26 in the claims file, 8 in the test's own docs), plus the ledger's
-twenty-four entries. Counted rather than inherited — which is the lesson the slice before
-this one wrote down and the reason this one exists.
+The tally table covers the counts in both files' headers; the ledger test covers every
+entry in both `[ledger]` lists, so it needs no list of its own and grows with them. Sizes
+are deliberately not written here: a figure in this paragraph would be a hand-maintained
+count of the thing that exists to end hand-maintained counts, and it would be wrong the
+next time a tally is added. `TALLIES` and `NOT_DERIVED` in `path_claims.rs` are the
+authority. Of the two tests the ledger one is the stronger — it declares **nothing**,
+comparing a number in a comment against a number in the file — and it is the one that
+caught `past-empty`. If a later slice has to cut scope here, cut tallies, not that.
 
 ### Derived from the check's own functions, never re-scanned
 
@@ -62,9 +67,10 @@ Where the two overlap they are asserted to agree, so there are two tables and on
 `NOT_DERIVED` lists the self-counts this check does not derive, each with its reason and
 its sentence. A declared list of exclusions is a free-text waiver unless something makes
 it go stale, so each entry's phrase must still be in the file: reword the sentence and the
-waiver reddens. Seven entries, all of one of three shapes — a count of past slices, a past
-tense measurement ("fourteen of the twenty-four steps *were* in that position"), or an
-estimate no scan reproduces ("about 145 measurement-shaped numbers").
+waiver reddens. Every entry is one of three shapes — a count of past slices, a past-tense
+measurement ("fourteen of the twenty-four steps *were* in that position", whose figures
+are frozen with the sentence and must not be refreshed), or an estimate no scan reproduces
+("about 145 measurement-shaped numbers").
 
 This is opt-in per sentence, like the ledger, and for the same reason: nothing can decide
 automatically whether a number in a paragraph is *about this file*. A green run is not a

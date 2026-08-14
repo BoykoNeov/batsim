@@ -4920,7 +4920,11 @@ const NOT_DERIVED: &[NotDerived] = &[
         prose: Prose::ClaimsFile,
         phrase: "fourteen of the twenty-four steps were in exactly that position",
         because: "past tense: how many steps had no claim when the ledger was written. \
-                  The present-tense version of it IS derived, in this test's own docs.",
+                  The present-tense version of it IS derived, in this test's own docs. \
+                  Note that the `twenty-four` in it is FROZEN with the rest of the \
+                  sentence — a twenty-fifth lesson reddens the tallies that count \
+                  lessons today and must not be `fixed` here, where it would silently \
+                  restate a past measurement as a present one.",
     },
     NotDerived {
         prose: Prose::ClaimsFile,
