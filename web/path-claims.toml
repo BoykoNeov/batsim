@@ -1894,6 +1894,151 @@ connected to. This is the number that makes the step's title literal rather than
 """
 
 # =====================================================================================
+# THE ZERO-LENGTH PROBE
+# =====================================================================================
+#
+# `probe = true` says a claim is read on what the panel shows BEFORE the reader presses
+# Run — not on any step of the trajectory.
+#
+# The page really does show something there. `applyStep` dials in a step's controls and
+# then awaits `readNow()`, which steps the engine by `dt = 0` under that step's own demand
+# and paints the result. It is the engine's own answer to "what is this pack doing now",
+# and it moves nothing: probed twice on a particle model, a BMS pack and a circuit, the
+# second telemetry is bit-identical to the first and the snapshot is unchanged across
+# both. That is also why the page's TWO probes on a reloading step — one in
+# `loadScenario` under the stale demand box, then this one — are reproduced by modelling
+# only the second.
+#
+# WHY IT IS DECLARED AND NOT INFERRED FROM `read_at_s = 0`. The harness addresses stepped
+# rows by nearest time, and 0 is nearest to the first stepped row — which is one whole
+# step of relaxation away. On the pulse steps that difference is 2.9 mV out of 74.8, and
+# it is not noise: it is the thing the probe exists to measure.
+#
+# WHY THE PROBE IS NOT JUST ANOTHER ROW. Two reasons, either sufficient:
+#
+#   * Time cannot name it. A probe shares an instant with a stepped row exactly, and the
+#     two differ by precisely the step of relaxation above. Nearest-time addressing would
+#     hand an author whichever happened to be stored first.
+#   * It would move every reduction over the run. Measured, not feared: on
+#     `belief-drifts` the probe reads a gap of 3.0000 points against that run's minimum of
+#     3.0182 — a probe has no step to lag the truth by — so a probe row would have stolen
+#     that claim's minimum and moved its recorded instant from 0.5 s to 0.0 without one
+#     word of prose changing. See docs/plans/path-probe-row.md.
+#
+# WHAT A PROBE CLAIM MAY MEASURE: anything readable off a single row. A reduction over the
+# whole run — a flag's arrival, an amp-hour total, a minimum — is refused rather than
+# answered from the stepped rows behind the claim's back.
+#
+# THREE FENCES, in `every_probe_claim_is_taken_before_the_run`: `read_at_s` must be 0, the
+# claim may not also be `after_mark`, and the step must set `reload: true`. The last is the
+# one worth naming — the harness always builds a fresh pack, which a stepped trajectory
+# mostly absorbs, but the probe IS the fresh pack. On a step that inherits its pack from
+# whichever step the reader arrived from, there is no fresh reading to claim.
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "Both numbers read **0.00 / 0.00** before you press Run, beside 3.927 V and 100.0 %"
+quantity = "surface_gap_neg_pts"
+value = 0.0
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "0.00"
+states = "same"
+read_at_s = 0.0
+probe = true
+display = "surface gap"
+shows = "0.00 / 0.00 pts"
+note = """
+The first claim in this file read on the zero-length probe, and the step's own headline:
+this row is what step 18 exists to put on the panel, and the sentence a reader meets first
+is about what it says before anything has happened.
+
+The value is a true zero in the sense the sentence means — a particle nobody has asked for
+a current has no gradient — and it is NOT a hard zero in the float. The engine reads
+-1.11e-16 here, because the bulk side of the difference goes through a volume-weighted
+mean that sums and divides while the surface side returns the outermost shell untouched.
+`toFixed` on that prints `-0.00`. The page has a guard that spells it `0.00` and this file
+mirrors the guard, so the display half of this claim asserts `0.00 / 0.00 pts` against the
+MIRROR — and a hand mirror is only as good as what ties it to the page. Measured: deleting
+the guard from `web/app.js` left the whole suite green, because the mirror kept printing
+what the page no longer printed. What holds the page to it is `MIRRORED`, which now pins
+the guard's own source line beside the row's. Read this claim as "the row prints
+`0.00 / 0.00 pts`", and `mirrored_constants_still_match_the_page` as the reason that is a
+statement about the page rather than about this file.
+
+Not `quoted`: the row prints `0.00 / 0.00 pts` and the sentence gives the two numbers
+without the unit, which is fair for a sentence that has just named the unit twice.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "Both numbers read **0.00 / 0.00** before you press Run, beside 3.927 V and 100.0 %"
+quantity = "surface_gap_pos_pts"
+value = 0.0
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "0.00"
+states = "same"
+read_at_s = 0.0
+probe = true
+note = """
+The second of the two numbers, and a separate claim rather than half a pair because the
+whole of this step is that these two electrodes do DIFFERENT things — one settles at 5.81
+points and the other is still climbing at 37.18 when the cell dies. A claim that read them
+as one quantity would be about neither.
+
+This one reads an exact 0.0 where its sibling reads -1.11e-16: the positive electrode's
+arithmetic lands on the zero and the negative's does not, which is the asymmetry the
+page's guard exists to hide from a reader and this pair records.
+
+No `display`: its sibling names the row, and the row prints both numbers. Two display
+claims on one row would assert the same string twice.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "Both numbers read **0.00 / 0.00** before you press Run, beside 3.927 V and 100.0 %"
+quantity = "v_at"
+value = 3.926673
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.927"
+states = "same"
+read_at_s = 0.0
+probe = true
+display = "terminal"
+shows = "3.927 V"
+quoted = true
+note = """
+The voltage the same probe reports, and the number step 16 quotes back as one of three:
+"3.798 V for the circuit, 3.927 for the particle, 2.808 here". That sentence needs three
+packs built from three scenario files and is not claimed yet — this is the one of the
+three that is read on its own step.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "Both numbers read **0.00 / 0.00** before you press Run, beside 3.927 V and 100.0 %"
+quantity = "soc_at"
+value = 1.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "100.0"
+spells_pow10 = 2
+states = "same"
+read_at_s = 0.0
+probe = true
+display = "soc (true)"
+shows = "100.0 %"
+quoted = true
+note = """
+A full cell, and the claim is worth making rather than obvious: it is what says the probe
+did not move the pack. A `dt = 0` step that coulomb-counted anything at all would land
+here first, and it would show up as a charge readout that is no longer exactly 100.0 %
+before the reader has pressed anything.
+"""
+
+# =====================================================================================
 # CHARGE LEGS
 # =====================================================================================
 #
@@ -2023,12 +2168,14 @@ unledgered = [
   "two-legs",                       # measured, no claim yet
   "leg-that-is-not-there",          # claims: 6
   "what-protection-costs",          # two perf ratios no trajectory can settle
-  "circuit-repeats-itself",         # needs the zero-length probe row
-  "particle-remembers",             # needs the zero-length probe row
+  "circuit-repeats-itself",         # the probe row exists now; its rebound figures are
+                                    # blocked on whether a reader can take one mid-run
+  "particle-remembers",             # same as step 12: the probe exists, the instant does not
   "three-times-the-current",        # measured, no claim yet
   "looks-fine-from-outside",        # needs an instructed continuation
   "the-electrolyte-starves",        # three perf ratios; needs a 1 C rerun
-  "the-gradient-itself",            # needs the zero-length probe row
+  "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
+                                    # rest of its numbers are measurements, not constants
   "one-step-that-got-through",      # needs two step lengths and both buttons
   "nothing-to-clamp",               # needs a BMS toggle and an ambient change
   "past-empty",                     # claims: 14

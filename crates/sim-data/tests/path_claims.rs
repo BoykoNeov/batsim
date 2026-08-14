@@ -307,18 +307,41 @@ const MIRRORED: &[(&str, &str, &str)] = &[
         "app.js",
         r#"for (const [key, fn, quiet = "no BMS"] of READOUTS) {"#,
     ),
-    // The two rows deliberately NOT mirrored, pinned so that a page change which turns
-    // one of them into a telemetry-only row is noticed rather than silently leaving a
-    // mirrorable row unmirrored.
+    // The one row deliberately NOT mirrored, pinned so that a page change which turns it
+    // into a telemetry-only row is noticed rather than silently leaving a mirrorable row
+    // unmirrored.
     (
         "the `past empty` row reads per-cell state",
         "app.js",
         "const d = Math.max(...cs.map((c) => c.soc_deficit));",
     ),
+    // --- the `surface gap` row, and the three lines it is made of ------------
+    //
+    // It sat beside `past empty` as unmirrored until the probe slice, and these four rows
+    // are what moving it cost. The last one is the reason they are here at all: with only
+    // the row's own line pinned, deleting the page's negative-zero guard left the whole
+    // suite green — the mirror kept its own copy of the guard and went on printing what
+    // the page no longer printed. Measured, in the perturbation table of
+    // `docs/plans/path-probe-row.md`, and it is the same failure this table exists for.
     (
-        "the `surface gap` row reads per-cell state",
+        "the `surface gap` row",
         "app.js",
         "return `${gapPts(c.surface_gap_neg, 2)} / ${gapPts(c.surface_gap_pos, 2)} pts`;",
+    ),
+    (
+        "the `surface gap` row's placeholder on a circuit",
+        "app.js",
+        "    \"circuit — no electrodes\",",
+    ),
+    (
+        "isPorous: which cells have the quantity at all",
+        "app.js",
+        "return !!cell && cell.surface_gap_neg !== null && cell.surface_gap_neg !== undefined;",
+    ),
+    (
+        "gapPts: the negative-zero guard",
+        "app.js",
+        "return (Math.abs(v) < 0.5 * 10 ** -dp ? 0 : v).toFixed(dp);",
     ),
 ];
 
@@ -459,10 +482,29 @@ fn to_c(k: f64) -> f64 {
     k - K
 }
 
+/// `gapPts`: a surface gap in points of charge, with negative zero spelled `0.00`.
+///
+/// The guard is the page's and is mirrored rather than simplified away, because it is
+/// exactly what step 18's headline turns on. A uniform particle does not read a hard zero:
+/// measured on that step's own probe, the negative electrode reads `-1.11e-16` — the bulk
+/// side of the difference goes through a volume-weighted mean while the surface side
+/// returns the outermost shell untouched. `toFixed` on that gives `-0.00`, and the step
+/// says the reader sees `0.00`. Without this the display claim would be red on a minus
+/// sign the page does not show.
+fn fmt_gap_pts(x: f64, dp: usize) -> String {
+    let v = x * 100.0;
+    let shown = if v.abs() < 0.5 * 10f64.powi(-(dp as i32)) {
+        0.0
+    } else {
+        v
+    };
+    to_fixed(shown, dp)
+}
+
 /// What a readout row prints for this frame — `READOUTS` in `web/app.js`, including the
 /// placeholder a row falls back to when its formatter returns `null` on a running pack.
 ///
-/// Two rows are missing on purpose and panic instead of returning something plausible:
+/// One row is missing on purpose and panics instead of returning something plausible:
 ///
 /// * **`past empty`** is formatted from per-cell `soc_deficit`, which is not in
 ///   `Telemetry` at all, and the page samples it on a 250 ms *wall*-clock throttle rather
@@ -470,11 +512,16 @@ fn to_c(k: f64) -> f64 {
 ///   simulation time t" — at speed it can be a dozen seconds of simulation behind, which
 ///   is a fact step 21's own prose has to warn a reader about. A mirror that answered
 ///   anyway would be asserting a number the page does not show.
-/// * **`surface gap`** is per-cell for the same reason (`Pack::cell`), though without the
-///   throttle.
 ///
-/// Both are named in the module docs as uncovered rather than left to be inferred.
-fn render_row(label: &str, t: &Telemetry, sim_time_s: f64) -> String {
+/// It is named in the module docs as uncovered rather than left to be inferred.
+///
+/// **`surface gap` used to sit beside it and no longer does.** It is per-cell in the same
+/// way — `Pack::cell` rather than `Telemetry` — but it carries no throttle, so unlike
+/// `past empty` it *does* have a value at a given simulation time. [`Row`] now carries it
+/// and this renders it, which is what lets step 18's headline (`0.00 / 0.00` before the
+/// reader presses Run) be a display claim rather than a number with no panel behind it.
+fn render_row(label: &str, row: &Row) -> String {
+    let (t, sim_time_s) = (&row.telemetry, row.t_s);
     match label {
         "sim time" => fmt_time(sim_time_s),
         "terminal" => format!("{} V", to_fixed(t.v_terminal, 3)),
@@ -506,17 +553,27 @@ fn render_row(label: &str, t: &Telemetry, sim_time_s: f64) -> String {
                 format!("refused {} A", to_fixed(t.i_rejected_a.abs(), 3))
             }
         }
-        "past empty" | "surface gap" => panic!(
-            "`{label}` is a readout row this test deliberately does not mirror: it is \
-             formatted from per-cell state rather than telemetry, and `past empty` is \
-             sampled on a wall-clock throttle, so it has no value at a given simulation \
-             time. Claiming what it displays needs a different instrument — see the \
-             module docs."
+        // `isPorous` first, and it is not a formatting detail: on a circuit this row does
+        // not print a zero, it prints the reason there is no number. A mirror that
+        // rendered `0.00 / 0.00` there would let a claim assert "measured, and flat" on a
+        // model with no electrodes to measure.
+        "surface gap" => match row.surface_gap {
+            None => "circuit — no electrodes".to_string(),
+            Some((neg, pos)) => {
+                format!("{} / {} pts", fmt_gap_pts(neg, 2), fmt_gap_pts(pos, 2))
+            }
+        },
+        "past empty" => panic!(
+            "`past empty` is a readout row this test deliberately does not mirror: it is \
+             formatted from per-cell state and sampled on a wall-clock throttle, so it has \
+             no value at a given simulation time. Claiming what it displays needs a \
+             different instrument — see the module docs."
         ),
         other => panic!(
             "path-claims.toml names a readout row that is not in web/app.js's READOUTS: \
              `{other}`. Known: sim time, terminal, current, soc (true), soc (bms), \
-             cell v, cell t, heat, soh cap, soh res, balancing, short (int), clamp."
+             cell v, cell t, heat, soh cap, soh res, balancing, short (int), clamp, \
+             surface gap."
         ),
     }
 }
@@ -618,6 +675,15 @@ struct Lesson {
     bms: Option<bool>,
     dt: f64,
     until_s: f64,
+    /// Does `applyStep` rebuild the pack on the way into this step?
+    ///
+    /// Read for one purpose: to fence a `probe` claim. [`run`] always builds a fresh pack,
+    /// which for a *stepped* row is a simplification the trajectory mostly absorbs — but a
+    /// probe claim is a claim about the pack **before the first step**, and on a step that
+    /// inherits its pack there is no such thing as a fresh one. `applyStep` also reloads
+    /// when the scenario file differs from the one on screen, so `reload: true` is the
+    /// stronger condition and the only one a claim can rely on from either direction.
+    reload: bool,
     /// `prose` and `expect` concatenated: everything a reader is shown for this step.
     text: String,
 }
@@ -784,6 +850,11 @@ fn lessons() -> Vec<Lesson> {
             dt: num_field(block, "dt").unwrap_or(default),
             until_s: num_field(block, "until_s")
                 .unwrap_or_else(|| panic!("lesson {id} has no until_s")),
+            // Absent means "reload only if the scenario changed", which this scraper
+            // cannot evaluate without knowing which step the reader came from — so it
+            // reads as false, the conservative direction: the fence it feeds refuses a
+            // probe claim rather than admitting one on a pack that may be inherited.
+            reload: block.contains("\n    reload: true"),
             text: lesson_text(block, &id),
             id,
         });
@@ -875,6 +946,21 @@ struct Row {
     /// records it reading 9.438 points at an instant the engine was at 9.704. Claims
     /// measured from this field are therefore value-only and may name no `display`.
     deficit_max: f64,
+    /// The `surface gap` row's two numbers, bulk minus surface on each electrode, as
+    /// fractions — `None` on an equivalent circuit, which has no electrodes.
+    ///
+    /// Per-cell like [`Self::deficit_max`] and read the same way, but **unlike** it this
+    /// one is mirrorable: `past empty` is sampled on a 250 ms wall-clock throttle and this
+    /// row is not, so "what does that row show at simulation time t" has an answer. Cell
+    /// `(0, 0)` because the page's readout reads `cells[0]` — the packs that have this
+    /// quantity are 1S1P, which is a fact the readout's own doc comment turns on.
+    surface_gap: Option<(f64, f64)>,
+}
+
+/// The `surface gap` row's pair, off the cell the page's readout reads.
+fn surface_gap(pack: &Pack) -> Option<(f64, f64)> {
+    let cell = pack.cell(0, 0).expect("pack has a cell at 0S0P");
+    Some((cell.surface_gap_neg?, cell.surface_gap_pos?))
 }
 
 /// The pack's largest per-cell deficit, over ground truth.
@@ -895,12 +981,44 @@ fn deficit_max(pack: &Pack) -> f64 {
 }
 
 /// One step's trajectory, sampled every engine step — including its charge leg, if the
-/// step has one.
+/// step has one, and the zero-length probe the page takes before any of it.
 struct Run {
     rows: Vec<Row>,
+    /// What `readNow()`'s `dt = 0` read reports before the reader presses Run.
+    ///
+    /// **Deliberately not a row in [`Self::rows`]**, and the separation is the whole
+    /// design. Two independent reasons, either one sufficient:
+    ///
+    /// * **Time cannot name it.** [`Self::row_at`] addresses rows by nearest time, and a
+    ///   probe shares its instant with a stepped row exactly — at the start of a run with
+    ///   the first step's `t = dt` nearby, and (were probes ever taken mid-run) with the
+    ///   step that ends at the same instant. The two differ by precisely the thing a probe
+    ///   is for: one step of relaxation. An addressing scheme that cannot tell them apart
+    ///   would hand an author whichever was pushed first.
+    /// * **It would move every reduction.** `first_flag`, `flags_arriving_at`,
+    ///   `delivered_ah`, `deficit_zero_s` and `soc_gap_pts_min` all fold over `rows`, and
+    ///   a prepended row changes each of them silently. Measured, not feared:
+    ///   `belief-drifts`'s probe reads a gap of 3.0000 points against the run's minimum of
+    ///   3.0182 — a probe has no step to lag the truth by — so it would have stolen that
+    ///   claim's minimum and moved its instant from 0.5 s to 0.0 without any prose
+    ///   changing. See `docs/plans/path-probe-row.md`.
+    ///
+    /// So a claim *declares* that it reads the probe, exactly as `after_mark` is declared
+    /// rather than inferred from `read_at_s`.
+    probe: Row,
 }
 
 impl Run {
+    /// The row a claim reads: the zero-length probe if it declares one, else the stepped
+    /// row nearest `at_s`.
+    fn read(&self, at_s: f64, probe: bool) -> &Row {
+        if probe {
+            &self.probe
+        } else {
+            self.row_at(at_s)
+        }
+    }
+
     /// The row whose end-of-step time is closest to `t`.
     ///
     /// The row carries its own time because the panel's clock renders the frame the
@@ -1043,6 +1161,7 @@ fn drive(
             t_s: pack.sim_time_s(),
             telemetry: t,
             deficit_max: deficit_max(pack),
+            surface_gap: surface_gap(pack),
         });
     }
 }
@@ -1058,6 +1177,22 @@ fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
     let env = Env {
         t_ambient: lesson.ambient_c + K,
         t_coolant: None,
+    };
+    // `applyStep`'s `await readNow()`, taken after the step's controls are dialled in and
+    // before the run is armed: a `dt = 0` step under **this step's** demand, which for a
+    // `Pulse` is the leg its own clock is on rather than `Rest`. It is what fills the
+    // readouts a reader sees "before you press Run".
+    //
+    // Taken first and used as-is, because `Pack::step(0.0, ..)` mutates nothing: probed
+    // twice on an SPM, a BMS pack and a circuit, the second telemetry is bit-identical to
+    // the first and `snapshot()` is unchanged across both. That is what makes the page's
+    // *two* probes on a reloading step — one under the stale demand box in `loadScenario`,
+    // then this one — reproducible by modelling only the second.
+    let probe = Row {
+        t_s: pack.sim_time_s(),
+        telemetry: pack.step(0.0, demand_now(lesson.demand, &pack, lesson.dt, None), &env),
+        deficit_max: deficit_max(&pack),
+        surface_gap: surface_gap(&pack),
     };
     let mut rows = Vec::new();
     let mut last: Option<Telemetry> = None;
@@ -1081,7 +1216,7 @@ fn run(lesson: &Lesson, leg: Option<&Leg>) -> Run {
             &mut last,
         );
     }
-    Run { rows }
+    Run { rows, probe }
 }
 
 // ---------------------------------------------------------------------------
@@ -1251,6 +1386,16 @@ struct Claim {
     /// a claim about a trajectory nobody ran.
     #[serde(default)]
     after_mark: bool,
+    /// Is this claim read on the **zero-length probe** — what the panel shows before the
+    /// reader presses Run, rather than on any step of the trajectory?
+    ///
+    /// Declared and not inferred, for the reason `after_mark` is: `read_at_s = 0` cannot
+    /// mean it, because [`Run::row_at`] answers 0 with the *first stepped row*, and the
+    /// two readings differ by exactly one step of relaxation — which on the pulse steps is
+    /// 2.9 mV out of 74.8. See [`Run::probe`] for what the probe is and why it is not a
+    /// row, and [`every_probe_claim_is_taken_before_the_run`] for the three fences on it.
+    #[serde(default)]
+    probe: bool,
     #[allow(
         dead_code,
         reason = "authoring context for a human reader, not asserted"
@@ -1599,11 +1744,95 @@ struct Claims {
     ledger: Ledger,
 }
 
+/// The quantities that can be read off **one row**, and are therefore the quantities a
+/// zero-length probe can answer.
+///
+/// Split out from [`measure`] rather than duplicated into it: a probe is a row and has no
+/// history, so this is precisely the boundary between "a claim may declare `probe`" and
+/// "it may not". A quantity added here becomes probe-readable automatically; one added to
+/// the reductions below stays refused, with a message naming itself.
+fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
+    let t = &row.telemetry;
+    Some(match quantity {
+        "v_at_mark" | "v_at" => t.v_terminal,
+        "soc_at" => t.soc_true,
+        "i_at" => t.i_actual,
+        "t_max_at" => t.t_max,
+        "soh_cap_at" => t.soh_capacity,
+        "soh_res_at" => t.soh_resistance,
+        // Heat, and the charge the pack would not take. Both exist because the `heat`
+        // and `clamp` rows are the two the overcharge step tells a reader to read, and a
+        // display claim with no value behind it would be pinning a rendering of a number
+        // nothing checks.
+        "q_gen_at" => t.q_gen_w,
+        "i_rejected_at" => t.i_rejected_a,
+        // The debt below empty, in points of charge — the units the prose and the `past
+        // empty` row both speak, so a claim reads as the sentence does. Ground truth, and
+        // value-only: that row is sampled on a wall clock, so no claim measured here may
+        // name a display. See `Row::deficit_max`.
+        "deficit_pts_at" => row.deficit_max * 100.0,
+        // The two halves of the `surface gap` row, each in points of charge — the units
+        // the row prints and the prose speaks. Separate quantities and not a pair, because
+        // a claim states one number: step 18's whole argument is that these two do
+        // *different things*, and a claim that averaged them would be about neither.
+        //
+        // A circuit panics rather than reading zero, for the reason the row prints its
+        // reason instead of a number: "no electrodes" and "flat" are not the same fact,
+        // and this file's own `isPorous` mirror exists to keep them apart.
+        "surface_gap_neg_pts" | "surface_gap_pos_pts" => {
+            let (neg, pos) = row.surface_gap.unwrap_or_else(|| {
+                panic!(
+                    "a claim reads `{quantity}` at t = {} s on a step whose cell model has \
+                     no surface. The `surface gap` row there says `circuit — no \
+                     electrodes` rather than printing a zero, so the quantity does not \
+                     exist — the claim is on the wrong step.",
+                    row.t_s
+                )
+            });
+            100.0
+                * if quantity.ends_with("neg_pts") {
+                    neg
+                } else {
+                    pos
+                }
+        }
+        // What the BMS believes minus what is true, in points of charge — the gap
+        // CLAUDE.md's eighth principle exists to expose, and the subject of step 4's whole
+        // closing paragraph.
+        //
+        // No `display` may be named on a claim measured here, and the reason is different
+        // from `deficit_pts_at`'s: the panel has no gap row at all. It prints `soc (true)`
+        // and `soc (bms)` a tenth of a point each and the reader does the subtraction, so
+        // the gap is a quantity the page shows without ever printing. That is also what
+        // sets the tolerance the two claims on it take — see their notes.
+        //
+        // The row's own time, not the `at_s` an author asked for: `row_at` returns the
+        // nearest row, and a message naming the instant an author wanted rather than the
+        // one that was read sends them to the wrong place.
+        "soc_gap_pts_at" => gap_pts(t, row.t_s),
+        _ => return None,
+    })
+}
+
 /// The quantities a claim may name, and how each is read off a run.
 ///
 /// Kept as an explicit match rather than a registry so an unknown quantity is a
 /// compile-time-shaped failure with a list in the message, not a silent skip.
-fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
+fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
+    if let Some(v) = measure_row(quantity, run.read(at_s, probe)) {
+        return v;
+    }
+    // Everything past here folds over the whole trajectory, and a probe is one row taken
+    // before any of it exists. Refused rather than answered from `rows` behind the claim's
+    // back: a claim that says `probe = true` and gets the stepped run's minimum would be
+    // green about a measurement nobody made.
+    assert!(
+        !probe,
+        "a claim reads `{quantity}` off the zero-length probe. That quantity is a \
+         reduction over the whole run — a flag's arrival, a charge total, a minimum — and \
+         the probe is a single read taken before the first step, with no history behind \
+         it. Drop `probe` and give the claim the instant it is really read at."
+    );
     // Two families take an argument after a colon, because the thing being read is not
     // a fixed time: a flag's arrival, and the voltage at a charge level.
     if let Some(flag) = quantity.strip_prefix("flag_first_s:") {
@@ -1624,18 +1853,6 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
             .v_terminal;
     }
     match quantity {
-        "v_at_mark" | "v_at" => run.at(at_s).v_terminal,
-        "soc_at" => run.at(at_s).soc_true,
-        "i_at" => run.at(at_s).i_actual,
-        "t_max_at" => run.at(at_s).t_max,
-        "soh_cap_at" => run.at(at_s).soh_capacity,
-        "soh_res_at" => run.at(at_s).soh_resistance,
-        // Heat, and the charge the pack would not take. Both exist because the `heat`
-        // and `clamp` rows are the two the overcharge step tells a reader to read, and a
-        // display claim with no value behind it would be pinning a rendering of a number
-        // nothing checks.
-        "q_gen_at" => run.at(at_s).q_gen_w,
-        "i_rejected_at" => run.at(at_s).i_rejected_a,
         // Amp-hours out of the terminals by `at_s`, `Σ i·dt / 3600`.
         //
         // The one quantity in this file that no readout row shows, and it is here because
@@ -1667,11 +1884,6 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
                 .map(|r| r.telemetry.i_actual * dt / 3600.0)
                 .sum()
         }
-        // The debt below empty, in points of charge — the units the prose and the `past
-        // empty` row both speak, so a claim reads as the sentence does. Ground truth, and
-        // value-only: that row is sampled on a wall clock, so no claim measured here may
-        // name a display. See `Row::deficit_max`.
-        "deficit_pts_at" => run.row_at(at_s).deficit_max * 100.0,
         // When the debt is paid off: the first step at zero deficit after a step that had
         // one. Measured rather than assumed because it is the instant two of this path's
         // claims are read at, and a hardcoded time would go quietly stale if the
@@ -1694,22 +1906,6 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
                     )
                 })
                 .t_s
-        }
-        // What the BMS believes minus what is true, in points of charge — the gap
-        // CLAUDE.md's eighth principle exists to expose, and the subject of step 4's whole
-        // closing paragraph.
-        //
-        // No `display` may be named on a claim measured here, and the reason is different
-        // from `deficit_pts_at`'s: the panel has no gap row at all. It prints `soc (true)`
-        // and `soc (bms)` a tenth of a point each and the reader does the subtraction, so
-        // the gap is a quantity the page shows without ever printing. That is also what
-        // sets the tolerance the two claims on it take — see their notes.
-        "soc_gap_pts_at" => {
-            // The row's own time, not `at_s`: `row_at` returns the nearest row, and a
-            // message that names the instant an author asked for rather than the one that
-            // was read sends them to the wrong place.
-            let row = run.row_at(at_s);
-            gap_pts(&row.telemetry, row.t_s)
         }
         // The smallest that gap ever gets over the whole run, which is how "simply never
         // closes" is made checkable. The mark reading alone cannot say it: an estimator
@@ -1750,8 +1946,8 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, soc_at, i_at, t_max_at, soh_cap_at, soh_res_at, \
              soh_ratio_at, q_gen_at, i_rejected_at, deficit_pts_at, deficit_zero_s, \
-             delivered_ah, soc_gap_pts_at, soc_gap_pts_min, flag_first_s:<FLAG>, \
-             v_at_soc_below:<fraction>."
+             delivered_ah, soc_gap_pts_at, soc_gap_pts_min, surface_gap_neg_pts, \
+             surface_gap_pos_pts, flag_first_s:<FLAG>, v_at_soc_below:<fraction>."
         ),
     }
 }
@@ -3080,6 +3276,58 @@ fn every_claim_is_reachable_in_its_own_step() {
     }
 }
 
+/// Check 3's sibling — a `probe` claim is really about the instant before the run.
+///
+/// Three fences, and each one closes a way the declaration could be true of the file and
+/// false of the page:
+///
+/// * **`read_at_s` must be 0.** The probe is taken before the first step, so it has no
+///   other instant. A probe claim carrying a decorative time would be the shape
+///   `soc_gap_pts_min` was fenced against a slice ago, with the added trap that the number
+///   *looks* addressed by time and is not.
+/// * **It cannot also be `after_mark`.** The two say opposite things about when a reader
+///   sees the number: before the run was armed, and after it passed the mark.
+/// * **The step must reload.** [`run`] builds a fresh pack for every step, which a stepped
+///   trajectory mostly absorbs — but the probe *is* the fresh pack, so on a step that
+///   inherits its pack from its predecessor the harness would be mirroring a reading the
+///   page never shows. `applyStep` reloads on `reload: true` or a changed scenario file;
+///   only the first is knowable here, and it is the conservative half.
+///
+/// The quantity is fenced elsewhere, in [`measure`]: a reduction over the whole run has no
+/// probe reading, and asking for one is refused rather than quietly answered from `rows`.
+#[test]
+fn every_probe_claim_is_taken_before_the_run() {
+    let lessons = lessons();
+    for c in claims().iter().filter(|c| c.probe) {
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == c.step)
+            .unwrap_or_else(|| panic!("no lesson `{}`", c.step));
+        assert_eq!(
+            c.read_at_s, 0.0,
+            "claim `{}` on step `{}` reads the zero-length probe and sets read_at_s = {}. \
+             The probe is taken before the first step and has no other instant; a time \
+             here reads as an address it is not.",
+            c.literal, c.step, c.read_at_s
+        );
+        assert!(
+            !c.after_mark,
+            "claim `{}` on step `{}` is both `probe` and `after_mark`. Those are opposite \
+             instants — before the reader arms the run, and after it passed the mark.",
+            c.literal, c.step
+        );
+        assert!(
+            lesson.reload,
+            "claim `{}` reads the zero-length probe on step `{}`, and that step does not \
+             set `reload: true`. `applyStep` then keeps whatever pack is on screen when \
+             the scenario file has not changed, so what the panel shows before the reader \
+             presses Run depends on the step they arrived from — while this harness always \
+             builds a fresh one. The claim would be about a pack no reader is guaranteed.",
+            c.literal, c.step
+        );
+    }
+}
+
 /// Check 2 — the engine still produces the number.
 #[test]
 fn every_claim_matches_the_engine() {
@@ -3139,7 +3387,7 @@ fn every_claim_matches_the_engine() {
         }
 
         for c in all.iter().filter(|c| c.step == step) {
-            let got = measure(&c.quantity, &r, c.read_at_s);
+            let got = measure(&c.quantity, &r, c.read_at_s, c.probe);
             assert!(
                 (got - c.value).abs() <= c.tol,
                 "step `{}`, claim `{}`:\n  {} at t = {} s\n  prose says {}\n  engine says \
@@ -3165,9 +3413,12 @@ fn every_claim_matches_the_engine() {
             let Some((row, shows)) = c.display_claim() else {
                 continue;
             };
-            let row_read = r.row_at(c.read_at_s);
-            let (row_time_s, telemetry) = (row_read.t_s, &row_read.telemetry);
-            let printed = render_row(row, telemetry, row_time_s);
+            // The same row the value came from, probe included: a display claim renders
+            // what the reader is looking at when the claim is read, and on a probe claim
+            // that is the panel before the run is armed.
+            let row_read = r.read(c.read_at_s, c.probe);
+            let row_time_s = row_read.t_s;
+            let printed = render_row(row, row_read);
             assert_eq!(
                 printed, shows,
                 "step `{}`, claim `{}`:\n  the `{row}` readout at t = {} s\n  \
