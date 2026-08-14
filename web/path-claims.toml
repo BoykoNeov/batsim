@@ -1881,14 +1881,21 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # have reddened, because there was no claim to redden.
 #
 # The ledger is the other axis: a step named in `steps` below has its prose scanned end
-# to end, and EVERY number in it must be tied to something. Not the sentences that are
+# to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: three
-# steps, fourteen numbers, all of them scenario constants. Those three were picked
+# steps, fourteen numerals, all of them scenario constants. Those three were picked
 # because the same measuring pass found they carry no measurement-shaped figure at all,
 # so they can be closed before a single number is measured. The remaining eleven
 # unclaimed steps need arms this file has not got — see the plan.
+#
+# NUMERAL, NOT NUMBER, and the difference is load-bearing. The scan finds digits, so a
+# quantity spelled in English goes straight past it — and two of these three steps state
+# four that way: "about half a point across the whole grid" and "a quarter of a point"
+# between the two cells of a group (step 3), "a gap of about three points" and "a fraction
+# of a point" of sensor drift (step 4). All four are engine measurements and none is
+# checked by anything. A ledgered step is digits-closed, which is less than closed.
 #
 # ONE ARM, and the vocabulary that makes it honest. The arm says "this number is the
 # value of a NAMED FIELD of the step's scenario file". Naming the field is the whole
@@ -1900,6 +1907,9 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # The vocabulary is a declaration; the NUMBER never is. It is read out of the scenario
 # file and compared, so a rule pointed at the wrong field fails on sight — the same way a
 # mis-pointed `spells` does. There is no waiver variant, for the reason check 6 has none.
+# A `*` in a path walks an array and is read STRICTLY: every value it reaches has to be
+# the number. It was existential first, and that let step 5's "in the same instant" pass
+# with the two faults 100 s apart — measured, not argued.
 #
 # A LEDGERED STEP MAY NOT CARRY CLAIMS YET. The arm a claimed sentence needs is check 6's
 # own accounting, and wiring it in with no ledgered step to exercise it would be a second

@@ -8,12 +8,12 @@ could not have reddened anything, because a step with no claim has no literal fo
 to scan.
 
 This slice builds the first piece of the instrument that does redden. It is deliberately the
-cheapest piece: the three steps whose every number is a constant some file already declares,
-so they can be closed before a single quantity is measured.
+cheapest piece: the three steps whose every *numeral* is a constant some file already
+declares, so they can be closed before a single quantity is measured.
 
 ## What landed
 
-* **The ledger** — `every_number_in_a_ledgered_step_is_accounted_for` scans a step's *whole*
+* **The ledger** — `every_numeral_in_a_ledgered_step_is_accounted_for` scans a step's *whole*
   prose, not the sentences a claim quotes, and requires every number in it to be tied to
   something. Opt-in per step through a new `[ledger]` table in `web/path-claims.toml`.
 * **One arm, the scenario file** — a number is accounted if it is the value of a *named
@@ -26,16 +26,33 @@ so they can be closed before a single quantity is measured.
 * **A bound on the lesson scraper**, which turned out to be a live hole rather than tidiness.
   See below.
 
-Coverage, stated the way this file states everything: **three steps, fourteen numbers, one
+Coverage, stated the way this file states everything: **three steps, fourteen numerals, one
 arm.** Twenty-one steps are named as not covered — ten of them have their claimed sentences
 checked by the seven claim checks and the rest of their prose free; eleven have nothing at
 all.
 
-| step | numbers | what decides them |
+| step | numerals | what decides them |
 | --- | --- | --- |
 | `pack-disagrees` | 4 | `pack.series`, `pack.parallel`, both `pack.scatter` sigmas |
 | `belief-drifts` | 3 | the BMS's current offset, its noise, its boot error |
 | `lying-sensor` | 7 | the two `[[faults]]` tables, read straight off the file |
+
+**A ledgered step is digits-closed, which is not the same as closed**, and the distinction
+matters enough to be here rather than in the deferred list. The scanner finds numerals; a
+quantity spelled in English is invisible to it, and these three steps state four that way:
+
+* `pack-disagrees` — "about **half a point** across the whole grid by the end, of which **a
+  quarter of a point** is between the two cells of a single pair". Both are engine
+  measurements: the spread of true SOC across eight cells at the 300 s mark, and the part of
+  it that is inside one parallel group.
+* `belief-drifts` — "a gap of about **three points** that simply never closes", and the
+  sensor offset adding "only **a fraction of a point** over ten minutes". Both are
+  `soc_bms − soc_true`, which is the whole subject of the step.
+
+Those four are the sentences a reader actually leans on, and nothing checks them. The check
+is named `every_numeral_…` for that reason. Two of them are also the cheapest claims
+available anywhere in the remaining eleven steps: the estimator gap needs no zero-length
+probe and no instructed continuation, only a run to the mark and the `claimed` arm.
 
 ## The design question, and the answer that cost the most
 
@@ -66,9 +83,30 @@ Two fences keep the vocabulary from becoming the loophole:
   mirror it was meant to guard was wrong the whole time. A vocabulary entry left behind by a
   prose edit would read as coverage of a number that is now failing somewhere else.
 
-`*` in a path walks an array, so `faults.*.at_s` is "the time of some scheduled fault" and
-does not care what order the file lists the two faults in. The alternative — a literal index
-— would turn a harmless reordering of the file into a red test about the prose.
+### The wildcard was existential, and that was a hole
+
+`*` in a path walks an array, so `faults.*.at_s` does not care what order the file lists its
+two faults in — the alternative, a literal index, would turn a harmless reordering of the
+file into a red test about the prose.
+
+It was written as "*some* value at this path is the number", and that is a fail-toward-green
+on the one relational thing `lying-sensor`'s prose says: the short and the sensor lie land
+"**in the same instant**". Measured rather than argued — the second fault's `at_s` moved to
+700 s, everything else untouched:
+
+| arm | `every_numeral_in_a_ledgered_step_is_accounted_for` |
+| --- | --- |
+| wildcard existential (as first written) | **green**, with the sentence false |
+| wildcard strict (this slice) | **red** |
+
+So a wildcard is now read strictly: every value it reaches must be the number. For the other
+five wildcarded paths that is the same check — each reaches exactly one value — and for
+`at_s` it is the difference between "a fault happens at 600" and what the sentence says.
+
+The cost is stated rather than left to be discovered: a *third* fault at some other time
+would fail this rule even though the sentence, which names two, would still be true. That is
+the fail-toward-red direction, and the answer then is a path that selects the fault the
+sentence names — which this walker cannot express.
 
 ## Found on the way: the last lesson's block ran past the end of the lessons
 
@@ -100,7 +138,7 @@ red and concluded the bound changed nothing.
 
 ## What was measured, not assumed
 
-Fourteen perturbation cases, launched at below-normal priority with real exit codes (a
+Fifteen perturbation cases, launched at below-normal priority with real exit codes (a
 `start /wait` wrapper hides the child's status — twice recorded in this repo), each recording
 *which* test reddened rather than only that something did:
 
@@ -115,6 +153,7 @@ Fourteen perturbation cases, launched at below-normal priority with real exit co
 | a vocabulary rule matches nothing | rules |
 | a rule points at the wrong field | ledger |
 | a rule points at a field that is not there | ledger |
+| the second fault stops being simultaneous | ledger — existentially green, see above |
 | a lesson is in neither list | lists |
 | a lesson is in both lists | lists (and the ledger, which now scans it) |
 | a claimed step is ledgered | ledger, on the fence that refuses it |
@@ -150,7 +189,12 @@ nothing reads is the shape that hid a wrong CC-CV mirror for six slices.
 
 ## Deferred, with a price
 
-* **Fourteen numbers out of about 350 is not a coverage claim, and the eleven wholly
+* **A quantity spelled in English is invisible, and four of them are in the ledgered steps.**
+  Named above with what each one measures. The scanner would need a word vocabulary ("half a
+  point", "about three points") and, behind it, the `claimed` arm and a measured claim — so
+  this is next-slice work rather than a gap that can be closed by wording. Until then, the
+  three green steps mean "every digit is tied to a file", not "this step is checked".
+* **Fourteen numerals out of about 350 is not a coverage claim, and the eleven wholly
   unchecked steps are still wholly unchecked.** Step 19's six stale figures and step 14's
   false contrast would both still be invisible today; the repairs are in the prose, and
   nothing guards them. The list in `[ledger].unledgered` is the honest statement of that, one

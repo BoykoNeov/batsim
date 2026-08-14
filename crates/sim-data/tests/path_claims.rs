@@ -70,8 +70,11 @@
 //!   force left the whole suite green.
 //!
 //! Beside all six sits **the ledger**, which is about a *step* rather than about a claim:
-//! [`every_number_in_a_ledgered_step_is_accounted_for`] scans a step's whole prose and
-//! requires every number in it to be tied to something, claimed or not. Check 6 can only
+//! [`every_numeral_in_a_ledgered_step_is_accounted_for`] scans a step's whole prose and
+//! requires every numeral in it to be tied to something, claimed or not. Numeral, not
+//! number: a quantity spelled in English is invisible to it, and two ledgered steps state
+//! four measurements that way ("about half a point across the whole grid", "a gap of about
+//! three points"). A ledgered step is digits-closed, which is less than closed. Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all —
 //! which is how six figures in step 19 went stale, and how a contrast in step 14 that
 //! never existed survived, both under a fully green suite. Coverage is opt-in per step
@@ -2347,8 +2350,19 @@ struct ScenarioRule {
     /// the prose, so it is written the way the prose writes it.
     phrase: &'static str,
     /// One dotted key path into the step's scenario TOML per `{n}`, in order. `*` walks an
-    /// array, so `faults.*.at_s` is "the time of some scheduled fault" and does not care
-    /// which order the file lists them in.
+    /// array, so `faults.*.at_s` does not care which order the file lists its faults in.
+    ///
+    /// **A wildcard is read strictly: *every* value it reaches must be the number.** It was
+    /// existential first — some fault at 600 — and that is a fail-toward-green on the one
+    /// relational thing this step's prose says. `lying-sensor` claims the short and the
+    /// sensor lie land "in the same instant"; measured, with the second fault moved to
+    /// 700 s, the existential arm stayed green and the sentence was false. Strict makes the
+    /// arm say what the sentence says.
+    ///
+    /// The cost is stated rather than discovered: a *third* fault scheduled at some other
+    /// time would fail this rule even though the sentence — which names two — would still
+    /// be true. That is the fail-toward-red direction, and the answer then is a path that
+    /// selects the fault the sentence names, which this walker cannot express.
     paths: &'static [&'static str],
     /// How many powers of ten larger the unit the *prose* writes is than the unit the
     /// *file* writes — 2 for a percentage against a fraction, 3 for mA against A. Same
@@ -2541,7 +2555,7 @@ fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usi
     out
 }
 
-/// The ledger — every number in a ledgered step's whole prose is tied to something.
+/// The ledger — every numeral in a ledgered step's whole prose is tied to something.
 ///
 /// Check 6 requires an accounting for every number inside a sentence some claim already
 /// quotes, and that is as far as it reaches: a step with no claims has no literal to scan.
@@ -2552,12 +2566,20 @@ fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usi
 /// there was no claim to redden.
 ///
 /// So this scans a step's prose end to end. Three steps are ledgered today, chosen because
-/// every number in them is a scenario constant: `docs/plans/path-prose-ledger.md` measured
+/// every *numeral* in them is a scenario constant: `docs/plans/path-prose-ledger.md` measured
 /// all fourteen steps and found these three carry no measurement-shaped figure at all, so
 /// they can be closed before a single number is measured. That is the whole of what this
 /// check covers, and the rest of the design — arms for control settings, chemistry
 /// constants, ordinals naming other steps, and figures derived from other figures in the
 /// same sentence — is written up in that plan and not built.
+///
+/// **Numeral is the operative word, and it is a real limit rather than pedantry.**
+/// [`written_numbers`] finds digits. A quantity spelled in English is invisible to it, and
+/// two of the three ledgered steps state four of them: "about half a point across the whole
+/// grid" and "a quarter of a point" between the cells of one group in step 3, "a gap of about
+/// three points" and "a fraction of a point" of sensor drift in step 4. Every one is an
+/// engine measurement, and they are the sentences a reader leans on. A green ledger here says
+/// the step's *digits* are tied to something — it does not say the step is checked.
 ///
 /// **There is one arm, and a step with claims on it may not be ledgered yet.** The arm a
 /// claimed sentence needs is check 6's own accounting, and wiring it in with no ledgered
@@ -2565,7 +2587,7 @@ fn cover_by_rule(text: &str, numbers: &[Written], step: &str) -> Vec<Option<(usi
 /// by nothing. The fence below says so out loud rather than letting the next author meet it
 /// as a confusing failure.
 #[test]
-fn every_number_in_a_ledgered_step_is_accounted_for() {
+fn every_numeral_in_a_ledgered_step_is_accounted_for() {
     let lessons = lessons();
     let all = claims();
     let ledger = ledger();
@@ -2643,12 +2665,16 @@ fn every_number_in_a_ledgered_step_is_accounted_for() {
             assert!(
                 found
                     .iter()
-                    .any(|v| tol_eq(v * 10f64.powi(rule.pow10), spelled)),
+                    .all(|v| tol_eq(v * 10f64.powi(rule.pow10), spelled)),
                 "step `{step}` says `{}` where scenarios/{} says {found:?} at \
                  `{path}`:\n  …{context}…\n\
                  The prose and the scenario file have parted. One of them moved; the \
                  sentence is what a reader is shown, so fix whichever is wrong rather \
-                 than the rule.",
+                 than the rule.\n\
+                 Note that a `*` in the path is read strictly — EVERY value it reaches \
+                 has to be this number, which is what lets `faults.*.at_s` carry \
+                 \"in the same instant\". If the sentence really is about one of \
+                 several, it needs a path that says which.",
                 w.token,
                 lesson.scenario,
             );
