@@ -32,6 +32,12 @@ that were blocking it, and deliberately not the larger one.
   `spelled_value` each used to parse the string themselves and two resolution sites is how
   a word comes to be a number for the tolerance and not for the value.
 
+  A word may carry **no `spells_pow10`**, and that is asserted rather than assumed. A word
+  is written in the unit the sentence uses and has no second reading; unfenced,
+  `spells = "three"` with `spells_pow10 = 2` reads the sentence as 0.03 and licenses a
+  tolerance of 0.005 — a scale nobody wrote, on the one kind of `spells` whose own text
+  cannot show it. It is in the perturbation table below.
+
 * **A word nothing spells fails.** `every_word_numeral_is_spelled_by_a_claim`, the same
   guard `every_ledger_rule_is_a_phrase_and_is_used` keeps over the ledger's vocabulary, for
   the same reason: `CCCV_PERIOD_S` sat pinned and unread for six slices while the mirror it
@@ -118,6 +124,7 @@ recording *which* test reddened rather than only that something did.
 | `tol` widened to the rule (0.5) | tolerance |
 | the minimum claim reads at 300 s | value, on the instant assertion |
 | a word numeral no claim spells | word-numeral |
+| a word `spells` given `spells_pow10 = 2` | stated, tolerance |
 | the scenario's boot error moves to 4 % | value **and** ledger |
 | CONTROL: the old fence restored, with the claims present | ledger |
 | CONTROL: `belief-drifts` prose gains `17 kg` | ledger |

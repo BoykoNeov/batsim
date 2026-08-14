@@ -1311,6 +1311,20 @@ impl Claim {
             self.literal,
             self.step
         );
+        // A word carries its own unit and there is nothing to convert: "three points" is
+        // three points, where `"0.53"` against a fraction is a percentage that has to be
+        // brought down two decades. Left unfenced, `spells = "three"` with pow10 = 2 reads
+        // the sentence as 0.03 and licenses a tolerance of 0.005 — a scale nobody wrote,
+        // on the one kind of `spells` whose text cannot show it.
+        assert!(
+            !WORD_NUMERALS.iter().any(|(w, _)| *w == spells) || self.spells_pow10 == 0,
+            "claim `{}` on step `{}` spells the word `{spells}` and sets spells_pow10 = {}. \
+             A word is written in the unit the sentence uses and has no other reading; a \
+             scale here would silently move both the number and its tolerance.",
+            self.literal,
+            self.step,
+            self.spells_pow10
+        );
         assert!(
             self.spells_pow10.abs() <= 12,
             "claim `{}` on step `{}` sets spells_pow10 = {}. That is a unit conversion of \
@@ -1690,7 +1704,13 @@ fn measure(quantity: &str, run: &Run, at_s: f64) -> f64 {
         // and `soc (bms)` a tenth of a point each and the reader does the subtraction, so
         // the gap is a quantity the page shows without ever printing. That is also what
         // sets the tolerance the two claims on it take — see their notes.
-        "soc_gap_pts_at" => gap_pts(run.at(at_s), at_s),
+        "soc_gap_pts_at" => {
+            // The row's own time, not `at_s`: `row_at` returns the nearest row, and a
+            // message that names the instant an author asked for rather than the one that
+            // was read sends them to the wrong place.
+            let row = run.row_at(at_s);
+            gap_pts(&row.telemetry, row.t_s)
+        }
         // The smallest that gap ever gets over the whole run, which is how "simply never
         // closes" is made checkable. The mark reading alone cannot say it: an estimator
         // that closed the gap at 300 s and re-opened it by 600 would pass the mark claim
