@@ -131,7 +131,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  102 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  103 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  17 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -142,7 +142,7 @@
 #             two claims on step 4's estimator gap, where the sentence's own word
 #             ("three") licenses half a point and the tolerance taken is half of the
 #             last place a reader could compute the gap to from the two rows behind it.
-#   grid      2 claims. The quantity is a time the engine can only report on the step
+#   grid      4 claims. The quantity is a time the engine can only report on the step
 #             grid (`flag_first_s:*`, `deficit_zero_s`) and the prose spells no number
 #             in it — it gives a consequence, or a rendering of the clock. `tol` is
 #             half a timestep, which for a grid time is the tightest meaningful bound:
@@ -182,7 +182,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 17 claims.
 #
-#   same        110 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        111 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    3. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -207,7 +207,7 @@
 #               and cannot stand alone — an earlier claim on the same sentence, quantity
 #               and number must state `same`, or "is not 100.00" would be satisfied by
 #               pointing at any figure in the sentence.
-#   nothing      1. The sentence prints no number about this quantity — `An `OC` flag`.
+#   nothing      3. The sentence prints no number about this quantity — `An `OC` flag`.
 #               Checked rather than trusted: the literal must contain no digit at all,
 #               which is what stops this being the escape hatch that re-opens the hole.
 #
@@ -3438,6 +3438,145 @@ cut-off with an eighth of its rated charge still counted, which is the whole sub
 the step after next.
 """
 
+# --- step 11: the cold charge the protection stops, and what stops nothing ----------
+#
+# The first arms in this file that drag the ambient slider, and they exist because of what
+# the sentence they follow asserts: two flags "at the same instant". No mechanism here
+# compares one arm against another — `identical_to` compares end states, not arrivals — so
+# the equality is asserted the only way this file can assert it, by two claims on two arms
+# pinning the SAME number. Move either arrival and one of them reddens.
+
+[[arm]]
+step = "what-protection-costs"
+name = "cold"
+instruction = "drag the ambient to −5 °C and watch the pack cool until `UT` inhibits the charge at 60.8 %, then switch the BMS off and see `PLATING_RISK` at the same instant"
+start = "restart"
+ambient_c = -5.0
+actions = [{ do = "run", to_s = 4100.0 }]
+note = """
+`restart` rather than `mark`, and the label is slightly wider than the button: what a
+reader does here is drag the slider and then press **Run**, on the pack the step just
+built. That is the same trajectory the Restart button gives — a fresh pack at t = 0 with
+the controls left as the reader set them — because `applyStep` has already reloaded this
+scenario and `$("ambient").oninput` rebuilds nothing. The mark-side reading is not
+available: at 4100 s the protected charge has already stopped at 94.9 %, so a slider
+dragged there could never show a pack inhibited at 60.8 %.
+
+Runs to 4100 s, which is the step's own mark rather than a length invented here. The arm is
+this step's run under a different slider, and it carries on for 2600 s past its furthest
+claim — long enough that "reachable" is not a statement about how far the harness chose to
+go. Nothing else arrives in that stretch: the current is zero from the inhibit onwards and
+the pack simply keeps cooling, 273.145 K at the flag to 268.297 K at the mark.
+"""
+
+[[arm]]
+step = "what-protection-costs"
+name = "cold, protection off"
+instruction = "drag the ambient to −5 °C and watch the pack cool until `UT` inhibits the charge at 60.8 %, then switch the BMS off and see `PLATING_RISK` at the same instant"
+start = "restart"
+ambient_c = -5.0
+bms = false
+actions = [{ do = "run", to_s = 4100.0 }]
+note = """
+The same cold pack with the checkbox cleared, which is the second half of the sentence.
+Both overrides are anchored in it — the −5 as a number, the BMS by name — and both are
+genuine changes from what the step configures (25 °C, protection on).
+
+`restart` is forced here for a second reason on top of the ambient's: the page's BMS
+checkbox clicks Reset, so a mid-run toggle is not a thing the page can do at all.
+
+What this arm shows past its claim is the sentence's last clause, "with the charge carrying
+on regardless": the current stays at the full −3 A through the flag and the pack reaches
+95.7 % by the mark, where the protected arm stopped dead at 60.75 %. No claim reads it —
+the prose gives no number for it — so it is recorded here rather than asserted.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "watch the pack cool until `UT` inhibits the charge"
+quantity = "flag_first_s:UT"
+arm = "cold"
+value = 1494.5
+tol = 0.25
+tol_from = "grid"
+states = "nothing"
+read_at_s = 1494.5
+note = """
+When the cold reaches the BMS. `UT` is the charge inhibit below `t_charge_min_k`, and the
+pack takes twenty-five minutes of simulated time to cool from 25 °C into it — which is why
+the sentence tells the reader to *watch* rather than to look.
+
+`nothing`, because the sentence prints no number about this instant, and the variant is
+checked rather than declared: the literal has to contain no digit at all, which this one
+does not. `grid` for the tolerance, half a step at dt = 0.5 — the engine hits the claimed
+step or misses by a whole one.
+
+Its twin on the unprotected arm is pinned to this same 1494.5, which is the whole of "at
+the same instant". See that claim.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "inhibits the charge at 60.8 %"
+quantity = "soc_at"
+arm = "cold"
+value = 0.607528726
+tol = 5e-4
+tol_from = "spelled"
+spells = "60.8"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1494.5
+display = "soc (true)"
+shows = "60.8 %"
+quoted = true
+note = """
+Where the inhibit catches it. The pack is charging the whole time it is cooling, so the
+number is not a property of the protection alone — it is where these two races meet, and it
+would move if the charge current or the thermal mass did.
+
+THIS SENTENCE IS 94 % OF THE WAY THROUGH ITS OWN ROUNDING, and that is worth knowing rather
+than discovering. The engine says 60.7529 % and the sentence says 60.8, so the stated check
+is using 4.71e-4 of the 5e-4 that one decimal licenses. A drift of three parts in ten
+thousand downward and the sentence should read 60.7. The margin is thin because the true
+value sits just past the .75 boundary, not because anything is wrong.
+
+The same number is written into a code comment in `web/app.js` — `ccCvDone`'s doc cites "a
+BMS charge inhibit takes the current to zero at whatever SOC the pack happened to have
+reached — measured at 60.8 % on `cc_cv_charge_pack.toml` cooled to −5 °C". That comment is
+prose about the same measurement and nothing checks it; this claim covers the sentence a
+reader is shown, not the comment.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "then switch the BMS off and see `PLATING_RISK` at the same instant"
+quantity = "flag_first_s:PLATING_RISK"
+arm = "cold, protection off"
+value = 1494.5
+tol = 0.25
+tol_from = "grid"
+states = "nothing"
+read_at_s = 1494.5
+note = """
+THE OTHER HALF OF AN EQUALITY, and the reason this claim is worth its own arm. The sentence
+says the plating flag arrives "at the same instant" as the inhibit on the protected run,
+and no variant of `states` and no field of an arm can say "the same as that other arm".
+What can be said is that both instants are 1494.5 s, twice, in two claims, each measured on
+its own trajectory. Move either one and exactly one claim reddens — which is what an
+equality asserted by two independent pins buys.
+
+It is not a coincidence of the tolerance either: both flags are decided by the same
+threshold crossing. `PLATING_RISK` is raised when a cold cell is charged above a C-rate
+threshold and `UT` inhibits charging below `t_charge_min_k`, and this chemistry sets
+`t_plating_min_k` and `t_charge_min_k` to the same 273.15 K — so the inhibit exists exactly
+where the damage begins, which is the sentence's point and the last line of the step.
+
+`nothing` again: the literal carries no digit. The step this arm is on runs 2600 s further
+and everything past the flag is the sentence's "carrying on regardless", which no number in
+the prose states.
+"""
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -3455,7 +3594,8 @@ unledgered = [
   "wearing-out-while-idle",         # claims: 3
   "two-legs",                       # measured, no claim yet
   "leg-that-is-not-there",          # claims: 6
-  "what-protection-costs",          # two perf ratios no trajectory can settle
+  "what-protection-costs",          # claims: 3, on two ambient arms. Also two perf
+                                    # ratios no trajectory can settle
   "circuit-repeats-itself",         # the probe row exists now; its rebound figures are
                                     # blocked on whether a reader can take one mid-run
   "particle-remembers",             # same as step 12: the probe exists, the instant does not

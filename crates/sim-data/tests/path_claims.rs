@@ -79,7 +79,7 @@
 //! A ledgered step is digits-closed, which is less than closed. Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all when
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
-//! step 14 that never existed survived, both under a fully green suite. Eight steps are
+//! step 14 that never existed survived, both under a fully green suite. Seven steps are
 //! still in that position. Coverage is opt-in per step
 //! (`[ledger]` in `path-claims.toml`) and today it is three steps and fourteen numbers,
 //! all of them scenario constants. One arm exists, the scenario file; the rest of the
@@ -120,14 +120,24 @@
 //!   columns are checked by nothing. Only the temperature channel is carried, because it is
 //!   the only one a claim reads — the current and charge channels would be fields with no
 //!   consulting code, which is the shape this file rejects everywhere else.
-//! * **The ambient slider, and a sentence needing two packs.** A step may declare any
+//! * **A slider dragged mid-run, and a sentence needing two packs.** A step may declare any
 //!   number of `[[arm]]`s — an instructed control change and the trajectory that follows —
-//!   covering the demand box, the `dt` box, the BMS checkbox, **Restart**, **Clear
-//!   queued**, **Clear latched BMS fault**, **Step 1** and **Run**. What is left out is
-//!   `ambient_c`, because the only steps whose prose instructs it are not claimed yet and
-//!   an override with no caller is the shape this file rejects; and a sentence comparing
-//!   two *scenario files* (step 16's 1 C rerun of both porous models), which is a second
-//!   pack rather than a second trajectory — [`run`] builds one pack per arm.
+//!   covering the demand box, the `dt` box, the BMS checkbox, the ambient slider,
+//!   **Restart**, **Clear queued**, **Clear latched BMS fault**, **Step 1** and **Run**.
+//!   `ambient_c` is **restart-side only**: [`run`] keeps one [`Env`] for the whole
+//!   trajectory, which is sound exactly because an ambient override implies
+//!   [`Start::Restart`] and a restart arm has no pre-mark segment. Step 8 asks a reader to
+//!   raise the slider *at* the mark, and that arm needs the environment split in two — and
+//!   the sentence that would pay for it prints `20 K` and `2.7×`, both figures derived from
+//!   their siblings, so it is blocked on the accounting arm below as well. Also left out is
+//!   a sentence comparing two *scenario files* (step 16's 1 C rerun of both porous models),
+//!   which is a second pack rather than a second trajectory — [`run`] builds one pack per
+//!   arm.
+//! * **One arm compared against another.** `identical_to` compares two arms' end *states*,
+//!   and nothing compares two arms' *events*. Step 11 says a charge inhibit and a plating
+//!   flag arrive "at the same instant" on two different trajectories; that equality is
+//!   asserted only in the weak sense that two claims pin the same number, so moving both
+//!   arrivals together would keep it green.
 //! * **How far an arm runs is this file's own choice, and the reachability check on an arm
 //!   claim is therefore weaker than the one on a pre-mark claim.** Before the mark the
 //!   page stops at `until_s` whatever the reader does, so "reachable" is a fact about the
@@ -140,8 +150,8 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed three whole steps — but only three. Nine steps carry neither a claim
-//!   nor a ledger entry and are untouched by anything here; the other twelve have their
+//!   has now closed three whole steps — but only three. Five steps carry neither a claim
+//!   nor a ledger entry and are untouched by anything here; the other sixteen have their
 //!   claimed sentences checked and the rest of their prose free. `[ledger].unledgered`
 //!   names all twenty-one, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is arms the ledger has not got — chemistry constants,
@@ -1302,8 +1312,13 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
         Some(bms) => build_with_bms(lesson, bms),
         None => build(lesson),
     };
+    // ONE environment for the whole run, and that is sound only because an ambient override
+    // implies [`Start::Restart`] — a restart arm has no pre-mark segment, so there is no
+    // stretch of this trajectory that ran under the step's own slider. The day the refusal
+    // in `every_arm_is_instructed_by_its_own_step` is relaxed for a sentence that drags the
+    // slider *at* the mark, this becomes two: the step's before, the arm's after.
     let env = Env {
-        t_ambient: lesson.ambient_c + K,
+        t_ambient: arm.and_then(|a| a.ambient_c).unwrap_or(lesson.ambient_c) + K,
         t_coolant: None,
     };
     // `applyStep`'s `await readNow()`, taken after the step's controls are dialled in and
@@ -1931,6 +1946,18 @@ struct Arm {
     /// is a declaration with no fact under it.
     #[serde(default)]
     bms: Option<bool>,
+    /// The ambient slider \[°C\], if this arm drags it. Must be spelled inside
+    /// `instruction`, and must differ from the step's own.
+    ///
+    /// Celsius, because that is what the slider, the lesson block and the prose all speak;
+    /// it becomes kelvin at the one place it reaches [`Env`], like every other temperature
+    /// this file reads out of the page.
+    ///
+    /// **Restart only, and that is a scoping refusal rather than a fidelity one** — see the
+    /// assertion in [`every_arm_is_instructed_by_its_own_step`], which says what relaxing it
+    /// would cost and which sentence would pay.
+    #[serde(default)]
+    ambient_c: Option<f64>,
     /// The buttons, in the order the reader presses them. Never empty: an arm that does
     /// nothing is a second copy of the step wearing a name.
     actions: Vec<Action>,
@@ -2584,6 +2611,45 @@ fn every_arm_is_instructed_by_its_own_step() {
                 "arm `{}` on step `{}` toggles the BMS on a continuation. The page cannot \
                  do that: `$(\"bms\").onchange` clicks Reset, so the pack is rebuilt and \
                  the run goes back to t = 0. See `build_with_bms`.",
+                arm.name,
+                arm.step
+            );
+        }
+
+        if let Some(ambient_c) = arm.ambient_c {
+            let spelled = Arm::spelled(ambient_c);
+            assert!(
+                contains_number(&instruction, &spelled),
+                "arm `{}` on step `{}` drags the ambient slider to {ambient_c} °C, and \
+                 `{spelled}` does not appear as a number in its instruction:\n  {}\n\
+                 Note that the prose writes a negative temperature with a typographic \
+                 minus; `instruction` is normalised through `ascii_minus` before this \
+                 test, so the arm spells `-5` and the sentence may say `−5`.",
+                arm.name,
+                arm.step,
+                arm.instruction
+            );
+            assert!(
+                (ambient_c - lesson.ambient_c).abs() > f64::EPSILON,
+                "arm `{}` on step `{}` declares an ambient of {ambient_c} °C, which is \
+                 where the step already leaves the slider. An override that changes \
+                 nothing is a control the reader was never asked to touch.",
+                arm.name,
+                arm.step
+            );
+            assert!(
+                arm.start == Start::Restart,
+                "arm `{}` on step `{}` drags the ambient on a continuation. **This is a \
+                 scoping refusal, not a fidelity one**, and it is the weakest of the three \
+                 in this test: `$(\"ambient\").oninput` calls `applyEnv` and rebuilds \
+                 nothing, so unlike the BMS checkbox the page really can do this mid-run, \
+                 and unlike `dt` there is a step in the path that asks for it — step 8's \
+                 \"raise the ambient slider to 45 °C and press Run\", at the mark. What \
+                 stops it being built today is that `run` keeps ONE environment for the \
+                 whole trajectory; a mark-side drag needs two, split at `until_s`. The \
+                 sentence that would pay for the split prints `20 K` and `2.7×`, both of \
+                 which are figures derived from their siblings, so it cannot be claimed \
+                 until that accounting arm exists either.",
                 arm.name,
                 arm.step
             );
