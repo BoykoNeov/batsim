@@ -123,7 +123,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 53 claims below that set
+#              Be clear about what this buys TODAY: in all 61 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -142,7 +142,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  103 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  113 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  17 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -163,7 +163,7 @@
 #             more finely than a half-step. `**383.0 s later**` returns a grid time
 #             too, and half a step there is five times looser than the tenth it prints
 #             — so it is not eligible for `grid` at all.
-#             The two survivors are exactly the two claims whose `states` is `nothing`
+#             Every one of them is a claim whose `states` is `nothing`
 #             or `displayed`, and that is not a coincidence: a claim whose sentence
 #             spells its own number takes that number's rule, however coarse the grid
 #             is. Four claims were declared `grid` on the strength of "the prose spells
@@ -193,7 +193,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 17 claims.
 #
-#   same        111 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        121 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    3. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -239,8 +239,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Four accountings, and no fifth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 116 of the 139 numbers the
-#            86 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 126 of the 150 numbers the
+#            94 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -260,7 +260,7 @@
 # sitting beside the number, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 86 claimed sentences need none. A future literal printing a control setting or a
+# the 94 claimed sentences need none. A future literal printing a control setting or a
 # chemistry constant will fail loudly, and the answer will be an arm that checks it
 # against the lesson block or the chemistry file — not a waiver.
 #
@@ -2615,7 +2615,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: three
 # steps, fourteen numerals, all of them scenario constants. Those three were picked
 # because the same measuring pass found they carry no measurement-shaped figure at all,
-# so they can be closed before a single number is measured. The remaining five
+# so they can be closed before a single number is measured. The remaining four
 # unclaimed steps need arms this file has not got — see the plan.
 #
 # NUMERAL, NOT NUMBER, and the difference is load-bearing. The scan finds digits, so a
@@ -3593,6 +3593,290 @@ and everything past the flag is the sentence's "carrying on regardless", which n
 the prose states.
 """
 
+# --- step 16: the same discharge, one block different, dead in half the time -------
+#
+# THE FIRST CLAIMS IN THIS FILE ON A DOYLE-FULLER-NEWMAN RUN. The engine has carried the
+# model since Phase 7 and a client has been able to select it since `dfn-scenario`; what it
+# has never had is a standing check that the sentences a reader is shown about it are the
+# ones it produces.
+#
+# COST, MEASURED RATHER THAN ASSUMED, because this file's own rule is that a check needing
+# too much is a check that does not run. One trajectory is built per (step, arm) and every
+# claim on it reads the same rows, so ten claims cost one run — 250 steps at dt = 2 to the
+# 500 s mark. That run takes the default `cargo test` gate from 4.0 s to 6.4 s: the single
+# most expensive thing in this file by a wide margin, and still 0.57 s in release.
+# The 18 steps after the cut-off are a third of it on their own, because a Newton solve
+# that has stopped converging burns its whole iteration cap every step. A claim on the 1 C
+# rerun the last paragraph instructs would be 1742 steps on each of TWO models — roughly
+# fifty times this — which is a second reason it is left out beside needing a second pack.
+#
+# Everything here is measured on this step's OWN pack. The step is written as one half of a
+# pair and quotes its twin constantly — `3.918`, `3.471`, `3.437`, `6.33 W`, the 1 C
+# boundary — and not one of those is claimable while `run` builds one pack per arm. Several
+# literals below therefore stop short of the fragment naming the twin. That is a dodge and
+# it is recorded rather than left to be inferred: the sentences are longer than the claims.
+#
+# WHAT ELSE IS NOT CLAIMED, and why:
+#   * "it drops **535 mV**" — a subtraction of this step's own 2.957 and 2.422, which is
+#     the `Derived` accounting arm and does not exist.
+#   * "15.46 A for 464 s is 1.99 A·h" — the sentence does that arithmetic itself and is
+#     right on its own terms (15.459594 x 464 / 3600 = 1.9927). `delivered_ah` would answer
+#     1.984 here, because it EXCLUDES the row at `at_s` on purpose — the cutoff step is the
+#     one that went too far, and the lead-acid claims take the same conservative end of the
+#     same bracket. Two defensible conventions one step apart; claiming it would need the
+#     sentence and the quantity to agree about which, and they do not.
+#   * "2.50 V cut-off" — `v_min` in `nmc_21700_lgm50.toml`, the `Chemistry` arm.
+#   * "about 140x less per step" and "nearly 500x" — cost ratios no trajectory settles.
+#
+# ONE FLAG THE PROSE DOES NOT NAME. `OPERATING_POINT_OUT_OF_WINDOW` arrives at 464 s, the
+# same step the cut-off is crossed on. The step says nothing about it, which is not a
+# defect — the flag means the demand landed outside the window the pack can serve, and
+# "it is finished" is that in words. It matters here for a mechanical reason: the `ReadAt`
+# accounting is refused at an instant a flag arrives, so `464` has to be SPELLED by a claim
+# rather than accounted as the moment two other claims are read at. `t_at_v_below:` is what
+# spells it, and it spells it off the crossing the sentence actually names.
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "the panel reads **2.808 V**"
+quantity = "v_at"
+value = 2.808337
+tol = 5e-4
+tol_from = "spelled"
+spells = "2.808"
+states = "same"
+read_at_s = 0.0
+probe = true
+display = "terminal"
+shows = "2.808 V"
+quoted = true
+note = """
+The zero-length probe, and this step's whole opening move: the page disagrees with its twin
+before the reader presses anything. The step reloads, so the pack is the fresh one.
+
+Read under THIS step's demand, 15.459594 A, so it is not an open-circuit voltage — the same
+caveat step 15's probe claim carries. What makes the pair worth having is that the twin's
+probe is 3.927 V on the identical cell at the identical current: 1.1 V of disagreement with
+no time for anything to move at all, which is the electrolyte's ohmic and concentration
+overpotential appearing in the very first solve. The sentence's other two probes (3.798 for
+the circuit, 3.927 for the particle) are other packs and are not claimed here.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "**3.839 V** against the twin"
+quantity = "v_at"
+value = 3.838664
+tol = 5e-4
+tol_from = "spelled"
+spells = "3.839"
+states = "same"
+read_at_s = 2.0
+display = "terminal"
+shows = "3.839 V"
+quoted = true
+note = """
+The first stepped row, at this step's 2 s timestep — the golden's timestep, and load-bearing
+here in a way it is not on the twin.
+
+The literal stops at "against the twin" because the next word is 3.918, which is the twin's
+first step and a second pack.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "falls faster all the way down: 2.957 V at 400 s"
+quantity = "v_at"
+value = 2.957217
+tol = 5e-4
+tol_from = "spelled"
+spells = "2.957"
+states = "same"
+read_at_s = 400.0
+display = "terminal"
+shows = "2.957 V"
+quoted = true
+note = """
+The last reading before the knee. 400 s is accounted as the instant this claim is read at,
+which is available here and not at 464: no flag arrives on this step.
+
+The literal stops before "where the other reads 3.471" for the usual reason.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "2.422 V at t = 464 s"
+quantity = "v_at"
+value = 2.421753
+tol = 5e-4
+tol_from = "spelled"
+spells = "2.422"
+states = "same"
+read_at_s = 464.0
+display = "terminal"
+shows = "2.422 V"
+quoted = true
+note = """
+The bottom of the collapse. 216 mV below the row 2 s earlier, on a trace that had been
+falling by 3.5 mV a step for the previous minute.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "2.422 V at t = 464 s"
+quantity = "t_at_v_below:2.5"
+value = 464.0
+tol = 0.5
+tol_from = "spelled"
+spells = "464"
+states = "same"
+read_at_s = 464.0
+display = "sim time"
+shows = "8m"
+note = """
+THE INSTANT, CLAIMED RATHER THAN ACCOUNTED. The sentence says the cell is finished at 464 s,
+and a `ReadAt` accounting would have said only "we measured then" — a far weaker statement,
+and one this file has already been caught making: the perturbation that deletes step 20's
+`207.5 s` claim came back green under exactly that reading. Here the fence forces the issue
+by itself, because `OPERATING_POINT_OUT_OF_WINDOW` arrives on this step and a `ReadAt` is
+refused at an instant a flag arrives.
+
+`t_at_v_below:2.5` and not the flag, although the flag prints the same digit. The sentence's
+claim is that the run went past its cut-off; the flag's claim is that the demand left the
+window the pack can serve. They coincide on this trajectory and they are not the same
+statement, and two quantities printing one digit is the mis-pointing `states` exists to
+refuse.
+
+The threshold is written into the quantity rather than read out of the chemistry file. See
+the note on `measure` — a claim that took `v_min` from the file would be asserting the
+crossing of whatever that field says rather than of the 2.50 V its own sentence prints, and
+tying those two together is the `Chemistry` accounting arm's job.
+
+HOW LITTLE THAT THRESHOLD IS PINNED, measured rather than assumed, because a check nobody
+has perturbed is a check nobody knows the strength of. Moving it from 2.5 to 2.6 changes
+NOTHING: the collapse is 216 mV in one 2 s step, from 2.638 V at 462 s to 2.422 at 464, so
+every threshold in (2.4218, 2.6381] lands on the same row. 2.65 is the first that reaches
+the step before. What this claim really pins, then, is the step the voltage falls off on,
+and the threshold names which crossing is meant rather than bounding it. That is the
+honest reading and it is the useful one — the sentence is about a cliff, and a number that
+survives 216 mV of slack in one direction is a number about the cliff and not about where
+exactly the line was drawn.
+
+`shows` is the clock's rendering, not quoted: the sentence gives seconds and the row gives
+minutes.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "with 61.3 % of the capacity still showing on the readout."
+quantity = "soc_at"
+value = 0.61333333
+tol = 5e-4
+tol_from = "spelled"
+spells = "61.3"
+spells_pow10 = 2
+states = "same"
+read_at_s = 464.0
+display = "soc (true)"
+shows = "61.3 %"
+quoted = true
+note = """
+The number the whole step is about. The cell is at its voltage cut-off with three fifths of
+its rated charge still counted, because the coulomb counter is not asked what the
+electrolyte is doing — it counts amps out, and 464 s of 15.46 A is 1.99 A·h of 5.15.
+
+"on the readout" is the sentence telling the reader where to look, so the display half is
+quoted. Its own sentence, rather than the fragment above, because the sentence the page
+prints runs from `2.422 V` to here in one bold span and the `2.50 V cut-off` in the middle
+of it is a chemistry constant nothing can account for yet.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "22.41 W here"
+quantity = "q_gen_at"
+value = 22.4119
+tol = 5e-3
+tol_from = "spelled"
+spells = "22.41"
+states = "same"
+read_at_s = 500.0
+display = "heat"
+shows = "22.41 W"
+quoted = true
+note = """
+"at the mark" — 500 s, this step's `until_s`, and the one number in the sentence that is
+read there rather than at the collapse. Against the twin's 6.33 W from the identical
+current, which is not claimed here.
+
+Worth knowing what it is and is not: heat is reported and never integrated on this scenario,
+which is isothermal. 22.41 W is the current times the gap between equilibrium and the
+terminal, and that gap is where the whole disagreement between the two models lives — which
+is why the sentence points at it.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "`SOLVE_UNCONVERGED` appears at **466 s**"
+quantity = "flag_first_s:SOLVE_UNCONVERGED"
+value = 466.0
+tol = 0.5
+tol_from = "spelled"
+spells = "466"
+states = "same"
+read_at_s = 466.0
+display = "sim time"
+shows = "8m"
+note = """
+ONE STEP AFTER THE CUT-OFF, and the sentence says so. That ordering is the step's point: the
+Newton solve stops being able to answer at almost exactly the moment there is nothing left
+to answer about, so the flag is a consequence of the collapse and not a warning of it. Move
+the arrival to 464 and this claim reddens while the sentence still reads plausibly, which is
+the whole reason it is pinned.
+
+Half a unit in the last place of "466" is 0.5 s, which is a quarter of this step's 2 s
+timestep — so the rule is tighter than the grid and the engine has to land on the step
+rather than near it.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "the flat shelf that carries the run from 2.414 V down to 2.379 V at the mark"
+quantity = "v_at"
+value = 2.413589
+tol = 5e-4
+tol_from = "spelled"
+spells = "2.414"
+states = "same"
+read_at_s = 466.0
+display = "terminal"
+shows = "2.414 V"
+quoted = true
+note = """
+The near end of the shelf, on the first unconverged step. The sentence is careful that this
+is the solver and not the cell, and the scenario file says the same thing at length — the
+trace past the cut-off drifts UPWARDS by up to 10 mV in places, which is the tell.
+"""
+
+[[claim]]
+step = "the-electrolyte-starves"
+literal = "the flat shelf that carries the run from 2.414 V down to 2.379 V at the mark"
+quantity = "v_at"
+value = 2.378575
+tol = 5e-4
+tol_from = "spelled"
+spells = "2.379"
+states = "same"
+read_at_s = 500.0
+display = "terminal"
+shows = "2.379 V"
+quoted = true
+note = """
+The far end, at the mark. 35 mV of fall in 34 s against the 216 mV the step before the
+cut-off cost — which is what makes "flat shelf" the right words and what a claim can pin
+that an adjective cannot.
+"""
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -3600,8 +3884,8 @@ steps = [
                      # two claims on its estimator gap, which the prose spells in words
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
 ]
-# Not scanned, and why. Sixteen of these carry claims, so their claimed sentences are
-# checked and the rest of their prose is not; the other five are unchecked entirely.
+# Not scanned, and why. Seventeen of these carry claims, so their claimed sentences are
+# checked and the rest of their prose is not; the other four are unchecked entirely.
 unledgered = [
   "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
@@ -3617,7 +3901,9 @@ unledgered = [
   "particle-remembers",             # same as step 12: the probe exists, the instant does not
   "three-times-the-current",        # measured, no claim yet
   "looks-fine-from-outside",        # claims: 11, on both sides of one continuation
-  "the-electrolyte-starves",        # three perf ratios; needs a 1 C rerun
+  "the-electrolyte-starves",        # claims: 10, all on its own pack. Its twin readings
+                                    # and its 1 C boundary need a second pack; three perf
+                                    # ratios no trajectory can settle
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
   "one-step-that-got-through",      # claims: 9, on six arms. Its headline sentence is

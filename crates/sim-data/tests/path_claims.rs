@@ -79,7 +79,7 @@
 //! A ledgered step is digits-closed, which is less than closed. Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all when
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
-//! step 14 that never existed survived, both under a fully green suite. Seven steps are
+//! step 14 that never existed survived, both under a fully green suite. Six steps are
 //! still in that position. Coverage is opt-in per step
 //! (`[ledger]` in `path-claims.toml`) and today it is three steps and fourteen numbers,
 //! all of them scenario constants. One arm exists, the scenario file; the rest of the
@@ -163,8 +163,8 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed three whole steps — but only three. Five steps carry neither a claim
-//!   nor a ledger entry and are untouched by anything here; the other sixteen have their
+//!   has now closed three whole steps — but only three. Four steps carry neither a claim
+//!   nor a ledger entry and are untouched by anything here; the other seventeen have their
 //!   claimed sentences checked and the rest of their prose free. `[ledger].unledgered`
 //!   names all twenty-one, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is arms the ledger has not got — chemistry constants,
@@ -1426,7 +1426,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 103 of 124 claims.
+    /// number's last printed place. The default shape: 113 of 134 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1435,14 +1435,14 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 17 of 124.
+    /// declaration was wrong. 17 of 134.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 2 of 69, both of
-    /// them claims whose [`States`] is `nothing` or `displayed`: a claim that spells its
-    /// own number takes that number's rule instead, however coarse the grid is.
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 134, every
+    /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
+    /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
     /// This is the variant that could have re-licensed the defect it was written after,
     /// so it is fenced three ways in [`every_tolerance_follows_its_declared_rule`]. In
@@ -1480,7 +1480,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 111 of 124, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 121 of 134, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2243,8 +2243,9 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
          the probe is a single read taken before the first step, with no history behind \
          it. Drop `probe` and give the claim the instant it is really read at."
     );
-    // Two families take an argument after a colon, because the thing being read is not
-    // a fixed time: a flag's arrival, and the voltage at a charge level.
+    // Three families take an argument after a colon, because the thing being read is not
+    // a fixed time: a flag's arrival, the voltage at a charge level, and the instant a
+    // voltage threshold is crossed.
     if let Some(flag) = quantity.strip_prefix("flag_first_s:") {
         return run.first_flag(flag).unwrap_or_else(|| {
             panic!("the run never raised `{flag}` — the claim is about a flag that no longer fires")
@@ -2261,6 +2262,43 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
             .unwrap_or_else(|| panic!("the run never fell to soc <= {frac}"))
             .telemetry
             .v_terminal;
+    }
+    // When the terminal first falls to or below a threshold \[s\] — the mirror image of
+    // `v_at_soc_below:`, which asks what the voltage is at a charge level.
+    //
+    // It exists for the sentence step 16 is built around: *"it is finished: **2.422 V at
+    // t = 464 s, past the 2.50 V cut-off**"*. That instant is a crossing rather than a
+    // reading, and until this quantity existed the only number in the file that could have
+    // stood for it was `flag_first_s:OPERATING_POINT_OUT_OF_WINDOW`, which happens to
+    // arrive on the same step. Happens to is the objection: a flag saying the demand left
+    // the servable window is not the sentence's claim that the cell reached its cut-off,
+    // and two quantities printing one digit is the mis-pointing [`States`] exists to
+    // refuse. See `docs/plans/path-untouched-steps.md`.
+    //
+    // **The threshold is an argument rather than a lookup**, on the same terms as
+    // `v_at_soc_below:`'s charge fraction: `sim-data` can read `v_min` out of the
+    // chemistry file, and a claim that took it from there would be asserting the crossing
+    // of whatever that field says rather than of the number its own sentence prints. The
+    // day the `Chemistry` accounting arm lands, tying the two together is that arm's job.
+    if let Some(volts) = quantity.strip_prefix("t_at_v_below:") {
+        let volts: f64 = volts
+            .parse()
+            .unwrap_or_else(|_| panic!("`{volts}` is not a voltage"));
+        return run
+            .rows
+            .iter()
+            .find(|r| r.telemetry.v_terminal <= volts)
+            .unwrap_or_else(|| {
+                panic!(
+                    "the run never fell to v <= {volts} — its lowest terminal voltage is \
+                     {:.6} V. The claim is about a crossing that no longer happens.",
+                    run.rows
+                        .iter()
+                        .map(|r| r.telemetry.v_terminal)
+                        .fold(f64::MAX, f64::min)
+                )
+            })
+            .t_s;
     }
     match quantity {
         // Amp-hours out of the terminals by `at_s`, `Σ i·dt / 3600`.
@@ -2382,7 +2420,7 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
              deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, \
              soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, \
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
-             v_at_soc_below:<fraction>."
+             v_at_soc_below:<fraction>, t_at_v_below:<volts>."
         ),
     }
 }
@@ -4736,6 +4774,19 @@ const TALLIES: &[Tally] = &[
         phrase: "grid {n} claims. The quantity is a time",
         of: &[n_grid],
     },
+    // The `grid` count stated a SECOND time, in this test's own docs, in the sentence that
+    // also says which claims survived the fence. It said "2 of 69" — true when four `grid`
+    // claims were demoted and two were left, on a file that then held 69 claims — and stale
+    // in both halves from the moment the ambient-arm slice added two more. Nothing covered
+    // it: the tally above counts the same claims, but it matches a different sentence, and
+    // a count sitting beside a derived one is not thereby derived. The `claims file` twin
+    // of this sentence was reworded to carry no number at all, which is the other way to
+    // stop a count rotting.
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "misses by a whole one. {n} of {n}, every",
+        of: &[n_grid, n_claims],
+    },
     Tally {
         prose: Prose::ClaimsFile,
         phrase: "deliberately tighter on {n} claims",
@@ -4869,6 +4920,17 @@ const TALLIES: &[Tally] = &[
         prose: Prose::ThisTest,
         phrase: "{W} steps are still in that position",
         of: &[n_unclaimed_steps],
+    },
+    // The unledgered split, stated once in each file. `path-claims.toml`'s copy has been
+    // derived since the self-counts slice; this one is its twin and was not, so adding a
+    // first claim to `the-electrolyte-starves` moved one and left the other saying five
+    // and sixteen. Same shape as the `grid` pair above: a sentence next to a derived
+    // sentence is not itself derived.
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "{W} steps carry neither a claim nor a ledger entry and are untouched by \
+                 anything here; the other {w} have their claimed sentences checked",
+        of: &[n_unledgered_unclaimed, n_unledgered_claimed],
     },
     Tally {
         prose: Prose::ThisTest,
