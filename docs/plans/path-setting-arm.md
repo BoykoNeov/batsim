@@ -50,6 +50,13 @@ headline that resolves `0.5` to the step's own run, `5` to the `dt 5` arm and `1
 Measured, not assumed: tying `Setting` to the *step's* `dt` instead of each claim's own
 trajectory leaves `5` and `10` unaccounted and reddens check 6 by name.
 
+**The `speed_x` trap itself is reasoned, not measured**, and this file's own doctrine says
+to state that rather than let the paragraph read as a result. `Lesson` does not scrape
+`speed_x`, so the generous version cannot be built — or perturbed into existence — without
+adding the field first; the attempt to perturb it came back as a compile error, which the
+table's parser reads as "reddens nothing". The field really is in the block and the
+argument stands on the design; what is on the record is the weaker half above.
+
 ### And a token may not have two readings
 
 `cover_by_rule` panics when two vocabulary rules cover one number; the `ReadAt` arm is
@@ -181,9 +188,11 @@ Two of them are worth naming:
 **1.37**, which prints as 1.4 and not as 1.3 — so a reader who reconstructs the sentence's
 own arithmetic from the two numbers beside it does not get the number it states.
 
-It is not necessarily wrong. The sentence is about the *probe's* reading, which is the
-value that crossed the threshold rather than the threshold itself, and a probe that lands
-just over 343.15 puts the gap slightly under 1.37. **No quantity in this file reads a
+It is not necessarily wrong, and what would have to be true is statable: the sentence is
+about the *probe's* reading rather than about the threshold, and a probe crosses by landing
+at or just above 343.15. For `1.3` to be right at its own precision the probe would have to
+sit in roughly [343.17, 343.27] — an overshoot of 0.02 to 0.12 K in one step, which is
+plausible on a pack heating this fast and is not established here. **No quantity in this file reads a
 sensor** — CLAUDE.md's eighth principle keeps the BMS's view behind the sensor layer, and
 this harness measures ground truth — so the harness cannot settle it. Left unclaimed, and
 named here and in the claim's note rather than quietly skipped: it is the one number in

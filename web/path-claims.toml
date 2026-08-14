@@ -3095,11 +3095,14 @@ note = """
 Ground truth at the instant the trip fires, against a probe that decided from a corner
 cell. The gap between them is what the sentence calls "1.3 K of somebody else's
 temperature", and THAT number is not claimed here: it is the difference between this
-reading and a SENSOR reading, and no quantity in this file reads a sensor. Naming it
-rather than leaving it: 344.52 minus the 343.15 K threshold is 1.37, so a reader
-reconstructing the sentence's 1.3 from the numbers it prints gets 1.4. The sentence is
-about the probe's own reading, which is below the threshold it just crossed and is not
-1.37 above this one.
+reading and a SENSOR reading, and no quantity in this file reads a sensor.
+
+NAMED RATHER THAN LEFT: 344.52 minus the 343.15 K threshold is 1.37, so a reader
+reconstructing the sentence's 1.3 from the two numbers it prints gets 1.4. What would have
+to be true for 1.3 to be right is statable — the sentence is about the probe's own reading,
+and a probe crosses by landing at or just above the threshold, so it would have to sit in
+roughly [343.17, 343.27] K, an overshoot of 0.02 to 0.12 K in one step. That is plausible
+on a pack heating this fast. It is not established, and this harness cannot establish it.
 """
 
 [[claim]]

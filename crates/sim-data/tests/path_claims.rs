@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 21 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 24 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -77,9 +77,10 @@
 //! three points" — the last of which now carries two claims of its own, through
 //! [`WORD_NUMERALS`], while remaining invisible to this scan).
 //! A ledgered step is digits-closed, which is less than closed. Check 6 can only
-//! reach the sentences a claim already quotes, and fourteen steps had no claim at all —
-//! which is how six figures in step 19 went stale, and how a contrast in step 14 that
-//! never existed survived, both under a fully green suite. Coverage is opt-in per step
+//! reach the sentences a claim already quotes, and fourteen steps had no claim at all when
+//! this was written — which is how six figures in step 19 went stale, and how a contrast in
+//! step 14 that never existed survived, both under a fully green suite. Eight steps are
+//! still in that position. Coverage is opt-in per step
 //! (`[ledger]` in `path-claims.toml`) and today it is three steps and fourteen numbers,
 //! all of them scenario constants. One arm exists, the scenario file; the rest of the
 //! design is in `docs/plans/path-prose-ledger.md`.
@@ -130,20 +131,22 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the twenty-one steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed three whole steps — but only three. Eleven steps carry neither a claim
-//!   nor a ledger entry and are untouched by anything here; the other ten have their
+//!   has now closed three whole steps — but only three. Nine steps carry neither a claim
+//!   nor a ledger entry and are untouched by anything here; the other twelve have their
 //!   claimed sentences checked and the rest of their prose free. `[ledger].unledgered`
 //!   names all twenty-one, one line each, so this list cannot go quietly out of date.
-//!   What the remaining steps need is arms the ledger has not got — control settings the
-//!   reader types, chemistry constants, ordinals naming other steps, and figures derived
-//!   from other figures in the same sentence. Both of the *harness* capabilities that
-//!   list used to name have now landed: the zero-length probe, and instructed control
-//!   changes. **The binding constraint has moved to the accounting taxonomy**, and step
-//!   18's headline sentence is the worked example — both of its trajectories exist and are
-//!   exact, and it still cannot be claimed because `0.5`, `5` and `10` are control
-//!   settings and [`Accounted`] has no arm for a setting. Check 6 could refuse a waiver
-//!   variant because its claimed sentences happen to need none; a whole-prose ledger
-//!   cannot, and it still refuses one.
+//!   What the remaining steps need is arms the ledger has not got — chemistry constants,
+//!   ordinals naming other steps, and figures derived from other figures in the same
+//!   sentence. Both of the *harness* capabilities that list used to name have landed — the
+//!   zero-length probe, and instructed control changes — and so has the first of the
+//!   accounting arms: [`Accounted::Setting`], which is what let step 18's headline be
+//!   claimed after three slices of being the worked example of a sentence blocked on this
+//!   check rather than on the harness. Two arms of that taxonomy are still missing, and
+//!   both were met head-on by the slice that added the first: a chemistry constant, and a
+//!   figure derived from its siblings in the same sentence. Each cost a literal that had
+//!   to stop short of the fragment naming it. Check 6 could refuse a waiver variant
+//!   because its claimed sentences happen to need none; a whole-prose ledger cannot, and
+//!   it still refuses one.
 //! * **Page-behaviour claims.** Anything about what a control does, what a legend
 //!   prints, or what a button orders. Those need a browser.
 //! * **The client-side demand programs are mirrored, not shared.** `Pulse` and `CcCv`
@@ -3042,6 +3045,13 @@ enum Accounted {
     /// green, and still green the day one of the two moves. It is the same defect
     /// [`ScenarioRule`] refuses when it insists a rule name its field rather than search
     /// the file.
+    ///
+    /// **That trap is reasoned rather than measured**, and the distinction is this file's
+    /// own: [`Lesson`] does not scrape `speed_x` at all, so the generous version cannot be
+    /// built — or perturbed into existence — without adding the field first. What *was*
+    /// measured is the weaker half of the same property: tying this arm to the step's own
+    /// `dt` instead of to each claim's trajectory leaves the headline's `5` and `10`
+    /// unaccounted and reddens check 6 by name.
     ///
     /// So the tie is to a **trajectory**: the token must equal the step length of a run
     /// that a claim in this sentence group actually reads — the step's own `dt` for a
