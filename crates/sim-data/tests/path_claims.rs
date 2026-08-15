@@ -82,12 +82,14 @@
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
 //! (`[ledger]` in `path-claims.toml`) and today it is five steps and forty-two numbers.
-//! Five arms exist — a scenario field, a chemistry field, a control on the lesson block,
-//! the sentence's own arithmetic over those, and a claim whose literal contains the number
+//! Eight arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! the sentence's own arithmetic over those, digits inside a name, the position of another
+//! lesson, a node of a chemistry table, and a claim whose literal contains the number
 //! ([`claimed_accounting`], which is check 6's own accounting asked about a number the
-//! ledger found). Two are still missing, an ordinal naming another step and the general
-//! figure-derived-from-its-siblings; the rest of the design is in
-//! `docs/plans/path-prose-ledger.md`.
+//! ledger found). ONE is still missing: the general figure-derived-from-its-siblings, which
+//! stays missing until a *ledgered* step prints one. Check 6 has an arm of that name
+//! already; the two scans are separate, as they are for `setting`. The rest of the design is
+//! in `docs/plans/path-prose-ledger.md`.
 //!
 //! Behind the value check sits a seventh, about this file rather than about the page:
 //! [`every_tolerance_follows_its_declared_rule`]. `tol` is what decides how much of a
@@ -1451,8 +1453,17 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
     // environment would fade it further than the sentence says. See
     // `docs/plans/path-derived-arm.md`.
     //
-    // A restart arm still sees its own slider from t = 0, because `before` is only ever
-    // reached through the pre-mark drive below, which a restart arm skips.
+    // A restart arm sees its own slider from t = 0. It skips the pre-mark drive, so the only
+    // thing that branch reaches on such an arm is the **probe** — the readouts a reader sees
+    // after clicking Restart with the slider already dragged, which is the arm's ambient and
+    // not the lesson's.
+    //
+    // **Measured, and it is unobservable today**: flipping that branch to the lesson's
+    // ambient leaves the whole suite green, because no claim reads a probe on a restart arm
+    // that overrides the ambient — the only two such arms claim flag arrivals. It is written
+    // the correct way round rather than the reachable way round, and the claim that would
+    // reach it is a `probe = true` reading on one of them. See
+    // `docs/plans/path-derived-arm.md`.
     let after = Env {
         t_ambient: arm.and_then(|a| a.ambient_c).unwrap_or(lesson.ambient_c) + K,
         t_coolant: None,
@@ -4352,10 +4363,12 @@ struct LedgerRule {
 /// `tol_from` exists to catch.
 ///
 /// The taxonomy is `docs/plans/path-prose-ledger.md`'s, built one arm at a time as a
-/// sentence needs it. Two of its six are still missing (`Ordinal`, and the general
-/// `Derived` over a sentence's own siblings), and they stay missing until a ledgered step
-/// prints one: an arm with nothing to account is the `CCCV_PERIOD_S` shape this file has
-/// already been caught by once.
+/// sentence needs it. One of its six is still missing — the general `Derived` over a
+/// sentence's own siblings — and it stays missing until a *ledgered* step prints one: an
+/// arm with nothing to account is the `CCCV_PERIOD_S` shape this file has already been
+/// caught by once. Check 6 has a `Derived` of its own ([`Accounted::Derived`]); that one is
+/// over a claimed sentence and says nothing about this scan, the same way `setting` sits in
+/// both.
 enum Tie {
     /// A named field of the step's scenario file — a dotted key path, with `*` walking an
     /// array so `faults.*.at_s` does not care what order the file lists its faults in.
@@ -4962,9 +4975,9 @@ fn claimed_accounting(
 /// measured. The fourth, `protection-on`, is the first that could not be — it prints its
 /// pack, its cell's rating, its demand box and the current the BMS clamps it to — and it is
 /// what [`Tie::Chemistry`], [`Tie::Setting`], [`Tie::Product`] and [`claimed_accounting`]
-/// were built for. Two arms of the taxonomy are still missing and are written up in that
-/// plan: an ordinal naming another step, and a figure derived from its siblings in the same
-/// sentence.
+/// were built for. One arm of the taxonomy is still missing and is written up in that plan:
+/// a figure derived from its siblings in the same sentence. Check 6's arm of that name is a
+/// different scan and does not close it.
 ///
 /// **Numeral is the operative word, and it is a real limit rather than pedantry.**
 /// [`written_numbers`] finds digits. A quantity spelled in English is invisible to it, and
@@ -5069,9 +5082,9 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
                      `LEDGER_VOCABULARY` naming the field; if a control on the lesson \
                      block does, add one tied to a `Control`. If the engine does, it \
                      needs a claim in web/path-claims.toml quoting the sentence it is \
-                     printed in. If it is an ordinal naming another step, or a figure \
-                     derived from its siblings in the same sentence, it needs the arm \
-                     for that — see docs/plans/path-prose-ledger.md. There is no \
+                     printed in. If it is a figure this sentence works out from its \
+                     own siblings, it needs the one arm of this taxonomy still \
+                     unbuilt — see docs/plans/path-prose-ledger.md. There is no \
                      waiver.",
                     w.token,
                 );

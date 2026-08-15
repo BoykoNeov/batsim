@@ -783,8 +783,9 @@ spells = "2.7"
 op = "ratio"
 from = ["2.84", "1.06"]
 note = """
-The file's first derivation, and the last arm of the taxonomy in
-docs/plans/path-prose-ledger.md.
+The file's first derivation. It is CHECK 6's arm, not the ledger's: the `Derived` row in
+docs/plans/path-prose-ledger.md's taxonomy is a tie over a ledgered step's whole prose, and
+that one is still missing. `setting` already lives in both scans for the same reason.
 
 What is declared here is where to read the two operands and what the sentence does with
 them. The value is not: 2.84 / 1.06 is recomputed and compared at the one decimal place the

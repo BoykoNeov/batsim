@@ -155,7 +155,37 @@ to each other one test sooner. That is a real property rather than a miss, but i
 reason the env split needed its own row — reverting the split is the only edit that reaches
 the trajectory without tripping something in front of it.
 
+### The twelfth perturbation, which came back green
+
+`before`'s other branch — a **restart** arm, which sees its own slider from t = 0 — is
+reached by nothing the eleven edits above touch. Flipped to the lesson's ambient, the suite
+stays green.
+
+That is a measurement rather than a miss, and the reason is worth having written down: a
+restart arm skips the pre-mark drive, so the only thing the branch reaches there is the
+zero-length **probe**, and neither of the two restart arms that override the ambient carries
+a probe claim — both claim flag arrivals. The branch is written the correct way round (the
+page's readouts after Restart are under the slider the reader dragged) and is asserted by
+nobody. The claim that would reach it is a `probe = true` reading on one of those arms, and
+inventing one would mean inventing the sentence it is read from.
+
 ## Deferred, with a price
+
+* **The operands are the author's pick, and here that costs nothing only because the
+  sentence is thin.** Four of its five numbers are accounted, so there are twelve ordered
+  pairs a `from` could name and the check takes the first that rounds right. Every wrong one
+  misses `2.7` by a wide margin — `20 / 2.84`, `200 000 / 2.84`, `1.06 / 20` — so no
+  plausible mistake survives. That is a fact about *this* sentence, not about the arm, and
+  it is stated rather than discovered, the way `Tie::Member` states its own. The next
+  derivation in a number-dense sentence is where it bites, and the answer there is a
+  narrower operand reference than a bare token, not a wider one.
+
+* **Three sentences about the ledger's arms were stale before this slice touched them** —
+  the module docs, the ledger test's docs and its unaccounted-number panic all still said
+  two arms were missing and named the ordinal, which was built one slice ago. Fixed here.
+  None of them is a derived count: the ledger's arm tally is a *word* ("Five arms exist"),
+  and the self-count machinery reads digits. That is the same blindness this file already
+  prices for the path's prose, now shown to bite its own documentation.
 
 * **`Tie::Derived` is still missing from the ledger**, and `slow-and-patient` still needs it
   along with a quotient tie for `C/20` and a table-span tie for its `180 mV`. Nothing here
