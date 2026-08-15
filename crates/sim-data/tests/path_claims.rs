@@ -141,15 +141,13 @@
 //!   number of `[[arm]]`s — an instructed control change and the trajectory that follows —
 //!   covering the demand box, the `dt` box, the BMS checkbox, the ambient slider,
 //!   **Restart**, **Clear queued**, **Clear latched BMS fault**, **Step 1** and **Run**.
-//!   `ambient_c` is **restart-side only**: [`run`] keeps one [`Env`] for the whole
-//!   trajectory, which is sound exactly because an ambient override implies
-//!   [`Start::Restart`] and a restart arm has no pre-mark segment. Step 8 asks a reader to
-//!   raise the slider *at* the mark, and that arm needs the environment split in two — and
-//!   the sentence that would pay for it prints `20 K` and `2.7×`, both figures derived from
-//!   their siblings, so it is blocked on the accounting arm below as well. Also left out is
-//!   a sentence comparing two *scenario files* (step 16's 1 C rerun of both porous models),
-//!   which is a second pack rather than a second trajectory — [`run`] builds one pack per
-//!   arm.
+//!   `ambient_c` may be dragged **at the mark**: [`run`] keeps two [`Env`]s, the step's
+//!   slider before the mark and the arm's after it. That split and the accounting arm that
+//!   pays for it were one deadlock — the sentence needing the split prints `20 K` and
+//!   `2.7×`, figures derived from their siblings, so neither half was buildable alone. Left
+//!   out is a sentence comparing two *scenario files* (step 16's 1 C rerun of both porous
+//!   models), which is a second pack rather than a second trajectory — [`run`] builds one
+//!   pack per arm.
 //! * **One arm compared against another.** `identical_to` compares two arms' end *states*,
 //!   and nothing compares two arms' *events*. Step 11 says a charge inhibit and a plating
 //!   flag arrive "at the same instant" on two different trajectories; that equality is
@@ -1443,15 +1441,33 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
         Some(bms) => build_with_bms(lesson, bms),
         None => build(lesson),
     };
-    // ONE environment for the whole run, and that is sound only because an ambient override
-    // implies [`Start::Restart`] — a restart arm has no pre-mark segment, so there is no
-    // stretch of this trajectory that ran under the step's own slider. The day the refusal
-    // in `every_arm_is_instructed_by_its_own_step` is relaxed for a sentence that drags the
-    // slider *at* the mark, this becomes two: the step's before, the arm's after.
-    let env = Env {
+    // TWO environments, split at the mark: the step's slider before it, the arm's after.
+    //
+    // This used to be one, which was sound only while an ambient override implied
+    // [`Start::Restart`] — a restart arm has no pre-mark segment, so no stretch of its
+    // trajectory ran under the step's own slider. Step 8 is the sentence that paid for the
+    // split: it asks a reader to raise the slider *at* the mark and press Run, so the pack
+    // that produces its second leg spent 200 000 s at 25 °C first, and a single 45 °C
+    // environment would fade it further than the sentence says. See
+    // `docs/plans/path-derived-arm.md`.
+    //
+    // A restart arm still sees its own slider from t = 0, because `before` is only ever
+    // reached through the pre-mark drive below, which a restart arm skips.
+    let after = Env {
         t_ambient: arm.and_then(|a| a.ambient_c).unwrap_or(lesson.ambient_c) + K,
         t_coolant: None,
     };
+    let before = Env {
+        t_ambient: match arm.map(|a| a.start) {
+            Some(Start::Restart) => after.t_ambient,
+            _ => lesson.ambient_c + K,
+        },
+        t_coolant: None,
+    };
+    // The probe and the pre-mark drive take `before` — the probe because it is read before
+    // the run is armed, which on a continuation is the step's own slider whatever the arm
+    // does later. The actions take `after`.
+    //
     // `applyStep`'s `await readNow()`, taken after the step's controls are dialled in and
     // before the run is armed: a `dt = 0` step under **this step's** demand, which for a
     // `Pulse` is the leg its own clock is on rather than `Rest`. It is what fills the
@@ -1462,7 +1478,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
     // the first and `snapshot()` is unchanged across both. That is what makes the page's
     // *two* probes on a reloading step — one under the stale demand box in `loadScenario`,
     // then this one — reproducible by modelling only the second.
-    let probe_telemetry = pack.step(0.0, demand_now(lesson.demand, &pack, dt, None), &env);
+    let probe_telemetry = pack.step(0.0, demand_now(lesson.demand, &pack, dt, None), &before);
     let (probe_deficit_min, probe_deficit_max) = deficit_range(&pack);
     let probe = Row {
         t_s: pack.sim_time_s(),
@@ -1476,7 +1492,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
         // under load and there is no row before it. Pulse steps only, for the reason
         // [`Row::rest_v`] gives.
         rest_v: matches!(lesson.demand, Prog::Pulse { .. })
-            .then(|| pack.step(0.0, Demand::Rest, &env).v_terminal),
+            .then(|| pack.step(0.0, Demand::Rest, &before).v_terminal),
     };
     let mut rows = Vec::new();
     let mut last: Option<Telemetry> = None;
@@ -1490,7 +1506,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
             lesson.demand,
             dt,
             lesson.until_s,
-            &env,
+            &before,
             &mut rows,
             &mut last,
         );
@@ -1519,10 +1535,10 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
                 // diverge from what a `Run` of the same length would do.
                 Action::Step1 => {
                     let to_s = pack.sim_time_s() + dt;
-                    drive(&mut pack, prog, dt, to_s, &env, &mut rows, &mut last);
+                    drive(&mut pack, prog, dt, to_s, &after, &mut rows, &mut last);
                 }
                 Action::Run { to_s } => {
-                    drive(&mut pack, prog, dt, *to_s, &env, &mut rows, &mut last);
+                    drive(&mut pack, prog, dt, *to_s, &after, &mut rows, &mut last);
                 }
             }
         }
@@ -1557,7 +1573,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 153 of 175 claims.
+    /// number's last printed place. The default shape: 155 of 177 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1566,12 +1582,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 18 of 175.
+    /// declaration was wrong. 18 of 177.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 175, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 177, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1611,7 +1627,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 159 of 175, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 160 of 177, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2257,6 +2273,9 @@ struct Claims {
     claim: Vec<Claim>,
     #[serde(default)]
     arm: Vec<Arm>,
+    /// The sentences that do arithmetic on their own numbers. See [`Derivation`].
+    #[serde(default)]
+    derived: Vec<Derivation>,
     /// Which steps have their whole prose scanned. Required, with no serde default: an
     /// absent `[ledger]` would read as "no step is ledgered and none needs listing", which
     /// is the state this contract exists to end.
@@ -2479,9 +2498,33 @@ impl Tooth {
     }
 }
 
-fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool) -> f64 {
+fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f64 {
     if let Some(v) = measure_row(quantity, run.read(at_s, probe)) {
         return v;
+    }
+    // How much capacity the pack has lost **since this step's mark**, as a fraction.
+    //
+    // Not a value the pack has at any instant, which is why it is here rather than in
+    // [`measure_row`]: it is the difference between two rows of one trajectory. Step 8's
+    // second leg is the sentence it exists for — *"20 K buys 2.84 points over the next
+    // 200 000 s"* — where `complement` gives the 3.90 points lost since the pack was new
+    // and `since_mark` is a frame for instants rather than for quantities.
+    //
+    // The origin is the step's own mark and never a declared time, so a claim cannot point
+    // it at whichever instant makes the arithmetic work. A continuation arm carries the
+    // pre-mark rows, which is what makes the reading available at all.
+    if quantity == "soh_cap_fade_since_mark" {
+        assert!(
+            at_s > mark_s,
+            "a claim reads `{quantity}` at t = {at_s} s on a step whose mark is at \
+             {mark_s} s. Before the mark this quantity folds over a stretch that has not \
+             happened, and at the mark it is zero for every sentence that could print it — \
+             so it is only ever a reading on a continuation arm."
+        );
+        return measure_row("soh_cap_at", run.read(mark_s, false))
+            .expect("`soh_cap_at` is a row quantity")
+            - measure_row("soh_cap_at", run.read(at_s, probe))
+                .expect("`soh_cap_at` is a row quantity");
     }
     // Everything past here folds over the whole trajectory, and a probe is one row taken
     // before any of it exists. Refused rather than answered from `rows` behind the claim's
@@ -2847,6 +2890,11 @@ fn ledger() -> Ledger {
     parse_claims_file().ledger
 }
 
+/// The declared derivations. See [`Derivation`].
+fn derivations() -> Vec<Derivation> {
+    parse_claims_file().derived
+}
+
 /// The declared arms. A step may have several; their names must differ.
 ///
 /// A step used to be allowed one leg and no more, because a claim pointed at it with a
@@ -3075,22 +3123,13 @@ fn every_arm_is_instructed_by_its_own_step() {
                 arm.name,
                 arm.step
             );
-            assert!(
-                arm.start == Start::Restart,
-                "arm `{}` on step `{}` drags the ambient on a continuation. **This is a \
-                 scoping refusal, not a fidelity one**, and it is the weakest of the three \
-                 in this test: `$(\"ambient\").oninput` calls `applyEnv` and rebuilds \
-                 nothing, so unlike the BMS checkbox the page really can do this mid-run, \
-                 and unlike `dt` there is a step in the path that asks for it — step 8's \
-                 \"raise the ambient slider to 45 °C and press Run\", at the mark. What \
-                 stops it being built today is that `run` keeps ONE environment for the \
-                 whole trajectory; a mark-side drag needs two, split at `until_s`. The \
-                 sentence that would pay for the split prints `20 K` and `2.7×`, both of \
-                 which are figures derived from their siblings, so it cannot be claimed \
-                 until that accounting arm exists either.",
-                arm.name,
-                arm.step
-            );
+            // No `Start::Restart` fence here, and its removal is this slice's. It stood as
+            // a scoping refusal and said so — `$("ambient").oninput` calls `applyEnv` and
+            // rebuilds nothing, so unlike the BMS checkbox the page really can drag this
+            // mid-run — and what it was scoping around was `run` keeping ONE environment
+            // for the whole trajectory. `run` now keeps two, split at the mark, so step 8's
+            // "raise the ambient slider to 45 °C and press Run" is a trajectory this file
+            // can produce. See `docs/plans/path-derived-arm.md`.
         }
 
         // An arm has to assert something. A claim is the usual way; being one half of an
@@ -3575,6 +3614,79 @@ fn every_claim_states_the_value_it_measures() {
     }
 }
 
+/// A sentence doing arithmetic on numbers it prints itself.
+///
+/// The declaration behind [`Accounted::Derived`], and the last arm of the taxonomy
+/// `docs/plans/path-prose-ledger.md` laid out. Step 8's is the file's first and today its
+/// only one:
+///
+/// > 20 K buys 2.84 points over the next 200 000 s against the 1.06 the first leg cost,
+/// > about 2.7×.
+///
+/// **What is declared is the operands and the operation, never the value.** The quotient is
+/// recomputed from the tokens the sentence prints and compared at the precision the prose
+/// commits to, exactly as [`Tie::Product`] compares `4.61 Ah`, so a row pointed at the wrong
+/// operand fails on sight. That is what separates this from the "list of declared
+/// identities" the plan refuses: a row cannot supply a number, only name where in the
+/// sentence to read one.
+///
+/// **And every operand must itself be accounted by one of the other arms**
+/// ([`every_derivation_is_a_sentence_doing_arithmetic`]). Without that clause the arm says
+/// only that two unpinned numbers divide into a third, which is a circle rather than a tie.
+#[derive(Debug, serde::Deserialize)]
+struct Derivation {
+    /// The lesson whose prose this sentence is in.
+    step: String,
+    /// The sentence, quoted exactly as [`Claim::literal`] quotes one — and it must be a
+    /// sentence some claim on this step quotes, or the operands would have no accounting to
+    /// inherit.
+    literal: String,
+    /// The number this row accounts for, written as the sentence writes it.
+    spells: String,
+    /// What the sentence does with the operands.
+    op: Op,
+    /// The operands, in order, each written as the sentence writes it. Every one must be a
+    /// number the sentence prints.
+    from: Vec<String>,
+    #[allow(
+        dead_code,
+        reason = "authoring context for a human reader, not asserted"
+    )]
+    note: String,
+}
+
+/// The arithmetic a [`Derivation`] performs.
+///
+/// One variant, because one sentence in the path prints one. A sum or a difference gets
+/// built the day a sentence needs it — an operation nothing performs would be the
+/// `CCCV_PERIOD_S` shape this file has already been caught by once: pinned, and consulted by
+/// nothing.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Op {
+    /// The first operand divided by the second — `2.84 / 1.06`, printed `2.7×`.
+    Ratio,
+}
+
+impl Op {
+    /// The value, or `None` if the operands make it undefined.
+    fn apply(self, from: &[f64]) -> Option<f64> {
+        match self {
+            Op::Ratio => match from {
+                [a, b] if *b != 0.0 => Some(a / b),
+                _ => None,
+            },
+        }
+    }
+
+    /// How many operands it takes.
+    fn arity(self) -> usize {
+        match self {
+            Op::Ratio => 2,
+        }
+    }
+}
+
 /// How a number printed inside a claimed literal is accounted for.
 ///
 /// Derived, never declared, and that is the whole of the design. The three other fields
@@ -3685,12 +3797,27 @@ enum Accounted {
     /// and `cover_by_rule`'s double-cover panic both exist for, and a new arm is exactly
     /// where it would come back.
     ///
-    /// **Ambient, demand and the mark are deliberately not here.** `dt` is the only
-    /// control an arm can override that a sentence in this path also prints, and an arm
-    /// for a control nothing reads would be `CCCV_PERIOD_S` again: pinned, and consulted
-    /// by nothing. The next sentence that prints an ambient temperature is where that arm
-    /// gets built — `docs/plans/path-prose-ledger.md` sizes the rest of the taxonomy.
+    /// **Demand and the mark are deliberately not here**, and the ambient arrived the way
+    /// this doc said it would. What stood here was that `dt` was the only control an arm can
+    /// override that a sentence in this path also prints, and that "the next sentence that
+    /// prints an ambient temperature is where that arm gets built". Step 8's is that
+    /// sentence — *"20 K buys 2.84 points"* — and it prints the **step** rather than the
+    /// level: the 45 °C the reader dials in against the 25 the slider was already on. So
+    /// that is what the arm reads, and a sentence printing an ambient *level* still fails
+    /// here loudly, because nothing in the path prints one and an arm for it would be
+    /// `CCCV_PERIOD_S` again: pinned, and consulted by nothing.
+    ///
+    /// The two readings are fenced against each other rather than ordered: a step whose `dt`
+    /// happened to equal its arm's ambient step would hand the token whichever was tried
+    /// first. See the assert in [`accounting_without_arithmetic`].
     Setting(f64),
+    /// It is the sentence's **own arithmetic over numbers it prints itself** — `2.7×` from
+    /// the `2.84` and the `1.06` beside it. See [`Derivation`], which is where the operands
+    /// and the operation are declared, and where the value never is.
+    ///
+    /// The payload is the value recomputed from the operands, which is what the caller
+    /// compares against the token.
+    Derived(f64),
 }
 
 /// Every claim on one sentence — a `(step, literal)` pair — in file order.
@@ -3711,28 +3838,53 @@ fn sentences(all: &[Claim]) -> Vec<(&str, &str)> {
     out
 }
 
-/// How this sentence's claims account for one number printed in it, or `None`.
+/// How this sentence's claims account for one number printed in it, without the sentence's
+/// own arithmetic — the four arms that need no other token to be settled first.
 ///
-/// Shared by check 6, which runs the whole scan without an engine, and by the event fence
-/// in [`every_claim_matches_the_engine`], which re-derives it for the one arm that needs a
-/// trajectory to be checked. Derived rather than declared: see [`Accounted`].
-fn accounting_for(
+/// Split from [`accounting_for`] because [`Accounted::Derived`] rests on its operands having
+/// an accounting of their own, and a `Derived` operand would have no floor. Calling this on
+/// the operands is what makes the recursion one level deep by construction rather than by a
+/// depth counter.
+fn accounting_without_arithmetic(
     token: &str,
     group: &[&Claim],
     lesson: &Lesson,
     arms: &[Arm],
 ) -> Option<Accounted> {
-    // A step length one of this sentence's own claims is measured at. Compared as a
-    // number rather than as text, so a sentence writing `5.0` where the box takes 5 is
-    // the same setting — the token is the reader's, the tie is to the run.
+    // A control one of this sentence's own claims is measured under. Compared as a number
+    // rather than as text, so a sentence writing `5.0` where the box takes 5 is the same
+    // setting — the token is the reader's, the tie is to the run.
+    //
+    // Two of them now: the step length, and the **ambient step** an arm dials in against the
+    // slider the lesson left. The second is a difference and not a level, because that is
+    // what step 8's sentence prints, and °C and K differ by an offset that cancels in one.
     //
     // Taken first although it is tried last, because the three arms below return early and
     // this one has to be able to refuse them. See the fence under `shown`.
     let setting = group.iter().find_map(|c| {
-        let dt = arm_of(arms, c).and_then(|a| a.dt).unwrap_or(lesson.dt);
-        number_of(token)
-            .filter(|n| (n - dt).abs() < 1e-9)
-            .map(|_| dt)
+        let arm = arm_of(arms, c);
+        let dt = arm.and_then(|a| a.dt).unwrap_or(lesson.dt);
+        let ambient_step = arm
+            .and_then(|a| a.ambient_c)
+            .map(|c| c - lesson.ambient_c)
+            .filter(|d| d.abs() > f64::EPSILON);
+        let n = number_of(token)?;
+        // A step whose two controls landed on one number would hand the token whichever
+        // reading was tried first, which is the hazard this whole taxonomy is arranged
+        // against. Asserted rather than assumed, because nothing else keeps them apart.
+        if let Some(step) = ambient_step {
+            assert!(
+                (step.abs() - dt).abs() > 1e-9,
+                "step `{}` reads a trajectory whose step length is {dt} s and whose ambient \
+                 moves by {step} K. Those are the same number, so a token spelling it has \
+                 two readings and this function decides which — not the sentence.",
+                lesson.id,
+            );
+        }
+        if (n - dt).abs() < 1e-9 {
+            return Some(dt);
+        }
+        ambient_step.filter(|step| (n - step.abs()).abs() < 1e-9)
     });
     // Two readings of one number, which is the hazard this whole taxonomy is arranged
     // against. Refused rather than resolved by trial order: with an order, an author who
@@ -3742,7 +3894,7 @@ fn accounting_for(
         assert!(
             setting.is_none(),
             "step `{}`, sentence `{}`:\n  it prints `{token}`, which is both {other} and \
-             the step length of a trajectory this sentence's claims read ({} s).\n\
+             a control of a trajectory this sentence's claims read ({}).\n\
              Two readings of one number means the accounting is decided by which arm was \
              tried first rather than by the sentence. Reword the sentence, or split the \
              literal so the two readings sit in different groups.",
@@ -3852,6 +4004,82 @@ fn accounting_for(
     setting.map(Accounted::Setting)
 }
 
+/// How this sentence accounts for one number printed in it, or `None`.
+///
+/// Shared by check 6, which runs the whole scan without an engine, and by the event fence
+/// in [`every_claim_matches_the_engine`], which re-derives it for the one arm that needs a
+/// trajectory to be checked. Derived rather than declared: see [`Accounted`].
+///
+/// The four arms above first, then the sentence's own arithmetic. **A token both arms answer
+/// is refused rather than resolved**, which is the same hazard `cover_by_rule`'s
+/// double-cover panic exists for: with a trial order, a number that is genuinely a
+/// measurement and also happens to be the ratio of two others gets whichever this function
+/// tried first, and the check becomes a fact about this function.
+fn accounting_for(
+    token: &str,
+    group: &[&Claim],
+    lesson: &Lesson,
+    arms: &[Arm],
+    derived: &[Derivation],
+) -> Option<Accounted> {
+    let base = accounting_without_arithmetic(token, group, lesson, arms);
+    let Some((literal, row)) = group
+        .first()
+        .map(|c| c.literal.as_str())
+        .and_then(|literal| {
+            derived
+                .iter()
+                .find(|d| d.step == group[0].step && d.literal == literal && d.spells == token)
+                .map(|row| (literal, row))
+        })
+    else {
+        return base;
+    };
+    assert!(
+        base.is_none(),
+        "step `{}`, sentence `{literal}`:\n  it prints `{token}`, which a `[[derived]]` row \
+         accounts for as the sentence's own arithmetic — and which {} already accounts for.\n\
+         Two readings of one number means the accounting is decided by which arm was tried \
+         first rather than by the sentence. Drop the `[[derived]]` row: a number a claim \
+         measures is measured, whatever else it also happens to equal.",
+        group[0].step,
+        match base {
+            Some(Accounted::Spelled) => "a claim on it spells it",
+            Some(Accounted::ReadAt(_)) => "it is an instant a claim on it is read at",
+            Some(Accounted::Shown) => "a row this sentence's claims assert prints it",
+            _ => "it is a control of a trajectory this sentence's claims read",
+        },
+    );
+    // Granted only when the arithmetic reproduces the digit, so a row pointed at the wrong
+    // operand accounts for nothing rather than accounting for it wrongly. The message a
+    // reader gets for that comes from
+    // [`every_derivation_is_a_sentence_doing_arithmetic`], which says which operands were
+    // read and what they came to.
+    derived_value(row, literal)
+        .filter(|v| to_fixed(*v, decimals_of(token).max(0) as usize) == token)
+        .map(Accounted::Derived)
+}
+
+/// What a [`Derivation`] comes to, or `None` if an operand is not a number the sentence
+/// prints.
+///
+/// The operands are read out of the **sentence** rather than out of the row: `from` says
+/// where to look and the prose says what the number is. That is the difference between this
+/// and the list of declared identities `docs/plans/path-prose-ledger.md` refuses — a row
+/// cannot supply a value, only name where one is written.
+fn derived_value(row: &Derivation, literal: &str) -> Option<f64> {
+    let printed = numeric_tokens(&ascii_minus(literal));
+    let operands: Vec<f64> = row
+        .from
+        .iter()
+        .filter(|t| printed.iter().any(|p| p == *t))
+        .filter_map(|t| number_of(t))
+        .collect();
+    (operands.len() == row.from.len())
+        .then(|| row.op.apply(&operands))
+        .flatten()
+}
+
 /// Check 6 — every number a claimed sentence prints is tied to something.
 ///
 /// Checks 1–5 tie the number a claim *spells* to the value it measures and say nothing
@@ -3884,6 +4112,7 @@ fn every_number_in_a_claimed_literal_is_accounted_for() {
     let lessons = lessons();
     let all = claims();
     let arms = arms();
+    let derived = derivations();
 
     for (step, literal) in sentences(&all) {
         let lesson = lessons
@@ -3894,7 +4123,7 @@ fn every_number_in_a_claimed_literal_is_accounted_for() {
 
         for token in numeric_tokens(&ascii_minus(literal)) {
             assert!(
-                accounting_for(&token, &group, lesson, &arms).is_some(),
+                accounting_for(&token, &group, lesson, &arms, &derived).is_some(),
                 "step `{step}`, sentence `{literal}`:\n  it prints `{token}`, and none of \
                  the {} claim(s) on it accounts for that number.\n\
                  Tried, in order:\n  \
@@ -3902,8 +4131,10 @@ fn every_number_in_a_claimed_literal_is_accounted_for() {
                  - read at: no claim here is read at that instant \
                  ({:?} in its own frame)\n  \
                  - shown:   it is in no `shows` string this sentence's claims assert\n  \
-                 - setting: it is not the step length of any trajectory this sentence's \
-                 claims read\n\
+                 - setting: it is not the step length or the ambient step of any \
+                 trajectory this sentence's claims read\n  \
+                 - derived: no `[[derived]]` row on this sentence spells it, or the one \
+                 that does no longer comes to it\n\
                  A number inside a sentence this file already claims, tied to nothing, is \
                  the hole checks 1-5 leave open: the prose and the literal can drift \
                  together and every one of them stays green. Give it a claim of its own \
@@ -3921,6 +4152,143 @@ fn every_number_in_a_claimed_literal_is_accounted_for() {
                     .collect::<Vec<_>>(),
             );
         }
+    }
+}
+
+/// Every `[[derived]]` row is a sentence doing arithmetic, and the arithmetic works.
+///
+/// Check 6 grants [`Accounted::Derived`] only when a row's operands are numbers the sentence
+/// prints and the operation reproduces the digit. That silence is the right behaviour there
+/// — a row that no longer works accounts for nothing — but it is a poor message, so the
+/// fences live here, where each can say which operand was read and what it came to.
+///
+/// Six of them, and every one is a way the arm could have degenerated into the "list of
+/// declared identities" `docs/plans/path-prose-ledger.md` refuses:
+///
+/// 1. **The sentence is one some claim quotes.** A row on unclaimed prose would be an
+///    accounting arm reaching past the claims, which is the ledger's job and a different
+///    contract.
+/// 2. **The number it accounts for is printed in that sentence** — otherwise the row
+///    accounts for nothing and looks like coverage.
+/// 3. **Every operand is printed in that sentence too.** This is the load-bearing one: an
+///    operand the prose does not print is a number the author supplied, and then the row is
+///    an identity rather than a reading.
+/// 4. **Every operand has an accounting of its own, and it is not `derived`.** Without it
+///    the arm says two unpinned numbers divide into a third. Chains are refused rather than
+///    followed: a derivation of a derivation has no floor.
+/// 5. **The operands differ from each other and from the result**, or the arithmetic is
+///    trivially satisfiable.
+/// 6. **The arithmetic reproduces the printed digit**, at the precision the prose commits
+///    to, through the page's own rounding rule.
+#[test]
+fn every_derivation_is_a_sentence_doing_arithmetic() {
+    let lessons = lessons();
+    let all = claims();
+    let arms = arms();
+    let derived = derivations();
+
+    for row in &derived {
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == row.step)
+            .unwrap_or_else(|| panic!("`[[derived]]` names `{}`, which is not a lesson", row.step));
+        let group = sentence_group(&all, &row.step, &row.literal);
+        assert!(
+            !group.is_empty(),
+            "the `[[derived]]` row on step `{}` quotes\n  {}\nand no claim on that step \
+             quotes the same sentence. A derivation inherits its operands' accountings from \
+             the claims on the sentence, so a row on prose nobody claims can inherit \
+             nothing.",
+            row.step,
+            row.literal,
+        );
+        let printed = numeric_tokens(&ascii_minus(&row.literal));
+        assert!(
+            printed.contains(&row.spells),
+            "the `[[derived]]` row on step `{}` accounts for `{}`, which is not a number the \
+             sentence it quotes prints:\n  {}\n  printed: {printed:?}\n\
+             A row that accounts for nothing is the shape this file rejects everywhere \
+             else — it looks like coverage. If the sentence was reworded, reword the row.",
+            row.step,
+            row.spells,
+            row.literal,
+        );
+        assert_eq!(
+            row.from.len(),
+            row.op.arity(),
+            "the `[[derived]]` row for `{}` on step `{}` is `{:?}`, which takes {} \
+             operand(s), and lists {}.",
+            row.spells,
+            row.step,
+            row.op,
+            row.op.arity(),
+            row.from.len(),
+        );
+        for operand in &row.from {
+            assert!(
+                printed.contains(operand),
+                "the `[[derived]]` row for `{}` on step `{}` reads an operand `{operand}` \
+                 that the sentence does not print:\n  {}\n  printed: {printed:?}\n\
+                 **This is the fence that keeps the arm a reading rather than an \
+                 identity.** An operand the prose does not carry is a number the author \
+                 supplied, and then the row asserts its own arithmetic instead of the \
+                 sentence's.",
+                row.spells,
+                row.step,
+                row.literal,
+            );
+            assert_ne!(
+                operand, &row.spells,
+                "the `[[derived]]` row for `{}` on step `{}` lists the number it accounts \
+                 for as one of its own operands.",
+                row.spells, row.step,
+            );
+            let accounted = accounting_without_arithmetic(operand, &group, lesson, &arms);
+            assert!(
+                accounted.is_some(),
+                "the `[[derived]]` row for `{}` on step `{}` reads `{operand}`, and nothing \
+                 accounts for that operand:\n  {}\n\
+                 An operand tied to nothing makes the derivation a circle — it would say \
+                 only that two numbers nobody pinned divide into a third. Give the operand \
+                 a claim of its own, or one of check 6's other arms.",
+                row.spells,
+                row.step,
+                row.literal,
+            );
+        }
+        let mut seen = row.from.clone();
+        seen.sort();
+        let before = seen.len();
+        seen.dedup();
+        assert_eq!(
+            before,
+            seen.len(),
+            "the `[[derived]]` row for `{}` on step `{}` reads one operand twice.",
+            row.spells,
+            row.step,
+        );
+        let value = derived_value(row, &row.literal).unwrap_or_else(|| {
+            panic!(
+                "the `[[derived]]` row for `{}` on step `{}` is `{:?}` over {:?}, and that \
+                 has no value — a division by zero, or an operand that is not a number.",
+                row.spells, row.step, row.op, row.from,
+            )
+        });
+        let places = decimals_of(&row.spells).max(0) as usize;
+        assert_eq!(
+            to_fixed(value, places),
+            row.spells,
+            "step `{}`, sentence\n  {}\nsays `{}`, and its own arithmetic says {value}: \
+             `{:?}` over {:?}.\n\
+             The sentence and the numbers it is doing arithmetic on have parted. Nothing \
+             here is a measurement — check the operands' own claims first, because if one \
+             of them moved this is the sentence telling you the conclusion moved with it.",
+            row.step,
+            row.literal,
+            row.spells,
+            row.op,
+            row.from,
+        );
     }
 }
 
@@ -4556,6 +4924,7 @@ fn claimed_accounting(
     all: &[Claim],
     lesson: &Lesson,
     arms: &[Arm],
+    derived: &[Derivation],
 ) -> Option<&'static str> {
     for (owner, literal) in sentences(all) {
         if owner != step {
@@ -4568,7 +4937,7 @@ fn claimed_accounting(
                 continue;
             }
             let group = sentence_group(all, step, literal);
-            if let Some(accounted) = accounting_for(&number.token, &group, lesson, arms) {
+            if let Some(accounted) = accounting_for(&number.token, &group, lesson, arms, derived) {
                 return Some(accounted.arm_name());
             }
         }
@@ -4635,6 +5004,7 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
     let ledger = ledger();
     let all = claims();
     let arms = arms();
+    let derived = derivations();
 
     for step in &ledger.steps {
         let lesson = lessons
@@ -4671,7 +5041,7 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
                     .map_or(text.len(), |(i, _)| after + i);
                 text[a..b].split_whitespace().collect::<Vec<_>>().join(" ")
             };
-            let claimed = claimed_accounting(w, &text, step, &all, lesson, &arms);
+            let claimed = claimed_accounting(w, &text, step, &all, lesson, &arms, &derived);
             if let (Some((r, _)), Some(arm)) = (*covered, claimed) {
                 panic!(
                     "step `{step}`: the number `{}` is accounted for twice — by the \
@@ -5123,6 +5493,7 @@ fn every_claim_matches_the_engine() {
     let lessons = lessons();
     let all = claims();
 
+    let derived = derivations();
     // Group by *trajectory* and run each one once. Not a micro-optimisation: step 8 is a
     // 200 000 s rest at dt = 0.5 — 400 000 engine steps — and it carries three claims.
     // Re-running it per claim tripled this test's cost for nothing.
@@ -5174,7 +5545,8 @@ fn every_claim_matches_the_engine() {
                 continue;
             }
             for token in numeric_tokens(&ascii_minus(literal)) {
-                let Some(Accounted::ReadAt(at_s)) = accounting_for(&token, &group, lesson, &arms)
+                let Some(Accounted::ReadAt(at_s)) =
+                    accounting_for(&token, &group, lesson, &arms, &derived)
                 else {
                     continue;
                 };
@@ -5198,7 +5570,7 @@ fn every_claim_matches_the_engine() {
             .iter()
             .filter(|c| c.step == step && c.arm.as_deref() == arm_name)
         {
-            let got = measure(&c.quantity, &r, c.read_at_s, c.probe);
+            let got = measure(&c.quantity, &r, c.read_at_s, c.probe, lesson.until_s);
             assert!(
                 (got - c.value).abs() <= c.tol,
                 "step `{}`, claim `{}`:\n  {} at t = {} s\n  prose says {}\n  engine says \
@@ -5406,6 +5778,7 @@ struct Facts {
     claims: Vec<Claim>,
     arms: Vec<Arm>,
     ledger: Ledger,
+    derived: Vec<Derivation>,
     lessons: Vec<Lesson>,
 }
 
@@ -5416,6 +5789,7 @@ impl Facts {
             claims: parsed.claim,
             arms: arms(),
             ledger: parsed.ledger,
+            derived: parsed.derived,
             lessons: lessons(),
         }
     }
@@ -5449,7 +5823,8 @@ impl Facts {
             let group = sentence_group(&self.claims, step, literal);
             for token in numeric_tokens(&ascii_minus(literal)) {
                 printed += 1;
-                if let Some(Accounted::Spelled) = accounting_for(&token, &group, lesson, &self.arms)
+                if let Some(Accounted::Spelled) =
+                    accounting_for(&token, &group, lesson, &self.arms, &self.derived)
                 {
                     spelled += 1;
                 }
@@ -5470,7 +5845,7 @@ impl Facts {
             let lesson = self.lesson(step);
             let group = sentence_group(&self.claims, step, literal);
             for token in numeric_tokens(&ascii_minus(literal)) {
-                if let Some(a) = accounting_for(&token, &group, lesson, &self.arms) {
+                if let Some(a) = accounting_for(&token, &group, lesson, &self.arms, &self.derived) {
                     let name = a.arm_name();
                     if !used.contains(&name) {
                         used.push(name);
@@ -5483,7 +5858,7 @@ impl Facts {
 }
 
 impl Accounted {
-    /// The name the header gives this arm. Exhaustive on purpose: a fifth variant does
+    /// The name the header gives this arm. Exhaustive on purpose: a sixth variant does
     /// not compile until it is named here, so [`Facts::accounting_arms`] cannot go stale
     /// by omission.
     fn arm_name(&self) -> &'static str {
@@ -5492,6 +5867,7 @@ impl Accounted {
             Accounted::ReadAt(_) => "read at",
             Accounted::Shown => "shown",
             Accounted::Setting(_) => "setting",
+            Accounted::Derived(_) => "derived",
         }
     }
 }
