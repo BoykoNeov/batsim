@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Five steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Six steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -85,7 +85,7 @@
 #              an absolute time, or a magnitude where the value is negative.
 #              A sentence may spell its number in LETTERS — "about three points" spells
 #              `"three"` — and one does. `WORD_NUMERALS` in path_claims.rs is the
-#              translation, two entries, and a word in it that no claim spells fails the
+#              translation, three entries, and a word in it that no claim spells fails the
 #              test. A word commits to no decimal place, so the rule it licenses is half
 #              a unit of the unit it is written in: half a point, for that one.
 #   spells_pow10  how many powers of ten larger `spells`'s unit is than `value`'s. 2 for a
@@ -142,7 +142,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  155 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  156 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  18 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -193,7 +193,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 18 claims.
 #
-#   same        160 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        161 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -239,8 +239,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 165 of the 196 numbers the
-#            112 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 166 of the 197 numbers the
+#            113 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -271,7 +271,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 112 claimed sentences need none. A future literal printing a chemistry constant will
+# the 113 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -286,7 +286,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — five steps of the twenty-four so far.
+# of this file — six steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -785,7 +785,9 @@ from = ["2.84", "1.06"]
 note = """
 The file's first derivation. It is CHECK 6's arm, not the ledger's: the `Derived` row in
 docs/plans/path-prose-ledger.md's taxonomy is a tie over a ledgered step's whole prose, and
-that one is still missing. `setting` already lives in both scans for the same reason.
+that one is `Tie::Derived`, built one slice later for step 22's "six of these in series is
+the 12 V battery". `setting` already lives in both scans for the same reason, and so does
+this.
 
 What is declared here is where to read the two operands and what the sentence does with
 them. The value is not: 2.84 / 1.06 is recomputed and compared at the one decimal place the
@@ -2117,6 +2119,28 @@ reached 96.72 %.
 
 [[claim]]
 step = "slow-and-patient"
+literal = "The 3.3 % is a stated model error"
+quantity = "soc_at"
+value = 0.03304861
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.3"
+spells_pow10 = 2
+states = "same"
+read_at_s = 69620.5
+note = """
+The same number as the claim above, in the sentence that says what KIND of number it is,
+and it is here because this step is ledgered: the scan reaches every numeral in the prose
+and the `claimed` arm is positional, so a second sentence stating the same quantity needs
+its own claim rather than a waiver. Step 6's clamped current set the precedent — stated in
+two sentences, claimed twice.
+
+No `display`: the row is pinned by the claim above, which is the sentence that tells the
+reader to look at it. This one is about what the reading MEANS.
+"""
+
+[[claim]]
+step = "slow-and-patient"
 literal = "delivered 6.9620 A·h"
 quantity = "delivered_ah"
 value = 6.962
@@ -2748,28 +2772,39 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: five
-# steps, forty-two numerals, and no longer all of them scenario constants. The first
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: six
+# steps, fifty-eight numerals, and no longer all of them scenario constants. The first
 # three were picked because the same measuring pass found they carry no
 # measurement-shaped figure at all, so they could be closed before a single number was
 # measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's
 # capacity, the cell's rating and the demand in one breath, and its expect prints the
 # clamped current and the demand box again — four different kinds of number in eight
-# numerals, which is why it cost three arms and one claim. Of the steps below, those that
+# numerals, which is why it cost three arms and one claim. The sixth, step 22, is where the
+# taxonomy closed: twelve of its sixteen numerals were untied and not one was a field a rule
+# could read straight off a file, which took four more arms including the derivation the
+# plan had reserved from the start. Of the steps below, those that
 # carry no claim at all and need arms this file has not got: none. Every step in this list
 # now carries at least one measured number, which was not true five slices ago. (Two steps
 # in the repo still carry none, and they are both LEDGERED ones — scanned end to end for
 # numerals and measured nowhere, which is the opposite gap.) What the list still lacks is a
-# scan over its whole prose, and that is what needs the arms. See the plan.
+# scan over its whole prose, and that no longer waits on an arm: what each of those steps
+# needs now is its own vocabulary and its own measurements. See the plan.
 #
 # NUMERAL, NOT NUMBER, and the difference is load-bearing. The scan finds digits, so a
-# quantity spelled in English goes straight past it — and two of these three steps state
-# four that way: "about half a point across the whole grid" and "a quarter of a point"
+# quantity spelled in English goes straight past it — and three of the ledgered steps state
+# five that way: "about half a point across the whole grid" and "a quarter of a point"
 # between the two cells of a group (step 3), "a gap of about three points" and "a fraction
-# of a point" of sensor drift (step 4). All four are engine measurements. Three of them
-# are still checked by nothing; the estimator gap now has two claims, at the mark and at
-# its narrowest, and they are claims rather than ledger entries — this scan cannot see the
-# sentence they are about. A ledgered step is digits-closed, which is less than closed.
+# of a point" of sensor drift (step 4), and "all but three points of what it holds" at the
+# end of step 22. All five are engine measurements. Four of them are still checked by
+# nothing; the estimator gap now has two claims, at the mark and at its narrowest, and they
+# are claims rather than ledger entries — this scan cannot see the sentence they are about.
+# A ledgered step is digits-closed, which is less than closed.
+#
+# ONE WORD IS NOW READ, AND IT IS NOT A SCANNER. Step 22's "six of these in series is the
+# 12 V battery" derives its `12` from a word, and `Operand::Word` translates that one word
+# where the rule names it. Nothing else changed: "all but three points" in the same step's
+# own expect is as invisible as it was, and so is "twenty hours" two paragraphs above it.
+# A green ledger is still a statement about a step's digits.
 #
 # Teaching the scan to read those words is one slice with three parts and not one part: a
 # vocabulary that sees "three points" sees "half a point" too, which is step 3's per-cell
@@ -2777,10 +2812,13 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# FOUR ARMS, and the vocabulary that makes three of them honest. An arm says what decides
-# a number: a NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that
-# scenario names, a CONTROL on the lesson's own block, or the sentence's own arithmetic
-# over those. Naming the field is the whole point: a generous arm — "the number appears
+# THE ARMS THEMSELVES, and there are twelve of them. An arm says what decides a number: a
+# NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
+# names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
+# PRODUCT or as a RATIO, the SPAN of a chemistry table end to end, a NODE of one, digits
+# inside a NAME, the POSITION of another lesson in the path, the panel's CLOCK at the step's
+# mark, a figure the sentence works out from its OWN SIBLINGS, and a CLAIM whose literal
+# contains the number. Naming the field is the whole point: a generous arm — "the number appears
 # somewhere in the scenario" — accounts for a third of the path's numbers and means
 # nothing, because a scenario file has enough integers in it that a `2` finds `series = 2`
 # by accident. So something has to say which field a sentence is talking about, and that
@@ -2793,15 +2831,27 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to be the number. It was existential first, and that let step 5's "in the same instant"
 # pass with the two faults 100 s apart — measured, not argued.
 #
-# THE ARITHMETIC ARM IS THE ONE THAT ROUNDS, and it is the only one that does. A constant
-# printed in prose either is the file's number or is wrong about it, so it is compared
-# exactly. A product is computed — step 6's "4.61 Ah at pack level" is the cell's
+# THE ARITHMETIC ARMS ARE THE ONES THAT ROUND, and they are the only ones that do. A
+# constant printed in prose either is the file's number or is wrong about it, so it is
+# compared exactly. A computed number is not: step 6's "4.61 Ah at pack level" is the cell's
 # 2.303451 Ah times the pack's 2 in parallel, which is 4.606902 — and no sentence would
 # print that, so it is compared at the precision the sentence itself commits to, through
-# the same rounding rule the page uses. Each factor has to resolve to exactly one number:
-# a wildcard under a product would make "which of them" the author's pick.
+# the same rounding rule the page uses. The same goes for the ratio, the span and the
+# derivation: 7.2 / 0.36 is 20.000000000000004 and 2.130 - 1.950 is 0.17999999999999994.
+# Each factor has to resolve to exactly one number: a wildcard under a product would make
+# "which of them" the author's pick.
 #
-# THE FIFTH ARM IS A CLAIM, and it is check 6's accounting reused whole rather than a
+# THE SPAN, THE CLOCK AND THE DERIVATION are step 22's, and each exists because no arm
+# above it could carry the sentence. "Lead-acid spans only 180 mV end to end" is about the
+# WHOLE OCV table rather than a node of it. "The panel reads 19.3h" is not the mark
+# (69620.5 s) and is in no file at all — it is what the `sim time` row prints there, so the
+# tie is to that row's own formatter, which is the same mirror the display check runs on.
+# And "six of these in series is the 12 V battery" is the arithmetic the plan reserved the
+# last slot for: the `12` is the `2 V` the same sentence prints, six times over. Its
+# operands are declared and its value never is, and every operand must be accounted for by
+# an arm that is NOT a derivation — a derivation resting on derivations has no floor.
+#
+# ONE ARM IS A CLAIM, and it is check 6's accounting reused whole rather than a
 # second reading of the same claims. If the number sits INSIDE the literal of a sentence
 # some claim quotes, that sentence's own claims account for it — spelled, read at, shown,
 # or a step length — and the ledger asks `accounting_for` the same question check 6 asks.
@@ -3278,7 +3328,9 @@ file read a sensor.
 
 `343.15` is still outside the literal, and for the standing reason: it is a threshold this
 step's scenario declares, and the accounting has no arm for a configured constant. That arm
-is designed in docs/plans/path-prose-ledger.md and is one of the two still missing.
+is designed in docs/plans/path-prose-ledger.md and is now the ONLY one still missing — the
+figure-derived-from-its-siblings that stood beside it landed as `Tie::Derived` on the
+ledger's side and as `Accounted::Derived` on this one.
 
 A PREDICTION THAT WAS REGISTERED AND THEN CONFIRMED. The note this replaces said the
 sentence's 1.3 could only be right if the probe sat "in roughly [343.17, 343.27] K, an
@@ -4957,8 +5009,15 @@ steps = [
                      # introduced in, the charge it starts at, a node of the OCV table —
                      # six of the twenty. The other fourteen are measurements, which
                      # makes this the first ledgered step that is mostly claims
+  "slow-and-patient", # 16: the nameplate of a lead-acid cell, stated four ways, plus the
+                     # rate it is quoted at, the span of its OCV curve, the battery six of
+                     # these make, the clock the run stops on and the step it points back
+                     # to. Eleven of the sixteen are constants a rule accounts for, four are
+                     # claimed measurements, and one — the model error, printed twice — is
+                     # both. It still needed FOUR new arms, because not one of the eleven is
+                     # a field a rule could read straight off a file
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: nineteen of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: eighteen of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
@@ -4989,7 +5048,6 @@ unledgered = [
   "nothing-to-clamp",               # claims: 19, on both halves of the step now
   "past-empty",                     # claims: 13
   "what-it-cost",                   # claims: 19
-  "slow-and-patient",               # claims: 4
   "sixty-times-the-current",        # claims: 4
   "and-it-is-still-in-there",       # claims: 8
 ]

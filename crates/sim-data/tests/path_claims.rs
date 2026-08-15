@@ -72,8 +72,8 @@
 //! Beside all six sits **the ledger**, which is about a *step* rather than about a claim:
 //! [`every_numeral_in_a_ledgered_step_is_accounted_for`] scans a step's whole prose and
 //! requires every numeral in it to be tied to something, claimed or not. Numeral, not
-//! number: a quantity spelled in English is invisible to it, and two ledgered steps state
-//! four measurements that way ("about half a point across the whole grid", "a gap of about
+//! number: a quantity spelled in English is invisible to it, and three ledgered steps state
+//! five measurements that way ("about half a point across the whole grid", "a gap of about
 //! three points" — the last of which now carries two claims of its own, through
 //! [`WORD_NUMERALS`], while remaining invisible to this scan).
 //! A ledgered step is digits-closed, which is less than closed. Check 6 can only
@@ -81,15 +81,17 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is five steps and forty-two numbers.
-//! Eight arms exist — a scenario field, a chemistry field, a control on the lesson block,
-//! the sentence's own arithmetic over those, digits inside a name, the position of another
-//! lesson, a node of a chemistry table, and a claim whose literal contains the number
-//! ([`claimed_accounting`], which is check 6's own accounting asked about a number the
-//! ledger found). ONE is still missing: the general figure-derived-from-its-siblings, which
-//! stays missing until a *ledgered* step prints one. Check 6 has an arm of that name
-//! already; the two scans are separate, as they are for `setting`. The rest of the design is
-//! in `docs/plans/path-prose-ledger.md`.
+//! (`[ledger]` in `path-claims.toml`) and today it is six steps and fifty-eight numbers.
+//! Twelve arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! the sentence's own arithmetic over those as a product or as a ratio, the span of a
+//! chemistry table, a node of one, digits inside a name, the position of another lesson,
+//! the panel's clock at the step's mark, a figure the sentence works out from its own
+//! siblings, and a claim whose literal contains the number ([`claimed_accounting`], which is
+//! check 6's own accounting asked about a number the ledger found). **None of the taxonomy
+//! is missing any more**: the last of its six kinds — the figure derived from its siblings —
+//! is [`Tie::Derived`], built for step 22's "six of these in series is the 12 V battery".
+//! Check 6 has an arm of that name too; the two scans are separate, as they are for
+//! `setting`. The rest of the design is in `docs/plans/path-prose-ledger.md`.
 //!
 //! Behind the value check sits a seventh, about this file rather than about the page:
 //! [`every_tolerance_follows_its_declared_rule`]. `tol` is what decides how much of a
@@ -165,24 +167,24 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the nineteen steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the eighteen steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed five whole steps — but only five. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other nineteen have their claimed sentences
+//!   has now closed six whole steps — but only six. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other eighteen have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all nineteen, one line each, so this list cannot go quietly out of date.
-//!   What the remaining steps need is arms the ledger has not got — the last of them being
-//!   a figure derived from other figures in the same sentence. Chemistry constants,
-//!   ordinals naming other steps, part numbers and table nodes all have one now. Both of the *harness* capabilities that list used to name have landed — the
-//!   zero-length probe, and instructed control changes — and so has the first of the
-//!   accounting arms: [`Accounted::Setting`], which is what let step 18's headline be
-//!   claimed after three slices of being the worked example of a sentence blocked on this
-//!   check rather than on the harness. Two arms of that taxonomy are still missing, and
-//!   both were met head-on by the slice that added the first: a chemistry constant, and a
-//!   figure derived from its siblings in the same sentence. Each cost a literal that had
-//!   to stop short of the fragment naming it. Check 6 could refuse a waiver variant
-//!   because its claimed sentences happen to need none; a whole-prose ledger cannot, and
-//!   it still refuses one.
+//!   names all eighteen, one line each, so this list cannot go quietly out of date.
+//!   What the remaining steps need is no longer an arm the ledger has not got: the last of
+//!   its six — a figure derived from other figures in the same sentence — is
+//!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
+//!   table nodes, table spans, ratios and the clock at a mark all have one too. What they
+//!   need now is measurement, one step at a time. Both of the *harness* capabilities that
+//!   list used to name have landed — the zero-length probe, and instructed control changes
+//!   — and so has the last of check 6's five accounting arms, [`Accounted::Derived`].
+//!   **What check 6 still has no arm for is a configured constant** — a threshold a
+//!   scenario file declares — which is why step 11's literal still has to stop short of the
+//!   fragment naming its `343.15`. Check 6 could
+//!   refuse a waiver variant because its claimed sentences happen to need none; a
+//!   whole-prose ledger cannot, and it still refuses one.
 //! * **Page-behaviour claims.** Anything about what a control does, what a legend
 //!   prints, or what a button orders. Those need a browser.
 //! * **The client-side demand programs are mirrored, not shared.** `Pulse` and `CcCv`
@@ -1584,7 +1586,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 155 of 177 claims.
+    /// number's last printed place. The default shape: 156 of 178 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1593,12 +1595,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 18 of 177.
+    /// declaration was wrong. 18 of 178.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 177, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 178, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1638,7 +1640,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 160 of 177, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 161 of 178, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -1876,17 +1878,19 @@ fn decimals_of(s: &str) -> i32 {
 /// string as a float. The choice was then between a claim that lies about its own wording
 /// and no claim, which is how that sentence went four slices unchecked.
 ///
-/// **One entry, and it is required to be used.** A word nothing spells is the
-/// `CCCV_PERIOD_S` shape this file rejects everywhere else, so
-/// [`every_word_numeral_is_spelled_by_a_claim`] fails on a table entry no claim consults —
-/// the same guard [`every_ledger_rule_is_a_phrase_and_is_used`] keeps over the ledger's
-/// vocabulary. Add the next word when the next claim needs it, not before.
+/// **Every entry is required to be used.** A word nothing reads is the `CCCV_PERIOD_S`
+/// shape this file rejects everywhere else, so [`every_word_numeral_is_read_by_something`]
+/// fails on a table entry nothing consults — the same guard
+/// [`every_ledger_rule_is_a_phrase_and_is_used`] keeps over the ledger's vocabulary. Add the
+/// next word when the next claim or rule needs it, not before.
 ///
-/// **This is the claim side only.** The ledger's scanner still finds *digits*
-/// ([`written_numbers`]), so a word quantity in a ledgered step's prose is invisible to it
-/// whether or not a claim spells it — see the note in
-/// [`every_numeral_in_a_ledgered_step_is_accounted_for`].
-const WORD_NUMERALS: &[(&str, f64)] = &[("three", 3.0), ("fifty", 50.0)];
+/// **Two readers, and neither is a scanner.** `spells` is the claim side. `six` is the
+/// ledger side, read as the operand of one derivation ([`Operand::Word`]) — step 22's "six
+/// of these in series is the 12 V battery". Both are places an author *names* a word.
+/// [`written_numbers`] still finds digits only, so a word quantity in a ledgered step's
+/// prose is invisible to the scan whether or not something in here translates it — see the
+/// note in [`every_numeral_in_a_ledgered_step_is_accounted_for`].
+const WORD_NUMERALS: &[(&str, f64)] = &[("three", 3.0), ("six", 6.0), ("fifty", 50.0)];
 
 /// The number `spells` names, in the unit the sentence writes it in, or `None` if the
 /// string is neither digits nor a word this file knows.
@@ -3381,7 +3385,8 @@ fn every_tolerance_follows_its_declared_rule() {
     }
 }
 
-/// Every word in [`WORD_NUMERALS`] is spelled by some claim.
+/// Every word in [`WORD_NUMERALS`] is read by something — a claim that spells it, or a
+/// ledger rule that derives a number from it.
 ///
 /// The table is a translation from English to a number, and a translation nothing consults
 /// is coverage-shaped: it reads as "this file understands written numbers" while the one
@@ -3389,17 +3394,33 @@ fn every_tolerance_follows_its_declared_rule() {
 /// argument, as [`every_ledger_rule_is_a_phrase_and_is_used`] keeps over the ledger's
 /// vocabulary — and the same history behind it, `CCCV_PERIOD_S` sitting pinned and unread
 /// for six slices while the mirror it was meant to guard was wrong.
+///
+/// **Two readers now, and deliberately one table.** `spells` reads a word because a claim's
+/// sentence writes its quantity in letters; [`Operand::Word`] reads one because a
+/// derivation's operand is written that way. One table is what stops a word meaning
+/// different numbers on the two sides — the same argument the header's own vocabulary is
+/// held to in [`every_count_these_files_state_about_themselves_is_derived`].
 #[test]
-fn every_word_numeral_is_spelled_by_a_claim() {
+fn every_word_numeral_is_read_by_something() {
     let all = claims();
     for (word, value) in WORD_NUMERALS {
+        let spelled = all.iter().any(|c| c.spells.as_deref() == Some(*word));
+        let derived = LEDGER_VOCABULARY.iter().any(|rule| {
+            rule.ties.iter().any(|tie| match tie {
+                Tie::Derived(operands) => operands
+                    .iter()
+                    .any(|op| matches!(op, Operand::Word(w) if w == word)),
+                _ => false,
+            })
+        });
         assert!(
-            all.iter().any(|c| c.spells.as_deref() == Some(*word)),
-            "WORD_NUMERALS translates `{word}` to {value} and no claim in \
-             web/path-claims.toml spells it. Either the sentence it was added for was \
-             reworded — in which case its claim is failing elsewhere and this entry is why \
-             that is hard to see — or the word was never used. Add words when a claim needs \
-             them; a table read by nothing is the `CCCV_PERIOD_S` shape."
+            spelled || derived,
+            "WORD_NUMERALS translates `{word}` to {value} and nothing in \
+             web/path-claims.toml spells it and no ledger rule derives from it. Either the \
+             sentence it was added for was reworded — in which case its claim is failing \
+             elsewhere and this entry is why that is hard to see — or the word was never \
+             used. Add words when a claim or a rule needs them; a table read by nothing is \
+             the `CCCV_PERIOD_S` shape."
         );
     }
 }
@@ -4363,12 +4384,15 @@ struct LedgerRule {
 /// `tol_from` exists to catch.
 ///
 /// The taxonomy is `docs/plans/path-prose-ledger.md`'s, built one arm at a time as a
-/// sentence needs it. One of its six is still missing — the general `Derived` over a
-/// sentence's own siblings — and it stays missing until a *ledgered* step prints one: an
-/// arm with nothing to account is the `CCCV_PERIOD_S` shape this file has already been
-/// caught by once. Check 6 has a `Derived` of its own ([`Accounted::Derived`]); that one is
-/// over a claimed sentence and says nothing about this scan, the same way `setting` sits in
-/// both.
+/// sentence needs it, and **all six of its kinds now exist**: the last, the general
+/// `Derived` over a sentence's own siblings, waited until a *ledgered* step printed one —
+/// step 22's "six of these in series is the 12 V battery" — because an arm with nothing to
+/// account is the `CCCV_PERIOD_S` shape this file has already been caught by once. Three
+/// variants below are finer distinctions the plan's six did not separate (`Ratio` beside
+/// `Product`, `Span` beside `Member`, and `Clock`, which reads a rendering rather than a
+/// file), each built the same way: when one sentence needed it. Check 6 has a `Derived` of
+/// its own ([`Accounted::Derived`]); that one is over a claimed sentence and says nothing
+/// about this scan, the same way `setting` sits in both.
 enum Tie {
     /// A named field of the step's scenario file — a dotted key path, with `*` walking an
     /// array so `faults.*.at_s` does not care what order the file lists its faults in.
@@ -4461,6 +4485,97 @@ enum Tie {
     /// passing. What it cannot do is pass when the table no longer has a node there at all,
     /// which is what a re-fit does and what the sentence is really resting on.
     Member(&'static str),
+    /// The sentence's own arithmetic again, **divided**: the first tie below it over the
+    /// second, and exactly two of them.
+    ///
+    /// Step 22 says `0.36 A is C/20`, and the `20` is neither a file's number nor a
+    /// measurement — it is the hours the cell's own rating is quoted over, which is the
+    /// capacity divided by the current in the demand box. Tying it to the pair is what
+    /// makes the sentence fail when either half moves: change the box to C/5 and the rate
+    /// this sentence names is wrong, which is precisely what a reader would be misled by.
+    ///
+    /// Compared at the prose's own precision for [`Tie::Product`]'s reason — 7.2 / 0.36 is
+    /// 20.000000000000004 in binary floating point, and no sentence would print that.
+    Ratio(&'static [Tie]),
+    /// The **span of a table** the chemistry declares: its largest value minus its
+    /// smallest, at this path.
+    ///
+    /// "Lead-acid spans only 180 mV of open-circuit voltage end to end" is a statement
+    /// about the whole `[ocv]` table rather than about any node of it, so neither
+    /// [`Tie::Chemistry`] nor [`Tie::Member`] can carry it: the first wants one field and
+    /// the second asks whether some node *is* the number.
+    ///
+    /// **Fenced to two values or more.** The span of a one-node table is zero, and a
+    /// sentence saying a chemistry spans nothing would then be accounted by a table that
+    /// had been emptied — a fail-toward-green on exactly the restructuring this arm is
+    /// supposed to notice. Rounded like a product, and for the same reason: 2.130 - 1.950
+    /// is 0.17999999999999994.
+    Span(&'static str),
+    /// The **panel's clock at the step's mark** — `fmtTime(until_s)`, as the `sim time` row
+    /// renders it.
+    ///
+    /// Step 22 says "the panel reads `19.3h`, not twenty", and `19.3` is not the mark
+    /// (69620.5) nor any field of any file: it is what one row prints when the run stops.
+    /// A [`Tie::Setting`]-shaped arm reading `until_s` could not account for it, and the
+    /// sentence is quoting the row, so the tie is to the row's own formatter — the same
+    /// [`fmt_time`] mirror the display check runs on, and the same reasoning
+    /// [`Accounted::Shown`] gives for granting a claim the clock at the mark: `sim time` is
+    /// the only row that is a function of time alone, so it is the only one this scan can
+    /// render without an engine.
+    ///
+    /// Move the mark and the sentence goes red, which is the property that makes it a tie.
+    Clock,
+    /// The taxonomy's sixth arm: a number the sentence works out **from its own siblings**,
+    /// as their product.
+    ///
+    /// `docs/plans/path-prose-ledger.md` reserved this slot and named the sentence that
+    /// would fill it — step 22's *"six of these in series is the 12 V battery"*. The `12`
+    /// is in no file: it is six times the `2 V` the same sentence prints two clauses
+    /// earlier. Every other arm checks a token against a file; this one checks it against
+    /// other tokens beside it, which is why it was left until a ledgered step printed one.
+    ///
+    /// The operands are declared and the value never is (see [`Operand`]), and each one has
+    /// to be accounted for by an arm that is *not* this one — a derivation whose operands
+    /// are themselves derived has no floor. That fence is what makes it a tie rather than
+    /// the declared identity the plan refuses.
+    ///
+    /// Check 6 has an arm of this name over claimed literals ([`Accounted::Derived`]); the
+    /// two scans are separate, as they are for `setting`.
+    ///
+    /// **Product only.** That is the operation this sentence states; the day a ledgered
+    /// step derives one by another, this grows an operation the way check 6's `[[derived]]`
+    /// carries `op`. An arm with nothing to account is the shape this file refuses.
+    Derived(&'static [Operand]),
+}
+
+/// One operand of a [`Tie::Derived`] — something the *sentence itself* supplies.
+///
+/// Never a value: an operand names where in the sentence to read the number, and the number
+/// comes from the prose. Declaring `6.0` here would be the declared identity the ledger's
+/// design refuses, because the author would then be supplying both sides of the arithmetic.
+#[derive(Debug)]
+enum Operand {
+    /// A numeral this sentence prints, written exactly as it writes it.
+    ///
+    /// Resolved by scanning the sentence around the number being accounted, so an operand
+    /// in a *different* sentence of the step is not reachable — the arm is about a figure
+    /// worked out from what a reader can see in one breath. It must resolve to exactly one
+    /// token, must not be the number being accounted, and must itself be accounted for by
+    /// some other arm.
+    Sibling(&'static str),
+    /// A numeral this sentence spells **in letters** — "six of these in series".
+    ///
+    /// Resolved through [`WORD_NUMERALS`], the same table `spells` reads, so a word means
+    /// one number in this file rather than two. The word must appear in the rule's own
+    /// phrase ([`every_ledger_rule_is_a_phrase_and_is_used`]), which is what pins it to the
+    /// sentence: the phrase match already requires those exact words around the number.
+    ///
+    /// **This is not the word-numeral scanner the ledger has not got, and the difference
+    /// matters.** [`written_numbers`] still finds digits only, so every English quantity in
+    /// a ledgered step's prose is as invisible as it ever was — "all but three points" in
+    /// this very step among them. What this reads is one word an author names in one rule.
+    /// A green ledger is still a statement about a step's digits.
+    Word(&'static str),
 }
 
 /// A number the lesson block sets and the page acts on.
@@ -4657,6 +4772,88 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Member("ocv.soc.*")],
         pow10: 2,
     },
+    // Step 22 — the first lead-acid step, and the first whose numbers need arithmetic that
+    // is not a product. Its opening paragraph is the cell's nameplate: what one cell is,
+    // what six of them make, what it is rated and the condition that rating carries.
+    LedgerRule {
+        // The nominal voltage, and no numeric field of the chemistry holds one — the file
+        // has `v_max`, `v_min` and an OCV table, none of which is 2 V. What does hold it is
+        // the cell's own name, which is what `Tie::Name` is for. The prefix keeps it off
+        // the `12` sitting in `meta.provenance` two lines below.
+        phrase: "a {n} V lead-acid cell",
+        ties: &[Tie::Name {
+            field: "meta.name",
+            prefix: "lead-acid ",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The sentence the ledger's sixth arm was reserved for. `12` is in no file: it is
+        // the `2` this same sentence prints, six times over, and `six` is a word the phrase
+        // itself pins.
+        phrase: "six of these in series is the {n} V battery",
+        ties: &[Tie::Derived(&[Operand::Word("six"), Operand::Sibling("2")])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "It is rated {n} Ah",
+        ties: &[Tie::Chemistry("cell.capacity_ah")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same rating, stated again as the condition a datasheet attaches to it. Two
+        // rules rather than one loose one, on step 6's terms: two sentences say it two ways.
+        phrase: "*{n} Ah if you take twenty hours",
+        ties: &[Tie::Chemistry("cell.capacity_ah")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The demand box and what it is a fraction of, in one breath — which is what the
+        // sentence says. The `20` is hours: the cell's rating over the current asked for.
+        phrase: "{n} A is C/{n}",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Ratio(&[
+                Tie::Chemistry("cell.capacity_ah"),
+                Tie::Setting(Control::DemandValue),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The cut-off the run marks itself at, which is this chemistry's own end-of-
+        // discharge and not the page's choice.
+        phrase: "chemistry's own {n} V",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The whole point of the chemistry, and a statement about the table rather than
+        // about any node of it.
+        phrase: "spans only {n} mV of open-circuit voltage",
+        ties: &[Tie::Span("ocv.volts.*")],
+        pow10: 3,
+    },
+    LedgerRule {
+        phrase: "the LFP cell of step {n}",
+        ties: &[Tie::Ordinal("bare-curve")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The nameplate a third time, now as the thing the delivered charge is measured
+        // against. The claim beside it stops at `A·h`, which is what leaves this number to
+        // the ledger.
+        phrase: "of the {n} on the label",
+        ties: &[Tie::Chemistry("cell.capacity_ah")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Not the mark (69620.5 s) and not any file's number: what one row prints when the
+        // run stops there.
+        phrase: "the panel reads `{n}h`",
+        ties: &[Tie::Clock],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -4736,6 +4933,107 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
     }
 }
 
+/// What a [`Tie::Derived`] reads: the step's prose, the numbers in it, how each of those is
+/// accounted for, and which one is being accounted right now.
+///
+/// Carried alongside the files rather than folded into them, because this is the one arm
+/// whose answer is in the sentence rather than in the tree.
+struct SentenceCtx<'a> {
+    step: &'a str,
+    /// The step's whole prose, as [`every_numeral_in_a_ledgered_step_is_accounted_for`]
+    /// scans it.
+    text: &'a str,
+    numbers: &'a [Written],
+    /// Which vocabulary rule covers each number, as [`cover_by_rule`] reports it.
+    cover: &'a [Option<(usize, usize)>],
+    /// The index into `numbers` of the number being accounted for.
+    at: usize,
+    all: &'a [Claim],
+    arms: &'a [Arm],
+    derived: &'a [Derivation],
+}
+
+/// The sentence around a byte offset — as far as the nearest full stop, line break or
+/// string boundary on each side.
+///
+/// Deliberately conservative at both ends. The prose is scraped as JavaScript source, so a
+/// quote is where one paragraph stops being another; narrowing too far can only make an
+/// operand unreachable, which fails loudly, while widening would let a [`Tie::Derived`]
+/// reach a number in a sentence the reader is not looking at.
+fn sentence_span(text: &str, at: usize) -> (usize, usize) {
+    let before = &text[..at];
+    let from = [
+        before.rfind('\n').map(|i| i + 1),
+        before.rfind('"').map(|i| i + 1),
+        before.rfind(". ").map(|i| i + 2),
+    ]
+    .into_iter()
+    .flatten()
+    .max()
+    .unwrap_or(0);
+    let after = &text[at..];
+    let to = [
+        after.find('\n'),
+        after.find('"'),
+        after.find(". ").map(|i| i + 1),
+    ]
+    .into_iter()
+    .flatten()
+    .min()
+    .map_or(text.len(), |i| at + i);
+    (from, to)
+}
+
+/// What one operand of a [`Tie::Derived`] is worth, or `None` if the sentence does not
+/// supply it — which the caller reports as a broken rule.
+///
+/// The two fences the arm rests on are here, and both panic rather than resolving: an
+/// operand that matches two tokens of the same sentence, and one that nothing else accounts
+/// for. See [`Operand`].
+fn operand_value(op: &Operand, ctx: &SentenceCtx, lesson: &Lesson) -> Option<f64> {
+    match op {
+        Operand::Word(w) => WORD_NUMERALS
+            .iter()
+            .find(|(word, _)| word == w)
+            .map(|(_, v)| *v),
+        Operand::Sibling(token) => {
+            let (from, to) = sentence_span(ctx.text, ctx.numbers[ctx.at].at);
+            let mut hits = ctx.numbers.iter().enumerate().filter(|(i, w)| {
+                *i != ctx.at && w.token == *token && w.at >= from && w.at + w.len <= to
+            });
+            let (i, w) = hits.next()?;
+            assert!(
+                hits.next().is_none(),
+                "step `{}`: a derivation reads the operand `{token}`, and the sentence it \
+                 is in prints that number more than once. Which one it means would be \
+                 decided by scan order rather than by the sentence.",
+                ctx.step,
+            );
+            let by_rule = ctx.cover[i].map(|(r, p)| &LEDGER_VOCABULARY[r].ties[p]);
+            let claimed = claimed_accounting(
+                w,
+                ctx.text,
+                ctx.step,
+                ctx.all,
+                lesson,
+                ctx.arms,
+                ctx.derived,
+            );
+            assert!(
+                claimed.is_some() || matches!(by_rule, Some(t) if !matches!(t, Tie::Derived(_))),
+                "step `{}`: a derivation reads the operand `{token}`, and nothing else \
+                 accounts for that number — or the only thing that does is another \
+                 derivation.\n\
+                 An identity over unaccounted numbers says only that two free figures \
+                 multiply into a third, which is the declared identity this arm exists \
+                 instead of. Tie the operand to a file, a control or a claim first.",
+                ctx.step,
+            );
+            number_of(&w.token)
+        }
+    }
+}
+
 /// Every number a tie resolves to. Empty means it resolves to nothing at all, which the
 /// caller reports as a broken rule rather than as a disagreement.
 fn tie_values(
@@ -4744,6 +5042,7 @@ fn tie_values(
     lessons: &[Lesson],
     scenario: &toml::Value,
     chemistry: &toml::Value,
+    ctx: &SentenceCtx,
 ) -> Vec<f64> {
     match tie {
         Tie::Scenario(path) => numbers_at_path(scenario, path),
@@ -4752,13 +5051,62 @@ fn tie_values(
         Tie::Product(factors) => {
             let mut product = 1.0;
             for factor in *factors {
-                let values = tie_values(factor, lesson, lessons, scenario, chemistry);
+                let values = tie_values(factor, lesson, lessons, scenario, chemistry, ctx);
                 // Exactly one, never "the first of several": a wildcard under a product
                 // would make which value it used the author's pick rather than the file's.
                 let [only] = values[..] else {
                     return Vec::new();
                 };
                 product *= only;
+            }
+            vec![product]
+        }
+        Tie::Ratio(pair) => {
+            let [over, by] = pair else {
+                panic!(
+                    "a `Tie::Ratio` takes exactly two ties; this one has {}",
+                    pair.len()
+                );
+            };
+            let (over, by) = (
+                tie_values(over, lesson, lessons, scenario, chemistry, ctx),
+                tie_values(by, lesson, lessons, scenario, chemistry, ctx),
+            );
+            // Exactly one on each side, for `Product`'s reason, and a zero divisor resolves
+            // to nothing rather than to an infinity the comparison would then round.
+            let ([over], [by]) = (&over[..], &by[..]) else {
+                return Vec::new();
+            };
+            if *by == 0.0 {
+                return Vec::new();
+            }
+            vec![over / by]
+        }
+        Tie::Span(path) => {
+            let values = numbers_at_path(chemistry, path);
+            // A span needs two ends. One value spans zero, and a sentence saying a
+            // chemistry spans nothing would then be accounted by an emptied table.
+            if values.len() < 2 {
+                return Vec::new();
+            }
+            let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+            for v in values {
+                lo = lo.min(v);
+                hi = hi.max(v);
+            }
+            vec![hi - lo]
+        }
+        Tie::Clock => numeric_tokens(&fmt_time(lesson.until_s))
+            .iter()
+            .filter_map(|t| number_of(t))
+            .collect(),
+        Tie::Derived(operands) => {
+            let mut product = 1.0;
+            for op in *operands {
+                let Some(v) = operand_value(op, ctx, lesson) else {
+                    return Vec::new();
+                };
+                product *= v;
             }
             vec![product]
         }
@@ -4817,6 +5165,46 @@ fn tie_describe(tie: &Tie) -> String {
         }
         Tie::Ordinal(step) => format!("the position of the lesson `{step}` in the path"),
         Tie::Member(path) => format!("the nodes of the chemistry's `{path}`"),
+        Tie::Ratio(pair) => pair
+            .iter()
+            .map(tie_describe)
+            .collect::<Vec<_>>()
+            .join(" divided by "),
+        Tie::Span(path) => format!("the span of the chemistry's `{path}`"),
+        Tie::Clock => "the `sim time` row's rendering of the step's mark".to_string(),
+        Tie::Derived(operands) => format!(
+            "this sentence's own {}",
+            operands
+                .iter()
+                .map(|op| match op {
+                    Operand::Sibling(t) => format!("`{t}`"),
+                    Operand::Word(w) => format!("`{w}` (spelled in letters)"),
+                })
+                .collect::<Vec<_>>()
+                .join(" times ")
+        ),
+    }
+}
+
+/// The name the ledger's own prose gives this kind of tie.
+///
+/// Exhaustive on purpose, the same contract [`Accounted::arm_name`] keeps: a new variant
+/// does not compile until it is named here, so the arm count both files state about
+/// themselves ([`n_ledger_arms`]) cannot go stale by omission. Three sentences claiming an
+/// arm was missing after it had been built is a defect this file has already shipped once.
+fn tie_arm_name(tie: &Tie) -> &'static str {
+    match tie {
+        Tie::Scenario(_) => "scenario field",
+        Tie::Chemistry(_) => "chemistry field",
+        Tie::Setting(_) => "control",
+        Tie::Product(_) => "product",
+        Tie::Name { .. } => "name",
+        Tie::Ordinal(_) => "ordinal",
+        Tie::Member(_) => "table node",
+        Tie::Ratio(_) => "ratio",
+        Tie::Span(_) => "table span",
+        Tie::Clock => "clock",
+        Tie::Derived(_) => "derived",
     }
 }
 
@@ -4824,18 +5212,22 @@ fn tie_describe(tie: &Tie) -> String {
 ///
 /// Three comparisons, and which one is used is a property of the tie rather than a per-rule
 /// choice. A constant is compared exactly — the prose either prints the file's number or is
-/// wrong about it. A [`Tie::Product`] is compared at the prose's own precision, because the
-/// sentence is doing arithmetic and no author would print `4.606902`. A [`Tie::Member`] asks
-/// whether *any* value is the number, because "a node of that table" is what its sentence
-/// says; every other tie requires all of them.
+/// wrong about it. A **computed** tie is compared at the prose's own precision, because the
+/// sentence is doing arithmetic and no author would print `4.606902` — that is
+/// [`Tie::Product`], [`Tie::Ratio`], [`Tie::Span`] and [`Tie::Derived`], each of which lands
+/// on a number binary floating point does not spell round (`20.000000000000004`,
+/// `0.17999999999999994`). A [`Tie::Member`] asks whether *any* value is the number, because
+/// "a node of that table" is what its sentence says; every other tie requires all of them.
 fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
     let written = token.replace(' ', "");
     let scale = 10f64.powi(pow10);
     match tie {
-        Tie::Product(_) => values.iter().all(|v| {
-            let places = decimals_of(&written).max(0) as usize;
-            to_fixed(v * scale, places) == written
-        }),
+        Tie::Product(_) | Tie::Ratio(_) | Tie::Span(_) | Tie::Derived(_) => {
+            values.iter().all(|v| {
+                let places = decimals_of(&written).max(0) as usize;
+                to_fixed(v * scale, places) == written
+            })
+        }
         Tie::Member(_) => match number_of(token) {
             Some(spelled) => values.iter().any(|v| tol_eq(v * scale, spelled)),
             None => false,
@@ -4975,9 +5367,12 @@ fn claimed_accounting(
 /// measured. The fourth, `protection-on`, is the first that could not be — it prints its
 /// pack, its cell's rating, its demand box and the current the BMS clamps it to — and it is
 /// what [`Tie::Chemistry`], [`Tie::Setting`], [`Tie::Product`] and [`claimed_accounting`]
-/// were built for. One arm of the taxonomy is still missing and is written up in that plan:
-/// a figure derived from its siblings in the same sentence. Check 6's arm of that name is a
-/// different scan and does not close it.
+/// were built for. The sixth, `slow-and-patient`, is what closed the taxonomy: its twelve
+/// unclaimed numerals are all constants and not one of them is a field a rule could read
+/// straight off a file, which took [`Tie::Derived`] — the figure worked out from its
+/// siblings, the last arm the plan named — along with [`Tie::Ratio`], [`Tie::Span`] and
+/// [`Tie::Clock`]. Check 6's arm of that name is a different scan and closes nothing here.
+/// See `docs/plans/path-ledger-sixth-step.md`.
 ///
 /// **Numeral is the operative word, and it is a real limit rather than pedantry.**
 /// [`written_numbers`] finds digits. A quantity spelled in English is invisible to it, and
@@ -5037,7 +5432,7 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
         let chemistry = chemistry_toml(&lesson.scenario);
         let cover = cover_by_rule(&text, &numbers, step);
 
-        for (w, covered) in numbers.iter().zip(&cover) {
+        for (index, (w, covered)) in numbers.iter().zip(&cover).enumerate() {
             // The sentence around the number, which is what an author has to look at:
             // the ledger's failures are all "this figure and this file disagree", and the
             // figure on its own does not say where in the step to look.
@@ -5083,15 +5478,25 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
                      block does, add one tied to a `Control`. If the engine does, it \
                      needs a claim in web/path-claims.toml quoting the sentence it is \
                      printed in. If it is a figure this sentence works out from its \
-                     own siblings, it needs the one arm of this taxonomy still \
-                     unbuilt — see docs/plans/path-prose-ledger.md. There is no \
-                     waiver.",
+                     own siblings, `Tie::Derived` accounts for it — name the operands, \
+                     never the value, and every operand must already be accounted for by \
+                     something that is not itself a derivation. There is no waiver.",
                     w.token,
                 );
             };
             let rule = &LEDGER_VOCABULARY[r];
             let tie = &rule.ties[p];
-            let found = tie_values(tie, lesson, &lessons, &scenario, &chemistry);
+            let ctx = SentenceCtx {
+                step,
+                text: &text,
+                numbers: &numbers,
+                cover: &cover,
+                at: index,
+                all: &all,
+                arms: &arms,
+                derived: &derived,
+            };
+            let found = tie_values(tie, lesson, &lessons, &scenario, &chemistry, &ctx);
             assert!(
                 !found.is_empty(),
                 "step `{step}`: the rule `{}` reads {}, and that resolves to no number \
@@ -5118,6 +5523,46 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
             );
         }
     }
+}
+
+/// The fence [`Tie::Derived`] rests on: an operand nothing else accounts for is refused.
+///
+/// Hand-built rather than perturbed, and the reason is worth writing down. The scan visits a
+/// step's numbers in **text order**, so step 22's `2 V` is reached before the `12 V` derived
+/// from it: every edit that un-accounts the operand — deleting its rule, breaking its phrase
+/// — reddens on the operand's own line, one number sooner, and never reaches this assert.
+/// It is a confounded perturbation in the sense `docs/plans/path-derived-arm.md` names, so
+/// the fence is exercised directly instead: the step's real prose, and an empty cover map
+/// standing in for "nothing accounts for it".
+///
+/// Without this assert the arm would say only that two unaccounted numbers multiply into a
+/// third, which is the declared identity the ledger's design refuses.
+#[test]
+#[should_panic(expected = "accounts for that number")]
+fn a_derivation_refuses_an_operand_nothing_else_accounts_for() {
+    let lessons = lessons();
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == "slow-and-patient")
+        .expect("step 22 is still in the path");
+    let text = ascii_minus(&lesson.text);
+    let numbers = written_numbers(&text);
+    let at = numbers
+        .iter()
+        .position(|w| w.token == "12")
+        .expect("step 22 still prints the 12 V battery");
+    let cover = vec![None; numbers.len()];
+    let ctx = SentenceCtx {
+        step: lesson.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at,
+        all: &[],
+        arms: &[],
+        derived: &[],
+    };
+    operand_value(&Operand::Sibling("2"), &ctx, lesson);
 }
 
 /// Every lesson is either ledgered or named as not ledgered.
@@ -5236,6 +5681,35 @@ fn every_ledger_rule_is_a_phrase_and_is_used() {
                      prefix is the whole of this tie's specificity.",
                     rule.phrase
                 );
+            }
+            // A ratio is written as a pair, so a third tie under one would be silently
+            // dropped by the division rather than reported.
+            if let Tie::Ratio(pair) = tie {
+                assert_eq!(
+                    pair.len(),
+                    2,
+                    "vocabulary rule `{}` divides {} ties. A ratio has a numerator and a \
+                     denominator and nothing else.",
+                    rule.phrase,
+                    pair.len(),
+                );
+            }
+            // The word an operand reads has to be IN the phrase, which is what pins it to
+            // the sentence: the phrase match already requires those exact words around the
+            // number, so `six` cannot be a word the author supplied from outside. Without
+            // this the operand would be a declared 6 with a label on it.
+            if let Tie::Derived(operands) = tie {
+                for op in *operands {
+                    if let Operand::Word(w) = op {
+                        assert!(
+                            rule.phrase.contains(w),
+                            "vocabulary rule `{}` derives a number from the word `{w}`, \
+                             and its own phrase does not contain that word. An operand \
+                             the phrase does not pin is a number the author supplied.",
+                            rule.phrase,
+                        );
+                    }
+                }
             }
         }
         let words: String = parts.concat();
@@ -5731,6 +6205,8 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (44, "forty-four"),
     (45, "forty-five"),
     (50, "fifty"),
+    (58, "fifty-eight"),
+    (60, "sixty"),
 ];
 
 /// The same, for the counts a sentence writes as a position rather than a size — "and no
@@ -5887,6 +6363,24 @@ impl Accounted {
 
 fn n_claims(f: &Facts) -> usize {
     f.claims.len()
+}
+/// How many arms the ledger's scan has — the distinct kinds of tie its vocabulary reads,
+/// plus the `claimed` arm, which is a claim rather than a tie.
+///
+/// Derived from **use** and not from the enum, on [`Facts::accounting_arms`]' terms: this
+/// file's rule is that an arm nothing accounts anything with does not get built, so a
+/// variant no rule names would be a gap rather than coverage.
+fn n_ledger_arms(_f: &Facts) -> usize {
+    let mut used: Vec<&'static str> = Vec::new();
+    for rule in LEDGER_VOCABULARY {
+        for tie in rule.ties {
+            let name = tie_arm_name(tie);
+            if !used.contains(&name) {
+                used.push(name);
+            }
+        }
+    }
+    used.len() + 1
 }
 fn n_lessons(f: &Facts) -> usize {
     f.lessons.len()
@@ -6206,6 +6700,21 @@ const TALLIES: &[Tally] = &[
         phrase: "today it is {w} steps and {w} numbers",
         of: &[n_ledgered, n_ledgered_numerals],
     },
+    // The ledger's arm count, stated once in each file. Neither was derived until this
+    // slice, and both were stale the same way: three sentences saying an arm was missing
+    // after it had been built, fixed by hand one slice earlier with nothing to stop the
+    // next one. The count is a word in both, which is why the earlier self-count pass —
+    // which reads digits — never saw them.
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "{W} arms exist",
+        of: &[n_ledger_arms],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "and there are {w} of them",
+        of: &[n_ledger_arms],
+    },
     Tally {
         prose: Prose::ThisTest,
         phrase: "so several per step is now the normal case — step 18 has {w}.",
@@ -6277,10 +6786,21 @@ const NOT_DERIVED: &[NotDerived] = &[
     },
     NotDerived {
         prose: Prose::ThisTest,
-        phrase: "two ledgered steps state four measurements that way",
+        phrase: "three ledgered steps state five measurements that way",
         because: "a count of quantities spelled in ENGLISH, which is precisely what the \
-                  ledger's numeral scan cannot see. Deriving it needs the word \
-                  vocabulary the ledger deliberately has not got.",
+                  ledger's numeral scan cannot see. Deriving it needs a word SCANNER; \
+                  `Operand::Word` reads one word where a rule names it, which is not the \
+                  same thing and cannot count what nobody named.",
+    },
+    // The claims file's twin of the sentence above, which was stale in both halves —
+    // "two of these three steps state four that way", written when three steps were
+    // ledgered and left alone through two more. A waiver rather than a derivation for the
+    // reason above; what this adds is that rewording it now reddens.
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "three of the ledgered steps state five that way",
+        because: "the same count, in the file's own header, and unreachable for the same \
+                  reason.",
     },
 ];
 
