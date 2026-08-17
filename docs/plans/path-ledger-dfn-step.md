@@ -188,6 +188,7 @@ verify is the honest version of the same edit.
 | prose `set the current to 5.153198 A` → `5.153197` | the capacity tie again, on the other sentence |
 | the new `2.808 here` claim deleted | the ledger, on a numeral nothing accounts for |
 | `n_ledger_arms`'s nested walk reverted | the arm-count tally, at fifteen against sixteen |
+| **`Tie::Hours` lifted out of `tie_agrees`'s rounding group** | **nothing — a registered GREEN, added after the run** |
 
 ### What the table found
 
@@ -203,6 +204,21 @@ surprise. Three rows are worth reading twice:
 * **Removing the `Hours` wrapper reddens the arm-count tally too.** The conversion is the only
   reason that arm is in the vocabulary at all, so deleting it changes what the file says about
   itself. Registered as one redness; it came back as two, both correct.
+
+**And one case was added after the table, because the table had a hole in exactly the place
+this document lectures about.** `Tie::Hours`'s doc paragraph says its comparison is *"like a
+computed tie rather than delegating to what it wraps"* — a live behavioural choice, in prose.
+Lifting the variant out of `tie_agrees`'s rounding group leaves **all 28 tests green**: its one
+user is a factor of a `Tie::Product`, and `tie_agrees` is asked about a rule's *outermost* tie,
+so the product's own rounding decides that sentence and the new arm is never entered. A
+comparison arm nothing reaches is the `CCCV_PERIOD_S` shape — pinned, and consulted by nothing
+— which `Tie::Derived`'s own doc in this same file names as the thing to avoid.
+
+The fix is a test that asks the question directly, with both sides handed in:
+`an_hours_tie_rounds_the_way_a_computed_tie_does` requires the hours tie to accept
+`1.9925… → "1.99"` **and** a constant tie to refuse the identical pair. The second assert is
+what makes it a test rather than a restatement, and it is the same distinction that sent
+`15.46` off the page. With it, the green above is red on that test alone.
 
 ## Learned while building
 
@@ -222,6 +238,14 @@ parenthetical writes the number without its unit, so it does not hand the reader
 at all. This is also the first live instance of the independent bite the file's own header says
 `quoted` is kept for, and it arrived pointing the wrong way: at a sentence that is not the
 claim's.
+
+**A nested arm's own comparison is unreachable, and the doc paragraph describing it is the
+tell.** The same nesting that hid `Tie::Hours` from the arm count hides its `tie_agrees` arm
+from every rule: the outermost tie is what gets asked. What made this findable was not a test
+but a *sentence* — a paragraph asserting a deliberate choice between two behaviours, in a
+variant no rule reaches at that layer. **When a doc comment claims a behavioural choice, ask
+which run enters that code.** If the honest answer is "none", the paragraph is the defect, and
+the options are a direct test, a deletion, or a recorded green — in that order of preference.
 
 **An arm used only inside another arm is invisible to a count that walks the outside.**
 `Tie::Hours` never appears at the top of a rule — it sits inside a product — and

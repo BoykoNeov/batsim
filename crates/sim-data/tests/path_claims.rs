@@ -4763,6 +4763,14 @@ enum Tie {
     /// lesson answers and leaves the answer's exactness alone, where a conversion by a
     /// non-decimal factor always lands off a round number. A prose figure in hours is
     /// rounded by construction.
+    ///
+    /// **That choice is unreachable through the vocabulary today, and it has a test of its
+    /// own because of that.** Its one user sits inside a [`Tie::Product`], and [`tie_agrees`]
+    /// is asked about a rule's *outermost* tie — so the product's own rounding is what decides
+    /// `1.99`, and moving this variant out of the rounding group leaves the whole suite green
+    /// (measured, not assumed). A comparison arm nothing reaches is the `CCCV_PERIOD_S` shape
+    /// this file has been caught by once, so [`an_hours_tie_rounds_the_way_a_computed_tie_does`]
+    /// asks the question directly instead of leaving the paragraph above to stand on nothing.
     Hours(&'static Tie),
     /// The **span of a table** the chemistry declares: its largest value minus its
     /// smallest, at this path.
@@ -6621,6 +6629,37 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
             );
         }
     }
+}
+
+/// [`Tie::Hours`] rounds like a computed tie, asked directly because no rule can ask it.
+///
+/// The conversion's only user is a factor of a [`Tie::Product`], and [`tie_agrees`] sees a
+/// rule's outermost tie — so the product decides that sentence and this variant's own arm is
+/// never entered. Measured rather than reasoned: lifting `Tie::Hours` out of the rounding
+/// group in `tie_agrees` leaves all 28 tests green, which is exactly the "pinned and
+/// consulted by nothing" shape this file rejects everywhere else.
+///
+/// So the question is put here, with the comparison's two sides handed in directly. The
+/// numbers are step 16's: 464 s of 15.459594 A is 1.9925... A·h, and the sentence prints
+/// `1.99`. The second half is what makes it a test rather than a restatement — a constant tie
+/// with the identical numbers must REFUSE, because a constant is compared exactly. Swap the
+/// variants and one of the two asserts fails whichever way round the arms are written.
+#[test]
+fn an_hours_tie_rounds_the_way_a_computed_tie_does() {
+    let hours = Tie::Hours(&Tie::Clock);
+    let exact = Tie::Chemistry("cell.capacity_ah");
+    let amp_hours = 15.459594 * 464.0 / 3600.0;
+    assert!(
+        tie_agrees(&hours, &[amp_hours], "1.99", 0),
+        "an hours tie is a computed quantity and has to be compared at the prose's own \
+         precision: {amp_hours} does not spell round, and no sentence would print it whole."
+    );
+    assert!(
+        !tie_agrees(&exact, &[amp_hours], "1.99", 0),
+        "a constant tie must refuse the same pair, or the distinction this test is about \
+         does not exist — and the `15.46` that could not be tied to the demand box would \
+         have had an arm all along."
+    );
 }
 
 /// The fence [`Tie::Derived`] rests on: an operand nothing else accounts for is refused.
