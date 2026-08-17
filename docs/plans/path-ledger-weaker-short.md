@@ -137,6 +137,13 @@ it was changing.
   an argmax. Measured here: 344.548772 K at 155.5 *is* this run's maximum, and the twin's
   maximum is one step after its tooth. Nothing would redden if either moved while the reading
   at the claimed instant stayed put.
+* **A quoting rule inherits the quoted claim's tolerance, not its own.** The twin's 299.1 K
+  resolves to step 18's *stored* value, and what ties that value to the engine is check 7 at
+  that claim's tolerance — `tighter`, 5e-3 K. So the twin's cell can drift five thousandths
+  of a kelvin without reddening anything, and this sentence would go on resolving off the
+  stored figure. Under the tenth this sentence prints by two orders of magnitude, so it
+  cannot reach the prose today; the general point is that a rule quoting a claim declared
+  `spelled` on a whole number would inherit half a unit instead.
 * **Four numbers in this step are spelled in English** — "two rungs", "half a percent", "fifty
   points", "a third of the sag" — and the scan sees digits only. One of them (`fifty`) is
   claimed through `spells`; the other three are not. The word-numeral scanner is still one
