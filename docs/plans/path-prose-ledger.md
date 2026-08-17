@@ -62,14 +62,26 @@ frame. The mirror decided every step.
 
 A pinned constant no code consults is exactly the "looks like coverage" shape this file
 rejects everywhere else, so it is fixed here rather than recorded: `drive` now holds a
-CC-CV demand across each window, and `cccv_window_steps` reads the pinned 10. Measured
-cost of the gap, on `two-legs` where the constant-voltage leg actually engages: the switch
-lands one step later, 5420.5 s rather than 5420.0 s.
+CC-CV demand across each window. Measured cost of the gap, on `two-legs` where the
+constant-voltage leg actually engages: the switch lands one step later, 5420.5 s rather
+than 5420.0 s.
 
 **Nothing in `path-claims.toml` moved**, and the reason is worth stating rather than
 taking as reassurance: the only claimed CC-CV step is `leg-that-is-not-there`, whose LFP
 cell never reaches the band at all, so it is on a constant current under either rule. That
 is why the gap was invisible for six slices — not why it was harmless.
+
+> **Both paragraphs are dated, and one clause was wrong when it was written.**
+> `cccv_window_steps` did *not* read the pinned 10 — it carried its own copy of the number,
+> and the pin still had no reader at all; `Tie::Page` gave it one when step 9 was ledgered
+> (`docs/plans/path-ledger-two-legs-step.md`).
+>
+> "Nothing in `path-claims.toml` moved" was true *this morning* and is not true now. The
+> two-legs claims landed nine hours after this fix, and measured today — with `windowed`
+> forced back to `false` — the harness's own suite goes red on `i_at:5420`, which reads
+> −1.5552 A against the −1.5 the constant-current leg has. The sentence's point survives
+> intact and is sharpened: a gap is invisible exactly as long as nothing claims the thing
+> it moves, and the window of invisibility here closed within a day of it being recorded.
 
 One thing the mirror still does not model is `ccCvDone`, the page's completion test. It is
 evaluated at the end of each *chopped chunk* rather than each window, so how long a

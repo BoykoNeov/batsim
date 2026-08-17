@@ -57,13 +57,22 @@ about when the page changes *leg*, which `ccCvDemand` decides on the decision gr
 else. `advance` holds one demand across a whole window, so the boundary is a multiple of 10 s by
 construction and no invariant is needed.
 
-**The harness was once wrong about this instant and nothing could tell.** Before `drive` chopped
-its steps at the page's windows it decided the demand per step, and the switch landed at
-5420.5 — one step late. The file's own comment still said so in the present tense; it was
-measured out of date here (the switch is at 5420.0 now) and rewritten as history. It was
-invisible because the only *claimed* CC-CV step was `leg-that-is-not-there`, whose LFP cell
-never reaches the band at all and is therefore on a constant current under either rule. This
-claim is what would catch it coming back.
+**The harness was once wrong about this instant and nothing could tell.** Before `drive`
+chopped its steps at the page's windows it decided the demand per step, and the leg changed a
+step early — `cccv_cc_ends_s` reads 5419.5 with the window forced off, against the 5420.0 the
+page has. It was invisible because the only *claimed* CC-CV step then was
+`leg-that-is-not-there`, whose LFP cell never reaches the band at all and is on a constant
+current under either rule; this step's own claims arrived nine hours after the fix.
+
+**And the claim as first written would not have caught it.** `tol_from = "spelled"` gives half
+a unit in the last printed place — 0.5 s — and this quantity moves in whole 0.5 s steps, so a
+boundary one step out sits *exactly* on the tolerance and passes. Measured: at 0.5 the value
+check goes green and the run is caught two claims later by a display check on the `terminal`
+row, which is a different sentence being wrong about a different thing. Half a step (0.25) is
+the tightest meaningful bound for a grid time — what `grid` would give if the sentence spelled
+no number, declared as `tighter` because it does. **A claim can be right, green, and
+decorative against the one failure it was written for**, and the only way to find out is to
+break the thing and watch which assertion fires.
 
 ## `Tie::Page`: the arm that reads the client
 
@@ -92,11 +101,15 @@ the `800` is the speed slider, and the `1` is the identity, the way a reader say
 No file decides it. On the terms step 16 set when five of its numbers left, the sentence now
 reads *"a different path in real time than at 800×"*: same statement, one number instead of two.
 
-**The `5 %` denominator cannot be recovered from the token.** The charge added in the second leg
-is 4.24 points; over the charge this run actually put in (99.52 − 20) that is 5.33 %, and over a
-full charge (100 − 20) it is 5.30. Both print `5`. The measured pair is the one the arm can
-express and the one the sentence means — but the green says the arithmetic *rounds* to what the
-prose prints, not that the other reading is wrong, and the rule says so in its own comment.
+**The `5 %` denominator is only half recovered from the token, and it is worth being exact
+about which half.** The charge added in the second leg is 4.24 points. Over the charge this run
+actually put in (99.52 − 20) that is **5.33 %**; over a full charge from this start (100 − 20)
+it is **5.30 %**; over the cell's whole capacity it is **4.24 %**. The third prints `4`, so the
+token does rule that reading out — the sentence is about a fraction of the charging, not of the
+cell. The first two both print `5` and nothing here separates them. The measured pair is the one
+the arm can express and the one the sentence means, and the rule's comment says exactly this:
+the green proves the arithmetic rounds to what the prose prints, and proves one rival wrong out
+of two.
 
 **The two denominators are deliberately not parallel**, which looks like a defect until stated:
 the time is measured from t = 0, the charge from the 20 % the pack started at. A charge fraction
@@ -156,6 +169,7 @@ number is never declared:
 | the ordinal names `bare-curve` (position 1) instead of step 2 | red, ledger scan |
 | the prose says the rule is checked every 20 s where the page says 10 | red, ledger scan |
 | the `cccv_cc_ends_s` claim deleted | red — the 13 % rule resolves to no number, **and** the claim count |
+| `drive`'s decision window forced off (the pre-2026-08-14 harness) | red — `i_at:5420` reads −1.5552 A, and `cccv_cc_ends_s` reads 5419.5 |
 | the 13 % ratio's operands reversed (6210 / 790 = 786 %) | red, ledger scan |
 | both charge readings untagged, the rules quoting bare `soc_at` | red — the quote is refused as ambiguous |
 

@@ -2810,7 +2810,7 @@ const LESSONS = [
     until_s: 6300,
     watch: ["plot-i", "plot-v"],
     prose: [
-      "Seven steps of taking charge out and one of leaving it alone; this one puts it back. The `CC-CV charge` demand mode is not a demand the engine has — it is two of them with a rule between them, which is where `CLAUDE.md` says a charge policy belongs: constant current until the pack reaches its voltage limit, then hold that voltage and let the current do what it likes.",
+      "Seven steps of taking charge out, then a step where nothing flowed at all; this one puts it back. The `CC-CV charge` demand mode is not a demand the engine has — it is two of them with a rule between them, which is where `CLAUDE.md` says a charge policy belongs: constant current until the pack reaches its voltage limit, then hold that voltage and let the current do what it likes.",
       "The same NMC cell as step 2, starting at 20 % instead of full. Nothing is protecting it, so the only thing that ends this charge is the current falling below the 0.15 A cutoff.",
       "The rule is checked every 10 s of *simulation* time, never once per frame — otherwise the speed multiplier would decide which step the legs change on, and the same experiment would take a different path in real time than at 800×.",
     ],

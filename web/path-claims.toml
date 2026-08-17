@@ -142,8 +142,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  171 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  20 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  170 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  21 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -191,7 +191,7 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 20 claims.
+# bounds the engine against `value` and is deliberately tighter on 21 claims.
 #
 #   same        177 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
@@ -3076,7 +3076,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 #
 # NUMERAL, NOT NUMBER, and the difference is load-bearing. The scan finds digits, so a
 # quantity spelled in English goes straight past it — and three of the ledgered steps state
-# five that way: "about half a point across the whole grid" and "a quarter of a point"
+# five MEASUREMENTS that way (step 9 states a count of the path itself, which is the
+# paragraph below): "about half a point across the whole grid" and "a quarter of a point"
 # between the two cells of a group (step 3), "a gap of about three points" and "a fraction
 # of a point" of sensor drift (step 4), and "all but three points of what it holds" at the
 # end of step 22. All five are engine measurements. Four of them are still checked by
@@ -3088,8 +3089,10 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # out; this one puts it back" — not a measurement but a count of the path itself, and false:
 # seven of the eight take charge out and the eighth is the pack at rest. It survived this
 # scan, check 6, and the whole suite, because it is spelled in letters. Hand-checked and
-# fixed when the step was ledgered. A sixth word numeral in a ledgered step, and the first
-# one anybody has caught being wrong.
+# fixed when the step was ledgered — and reworded twice, because the first repair said
+# "and one of leaving it alone", which prints a SECOND word numeral into the paragraph
+# documenting that they are invisible. A sixth word numeral in a ledgered step, and the
+# first one anybody has caught being wrong.
 #
 # ONE WORD IS NOW READ, AND IT IS NOT A SCANNER. Step 22's "six of these in series is the
 # 12 V battery" derives its `12` from a word, and `Operand::Word` translates that one word
@@ -4729,8 +4732,8 @@ step = "two-legs"
 literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
 quantity = "cccv_cc_ends_s"
 value = 5420.0
-tol = 0.5
-tol_from = "spelled"
+tol = 0.25
+tol_from = "tighter"
 spells = "5420"
 states = "same"
 read_at_s = 5420.0
@@ -4754,11 +4757,29 @@ what was asked for. `|i| < 1.5 A` would be a different statement that happens to
 and would go on agreeing on a step where a BMS derate softened the current without any leg
 changing.
 
-The harness was once wrong about this instant and nothing could tell. Before `drive` chopped
-its steps at the page's decision windows it decided the demand per step, and the switch
-landed at 5420.5 — one step late, invisible, because the only claimed CC-CV step was
-`leg-that-is-not-there`, whose cell never reaches the band at all. This claim is what would
-now catch it.
+TIGHTER THAN THE SENTENCE, AND THE MEASUREMENT IS WHY. `spelled` gives this claim a
+tolerance of half a unit in the last place the prose prints — 0.5 s — and this quantity moves
+in whole steps of 0.5 s. So a leg boundary one step out sits EXACTLY on the tolerance and
+passes: the claim would have been decorative against the one failure it exists for. Half a
+step (0.25) is the tightest meaningful bound for a grid time, which is what `grid` would give
+if this sentence spelled no number — it spells 5420, so `grid` is not eligible and the same
+bound is declared as `tighter` instead. Four other claims in this file are in that position
+for the same reason.
+
+Measured, not argued: with `drive`'s window forced off — the harness as it stood before
+2026-08-14, which decided the demand per step — the leg changes one step EARLIER and this
+quantity reads 5419.5. At 0.25 this claim is what fails. At 0.5 it passes (the difference is
+exactly the tolerance) and the run is caught two claims later by a display check on the
+`terminal` row, which is a different sentence being wrong about a different thing — the
+"some other check went red" shape this file keeps having to tell apart from a test that
+works.
+
+That gap was invisible when it was fixed, and the reason is worth keeping: the only claimed
+CC-CV step then was `leg-that-is-not-there`, whose cell never reaches the band at all and is
+on a constant current under either rule. This step's own claims arrived nine hours later. Run
+the same experiment today and `i_at:5420` reddens too, at −1.5552 A against the −1.5 the
+constant-current leg holds — so the harness has two independent readings of that boundary now
+where it had none.
 
 `90m` is what the clock reads there, which is also the "90 minutes" `cc_cv_charge_nmc.toml`'s
 own header states — that header is a second, unguarded copy of half this step's numbers, and

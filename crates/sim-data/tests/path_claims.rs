@@ -1461,12 +1461,14 @@ impl Run {
 ///
 /// **The window was once missing here, and the cost was measured on `two-legs`** — the step
 /// where the CV leg actually engages: without it the mirror decided every step, which is the
-/// page's *inner* function without the loop around it, and the switch landed one step late
-/// (5420.5 s rather than 5420.0). Nothing in `path-claims.toml` moved when it was fixed,
+/// page's *inner* function without the loop around it, and the leg changed a step EARLY. The
+/// page's first voltage hold is the step ending at 5420.5 s; the mirror's was 5420.0. Nothing in `path-claims.toml` moved when it was fixed,
 /// because the only claimed CC-CV step then was `leg-that-is-not-there`, whose LFP cell never
 /// reaches the band at all and is therefore on a constant current under either rule. That is
-/// why it was invisible, not why it was harmless — and `two-legs` now claims that instant
-/// (`cccv_cc_ends_s`), so the gap could not come back unseen.
+/// why it was invisible, not why it was harmless: that step's own claims landed nine hours
+/// after the fix. Two of them read the boundary now — `cccv_cc_ends_s` at half a step, and
+/// `i_at:5420`, which measured −1.5552 A with the window forced back off — so the gap could
+/// not come back unseen.
 ///
 /// The period itself is read off the page by [`cccv_period_s`] rather than repeated here.
 fn cccv_window_steps(dt: f64) -> u64 {
@@ -1781,7 +1783,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 171 of 195 claims.
+    /// number's last printed place. The default shape: 170 of 195 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1790,7 +1792,7 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 20 of 195.
+    /// declaration was wrong. 21 of 195.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
@@ -4900,7 +4902,7 @@ struct LedgerRule {
 /// sentence needs it, and **all six of its kinds now exist**: the last, the general
 /// `Derived` over a sentence's own siblings, waited until a *ledgered* step printed one —
 /// step 22's "six of these in series is the 12 V battery" — because an arm with nothing to
-/// account is the `CCCV_PERIOD_S` shape this file has already been caught by once. Four
+/// account is the `CCCV_PERIOD_S` shape this file has already been caught by once. Several
 /// variants below are finer distinctions the plan's six did not separate (`Ratio` beside
 /// `Product`, `Span` beside `Member`, `Clock`, which reads a rendering rather than a file,
 /// and `Page`, which reads a constant of the client rather than of a scenario), each built
@@ -6406,11 +6408,13 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
     LedgerRule {
         // 99.52 - 95.28 over 99.52 - 20 = 5.33 %, which the sentence prints as 5.
         //
-        // The token does not discriminate the denominator: over `1 - initial_soc` instead
-        // — the charge a full run would put in rather than the charge this one did — it is
-        // 5.30, and both print `5`. The measured pair is the one this arm can express, and
-        // it is the one the sentence means; what it is not is proof that the other reading
-        // is wrong. Stated so a later reader does not take the green for more than it is.
+        // The token discriminates one candidate denominator and not the other, which is
+        // worth stating exactly. Over the cell's WHOLE capacity the last leg is 4.24 points
+        // of 100, which prints `4` — so the sentence is not about that, and the green says
+        // so. Over `1 - initial_soc` — the charge a full run would put in rather than the
+        // charge this one did — it is 5.30, and that prints `5` too. The measured pair is
+        // the one this arm can express and the one the sentence means; what the green does
+        // not do is choose between it and that third reading.
         phrase: "for {n} % of the charge",
         ties: &[Tie::Ratio(&[
             Tie::Difference(&[
@@ -9305,9 +9309,10 @@ const NOT_DERIVED: &[NotDerived] = &[
     // reason above; what this adds is that rewording it now reddens.
     NotDerived {
         prose: Prose::ClaimsFile,
-        phrase: "three of the ledgered steps state five that way",
+        phrase: "three of the ledgered steps state five MEASUREMENTS that way",
         because: "the same count, in the file's own header, and unreachable for the same \
-                  reason.",
+                  reason. The word MEASUREMENTS is the scope step 9 made necessary: it \
+                  states a word numeral too and it is a count of the path, not a reading.",
     },
 ];
 
