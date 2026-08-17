@@ -84,10 +84,10 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twelve steps and 201 numbers.
-//! Eighteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
-//! the sentence's own arithmetic over those as a product, a ratio or a difference, one of
-//! their durations read in hours, the span of a
+//! (`[ledger]` in `path-claims.toml`) and today it is thirteen steps and 235 numbers.
+//! Nineteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
+//! one of their durations read in hours, the span of a
 //! chemistry table, a node of one, digits inside a name, the position of another lesson,
 //! the panel's clock at the step's mark, a constant of the page's own policy parsed out of
 //! `web/app.js` ([`Tie::Page`]), a figure the sentence works out from its own
@@ -179,12 +179,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the twelve steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the eleven steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed twelve whole steps — but only twelve. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other twelve have their claimed sentences
+//!   has now closed thirteen whole steps — but only thirteen. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other eleven have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all twelve, one line each, so this list cannot go quietly out of date.
+//!   names all eleven, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -1783,7 +1783,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 170 of 195 claims.
+    /// number's last printed place. The default shape: 174 of 199 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1792,12 +1792,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 21 of 195.
+    /// declaration was wrong. 21 of 199.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 195, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 199, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1837,7 +1837,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 177 of 195, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 181 of 199, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -5032,6 +5032,29 @@ enum Tie {
     /// [`Tie::Product`]'s reason: a difference of two measurements lands on
     /// `0.5354644...`, and no sentence would print that.
     Difference(&'static [Tie]),
+    /// The **sum of two ties**, and the third of the arithmetic family beside
+    /// [`Tie::Ratio`] and [`Tie::Difference`].
+    ///
+    /// Step 19 is what built it, and it prints two numbers that no file holds and no engine
+    /// reports. *"The trip is a probe crossing 343.15 K"* is a **threshold assembled from two
+    /// files**: the chemistry's ceiling for the cell (`cell.t_max_k`, 333.15) plus the
+    /// scenario's hard margin (`pack.bms.protection.t_hard_margin_k`, 10). Neither half is
+    /// the number, and the sum is what the protection layer actually compares a probe
+    /// against — so moving the ceiling in the chemistry or the margin in the scenario turns
+    /// the sentence red, which is the property that makes this a tie. *"A twin whose run ends
+    /// at 299.1 K"* is the same shape across a lesson boundary: the twin's ambient plus the
+    /// rise the twin's own claim pins.
+    ///
+    /// **Order is irrelevant here and is the reason this is not a fourth [`LedgerOp`].**
+    /// Its two neighbours both say "order is the claim" — reversed, a difference changes
+    /// sign and a ratio inverts. A sum reversed is the same number, so nothing about the
+    /// sentence is encoded in which tie is written first, and a fence about order would be
+    /// a fence about nothing.
+    ///
+    /// **Exactly two, and each must resolve to exactly one number**, on [`Tie::Product`]'s
+    /// terms: with several, which value the sentence meant would be the author's pick rather
+    /// than the file's. **Compared at the prose's own precision**, like every computed tie.
+    Sum(&'static [Tie]),
     /// The tie below it, **read in hours where the file reads seconds**.
     ///
     /// One wrapper for one job: an amp-hour figure worked out from a current and a duration.
@@ -6443,6 +6466,99 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ])],
         pow10: 2,
     },
+    // Step 19 — the weaker short, and the step where the protection layer has nothing to
+    // clamp. Twenty-three of its thirty-four numerals were claims before it was scanned, so
+    // this block is small for a step this dense: the two shorts, the two thresholds the
+    // rungs sit at, the mark, and two durations measured from the fault.
+    //
+    // Its two shorts in one rule, because the sentence is the comparison: this file's
+    // resistance and the twin's, in the milliohms both are quoted in.
+    LedgerRule {
+        phrase: "the short is {n} milliohms instead of {n}",
+        ties: &[
+            Tie::Scenario("faults.*.fault.ExternalShort.ohms"),
+            Tie::Elsewhere {
+                step: "one-step-that-got-through",
+                tie: &Tie::Scenario("faults.*.fault.ExternalShort.ohms"),
+            },
+        ],
+        pow10: 3,
+    },
+    // The two durations, and both are the same subtraction: an instant this step's own
+    // claims pin, less the instant the fault lands. Neither is a number any file holds —
+    // the scenario says when the short appears and the engine says when the BMS answers,
+    // and the sentence prints the gap between them.
+    //
+    // THE FIRST OF THEM MOVED THE PROSE. It read "73 seconds of no flags at all", and the
+    // subtraction is 73.5 — true of a duration rounded down, false of the arithmetic, and a
+    // computed tie compares at the prose's own precision, so a whole number here would have
+    // to be 74. The digit changed rather than the rule.
+    LedgerRule {
+        phrase: "{n} seconds of no flags at all",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "nothing-to-clamp",
+                arm: None,
+                quantity: "flag_first_s:OT",
+                states: QuotedAs::Same,
+            },
+            Tie::Scenario("faults.*.at_s"),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "{n} s after the short",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "nothing-to-clamp",
+                arm: None,
+                quantity: "flag_first_s:CONTACTOR_OPEN",
+                states: QuotedAs::Same,
+            },
+            Tie::Scenario("faults.*.at_s"),
+        ])],
+        pow10: 0,
+    },
+    // The rung that did fire, and the reason this step needed `Tie::Sum`: the trip point is
+    // in neither file on its own. The chemistry says what the cell may reach and the
+    // scenario says how far past that the BMS will let it go before opening the contactor.
+    LedgerRule {
+        phrase: "crossing {n} K",
+        ties: &[Tie::Sum(&[
+            Tie::Chemistry("cell.t_max_k"),
+            Tie::Scenario("pack.bms.protection.t_hard_margin_k"),
+        ])],
+        pow10: 0,
+    },
+    // The twin's temperature, assembled the same way out of the step next door: its ambient
+    // plus the rise its own claim pins. `Elsewhere` for the file read and `Quoted` for the
+    // measurement, which is the division of labour those two arms were built for.
+    //
+    // THE SECOND SENTENCE THIS BLOCK MOVED. It said the twin "peaks" at this figure, and
+    // what the claim below it measures is that pack at ITS mark — 299.075 K against a true
+    // peak of 299.112 K one step after the tooth. Both print 299.1, so no tolerance here
+    // could have told them apart; the verb is what changed.
+    LedgerRule {
+        phrase: "a twin whose run ends at {n} K",
+        ties: &[Tie::Sum(&[
+            Tie::Elsewhere {
+                step: "one-step-that-got-through",
+                tie: &Tie::Scenario("pack.initial_temp_k"),
+            },
+            Tie::Quoted {
+                step: "one-step-that-got-through",
+                arm: None,
+                quantity: "t_rise_k_at",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "this step's mark is {n} s",
+        ties: &[Tie::Setting(Control::Until)],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -6734,6 +6850,24 @@ fn tie_values(
             };
             vec![less - by]
         }
+        Tie::Sum(pair) => {
+            let [one, other] = pair else {
+                panic!(
+                    "a `Tie::Sum` takes exactly two ties; this one has {}",
+                    pair.len()
+                );
+            };
+            let (one, other) = (
+                tie_values(one, lesson, lessons, scenario, chemistry, ctx),
+                tie_values(other, lesson, lessons, scenario, chemistry, ctx),
+            );
+            // Exactly one on each side, for `Product`'s reason. Order is not checked
+            // because a sum has none; see the variant's docs.
+            let ([one], [other]) = (&one[..], &other[..]) else {
+                return Vec::new();
+            };
+            vec![one + other]
+        }
         Tie::Hours(seconds) => {
             let seconds = tie_values(seconds, lesson, lessons, scenario, chemistry, ctx);
             let [seconds] = &seconds[..] else {
@@ -6960,6 +7094,11 @@ fn tie_describe(tie: &Tie) -> String {
             .map(tie_describe)
             .collect::<Vec<_>>()
             .join(" less "),
+        Tie::Sum(pair) => pair
+            .iter()
+            .map(tie_describe)
+            .collect::<Vec<_>>()
+            .join(" plus "),
         Tie::Hours(seconds) => format!("{}, in hours", tie_describe(seconds)),
         Tie::Span(path) => format!("the span of the chemistry's `{path}`"),
         Tie::Clock => "the `sim time` row's rendering of the step's mark".to_string(),
@@ -7020,6 +7159,7 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Member(_) => "table node",
         Tie::Ratio(_) => "ratio",
         Tie::Difference(_) => "difference",
+        Tie::Sum(_) => "sum",
         Tie::Hours(_) => "duration in hours",
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
@@ -7037,7 +7177,7 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
 /// choice. A constant is compared exactly — the prose either prints the file's number or is
 /// wrong about it. A **computed** tie is compared at the prose's own precision, because the
 /// sentence is doing arithmetic and no author would print `4.606902` — that is
-/// [`Tie::Product`], [`Tie::Ratio`], [`Tie::Span`] and [`Tie::Derived`], each of which lands
+/// [`Tie::Product`], [`Tie::Ratio`], [`Tie::Sum`], [`Tie::Span`] and [`Tie::Derived`], each of which lands
 /// on a number binary floating point does not spell round (`20.000000000000004`,
 /// `0.17999999999999994`). A [`Tie::Member`] asks whether *any* value is the number, because
 /// "a node of that table" is what its sentence says; every other tie requires all of them.
@@ -7051,6 +7191,7 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
         Tie::Product(_)
         | Tie::Ratio(_)
         | Tie::Difference(_)
+        | Tie::Sum(_)
         | Tie::Hours(_)
         | Tie::Span(_)
         | Tie::Derived { .. }
@@ -7215,6 +7356,20 @@ fn claimed_accounting(
 /// pack this harness cannot build. Spelling them in words would have cleared this scan and
 /// checked nothing, which is the one option that was refused.
 /// See `docs/plans/path-ledger-dfn-step.md`.
+///
+/// The thirteenth, `nothing-to-clamp`, is the densest step left and was the cheapest of
+/// them to scan, which is the opposite of how the ranking read: twenty-seven of its
+/// thirty-four numerals sit inside a claimed sentence, so the scan asked for seven. Six
+/// were rules and the seventh was [`Tie::Sum`] twice over — a trip point neither file holds
+/// on its own (`cell.t_max_k` plus `pack.bms.protection.t_hard_margin_k`) and the twin's
+/// temperature, its ambient plus the rise its own claim pins. **Two of its numbers moved
+/// instead of being tied, and both were prose defects the scan found rather than gaps in
+/// this taxonomy**: "73 seconds of no flags" against a subtraction of 73.5, which a
+/// computed tie reads as 74; and a twin that "peaks" at a figure measured at its mark, one
+/// step after the peak, where nothing at one decimal could tell the two apart. A third left
+/// the page on the DFN step's precedent — an instruction to run "to about 400 s", which no
+/// file decides and which a tie reading a claim's own `read_at_s` would have declared from
+/// both sides. See `docs/plans/path-ledger-weaker-short.md`.
 ///
 /// **Numeral is the operative word, and it is a real limit rather than pedantry.**
 /// [`written_numbers`] finds digits. A quantity spelled in English is invisible to it, and
@@ -8797,7 +8952,7 @@ fn n_ledger_arms(_f: &Facts) -> usize {
             used.push(name);
         }
         match tie {
-            Tie::Product(ties) | Tie::Ratio(ties) | Tie::Difference(ties) => {
+            Tie::Product(ties) | Tie::Ratio(ties) | Tie::Difference(ties) | Tie::Sum(ties) => {
                 for tie in *ties {
                     walk(tie, used);
                 }

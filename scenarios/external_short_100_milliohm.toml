@@ -10,10 +10,20 @@
 # short is not a demand. The demand here is `Rest`, and 86 A flows anyway, because a
 # conductance across the terminals is not something a clamp on `i_req` can reach.
 #
-# What stops it is the thermal path, 95 s later and half the charge gone: the pack heats
+# What stops it is the thermal path, 96 s later and half the charge gone: the pack heats
 # itself with its own resistance until a probe crosses `t_max_k` + 10 K and the contactor
 # latches. Compare `pack.bms` removed: the trajectory is the same until that instant, and
 # then it simply carries on.
+#
+# EVERY NUMBER IN THIS HEADER IS A SECOND COPY, and nothing compares it with the first.
+# The guided path's step 19 is about this file and states the same figures, where they are
+# claimed against the engine one by one (`web/path-claims.toml`); this header is prose in a
+# file no check reads. Two of them had already parted when that step was scanned whole —
+# "95 s later" against a contactor that opens 96 s after the fault, and a latch stated at
+# t = 155.5 s, which is the frame the probe crosses on and not the frame the flag appears
+# on. Both are corrected above and below. Reconciled by hand on 2026-08-17 and unguarded
+# after it, which is the shape that produced a ratio asserted three times in two files and
+# wrong in both (`docs/plans/path-ledger-last-two-steps.md`).
 
 chemistry = "lfp_26650_generic"
 
@@ -23,7 +33,7 @@ description = """
 4S2P LFP at 90 % charge, resting, thermally coupled, with a protective BMS. At \
 t = 60 s a 100-milliohm short appears across the pack's load-side terminals. The groups \
 sag to 2.13 V — above v_min, so not even a soft under-voltage — and no flag of any kind \
-is raised for 73 s. The contactor eventually latches at t = 155.5 s on over-temperature, \
+is raised for 73.5 s. The contactor eventually latches at t = 156.0 s on over-temperature, \
 by which time the pack has gone from 90 % to 39.6 %."""
 
 [pack]
