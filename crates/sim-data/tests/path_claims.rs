@@ -81,7 +81,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is eight steps and 107 numbers.
+//! (`[ledger]` in `path-claims.toml`) and today it is nine steps and 126 numbers.
 //! Fourteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product or as a ratio, the span of a
 //! chemistry table, a node of one, digits inside a name, the position of another lesson,
@@ -169,12 +169,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the eighteen steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the fifteen steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed six whole steps — but only six. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other sixteen have their claimed sentences
+//!   has now closed nine whole steps — but only nine. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other fifteen have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all eighteen, one line each, so this list cannot go quietly out of date.
+//!   names all fifteen, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -4790,10 +4790,17 @@ enum Tie {
     /// trajectory tie both exist to refuse: it would account any token that happened to
     /// equal any number that step measures.
     ///
+    /// **One measurement, not one claim.** This used to demand that exactly one claim named
+    /// the quantity, and step 12 cannot satisfy it: its first rebound is stated in two
+    /// sentences, so `pulse_rebound_mv:1` carries two claims at one instant with one value.
+    /// What the fence is really about is a quantity whose claims answer *differently* —
+    /// `v_at` on step 15 is six readings at six instants — so agreement is what it checks
+    /// now, and a pair that has drifted apart fails here rather than passing unseen.
+    ///
     /// **Compared at the prose's own precision**, like every computed tie, which is what
     /// lets one arm carry both `0.07` (two places) and `0.0746` (four) off one claim value.
-    /// A quoted claim that spells its own number scaled — a `spells_pow10` — is refused
-    /// rather than resolved, or the two scalings would multiply silently.
+    /// The quoted claim's own `spells_pow10` is not consulted; see [`tie_values`] for the
+    /// fence that used to refuse one and why it could not fire correctly.
     ///
     /// **This is what would have caught the defect this slice found.** Step 23 said its
     /// heat was 87 times step 22's "at the same state of charge", and step 22's own claim
@@ -4803,9 +4810,30 @@ enum Tie {
     Quoted {
         /// The lesson whose claim decides it.
         step: &'static str,
-        /// That claim's `quantity`. Exactly one claim on that step may name it.
+        /// That claim's `quantity`. Every claim on that step naming it must agree.
         quantity: &'static str,
+        /// Which side of that value this sentence prints.
+        states: QuotedAs,
     },
+}
+
+/// Which side of a quoted claim's value the quoting sentence prints.
+///
+/// The claims file has had this distinction since it was written — [`States::Complement`],
+/// "the sentence prints how far *below one* the value is" — and step 13's own 8 % claim
+/// uses it on the very quantity step 13 then quotes step 12 for. So the tie takes the
+/// claims file's word rather than growing a second vocabulary for the same idea.
+///
+/// The complement is taken **before** the rule's `pow10`, which is what makes step 12's
+/// `0.995238` come out as the `0.5 %` step 13 prints: `1 − 0.995238`, then a hundred, then
+/// rounded to the one place the sentence commits to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuotedAs {
+    /// The sentence prints the value itself.
+    Same,
+    /// The sentence prints `1 − value`. Fenced by nothing but the comparison: a complement
+    /// pointed at a quantity that is not a fraction cannot round to the token.
+    Complement,
 }
 
 /// What a [`Tie::Derived`] does to its operands.
@@ -5069,6 +5097,114 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Member("ocv.soc.*")],
         pow10: 2,
     },
+    // Step 13 — the same train on the single-particle model. Ten of its twenty numerals are
+    // claimed measurements; not one of the other ten is a measurement at all. Two are the
+    // scenario's, two are digit runs inside the chemistry's own provenance string, three are
+    // numbers the step NEXT DOOR measured, and two are that chemistry's RC time constants,
+    // which the file states as a resistance and a capacitance and never as a time.
+    LedgerRule {
+        // The charge all three pulse steps start from. A different sentence from step 12's
+        // "at 90 % charge, running", and deliberately a different rule: a phrase generous
+        // enough to cover both would be a phrase generous enough to cover a third.
+        phrase: "the same {n} %, the same train",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The one field that makes this step's file differ from step 12's, and the scenario
+        // header says why it is written out rather than defaulted: it is part of the
+        // snapshot layout, so it is a number the file has to carry.
+        phrase: "{n} shells deep",
+        ties: &[Tie::Scenario("pack.cell_model.Spm.shells")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The parameter set's year, which is four fifths of its name. Same shape as step
+        // 12's `M{n}`, off the provenance rather than the display name: `Chen` also occurs
+        // there as an author's surname, and the digit run after THAT is empty and dropped.
+        phrase: "PyBaMM's Chen{n} rather than fitted",
+        ties: &[Tie::Name {
+            field: "meta.provenance",
+            prefix: "Chen",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The `0` of `[r0]` — a section name, not a quantity, and the position the same
+        // digit was in when `Tie::Name`'s docs recorded it as reworded away. This one has a
+        // field to point at: the chemistry's provenance is where those blocks are CALLED
+        // placeholders, which is exactly what the sentence is telling the reader. `[[rc]]`
+        // in the same string contains `[r` too, and the digit run after it is empty.
+        phrase: "file's `[r{n}]` and `[[rc]]` are labelled placeholders",
+        ties: &[Tie::Name {
+            field: "meta.provenance",
+            prefix: "[r",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The circuit's first rebound, measured on step 12 and quoted here so the reader
+        // has something to be four times smaller than.
+        phrase: "where the circuit's was {n}",
+        ties: &[Tie::Quoted {
+            step: "circuit-repeats-itself",
+            quantity: "pulse_rebound_mv:1",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same figure again, and the sentence is about the FIFTH this time — "was the
+        // same five times" — so the tie is to step 12's fifth rebound and not to its first.
+        // The two claims are 74.767 and 74.770, which is the sentence's own point.
+        phrase: "its {n} mV was the same five times",
+        ties: &[Tie::Quoted {
+            step: "circuit-repeats-itself",
+            quantity: "pulse_rebound_mv:5",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The circuit's tail, which step 12 prints from the other end: it claims 99.5 % has
+        // ARRIVED by the half-way point of the rest, and this sentence prints the 0.5 % that
+        // has not. Hence the complement.
+        //
+        // THE FRAME GAP IS STATED RATHER THAN HIDDEN: step 12's claim is on its FIRST rest
+        // and this sentence is about the fifth. They are the same number only because the
+        // circuit is linear and time-invariant — step 12's whole lesson, and separately
+        // claimed there as five rebounds identical to four decimal places. A re-fit that
+        // made the circuit's late rests differ from its early ones would leave this green.
+        // The alternative, a claim on step 12's fifth rest, has no admissible `tol_from`:
+        // `spelled` and `tighter` both need a spelled number and step 12 prints none for it,
+        // and `grid` is fenced to step-grid times.
+        phrase: "against the circuit's {n} %",
+        ties: &[Tie::Quoted {
+            step: "circuit-repeats-itself",
+            quantity: "pulse_rebound_arrived:1",
+            states: QuotedAs::Complement,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The two RC time constants, which the chemistry file never writes: it writes a
+        // resistance and a capacitance per pair, and tau is their product. One rule and two
+        // ties, because the sentence names both pairs in one breath and the indexed path is
+        // what keeps each product on its own pair — `rc.*.r_ohms` reaches both resistances,
+        // and a factor reaching two values resolves to nothing by design.
+        phrase: "the RC pairs are {n} s and {n} s",
+        ties: &[
+            Tie::Product(&[
+                Tie::Chemistry("rc.0.r_ohms"),
+                Tie::Chemistry("rc.0.c_farad"),
+            ]),
+            Tie::Product(&[
+                Tie::Chemistry("rc.1.r_ohms"),
+                Tie::Chemistry("rc.1.c_farad"),
+            ]),
+        ],
+        pow10: 0,
+    },
     // Step 22 — the first lead-acid step, and the first whose numbers need arithmetic that
     // is not a product. Its opening paragraph is the cell's nameplate: what one cell is,
     // what six of them make, what it is rated and the condition that rating carries.
@@ -5214,6 +5350,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
             Tie::Quoted {
                 step: "slow-and-patient",
                 quantity: "delivered_ah",
+                states: QuotedAs::Same,
             },
             Tie::Derived {
                 op: LedgerOp::Difference,
@@ -5236,6 +5373,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Quoted {
             step: "slow-and-patient",
             quantity: "q_gen_at",
+            states: QuotedAs::Same,
         }],
         pow10: 0,
     },
@@ -5260,6 +5398,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Quoted {
             step: "slow-and-patient",
             quantity: "q_gen_at",
+            states: QuotedAs::Same,
         }],
         pow10: 0,
     },
@@ -5314,6 +5453,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Quoted {
             step: "sixty-times-the-current",
             quantity: "delivered_ah",
+            states: QuotedAs::Same,
         }],
         pow10: 0,
     },
@@ -5345,7 +5485,18 @@ fn scenario_toml(file: &str) -> toml::Value {
     toml::from_str(&text).unwrap_or_else(|e| panic!("scenarios/{file} parses as TOML: {e}"))
 }
 
-/// Every number at a dotted key path, with `*` walking an array.
+/// Every number at a dotted key path, with `*` walking an array and a digit indexing one.
+///
+/// The two array segments answer two different sentences and neither is the other's
+/// fallback. `*` is for prose about *every* member — step 5's "both faults land at 600 s",
+/// where reaching only one of them would be a fail-toward-green — and it is read strictly
+/// for that reason. An index is for prose about *one*: step 13 names the two RC pairs
+/// separately ("9 s and 72 s"), and each is a product of that pair's own two fields, which
+/// `*` cannot express because a [`Tie::Product`] factor reaching two values resolves to
+/// nothing by design.
+///
+/// A digit segment only indexes when the value it is applied to is an array, so a table
+/// whose key happens to be a numeral is still reached as a key.
 ///
 /// Empty means the path is not in the file at all, which is a broken rule rather than a
 /// disagreement, and the caller says so differently.
@@ -5357,6 +5508,10 @@ fn numbers_at_path<'a>(value: &'a toml::Value, path: &str) -> Vec<f64> {
             if seg == "*" {
                 if let Some(a) = v.as_array() {
                     next.extend(a.iter());
+                }
+            } else if let Some(a) = v.as_array() {
+                if let Some(child) = seg.parse::<usize>().ok().and_then(|i| a.get(i)) {
+                    next.push(child);
                 }
             } else if let Some(child) = v.as_table().and_then(|t| t.get(seg)) {
                 next.push(child);
@@ -5622,23 +5777,47 @@ fn tie_values(
             );
             tie_values(tie, other, lessons, &scenario, &chemistry, ctx)
         }
-        Tie::Quoted { step, quantity } => {
-            let mut hits = ctx
+        Tie::Quoted {
+            step,
+            quantity,
+            states,
+        } => {
+            let hits: Vec<&Claim> = ctx
                 .all
                 .iter()
-                .filter(|c| c.step == *step && c.quantity == *quantity);
-            let Some(claim) = hits.next() else {
+                .filter(|c| c.step == *step && c.quantity == *quantity)
+                .collect();
+            let [first, rest @ ..] = &hits[..] else {
                 return Vec::new();
             };
+            // Not "exactly one claim", which is what this used to demand and which step 12
+            // cannot satisfy: it states its first rebound in two sentences, so
+            // `pulse_rebound_mv:1` carries two claims — at one instant, with one value. The
+            // hazard is a quantity two claims answer DIFFERENTLY (`v_at` on step 15 is six
+            // readings at six instants), and that is what this refuses. Agreement is
+            // checked rather than assumed, so two claims on one quantity that have drifted
+            // apart fail here instead of being invisible.
             assert!(
-                hits.next().is_none(),
-                "a rule quotes step `{step}`'s `{quantity}`, and that step has more than                  one claim on it. Which one the sentence means would be decided by file                  order rather than by the sentence."
+                rest.iter().all(|c| c.value == first.value),
+                "a rule quotes step `{step}`'s `{quantity}`, and the claims on it answer \
+                 differently: {:?}. Which one the sentence means would be decided by file \
+                 order rather than by the sentence. Quote a quantity that names one \
+                 measurement — or, if these are meant to be the same reading, one of them \
+                 has drifted.",
+                hits.iter().map(|c| c.value).collect::<Vec<_>>(),
             );
-            assert_eq!(
-                claim.spells_pow10, 0,
-                "a rule quotes step `{step}`'s `{quantity}`, whose own claim spells its                  number scaled. The rule's `pow10` would then apply on top of it and the                  two scalings would multiply silently. Quote a claim that states its                  quantity in the value's own unit."
-            );
-            vec![claim.value]
+            // The claim's own `spells_pow10` is deliberately NOT consulted, and the fence
+            // that used to refuse a non-zero one is gone. It read: "the rule's `pow10`
+            // would apply on top of it and the two scalings would multiply silently" — a
+            // composition this arm rules out by construction, because what it resolves to
+            // is `value`, which is in the engine's units. `spells_pow10` describes how the
+            // OTHER step's prose renders that value, and no scan reads it here. The only
+            // scaling is this rule's own, against this step's own sentence. What the fence
+            // actually did was refuse step 13's `0.5 %`, whose source claim spells `99.5 %`.
+            match states {
+                QuotedAs::Same => vec![first.value],
+                QuotedAs::Complement => vec![1.0 - first.value],
+            }
         }
         Tie::Name { field, prefix } => digits_after(&string_at_path(chemistry, field), prefix),
         Tie::Ordinal(step) => lessons
@@ -5720,9 +5899,16 @@ fn tie_describe(tie: &Tie) -> String {
         Tie::Elsewhere { step, tie } => {
             format!("{}, read on the lesson `{step}`", tie_describe(tie))
         }
-        Tie::Quoted { step, quantity } => {
-            format!("the lesson `{step}`'s claim on `{quantity}`")
-        }
+        Tie::Quoted {
+            step,
+            quantity,
+            states,
+        } => match states {
+            QuotedAs::Same => format!("the lesson `{step}`'s claim on `{quantity}`"),
+            QuotedAs::Complement => {
+                format!("one less the lesson `{step}`'s claim on `{quantity}`")
+            }
+        },
     }
 }
 
@@ -6199,6 +6385,62 @@ fn an_elsewhere_reads_the_named_lessons_own_files() {
         want, mine,
         "this test is only evidence while the two chemistries' capacities DIFFER."
     );
+}
+
+/// A quotation of a quantity whose claims **disagree** is refused rather than resolved.
+///
+/// [`Tie::Quoted`] used to demand exactly one claim per `(step, quantity)`, which step 12
+/// cannot satisfy — it states its first rebound in two sentences, one value, one instant —
+/// so the fence now checks agreement instead of arity. The hazard it still has to refuse is
+/// the one the old wording named: `v_at` on step 15 is six readings at six instants, and
+/// "step 15's `v_at`" would be decided by whichever the file happens to list first.
+///
+/// No claim is synthesised for this. The pair is real, which is what makes it evidence: if
+/// some future slice split those readings into six named quantities, this test stops
+/// compiling a case and says so through the assertion below rather than passing on nothing.
+#[test]
+#[should_panic(expected = "answer differently")]
+fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
+    let lessons = lessons();
+    let all = claims();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "particle-remembers")
+        .expect("step 13 is still in the path");
+    let values: Vec<f64> = all
+        .iter()
+        .filter(|c| c.step == "looks-fine-from-outside" && c.quantity == "v_at" && c.arm.is_none())
+        .map(|c| c.value)
+        .collect();
+    assert!(
+        values.len() > 1 && values.iter().any(|v| *v != values[0]),
+        "this test needs a quantity two claims on one step answer differently, and step \
+         15's `v_at` is no longer one: {values:?}. Point it at another, or the panic below \
+         would be evidence about nothing."
+    );
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &all,
+        arms: &[],
+        derived: &[],
+    };
+    let tie = Tie::Quoted {
+        step: "looks-fine-from-outside",
+        quantity: "v_at",
+        states: QuotedAs::Same,
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
 }
 
 /// A wrapper naming its own lesson is refused rather than resolved.

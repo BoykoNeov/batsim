@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Eight steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Nine steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -286,7 +286,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — eight steps of the twenty-four so far.
+# of this file — nine steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -2925,8 +2925,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: eight
-# steps, 107 numerals, and no longer all of them scenario constants. The first
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: nine
+# steps, 126 numerals, and no longer all of them scenario constants. The first
 # three were picked because the same measuring pass found they carry no
 # measurement-shaped figure at all, so they could be closed before a single number was
 # measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's
@@ -5175,6 +5175,13 @@ steps = [
   "and-it-is-still-in-there", # 26: six ordinals pointing at three other steps, the pulse
                      # program's on-leg, the cutoff the panel never prints, and eleven
                      # measurements. The most heavily CLAIMED step in the path
+  "particle-remembers", # 19: the charge it starts at, its shell count, two digit runs
+                     # inside the chemistry's own provenance string, its two RC time
+                     # constants — which that file states as a resistance and a
+                     # capacitance and never as a time — and three numbers the step NEXT
+                     # DOOR measured. Ten of the nineteen are claimed measurements, and
+                     # not one of the other nine is a measurement at all, which is why
+                     # this step needed no new claim
   "slow-and-patient", # 16: the nameplate of a lead-acid cell, stated four ways, plus the
                      # rate it is quoted at, the span of its OCV curve, the battery six of
                      # these make, the clock the run stops on and the step it points back
@@ -5183,7 +5190,7 @@ steps = [
                      # both. It still needed FOUR new arms, because not one of the eleven is
                      # a field a rule could read straight off a file
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: sixteen of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: fifteen of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
@@ -5198,8 +5205,6 @@ unledgered = [
   "leg-that-is-not-there",          # claims: 6
   "what-protection-costs",          # claims: 3, on two ambient arms. Also two perf
                                     # ratios no trajectory can settle
-  "particle-remembers",             # claims: 10, on five rebounds and one tooth. Its
-                                    # comparisons against the circuit are a second pack
   "three-times-the-current",        # claims: 6, on one tooth and the floor below empty.
                                     # Its ratios need step 13's run; its circuit figures a
                                     # second scenario file
