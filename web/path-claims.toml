@@ -143,7 +143,7 @@
 # else is accepted:
 #
 #   spelled  170 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  19 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   tighter  20 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -191,9 +191,9 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 19 claims.
+# bounds the engine against `value` and is deliberately tighter on 20 claims.
 #
-#   same        175 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        176 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -671,6 +671,31 @@ Run depends on the step they arrived from. Half a second in it does not.
 
 No `quoted`: the row prints `100.00 %` and the sentence says `100 %`. The row's string is
 recorded anyway, because the sentence's whole point is that the two lines LEAVE that value.
+"""
+
+[[claim]]
+step = "wearing-out-while-idle"
+literal = "Two lines leaving 100 % together"
+quantity = "soh_res_at:0.5"
+value = 1.0
+tol = 1.0e-12
+tol_from = "tighter"
+spells = "100"
+spells_pow10 = 2
+states = "same"
+read_at_s = 0.5
+display = "soh res"
+shows = "1.0000 ×"
+note = """
+The OTHER line, and the reason this sentence carries two claims for one numeral: the plot
+draws both series as percentages of new (`soh_capacity * 100` and `soh_resistance * 100`,
+one axis, which the page's own comment beside `plot-soh` says in the sentence this prose
+echoes). With only the capacity claimed, a resistance that started anywhere else would have
+left the suite green on a sentence about TWO lines.
+
+The row is the one place the two part company: `soh res` prints a multiplier, `1.0000 ×`,
+where the plot prints 100 %. That is why `shows` is not a percentage and why the sentence is
+about the plot rather than about the readouts.
 """
 
 [[claim]]

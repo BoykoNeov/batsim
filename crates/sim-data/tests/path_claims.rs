@@ -1725,7 +1725,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 170 of 193 claims.
+    /// number's last printed place. The default shape: 170 of 194 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1734,12 +1734,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 19 of 193.
+    /// declaration was wrong. 20 of 194.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 193, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 194, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1779,7 +1779,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 175 of 193, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 176 of 194, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -4203,11 +4203,15 @@ enum Accounted {
     /// [`LedgerRule`] refuses when it insists a rule name its field rather than search
     /// the file.
     ///
-    /// **That trap is reasoned rather than measured**, and the distinction is this file's
-    /// own: [`Lesson`] does not scrape `speed_x` at all, so the generous version cannot be
-    /// built — or perturbed into existence — without adding the field first. What *was*
-    /// measured is the weaker half of the same property: tying this arm to the step's own
-    /// `dt` instead of to each claim's trajectory leaves the headline's `5` and `10`
+    /// **That trap is reasoned rather than measured**, and the distinction is this file's own.
+    /// It used to rest on an absence — "[`Lesson`] does not scrape `speed_x` at all, so the
+    /// generous version cannot be built, or perturbed into existence, without adding the field
+    /// first" — and that absence is gone: the ledger's [`Control::Speed`] reads `speed_x` now,
+    /// because step 8's prose prints it. What holds the trap shut is the design rather than the
+    /// missing field: the tie below is to a **trajectory**, and no trajectory has a speed. A
+    /// generous version is now buildable and would be a rewrite of this arm rather than a
+    /// slip. What *was* measured is the weaker half of the same property: tying this arm to the
+    /// step's own `dt` instead of to each claim's trajectory leaves the headline's `5` and `10`
     /// unaccounted and reddens check 6 by name.
     ///
     /// So the tie is to a **trajectory**: the token must equal the step length of a run
@@ -7570,6 +7574,44 @@ fn an_on_arm_reads_a_control_the_arm_overrides() {
     let tie = Tie::OnArm {
         arm: "hot",
         tie: &Tie::Setting(Control::Until),
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
+/// And the arm it names has to exist.
+///
+/// The third of [`Tie::OnArm`]'s panics, and the one no perturbation reaches: renaming the arm
+/// in `path-claims.toml` breaks the claim that reads it first, so the suite fails on a claim
+/// naming nothing before this is ever asked. Its own test for that reason.
+#[test]
+#[should_panic(expected = "declares no arm of that name")]
+fn an_on_arm_names_an_arm_that_exists() {
+    let lessons = lessons();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "wearing-out-while-idle")
+        .expect("step 8 is still in the path");
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let arms = arms();
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &arms,
+        derived: &[],
+    };
+    let tie = Tie::OnArm {
+        arm: "hot from nowhere",
+        tie: &Tie::Setting(Control::Ambient),
     };
     let (scenario, chemistry) = (
         scenario_toml(&from.scenario),

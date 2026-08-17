@@ -70,13 +70,21 @@ the speed slider (`twenty seconds of watching at 10 000×`). The second required
 scrape `speed_x` for the first time, and that has a consequence recorded in the file rather
 than left to be discovered:
 
-`Accounted::Setting` — check 6's arm for a control a reader dials in — argues at length that
+`Accounted::Setting` — check 6's arm for a control a reader dials in — argued at length that
 the *generous* version of itself, accounting a token against any numeric field of the lesson
 block, "cannot be built, or perturbed into existence, without adding the field first", because
-step 18's block carries `speed_x: 10` beside a sentence whose `10` is a step length. That
-field now exists. The argument still holds, but it is now the design rather than the absence:
-check 6's arm ties a token to the step length of a **trajectory** a claim is read on, and no
-trajectory has a speed. The paragraph says so now.
+step 18's block carries `speed_x: 10` beside a sentence whose `10` is a step length. That field
+now exists, so **that paragraph became false in the commit that ledgered this step**, and it
+took a second pass to notice: the new field's own doc recorded the consequence, and the
+paragraph the consequence was about was left standing. Both say it now. The argument itself
+holds — check 6's arm ties a token to the step length of a **trajectory** a claim is read on,
+and no trajectory has a speed — but it rests on the design rather than on an absence, and a
+generous version is now buildable and would be a rewrite rather than a slip.
+
+Worth naming as its own lesson, because this is a file whose subject is stale prose: **writing
+down the consequence of a change is not the same as fixing the sentence the consequence is
+about.** The note on `Lesson::speed_x` and the paragraph in `Accounted::Setting` are two ends of
+one fact, and only one end moved.
 
 ## A recorded gap that cannot be closed
 
@@ -130,6 +138,28 @@ continuation arm changes nothing, because both arms drag the slider to the same 
 two-rule split is about which *sentence* is which, and it cannot tell the arms apart on this
 number. Written down rather than discovered later — the same limit `Arm::pack_from` records for
 two lessons that agree on their timestep.
+
+## Three things a review caught that the suite could not
+
+Registered and run after the slice was pushed, as its own commit.
+
+| what | outcome |
+| --- | --- |
+| the stale `Accounted::Setting` paragraph, reverted | **green**, as it must be — no check reads a sentence about the code, which is why this sweep is manual and why it will be needed again |
+| the second line's claim (`soh_res_at:0.5`) moved 1.0 → 2.0 | reddens the value and stated checks |
+| `Tie::OnArm`'s third panic, asked directly | its own `should_panic` test — no perturbation reaches it, because renaming the arm breaks the claim that reads it first |
+
+The second is the substantive one. "Two lines leaving 100 % together" carried **one** claim,
+on the capacity trace, and the resistance trace could have started anywhere with the suite
+green. Both series are drawn as percentages of new (`soh_capacity * 100` and
+`soh_resistance * 100` on one axis — the page's own comment beside `plot-soh` says the same
+sentence the prose does), so the second claim is what makes the sentence's *subject* checked
+rather than half of it. It is also the one place the plot and the readouts part company: `soh
+res` prints `1.0000 ×` where the plot prints 100 %, which is why that claim's `shows` is not a
+percentage.
+
+**A sentence about two things needs two claims even when it prints one number.** Check 6 is
+satisfied by one accounting per numeral, so a plural subject can hide behind a singular figure.
 
 ## Learned while building
 
