@@ -6538,6 +6538,15 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
     // what the claim below it measures is that pack at ITS mark — 299.075 K against a true
     // peak of 299.112 K one step after the tooth. Both print 299.1, so no tolerance here
     // could have told them apart; the verb is what changed.
+    //
+    // WHAT THIS SENTENCE INHERITS, NAMED RATHER THAN LEFT: a `Quoted` tie resolves to the
+    // other claim's STORED value, and what ties that value to the engine is check 7 at that
+    // claim's own tolerance. Step 18's rise is declared `tighter` at 5e-3 K, so the twin's
+    // cell can drift up to five thousandths of a kelvin without reddening anything and this
+    // sum goes on resolving off the stored figure. Five mK is far under the tenth this
+    // sentence prints, so the hole cannot reach the prose today — but it is the source
+    // claim's tolerance and not this rule's that decides how wide it is, which is worth
+    // knowing before a rule quotes a claim declared `spelled` on a whole number.
     LedgerRule {
         phrase: "a twin whose run ends at {n} K",
         ties: &[Tie::Sum(&[

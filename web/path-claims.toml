@@ -5768,7 +5768,7 @@ steps = [
   "and-it-is-still-in-there", # 26: six ordinals pointing at three other steps, the pulse
                      # program's on-leg, the cutoff the panel never prints, and eleven
                      # measurements. The most heavily claimed step in the path when it was
-                     # scanned; step 19 passed it with twenty-three
+                     # scanned
   "particle-remembers", # 19: the charge it starts at, its shell count, two digit runs
                      # inside the chemistry's own provenance string, its two RC time
                      # constants — which that file states as a resistance and a
@@ -5803,12 +5803,14 @@ steps = [
                      # claimed measurements, and one — the model error, printed twice — is
                      # both. It still needed FOUR new arms, because not one of the eleven is
                      # a field a rule could read straight off a file
-  "nothing-to-clamp", # 34: twenty-seven sit inside a claimed sentence, which is what made
-                     # the densest step left the cheapest one to scan — twenty-three were
-                     # already claimed and four were added here. Of the seven a rule
-                     # accounts for: the two shorts, the trip point the two files assemble
-                     # between them, the twin's temperature, the mark, and two durations
-                     # measured from the fault. Two figures moved rather than being tied —
+  "nothing-to-clamp", # 34: most of them sit inside a claimed sentence, which is what made
+                     # the densest step left the cheapest one to scan — this step had been
+                     # claimed twice over, for its unprotected arm and for its protected
+                     # half, before the ledger reached it. What a rule accounts for, named
+                     # rather than counted: the two shorts, the trip point the two files
+                     # assemble between them, the twin's temperature, the mark, and two
+                     # durations measured from the fault. Two figures moved rather than
+                     # being tied —
                      # a duration rounded down where its subtraction is exact, and a verb
                      # that said "peaks" where the arm reads a mark — and one left the
                      # page, an instruction to run "to about 400 s" that no file decides
