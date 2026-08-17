@@ -81,12 +81,14 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is six steps and fifty-eight numbers.
-//! Twelve arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! (`[ledger]` in `path-claims.toml`) and today it is eight steps and 107 numbers.
+//! Fourteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product or as a ratio, the span of a
 //! chemistry table, a node of one, digits inside a name, the position of another lesson,
 //! the panel's clock at the step's mark, a figure the sentence works out from its own
-//! siblings, and a claim whose literal contains the number ([`claimed_accounting`], which is
+//! siblings, any of those read on **another lesson** ([`Tie::Elsewhere`]), a number
+//! **another step measured** ([`Tie::Quoted`], which reads that step's claim), and a claim
+//! whose literal contains the number ([`claimed_accounting`], which is
 //! check 6's own accounting asked about a number the ledger found). **None of the taxonomy
 //! is missing any more**: the last of its six kinds — the figure derived from its siblings —
 //! is [`Tie::Derived`], built for step 22's "six of these in series is the 12 V battery".
@@ -170,7 +172,7 @@
 //! * **Sentences no claim is about, in the eighteen steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
 //!   has now closed six whole steps — but only six. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other eighteen have their claimed sentences
+//!   claim nor a ledger entry: none. The other sixteen have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
 //!   names all eighteen, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
@@ -1107,6 +1109,30 @@ struct Row {
     /// turns on. What it is *not* is a reading the page takes by itself: see the module
     /// docs on what a reader would have to do to see this number.
     rest_v: Option<f64>,
+    /// The cell's **total** overpotential \[V\] — `CellView::overpotential_v` off cell
+    /// `(0, 0)`, which is the cell the pack grid's first tile is.
+    ///
+    /// Free, in the sense that [`deficit_range`] and [`surface_gap`] already build that
+    /// view on every row. Cell `(0, 0)` for [`surface_gap`]'s reason: the steps whose prose
+    /// speaks of *the* cell's overpotential are 1S1P, and on a pack that is not, a sentence
+    /// naming one cell's internals is on the wrong step rather than reading the wrong cell.
+    overpotential_v: f64,
+    /// The **RC-pair half** of [`Self::overpotential_v`] \[V\] — `Σ V_rc` on an equivalent
+    /// circuit, leaving the fitted diffusion term as the difference.
+    ///
+    /// `Some` only at the instants a claim asked for, which is what makes this affordable.
+    /// There is **no public accessor**: `CellView` carries the total and `EcmState::v_rc` is
+    /// reachable only by serialising `Pack::snapshot()`, whose JSON carries the whole
+    /// chemistry — three kilobytes of tables per row, on a step that takes 139 241 of them.
+    /// So [`run`] is told the instants up front and [`drive`] pays the cost on those rows
+    /// alone. It is the same fence [`Self::rest_v`] keeps for the same kind of reason, one
+    /// level stricter: that one is taken wherever it *could* be read, this one only where
+    /// it *is*.
+    ///
+    /// Reading it out of the snapshot is what keeps this a test-side quantity: no `sim-core`
+    /// change, no new `CellView` field, and so no `sim_server::API_VERSION` /
+    /// `sim_wasm::WASM_API_VERSION` bump for a number only a claim reads.
+    rc_overpotential_v: Option<f64>,
 }
 
 /// The sensor channels this file reads, with the frame's own clock beside them.
@@ -1138,6 +1164,34 @@ fn sensed(pack: &Pack) -> Option<Sensed> {
         probe_max_k: frame.max_probe_k(),
         sampled_at_s: frame.sampled_at_s,
     })
+}
+
+/// `Σ V_rc` on cell `(0, 0)` \[V\], read out of the pack's serialised snapshot.
+///
+/// The one thing in this file that reaches a private field, and it reaches it the only way
+/// the public API allows: `Snapshot` is `Serialize`, so the state is readable even where no
+/// accessor is. The path is walked explicitly — `pack.groups[0].cells[0].model.<variant>` —
+/// rather than searched for a `v_rc` key anywhere in the tree, on the same terms as
+/// [`Tie::Name`]'s prefix: a search would silently answer off some other cell the day the
+/// layout changes, where a walk fails loudly.
+///
+/// Panics on a cell model that has no RC pairs. A porous-electrode cell's overpotential does
+/// not decompose this way at all — it is kinetic plus concentration, not placeholder plus
+/// fitted — so a claim asking for the split there is a claim on the wrong step.
+fn rc_overpotential_v(pack: &Pack) -> f64 {
+    let json = serde_json::to_value(pack.snapshot()).expect("a pack snapshot serialises");
+    let model = &json["pack"]["groups"][0]["cells"][0]["model"];
+    let inner = model
+        .as_object()
+        .and_then(|m| m.values().next())
+        .unwrap_or_else(|| panic!("a serialised cell model is a one-variant object: {model}"));
+    let v_rc = inner["v_rc"].as_array().unwrap_or_else(|| {
+        panic!(
+            "this cell model carries no `v_rc`, so its overpotential has no RC half to \
+             separate: {inner}"
+        )
+    });
+    v_rc.iter().filter_map(serde_json::Value::as_f64).sum()
 }
 
 /// The `surface gap` row's pair, off the cell the page's readout reads.
@@ -1368,14 +1422,26 @@ fn cccv_window_steps(dt: f64) -> u64 {
 /// on a decision-window boundary, because a chunk never crosses one — see the invariant in
 /// [`measure`]'s `cccv_taper_s`, which refuses to answer anywhere else rather than
 /// returning the earliest of several instants the page could show.
+/// What [`drive`] accumulates: the rows so far, and the telemetry the last step returned.
+///
+/// One value rather than two out-parameters, because the two are read together — a
+/// client-side demand program decides the next step from the previous step's telemetry, so a
+/// driver holding one without the other could not run a CC-CV leg at all. It also keeps
+/// `drive` inside clippy's argument budget now that it carries a capture list.
+#[derive(Default)]
+struct Trace {
+    rows: Vec<Row>,
+    last: Option<Telemetry>,
+}
+
 fn drive(
     pack: &mut Pack,
     prog: Prog,
     dt: f64,
     end_s: f64,
     env: &Env,
-    rows: &mut Vec<Row>,
-    last: &mut Option<Telemetry>,
+    trace: &mut Trace,
+    capture: &[f64],
 ) {
     let windowed = matches!(prog, Prog::CcCv { .. });
     let k = cccv_window_steps(dt);
@@ -1386,14 +1452,14 @@ fn drive(
         let d = if windowed {
             let index = (pack.sim_time_s() / dt).round() as u64;
             if index.is_multiple_of(k) || held.is_none() {
-                held = Some(demand_now(prog, pack, dt, last.as_ref()));
+                held = Some(demand_now(prog, pack, dt, trace.last.as_ref()));
             }
             held.expect("a window's demand is decided before it is used")
         } else {
-            demand_now(prog, pack, dt, last.as_ref())
+            demand_now(prog, pack, dt, trace.last.as_ref())
         };
         let t = pack.step(dt, d, env);
-        *last = Some(t);
+        trace.last = Some(t);
         let (deficit_min, deficit_max) = deficit_range(pack);
         // The zero-length `Rest` read, and only where something reads it: a pulse train's
         // leg boundaries. `Pack::step(0.0, ..)` mutates nothing, so this cannot disturb the
@@ -1408,14 +1474,24 @@ fn drive(
             }
             _ => None,
         };
-        rows.push(Row {
-            t_s: pack.sim_time_s(),
+        let now = pack.sim_time_s();
+        // The instants a claim asked the RC half for, matched on the same nearest-row rule
+        // [`Run::row_at`] uses — half a step either side, so an on-grid `read_at_s` lands on
+        // exactly one row and an off-grid one lands on the row `row_at` would return.
+        let wanted = capture.iter().any(|w| (now - w).abs() <= dt * 0.5 + 1e-9);
+        trace.rows.push(Row {
+            t_s: now,
             telemetry: t,
             deficit_max,
             deficit_min,
             surface_gap: surface_gap(pack),
             sensed: sensed(pack),
             rest_v,
+            overpotential_v: pack
+                .cell(0, 0)
+                .expect("pack has a cell at 0S0P")
+                .overpotential_v,
+            rc_overpotential_v: wanted.then(|| rc_overpotential_v(pack)),
         });
     }
 }
@@ -1439,7 +1515,7 @@ fn drive(
 /// Every arm drives its own pack from scratch. It costs a re-run of the pre-mark
 /// trajectory for each continuation arm, and it buys the thing step 18 needs: four arms
 /// branching off one mark, none of them able to see another's buttons.
-fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
+fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64]) -> Run {
     let dt = arm.and_then(|a| a.dt).unwrap_or(lesson.dt);
     let mut pack = match arm.and_then(|a| a.bms) {
         Some(bms) => build_with_bms(lesson, bms),
@@ -1506,9 +1582,17 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
         // [`Row::rest_v`] gives.
         rest_v: matches!(lesson.demand, Prog::Pulse { .. })
             .then(|| pack.step(0.0, Demand::Rest, &before).v_terminal),
+        overpotential_v: pack
+            .cell(0, 0)
+            .expect("pack has a cell at 0S0P")
+            .overpotential_v,
+        // Never on the probe. A claim reading the RC half declares an instant of the run;
+        // the probe is not one, and [`Run::read`] would hand it over to any claim that set
+        // `probe = true` — which is the "whichever was pushed first" hazard the probe row
+        // is kept out of `rows` to avoid.
+        rc_overpotential_v: None,
     };
-    let mut rows = Vec::new();
-    let mut last: Option<Telemetry> = None;
+    let mut trace = Trace::default();
 
     // A continuation arm, and a step with no arm at all, both run the step as configured
     // first. A restart arm does not: its pack is the rebuilt one and its clock starts at
@@ -1520,8 +1604,8 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
             dt,
             lesson.until_s,
             &before,
-            &mut rows,
-            &mut last,
+            &mut trace,
+            capture,
         );
     }
 
@@ -1548,10 +1632,10 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
                 // diverge from what a `Run` of the same length would do.
                 Action::Step1 => {
                     let to_s = pack.sim_time_s() + dt;
-                    drive(&mut pack, prog, dt, to_s, &after, &mut rows, &mut last);
+                    drive(&mut pack, prog, dt, to_s, &after, &mut trace, capture);
                 }
                 Action::Run { to_s } => {
-                    drive(&mut pack, prog, dt, *to_s, &after, &mut rows, &mut last);
+                    drive(&mut pack, prog, dt, *to_s, &after, &mut trace, capture);
                 }
             }
         }
@@ -1559,7 +1643,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 
     let end_snapshot = serde_json::to_string(&pack.snapshot()).expect("a pack snapshot serialises");
     Run {
-        rows,
+        rows: trace.rows,
         probe,
         end_snapshot,
         // The program the trajectory's last stretch ran under, which for an arm that typed
@@ -1586,7 +1670,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 156 of 178 claims.
+    /// number's last printed place. The default shape: 164 of 186 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1595,12 +1679,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 18 of 178.
+    /// declaration was wrong. 18 of 186.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 178, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 186, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1640,7 +1724,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 161 of 178, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 169 of 186, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2330,6 +2414,19 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
         // nothing checks.
         "q_gen_at" => t.q_gen_w,
         "i_rejected_at" => t.i_rejected_a,
+        // The `overpotential` figure and the two mechanisms under it, in millivolts —
+        // the unit both the pack grid and the prose use, so a claim reads as the sentence
+        // does. Three quantities and not one with a selector, on the same terms as the
+        // surface gap: a claim states one number, and the whole subject of steps 23 and 24
+        // is that these two do not move together.
+        //
+        // `rc` is the placeholder RC pair and `diffusion` is what is left — the fitted term
+        // — so the pair is a decomposition of the first by construction rather than two
+        // measurements that ought to add up. The RC half is `None` on every row a claim did
+        // not ask for; see [`Row::rc_overpotential_v`].
+        "overpotential_mv_at" => row.overpotential_v * 1000.0,
+        "rc_overpotential_mv_at" => rc_half(row) * 1000.0,
+        "diffusion_overpotential_mv_at" => (row.overpotential_v - rc_half(row)) * 1000.0,
         // The debt below empty, in points of charge — the units the prose and the `past
         // empty` row both speak, so a claim reads as the sentence does. Ground truth, and
         // value-only: that row is sampled on a wall clock, so no claim measured here may
@@ -2609,6 +2706,33 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
             })
             .t_s;
     }
+    // The same crossing, timed from the start of the pulse leg `at_s` is on — step 24's
+    // *"the run stops at the same `1.750 V` again — after **237.5 s**"*.
+    //
+    // A separate quantity rather than a frame on the one above, because neither existing
+    // frame reaches it and both would be wrong in a way that looks right. `since_mark` is
+    // **zero** here: the crossing IS this step's mark. And `t_at_v_below` answers 737 s,
+    // because leg one crossed the same threshold first — the very fact the step is about.
+    // What the sentence prints is how long the *second* discharge lasted, which is a
+    // duration inside one leg and has no other name.
+    if let Some(volts) = quantity.strip_prefix("leg_s_at_v_below:") {
+        let volts: f64 = volts
+            .parse()
+            .unwrap_or_else(|_| panic!("`{volts}` is not a voltage"));
+        let from = leg_start_s(run, at_s, quantity);
+        return run
+            .rows
+            .iter()
+            .find(|r| r.t_s >= from && r.telemetry.v_terminal <= volts)
+            .unwrap_or_else(|| {
+                panic!(
+                    "the leg beginning at t = {from} s never fell to v <= {volts}. The \
+                     claim is about a crossing that no longer happens on this leg."
+                )
+            })
+            .t_s
+            - from;
+    }
     // The pulse-train family. Five quantities, all `<name>:<tooth>` with the tooth counted
     // from one, and all of them differences between two instants the `Pulse` program
     // defines rather than readings at `read_at_s`. Steps 12, 13 and 14 are built on the
@@ -2715,6 +2839,27 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
             run.rows
                 .iter()
                 .filter(|r| r.t_s < at_s - dt * 0.5)
+                .map(|r| r.telemetry.i_actual * dt / 3600.0)
+                .sum()
+        }
+        // The same charge, counted from the start of the pulse leg `at_s` is on rather than
+        // from t = 0 — step 24's `1.4220 A·h`, which is what the second discharge got out of
+        // a cell that had already declared itself empty.
+        //
+        // The leg's origin is read off the run ([`leg_start_s`]) and not off the program, so
+        // it needs nothing declared twice. The same end of the bracket is excluded at both
+        // ends, so this is exactly `delivered_ah(at_s) − delivered_ah(leg start)` and cannot
+        // disagree with the whole-run quantity by a step's charge.
+        "leg_delivered_ah" => {
+            let dt = run
+                .rows
+                .windows(2)
+                .next()
+                .map_or(0.0, |w| w[1].t_s - w[0].t_s);
+            let from = leg_start_s(run, at_s, quantity);
+            run.rows
+                .iter()
+                .filter(|r| r.t_s > from - dt * 0.5 && r.t_s < at_s - dt * 0.5)
                 .map(|r| r.telemetry.i_actual * dt / 3600.0)
                 .sum()
         }
@@ -2865,9 +3010,54 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
              deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, cccv_taper_s,              pulse_sag_mv:<tooth>, pulse_jump_mv:<tooth>, pulse_rebound_mv:<tooth>,              pulse_lost_mv:<tooth>, pulse_rebound_arrived:<tooth>, \
              soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, \
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
-             v_at_soc_below:<fraction>, t_at_v_below:<volts>."
+             v_at_soc_below:<fraction>, t_at_v_below:<volts>, overpotential_mv_at, \
+             rc_overpotential_mv_at, diffusion_overpotential_mv_at, leg_delivered_ah, \
+             leg_s_at_v_below:<volts>."
         ),
     }
+}
+
+/// When the pulse leg containing `at_s` began \[s\] — the last leg boundary at or before it.
+///
+/// Read off [`Row::rest_v`], which [`drive`] fills on exactly the rows where the program
+/// changes leg and nowhere else. That is the point: the origin comes from the same place the
+/// tooth quantities take theirs, so a leg-relative number and a tooth cannot disagree about
+/// where a leg starts. Nothing is declared twice and no program is re-derived here.
+///
+/// The boundary row is the **first step of the new leg**, so a duration measured from it is
+/// a duration of full steps under the new demand — which is what both callers want and what
+/// step 24's `237.5 s` is.
+fn leg_start_s(run: &Run, at_s: f64, quantity: &str) -> f64 {
+    run.rows
+        .iter()
+        .rfind(|r| r.t_s <= at_s + 1e-9 && r.rest_v.is_some())
+        .unwrap_or_else(|| {
+            panic!(
+                "`{quantity}` is measured from the start of a pulse leg, and this run \
+                 reaches no leg boundary at or before t = {at_s} s. The step is not a \
+                 pulse train, or the claim reads inside its first leg — which starts at \
+                 t = 0 and has `delivered_ah` and `t_at_v_below` already."
+            )
+        })
+        .t_s
+}
+
+/// The RC-pair half of a row's overpotential \[V\], refusing rather than falling back.
+///
+/// A row carries it only if a claim named this instant before the run started, so a `None`
+/// here means the claim and the capture list have parted — the `read_at_s` moved, or the
+/// quantity was renamed on one side. Falling back to zero would read as "the RC pair is
+/// spent", which is a real state this quantity is used to distinguish.
+fn rc_half(row: &Row) -> f64 {
+    row.rc_overpotential_v.unwrap_or_else(|| {
+        panic!(
+            "no RC-pair reading was taken at t = {} s. That read is expensive, so it is \
+             taken only at the instants the claims on this trajectory ask for — see \
+             `Row::rc_overpotential_v`. A claim's `read_at_s` moved without the run being \
+             told, or a quantity name was changed on one side only.",
+            row.t_s
+        )
+    })
 }
 
 /// `soc_bms − soc_true` at one row, in points of charge.
@@ -3213,8 +3403,8 @@ fn every_identical_arm_really_is_identical() {
             .find(|a| a.step == arm.step && a.name == twin_name)
             .unwrap_or_else(|| panic!("no arm `{twin_name}` on step `{}`", arm.step));
 
-        let mine = run(lesson, Some(arm));
-        let theirs = run(lesson, Some(twin));
+        let mine = run(lesson, Some(arm), &[]);
+        let theirs = run(lesson, Some(twin), &[]);
         assert_eq!(
             mine.end_snapshot, theirs.end_snapshot,
             "step `{}`: arms `{}` and `{twin_name}` are declared to end on an identical \
@@ -3407,7 +3597,7 @@ fn every_word_numeral_is_read_by_something() {
         let spelled = all.iter().any(|c| c.spells.as_deref() == Some(*word));
         let derived = LEDGER_VOCABULARY.iter().any(|rule| {
             rule.ties.iter().any(|tie| match tie {
-                Tie::Derived(operands) => operands
+                Tie::Derived { operands, .. } => operands
                     .iter()
                     .any(|op| matches!(op, Operand::Word(w) if w == word)),
                 _ => false,
@@ -4542,10 +4732,104 @@ enum Tie {
     /// Check 6 has an arm of this name over claimed literals ([`Accounted::Derived`]); the
     /// two scans are separate, as they are for `setting`.
     ///
-    /// **Product only.** That is the operation this sentence states; the day a ledgered
-    /// step derives one by another, this grows an operation the way check 6's `[[derived]]`
-    /// carries `op`. An arm with nothing to account is the shape this file refuses.
-    Derived(&'static [Operand]),
+    /// **The operation is declared.** This shipped product-only, with the price stated:
+    /// "the day a ledgered step derives one by another, this grows an operation the way
+    /// check 6's `[[derived]]` carries `op`". Steps 23 and 24 bring both of the others in
+    /// one slice — a difference (`6.9620 − 4.4190` amp-hours left in the cell) and three
+    /// quotients (two heats, and leg two against leg one) — so the operation is now a field
+    /// rather than an assumption. See [`Op`], and note that order is load-bearing under two
+    /// of the three.
+    Derived {
+        /// What the sentence does to its operands.
+        op: LedgerOp,
+        /// What it does it to, in the order the operation takes them.
+        operands: &'static [Operand],
+    },
+    /// The same question asked of **a different lesson** — the inner tie, resolved against
+    /// the named step's block, scenario and chemistry.
+    ///
+    /// Step 23 is the third lesson on one scenario file and its opening sentences say so by
+    /// comparison: *"21.6 A instead of 0.36"*, *"reached in `12m` instead of `19.3h`"*. The
+    /// `0.36` is step 22's demand box and the `19.3` is step 22's clock — facts
+    /// [`Tie::Setting`] and [`Tie::Clock`] already read, about the wrong lesson. A wrapper
+    /// rather than two more flat arms, because "what does the step next door say" is one
+    /// question and the sentence asks it twice with different inner ties.
+    ///
+    /// Three refusals, all in [`tie_values`]:
+    ///
+    /// * **No nesting.** An `Elsewhere` inside an `Elsewhere` has no floor and no sentence
+    ///   needs one.
+    /// * **Not its own step.** A wrapper naming the lesson it sits in is [`Tie::Setting`]
+    ///   with extra words — green, and for the wrong reason.
+    /// * **No inner [`Tie::Derived`]**. That arm reads *this* sentence's siblings, and
+    ///   "the sibling of a token in another lesson" is not a thing.
+    ///
+    /// **Its blind spot is stated because its two users cannot close it.** Both name a step
+    /// on step 23's own scenario file, so "resolves against the *named* lesson's files" is
+    /// untested by construction: an implementation that read this step's files would pass
+    /// both sentences. [`an_elsewhere_reads_the_named_lessons_own_files`] is that test,
+    /// pointed at an LFP step on purpose.
+    Elsewhere {
+        /// The lesson's id, as `const LESSONS` writes it.
+        step: &'static str,
+        /// What to read there.
+        tie: &'static Tie,
+    },
+    /// A number **another step measured** — the value of that step's claim on a named
+    /// quantity.
+    ///
+    /// The first arm here that is not a fact about a file, and it exists because step 23
+    /// quotes step 22's cell: *"4.4190 A·h came out against the last step's 6.9620"*,
+    /// *"`0.07 W` where the last step stopped"*. A constant can be tied to a file; a
+    /// measurement cannot, and step 23's prose is not the place to re-measure step 22's
+    /// trajectory. So the tie is to the **claim** — which check 7 checks against the engine
+    /// where it lives, so a quotation here inherits that check instead of duplicating it.
+    ///
+    /// **Named by `(step, quantity)`, never by step alone.** "Some claim on step 22 spells
+    /// 0.07" is the search-the-file match [`Tie::Name`]'s prefix and [`Accounted::Setting`]'s
+    /// trajectory tie both exist to refuse: it would account any token that happened to
+    /// equal any number that step measures.
+    ///
+    /// **Compared at the prose's own precision**, like every computed tie, which is what
+    /// lets one arm carry both `0.07` (two places) and `0.0746` (four) off one claim value.
+    /// A quoted claim that spells its own number scaled — a `spells_pow10` — is refused
+    /// rather than resolved, or the two scalings would multiply silently.
+    ///
+    /// **This is what would have caught the defect this slice found.** Step 23 said its
+    /// heat was 87 times step 22's "at the same state of charge", and step 22's own claim
+    /// note said it was there "so that step 23's 6.09 W has something to be 87 times". Two
+    /// files, three assertions, one suite, all green: nothing compared the two steps'
+    /// numbers to each other. See `docs/plans/path-ledger-last-two-steps.md`.
+    Quoted {
+        /// The lesson whose claim decides it.
+        step: &'static str,
+        /// That claim's `quantity`. Exactly one claim on that step may name it.
+        quantity: &'static str,
+    },
+}
+
+/// What a [`Tie::Derived`] does to its operands.
+///
+/// Declared per rule rather than inferred, on the same terms as everything else in this
+/// taxonomy: an author says what the sentence does, and the file says what the numbers are.
+///
+/// A separate type from [`Op`], which is check 6's and comes out of the claims file, on the
+/// same terms the two `Derived` arms are separate: one scan reads a claimed sentence and the
+/// other reads a whole step, and an operation shared between them would be one more place
+/// the two could quietly answer differently. It uses check 6's word for division so that a
+/// reader meeting both meets one vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LedgerOp {
+    /// Every operand multiplied. Order is irrelevant, which is why the arm shipped without
+    /// this field at all.
+    Product,
+    /// The first operand less every one after it. **Order is the claim**: reversed, step
+    /// 23's `2.5` becomes −2.5 and the sentence is about a cell that has been overfilled.
+    Difference,
+    /// The first operand divided by every one after it. Order is the claim here too, and a
+    /// zero divisor resolves to nothing rather than to an infinity the comparison would
+    /// then round.
+    Ratio,
 }
 
 /// One operand of a [`Tie::Derived`] — something the *sentence itself* supplies.
@@ -4587,12 +4871,25 @@ enum Operand {
 /// field of the block happened to hold that number would be right off the wrong field —
 /// green, and still green the day one of the two moves.
 ///
-/// Three variants, one per control a ledgered step has so far printed. The next one a
-/// ledgered step prints is where the fourth gets added.
+/// Four variants, one per control a ledgered step has so far printed. The next one a
+/// ledgered step prints is where the fifth gets added.
 #[derive(Debug, Clone, Copy)]
 enum Control {
     /// The demand box, in the unit the box takes — amps, discharge-positive.
     DemandValue,
+    /// The ambient slider, in the unit the slider takes — °C.
+    ///
+    /// **A level, where [`Accounted::Setting`] reads a step.** That arm's docs say a
+    /// sentence printing an ambient *level* "still fails here loudly, because nothing in
+    /// the path prints one" — true of the claims scan, and step 23 is the sentence that
+    /// makes it false of this one: *"same chemistry, same 1S1P, same 25 °C, same
+    /// half-second step"*. A level is what a held control is; a step is what a reader dials
+    /// in at the mark. The two scans read different sentences, so they read different
+    /// things, and neither is the other's fallback.
+    ///
+    /// Read in °C rather than K because that is the unit the slider and the sentence both
+    /// speak. The offset does not cancel here the way it does in a difference.
+    Ambient,
     /// How long the pulse program holds the current on \[s\].
     ///
     /// Not a demand the engine has: the page runs the train on top of it, which is why
@@ -4792,7 +5089,10 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // the `2` this same sentence prints, six times over, and `six` is a word the phrase
         // itself pins.
         phrase: "six of these in series is the {n} V battery",
-        ties: &[Tie::Derived(&[Operand::Word("six"), Operand::Sibling("2")])],
+        ties: &[Tie::Derived {
+            op: LedgerOp::Product,
+            operands: &[Operand::Word("six"), Operand::Sibling("2")],
+        }],
         pow10: 0,
     },
     LedgerRule {
@@ -4852,6 +5152,185 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // run stops there.
         phrase: "the panel reads `{n}h`",
         ties: &[Tie::Clock],
+        pow10: 0,
+    },
+    // Step 23 — the same cell and the same file at sixty times the current. Its opening
+    // sentences are all comparisons with the step before, which is what `Tie::Elsewhere`
+    // and `Tie::Quoted` are for: half the numbers here are facts about step 22.
+    LedgerRule {
+        // The one field that differs, and the one it differs from. Two lessons, one rule,
+        // because the sentence puts them a word apart.
+        phrase: "different: {n} A instead of {n}",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Elsewhere {
+                step: "slow-and-patient",
+                tie: &Tie::Setting(Control::DemandValue),
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The cell's own continuous rating, which is what the clause after the comma says
+        // this current is the top of. It is ALSO 21.6 A over the 7.2 Ah nameplate, and
+        // `Tie::Ratio` would carry that reading — the choice against it is argued in
+        // `docs/plans/path-ledger-last-two-steps.md`: the ratio's unique failure (the
+        // rating moving) would leave the sentence false with nothing in the repo pinning
+        // `max_discharge_c`, where this reading's unique failure (the box moving) is
+        // already caught by the `21.6` in the sentence before it.
+        phrase: "That is {n} C, sixty times",
+        ties: &[Tie::Chemistry("cell.max_discharge_c")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Everything the step holds, in one breath: the topology, and the slider. The `dt`
+        // beside them is spelled "half-second" and stays invisible, which is the digit
+        // scanner's standing limit rather than a gap in this rule.
+        phrase: "same {n}S{n}P, same {n} °C",
+        ties: &[
+            Tie::Scenario("pack.series"),
+            Tie::Scenario("pack.parallel"),
+            Tie::Setting(Control::Ambient),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Both clocks: this step's mark rendered by the `sim time` row, and step 22's.
+        phrase: "reached in `{n}m` instead of `{n}h`",
+        ties: &[
+            Tie::Clock,
+            Tie::Elsewhere {
+                step: "slow-and-patient",
+                tie: &Tie::Clock,
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The step before's amp-hours, and the difference the sentence draws from them. The
+        // claim beside it stops at `A·h came out`, which is what leaves both of these here.
+        phrase: "the last step's {n}, and the missing {n} A·h",
+        ties: &[
+            Tie::Quoted {
+                step: "slow-and-patient",
+                quantity: "delivered_ah",
+            },
+            Tie::Derived {
+                op: LedgerOp::Difference,
+                operands: &[Operand::Sibling("6.9620"), Operand::Sibling("4.4190")],
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "Step {n} finds the place",
+        ties: &[Tie::Ordinal("and-it-is-still-in-there")],
+        pow10: 0,
+    },
+    // The heat comparison, in four numbers where it used to be three. The sentence quotes
+    // step 22's heat twice — as the panel rounds it and as the claim values it — and prints
+    // both ratios, because they are not the same number and the gap between them is the
+    // lesson. See `docs/plans/path-ledger-last-two-steps.md` for what it used to say.
+    LedgerRule {
+        phrase: "against `{n} W` where the last step stopped",
+        ties: &[Tie::Quoted {
+            step: "slow-and-patient",
+            quantity: "q_gen_at",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "divides out to {n} times as much",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Ratio,
+            operands: &[Operand::Sibling("6.09"), Operand::Sibling("0.07")],
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the honest figure is {n}, because",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Ratio,
+            operands: &[Operand::Sibling("6.09"), Operand::Sibling("0.0746")],
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "is a rounded {n} and at two decimal",
+        ties: &[Tie::Quoted {
+            step: "slow-and-patient",
+            quantity: "q_gen_at",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "expecting steps {n} and {n}",
+        ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("what-it-cost")],
+        pow10: 0,
+    },
+    // Step 24 — the rest, and the second discharge out of a cell that had already stopped.
+    // Six of its numerals point at other steps and the rest are measurements, so this block
+    // is ordinals and one setting; everything else on the step is claimed.
+    LedgerRule {
+        phrase: "the same {n} C discharge for the same {n} seconds",
+        ties: &[
+            Tie::Chemistry("cell.max_discharge_c"),
+            Tie::Setting(Control::PulseOn),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "leg one is step {n}, exactly",
+        ties: &[Tie::Ordinal("sixty-times-the-current")],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "Leg one is step {n} run again, and it ends where step {n} ended",
+        ties: &[
+            Tie::Ordinal("sixty-times-the-current"),
+            Tie::Ordinal("sixty-times-the-current"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The cutoff the panel would have printed, which is the chemistry's own end of
+        // discharge — the same field step 22's `chemistry's own 1.750 V` reads, said a
+        // third way. The step beside it is where that instant is readable.
+        phrase: "without ever printing `{n} V`, and step {n}",
+        ties: &[
+            Tie::Chemistry("cell.v_min"),
+            Tie::Ordinal("sixty-times-the-current"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "what step {n} had to say",
+        ties: &[Tie::Ordinal("past-empty")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Leg one's amp-hours, quoted off the step that measured them...
+        phrase: "A·h against the first leg's {n}",
+        ties: &[Tie::Quoted {
+            step: "sixty-times-the-current",
+            quantity: "delivered_ah",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // ...and the fraction the sentence works out from it. A separate rule because
+        // `pow10` is a property of the rule and these two numbers are in different units:
+        // amp-hours and a percentage.
+        phrase: "{n} % of it, from a cell",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Ratio,
+            operands: &[Operand::Sibling("1.4220"), Operand::Sibling("4.4190")],
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        phrase: "unlike steps {n} and {n} there is",
+        ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("what-it-cost")],
         pow10: 0,
     },
 ];
@@ -4930,6 +5409,7 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
             Prog::Pulse { off_s, .. } => Some(off_s),
             _ => None,
         },
+        Control::Ambient => Some(lesson.ambient_c),
     }
 }
 
@@ -5020,7 +5500,8 @@ fn operand_value(op: &Operand, ctx: &SentenceCtx, lesson: &Lesson) -> Option<f64
                 ctx.derived,
             );
             assert!(
-                claimed.is_some() || matches!(by_rule, Some(t) if !matches!(t, Tie::Derived(_))),
+                claimed.is_some()
+                    || matches!(by_rule, Some(t) if !matches!(t, Tie::Derived { .. })),
                 "step `{}`: a derivation reads the operand `{token}`, and nothing else \
                  accounts for that number — or the only thing that does is another \
                  derivation.\n\
@@ -5100,15 +5581,64 @@ fn tie_values(
             .iter()
             .filter_map(|t| number_of(t))
             .collect(),
-        Tie::Derived(operands) => {
-            let mut product = 1.0;
-            for op in *operands {
-                let Some(v) = operand_value(op, ctx, lesson) else {
+        Tie::Derived { op, operands } => {
+            let mut values = Vec::new();
+            for operand in *operands {
+                let Some(v) = operand_value(operand, ctx, lesson) else {
                     return Vec::new();
                 };
-                product *= v;
+                values.push(v);
             }
-            vec![product]
+            let [first, rest @ ..] = &values[..] else {
+                return Vec::new();
+            };
+            match op {
+                LedgerOp::Product => vec![values.iter().product()],
+                LedgerOp::Difference => vec![rest.iter().fold(*first, |a, b| a - b)],
+                // A zero divisor resolves to nothing rather than to an infinity the
+                // comparison would then round, exactly as `Tie::Ratio` refuses one.
+                LedgerOp::Ratio if rest.contains(&0.0) => Vec::new(),
+                LedgerOp::Ratio => vec![rest.iter().fold(*first, |a, b| a / b)],
+            }
+        }
+        Tie::Elsewhere { step, tie } => {
+            assert!(
+                lesson.id != *step,
+                "a rule on step `{}` reads `Elsewhere` about that same step. That is                  `{}` with extra words, and it would be green for a reason the sentence                  does not state.",
+                lesson.id,
+                tie_arm_name(tie),
+            );
+            assert!(
+                !matches!(tie, Tie::Elsewhere { .. } | Tie::Derived { .. }),
+                "a rule wraps `{}` in `Elsewhere`. Nesting has no floor, and a derivation                  reads THIS sentence's siblings — there is no such thing as the sibling of                  a token in another lesson.",
+                tie_arm_name(tie),
+            );
+            let Some(other) = lessons.iter().find(|l| l.id == *step) else {
+                return Vec::new();
+            };
+            let (scenario, chemistry) = (
+                scenario_toml(&other.scenario),
+                chemistry_toml(&other.scenario),
+            );
+            tie_values(tie, other, lessons, &scenario, &chemistry, ctx)
+        }
+        Tie::Quoted { step, quantity } => {
+            let mut hits = ctx
+                .all
+                .iter()
+                .filter(|c| c.step == *step && c.quantity == *quantity);
+            let Some(claim) = hits.next() else {
+                return Vec::new();
+            };
+            assert!(
+                hits.next().is_none(),
+                "a rule quotes step `{step}`'s `{quantity}`, and that step has more than                  one claim on it. Which one the sentence means would be decided by file                  order rather than by the sentence."
+            );
+            assert_eq!(
+                claim.spells_pow10, 0,
+                "a rule quotes step `{step}`'s `{quantity}`, whose own claim spells its                  number scaled. The rule's `pow10` would then apply on top of it and the                  two scalings would multiply silently. Quote a claim that states its                  quantity in the value's own unit."
+            );
+            vec![claim.value]
         }
         Tie::Name { field, prefix } => digits_after(&string_at_path(chemistry, field), prefix),
         Tie::Ordinal(step) => lessons
@@ -5172,17 +5702,27 @@ fn tie_describe(tie: &Tie) -> String {
             .join(" divided by "),
         Tie::Span(path) => format!("the span of the chemistry's `{path}`"),
         Tie::Clock => "the `sim time` row's rendering of the step's mark".to_string(),
-        Tie::Derived(operands) => format!(
+        Tie::Derived { op, operands } => format!(
             "this sentence's own {}",
             operands
                 .iter()
-                .map(|op| match op {
+                .map(|operand| match operand {
                     Operand::Sibling(t) => format!("`{t}`"),
                     Operand::Word(w) => format!("`{w}` (spelled in letters)"),
                 })
                 .collect::<Vec<_>>()
-                .join(" times ")
+                .join(match op {
+                    LedgerOp::Product => " times ",
+                    LedgerOp::Difference => " less ",
+                    LedgerOp::Ratio => " divided by ",
+                })
         ),
+        Tie::Elsewhere { step, tie } => {
+            format!("{}, read on the lesson `{step}`", tie_describe(tie))
+        }
+        Tie::Quoted { step, quantity } => {
+            format!("the lesson `{step}`'s claim on `{quantity}`")
+        }
     }
 }
 
@@ -5204,7 +5744,9 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Ratio(_) => "ratio",
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
-        Tie::Derived(_) => "derived",
+        Tie::Derived { .. } => "derived",
+        Tie::Elsewhere { .. } => "another lesson",
+        Tie::Quoted { .. } => "quoted claim",
     }
 }
 
@@ -5222,12 +5764,17 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
     let written = token.replace(' ', "");
     let scale = 10f64.powi(pow10);
     match tie {
-        Tie::Product(_) | Tie::Ratio(_) | Tie::Span(_) | Tie::Derived(_) => {
-            values.iter().all(|v| {
-                let places = decimals_of(&written).max(0) as usize;
-                to_fixed(v * scale, places) == written
-            })
-        }
+        // A wrapper compares the way the thing it wraps compares: `Elsewhere` changes
+        // WHICH lesson answers, never how exactly the answer has to match.
+        Tie::Elsewhere { tie, .. } => tie_agrees(tie, values, token, pow10),
+        Tie::Product(_)
+        | Tie::Ratio(_)
+        | Tie::Span(_)
+        | Tie::Derived { .. }
+        | Tie::Quoted { .. } => values.iter().all(|v| {
+            let places = decimals_of(&written).max(0) as usize;
+            to_fixed(v * scale, places) == written
+        }),
         Tie::Member(_) => match number_of(token) {
             Some(spelled) => values.iter().any(|v| tol_eq(v * scale, spelled)),
             None => false,
@@ -5565,6 +6112,164 @@ fn a_derivation_refuses_an_operand_nothing_else_accounts_for() {
     operand_value(&Operand::Sibling("2"), &ctx, lesson);
 }
 
+/// [`Tie::Elsewhere`] reads the **named** lesson's own files, and its two users cannot say so.
+///
+/// Both of them — step 23's `0.36` and its `19.3h` — name step 22, which runs step 23's own
+/// scenario file on step 23's own chemistry. So an implementation that quietly resolved
+/// against *this* step's files would pass both sentences and the whole suite with them: the
+/// arm's one substantive property would be untested by construction. That is the shape
+/// `docs/plans/path-derived-arm.md` calls a confounded perturbation, and the answer is the
+/// same one — exercise the property directly.
+///
+/// So this points the wrapper at `bare-curve`, an LFP step on `cc_discharge_lfp.toml`, and
+/// asserts it comes back with **that** lesson's numbers rather than the lead-acid ones it is
+/// invoked from.
+///
+/// **Two ties, because the wrapper hands its inner tie three things and the two halves are
+/// separately blind.** Measured rather than assumed: neutering the *lesson* argument reddens
+/// the ledger by itself, because step 22's clock and demand box are not step 23's however
+/// much file they share — so that half was never blind and the sentence this file first
+/// wrote about it was wrong. What the two users genuinely cannot reach is the **scenario and
+/// chemistry** pair, which for both of them is the same file they are invoked from. So the
+/// second tie reads a chemistry field: LFP's 2.303451 Ah against the lead-acid 7.2, off a
+/// wrapper called from a lead-acid step.
+#[test]
+fn an_elsewhere_reads_the_named_lessons_own_files() {
+    let lessons = lessons();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "sixty-times-the-current")
+        .expect("step 23 is still in the path");
+    let named = lessons
+        .iter()
+        .find(|l| l.id == "bare-curve")
+        .expect("step 1 is still in the path");
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &[],
+        derived: &[],
+    };
+    // Resolved from step 23, whose own box is 21.6 A, and asked about step 1, whose is 2.
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+
+    // Half one: the lesson block.
+    let tie = Tie::Elsewhere {
+        step: "bare-curve",
+        tie: &Tie::Setting(Control::DemandValue),
+    };
+    let got = tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+    let want = control_value(Control::DemandValue, named).expect("step 1 has a demand box");
+    assert_eq!(
+        got,
+        vec![want],
+        "`Tie::Elsewhere` pointed at `bare-curve` resolved to {got:?}, and that lesson's          demand box is {want}. It read the wrong lesson — most likely the one the rule is          written on, which is step 23 at {:?}.",
+        control_value(Control::DemandValue, from),
+    );
+    assert_ne!(
+        control_value(Control::DemandValue, from),
+        Some(want),
+        "this test is only evidence while the two lessons' demand boxes DIFFER. They now          agree, so an implementation reading either one would pass — repoint it at a step          whose box is different."
+    );
+
+    // Half two: the chemistry the named lesson's scenario names, which is the half no
+    // sentence in the path can reach.
+    let tie = Tie::Elsewhere {
+        step: "bare-curve",
+        tie: &Tie::Chemistry("cell.capacity_ah"),
+    };
+    let got = tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+    let want = numbers_at_path(&chemistry_toml(&named.scenario), "cell.capacity_ah");
+    let mine = numbers_at_path(&chemistry, "cell.capacity_ah");
+    assert_eq!(
+        got, want,
+        "`Tie::Elsewhere` pointed at `bare-curve` read a capacity of {got:?}. That          lesson's chemistry says {want:?} and the one this wrapper was invoked from says          {mine:?} — so it resolved the inner tie against the CALLING step's files."
+    );
+    assert_ne!(
+        want, mine,
+        "this test is only evidence while the two chemistries' capacities DIFFER."
+    );
+}
+
+/// A wrapper naming its own lesson is refused rather than resolved.
+#[test]
+#[should_panic(expected = "with extra words")]
+fn an_elsewhere_may_not_name_its_own_step() {
+    let lessons = lessons();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "sixty-times-the-current")
+        .expect("step 23 is still in the path");
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &[],
+        derived: &[],
+    };
+    let tie = Tie::Elsewhere {
+        step: "sixty-times-the-current",
+        tie: &Tie::Setting(Control::DemandValue),
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
+/// A wrapper around a wrapper, or around a derivation, is refused rather than resolved.
+#[test]
+#[should_panic(expected = "Nesting has no floor")]
+fn an_elsewhere_may_not_wrap_another_one() {
+    let lessons = lessons();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "sixty-times-the-current")
+        .expect("step 23 is still in the path");
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &[],
+        derived: &[],
+    };
+    let tie = Tie::Elsewhere {
+        step: "slow-and-patient",
+        tie: &Tie::Elsewhere {
+            step: "bare-curve",
+            tie: &Tie::Clock,
+        },
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
 /// Every lesson is either ledgered or named as not ledgered.
 ///
 /// The half of the ledger that is about the future. Coverage grows one step at a time and
@@ -5698,7 +6403,7 @@ fn every_ledger_rule_is_a_phrase_and_is_used() {
             // the sentence: the phrase match already requires those exact words around the
             // number, so `six` cannot be a word the author supplied from outside. Without
             // this the operand would be a declared 6 with a label on it.
-            if let Tie::Derived(operands) = tie {
+            if let Tie::Derived { operands, .. } = tie {
                 for op in *operands {
                     if let Operand::Word(w) = op {
                         assert!(
@@ -6008,7 +6713,22 @@ fn every_claim_matches_the_engine() {
                 .find(|a| a.step == step && a.name == name)
                 .unwrap_or_else(|| panic!("no arm `{name}` on step `{step}`"))
         });
-        let r = run(lesson, arm);
+        // The instants this trajectory's claims want the overpotential split at, gathered
+        // before the run because that read is the one thing a row cannot afford to take
+        // speculatively. See [`Row::rc_overpotential_v`].
+        let capture: Vec<f64> = all
+            .iter()
+            .filter(|c| {
+                c.step == step
+                    && c.arm.as_deref() == arm_name
+                    && matches!(
+                        c.quantity.as_str(),
+                        "rc_overpotential_mv_at" | "diffusion_overpotential_mv_at"
+                    )
+            })
+            .map(|c| c.read_at_s)
+            .collect();
+        let r = run(lesson, arm, &capture);
 
         // The fence on `Accounted::ReadAt`, which lives here because this is the only
         // place a trajectory exists. Check 6 accepts a number in a claimed sentence when
@@ -6626,7 +7346,13 @@ const TALLIES: &[Tally] = &[
         // "all of them scenario constants" until step 6 joined, which is the sentence
         // moving because the fact did. A tally's phrase is allowed to follow its prose;
         // what it may never do is carry the number.
-        phrase: "{w} steps, {w} numerals, and no longer all of them scenario constants",
+        //
+        // The numeral count is in DIGITS where the step count is in words, and that is the
+        // count outgrowing the English: this check refuses to render a number `HEADER_WORDS`
+        // has no word for, and the ninth ledgered step would have taken it past a hundred
+        // whatever happened. Extending the word table to three digits is a table that grows
+        // every slice; writing this one in digits is the escape the refusal itself offers.
+        phrase: "{w} steps, {n} numerals, and no longer all of them scenario constants",
         of: &[n_ledgered, n_ledgered_numerals],
     },
     // Phrased as a count of what is LEFT rather than "the remaining N steps", which was
@@ -6697,7 +7423,7 @@ const TALLIES: &[Tally] = &[
     },
     Tally {
         prose: Prose::ThisTest,
-        phrase: "today it is {w} steps and {w} numbers",
+        phrase: "today it is {w} steps and {n} numbers",
         of: &[n_ledgered, n_ledgered_numerals],
     },
     // The ledger's arm count, stated once in each file. Neither was derived until this
