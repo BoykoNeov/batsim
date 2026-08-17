@@ -84,7 +84,10 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is fourteen steps and 251 numbers.
+//! (`[ledger]` in `path-claims.toml`) and today it is fourteen steps and 251 numbers —
+//! a collision of counts and not one number: the first fourteen were the steps with no
+//! claim when this paragraph was written, this fourteen is the steps scanned whole today,
+//! and only the second of them moves.
 //! Nineteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, the span of a
@@ -5505,7 +5508,14 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
-        phrase: "step {n} of this path, and step {n}",
+        // **Both ends of the phrase are load-bearing, and the short version was a trap.**
+        // `step {n} of this path, and step {n}` also matches step 2 — *"That fall is step 20
+        // of this path, and step 1's cell does the same thing"* — where the second slot is a
+        // back-reference and not the ordinal of `what-it-cost` at all. Nothing would have
+        // said so until step 2 was ledgered, because a rule does not know which step it was
+        // written for and the scan only reads ledgered ones. `the subject of` and `is about`
+        // are what keep it here: step 2 has neither.
+        phrase: "the subject of step {n} of this path, and step {n} is about",
         ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("what-it-cost")],
         pow10: 0,
     },

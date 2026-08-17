@@ -3156,7 +3156,10 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # claimed — all of them.
 #
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: fourteen
-# steps, 251 numerals, and no longer all of them scenario constants. The first
+# steps, 251 numerals, and no longer all of them scenario constants. This fourteen is
+# NOT the fourteen a few lines above: that one is frozen, and counts the steps that had
+# no claim when the ledger was written. The two happen to be equal today and only this
+# one moves. The first
 # three were picked because the same measuring pass found they carry no
 # measurement-shaped figure at all, so they could be closed before a single number was
 # measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's

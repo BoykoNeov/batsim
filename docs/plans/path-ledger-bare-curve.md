@@ -114,7 +114,7 @@ green. That is written into the claims' own notes rather than left to be discove
 
 ## Perturbations
 
-Twelve, all red, exit codes read from the process rather than from `start` — which is
+Thirteen, all red, exit codes read from the process rather than from `start` — which is
 exit-code-blind and has lied about a whole harness twice in this project.
 
 | perturbation | reddens |
@@ -125,6 +125,7 @@ exit-code-blind and has lied about a whole harness twice in this project.
 | prose `I·R0` → `I·R1` | the provenance name tie |
 | prose `2.00 V` → `2.10 V` | the declared floor |
 | prose demand box `2 A` → `3 A` | the second demand rule |
+| prose sentence-initial `2 A` → `3 A` | the first demand rule's first slot |
 | prose `step 20` → `step 19` | the ordinal of `past-empty` |
 | prose `step 21` → `step 22` | the ordinal of `what-it-cost` |
 | prose `80 %` → `70 %` | the window claim's literal |
@@ -163,10 +164,23 @@ the sentence intact and the number unaccounted, and the scan says so.
   `flag_first_s:SOC_CLAMPED_LOW` at 4146.5 with the same value, which is fine today and would
   become a hazard the moment anything quotes that quantity across steps — the agreement fence
   compares claims, and two that agree pass whichever is picked.
-* **Nothing checks that a ledgered step's rules stay on that step.** The vocabulary is
-  global: `step {n} of this path, and step {n}` is written for step 1 and the identical
-  phrase occurs in step 2, which is unledgered. When step 2 is scanned the rule will cover it
-  too — correctly, as it happens, but by luck rather than by design.
+* **Nothing checks that a rule stays on the step it was written for, and this slice nearly
+  shipped a trap on it.** The vocabulary is global and `rule_matches` has no idea which step
+  a phrase was written for, so a rule reaching a *different* step is invisible until that
+  step is ledgered. The ordinal rule here was first written `step {n} of this path, and step
+  {n}` — which also matches step 2's *"That fall is step 20 of this path, and step 1's cell
+  does the same thing"*, where the second slot is a back-reference and not the ordinal of
+  `what-it-cost` at all. It would have gone red the day step 2 was scanned, in a slice with
+  no reason to look here. The phrase was narrowed to `the subject of step {n} of this path,
+  and step {n} is about`, which step 2 does not carry.
+
+  The sweep that found it is worth keeping in mind: match every rule's phrase against all
+  twenty-four lesson texts and print the ones reaching more than one. **Three of the hundred and five
+  rules do.** Besides the ordinal, both of step 3's scatter rules reach
+  `what-protection-costs` — and they will be *right* there, because both scenarios declare
+  the same 2 % and 3 %. Right by coincidence of values, not by design, which is the same
+  hazard one degree quieter. The sweep is not a test; making it one needs a decision about
+  whether a rule is a statement about a step or about the path.
 
 ## What the ledger looks like now
 
