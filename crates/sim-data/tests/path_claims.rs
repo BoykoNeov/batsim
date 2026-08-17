@@ -81,7 +81,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is ten steps and 159 numbers.
+//! (`[ledger]` in `path-claims.toml`) and today it is ten steps and 164 numbers.
 //! Sixteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio or a difference, one of
 //! their durations read in hours, the span of a
@@ -151,10 +151,14 @@
 //!   `ambient_c` may be dragged **at the mark**: [`run`] keeps two [`Env`]s, the step's
 //!   slider before the mark and the arm's after it. That split and the accounting arm that
 //!   pays for it were one deadlock — the sentence needing the split prints `20 K` and
-//!   `2.7×`, figures derived from their siblings, so neither half was buildable alone. Left
-//!   out is a sentence comparing two *scenario files* (step 16's 1 C rerun of both porous
-//!   models), which is a second pack rather than a second trajectory — [`run`] builds one
-//!   pack per arm.
+//!   `2.7×`, figures derived from their siblings, so neither half was buildable alone.
+//!   A sentence comparing two *scenario files* used to be left out here, and is not any
+//!   more: [`Arm::pack_from`] names the lesson a reader walks **Back** to, so an arm can
+//!   rebuild another lesson's pack under this step's typed current. Step 16's 1 C rerun of
+//!   both porous models is what it was built for, and the three numbers that sentence had
+//!   to delete are back on the page. What is still left out is the third pack in the same
+//!   step — the equivalent circuit's zero-length probe at this current, which no lesson in
+//!   the path runs. It is reachable in principle now; what it needs is a lesson to walk to.
 //! * **One arm compared against another.** `identical_to` compares two arms' end *states*,
 //!   and nothing compares two arms' *events*. Step 11 says a charge inhibit and a plating
 //!   flag arrive "at the same instant" on two different trajectories; that equality is
@@ -1516,7 +1520,19 @@ fn drive(
 /// Every arm drives its own pack from scratch. It costs a re-run of the pre-mark
 /// trajectory for each continuation arm, and it buys the thing step 18 needs: four arms
 /// branching off one mark, none of them able to see another's buttons.
-fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64]) -> Run {
+///
+/// **`lesson` is the step the arm is declared on; the pack may come from a different one.**
+/// [`Arm::pack_from`] names the lesson a reader walks back to, and everything the *pack* is
+/// — scenario, timestep, ambient, BMS, standing demand — is read off that lesson instead,
+/// with this arm's own overrides on top. `lesson` still decides nothing but where the
+/// instruction was written, which is why it stays the first argument.
+fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) -> Run {
+    // The lesson the pack belongs to. Identical to `lesson` for every arm but a twin, and
+    // resolved by id rather than by index so a reordering of `const LESSONS` cannot quietly
+    // repoint one. A name with no lesson behind it is caught in
+    // `every_arm_is_instructed_by_its_own_step`; here it would be a silent fallback to the
+    // wrong pack, so it panics.
+    let lesson = pack_lesson_of(arm, lesson, lessons);
     let dt = arm.and_then(|a| a.dt).unwrap_or(lesson.dt);
     let mut pack = match arm.and_then(|a| a.bms) {
         Some(bms) => build_with_bms(lesson, bms),
@@ -1568,7 +1584,20 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64]) -> Run {
     // the first and `snapshot()` is unchanged across both. That is what makes the page's
     // *two* probes on a reloading step — one under the stale demand box in `loadScenario`,
     // then this one — reproducible by modelling only the second.
-    let probe_telemetry = pack.step(0.0, demand_now(lesson.demand, &pack, dt, None), &before);
+    //
+    // **The box as it stands when the probe is taken**, which is not always the step's.
+    // `applyStep` dials the step's own demand in and probes, so a continuation arm's probe
+    // is the step's — the reader has not typed anything yet. A **restart** arm is the other
+    // order: the reader types a current and *then* presses Restart, and `loadScenario`'s
+    // `readNow` answers for the box in front of them. Measured, and unobservable today —
+    // flipping this back to the step's demand leaves the suite green, because no claim reads
+    // a probe on a restart arm that types a current. Written the correct way round rather
+    // than the reachable way round, on the same terms as the ambient split above.
+    let probe_prog = match arm {
+        Some(a) if a.start == Start::Restart => a.demand_a.map_or(lesson.demand, Prog::Current),
+        _ => lesson.demand,
+    };
+    let probe_telemetry = pack.step(0.0, demand_now(probe_prog, &pack, dt, None), &before);
     let (probe_deficit_min, probe_deficit_max) = deficit_range(&pack);
     let probe = Row {
         t_s: pack.sim_time_s(),
@@ -1671,7 +1700,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64]) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 167 of 189 claims.
+    /// number's last printed place. The default shape: 169 of 191 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1680,12 +1709,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 18 of 189.
+    /// declaration was wrong. 18 of 191.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 189, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 191, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1725,7 +1754,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 172 of 189, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 174 of 191, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2248,6 +2277,38 @@ struct Arm {
     step: String,
     /// What a claim writes in its own `arm` field. Unique within the step.
     name: String,
+    /// The lesson whose **pack** this arm runs, if it is not this step's own.
+    ///
+    /// Step 16's closing instruction is *"run both files again"*: it asks the reader to put
+    /// one current into two different scenarios, and the second of them is the lesson next
+    /// door. Before this field an arm could only ever rebuild the step it was declared on,
+    /// so the sentence comparing the two models at 1 C had no trajectory behind it and its
+    /// three numbers were deleted from the page. `docs/plans/path-ledger-dfn-step.md` named
+    /// that as the gap this closes.
+    ///
+    /// **What it models is navigation, not a control.** Every other override here is a box
+    /// or a checkbox; this one is the reader pressing **Back**, landing on another lesson —
+    /// which rebuilds from *that* lesson's scenario under *that* lesson's controls, because
+    /// `applyStep` reloads and re-dials — and then typing this arm's current and pressing
+    /// **Restart**. So the named lesson supplies the scenario, the timestep, the ambient and
+    /// the BMS, and this arm supplies what the reader types on top.
+    ///
+    /// Three fences, in [`assert_walkable`]: it may not name its own step, the lesson it
+    /// names must be on a *different* scenario file, and it implies [`Start::Restart`]. Not
+    /// one of them is reachable from the claims file, so each has a `should_panic` test of
+    /// its own rather than a paragraph. The instruction still has to be in **this** step's
+    /// prose, which is the whole point — the sentence that sends a reader next door is
+    /// written here.
+    ///
+    /// **Half of what this resolves is checked by its own user and half is not.** The
+    /// *scenario* half is: the twin arm reads a single-particle file where its step reads a
+    /// porous-electrode one, so an implementation that built this step's pack would land on
+    /// 3484 s where the claim says 3496 and fail loudly. The *block* half — timestep,
+    /// ambient, BMS — is not, because the two lessons agree on all three. It is written the
+    /// way the page behaves rather than the way a test could tell, the same position
+    /// [`Tie::Elsewhere`] states for its own named-lesson read.
+    #[serde(default)]
+    pack_from: Option<String>,
     /// The sentence in that step's prose that tells the reader to make this change,
     /// verbatim. Not a paraphrase: it is checked as a substring, like a claim's `literal`.
     instruction: String,
@@ -3186,6 +3247,67 @@ fn arm_of<'a>(all: &'a [Arm], claim: &Claim) -> Option<&'a Arm> {
     )
 }
 
+/// The lesson whose **pack** an arm runs — its own step's, unless [`Arm::pack_from`] sends
+/// the reader next door.
+///
+/// One function rather than three copies of the same `find`, because three places have to
+/// agree about it and two of them are checks: what [`run`] builds, what the override fences
+/// in [`every_arm_is_instructed_by_its_own_step`] compare against, and what
+/// [`every_claim_is_reachable_in_its_own_step`] measures a timeline with. A step that
+/// resolved this differently from the runner would check one trajectory and describe another.
+fn pack_lesson_of<'a>(arm: Option<&Arm>, lesson: &'a Lesson, lessons: &'a [Lesson]) -> &'a Lesson {
+    match arm.and_then(|a| a.pack_from.as_deref()) {
+        Some(id) => lessons.iter().find(|l| l.id == id).unwrap_or_else(|| {
+            panic!(
+                "an arm on step `{}` runs the pack of the lesson `{id}`, and there is no \
+                 such lesson. A step id that no longer exists means the prose it points at \
+                 was renamed and this arm was left behind.",
+                lesson.id
+            )
+        }),
+        None => lesson,
+    }
+}
+
+/// Can a reader actually walk to the pack this arm runs?
+///
+/// Three refusals on [`Arm::pack_from`], lifted out of
+/// [`every_arm_is_instructed_by_its_own_step`] so each can be asked directly. Not one of
+/// them is reachable by any arm in the file — the only twin arm satisfies all three — and a
+/// fence no perturbation can enter is the shape this file has been caught by before, so the
+/// three `should_panic` tests below are what price them.
+fn assert_walkable(arm: &Arm, lesson: &Lesson, pack_lesson: &Lesson) {
+    let Some(id) = arm.pack_from.as_deref() else {
+        return;
+    };
+    assert_ne!(
+        pack_lesson.id, lesson.id,
+        "arm `{}` on step `{}` names its own step in `pack_from`. That is the step's own \
+         pack with extra words — the same refusal `Tie::Elsewhere` makes, and for the same \
+         reason: it would be green without the sentence being about anything.",
+        arm.name, arm.step
+    );
+    assert_ne!(
+        pack_lesson.scenario, lesson.scenario,
+        "arm `{}` on step `{}` runs the pack of `{id}`, which is on the same scenario file \
+         (`{}`). Then it is not another pack at all, only another lesson block pointing at \
+         this one, and every number on the arm would be reachable without walking anywhere. \
+         If the point really is a different control rather than a different file, this arm \
+         is an ordinary restart on its own step.",
+        arm.name, arm.step, lesson.scenario
+    );
+    assert!(
+        arm.start == Start::Restart,
+        "arm `{}` on step `{}` runs another lesson's pack from `{:?}`. There is no such \
+         position: this step's mark is a state of THIS scenario, and a reader who walks to \
+         `{id}` has left it. `applyStep` reloads that lesson and re-dials its controls, so \
+         the only thing a typed current can do there is precede a **Restart**.",
+        arm.name,
+        arm.step,
+        arm.start
+    );
+}
+
 /// Does this claim read a continuation of the step's own run, past its mark?
 ///
 /// The question `after_mark` used to answer directly. It is now derived, because an arm
@@ -3264,6 +3386,16 @@ fn every_arm_is_instructed_by_its_own_step() {
 
         let instruction = ascii_minus(&arm.instruction);
 
+        // The pack's lesson, which is this step's unless the arm walks next door. Every
+        // "an override that changes nothing" fence below compares against THIS lesson and
+        // not against the declaring step: what the reader is holding when they type is the
+        // other lesson's controls, so that is what an override has to differ from. Written
+        // the correct way round rather than the reachable way round — the one twin arm in
+        // the file overrides only the demand box, so no other branch can tell the two
+        // lessons apart today.
+        let pack_lesson = pack_lesson_of(Some(arm), lesson, &lessons);
+        assert_walkable(arm, lesson, pack_lesson);
+
         if let Some(demand_a) = arm.demand_a {
             let spelled = Arm::spelled(demand_a);
             assert!(
@@ -3293,12 +3425,13 @@ fn every_arm_is_instructed_by_its_own_step() {
                 arm.instruction
             );
             assert!(
-                (dt - lesson.dt).abs() > f64::EPSILON,
-                "arm `{}` on step `{}` declares dt = {dt} s, which is what the step \
-                 already sets. An override that changes nothing is a control the reader \
-                 was never asked to touch.",
+                (dt - pack_lesson.dt).abs() > f64::EPSILON,
+                "arm `{}` on step `{}` declares dt = {dt} s, which is what the lesson its \
+                 pack comes from (`{}`) already sets. An override that changes nothing is \
+                 a control the reader was never asked to touch.",
                 arm.name,
-                arm.step
+                arm.step,
+                pack_lesson.id
             );
             assert!(
                 arm.start == Start::Restart,
@@ -3325,15 +3458,16 @@ fn every_arm_is_instructed_by_its_own_step() {
                 arm.step,
                 arm.instruction
             );
-            let (scenario, _) = load(&lesson.scenario);
-            let as_configured = lesson.bms.unwrap_or(scenario.pack.bms.is_some());
+            let (scenario, _) = load(&pack_lesson.scenario);
+            let as_configured = pack_lesson.bms.unwrap_or(scenario.pack.bms.is_some());
             assert!(
                 bms != as_configured,
-                "arm `{}` on step `{}` sets the BMS to {bms}, which is what the step is \
-                 already configured with. The arm is then the step's own run under a \
-                 second name, and its claims say nothing about unchecking anything.",
+                "arm `{}` on step `{}` sets the BMS to {bms}, which is what `{}` is already \
+                 configured with. The arm is then that lesson's own run under a second \
+                 name, and its claims say nothing about unchecking anything.",
                 arm.name,
-                arm.step
+                arm.step,
+                pack_lesson.id
             );
             assert!(
                 arm.start == Start::Restart,
@@ -3359,12 +3493,13 @@ fn every_arm_is_instructed_by_its_own_step() {
                 arm.instruction
             );
             assert!(
-                (ambient_c - lesson.ambient_c).abs() > f64::EPSILON,
+                (ambient_c - pack_lesson.ambient_c).abs() > f64::EPSILON,
                 "arm `{}` on step `{}` declares an ambient of {ambient_c} °C, which is \
-                 where the step already leaves the slider. An override that changes \
-                 nothing is a control the reader was never asked to touch.",
+                 where `{}` already leaves the slider. An override that changes nothing is \
+                 a control the reader was never asked to touch.",
                 arm.name,
-                arm.step
+                arm.step,
+                pack_lesson.id
             );
             // No `Start::Restart` fence here, and its removal is this slice's. It stood as
             // a scoping refusal and said so — `$("ambient").oninput` calls `applyEnv` and
@@ -3441,8 +3576,8 @@ fn every_identical_arm_really_is_identical() {
             .find(|a| a.step == arm.step && a.name == twin_name)
             .unwrap_or_else(|| panic!("no arm `{twin_name}` on step `{}`", arm.step));
 
-        let mine = run(lesson, Some(arm), &[]);
-        let theirs = run(lesson, Some(twin), &[]);
+        let mine = run(lesson, Some(arm), &[], &lessons);
+        let theirs = run(lesson, Some(twin), &[], &lessons);
         assert_eq!(
             mine.end_snapshot, theirs.end_snapshot,
             "step `{}`: arms `{}` and `{twin_name}` are declared to end on an identical \
@@ -4908,10 +5043,22 @@ enum Tie {
     /// note said it was there "so that step 23's 6.09 W has something to be 87 times". Two
     /// files, three assertions, one suite, all green: nothing compared the two steps'
     /// numbers to each other. See `docs/plans/path-ledger-last-two-steps.md`.
+    ///
+    /// **The address is `(step, arm, quantity)`, and the arm half is this slice's.** A step
+    /// and a quantity name a *number* only while the step runs one trajectory. Step 16 now
+    /// runs three — its own 3 C discharge and two 1 C reruns — and `t_at_v_below:2.5`
+    /// answers 464 on one of them and 3484 on another. Before the arm was part of the
+    /// address that pair was simply unquotable, and the four sentences that quote either of
+    /// them would have failed together on the agreement assert below. `None` is *the step's
+    /// own run*, not "any of them": an address that matches whatever happens to be lying
+    /// around is the search-the-file match this whole taxonomy refuses.
     Quoted {
         /// The lesson whose claim decides it.
         step: &'static str,
-        /// That claim's `quantity`. Every claim on that step naming it must agree.
+        /// Which of that lesson's `[[arm]]`s the claim is read on, or `None` for its own
+        /// run to its mark — the same field a claim writes, read the same way.
+        arm: Option<&'static str>,
+        /// That claim's `quantity`. Every claim on that step and arm naming it must agree.
         quantity: &'static str,
         /// Which side of that value this sentence prints.
         states: QuotedAs,
@@ -5249,6 +5396,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "where the circuit's was {n}",
         ties: &[Tie::Quoted {
             step: "circuit-repeats-itself",
+            arm: None,
             quantity: "pulse_rebound_mv:1",
             states: QuotedAs::Same,
         }],
@@ -5261,6 +5409,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "its {n} mV was the same five times",
         ties: &[Tie::Quoted {
             step: "circuit-repeats-itself",
+            arm: None,
             quantity: "pulse_rebound_mv:5",
             states: QuotedAs::Same,
         }],
@@ -5282,6 +5431,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "against the circuit's {n} %",
         ties: &[Tie::Quoted {
             step: "circuit-repeats-itself",
+            arm: None,
             quantity: "pulse_rebound_arrived:1",
             states: QuotedAs::Complement,
         }],
@@ -5336,6 +5486,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "where the twin read {n}",
         ties: &[Tie::Quoted {
             step: "looks-fine-from-outside",
+            arm: None,
             quantity: "v_at:0",
             states: QuotedAs::Same,
         }],
@@ -5347,6 +5498,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "({n} for the particle",
         ties: &[Tie::Quoted {
             step: "looks-fine-from-outside",
+            arm: None,
             quantity: "v_at:0",
             states: QuotedAs::Same,
         }],
@@ -5356,6 +5508,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "against the twin's {n} on the first step",
         ties: &[Tie::Quoted {
             step: "looks-fine-from-outside",
+            arm: None,
             quantity: "v_at:2",
             states: QuotedAs::Same,
         }],
@@ -5365,6 +5518,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "where the other reads {n}",
         ties: &[Tie::Quoted {
             step: "looks-fine-from-outside",
+            arm: None,
             quantity: "v_at:400",
             states: QuotedAs::Same,
         }],
@@ -5377,6 +5531,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "the minute that ends at {n} s",
         ties: &[Tie::Quoted {
             step: "the-electrolyte-starves",
+            arm: None,
             quantity: "t_at_v_below:2.5",
             states: QuotedAs::Same,
         }],
@@ -5390,11 +5545,13 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Difference(&[
             Tie::Quoted {
                 step: "the-electrolyte-starves",
+                arm: None,
                 quantity: "v_at:400",
                 states: QuotedAs::Same,
             },
             Tie::Quoted {
                 step: "the-electrolyte-starves",
+                arm: None,
                 quantity: "v_at:464",
                 states: QuotedAs::Same,
             },
@@ -5410,11 +5567,13 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Difference(&[
             Tie::Quoted {
                 step: "looks-fine-from-outside",
+                arm: None,
                 quantity: "v_at:400",
                 states: QuotedAs::Same,
             },
             Tie::Quoted {
                 step: "looks-fine-from-outside",
+                arm: None,
                 quantity: "v_at:464",
                 states: QuotedAs::Same,
             },
@@ -5441,6 +5600,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
             Tie::Setting(Control::DemandValue),
             Tie::Quoted {
                 step: "the-electrolyte-starves",
+                arm: None,
                 quantity: "t_at_v_below:2.5",
                 states: QuotedAs::Same,
             },
@@ -5448,6 +5608,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                 Tie::Setting(Control::DemandValue),
                 Tie::Hours(&Tie::Quoted {
                     step: "the-electrolyte-starves",
+                    arm: None,
                     quantity: "t_at_v_below:2.5",
                     states: QuotedAs::Same,
                 }),
@@ -5460,6 +5621,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "same instant, reads {n} V",
         ties: &[Tie::Quoted {
             step: "looks-fine-from-outside",
+            arm: None,
             quantity: "v_at:464",
             states: QuotedAs::Same,
         }],
@@ -5472,11 +5634,16 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Difference(&[
             Tie::Quoted {
                 step: "looks-fine-from-outside",
+                // The twin's cut-off is 560 s past its own mark, so the claim on it is read
+                // on the arm the reader presses Run again for — not on step 15's own run,
+                // which stops at 500 s and never crosses anything.
+                arm: Some("carries on"),
                 quantity: "t_at_v_below:2.5",
                 states: QuotedAs::Same,
             },
             Tie::Quoted {
                 step: "the-electrolyte-starves",
+                arm: None,
                 quantity: "t_at_v_below:2.5",
                 states: QuotedAs::Same,
             },
@@ -5487,6 +5654,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "against the twin's {n} W",
         ties: &[Tie::Quoted {
             step: "looks-fine-from-outside",
+            arm: None,
             quantity: "q_gen_at",
             states: QuotedAs::Same,
         }],
@@ -5503,17 +5671,63 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
+        // How far apart the two models land at 1 C: the twin's crossing less this file's,
+        // one claim from each of the two arms this step's closing instruction produces.
+        // Neither operand is anywhere near this token in the sentence — they are its two
+        // neighbours — but the tie side is still the right family, because what separates
+        // them is WHICH TRAJECTORY each was read on and only an address can say that. A
+        // `Tie::Derived` reading the printed `3484` and `3496` would be right about the
+        // arithmetic and silent about the packs.
+        phrase: "{n} s apart, which is",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "the-electrolyte-starves",
+                arm: Some("the twin at one c"),
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "the-electrolyte-starves",
+                arm: Some("one c"),
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same gap as a fraction of this file's own run, and the one number in the
+        // sentence that IS worked out from what a reader can see: the `12` two words back
+        // over the `3484` two clauses back.
+        //
+        // Admissible only because the `12` is tie-side. `operand_value` refuses an operand
+        // whose only accounting is another derivation, so if that rule were ever re-spelled
+        // as a `Tie::Derived` over the printed instants, this one goes red rather than
+        // quietly resting on a chain with no floor.
+        phrase: "which is {n} %",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Ratio,
+            operands: &[Operand::Sibling("12"), Operand::Sibling("3484")],
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
         // What the cheap model gets wrong about capacity, which at one current is the ratio
         // of the two cut-off instants: the same amps for 2.28 times as long.
         phrase: "wrong by a factor of {n} on how much charge",
         ties: &[Tie::Ratio(&[
             Tie::Quoted {
                 step: "looks-fine-from-outside",
+                // The twin's cut-off is 560 s past its own mark, so the claim on it is read
+                // on the arm the reader presses Run again for — not on step 15's own run,
+                // which stops at 500 s and never crosses anything.
+                arm: Some("carries on"),
                 quantity: "t_at_v_below:2.5",
                 states: QuotedAs::Same,
             },
             Tie::Quoted {
                 step: "the-electrolyte-starves",
+                arm: None,
                 quantity: "t_at_v_below:2.5",
                 states: QuotedAs::Same,
             },
@@ -5674,6 +5888,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[
             Tie::Quoted {
                 step: "slow-and-patient",
+                arm: None,
                 quantity: "delivered_ah",
                 states: QuotedAs::Same,
             },
@@ -5697,6 +5912,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "against `{n} W` where the last step stopped",
         ties: &[Tie::Quoted {
             step: "slow-and-patient",
+            arm: None,
             quantity: "q_gen_at",
             states: QuotedAs::Same,
         }],
@@ -5722,6 +5938,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "is a rounded {n} and at two decimal",
         ties: &[Tie::Quoted {
             step: "slow-and-patient",
+            arm: None,
             quantity: "q_gen_at",
             states: QuotedAs::Same,
         }],
@@ -5777,6 +5994,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "A·h against the first leg's {n}",
         ties: &[Tie::Quoted {
             step: "sixty-times-the-current",
+            arm: None,
             quantity: "delivered_ah",
             states: QuotedAs::Same,
         }],
@@ -6129,13 +6347,14 @@ fn tie_values(
         }
         Tie::Quoted {
             step,
+            arm,
             quantity,
             states,
         } => {
             let hits: Vec<&Claim> = ctx
                 .all
                 .iter()
-                .filter(|c| c.step == *step && c.quantity == *quantity)
+                .filter(|c| c.step == *step && c.arm.as_deref() == *arm && c.quantity == *quantity)
                 .collect();
             let [first, rest @ ..] = &hits[..] else {
                 return Vec::new();
@@ -6148,13 +6367,19 @@ fn tie_values(
             // checked rather than assumed, so two claims on one quantity that have drifted
             // apart fail here instead of being invisible. A step that wants to be quotable
             // tags its instants — `v_at:400` — which is what step 15 now does.
+            //
+            // The arm is part of the address now, so what is left here is genuine
+            // ambiguity *within one trajectory* — two instants filed under one name. It no
+            // longer fires on a quantity two RUNS of a step answer differently, which is
+            // step 16's 464 against its own 3484 and is not a drift at all.
             assert!(
                 rest.iter().all(|c| c.value == first.value),
-                "a rule quotes step `{step}`'s `{quantity}`, and the claims on it answer \
-                 differently: {:?}. Which one the sentence means would be decided by file \
-                 order rather than by the sentence. Quote a quantity that names one \
-                 measurement — or, if these are meant to be the same reading, one of them \
-                 has drifted.",
+                "a rule quotes step `{step}`'s `{quantity}` on {}, and the claims on it \
+                 answer differently: {:?}. Which one the sentence means would be decided by \
+                 file order rather than by the sentence. Quote a quantity that names one \
+                 measurement — tag its instant, as `v_at:400` does — or, if these are meant \
+                 to be the same reading, one of them has drifted.",
+                arm.map_or("its own run".to_string(), |a| format!("the arm `{a}`")),
                 hits.iter().map(|c| c.value).collect::<Vec<_>>(),
             );
             // The claim's own `spells_pow10` is deliberately NOT consulted, and the fence
@@ -6258,14 +6483,19 @@ fn tie_describe(tie: &Tie) -> String {
         }
         Tie::Quoted {
             step,
+            arm,
             quantity,
             states,
-        } => match states {
-            QuotedAs::Same => format!("the lesson `{step}`'s claim on `{quantity}`"),
-            QuotedAs::Complement => {
-                format!("one less the lesson `{step}`'s claim on `{quantity}`")
+        } => {
+            let whose = arm.map_or_else(
+                || format!("the lesson `{step}`'s own run"),
+                |a| format!("the lesson `{step}`'s arm `{a}`"),
+            );
+            match states {
+                QuotedAs::Same => format!("{whose}'s claim on `{quantity}`"),
+                QuotedAs::Complement => format!("one less {whose}'s claim on `{quantity}`"),
             }
-        },
+        }
     }
 }
 
@@ -6849,6 +7079,7 @@ fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
     };
     let tie = Tie::Quoted {
         step: "past-empty",
+        arm: None,
         quantity: "v_at",
         states: QuotedAs::Same,
     };
@@ -6918,6 +7149,7 @@ fn a_tagged_reading_resolves_to_that_reading() {
     );
     let tie = Tie::Quoted {
         step: "looks-fine-from-outside",
+        arm: None,
         quantity: "v_at:400",
         states: QuotedAs::Same,
     };
@@ -6976,6 +7208,95 @@ fn an_elsewhere_may_not_name_its_own_step() {
         chemistry_toml(&from.scenario),
     );
     tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
+/// An arm as [`assert_walkable`] wants to see one, for the three tests that ask it
+/// questions the file itself cannot ask.
+///
+/// Only the three fields those fences read are settable; everything else is the plainest
+/// value that parses. It is deliberately *not* a `Default` on [`Arm`] — an arm with a
+/// default is an arm somebody can forget to fill in, and every field on the real ones is
+/// there because a check reads it.
+fn walkable_probe(step: &str, pack_from: &str, start: Start) -> Arm {
+    Arm {
+        step: step.to_string(),
+        name: "probe".to_string(),
+        pack_from: Some(pack_from.to_string()),
+        instruction: String::new(),
+        start,
+        demand_a: None,
+        dt: None,
+        bms: None,
+        ambient_c: None,
+        actions: vec![Action::Run { to_s: 1.0 }],
+        identical_to: None,
+        note: String::new(),
+    }
+}
+
+/// An arm whose pack comes from the step it is declared on is refused.
+///
+/// Unreachable from the claims file — the one twin arm names the lesson next door — so the
+/// fence is priced here instead of resting on a paragraph. Same argument, and the same
+/// wording, as [`an_elsewhere_may_not_name_its_own_step`].
+#[test]
+#[should_panic(expected = "own pack with extra words")]
+fn a_pack_from_may_not_name_its_own_step() {
+    let lessons = lessons();
+    let here = lessons
+        .iter()
+        .find(|l| l.id == "the-electrolyte-starves")
+        .expect("step 16 is still in the path");
+    let arm = walkable_probe(&here.id, &here.id, Start::Restart);
+    assert_walkable(&arm, here, here);
+}
+
+/// An arm whose named lesson is on the *same* scenario file is refused.
+///
+/// The subtler of the three: `pack_from` would resolve, the run would build, and every
+/// number on the arm would be identical to one the step could produce without sending the
+/// reader anywhere. Steps 3 to 7 all sit on one file, which is what makes this askable with
+/// two real lessons rather than two invented ones.
+#[test]
+#[should_panic(expected = "not another pack at all")]
+fn a_pack_from_may_not_name_a_lesson_on_the_same_file() {
+    let lessons = lessons();
+    let here = lessons
+        .iter()
+        .find(|l| l.id == "pack-disagrees")
+        .expect("step 3 is still in the path");
+    let there = lessons
+        .iter()
+        .find(|l| l.id == "belief-drifts")
+        .expect("step 4 is still in the path");
+    assert_eq!(
+        here.scenario, there.scenario,
+        "this test is only evidence while those two lessons share a scenario file; they now \
+         read `{}` and `{}`, so it is asking nothing and needs a new pair.",
+        here.scenario, there.scenario
+    );
+    let arm = walkable_probe(&here.id, &there.id, Start::Restart);
+    assert_walkable(&arm, here, there);
+}
+
+/// An arm cannot continue this step's mark on another lesson's pack.
+///
+/// There is no such position to continue from: walking next door reloads that lesson and
+/// re-dials its controls, so a typed current there can only precede a Restart.
+#[test]
+#[should_panic(expected = "There is no such position")]
+fn a_pack_from_cannot_continue_this_steps_mark() {
+    let lessons = lessons();
+    let here = lessons
+        .iter()
+        .find(|l| l.id == "the-electrolyte-starves")
+        .expect("step 16 is still in the path");
+    let there = lessons
+        .iter()
+        .find(|l| l.id == "wearing-out-while-idle")
+        .expect("step 8 is still in the path");
+    let arm = walkable_probe(&here.id, &there.id, Start::Mark);
+    assert_walkable(&arm, here, there);
 }
 
 /// A wrapper around a wrapper, or around a derivation, is refused rather than resolved.
@@ -7247,7 +7568,10 @@ fn every_claim_is_reachable_in_its_own_step() {
             continue;
         };
 
-        let earliest = arm.earliest_s(lesson);
+        // A twin arm's timeline is the lesson its pack comes from, not the step it is
+        // declared on — the same resolution `run` makes, through the same function.
+        let pack_lesson = pack_lesson_of(Some(arm), lesson, &lessons);
+        let earliest = arm.earliest_s(pack_lesson);
         assert!(
             c.read_at_s >= earliest,
             "claim `{}` on step `{}` reads arm `{}` at t = {} s, which is before that arm \
@@ -7271,7 +7595,7 @@ fn every_claim_is_reachable_in_its_own_step() {
             c.step,
             arm.name,
         );
-        let end = arm.end_s(lesson);
+        let end = arm.end_s(pack_lesson);
         assert!(
             c.read_at_s <= end,
             "claim `{}` on step `{}` reads at t = {} s; the arm `{}` runs to {end} s. \
@@ -7472,7 +7796,7 @@ fn every_claim_matches_the_engine() {
             })
             .map(|c| c.read_at_s)
             .collect();
-        let r = run(lesson, arm, &capture);
+        let r = run(lesson, arm, &capture, &lessons);
 
         // The fence on `Accounted::ReadAt`, which lives here because this is the only
         // place a trajectory exists. Check 6 accepts a number in a claimed sentence when

@@ -259,7 +259,8 @@ walk, which is what makes this a fix rather than a redefinition.
 * **Fourteen steps are still claims-only**, and this was the expensive one. The three cheapest
   remaining are the two the last measurement pass found need no measurement at all plus
   `the-gradient-itself`, whose numbers are almost all measurements on the pre-Run probe.
-* **The twin-arm capability is now the named gap.** Three of this step's five departed numbers
+* **The twin-arm capability is now the named gap.** *(Built — see
+  `docs/plans/path-twin-arm.md`. The three numbers below are back on the page.)* Three of this step's five departed numbers
   need one pack to run another lesson's scenario file — an arm that names a scenario, and a
   `Tie::Quoted` that can tell two arms of one step apart (the last slice priced the second
   half at 22 ambiguous groups). It is the only thing standing between the 1 C boundary and a
