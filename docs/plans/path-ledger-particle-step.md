@@ -6,7 +6,9 @@ next expensive ones: their numbers are nearly all measurements, so ledgering the
 claim-writing slice rather than an arm-building one."*
 
 **Half of that is wrong, and measuring the two steps first is what showed it.** Step 13
-(`particle-remembers`) is not a claim-writing slice at all: it prints twenty numerals, ten
+(`particle-remembers`) is not a claim-writing slice at all: it printed twenty numerals when
+this was written — the ledger entry says **nineteen**, because the last row of the table
+below is a numeral this slice reworded out of the prose — ten
 of them are already claimed, and of the ten that are not, **none is a measurement**. They
 are the scenario's initial charge, its shell count, two digit runs inside the chemistry's
 own provenance string, two RC time constants the chemistry file's own arithmetic gives,
@@ -19,7 +21,7 @@ blocker are at the end of this document.
 
 ## Step 13, token by token
 
-Twenty numerals. Ten sit inside a claim's literal already — the five rebounds, the
+Twenty numerals as found, nineteen as shipped. Ten sit inside a claim's literal already — the five rebounds, the
 four-part decomposition of the first tooth, and the 8 % tail. The other ten:
 
 | token | what decides it | arm |
@@ -162,14 +164,23 @@ correct me.
 
 The thirty-two sort into four piles, and only the last is a blocker.
 
-**Fourteen fall to arms that already exist.** The scenario's `initial_soc` (`100 %`), the
+**Thirteen fall to arms that already exist.** The scenario's `initial_soc` (`100 %`), the
 demand box (`15.459594 A`, and `15.46` again as the same box at two decimal places), the
 ambient box (`25 °C`), the chemistry's `cell.v_min` (the `2.50 V` cut-off) and its
-`cell.capacity_ah` (`5.153198`, and `5.15` at two places), two `Tie::Derived` ratios
-against that capacity (`1 C` and `3 C`), a difference (`64` seconds) and a product
-(`1.99 A·h`) — and two quotations that this slice's own arm can serve: **`3.927` twice**,
-off step 19's probe claim, and **`6.33 W`**, off step 15's `q_gen_at`. Both are quotable
-for the same reason: each is the only claim naming that quantity on that step.
+`cell.capacity_ah` (`5.153198`, and `5.15` at two places), a `Tie::Ratio` of the box over
+that capacity (`3 C`, on step 22's `C/20` precedent), a difference (`64` seconds) and a
+product (`1.99 A·h`) — and two quotations that this slice's own arm can serve: **`3.927`
+twice**, off step 19's probe claim, and **`6.33 W`**, off step 15's `q_gen_at`. Both are
+quotable for the same reason: each is the only claim naming that quantity on that step.
+
+`1 C` looked like the same shape as `3 C` and is not, which is worth writing down before
+someone spends the arm on it. `Tie::Ratio` divides two *file reads*, and at 3 C both halves
+are real files — the demand box over the capacity. At 1 C the current is not in any box:
+the sentence is telling the reader to *type* `5.153198 A`, which is the capacity itself, so
+the ratio would be that field over itself. It resolves to `1` and it can never be anything
+else, which makes it an arm that cannot fail. Either it gets a control-shaped arm on the
+step's own instruction — the same machinery `[[arm]]` already uses to change a box — or the
+`1 C` gloss is reworded. That is a decision, not work.
 
 **One is reworded away**, on the precedent this slice set for `Phase 6`: "the model this
 engine's Phase 7 was built for" is a section number in a frozen build plan, not a quantity.
@@ -179,6 +190,12 @@ The reword belongs to the slice that ledgers the step, not to this one.
 instants of "over the 64 seconds from 400 s to 464 s", that `464` again where the amp-hour
 figure is worked out, the `535 mV` drop across that interval, and the second printing of
 `2.808` inside a parenthetical that this step's existing probe claim does not reach.
+
+The `2.808` carries a constraint worth stating: it is the last of three figures in
+*"(3.798 V for the circuit, 3.927 for the particle, 2.808 here)"*, and the other two are a
+third pack and a quotation. A claim literal reaching it must therefore stop short of both —
+`"2.808 here"` and not the whole parenthetical — or the literal covers a token a vocabulary
+rule also covers, which is the double-accounting panic this file already has code for.
 
 **Twelve are blocked, and the blocker is not the one this file predicted.**
 `path-claims.toml` records the reason as "its twin readings and its 1 C boundary need a
@@ -210,9 +227,11 @@ What is left after the rename is genuinely without an arm:
 * **`140×` and nearly `500×`** are per-step cost ratios. No trajectory settles a cost, and
   this is the same shape already named beside `what-protection-costs`.
 
-So the honest headline for step 16 is: about two thirds of it is affordable today, and the
-last third needs a per-instant rename on step 15, new claims on step 15, and a decision
-about whether the cost ratios get an arm or get reworded. It is not a claim-writing slice,
+So the honest headline for step 16 is: 11 numerals already claimed, 13 reachable by arms
+that exist, 1 reworded, 5 written as claims on its own pack, and **13 that are not work but
+decisions** — the twelve above plus the `1 C` gloss. About two thirds of it is affordable
+today; the last third needs a per-instant rename on step 15, new claims on step 15, and a
+decision about whether the cost ratios get an arm or get reworded. It is not a claim-writing slice,
 which is what the previous plan predicted for it.
 
 ## Learned while building
