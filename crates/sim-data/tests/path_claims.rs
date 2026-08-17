@@ -9,8 +9,11 @@
 //! were never true, or were true about a quantity no reader can see — and every one of
 //! those findings came from an instrument that lived outside the tree and never ran
 //! again. `web/path-claims.toml` is that instrument's findings turned into assertions;
-//! read its header for the four checks and why the literal is stored as a string
-//! rather than formatted from the value.
+//! read its header for the checks it describes and why the literal is stored as a string
+//! rather than formatted from the value. It said "the four checks" until this sentence was
+//! swept: that count was written when there were four, and the header it points at has
+//! listed six for five slices. It carries no number now, which is the other way to stop a
+//! count rotting — the one this file already took for the `grid` tally's twin.
 //!
 //! # The six checks, and why none of them is redundant
 //!
@@ -174,12 +177,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the fifteen steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the fourteen steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed nine whole steps — but only nine. Steps here carrying neither a
+//!   has now closed ten whole steps — but only ten. Steps here carrying neither a
 //!   claim nor a ledger entry: none. The other fourteen have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all fifteen, one line each, so this list cannot go quietly out of date.
+//!   names all fourteen, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -8254,6 +8257,9 @@ fn n_ledgered_numerals(f: &Facts) -> usize {
 fn n_unclaimed_steps(f: &Facts) -> usize {
     f.lessons.iter().filter(|l| f.claims_on(&l.id) == 0).count()
 }
+fn n_unledgered(f: &Facts) -> usize {
+    f.ledger.unledgered.len()
+}
 fn n_unledgered_claimed(f: &Facts) -> usize {
     f.ledger
         .unledgered
@@ -8515,6 +8521,35 @@ const TALLIES: &[Tally] = &[
         phrase: "today it is {w} steps and {n} numbers",
         of: &[n_ledgered, n_ledgered_numerals],
     },
+    // The three counts in the "what this does NOT cover" entry about the unledgered steps.
+    // All three were stale — "fifteen" steps unreached and "nine" closed, on a ledger of ten
+    // and fourteen — and all three are in WORDS, which is how they survived the self-counts
+    // slice: it read digits. They sit two lines from a count that WAS derived (the
+    // claimed/unclaimed split below), which is the third instance of this file's own lesson
+    // that a sentence beside a derived sentence is not itself derived.
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "in the {w} steps the ledger has not reached",
+        of: &[n_unledgered],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "has now closed {w} whole steps — but only {w}",
+        of: &[n_ledgered, n_ledgered],
+    },
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "names all {w}, one line each",
+        of: &[n_unledgered],
+    },
+    // Check 6's arm count, stated in this test's docs and derived in the claims file's
+    // header ("{W} accountings, and no {o}:"). Correct today; undeclared until now, which is
+    // exactly the position the ledger-arm count was in one slice ago.
+    Tally {
+        prose: Prose::ThisTest,
+        phrase: "the last of check 6's {w} accounting arms",
+        of: &[n_accounting_arms],
+    },
     // The ledger's arm count, stated once in each file. Neither was derived until this
     // slice, and both were stale the same way: three sentences saying an arm was missing
     // after it had been built, fixed by hand one slice earlier with nothing to stop the
@@ -8570,6 +8605,45 @@ const NOT_DERIVED: &[NotDerived] = &[
         prose: Prose::ClaimsFile,
         phrase: "Four separate slices have found numbers in it",
         because: "a count of past slices, settled by git history rather than by the file.",
+    },
+    // This test's twin of the sentence above. Same count, same reason, and undeclared until
+    // the sweep that found the four stale counts in these docs — three of which sat within
+    // two lines of a derived one.
+    NotDerived {
+        prose: Prose::ThisTest,
+        phrase: "Four slices found numbers in that prose",
+        because: "the same count of past slices as the claims file's copy, settled by git \
+                  history rather than by either file.",
+    },
+    // The count of checks, stated three times in this test's docs and once in the claims
+    // file. Not derivable for the reason the claims file's entry gives, so each sentence
+    // that carries the number is pinned here instead. The fourth statement of it — "read its
+    // header for the four checks" — was the one that went stale, and it was reworded to
+    // carry no number at all rather than waived.
+    NotDerived {
+        prose: Prose::ThisTest,
+        phrase: "The six checks, and why none of them is redundant",
+        because: "the number of checks is a property of the test code, not of data either \
+                  file parses — the claims file's `up to SIX independent ways` entry has \
+                  the argument in full.",
+    },
+    NotDerived {
+        prose: Prose::ThisTest,
+        phrase: "Beside all six sits **the ledger**",
+        because: "the same count of checks, in the sentence that sets the ledger beside \
+                  them.",
+    },
+    NotDerived {
+        prose: Prose::ThisTest,
+        phrase: "The five above are all about the number a claim *spells*",
+        because: "the same count of checks less the one being described, so it moves \
+                  whenever that one does and is no more derivable than it is.",
+    },
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "All seven are about a CLAIM",
+        because: "the six checks plus the tolerance rule behind the second — a count of \
+                  test code, as above, and the one place this file states the total.",
     },
     NotDerived {
         prose: Prose::ClaimsFile,

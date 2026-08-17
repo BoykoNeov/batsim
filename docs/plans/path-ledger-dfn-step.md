@@ -259,6 +259,12 @@ walk, which is what makes this a fix rather than a redefinition.
 * **Fourteen steps are still claims-only**, and this was the expensive one. The three cheapest
   remaining are the two the last measurement pass found need no measurement at all plus
   `the-gradient-itself`, whose numbers are almost all measurements on the pre-Run probe.
+  *(Measured and wrong on both halves — see
+  `docs/plans/path-self-description-sweep.md`. The zero-measurement steps were all three
+  already ledgered when this was written, and `the-gradient-itself` is the **most** expensive
+  of the fourteen, not among the cheapest: 38 of its 42 numerals are unaccounted, because
+  "almost all measurements" is what makes a step dear rather than cheap. The two cheapest are
+  `wearing-out-while-idle` and `two-legs`, at eight open numerals each.)*
 * **The twin-arm capability is now the named gap.** *(Built — see
   `docs/plans/path-twin-arm.md`. The three numbers below are back on the page.)* Three of this step's five departed numbers
   need one pack to run another lesson's scenario file — an arm that names a scenario, and a
