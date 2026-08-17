@@ -3045,7 +3045,11 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>, overpotential_mv_at, \
              rc_overpotential_mv_at, diffusion_overpotential_mv_at, leg_delivered_ah, \
-             leg_s_at_v_below:<volts>."
+             leg_s_at_v_below:<volts>.\n\
+             Any of the row quantities above may also carry the instant it is read at — \
+             `v_at:400` — which is how a step files several readings under separately \
+             quotable names. The tag must be a number and must equal the claim's own \
+             `read_at_s`; `v_at:first` is what lands here."
         ),
     }
 }

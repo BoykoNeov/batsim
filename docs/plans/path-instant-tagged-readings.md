@@ -19,8 +19,9 @@ checked against the instant the claim already declares.
 * It is **the instant**, and `measure` asserts it equals the claim's `read_at_s`. A tag and
   a `read_at_s` that disagree are two addresses for one reading, which is the thing this is
   supposed to end, so it fails rather than picking one.
-* It is **not a label**. `v_at:first` does not parse and does not resolve. There is nothing
-  to name but the instant.
+* It is **not a label**. `v_at:first` does not parse, so it never reaches the fallback and
+  lands on the unknown-quantity panic instead — by name, with the known list, and now with a
+  line saying the tag has to be a number. There is nothing to name but the instant.
 * It changes **no measurement**. The tag is stripped and the same row is read — the whole
   of the machinery is one fallback in `measure`, entered only when the untagged name is not
   a row quantity.
@@ -36,12 +37,15 @@ its `6.33 W`.
 
 ## Scoped to one step, and the rest of the file is priced rather than ignored
 
-The same ambiguity exists elsewhere. Keyed by step, arm and quantity, **23 groups of claims
-share a name and answer differently — 79 claims of the file's 186.** Tagging all of them
-would be a bigger and more mechanical change than this one, and it is deferred for a reason
-that is not only size: several of those groups are not row quantities at all
-(`soc_lost_pts_at`, `t_rise_k_at` and friends are reductions over a trajectory), so the tag
-would have to grow a second implementation to reach them. That is a slice with its own
+The same ambiguity exists elsewhere. With step 15 tagged, **22 groups of claims still share
+a name and answer differently — 80 claims of the file's 186** — counted the way
+`Tie::Quoted` sees them, by step and quantity. (Keyed by step, arm *and* quantity it is the
+same 22 groups and 73 claims; the difference is readings that differ only because one is on
+an arm, which the tie does not currently distinguish.) Tagging all of them would be a bigger
+and more mechanical change than this one, and it is deferred for a reason that is not only
+size: exactly two of the ambiguous names are not row quantities — `soc_lost_pts_at` and
+`t_rise_k_at` are reductions over a trajectory — so the tag would have to grow a second
+implementation to reach them. That is a slice with its own
 question — whether every reading should be addressable or only the ones a sentence quotes —
 and it should not be smuggled in behind this one.
 
@@ -83,6 +87,7 @@ by two claims, so repointing it could not quietly turn it into a test of nothing
 | the `should_panic` case repointed at step 15's voltages | its own evidence guard, because the ambiguity is gone |
 | `soc_at:1060`'s tag → `soc_at:1058` | the tag assert, on a claim read on an arm rather than the step's own run |
 | `measure`'s fallback made to dispatch on the tagged name | every tagged claim at once |
+| `v_at:400` → `v_at:first` (a tag that is not a number) | the unknown-quantity panic, loudly and by name — not a silent mismeasurement |
 
 ### What the table found
 
@@ -103,9 +108,14 @@ is guarding.**
 wrong tag, and nothing should notice" came back red — because the claim it retagged was
 `v_at:400`, the one the quotability test names by hand, so that test caught the rename
 rather than the mistagging. Repeating it on `soc_at:1060`, which no test names, is green as
-registered. The two together price the assert exactly: for the one reading a test names, the
-test is a second guard; for the other nine, the assert is the only thing standing between a
-tag and a `read_at_s` that disagree.
+registered.
+
+**The green is only evidence as half of a pair.** On its own, "nothing failed" could mean
+the mistagging is harmless. It is the *same edit* as the `soc_at:1058` row above — which is
+red — with the assert neutered and nothing else changed. Red without the neutering, green
+with it, is what pins the catching to the assert rather than to anything else in the run.
+For the one reading a test names, that test is a second guard; for the other nine, the
+assert is the only thing standing between a tag and a `read_at_s` that disagree.
 
 ## Learned while building
 
