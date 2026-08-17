@@ -81,9 +81,10 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is nine steps and 126 numbers.
-//! Fourteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
-//! the sentence's own arithmetic over those as a product or as a ratio, the span of a
+//! (`[ledger]` in `path-claims.toml`) and today it is ten steps and 159 numbers.
+//! Sixteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! the sentence's own arithmetic over those as a product, a ratio or a difference, one of
+//! their durations read in hours, the span of a
 //! chemistry table, a node of one, digits inside a name, the position of another lesson,
 //! the panel's clock at the step's mark, a figure the sentence works out from its own
 //! siblings, any of those read on **another lesson** ([`Tie::Elsewhere`]), a number
@@ -172,7 +173,7 @@
 //! * **Sentences no claim is about, in the fifteen steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
 //!   has now closed nine whole steps — but only nine. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other fifteen have their claimed sentences
+//!   claim nor a ledger entry: none. The other fourteen have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
 //!   names all fifteen, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
@@ -1670,7 +1671,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64]) -> Run {
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 164 of 186 claims.
+    /// number's last printed place. The default shape: 167 of 189 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1679,12 +1680,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 18 of 186.
+    /// declaration was wrong. 18 of 189.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 186, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 189, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1724,7 +1725,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 169 of 186, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 172 of 189, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -4724,6 +4725,45 @@ enum Tie {
     /// Compared at the prose's own precision for [`Tie::Product`]'s reason — 7.2 / 0.36 is
     /// 20.000000000000004 in binary floating point, and no sentence would print that.
     Ratio(&'static [Tie]),
+    /// The **difference of two ties**: the first less the second, and exactly two of them.
+    ///
+    /// [`Tie::Ratio`]'s sibling, and built for the same reason — a sentence stating what two
+    /// numbers come to when you take one from the other, where neither the sentence's own
+    /// tokens nor any single file holds the answer. Step 16 prints three of them and not one
+    /// is expressible any other way: *"it drops **535 mV**"* is that step's own readings at
+    /// two instants, *"the single-particle arm falls 34 mV"* is the twin's at the same two,
+    /// and *"has 596 seconds still to run"* is the twin's cut-off less this step's.
+    ///
+    /// [`Tie::Derived`]'s `Difference` is the same arithmetic over a sentence's **own
+    /// printed tokens**, and none of those three sentences prints both operands: they print
+    /// the answer and nothing else. That is the whole distinction between the two families —
+    /// this side reads files and claims, that side reads the prose beside the number.
+    ///
+    /// **Order is the claim.** Reversed, step 16's `535 mV` drop becomes a −535 mV climb and
+    /// the sentence is about a cell recovering. Compared at the prose's own precision for
+    /// [`Tie::Product`]'s reason: a difference of two measurements lands on
+    /// `0.5354644...`, and no sentence would print that.
+    Difference(&'static [Tie]),
+    /// The tie below it, **read in hours where the file reads seconds**.
+    ///
+    /// One wrapper for one job: an amp-hour figure worked out from a current and a duration.
+    /// Step 16 says *"15.459594 A for 464 s is 1.99 A·h"* — the current is the demand box,
+    /// the duration is a claim on this step, and the product of the two is in ampere-seconds
+    /// while the sentence writes ampere-hours. A rule's `pow10` cannot carry that: 3600 is
+    /// not a power of ten. Nothing else in this file can either, which is why the conversion
+    /// is a tie rather than a per-rule field.
+    ///
+    /// **It is a unit, not a number, and that is what keeps it out of the declaration
+    /// business.** An hour is 3600 seconds by definition, the same way [`to_c`] converts a
+    /// temperature and `pow10` converts a percentage; no value is being supplied by an
+    /// author.
+    ///
+    /// **Compared like a computed tie** rather than delegating to what it wraps, which is the
+    /// opposite choice from [`Tie::Elsewhere`] and deliberately so: `Elsewhere` changes which
+    /// lesson answers and leaves the answer's exactness alone, where a conversion by a
+    /// non-decimal factor always lands off a round number. A prose figure in hours is
+    /// rounded by construction.
+    Hours(&'static Tie),
     /// The **span of a table** the chemistry declares: its largest value minus its
     /// smallest, at this path.
     ///
@@ -4837,7 +4877,18 @@ enum Tie {
     /// **A step opts out of being unquotable by tagging its instants.** Step 15 was the
     /// case this fence was first written against and is no longer one: its eight voltages
     /// are `v_at:0` … `v_at:1060`, each tag asserted against the claim's own `read_at_s`.
-    /// See [`measure`]. That is the move any step owes a sentence that wants to quote it.
+    /// See [`measure`]. That is the move any step owes a sentence that wants to quote it,
+    /// and step 16 paid it for itself when it was ledgered.
+    ///
+    /// **A step may quote ITSELF, and there is no fence against it because there is nothing
+    /// to fence.** [`Tie::Elsewhere`] refuses naming its own lesson — a wrapper that changes
+    /// which lesson answers, pointed at this one, is the arm it wraps with extra words. This
+    /// is not that: what it names is a *measurement*, and [`claimed_accounting`] reaches a
+    /// measurement only when the number sits inside the literal of the sentence whose claims
+    /// decide it. Step 16 prints its own crossing instant in two further sentences and its
+    /// own 535 mV collapse in a third, none of which any claim quotes, so the alternative to
+    /// quoting itself is four numbers tied to nothing. The claim still answers to the engine
+    /// where it lives, which is the whole of what this arm rests on wherever it points.
     ///
     /// **Compared at the prose's own precision**, like every computed tie, which is what
     /// lets one arm carry both `0.07` (two places) and `0.0746` (four) off one claim value.
@@ -5245,6 +5296,230 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                 Tie::Chemistry("rc.1.c_farad"),
             ]),
         ],
+        pow10: 0,
+    },
+    // Step 16 — the Doyle-Fuller-Newman half of the pair, and the densest step in the path:
+    // 40 numerals, of which 12 are claimed on its own pack. Ten of the rest are readings the
+    // step NEXT DOOR measured, quoted rather than re-measured, because a claim is checked by
+    // running its own step's scenario and this step's whole argument is about the other one.
+    // Four more are readings of its OWN pack that a claim elsewhere in the step decides —
+    // `Tie::Quoted` naming this same lesson, which is the only arm that reaches a measurement
+    // in a sentence no claim quotes. See `docs/plans/path-ledger-dfn-step.md`.
+    LedgerRule {
+        // The charge it starts from, which is the one number in the opening sentence that is
+        // not a control. A different phrase from step 13's "the same {n} %, the same train"
+        // for that rule's own reason: a phrase generous enough to cover both would be
+        // generous enough to cover a third.
+        phrase: "Same cell, same {n} %",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The two boxes the sentence says have not changed, in one breath.
+        phrase: "same {n} A, same {n} \u{b0}C",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Setting(Control::Ambient),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The twin's zero-length probe, which is the disagreement this step opens with.
+        phrase: "where the twin read {n}",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            quantity: "v_at:0",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same probe again, in the parenthetical listing what the models answer. Two
+        // rules rather than one loose one, on step 6's terms: two sentences say it two ways.
+        phrase: "({n} for the particle",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            quantity: "v_at:0",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "against the twin's {n} on the first step",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            quantity: "v_at:2",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "where the other reads {n}",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            quantity: "v_at:400",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The instant the cell finishes, quoted off this step's OWN claim on the crossing —
+        // the claim that spells it two sentences later. Not `Tie::Setting`: 464 s is nothing
+        // the reader dials in and nothing any file holds; it is where the trajectory goes.
+        phrase: "the minute that ends at {n} s",
+        ties: &[Tie::Quoted {
+            step: "the-electrolyte-starves",
+            quantity: "t_at_v_below:2.5",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The collapse, as the difference between two of this step's own claimed readings.
+        // The sentence prints neither operand — it prints the drop — so `Tie::Derived`, which
+        // reads a sentence's own tokens, cannot carry it.
+        phrase: "it drops **{n} mV**",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "the-electrolyte-starves",
+                quantity: "v_at:400",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "the-electrolyte-starves",
+                quantity: "v_at:464",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 3,
+    },
+    LedgerRule {
+        // The same difference on the twin, over the same two instants — the contrast the
+        // sentence is for. Both operands are claims on step 15, and the second of them
+        // (`v_at:464`) is why that step's reading list now prints `3.437 at 464`: a claim can
+        // only be pinned to a number its own sentence spells.
+        phrase: "arm falls {n} mV",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "looks-fine-from-outside",
+                quantity: "v_at:400",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "looks-fine-from-outside",
+                quantity: "v_at:464",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 3,
+    },
+    LedgerRule {
+        // The chemistry's own end of discharge, which the claim beside it deliberately stops
+        // short of: its note says the cut-off "is a chemistry constant and no arm accounts
+        // for one", which was true of the claims scan and is what this arm is.
+        phrase: "past the {n} V cut-off",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The whole amp-hour sentence, which is four facts in one breath: the box, the
+        // instant, the arithmetic over the two of them, and the nameplate it is a fraction
+        // of. The last two used to read `15.46` and `5.15`, and the prose now prints both
+        // constants whole — the shorter forms could not be tied, because a constant is
+        // compared exactly and a rounded restatement of one is neither the file's number nor
+        // a computed quantity. See `docs/plans/path-ledger-dfn-step.md`.
+        phrase: "{n} A for {n} s is {n} A\u{b7}h of this cell's {n}",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Quoted {
+                step: "the-electrolyte-starves",
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+            Tie::Product(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Hours(&Tie::Quoted {
+                    step: "the-electrolyte-starves",
+                    quantity: "t_at_v_below:2.5",
+                    states: QuotedAs::Same,
+                }),
+            ]),
+            Tie::Chemistry("cell.capacity_ah"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "same instant, reads {n} V",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            quantity: "v_at:464",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How much longer the twin has: its cut-off less this step's, one claim from each
+        // pack. Neither number is on the page.
+        phrase: "has {n} seconds still to run",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "looks-fine-from-outside",
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "the-electrolyte-starves",
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "against the twin's {n} W",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            quantity: "q_gen_at",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The current the last paragraph tells the reader to type, which is this cell's
+        // capacity read as an ampere — the current that empties it in an hour. The sentence
+        // used to gloss it "1 C", and that gloss had no arm: `Tie::Ratio` divides two file
+        // reads, and here both halves would be this same field, so the arm would resolve to 1
+        // whatever the file said. See `docs/plans/path-ledger-dfn-step.md`.
+        phrase: "set the current to {n} A",
+        ties: &[Tie::Chemistry("cell.capacity_ah")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What the cheap model gets wrong about capacity, which at one current is the ratio
+        // of the two cut-off instants: the same amps for 2.28 times as long.
+        phrase: "wrong by a factor of {n} on how much charge",
+        ties: &[Tie::Ratio(&[
+            Tie::Quoted {
+                step: "looks-fine-from-outside",
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "the-electrolyte-starves",
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The rate this step runs at, said as a C-rate for the first time in the step: the
+        // box over the nameplate. Step 22's `C/{n}` is the same division the other way up.
+        phrase: "(At {n} C the cost gap",
+        ties: &[Tie::Ratio(&[
+            Tie::Setting(Control::DemandValue),
+            Tie::Chemistry("cell.capacity_ah"),
+        ])],
         pow10: 0,
     },
     // Step 22 — the first lead-acid step, and the first whose numbers need arithmetic that
@@ -5760,6 +6035,31 @@ fn tie_values(
             }
             vec![over / by]
         }
+        Tie::Difference(pair) => {
+            let [less, by] = pair else {
+                panic!(
+                    "a `Tie::Difference` takes exactly two ties; this one has {}",
+                    pair.len()
+                );
+            };
+            let (less, by) = (
+                tie_values(less, lesson, lessons, scenario, chemistry, ctx),
+                tie_values(by, lesson, lessons, scenario, chemistry, ctx),
+            );
+            // Exactly one on each side, for `Product`'s reason: with several, which one the
+            // sentence meant would be the author's pick rather than the file's.
+            let ([less], [by]) = (&less[..], &by[..]) else {
+                return Vec::new();
+            };
+            vec![less - by]
+        }
+        Tie::Hours(seconds) => {
+            let seconds = tie_values(seconds, lesson, lessons, scenario, chemistry, ctx);
+            let [seconds] = &seconds[..] else {
+                return Vec::new();
+            };
+            vec![seconds / 3600.0]
+        }
         Tie::Span(path) => {
             let values = numbers_at_path(chemistry, path);
             // A span needs two ends. One value spans zero, and a sentence saying a
@@ -5922,6 +6222,12 @@ fn tie_describe(tie: &Tie) -> String {
             .map(tie_describe)
             .collect::<Vec<_>>()
             .join(" divided by "),
+        Tie::Difference(pair) => pair
+            .iter()
+            .map(tie_describe)
+            .collect::<Vec<_>>()
+            .join(" less "),
+        Tie::Hours(seconds) => format!("{}, in hours", tie_describe(seconds)),
         Tie::Span(path) => format!("the span of the chemistry's `{path}`"),
         Tie::Clock => "the `sim time` row's rendering of the step's mark".to_string(),
         Tie::Derived { op, operands } => format!(
@@ -5971,6 +6277,8 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Ordinal(_) => "ordinal",
         Tie::Member(_) => "table node",
         Tie::Ratio(_) => "ratio",
+        Tie::Difference(_) => "difference",
+        Tie::Hours(_) => "duration in hours",
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
         Tie::Derived { .. } => "derived",
@@ -5998,6 +6306,8 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
         Tie::Elsewhere { tie, .. } => tie_agrees(tie, values, token, pow10),
         Tie::Product(_)
         | Tie::Ratio(_)
+        | Tie::Difference(_)
+        | Tie::Hours(_)
         | Tie::Span(_)
         | Tie::Derived { .. }
         | Tie::Quoted { .. } => values.iter().all(|v| {
@@ -6149,6 +6459,18 @@ fn claimed_accounting(
 /// siblings, the last arm the plan named — along with [`Tie::Ratio`], [`Tie::Span`] and
 /// [`Tie::Clock`]. Check 6's arm of that name is a different scan and closes nothing here.
 /// See `docs/plans/path-ledger-sixth-step.md`.
+///
+/// The tenth, `the-electrolyte-starves`, is the densest step in the path and the one whose
+/// numbers are least its own: nine of them are readings the step next door measured, or
+/// arithmetic over those, and four more are its own readings claimed in some other sentence
+/// of the same step. So it is [`Tie::Quoted`]'s step — including quoting *itself*, which no
+/// earlier step needed — plus [`Tie::Difference`] for the three sentences that print what
+/// two measurements come to and neither of the measurements, and [`Tie::Hours`] for the one
+/// amp-hour figure. **Five of its numbers left the page instead**: two per-step cost ratios,
+/// which no trajectory settles, and a three-number comparison at 1 C, which needs a second
+/// pack this harness cannot build. Spelling them in words would have cleared this scan and
+/// checked nothing, which is the one option that was refused.
+/// See `docs/plans/path-ledger-dfn-step.md`.
 ///
 /// **Numeral is the operative word, and it is a real limit rather than pedantry.**
 /// [`written_numbers`] finds digits. A quantity spelled in English is invisible to it, and
@@ -7474,13 +7796,34 @@ fn n_claims(f: &Facts) -> usize {
 /// file's rule is that an arm nothing accounts anything with does not get built, so a
 /// variant no rule names would be a gap rather than coverage.
 fn n_ledger_arms(_f: &Facts) -> usize {
+    /// Every arm this tie uses, itself and the ones it wraps.
+    ///
+    /// **Nested as well as top level, because an arm used only inside another is still an
+    /// arm.** This walked the rules' outermost ties only, which was indistinguishable from
+    /// the whole truth for as long as every arm was some rule's outermost one. `Tie::Hours`
+    /// is the first that is not: step 16's amp-hour figure is a `Product` of the demand box
+    /// and a duration read in hours, so the conversion never appears at the top of a rule.
+    /// A count that missed it would have the file's own prose list one more arm than the
+    /// count beside it, which is exactly the drift these tallies exist to catch.
+    fn walk(tie: &'static Tie, used: &mut Vec<&'static str>) {
+        let name = tie_arm_name(tie);
+        if !used.contains(&name) {
+            used.push(name);
+        }
+        match tie {
+            Tie::Product(ties) | Tie::Ratio(ties) | Tie::Difference(ties) => {
+                for tie in *ties {
+                    walk(tie, used);
+                }
+            }
+            Tie::Hours(tie) | Tie::Elsewhere { tie, .. } => walk(tie, used),
+            _ => {}
+        }
+    }
     let mut used: Vec<&'static str> = Vec::new();
     for rule in LEDGER_VOCABULARY {
         for tie in rule.ties {
-            let name = tie_arm_name(tie);
-            if !used.contains(&name) {
-                used.push(name);
-            }
+            walk(tie, &mut used);
         }
     }
     used.len() + 1
