@@ -2614,6 +2614,39 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
     if let Some(v) = measure_row(quantity, run.read(at_s, probe)) {
         return v;
     }
+    // A row quantity may **name the instant it is read at** — `v_at:400` — which is what
+    // makes two readings of one quantity on one step individually addressable. Nothing
+    // measures differently for it: the tag is stripped and the same row is read.
+    //
+    // Why a name and not just `read_at_s`: `Tie::Quoted` borrows another step's
+    // measurement by naming it, and a step that files eight voltages under `v_at` gives a
+    // quoting sentence no way to say *which*. The fence there refuses the ambiguity rather
+    // than letting file order settle it, so the tag is how a step opts out of being
+    // unquotable. See [`Tie::Quoted`].
+    //
+    // **The tag is asserted, not decorative**, on the same terms as the pulse family's
+    // `want()` above: it must be the instant the claim already declares, so it can never
+    // become a second, disagreeing address for the same reading. That is also what keeps
+    // it from being a free-form label — `v_at:first` does not parse and does not resolve.
+    //
+    // Only row quantities take one. `pulse_rebound_mv:1` counts teeth and
+    // `t_at_v_below:2.5` names a threshold, and neither prefix is a row quantity, so
+    // neither is reachable from here.
+    if let Some((name, tag)) = quantity
+        .split_once(':')
+        .and_then(|(name, tag)| tag.parse::<f64>().ok().map(|tag| (name, tag)))
+    {
+        if let Some(v) = measure_row(name, run.read(at_s, probe)) {
+            assert!(
+                (tag - at_s).abs() < run.dt * 0.5,
+                "a claim reads `{quantity}`, whose tag names t = {tag} s, and declares \
+                 `read_at_s = {at_s}`. The tag is the instant the reading is taken at and \
+                 not a label, so the two cannot disagree: one of them is pointing at a \
+                 moment the claim is not about."
+            );
+            return v;
+        }
+    }
     // How much capacity the pack has lost **since this step's mark**, as a fraction.
     //
     // Not a value the pack has at any instant, which is why it is here rather than in
@@ -4794,8 +4827,13 @@ enum Tie {
     /// the quantity, and step 12 cannot satisfy it: its first rebound is stated in two
     /// sentences, so `pulse_rebound_mv:1` carries two claims at one instant with one value.
     /// What the fence is really about is a quantity whose claims answer *differently* —
-    /// `v_at` on step 15 is six readings at six instants — so agreement is what it checks
+    /// step 20's `v_at` is ten readings at ten instants — so agreement is what it checks
     /// now, and a pair that has drifted apart fails here rather than passing unseen.
+    ///
+    /// **A step opts out of being unquotable by tagging its instants.** Step 15 was the
+    /// case this fence was first written against and is no longer one: its eight voltages
+    /// are `v_at:0` … `v_at:1060`, each tag asserted against the claim's own `read_at_s`.
+    /// See [`measure`]. That is the move any step owes a sentence that wants to quote it.
     ///
     /// **Compared at the prose's own precision**, like every computed tie, which is what
     /// lets one arm carry both `0.07` (two places) and `0.0746` (four) off one claim value.
@@ -5793,10 +5831,11 @@ fn tie_values(
             // Not "exactly one claim", which is what this used to demand and which step 12
             // cannot satisfy: it states its first rebound in two sentences, so
             // `pulse_rebound_mv:1` carries two claims — at one instant, with one value. The
-            // hazard is a quantity two claims answer DIFFERENTLY (`v_at` on step 15 is six
-            // readings at six instants), and that is what this refuses. Agreement is
+            // hazard is a quantity two claims answer DIFFERENTLY (`v_at` on step 20 is ten
+            // readings at ten instants), and that is what this refuses. Agreement is
             // checked rather than assumed, so two claims on one quantity that have drifted
-            // apart fail here instead of being invisible.
+            // apart fail here instead of being invisible. A step that wants to be quotable
+            // tags its instants — `v_at:400` — which is what step 15 now does.
             assert!(
                 rest.iter().all(|c| c.value == first.value),
                 "a rule quotes step `{step}`'s `{quantity}`, and the claims on it answer \
@@ -6392,12 +6431,18 @@ fn an_elsewhere_reads_the_named_lessons_own_files() {
 /// [`Tie::Quoted`] used to demand exactly one claim per `(step, quantity)`, which step 12
 /// cannot satisfy — it states its first rebound in two sentences, one value, one instant —
 /// so the fence now checks agreement instead of arity. The hazard it still has to refuse is
-/// the one the old wording named: `v_at` on step 15 is six readings at six instants, and
-/// "step 15's `v_at`" would be decided by whichever the file happens to list first.
+/// the one the old wording named: a step that files several readings under one name, where
+/// "that step's `v_at`" would be decided by whichever the file happens to list first.
+///
+/// **It used to point at step 15, and that is why the instant tag exists.** Step 15 filed
+/// eight voltages under `v_at`, which made it unquotable — step 16 is written almost
+/// entirely against it and could borrow nothing. Those eight now name their instants
+/// (`v_at:400`), so the case moved to step 20, which files ten under one name and has no
+/// sentence quoting it yet.
 ///
 /// No claim is synthesised for this. The pair is real, which is what makes it evidence: if
-/// some future slice split those readings into six named quantities, this test stops
-/// compiling a case and says so through the assertion below rather than passing on nothing.
+/// some future slice tags step 20's readings too, this test stops having a case and says so
+/// through the assertion below rather than passing on nothing.
 #[test]
 #[should_panic(expected = "answer differently")]
 fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
@@ -6409,14 +6454,20 @@ fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
         .expect("step 13 is still in the path");
     let values: Vec<f64> = all
         .iter()
-        .filter(|c| c.step == "looks-fine-from-outside" && c.quantity == "v_at" && c.arm.is_none())
+        .filter(|c| c.step == "past-empty" && c.quantity == "v_at" && c.arm.is_none())
         .map(|c| c.value)
         .collect();
     assert!(
         values.len() > 1 && values.iter().any(|v| *v != values[0]),
-        "this test needs a quantity two claims on one step answer differently, and step \
-         15's `v_at` is no longer one: {values:?}. Point it at another, or the panic below \
-         would be evidence about nothing."
+        // This message must NOT contain the phrase `should_panic` expects. It used to, and
+        // a perturbation caught it: repointing the filter at a step whose readings are
+        // tagged empties `values`, the guard fires — and the guard's own words satisfied
+        // the `expected =` match, so the test passed while proving nothing. A guard on a
+        // `should_panic` test has to fail in a way the attribute cannot mistake for the
+        // panic it is waiting for.
+        "this test needs a quantity that two claims on one step give unequal values for, \
+         and step 20's `v_at` is no longer one: {values:?}. Point it at another, or the \
+         refusal below would be evidence about nothing."
     );
     let text = ascii_minus(&from.text);
     let numbers = written_numbers(&text);
@@ -6432,7 +6483,7 @@ fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
         derived: &[],
     };
     let tie = Tie::Quoted {
-        step: "looks-fine-from-outside",
+        step: "past-empty",
         quantity: "v_at",
         states: QuotedAs::Same,
     };
@@ -6441,6 +6492,92 @@ fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
         chemistry_toml(&from.scenario),
     );
     tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
+/// A tagged reading **is** quotable, which is the whole point of tagging one.
+///
+/// The mirror of the test above, and the reason this slice exists: step 15 filed eight
+/// voltages under `v_at` and could not be quoted at all, so step 16 — which is written
+/// almost entirely against it — could borrow nothing. Each now names its instant, and this
+/// asserts that naming it resolves to that reading and not to some other.
+///
+/// Two things make it evidence rather than decoration. It picks an instant in the *middle*
+/// of the run, so a resolution that quietly took the first or the last claim would fail it.
+/// And it checks the tag against the claim's own `read_at_s`, so the pair cannot drift into
+/// agreeing about a number while disagreeing about when it was read.
+///
+/// No rule quotes step 15 yet — `Tie::Quoted` reaches it only from a ledgered step's
+/// vocabulary, and step 16 is not ledgered. This test is what stands in for that user until
+/// it is, which is the honest version of shipping a capability ahead of its sentence.
+#[test]
+fn a_tagged_reading_resolves_to_that_reading() {
+    let lessons = lessons();
+    let all = claims();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "particle-remembers")
+        .expect("step 13 is still in the path");
+    let want = all
+        .iter()
+        .find(|c| c.step == "looks-fine-from-outside" && c.quantity == "v_at:400")
+        .unwrap_or_else(|| {
+            panic!(
+                "step 15's 400 s reading is no longer filed as `v_at:400`. If its instants \
+                 were renamed again, rename them here; if the tag was dropped, step 15 is \
+                 unquotable again and step 16 has lost the arm this slice built for it."
+            )
+        });
+    assert_eq!(
+        want.read_at_s, 400.0,
+        "`v_at:400` on step 15 declares `read_at_s = {}`. The tag is the instant, so this \
+         pair cannot disagree — see `measure`, which asserts the same thing from the other \
+         side, against the trajectory.",
+        want.read_at_s
+    );
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &all,
+        arms: &[],
+        derived: &[],
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    let tie = Tie::Quoted {
+        step: "looks-fine-from-outside",
+        quantity: "v_at:400",
+        states: QuotedAs::Same,
+    };
+    assert_eq!(
+        tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx),
+        vec![want.value],
+        "quoting step 15's `v_at:400` resolved to something other than that claim's own \
+         value. A tagged reading names one measurement; if this resolves to a different \
+         one, the tag is not doing the addressing the fence assumes it does."
+    );
+    // And the middle-of-the-run instant is what makes the line above evidence: a
+    // resolution that took the file's first or last claim on the step would land on a
+    // different voltage, not on this one.
+    let others: Vec<f64> = all
+        .iter()
+        .filter(|c| c.step == "looks-fine-from-outside" && c.quantity.starts_with("v_at:"))
+        .map(|c| c.value)
+        .collect();
+    assert!(
+        others.len() > 2
+            && others.first() != Some(&want.value)
+            && others.last() != Some(&want.value),
+        "this test is only evidence while step 15's tagged voltages are several and the \
+         one it quotes is not the first or the last of them: {others:?}."
+    );
 }
 
 /// A wrapper naming its own lesson is refused rather than resolved.

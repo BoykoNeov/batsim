@@ -3607,7 +3607,7 @@ harness meets.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
-quantity = "v_at"
+quantity = "v_at:0"
 value = 3.926673
 tol = 5e-4
 tol_from = "spelled"
@@ -3631,7 +3631,7 @@ already in it and nothing else is. One step later the same pack reads 3.918.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
-quantity = "v_at"
+quantity = "v_at:2"
 value = 3.918015
 tol = 5e-4
 tol_from = "spelled"
@@ -3650,7 +3650,7 @@ keep separate from the ohmic drop.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
-quantity = "v_at"
+quantity = "v_at:400"
 value = 3.470594
 tol = 5e-4
 tol_from = "spelled"
@@ -3669,7 +3669,7 @@ five fragments.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
-quantity = "v_at"
+quantity = "v_at:440"
 value = 3.449121
 tol = 5e-4
 tol_from = "spelled"
@@ -3687,7 +3687,7 @@ First of the two readings that establish the plateau: 21 mV over the 40 s before
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
-quantity = "v_at"
+quantity = "v_at:460"
 value = 3.438645
 tol = 5e-4
 tol_from = "spelled"
@@ -3706,7 +3706,7 @@ distinction `quoted` exists to make.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
-quantity = "v_at"
+quantity = "v_at:500"
 value = 3.417777
 tol = 5e-4
 tol_from = "spelled"
@@ -3725,7 +3725,7 @@ number is half of the path's sharpest comparison.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
-quantity = "soc_at"
+quantity = "soc_at:500"
 value = 0.583333
 tol = 5e-4
 tol_from = "spelled"
@@ -3764,7 +3764,7 @@ does. Nothing about it says the model is running out of anything.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "2.502 V at 1058 s and **2.495 V at 1060 s**"
-quantity = "v_at"
+quantity = "v_at:1058"
 arm = "carries on"
 value = 2.502017
 tol = 5e-4
@@ -3786,7 +3786,7 @@ would have left both numbers tied to nothing. See `Accounted::ReadAt`.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "2.502 V at 1058 s and **2.495 V at 1060 s**"
-quantity = "v_at"
+quantity = "v_at:1060"
 arm = "carries on"
 value = 2.495319
 tol = 5e-4
@@ -3807,7 +3807,7 @@ constant is left out.
 [[claim]]
 step = "looks-fine-from-outside"
 literal = "with 11.7 % left on the readout"
-quantity = "soc_at"
+quantity = "soc_at:1060"
 arm = "carries on"
 value = 0.116667
 tol = 5e-4

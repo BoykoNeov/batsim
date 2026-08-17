@@ -70,7 +70,9 @@ assertion said three before a single case ran: an edit that matches a different 
 places than the author expected is the same silent-failure shape as an edit that matches
 nothing. The hazard the fence names is real and is about a
 *different* shape: `v_at` on step 15 carries six claims at six instants, and "step 15's
-`v_at`" would be decided by file order. What separates the two cases is not how many
+`v_at`" would be decided by file order. (That example expired one slice later: step 15's
+readings now name their instants — see `path-instant-tagged-readings.md` — and the fence's
+standing case moved to step 20.) What separates the two cases is not how many
 claims there are but whether they answer differently. So the fence becomes: **every claim
 on that `(step, quantity)` must carry the same `value`**, and a disagreement is refused
 with the message the old one gave. That is strictly more coverage for the quantities a
@@ -170,7 +172,7 @@ ambient box (`25 °C`), the chemistry's `cell.v_min` (the `2.50 V` cut-off) and 
 `cell.capacity_ah` (`5.153198`, and `5.15` at two places), a `Tie::Ratio` of the box over
 that capacity (`3 C`, on step 22's `C/20` precedent), a difference (`64` seconds) and a
 product (`1.99 A·h`) — and two quotations that this slice's own arm can serve: **`3.927`
-twice**, off step 19's probe claim, and **`6.33 W`**, off step 15's `q_gen_at`. Both are
+twice**, off step 17's probe claim, and **`6.33 W`**, off step 15's `q_gen_at`. Both are
 quotable for the same reason: each is the only claim naming that quantity on that step.
 
 `1 C` looked like the same shape as `3 C` and is not, which is worth writing down before
@@ -217,7 +219,7 @@ What is left after the rename is genuinely without an arm:
   instants step 15 never claims. New claims on step 15 would supply them; that is a second
   step's slice, not this step's.
 * **`3.798 V`** is the circuit's zero-length probe — a *third* pack. The claims file
-  already says so in the note on step 19's probe claim.
+  already says so in the note on step 17's probe claim.
 * **`12` seconds in `3484` — `0.34 %`** is the 1 C boundary, and it needs both models run
   to a full-discharge cut-off at a current that is not this step's box. That is an arm and
   a second pack at once, and roughly an hour of simulated time on the most expensive cell
