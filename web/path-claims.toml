@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Thirteen steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Fourteen steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -123,7 +123,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 66 claims below that set
+#              Be clear about what this buys TODAY: in all 67 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -143,7 +143,7 @@
 # else is accepted:
 #
 #   spelled  174 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  21 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   tighter  23 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -153,7 +153,7 @@
 #             two claims on step 4's estimator gap, where the sentence's own word
 #             ("three") licenses half a point and the tolerance taken is half of the
 #             last place a reader could compute the gap to from the two rows behind it.
-#   grid      4 claims. The quantity is a time the engine can only report on the step
+#   grid      5 claims. The quantity is a time the engine can only report on the step
 #             grid (`flag_first_s:*`, `deficit_zero_s`) and the prose spells no number
 #             in it — it gives a consequence, or a rendering of the clock. `tol` is
 #             half a timestep, which for a grid time is the tightest meaningful bound:
@@ -191,9 +191,9 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 21 claims.
+# bounds the engine against `value` and is deliberately tighter on 23 claims.
 #
-#   same        181 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        183 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -208,7 +208,7 @@
 #   until_end    1. A duration remaining to the mark — `the last 53 seconds` of a flag
 #               at 4146.5 s on a step ending at 4200. Fenced to pre-mark claims, which
 #               with the fence above stops an author trying both frames until one fits.
-#   displayed    1. The sentence prints what the ROW prints, not what the engine
+#   displayed    2. The sentence prints what the ROW prints, not what the engine
 #               computes: `it goes from `10m` to `16m`` of 983.0 s. No arithmetic — the
 #               tie is the display check, so the claim must name a row, be `quoted`, and
 #               carry that row's string inside its own literal. No `spells` allowed, or
@@ -239,8 +239,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 186 of the 218 numbers the
-#            127 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 188 of the 222 numbers the
+#            129 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -271,7 +271,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 127 claimed sentences need none. A future literal printing a chemistry constant will
+# the 129 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -286,7 +286,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — thirteen steps of the twenty-four so far.
+# of this file — fourteen steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -378,6 +378,91 @@ answer the grid cannot produce.
 
 The sibling claim on this step spells its flag time as a duration (`the last 53 seconds`)
 and this one spells it outright. Both read the same trajectory; only the sentence differs.
+"""
+
+[[claim]]
+step = "bare-curve"
+literal = "barely moves between 20 % and 80 % charge"
+quantity = "soc_at"
+value = 0.800058453
+tol = 1.206e-4
+tol_from = "tighter"
+spells = "80"
+spells_pow10 = 2
+states = "same"
+read_at_s = 829.0
+display = "soc (true)"
+shows = "80.0 %"
+note = """
+The upper end of the window this sentence is about. Both ends were unaccounted numerals
+until this step was scanned whole: the sentence names two charge levels and nothing said
+what decided them, so they read as a figure of speech rather than as two points on this
+run.
+
+**Tolerance, derived.** `spells` is a whole percent, so the rule licenses half a point —
+5e-3 as a fraction. This takes one *coulomb-counting step* instead: 2 A for 0.5 s out of
+2.303451 A·h is 1.206e-4 of the cell, which is the finest a charge level can be named on
+this grid at all. Forty times tighter than the spelled rule, and the engine sits at 48 %
+of it. The looser rule would admit anything from 79.5 % to 80.5 %, which is most of a
+minute of this discharge.
+
+**What it does and does not check.** It ties the sentence's `80` to this run: change the
+cell's capacity by a tenth of a percent and the charge at t = 829 s moves twice this
+tolerance. It does *not* check the sentence's actual argument — that the open-circuit
+voltage barely moves across the window — because no claim here reads the OCV table. Re-fit
+that table flatter or steeper and this claim stays green. Said out loud rather than left to
+be discovered; see docs/plans/path-ledger-bare-curve.md.
+"""
+
+[[claim]]
+step = "bare-curve"
+literal = "barely moves between 20 % and 80 % charge"
+quantity = "soc_at"
+value = 0.199992629
+tol = 1.206e-4
+tol_from = "tighter"
+spells = "20"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3317.0
+display = "soc (true)"
+shows = "20.0 %"
+note = """
+The lower end of the same window, sharing its literal with the claim above on step 2's
+precedent: one sentence, two ends, two claims. Same derivation of the tolerance, and here
+the engine is 6 % of it away rather than 48 %, because 0.20 falls nearer a grid row than
+0.80 does.
+
+Both claims name the `soc (true)` row as well, which is a second thing entirely: the
+sentence writes `20 %` and the panel prints `20.0 %`, so a reader looking for the moment
+this window opens has a row that says so.
+"""
+
+[[claim]]
+step = "bare-curve"
+literal = "the knee, at about 69 minutes — the clock reads `69m` — where the cell empties"
+quantity = "flag_first_s:SOC_CLAMPED_LOW"
+value = 4146.5
+tol = 0.25
+tol_from = "grid"
+states = "displayed"
+quoted = true
+read_at_s = 4146.5
+display = "sim time"
+shows = "69m"
+note = """
+The knee, in the clock's own language. The sibling claim on this step reads the same
+instant as a duration (`the last 53 seconds`) and carries `69m` in its display half — but
+a display half accounts for nothing outside its own literal, so the `69` a reader is
+actually shown in this sentence answered to nothing until the step was scanned whole.
+
+`displayed` needs the row's string inside this claim's literal, and `69 minutes` is not
+`69m`. Rather than drop the readable half, the sentence now says both: the minutes for a
+reader and the row for the check. Two `69`s, one accounting — the panel's string is what
+both of them are.
+
+The alternative was to reword the minutes away, which would have made the sentence worse
+to read in order to make it checkable. See docs/plans/path-ledger-bare-curve.md.
 """
 
 [[claim]]
@@ -3070,8 +3155,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: thirteen
-# steps, 235 numerals, and no longer all of them scenario constants. The first
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: fourteen
+# steps, 251 numerals, and no longer all of them scenario constants. The first
 # three were picked because the same measuring pass found they carry no
 # measurement-shaped figure at all, so they could be closed before a single number was
 # measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's
@@ -5814,12 +5899,21 @@ steps = [
                      # a duration rounded down where its subtraction is exact, and a verb
                      # that said "peaks" where the arm reads a mark — and one left the
                      # page, an instruction to run "to about 400 s" that no file decides
+  "bare-curve",      # 16: the first step of the path, and the cheapest left — measured
+                     # rather than ranked, twelve unaccounted against the next step's
+                     # fifteen. Three were already claimed and a sixteenth numeral arrived
+                     # with the scan, the clock's own `69m`. Of the twelve, eight are
+                     # constants a rule now names: the charge it starts at, the demand box
+                     # twice, the rate that box works out to, the nameplate, the declared
+                     # floor, and two ordinals pointing at steps 20 and 21. One is the `0`
+                     # of `R0`, a section of the chemistry file rather than a quantity.
+                     # The last three needed claims — the two ends of the flat window, and
+                     # the knee in the clock's own language
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: eleven of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: ten of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
-  "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
   "protection-off",                 # claims: 9
   "leg-that-is-not-there",          # claims: 6

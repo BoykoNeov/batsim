@@ -84,7 +84,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is thirteen steps and 235 numbers.
+//! (`[ledger]` in `path-claims.toml`) and today it is fourteen steps and 251 numbers.
 //! Nineteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, the span of a
@@ -179,12 +179,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the eleven steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the ten steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed thirteen whole steps — but only thirteen. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other eleven have their claimed sentences
+//!   has now closed fourteen whole steps — but only fourteen. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other ten have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all eleven, one line each, so this list cannot go quietly out of date.
+//!   names all ten, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -1783,7 +1783,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 174 of 199 claims.
+    /// number's last printed place. The default shape: 174 of 202 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1792,12 +1792,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 21 of 199.
+    /// declaration was wrong. 23 of 202.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 199, every
+    /// the engine either hits the claimed step or misses by a whole one. 5 of 202, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1837,7 +1837,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 181 of 199, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 183 of 202, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -4950,12 +4950,20 @@ enum Tie {
     /// exists to close.
     Product(&'static [Tie]),
     /// A digit that is part of a **name**, read out of a named *string* field of the
-    /// chemistry — `meta.name`, and so far only that.
+    /// chemistry — `meta.name` and `meta.provenance`.
     ///
     /// Step 12 calls its cell "the LG M50", and the `50` in it is not a quantity at all: it
     /// is four fifths of a part number. Nothing measures it and no numeric field holds it,
     /// so before this arm the sentence could not be ledgered — the same position the `0` of
     /// `R0` was in, and that one had no field to point at and was reworded away instead.
+    ///
+    /// **That last clause stopped being true the day this arm was built, and step 1 is where
+    /// it showed.** Its second paragraph says the voltage "drops instantly by `I·R0`", and
+    /// the LFP chemistry's own provenance names `R0` as one of the sections that are still
+    /// placeholders — so the digit has a field after all, and a stronger one than a reword:
+    /// the string that ties it is the string that *declares what it is*. The lesson is not
+    /// about this arm. It is that a note recording why something could not be done outlives
+    /// the reason, and the ledger's own steps are where such notes are read as fact.
     ///
     /// **The `prefix` is what makes it exact rather than a search.** The tie collects only
     /// the digit runs that follow `prefix` in the field's value, so `M{n}` against
@@ -5440,6 +5448,67 @@ enum Control {
 /// so a rule left behind by a prose edit fails here instead of sitting in the list looking
 /// like coverage.
 const LEDGER_VOCABULARY: &[LedgerRule] = &[
+    // Step 1 — the first thing anyone reads. Eight of its twelve unaccounted numerals are
+    // constants: the charge it starts at, the demand box twice, the rate that box works out
+    // to, the cell's nameplate, the floor the chemistry declares, and two ordinals pointing
+    // at the far end of the path. The ninth is the `0` of `R0`, which is a section of the
+    // chemistry file and not a quantity at all.
+    LedgerRule {
+        phrase: "at {n} % charge, isothermal",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The demand box and the rate it works out to, in the sentence that introduces both.
+        // The nameplate is spelled whole here — `2.303451`, not the `2.303` this sentence
+        // used to print — for the reason step 16's `5.15` and `15.46` were: a constant is
+        // compared exactly, and a rounded restatement of one is neither the file's number
+        // nor a computed quantity. See `docs/plans/path-ledger-dfn-step.md`.
+        phrase: "{n} A out of this cell is {n} C \u{2014} it holds {n} Ah",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+            Tie::Chemistry("cell.capacity_ah"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The `0` of `R0` — a section of the chemistry file, in the same position as the `0`
+        // of `[r0]` on step 13 and the `50` of `M50` on step 12. `Tie::Name`'s own docs
+        // record this token as the one that "had no field to point at and was reworded away
+        // instead", and that has been out of date since the arm was built: this chemistry's
+        // provenance is where `R0` is DECLARED a placeholder, which is a stronger tie than
+        // the reword it replaces. `RC` sits two characters later in the same string and the
+        // digit run after it is empty, so the prefix reaches one number and not two.
+        phrase: "drops instantly by `I\u{b7}R{n}`",
+        ties: &[Tie::Name {
+            field: "meta.provenance",
+            prefix: "R",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The floor the flag is about. Not the page's choice and not the scenario's — every
+        // LFP cell in the repo stops here.
+        phrase: "gone under the {n} V this chemistry file declares",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same box again, in the sentence about what the flag does NOT do. Two rules
+        // rather than one loose one, on the same terms as step 6's pair.
+        phrase: "the demand box still says {n} A",
+        ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "step {n} of this path, and step {n}",
+        ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("what-it-cost")],
+        pow10: 0,
+    },
     // Step 3 — the pack's topology and its manufacturing spread.
     LedgerRule {
         phrase: "{n} in series",
