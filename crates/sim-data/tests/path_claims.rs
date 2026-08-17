@@ -84,13 +84,14 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is ten steps and 164 numbers.
-//! Sixteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! (`[ledger]` in `path-claims.toml`) and today it is eleven steps and 183 numbers.
+//! Seventeen arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio or a difference, one of
 //! their durations read in hours, the span of a
 //! chemistry table, a node of one, digits inside a name, the position of another lesson,
 //! the panel's clock at the step's mark, a figure the sentence works out from its own
-//! siblings, any of those read on **another lesson** ([`Tie::Elsewhere`]), a number
+//! siblings, any of those read on **another lesson** ([`Tie::Elsewhere`]), a control read off
+//! **one of this step's arms** rather than off the step ([`Tie::OnArm`]), a number
 //! **another step measured** ([`Tie::Quoted`], which reads that step's claim), and a claim
 //! whose literal contains the number ([`claimed_accounting`], which is
 //! check 6's own accounting asked about a number the ledger found). **None of the taxonomy
@@ -177,12 +178,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the fourteen steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the thirteen steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed ten whole steps — but only ten. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other fourteen have their claimed sentences
+//!   has now closed eleven whole steps — but only eleven. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other thirteen have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all fourteen, one line each, so this list cannot go quietly out of date.
+//!   names all thirteen, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -781,6 +782,21 @@ struct Lesson {
     bms: Option<bool>,
     dt: f64,
     until_s: f64,
+    /// The speed slider's multiplier — steps per frame, and **nothing the trajectory can
+    /// see**.
+    ///
+    /// Scraped for one reader: the ledger's [`Control::Speed`], because step 8's prose prints
+    /// it ("twenty seconds of watching at 10 000×") and no file but this block holds it.
+    /// Absent in most lesson blocks, which is the page's own default rather than a missing
+    /// value.
+    ///
+    /// **Adding this field changes what one paragraph elsewhere can claim.**
+    /// [`Accounted::Setting`] argued that a generous version of *itself* — accounting a token
+    /// against any numeric field of the lesson block — "cannot be built, or perturbed into
+    /// existence, without adding the field first", and this is that field. The argument is
+    /// now the design rather than the absence: check 6's arm ties a token to the step length
+    /// of a **trajectory** a claim is read on, and no trajectory has a speed.
+    speed_x: Option<f64>,
     /// Does `applyStep` rebuild the pack on the way into this step?
     ///
     /// Read for one purpose: to fence a `probe` claim. [`run`] always builds a fresh pack,
@@ -956,6 +972,7 @@ fn lessons() -> Vec<Lesson> {
             dt: num_field(block, "dt").unwrap_or(default),
             until_s: num_field(block, "until_s")
                 .unwrap_or_else(|| panic!("lesson {id} has no until_s")),
+            speed_x: num_field(block, "speed_x"),
             // Absent means "reload only if the scenario changed", which this scraper
             // cannot evaluate without knowing which step the reader came from — so it
             // reads as false, the conservative direction: the fence it feeds refuses a
@@ -1556,12 +1573,17 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
     // after clicking Restart with the slider already dragged, which is the arm's ambient and
     // not the lesson's.
     //
-    // **Measured, and it is unobservable today**: flipping that branch to the lesson's
-    // ambient leaves the whole suite green, because no claim reads a probe on a restart arm
-    // that overrides the ambient — the only two such arms claim flag arrivals. It is written
-    // the correct way round rather than the reachable way round, and the claim that would
-    // reach it is a `probe = true` reading on one of them. See
-    // `docs/plans/path-derived-arm.md`.
+    // **Measured, and unobservable in principle rather than merely today.** Flipping that
+    // branch to the lesson's ambient leaves the whole suite green, and the recorded reason was
+    // that no claim reads a probe on a restart arm that overrides the ambient — with "the
+    // claim that would reach it is a `probe = true` reading on one of them" written down as
+    // the way to close it. That is false, and measuring it is what showed it: a zero-length
+    // step cannot see an environment at all. Probed at 25 °C and at 45 °C on this step's own
+    // fresh pack, the telemetry and the snapshot are byte-identical — nothing in `Env` reaches
+    // telemetry except through a `dt` that is zero here. So on a restart arm this branch is
+    // dead to every claim that could ever be written, and it is kept written the correct way
+    // round as a statement of what the page does. See
+    // `docs/plans/path-ledger-idle-step.md`, which is where that measurement is.
     let after = Env {
         t_ambient: arm.and_then(|a| a.ambient_c).unwrap_or(lesson.ambient_c) + K,
         t_coolant: None,
@@ -1703,7 +1725,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 169 of 191 claims.
+    /// number's last printed place. The default shape: 170 of 193 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1712,12 +1734,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 18 of 191.
+    /// declaration was wrong. 19 of 193.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 191, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 193, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1757,7 +1779,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 174 of 191, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 175 of 193, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2337,9 +2359,13 @@ struct Arm {
     /// it becomes kelvin at the one place it reaches [`Env`], like every other temperature
     /// this file reads out of the page.
     ///
-    /// **Restart only, and that is a scoping refusal rather than a fidelity one** — see the
-    /// assertion in [`every_arm_is_instructed_by_its_own_step`], which says what relaxing it
-    /// would cost and which sentence would pay.
+    /// **Draggable at the mark, which it was not always.** This said "Restart only, and that
+    /// is a scoping refusal rather than a fidelity one" for as long as [`run`] kept one
+    /// environment for a whole trajectory. `run` keeps two now, split at the mark, and the
+    /// fence came down with the slice that built the split — so the paragraph outlived the
+    /// rule it described, and step 8's own continuation arm had been contradicting it since.
+    /// The comment in [`every_arm_is_instructed_by_its_own_step`] where the assertion used to
+    /// be records the same history from the other side.
     #[serde(default)]
     ambient_c: Option<f64>,
     /// The buttons, in the order the reader presses them. Never empty: an arm that does
@@ -4938,6 +4964,35 @@ enum Tie {
     ///
     /// Move the mark and the sentence goes red, which is the property that makes it a tie.
     Clock,
+    /// A [`Tie::Setting`] read off **one of this step's arms** — the value the reader dials
+    /// in, rather than the one the step arrives with.
+    ///
+    /// Step 8 prints both in two sentences: the slider sits at 25 °C for the first leg, and
+    /// *"raise the ambient slider to 45 °C and press Run"* is the second. `Setting(Ambient)`
+    /// answers 25 for that step whatever the sentence says, so before this arm the 45 was
+    /// tied to nothing — and the wrong fix was available and worse: pointing a rule at the
+    /// scenario's `initial_temp_k` would have found a 298.15 that is not this number and
+    /// then, at some other lesson, one that accidentally is.
+    ///
+    /// **A wrapper, on [`Tie::Elsewhere`]'s terms**, and the parallel is exact: that one
+    /// changes *which lesson* answers a question and leaves the question alone, this one
+    /// changes *which trajectory's controls* answer it. What it wraps is a `Setting` and
+    /// nothing else — a file read does not become a different fact for being asked under an
+    /// arm's name, so wrapping one would be an arm that means nothing.
+    ///
+    /// **The override must be real.** An arm that leaves the control alone resolves to
+    /// nothing and panics by name rather than falling back to the step's own value. That
+    /// fallback is the whole hazard: it would account the sentence's 45 against the step's 25
+    /// and go green on a number that is not in any file. Neither fence is reachable from the
+    /// claims file — a rule is code — so each has a `should_panic` test of its own:
+    /// [`an_on_arm_may_only_wrap_a_setting`] and
+    /// [`an_on_arm_reads_a_control_the_arm_overrides`].
+    OnArm {
+        /// The arm's `name`, as `[[arm]]` writes it and a claim's `arm` field reads it.
+        arm: &'static str,
+        /// What to read off it. A [`Tie::Setting`], and the fences above refuse anything else.
+        tie: &'static Tie,
+    },
     /// The taxonomy's sixth arm: a number the sentence works out **from its own siblings**,
     /// as their product.
     ///
@@ -5178,6 +5233,22 @@ enum Control {
     PulseOn,
     /// How long it then rests \[s\].
     PulseOff,
+    /// The step's **mark** \[s\] — how far the page runs before it stops on its own.
+    ///
+    /// A control in the sense every other variant is: `pathArrived` stops the run there, and
+    /// step 8's prose states it as the thing the reader is about to watch ("This runs to
+    /// 200 000 s of simulation"). [`Tie::Clock`] reads the same field *rendered*, which is a
+    /// different sentence — step 22 quotes the panel's `19.3h` and this one quotes the
+    /// seconds.
+    Until,
+    /// The speed slider \[×\] — steps per frame.
+    ///
+    /// The one control here that the trajectory cannot see: it changes how fast a reader
+    /// watches and never `dt`, which is what step 8's own lesson comment says and why its
+    /// two-and-a-half days are twenty seconds of watching. Read off [`Lesson::speed_x`];
+    /// a step that leaves the slider alone resolves to nothing rather than to the page's
+    /// default, because a sentence printing a multiplier is printing one this block set.
+    Speed,
 }
 
 /// The vocabulary, one entry per way a ledgered step names a number some file decides.
@@ -6019,6 +6090,75 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("what-it-cost")],
         pow10: 0,
     },
+    // Step 8 — the pack that wears out while nothing happens. The step with the fewest
+    // unaccounted numerals of the fourteen, measured rather than guessed
+    // (docs/plans/path-self-description-sweep.md), and every one of them is a control or a
+    // topology figure except the ratio at the end.
+    //
+    // Its topology, split across two rules because `pow10` is a property of the rule and a
+    // charge level is a percentage where a cell count is not.
+    LedgerRule {
+        phrase: "{n}S{n}P LFP at",
+        ties: &[Tie::Scenario("pack.series"), Tie::Scenario("pack.parallel")],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "LFP at {n} % charge",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        phrase: "This runs to {n} s of simulation",
+        ties: &[Tie::Setting(Control::Until)],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "of watching at {n}×",
+        ties: &[Tie::Setting(Control::Speed)],
+        pow10: 0,
+    },
+    // The two sentences that dial the slider somewhere the step does not leave it. Same
+    // control, two arms, and that is the distinction `Tie::OnArm` was built to make: the
+    // first continues from the mark, the second rebuilds from new.
+    LedgerRule {
+        phrase: "raise the ambient slider to {n} \u{b0}C",
+        ties: &[Tie::OnArm {
+            arm: "hot",
+            tie: &Tie::Setting(Control::Ambient),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "with the slider still at {n} \u{b0}C",
+        ties: &[Tie::OnArm {
+            arm: "hot from new",
+            tie: &Tie::Setting(Control::Ambient),
+        }],
+        pow10: 0,
+    },
+    // What the whole step is for: the temperature's own factor, which the second leg does
+    // NOT show. Both operands are this step's, on two trajectories — the fresh pack's loss
+    // over the ratio of the one that had already aged — so the arm is part of each address
+    // and neither is readable off the prose. A `Tie::Derived` over the sentence's siblings
+    // could not express it: the sentence prints the answer and neither operand.
+    LedgerRule {
+        phrase: "Not the {n}× two fresh packs would show",
+        ties: &[Tie::Ratio(&[
+            Tie::Quoted {
+                step: "wearing-out-while-idle",
+                arm: Some("hot from new"),
+                quantity: "soh_cap_at:200000",
+                states: QuotedAs::Complement,
+            },
+            Tie::Quoted {
+                step: "wearing-out-while-idle",
+                arm: None,
+                quantity: "soh_cap_at:200000",
+                states: QuotedAs::Complement,
+            },
+        ])],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -6111,6 +6251,26 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
             _ => None,
         },
         Control::Ambient => Some(lesson.ambient_c),
+        Control::Until => Some(lesson.until_s),
+        Control::Speed => lesson.speed_x,
+    }
+}
+
+/// The same control read off an **arm** — what the reader dials in, rather than what the
+/// step arrives with. See [`Tie::OnArm`].
+///
+/// `None` means this arm leaves that control alone, and the caller turns that into a failure
+/// rather than into the step's own value: a silent fallback is the generous match the whole
+/// vocabulary refuses.
+fn arm_control_value(control: Control, arm: &Arm) -> Option<f64> {
+    match control {
+        Control::DemandValue => arm.demand_a,
+        Control::Ambient => arm.ambient_c,
+        // An arm overrides the demand box, the `dt` box, the BMS checkbox and the ambient
+        // slider, and nothing else. The pulse legs, the mark and the speed are the step's
+        // for the whole of it, so a rule asking an arm for one is asking a question the page
+        // cannot answer.
+        Control::PulseOn | Control::PulseOff | Control::Until | Control::Speed => None,
     }
 }
 
@@ -6327,6 +6487,39 @@ fn tie_values(
                 LedgerOp::Ratio => vec![rest.iter().fold(*first, |a, b| a / b)],
             }
         }
+        Tie::OnArm { arm, tie } => {
+            let Tie::Setting(control) = tie else {
+                panic!(
+                    "a rule wraps `{}` in `OnArm`. An arm overrides controls, not files: \
+                     asking a scenario field under an arm's name would resolve to the same \
+                     number and claim it came from somewhere else.",
+                    tie_arm_name(tie),
+                );
+            };
+            let found = ctx
+                .arms
+                .iter()
+                .find(|a| a.step == lesson.id && a.name == *arm)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "a rule on step `{}` reads the arm `{arm}`, and that step declares no \
+                         arm of that name. An arm is what makes the reader's control change a \
+                         trajectory; a rule naming one that is gone is reading a sentence \
+                         nobody can follow.",
+                        lesson.id,
+                    )
+                });
+            let value = arm_control_value(*control, found).unwrap_or_else(|| {
+                panic!(
+                    "a rule reads the arm `{arm}`'s {control:?} on step `{}`, and that arm \
+                     does not override it. Falling back to the step's own setting would \
+                     account the sentence's number against a control the reader was never \
+                     asked to touch — which is exactly what this arm exists to tell apart.",
+                    lesson.id,
+                )
+            });
+            vec![value]
+        }
         Tie::Elsewhere { step, tie } => {
             assert!(
                 lesson.id != *step,
@@ -6484,6 +6677,9 @@ fn tie_describe(tie: &Tie) -> String {
         Tie::Elsewhere { step, tie } => {
             format!("{}, read on the lesson `{step}`", tie_describe(tie))
         }
+        Tie::OnArm { arm, tie } => {
+            format!("{}, as the arm `{arm}` sets it", tie_describe(tie))
+        }
         Tie::Quoted {
             step,
             arm,
@@ -6522,6 +6718,7 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Hours(_) => "duration in hours",
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
+        Tie::OnArm { .. } => "an arm's control",
         Tie::Derived { .. } => "derived",
         Tie::Elsewhere { .. } => "another lesson",
         Tie::Quoted { .. } => "quoted claim",
@@ -7300,6 +7497,85 @@ fn a_pack_from_cannot_continue_this_steps_mark() {
         .expect("step 8 is still in the path");
     let arm = walkable_probe(&here.id, &there.id, Start::Mark);
     assert_walkable(&arm, here, there);
+}
+
+/// [`Tie::OnArm`] wraps a control and nothing else.
+///
+/// Neither of this arm's two fences is reachable from `path-claims.toml`, because a rule is
+/// code: the one `OnArm` in the vocabulary satisfies both. So they are asked directly, on the
+/// terms `an_elsewhere_may_not_wrap_another_one` established — a fence no run enters is a
+/// paragraph, and this file has been caught by that twice.
+#[test]
+#[should_panic(expected = "An arm overrides controls, not files")]
+fn an_on_arm_may_only_wrap_a_setting() {
+    let lessons = lessons();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "wearing-out-while-idle")
+        .expect("step 8 is still in the path");
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let arms = arms();
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &arms,
+        derived: &[],
+    };
+    let tie = Tie::OnArm {
+        arm: "hot",
+        tie: &Tie::Scenario("pack.initial_soc"),
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
+/// And it may only read a control that arm actually overrides.
+///
+/// The fallback this refuses is the one that would have accounted step 8's `45 °C` against
+/// the 25 the step arrives with — right-shaped, green, and about a control the reader was
+/// never asked to touch.
+#[test]
+#[should_panic(expected = "does not override it")]
+fn an_on_arm_reads_a_control_the_arm_overrides() {
+    let lessons = lessons();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "wearing-out-while-idle")
+        .expect("step 8 is still in the path");
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let arms = arms();
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &arms,
+        derived: &[],
+    };
+    // The `hot` arm drags the ambient and nothing else, so asking it for the mark is asking
+    // for a control it leaves where the step left it.
+    let tie = Tie::OnArm {
+        arm: "hot",
+        tie: &Tie::Setting(Control::Until),
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
 }
 
 /// A wrapper around a wrapper, or around a derivation, is refused rather than resolved.
@@ -8182,7 +8458,9 @@ fn n_ledger_arms(_f: &Facts) -> usize {
                     walk(tie, used);
                 }
             }
-            Tie::Hours(tie) | Tie::Elsewhere { tie, .. } => walk(tie, used),
+            Tie::Hours(tie) | Tie::Elsewhere { tie, .. } | Tie::OnArm { tie, .. } => {
+                walk(tie, used)
+            }
             _ => {}
         }
     }

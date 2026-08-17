@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Ten steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Eleven steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -142,8 +142,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  169 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  18 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  170 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  19 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -191,15 +191,15 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 18 claims.
+# bounds the engine against `value` and is deliberately tighter on 19 claims.
 #
-#   same        174 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        175 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
 #               −1.31397. Fenced to negative values; on a positive one it is a silent
 #               alias for `same`.
-#   complement   4. The sentence prints how far below one the value is — `0.53 points
+#   complement   5. The sentence prints how far below one the value is — `0.53 points
 #               are gone` of a `soh cap` of 0.9947106.
 #   since_mark   2. A duration since the step's mark — `**383.0 s later**` of an
 #               absolute 983.0 s on a step marking at 600. Fenced to claims read on an
@@ -239,8 +239,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 179 of the 211 numbers the
-#            123 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 181 of the 214 numbers the
+#            125 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -271,7 +271,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 123 claimed sentences need none. A future literal printing a chemistry constant will
+# the 125 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -286,7 +286,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — ten steps of the twenty-four so far.
+# of this file — eleven steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -641,10 +641,42 @@ it instead, against the lesson's own demand box, which is the difference between
 scans, stated where the next author will meet it.
 """
 
+# Step 8's readings are TAGGED with their instants (`soh_cap_at:50000`), which they were
+# not until the ledger reached this step. The step files three readings of one row, so a
+# sentence quoting "step 8's soh cap" had no way to say which — and the ratio at the end of
+# its `expect` quotes two of them. See `Tie::Quoted`.
+
+[[claim]]
+step = "wearing-out-while-idle"
+literal = "Two lines leaving 100 % together"
+quantity = "soh_cap_at:0.5"
+value = 1.0
+tol = 1.0e-12
+tol_from = "tighter"
+spells = "100"
+spells_pow10 = 2
+states = "same"
+read_at_s = 0.5
+display = "soh cap"
+shows = "100.00 %"
+note = """
+Where both traces start, and the first numeral in this step's prose. The aging sub-clock
+ticks every 10 s, so at the first step nothing has happened yet and health is exactly 1 —
+the tolerance is not a measurement tolerance, on the same terms as step 24's
+"`soh cap` leaves 100.00 % at t = 10 s".
+
+Read at the first step rather than at the probe: a `probe` claim requires the step to set
+`reload: true`, and this one does not, so what the panel shows before the reader presses
+Run depends on the step they arrived from. Half a second in it does not.
+
+No `quoted`: the row prints `100.00 %` and the sentence says `100 %`. The row's string is
+recorded anyway, because the sentence's whole point is that the two lines LEAVE that value.
+"""
+
 [[claim]]
 step = "wearing-out-while-idle"
 literal = "0.53 points are gone"
-quantity = "soh_cap_at"
+quantity = "soh_cap_at:50000"
 value = 0.9947106
 tol = 5.0e-5
 tol_from = "spelled"
@@ -667,7 +699,7 @@ makes that subtraction checkable.
 [[claim]]
 step = "wearing-out-while-idle"
 literal = "at the mark it is 1.06"
-quantity = "soh_cap_at"
+quantity = "soh_cap_at:200000"
 value = 0.9894213
 tol = 5.0e-5
 tol_from = "spelled"
@@ -755,7 +787,7 @@ claim's is.
 [[claim]]
 step = "wearing-out-while-idle"
 literal = "20 K buys 2.84 points over the next 200 000 s against the 1.06 the first leg cost, about 2.7×"
-quantity = "soh_cap_at"
+quantity = "soh_cap_at:200000"
 value = 0.9894213
 tol = 5.0e-5
 tol_from = "spelled"
@@ -798,6 +830,64 @@ Worth recording, because it is the reason this rounds cleanly either way: the en
 ratio is 2.8375 / 1.0579 = 2.6822, and the printed numbers give 2.6792. Both are 2.7 to a
 tenth. A sentence whose two readings straddled a rounding boundary would be a sentence to
 reword, not a tolerance to widen.
+"""
+
+# --- step 8's third trajectory: the same heat, from new ---------------------------
+#
+# The step's closing sentence has always said what two FRESH packs would show, and until
+# this arm the number was true of a run nobody could produce: the prose instructed a
+# continuation at the mark and nothing else, so 3.5x was measured on a trajectory the reader
+# is not shown. That is the "right but unreachable" class, and the fix is an instruction
+# rather than a deletion — Restart at 45 degC is one keystroke away from where the sentence
+# already leaves the reader.
+
+[[arm]]
+step = "wearing-out-while-idle"
+name = "hot from new"
+instruction = "press **Restart** with the slider still at 45 °C"
+start = "restart"
+ambient_c = 45.0
+actions = [{ do = "run", to_s = 200000.0 }]
+note = """
+A fresh pack at 45 °C for one leg's worth of rest, which is the other half of the
+comparison the step's last sentence makes. `Restart` rebuilds from the scenario and does
+NOT re-apply the step's controls, so the slider stays where the reader dragged it — the
+page's own behaviour, and why this arm needs no second instruction to put it back.
+
+Run length is the sentence's own: "the same 200 000 s", which is this step's mark, so the
+arm ends where the first leg ended and the two losses are comparable by construction.
+
+Measured on the way in, and it is why the sentence says 3.5 rather than the 3.6 the
+scenario file's header says: over a 200 000 s leg the fresh 45 °C pack loses 3.7489 points
+against 1.0579 at 25 °C, a ratio of 3.5439. The pure Arrhenius factor for +20 K on this
+chemistry's activation energy is 3.5535, and the file's 3.6 is that ratio over a 600 ks run.
+The difference is the warm-up: both packs start at 25 °C, `√t` weights the first minutes
+heavily, and the hot one spends its first few hundred seconds climbing to its own rate. A
+longer run dilutes that, which is why the same comparison rounds differently at 600 ks.
+"""
+
+[[claim]]
+step = "wearing-out-while-idle"
+literal = "the same 200 000 s costs **3.75 points** from new"
+quantity = "soh_cap_at:200000"
+value = 0.9625106
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "3.75"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 200000.0
+arm = "hot from new"
+display = "soh cap"
+shows = "96.25 %"
+note = """
+The fresh pack's loss over one leg, and the operand the closing ratio divides. `complement`
+because the sentence prints what is gone and the row prints what is left — the same frame as
+the 1.06 above it, on the other trajectory.
+
+The instant is 200 000 s of the ARM's own clock, which starts at zero: a restart arm covers
+the same instants as the step's own run and answers differently there, which is why the
+quantity is tagged and why `Tie::Quoted` takes the arm as part of the address.
 """
 
 # --- step 10: the charge that has nowhere to go ----------------------------------
@@ -2928,8 +3018,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: ten
-# steps, 164 numerals, and no longer all of them scenario constants. The first
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: eleven
+# steps, 183 numerals, and no longer all of them scenario constants. The first
 # three were picked because the same measuring pass found they carry no
 # measurement-shaped figure at all, so they could be closed before a single number was
 # measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's
@@ -2974,7 +3064,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are sixteen of them. An arm says what decides a number: a
+# THE ARMS THEMSELVES, and there are seventeen of them. An arm says what decides a number: a
 # NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO or a DIFFERENCE, a duration of theirs read IN HOURS, the SPAN of a
@@ -5442,6 +5532,13 @@ steps = [
                      # boxes, the charge it starts at, the cut-off, the nameplate twice and
                      # the rate. It cost four new arms across two slices, five new claims,
                      # and three numbers that left the page and have not come back
+  "wearing-out-while-idle", # 19: the cheapest of the fourteen, measured
+                     # (docs/plans/path-self-description-sweep.md) and not the one the
+                     # previous slice recommended. Eight of its numerals are claims on
+                     # three trajectories, and the other eleven are the pack, its charge,
+                     # the mark, the speed slider, and the two ambients the reader dials —
+                     # which took `Tie::OnArm`, the first tie that reads a control off an
+                     # ARM rather than off the step
   "slow-and-patient", # 16: the nameplate of a lead-acid cell, stated four ways, plus the
                      # rate it is quoted at, the span of its OCV curve, the battery six of
                      # these make, the clock the run stops on and the step it points back
@@ -5450,16 +5547,13 @@ steps = [
                      # both. It still needed FOUR new arms, because not one of the eleven is
                      # a field a rule could read straight off a file
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: fourteen of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: thirteen of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
   "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
   "protection-off",                 # claims: 9
-  "wearing-out-while-idle",         # claims: 5, on both legs. Its second leg is the
-                                    # first ambient dragged at the mark, and its ratio
-                                    # the first `[[derived]]` accounting
   "two-legs",                       # claims: 8, on both legs. Its headline ratios are
                                     # the `Derived` accounting arm
   "leg-that-is-not-there",          # claims: 6
