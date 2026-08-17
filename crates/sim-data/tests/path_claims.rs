@@ -84,12 +84,13 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is eleven steps and 183 numbers.
-//! Seventeen arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! (`[ledger]` in `path-claims.toml`) and today it is twelve steps and 201 numbers.
+//! Eighteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio or a difference, one of
 //! their durations read in hours, the span of a
 //! chemistry table, a node of one, digits inside a name, the position of another lesson,
-//! the panel's clock at the step's mark, a figure the sentence works out from its own
+//! the panel's clock at the step's mark, a constant of the page's own policy parsed out of
+//! `web/app.js` ([`Tie::Page`]), a figure the sentence works out from its own
 //! siblings, any of those read on **another lesson** ([`Tie::Elsewhere`]), a control read off
 //! **one of this step's arms** rather than off the step ([`Tie::OnArm`]), a number
 //! **another step measured** ([`Tie::Quoted`], which reads that step's claim), and a claim
@@ -178,12 +179,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the thirteen steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the twelve steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed eleven whole steps — but only eleven. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other thirteen have their claimed sentences
+//!   has now closed twelve whole steps — but only twelve. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other twelve have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all thirteen, one line each, so this list cannot go quietly out of date.
+//!   names all twelve, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -251,6 +252,12 @@ fn index_html() -> String {
 /// is `(what it is, the file, the literal that must still be there)`.
 const MIRRORED: &[(&str, &str, &str)] = &[
     ("default dt", "index.html", r#"id="dt" value="0.5""#),
+    // The one row with a reader beside it: [`cccv_period_s`] parses this constant's
+    // value, and this pin says the page still SPELLS it the way that parser looks for it.
+    // Both are kept because they fail differently — delete the row and a rename becomes an
+    // unexplained panic in the parser instead of a named failure here. For six slices this
+    // row was the whole of it, and the mirror it was meant to guard was wrong the whole
+    // time; that is the history the rest of this file keeps citing.
     (
         "CcCv sub-clock period",
         "app.js",
@@ -425,6 +432,37 @@ fn default_dt() -> f64 {
     let rest = &html[start..];
     let end = rest.find('"').expect("dt value attribute is quoted");
     rest[..end].parse().expect("dt default parses as a float")
+}
+
+/// `web/app.js`: how often the CC-CV controller is allowed to change its mind \[s\].
+///
+/// Parsed rather than declared, on [`default_dt`]'s terms exactly — and here that closes a
+/// gap this file's own docs complain about in four places. `CCCV_PERIOD_S` has sat in
+/// [`MIRRORED`] since the day this test was written with *nothing reading it*, which is the
+/// "pinned, and consulted by nothing" shape rejected everywhere else; [`cccv_window_steps`]
+/// carried its own copy of the `10`.
+///
+/// **The pin and the parse are both kept, and they say different things.** The `MIRRORED`
+/// row says the page still spells this constant the way the mirror expects to find it; this
+/// says what the number is. Delete the row and a rename becomes a silent panic here instead
+/// of a named failure there.
+///
+/// Anchored on the name **and** the `=`, so a longer identifier ending in the same characters
+/// cannot answer for it.
+fn cccv_period_s() -> f64 {
+    let app = app_js();
+    let marker = "const CCCV_PERIOD_S = ";
+    let start = app
+        .find(marker)
+        .unwrap_or_else(|| panic!("web/app.js has no `{marker}` — the decision window moved"))
+        + marker.len();
+    let rest = &app[start..];
+    let end = rest
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(rest.len());
+    rest[..end]
+        .parse()
+        .expect("CCCV_PERIOD_S is a numeric literal")
 }
 
 /// A constant that must still read the way the mirror below assumes it reads.
@@ -1158,6 +1196,19 @@ struct Row {
     /// change, no new `CellView` field, and so no `sim_server::API_VERSION` /
     /// `sim_wasm::WASM_API_VERSION` bump for a number only a claim reads.
     rc_overpotential_v: Option<f64>,
+    /// Whether this step ran under a **voltage hold** — the second leg of a CC-CV charge.
+    ///
+    /// The demand the step was taken with, recorded rather than inferred from the current.
+    /// `|i| < the box` is what the *reader* sees, and it is not the same statement: it is
+    /// also true of a BMS derate, of a clamped pack, and of the last constant-current step
+    /// before a leg change if anything ever softened one. Step 9's sentence is about which
+    /// demand the controller was issuing, so this is that demand.
+    ///
+    /// `false` on every other program, which is what it means — a pulse train and a plain
+    /// discharge never hold a voltage. The one quantity that reads it ([`measure`]'s
+    /// `cccv_cc_ends_s`) refuses on a step whose demand is not the page's CC-CV policy
+    /// rather than reading a run of `false`s as "the leg never changed".
+    voltage_hold: bool,
 }
 
 /// The sensor channels this file reads, with the frame's own clock beside them.
@@ -1406,21 +1457,21 @@ impl Run {
 /// `advance` does not ask [`demand_now`] per step for a CC-CV run: it chops each frame's
 /// steps at multiples of `CCCV_PERIOD_S / dt` and holds **one** demand across the whole
 /// window, so which step the legs change on is a property of the simulation rather than
-/// of how the browser scheduled a frame. `CCCV_PERIOD_S` was pinned in [`MIRRORED`] from
-/// the day this file was written and nothing here read it — the mirror decided every
-/// step, which is the page's *inner* function without the loop around it, and a pinned
-/// constant no code consults is the "looks like coverage" shape this file rejects
-/// everywhere else.
+/// of how the browser scheduled a frame.
 ///
-/// Measured cost of the gap on `two-legs`, the step where the CV leg actually engages:
-/// the switch lands one step late (5420.5 s rather than 5420.0). Nothing in
-/// `path-claims.toml` moved, because the only claimed CC-CV step is
-/// `leg-that-is-not-there`, whose LFP cell never reaches the band at all and is therefore
-/// on a constant current under either rule. That is why this was invisible, not why it
-/// was harmless.
+/// **The window was once missing here, and the cost was measured on `two-legs`** — the step
+/// where the CV leg actually engages: without it the mirror decided every step, which is the
+/// page's *inner* function without the loop around it, and the switch landed one step late
+/// (5420.5 s rather than 5420.0). Nothing in `path-claims.toml` moved when it was fixed,
+/// because the only claimed CC-CV step then was `leg-that-is-not-there`, whose LFP cell never
+/// reaches the band at all and is therefore on a constant current under either rule. That is
+/// why it was invisible, not why it was harmless — and `two-legs` now claims that instant
+/// (`cccv_cc_ends_s`), so the gap could not come back unseen.
+///
+/// The period itself is read off the page by [`cccv_period_s`] rather than repeated here.
 fn cccv_window_steps(dt: f64) -> u64 {
     // `Math.max(1, Math.round(CCCV_PERIOD_S / dt))`.
-    let k = (10.0 / dt).round();
+    let k = (cccv_period_s() / dt).round();
     if k < 1.0 {
         1
     } else {
@@ -1517,6 +1568,7 @@ fn drive(
                 .expect("pack has a cell at 0S0P")
                 .overpotential_v,
             rc_overpotential_v: wanted.then(|| rc_overpotential_v(pack)),
+            voltage_hold: matches!(d, Demand::Voltage(_)),
         });
     }
 }
@@ -1646,6 +1698,10 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
         // `probe = true` — which is the "whichever was pushed first" hazard the probe row
         // is kept out of `rows` to avoid.
         rc_overpotential_v: None,
+        // A probe is taken before the run is armed, so it is nobody's leg. On a CC-CV step
+        // the demand above is whatever `ccCvDemand` answers for a pack at rest, and no
+        // quantity asks this of the probe row — `cccv_cc_ends_s` folds over `rows`.
+        voltage_hold: false,
     };
     let mut trace = Trace::default();
 
@@ -1725,7 +1781,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 170 of 194 claims.
+    /// number's last printed place. The default shape: 171 of 195 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1734,12 +1790,12 @@ enum TolFrom {
     /// the prose hedges a round number the engine misses by more than its last place, and
     /// for four grid times whose prose *does* spell them: half a step is tighter than the
     /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 20 of 194.
+    /// declaration was wrong. 20 of 195.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 4 of 194, every
+    /// the engine either hits the claimed step or misses by a whole one. 4 of 195, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1779,7 +1835,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 176 of 194, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 177 of 195, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -3062,6 +3118,64 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
         // distinction, which is the one that keeps this from being a declaration.
         "soc_lost_pts_at" => (run.probe.telemetry.soc_true - run.at(at_s).soc_true) * 100.0,
         "t_rise_k_at" => run.at(at_s).t_max - run.probe.telemetry.t_max,
+        // How long the **constant-current leg** lasts \[s\]: the last instant the controller
+        // was still asking for a current, which is the step before the first voltage hold.
+        //
+        // A different question from `cccv_taper_s` below, and a better-behaved one. That one
+        // is about when the page *stops*, which `ccCvDone` decides at the end of a chopped
+        // chunk; this is about when the page changes *leg*, which `ccCvDemand` decides on the
+        // decision grid and nowhere else. Every demand this run took was chosen at a window
+        // boundary — [`drive`] holds one across the whole window, as the page does — so the
+        // leg boundary is a function of the simulation whatever the frame rate, with no
+        // invariant needed to say so.
+        //
+        // **Read off the demand, never off the current.** [`Row::voltage_hold`] records what
+        // the controller asked for. Inferring the leg from `|i| < the box` would be a
+        // different statement that happens to agree here: a derate, a clamp or a protection
+        // trip all soften a current without changing the leg.
+        //
+        // Two refusals rather than a plausible answer:
+        //
+        // * a step whose demand is not the page's CC-CV policy has no legs to divide;
+        // * a run that never holds a voltage, or that goes *back* to constant current after
+        //   holding one, has no single leg boundary — the sentence this exists for says the
+        //   current "stays at −1.5 A for 5420 s", which is a claim that there is exactly one.
+        "cccv_cc_ends_s" => {
+            if !matches!(run.prog, Prog::CcCv { .. }) {
+                panic!(
+                    "a claim reads `cccv_cc_ends_s` on a step whose demand is not the page's \
+                     CC-CV policy. There are no two legs to find the boundary of."
+                )
+            }
+            let first_hold = run
+                .rows
+                .iter()
+                .position(|r| r.voltage_hold)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "the run never left constant current — the controller asked for a \
+                         voltage hold on none of its {} steps, so this charge has one leg \
+                         and not two. `leg-that-is-not-there` is the step that is about, \
+                         and it has no boundary to claim.",
+                        run.rows.len()
+                    )
+                });
+            assert!(
+                run.rows[first_hold..].iter().all(|r| r.voltage_hold),
+                "the controller went back to constant current after holding a voltage, so \
+                 this run has more than one leg boundary and `cccv_cc_ends_s` is not a \
+                 number. Either the band is chattering — see docs/plans/cc-cv.md, which \
+                 sized it against the solver's residual for exactly this — or the sentence \
+                 claiming a single leg change is about a trajectory that no longer has one."
+            );
+            assert!(
+                first_hold > 0,
+                "the first step of this run was already a voltage hold, so its \
+                 constant-current leg is empty and the boundary is not a duration. A pack \
+                 that starts inside the band is a pack with nothing to charge."
+            );
+            run.rows[first_hold - 1].t_s
+        }
         // When a CC-CV charge finishes \[s\]: the first row whose current has fallen to the
         // taper the page is comparing against.
         //
@@ -3131,7 +3245,9 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, soc_at, i_at, \
              t_max_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
-             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, cccv_taper_s,              pulse_sag_mv:<tooth>, pulse_jump_mv:<tooth>, pulse_rebound_mv:<tooth>,              pulse_lost_mv:<tooth>, pulse_rebound_arrived:<tooth>, \
+             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, cccv_taper_s, \
+             cccv_cc_ends_s, pulse_sag_mv:<tooth>, pulse_jump_mv:<tooth>, \
+             pulse_rebound_mv:<tooth>, pulse_lost_mv:<tooth>, pulse_rebound_arrived:<tooth>, \
              soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, \
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>, overpotential_mv_at, \
@@ -4083,8 +4199,9 @@ struct Derivation {
 ///
 /// One variant, because one sentence in the path prints one. A sum or a difference gets
 /// built the day a sentence needs it — an operation nothing performs would be the
-/// `CCCV_PERIOD_S` shape this file has already been caught by once: pinned, and consulted by
-/// nothing.
+/// `CCCV_PERIOD_S` shape this file has already been caught by once: pinned, and for six
+/// slices consulted by nothing. (It has a reader now — see [`cccv_period_s`] — which does
+/// not retire the lesson, only the example's present tense.)
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Op {
@@ -4232,8 +4349,8 @@ enum Accounted {
     /// sentence — *"20 K buys 2.84 points"* — and it prints the **step** rather than the
     /// level: the 45 °C the reader dials in against the 25 the slider was already on. So
     /// that is what the arm reads, and a sentence printing an ambient *level* still fails
-    /// here loudly, because nothing in the path prints one and an arm for it would be
-    /// `CCCV_PERIOD_S` again: pinned, and consulted by nothing.
+    /// here loudly, because nothing in the path prints one and an arm for it would be what
+    /// `CCCV_PERIOD_S` was for six slices: pinned, and consulted by nothing.
     ///
     /// The two readings are fenced against each other rather than ordered: a step whose `dt`
     /// happened to equal its arm's ambient step would hand the token whichever was tried
@@ -4783,10 +4900,11 @@ struct LedgerRule {
 /// sentence needs it, and **all six of its kinds now exist**: the last, the general
 /// `Derived` over a sentence's own siblings, waited until a *ledgered* step printed one —
 /// step 22's "six of these in series is the 12 V battery" — because an arm with nothing to
-/// account is the `CCCV_PERIOD_S` shape this file has already been caught by once. Three
+/// account is the `CCCV_PERIOD_S` shape this file has already been caught by once. Four
 /// variants below are finer distinctions the plan's six did not separate (`Ratio` beside
-/// `Product`, `Span` beside `Member`, and `Clock`, which reads a rendering rather than a
-/// file), each built the same way: when one sentence needed it. Check 6 has a `Derived` of
+/// `Product`, `Span` beside `Member`, `Clock`, which reads a rendering rather than a file,
+/// and `Page`, which reads a constant of the client rather than of a scenario), each built
+/// the same way: when one sentence needed it. Check 6 has a `Derived` of
 /// its own ([`Accounted::Derived`]); that one is over a claimed sentence and says nothing
 /// about this scan, the same way `setting` sits in both.
 enum Tie {
@@ -4968,6 +5086,26 @@ enum Tie {
     ///
     /// Move the mark and the sentence goes red, which is the property that makes it a tie.
     Clock,
+    /// A **constant of the page's own policy**, parsed out of `web/app.js` by name.
+    ///
+    /// Step 9 tells the reader how often the charge controller is allowed to change its
+    /// mind — *"the rule is checked every 10 s of simulation time, never once per frame"* —
+    /// and that number is in no scenario, no chemistry and no lesson block. It is
+    /// `CCCV_PERIOD_S`, a constant of the client-side policy `CLAUDE.md` puts there, and the
+    /// sentence's whole point is that the page keeps a grid of its own.
+    ///
+    /// **Parsed, never declared**, which is what makes it a tie: [`cccv_period_s`] reads the
+    /// literal out of the page, so widening the window to 30 s turns this sentence red on
+    /// sight. It is the same instrument [`Tie::Clock`] uses one level down — that one reads a
+    /// *rendering* the page performs, this one reads a number the page holds — and the same
+    /// one `default_dt` has read out of the markup since this file was written.
+    ///
+    /// **The name is declared and the value never is.** Every other arm here names a field
+    /// and lets the file answer; this names a constant and does the same. What it does *not*
+    /// do is take a path into the source: a tie able to read any expression in `app.js` would
+    /// find a number for almost any token, which is the generous match the whole table
+    /// refuses. One constant, one parser, and a new one is a new function.
+    Page(&'static str),
     /// A [`Tie::Setting`] read off **one of this step's arms** — the value the reader dials
     /// in, rather than the one the step arrives with.
     ///
@@ -5209,8 +5347,11 @@ enum Operand {
 /// field of the block happened to hold that number would be right off the wrong field —
 /// green, and still green the day one of the two moves.
 ///
-/// Four variants, one per control a ledgered step has so far printed. The next one a
-/// ledgered step prints is where the fifth gets added.
+/// One variant per control a ledgered step has so far printed, and the next one a ledgered
+/// step prints is where the next gets added. The count is deliberately not written here: it
+/// was "four" for three slices after the enum had six, which is the self-description defect
+/// `docs/plans/path-self-description-sweep.md` swept nine instances of — and a count spelled
+/// in a word is invisible to every scanner in this file.
 #[derive(Debug, Clone, Copy)]
 enum Control {
     /// The demand box, in the unit the box takes — amps, discharge-positive.
@@ -5253,6 +5394,19 @@ enum Control {
     /// a step that leaves the slider alone resolves to nothing rather than to the page's
     /// default, because a sentence printing a multiplier is printing one this block set.
     Speed,
+    /// The CC-CV taper \[A\] — the current the page's completion test compares against.
+    ///
+    /// A control in the same sense [`Self::DemandValue`] is: it is a field of the demand box
+    /// the reader can type in, and `ccCvDone` reads it. Step 9's prose is careful about whose
+    /// number it is — *"the only thing that ends this charge is the current falling below the
+    /// 0.15 A cutoff"* — and the lesson block's own comment says the same: a scenario is an
+    /// initial condition and never a demand program, so the cutoff is the page's and not the
+    /// file's.
+    ///
+    /// Reads as nothing on any program but CC-CV, which is what keeps it off the other two
+    /// currents in the path: a `Pulse` step has no taper, and a rule asking for one there is
+    /// a rule on the wrong step.
+    Taper,
 }
 
 /// The vocabulary, one entry per way a ledgered step names a number some file decides.
@@ -6163,6 +6317,128 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ])],
         pow10: 0,
     },
+    // Step 9 — the charge, and the first ledgered step whose subject is the PAGE'S OWN
+    // POLICY rather than the engine's behaviour. `CC-CV` is not a demand `sim-core` has:
+    // it is two of them with a rule between, which is where CLAUDE.md puts a charge
+    // policy. So three of this step's numbers are the policy's — the current it asks for,
+    // the voltage it aims at, the current it stops below — and a fourth is how often the
+    // rule is allowed to fire, which is a constant of the client and of nothing else.
+    //
+    // Where it starts. A different phrase from the four other "{n} %" rules above for
+    // their reason: a phrase generous enough to cover two sentences is generous enough to
+    // cover a third that means something else.
+    LedgerRule {
+        phrase: "starting at {n} % instead of full",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    // Which cell it is. The ordinal is checked and the SAMENESS is not: `Tie::Ordinal`
+    // pins that `same-discharge-other-chemistry` is still the second lesson, so inserting
+    // a step ahead of it turns this red — but nothing here compares the two scenarios'
+    // chemistries, and no arm in this taxonomy can. The sentence's claim that it is the
+    // same cell rests on a reader opening both files.
+    LedgerRule {
+        phrase: "cell as step {n}, starting",
+        ties: &[Tie::Ordinal("same-discharge-other-chemistry")],
+        pow10: 0,
+    },
+    // The cutoff, which is the page's and not the file's — the lesson block's own comment
+    // says so: "a scenario is an initial condition and never a demand program".
+    LedgerRule {
+        phrase: "falling below the {n} A cutoff",
+        ties: &[Tie::Setting(Control::Taper)],
+        pow10: 0,
+    },
+    // How often the controller may change its mind, read off the page's own constant.
+    LedgerRule {
+        phrase: "checked every {n} s of",
+        ties: &[Tie::Page("CCCV_PERIOD_S")],
+        pow10: 0,
+    },
+    // The speed this step watches at, in the sentence that says the speed changes nothing.
+    LedgerRule {
+        phrase: "real time than at {n}×",
+        ties: &[Tie::Setting(Control::Speed)],
+        pow10: 0,
+    },
+    // THE HEADLINE, and both halves are ratios of this step's own claims. Neither operand
+    // is printed in the sentence that prints the answer — they are two sentences above it
+    // — so `Tie::Derived` cannot reach them and this is the file-and-claim family instead:
+    // `Tie::Ratio` over `Tie::Difference` over `Tie::Quoted`.
+    //
+    // The two denominators are NOT parallel, and that is the sentence rather than a slip:
+    // the time is measured from t = 0, where the charge is measured from the 20 % the pack
+    // started at. A charge "of the time" from the same origin would be nonsense — the run
+    // does not begin part-way through a clock — and a charge fraction over 100 % would
+    // count 20 points the reader never put in.
+    //
+    // KNOWN GRANULARITY, stated rather than discovered: both tokens commit to one digit,
+    // so `13` survives anything in [12.5, 13.5) — about 50 s of movement in the leg
+    // boundary — and `5` anything in [4.5, 5.5). The arms are as tight as the prose is,
+    // which is the rule `tol_from = "spelled"` keeps on the claims side.
+    LedgerRule {
+        // 6210 - 5420 over 6210 = 12.72 %, which the sentence prints as 13.
+        phrase: "last leg is {n} % of the time",
+        ties: &[Tie::Ratio(&[
+            Tie::Difference(&[
+                Tie::Quoted {
+                    step: "two-legs",
+                    arm: None,
+                    quantity: "cccv_taper_s",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "two-legs",
+                    arm: None,
+                    quantity: "cccv_cc_ends_s",
+                    states: QuotedAs::Same,
+                },
+            ]),
+            Tie::Quoted {
+                step: "two-legs",
+                arm: None,
+                quantity: "cccv_taper_s",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // 99.52 - 95.28 over 99.52 - 20 = 5.33 %, which the sentence prints as 5.
+        //
+        // The token does not discriminate the denominator: over `1 - initial_soc` instead
+        // — the charge a full run would put in rather than the charge this one did — it is
+        // 5.30, and both print `5`. The measured pair is the one this arm can express, and
+        // it is the one the sentence means; what it is not is proof that the other reading
+        // is wrong. Stated so a later reader does not take the green for more than it is.
+        phrase: "for {n} % of the charge",
+        ties: &[Tie::Ratio(&[
+            Tie::Difference(&[
+                Tie::Quoted {
+                    step: "two-legs",
+                    arm: None,
+                    quantity: "soc_at:6210",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "two-legs",
+                    arm: None,
+                    quantity: "soc_at:5420",
+                    states: QuotedAs::Same,
+                },
+            ]),
+            Tie::Difference(&[
+                Tie::Quoted {
+                    step: "two-legs",
+                    arm: None,
+                    quantity: "soc_at:6210",
+                    states: QuotedAs::Same,
+                },
+                Tie::Scenario("pack.initial_soc"),
+            ]),
+        ])],
+        pow10: 2,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -6254,6 +6530,10 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
             Prog::Pulse { off_s, .. } => Some(off_s),
             _ => None,
         },
+        Control::Taper => match lesson.demand {
+            Prog::CcCv { taper, .. } => Some(taper),
+            _ => None,
+        },
         Control::Ambient => Some(lesson.ambient_c),
         Control::Until => Some(lesson.until_s),
         Control::Speed => lesson.speed_x,
@@ -6271,10 +6551,14 @@ fn arm_control_value(control: Control, arm: &Arm) -> Option<f64> {
         Control::DemandValue => arm.demand_a,
         Control::Ambient => arm.ambient_c,
         // An arm overrides the demand box, the `dt` box, the BMS checkbox and the ambient
-        // slider, and nothing else. The pulse legs, the mark and the speed are the step's
-        // for the whole of it, so a rule asking an arm for one is asking a question the page
-        // cannot answer.
-        Control::PulseOn | Control::PulseOff | Control::Until | Control::Speed => None,
+        // slider, and nothing else. The pulse legs, the taper, the mark and the speed are
+        // the step's for the whole of it, so a rule asking an arm for one is asking a
+        // question the page cannot answer. (`demand_a` is the box's *current*, which is what
+        // an arm types; an arm that switched the mode to CC-CV would be a different
+        // trajectory and not an override.)
+        Control::PulseOn | Control::PulseOff | Control::Until | Control::Speed | Control::Taper => {
+            None
+        }
     }
 }
 
@@ -6471,6 +6755,18 @@ fn tie_values(
             .iter()
             .filter_map(|t| number_of(t))
             .collect(),
+        // One constant, one parser. The name is matched rather than looked up in a table so
+        // that a rule naming a constant nothing parses fails here by name, instead of
+        // resolving to nothing and being reported as a restructured file.
+        Tie::Page(name) => match *name {
+            "CCCV_PERIOD_S" => vec![cccv_period_s()],
+            other => panic!(
+                "a rule reads the page constant `{other}`, and this file has no parser for \
+                 it. A tie able to read any expression out of `web/app.js` would find a \
+                 number for almost any token; each constant a sentence prints gets its own \
+                 reader, on `default_dt`'s terms."
+            ),
+        },
         Tie::Derived { op, operands } => {
             let mut values = Vec::new();
             for operand in *operands {
@@ -6663,6 +6959,7 @@ fn tie_describe(tie: &Tie) -> String {
         Tie::Hours(seconds) => format!("{}, in hours", tie_describe(seconds)),
         Tie::Span(path) => format!("the span of the chemistry's `{path}`"),
         Tie::Clock => "the `sim time` row's rendering of the step's mark".to_string(),
+        Tie::Page(name) => format!("the page's `{name}` constant"),
         Tie::Derived { op, operands } => format!(
             "this sentence's own {}",
             operands
@@ -6722,6 +7019,7 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Hours(_) => "duration in hours",
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
+        Tie::Page(_) => "page constant",
         Tie::OnArm { .. } => "an arm's control",
         Tie::Derived { .. } => "derived",
         Tie::Elsewhere { .. } => "another lesson",

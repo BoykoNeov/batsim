@@ -2810,9 +2810,9 @@ const LESSONS = [
     until_s: 6300,
     watch: ["plot-i", "plot-v"],
     prose: [
-      "Eight steps of taking charge out; this one puts it back. The `CC-CV charge` demand mode is not a demand the engine has — it is two of them with a rule between them, which is where `CLAUDE.md` says a charge policy belongs: constant current until the pack reaches its voltage limit, then hold that voltage and let the current do what it likes.",
+      "Seven steps of taking charge out and one of leaving it alone; this one puts it back. The `CC-CV charge` demand mode is not a demand the engine has — it is two of them with a rule between them, which is where `CLAUDE.md` says a charge policy belongs: constant current until the pack reaches its voltage limit, then hold that voltage and let the current do what it likes.",
       "The same NMC cell as step 2, starting at 20 % instead of full. Nothing is protecting it, so the only thing that ends this charge is the current falling below the 0.15 A cutoff.",
-      "The rule is checked every 10 s of *simulation* time, never once per frame — otherwise the speed multiplier would decide which step the legs change on, and the same experiment would take a different path at 1× and at 800×.",
+      "The rule is checked every 10 s of *simulation* time, never once per frame — otherwise the speed multiplier would decide which step the legs change on, and the same experiment would take a different path in real time than at 800×.",
     ],
     expect:
       "Watch the current trace, which is flat and negative — negative because positive is discharge everywhere on this page. It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %. Then the knee: nothing on the page moves, but the current starts falling by itself — 0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %. **The last leg is 13 % of the time for 5 % of the charge**, and that is the shape worth taking away: near the top, the only thing pushing current in is the gap between the cell's own open-circuit voltage and the limit, and the charging is what closes it.",

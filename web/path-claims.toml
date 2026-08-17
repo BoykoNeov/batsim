@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Eleven steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Twelve steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -142,7 +142,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  170 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  171 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  20 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -193,7 +193,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 20 claims.
 #
-#   same        176 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        177 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -239,7 +239,7 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 181 of the 214 numbers the
+#   spelled  a claim on this sentence names it in `spells` — 182 of the 214 numbers the
 #            125 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
@@ -286,7 +286,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — eleven steps of the twenty-four so far.
+# of this file — twelve steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -3043,8 +3043,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: eleven
-# steps, 183 numerals, and no longer all of them scenario constants. The first
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twelve
+# steps, 201 numerals, and no longer all of them scenario constants. The first
 # three were picked because the same measuring pass found they carry no
 # measurement-shaped figure at all, so they could be closed before a single number was
 # measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's
@@ -3059,7 +3059,14 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # step 22 — its demand box, its clock, the amp-hours and the heat it measured. Three more
 # arms (`Elsewhere`, `Quoted`, and an operation on `Derived`) and a fourth control. Ledgering
 # them found three defects in prose the whole suite was green on, one of which had been
-# asserted three times over in two files. Of the steps below, those that
+# asserted three times over in two files. The twelfth is step 9, the charge, and it is the
+# first whose subject is the PAGE'S OWN POLICY rather than the engine's behaviour: `CC-CV`
+# is two demands with a rule between them, so its cutoff is a control, its decision window
+# is a constant of the client — parsed out of `web/app.js` by the eighteenth arm rather than
+# declared here — and its headline is a ratio of its own claims in a sentence that prints
+# neither operand. It also cost one number its place on the page (`1×`, the identity, which
+# nothing in the tree decides) and turned up a false self-count spelled in letters. Of the
+# steps below, those that
 # carry no claim at all and need arms this file has not got: none. Every step in this list
 # now carries at least one measured number, which was not true five slices ago. (Two steps
 # in the repo still carry none, and they are both LEDGERED ones — scanned end to end for
@@ -3077,6 +3084,13 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # are claims rather than ledger entries — this scan cannot see the sentence they are about.
 # A ledgered step is digits-closed, which is less than closed.
 #
+# AND THE CASE THAT PROVES IT COSTS SOMETHING. Step 9 opened "Eight steps of taking charge
+# out; this one puts it back" — not a measurement but a count of the path itself, and false:
+# seven of the eight take charge out and the eighth is the pack at rest. It survived this
+# scan, check 6, and the whole suite, because it is spelled in letters. Hand-checked and
+# fixed when the step was ledgered. A sixth word numeral in a ledgered step, and the first
+# one anybody has caught being wrong.
+#
 # ONE WORD IS NOW READ, AND IT IS NOT A SCANNER. Step 22's "six of these in series is the
 # 12 V battery" derives its `12` from a word, and `Operand::Word` translates that one word
 # where the rule names it. Nothing else changed: "all but three points" in the same step's
@@ -3089,13 +3103,14 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are seventeen of them. An arm says what decides a number: a
+# THE ARMS THEMSELVES, and there are eighteen of them. An arm says what decides a number: a
 # NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO or a DIFFERENCE, a duration of theirs read IN HOURS, the SPAN of a
 # chemistry table end to end, a NODE of one, digits
 # inside a NAME, the POSITION of another lesson in the path, the panel's CLOCK at the step's
-# mark, a figure the sentence works out from its OWN SIBLINGS, the same question asked of
+# mark, a CONSTANT OF THE PAGE parsed out of `web/app.js`, a figure the sentence works out
+# from its OWN SIBLINGS, the same question asked of
 # ANOTHER LESSON, a measurement some step's CLAIM decides, and a CLAIM whose literal
 # contains the number. Naming the field is the whole point: a generous arm — "the number appears
 # somewhere in the scenario" — accounts for a third of the path's numbers and means
@@ -4647,20 +4662,47 @@ measures directly, and neither is on the page anywhere else.
 # rather than assuming it, and refuses to answer at all if the crossing ever moves off the
 # grid. See the note on the claim itself.
 #
-# WHAT IS NOT CLAIMED HERE:
-#   * "**The last leg is 13 % of the time for 5 % of the charge**" — the step's headline,
-#     and both figures are ratios of other numbers in the prose. That is the `Derived`
-#     accounting arm and it does not exist. It is the third slice running to be blocked on
-#     that arm, which is worth knowing when it is finally built.
-#   * The prose paragraphs' `0.15 A` cutoff, `20 %` starting charge and `10 s` decision
-#     window: a control setting, a scenario field and a mirrored constant. Only the
-#     `expect` sentences are claimed, so check 6 never scans them — a claim on any of them
-#     would need an accounting arm apiece.
+# THIS STEP IS LEDGERED, so everything below is the whole of its prose and not a selection.
+# What used to stand here was a list of what it left unchecked, and every item on it has
+# been closed — worth reading in the order it happened, because two of the three were
+# closed by slices that never looked at this step:
+#
+#   * "**The last leg is 13 % of the time for 5 % of the charge**" — the headline, and
+#     both figures are ratios of other numbers in the prose. The note said this needed the
+#     `Derived` accounting arm and that no such arm existed; it was the third slice running
+#     to say so. `Accounted::Derived` was built two slices later, and the note was never
+#     updated — a false statement about the code, sitting in this file for five days,
+#     invisible to every check because no check reads a sentence ABOUT the tree.
+#     (In the end the headline needed neither: `Derived` reads a sentence's own printed
+#     siblings, and this sentence prints its answer two paragraphs away from its operands.
+#     It is `Tie::Ratio` over `Tie::Difference` over `Tie::Quoted` — the family that reads
+#     files and claims.)
+#   * The `0.15 A` cutoff, the `20 %` starting charge and the `10 s` decision window. All
+#     three now have arms: `Control::Taper`, `pack.initial_soc`, and `Tie::Page`, which
+#     parses `CCCV_PERIOD_S` out of `web/app.js` — the constant this test has pinned in
+#     `MIRRORED` since the day it was written and never once read.
+#
+# ONE NUMBER LEFT THE PAGE, on the terms step 16 set: the sentence about the speed
+# multiplier said the experiment "would take a different path at 1× and at 800×", and the
+# `1` is not a control, a file's number or a measurement — it is the identity, the way a
+# reader says "real time". Nothing in the tree decides it. The sentence now reads "in real
+# time than at 800×", which says the same thing and prints one number instead of two.
+#
+# WHAT THE LEDGER STILL DOES NOT REACH HERE, and it found a defect on the way in. The step
+# opened "Eight steps of taking charge out; this one puts it back" — a self-count spelled in
+# letters, which the digit scan goes straight past. Hand-checked when this step was
+# ledgered: `two-legs` is the ninth lesson, so eight steps do precede it, but the eighth is
+# `wearing-out-while-idle`, whose demand is `Rest` and whose own prose says "no current
+# flows anywhere". Seven take charge out. The sentence now says so.
+#
+# That is the second defect a hand-check of a word numeral has found here (see
+# docs/plans/path-self-description-sweep.md for the first four), and neither scan in this
+# file can see either. A ledgered step is digits-closed, which is less than closed.
 
 [[claim]]
 step = "two-legs"
 literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
-quantity = "i_at"
+quantity = "i_at:5420"
 value = -1.5
 tol = 0.05
 tol_from = "spelled"
@@ -4685,7 +4727,48 @@ Not quoted — the row prints three decimals where the sentence prints one.
 [[claim]]
 step = "two-legs"
 literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
-quantity = "v_at"
+quantity = "cccv_cc_ends_s"
+value = 5420.0
+tol = 0.5
+tol_from = "spelled"
+spells = "5420"
+states = "same"
+read_at_s = 5420.0
+display = "sim time"
+shows = "90m"
+note = """
+WHERE THE LEG CHANGES, which is what "stays at −1.5 A for 5420 s" says and what nothing on
+this step used to check. The three claims beside it read the current, the voltage and the
+charge AT 5420 s; every one of them would still be true if the controller had gone on asking
+for a current for another hour.
+
+Better behaved than `cccv_taper_s` two sentences later, and for a reason worth stating.
+That one is about when the page STOPS, which `ccCvDone` decides at the end of a chopped
+chunk — a fact about the browser except where the crossing lands on a window boundary, which
+is why it asserts that it does. This is about when the page changes LEG, which `ccCvDemand`
+decides on the decision grid and nowhere else: `advance` holds one demand across a whole
+window, so 5420 is a multiple of 10 s by construction and no invariant is needed to say so.
+
+Read off the demand the controller issued, not off the current: `Row::voltage_hold` records
+what was asked for. `|i| < 1.5 A` would be a different statement that happens to agree here,
+and would go on agreeing on a step where a BMS derate softened the current without any leg
+changing.
+
+The harness was once wrong about this instant and nothing could tell. Before `drive` chopped
+its steps at the page's decision windows it decided the demand per step, and the switch
+landed at 5420.5 — one step late, invisible, because the only claimed CC-CV step was
+`leg-that-is-not-there`, whose cell never reaches the band at all. This claim is what would
+now catch it.
+
+`90m` is what the clock reads there, which is also the "90 minutes" `cc_cv_charge_nmc.toml`'s
+own header states — that header is a second, unguarded copy of half this step's numbers, and
+nothing scans it.
+"""
+
+[[claim]]
+step = "two-legs"
+literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
+quantity = "v_at:0.5"
 value = 3.656836
 tol = 5e-3
 tol_from = "spelled"
@@ -4708,7 +4791,7 @@ is what a reader watching the trace actually sees first.
 [[claim]]
 step = "two-legs"
 literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
-quantity = "v_at"
+quantity = "v_at:5420"
 value = 4.199136
 tol = 5e-3
 tol_from = "spelled"
@@ -4731,7 +4814,7 @@ a coincidence to lean on.
 [[claim]]
 step = "two-legs"
 literal = "It stays at −1.5 A for 5420 s while the terminal voltage climbs from 3.66 V to 4.20, and the cell reaches 95.3 %."
-quantity = "soc_at"
+quantity = "soc_at:5420"
 value = 0.95277778
 tol = 5e-4
 tol_from = "spelled"
@@ -4745,13 +4828,19 @@ quoted = true
 note = """
 What the constant-current leg bought: 75.3 points of charge in 5420 s, from a start of 20 %.
 The whole of the rest of the run adds 4.2 more, which is the contrast the step's headline is
-about and the one figure on this step no claim can pin.
+about — and the headline is pinned now, as a ratio of this claim, the one at 6210 and the
+scenario's own starting charge. See the ledger's two rules for this step.
+
+TAGGED because it is quoted. The step files two charge readings and `Tie::Quoted` addresses a
+measurement by `(step, arm, quantity)`, so two claims filed under a bare `soc_at` would have
+answered differently and been refused rather than picked between. The tag is asserted against
+this claim's own `read_at_s`, so it cannot become a second address for a different instant.
 """
 
 [[claim]]
 step = "two-legs"
 literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
-quantity = "i_at"
+quantity = "i_at:5700"
 value = -0.653487
 tol = 5e-3
 tol_from = "spelled"
@@ -4770,7 +4859,7 @@ sentence is now talking about how much.
 [[claim]]
 step = "two-legs"
 literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
-quantity = "i_at"
+quantity = "i_at:6000"
 value = -0.274678
 tol = 5e-3
 tol_from = "spelled"
@@ -4827,7 +4916,7 @@ that the checked statement is this claim being here.
 [[claim]]
 step = "two-legs"
 literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
-quantity = "soc_at"
+quantity = "soc_at:6210"
 value = 0.99519515
 tol = 5e-4
 tol_from = "spelled"
@@ -5564,6 +5653,12 @@ steps = [
                      # the mark, the speed slider, and the two ambients the reader dials —
                      # which took `Tie::OnArm`, the first tie that reads a control off an
                      # ARM rather than off the step
+  "two-legs",        # 18: a charge, and the first ledgered step whose subject is the
+                     # PAGE'S POLICY rather than the engine. Eleven of its numerals are
+                     # claimed on one trajectory; three are the policy's own settings, one
+                     # is a constant of the client parsed out of `web/app.js`, and the last
+                     # two are the headline — a ratio of this step's own claims, in a
+                     # sentence that prints neither operand
   "slow-and-patient", # 16: the nameplate of a lead-acid cell, stated four ways, plus the
                      # rate it is quoted at, the span of its OCV curve, the battery six of
                      # these make, the clock the run stops on and the step it points back
@@ -5572,15 +5667,13 @@ steps = [
                      # both. It still needed FOUR new arms, because not one of the eleven is
                      # a field a rule could read straight off a file
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: thirteen of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: twelve of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
   "bare-curve",                     # claims: 3
   "same-discharge-other-chemistry", # claims: 5
   "protection-off",                 # claims: 9
-  "two-legs",                       # claims: 8, on both legs. Its headline ratios are
-                                    # the `Derived` accounting arm
   "leg-that-is-not-there",          # claims: 6
   "what-protection-costs",          # claims: 3, on two ambient arms. Also two perf
                                     # ratios no trajectory can settle

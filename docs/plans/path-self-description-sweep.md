@@ -101,6 +101,12 @@ that does not exist yet — the first has a number only an *arm's* control setti
 10 s the CC-CV rule is re-checked on, pinned in `MIRRORED` and read by `cccv_window_steps`).
 Both are one arm each, which is the shape every ledger slice so far has had.
 
+> **Both are done, and the prediction held on both** — `docs/plans/path-ledger-idle-step.md`
+> and `docs/plans/path-ledger-two-legs-step.md`. `Tie::OnArm` and `Tie::Page` are the two
+> capabilities, one each, named here before either existed. One detail above is wrong and
+> the slice found it: `cccv_window_steps` did **not** read the pin, it carried its own copy
+> of the `10`. The pin had no reader at all, which is the sharper version of the same point.
+
 ## Learned while building
 
 **A count spelled in letters is invisible to a scanner that reads digits, and this file has
