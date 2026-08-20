@@ -84,11 +84,11 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is sixteen steps and 313 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is seventeen steps and 344 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
-//! Nineteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! Twenty-two arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, the span of a
 //! chemistry table, a node of one, digits inside a name, the position of another lesson,
@@ -182,12 +182,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the eight steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the seven steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed sixteen whole steps — but only sixteen. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other eight have their claimed sentences
+//!   has now closed seventeen whole steps — but only seventeen. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other seven have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all eight, one line each, so this list cannot go quietly out of date.
+//!   names all seven, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -785,6 +785,37 @@ fn the_scanner_joins_thousands_groups_and_nothing_else() {
             "the scanner read `{text}` wrongly"
         );
     }
+
+    // `len` is the TOKEN's extent and not the run's, which is what both of its readers
+    // want — see [`Written`]. Asserted here rather than left to the one lesson sentence
+    // that happens to exercise it: step 18 prints a claimed number at the end of a literal
+    // with a full stop behind it, and while the field carried the run that number tested as
+    // sitting outside its own literal. A cover that survives only while one sentence keeps
+    // its shape is not a cover.
+    for (text, want) in [
+        ("instead of 1. Put", vec![("1", 11usize, 1usize)]),
+        ("at 5769. The", vec![("5769", 3, 4)]),
+        ("1.2.3 of them", vec![("1.2", 0, 3)]),
+        ("over the next 200 000 s", vec![("200 000", 14, 7)]),
+        ("3.66 V", vec![("3.66", 0, 4)]),
+    ] {
+        let got: Vec<(String, usize, usize)> = written_numbers(text)
+            .into_iter()
+            .map(|w| (w.token, w.at, w.len))
+            .collect();
+        let want: Vec<(String, usize, usize)> = want
+            .into_iter()
+            .map(|(t, at, len)| (t.to_string(), at, len))
+            .collect();
+        assert_eq!(got, want, "the scanner placed `{text}` wrongly");
+        for (token, at, len) in &got {
+            assert_eq!(
+                &text[*at..*at + *len],
+                token,
+                "`len` has to be an extent into the source, not a length in the abstract"
+            );
+        }
+    }
 }
 
 /// The clock's four branches, at and around each boundary.
@@ -1246,6 +1277,23 @@ struct Sensed {
     /// The hottest *instrumented* cell, which is not the hottest cell. That difference is
     /// the whole subject of the sentence this was built for.
     probe_max_k: Option<f64>,
+    /// **Lowest** measured group voltage \[V\], or `None` on a BMS with no groups.
+    ///
+    /// The channel the hard under-voltage rung is judged on, and the second thing here that
+    /// is belief rather than truth. Step 18's two sensor sentences are what it is for —
+    /// *"sensors sampled at the end of the previous step, which still read a resting
+    /// 3.3142 V per group"* and *"the frame taken after the spike reads 1.3336 V"* — and
+    /// both are statements about the frame, not about the pack.
+    ///
+    /// **Measured, and worth stating: on this pack the two coincide exactly.** The voltage
+    /// sensor in `sim-core` carries no offset and no noise term — only the current sensor
+    /// does — so a group's measured voltage is its true one to the last bit, and a claim
+    /// pointed at `v_cell_min_at` would read the same digits today. That is a property of
+    /// the model and not of this step, and it is precisely why the claims read the sensor:
+    /// the day a voltage-noise term lands, a truth-side claim would go on passing about a
+    /// number the sentence is not about. CLAUDE.md's eighth principle is that the gap is a
+    /// feature; a check that cannot see the gap cannot see it close either.
+    v_group_min: Option<f64>,
     /// Simulation time this frame was sampled at \[s\].
     ///
     /// Sampling is gated on `dt > 0` inside `Pack::step`, so a zero-length probe does not
@@ -1260,6 +1308,7 @@ fn sensed(pack: &Pack) -> Option<Sensed> {
     let frame = pack.bms()?.sensors();
     Some(Sensed {
         probe_max_k: frame.max_probe_k(),
+        v_group_min: frame.v_group.iter().copied().reduce(f64::min),
         sampled_at_s: frame.sampled_at_s,
     })
 }
@@ -1849,7 +1898,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 178 of 210 claims.
+    /// number's last printed place. The default shape: 183 of 215 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1860,12 +1909,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 27 of 210.
+    /// the number was always right and only the declaration was wrong. 27 of 215.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 5 of 210, every
+    /// the engine either hits the claimed step or misses by a whole one. 5 of 215, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1905,7 +1954,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 191 of 210, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 196 of 215, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2187,19 +2236,36 @@ fn spelled_places(spells: &str) -> i32 {
 }
 
 /// One number as the prose writes it: where it starts, what it reads as, and how many
-/// bytes of source it took.
+/// bytes of source the token covers.
 ///
-/// The length is not `token.len()`: the scanner below truncates `at 5769.` and `1.2.3`,
-/// so the token is shorter than the run it came from. The ledger's phrase matcher needs
-/// the run, because what follows a number in the sentence begins after the characters
-/// that were actually there.
+/// **The paragraph here used to say the opposite, and it was the reason the field was
+/// wrong.** It read: "The length is not `token.len()`: the scanner below truncates
+/// `at 5769.` and `1.2.3`, so the token is shorter than the run it came from. The ledger's
+/// phrase matcher needs the run, because what follows a number in the sentence begins after
+/// the characters that were actually there." The second sentence is true and the conclusion
+/// drawn from it is backwards: what follows `5769` in the source is the full stop, so a
+/// phrase written as `"at {n}. The"` needs the matcher to stop *before* it. Both readers of
+/// this field wanted the token and neither said so.
 #[derive(Debug, Clone)]
 struct Written {
     /// Byte offset of the first digit, in the text this was scanned from.
     at: usize,
     /// The number as written, sign excluded — `"4146.5"`.
     token: String,
-    /// Bytes of source the run consumed, from `at`.
+    /// Bytes of source the **token** covers, from `at`.
+    ///
+    /// The token and never the raw digit run, and the difference is a defect this file
+    /// shipped: `at 5769.` scans as a run of five bytes and a token of four, and while
+    /// this field carried the five, [`claimed_accounting`] read `at + len` as the number's
+    /// extent and decided a token sitting at the very end of a claimed literal was
+    /// *outside* it. Every such number was therefore invisible to check 6's accounting
+    /// when the ledger asked, which fails toward red on the number itself — a rule is
+    /// demanded for something a claim already spells — and toward **green** on the
+    /// double-accounting panic beside it, which is the hazard the whole taxonomy is
+    /// arranged against. See `docs/plans/path-ledger-one-step-that-got-through.md`.
+    ///
+    /// [`join_thousands`] already measured from the trimmed end for its own reason, so it
+    /// is unaffected; the joined token keeps its space and covers the source exactly.
     len: usize,
 }
 
@@ -2243,7 +2309,14 @@ fn written_numbers(text: &str) -> Vec<Written> {
                 Some((i, _)) => w.token[..i].to_string(),
                 None => w.token.trim_end_matches('.').to_string(),
             };
-            (!token.is_empty()).then_some(Written { token, ..w })
+            // `len` follows the trimmed token, never the run it was cut from. The token is
+            // a prefix of the source at `at` by construction, so this is still an extent
+            // into the text and not a length in the abstract.
+            (!token.is_empty()).then_some(Written {
+                at: w.at,
+                len: token.len(),
+                token,
+            })
         })
         .collect();
     join_thousands(text, runs)
@@ -2274,11 +2347,13 @@ fn join_thousands(text: &str, runs: Vec<Written>) -> Vec<Written> {
     let mut out: Vec<Written> = Vec::with_capacity(runs.len());
     for w in runs {
         let joins = out.last().is_some_and(|prev: &Written| {
-            // From the TRIMMED token's end, never from `len`. `len` is the untrimmed run,
-            // so on `at 5769. 880 s` it already covers the full stop — and the gap then
-            // measures from after it, lands on the space, and joins `5769` to `880` into a
-            // figure the sentence never printed. Caught by the unit test's own case, and
-            // only because the case was written; the suite was green with it live.
+            // From the TRIMMED token's end. `len` agrees with it now and did not always:
+            // it carried the untrimmed run, so on `at 5769. 880 s` it covered the full stop
+            // — and the gap then measured from after it, landed on the space, and joined
+            // `5769` to `880` into a figure the sentence never printed. Caught by the unit
+            // test's own case, and only because the case was written; the suite was green
+            // with it live. Reading the token is what kept this correct through that, and
+            // it stays because the token is what this means.
             let gap = prev.at + prev.token.len();
             w.token.len() == 3
                 && !w.token.contains('.')
@@ -2771,6 +2846,43 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
             });
             probe_max - t.t_max
         }
+        // The **lowest group voltage the BMS measured** at this instant \[V\] — the channel
+        // the hard under-voltage rung is judged on, and the one the contactor latches from.
+        //
+        // Belief and not truth, like `t_gap_k_at` above and unlike everything else here.
+        // Its two fences are that one's, for that one's reasons: a zero-length probe samples
+        // no sensors at all, and a frame sampled at some other instant is not a reading of
+        // this one. What it does *not* carry is the truth-side subtraction — the sentences
+        // this exists for quote the sensor's own number rather than a gap, and a gap here
+        // would be zero on every pack in the path (see [`Sensed::v_group_min`]).
+        //
+        // No `display` may be named on a claim measured here, on `t_gap_k_at`'s terms: the
+        // BMS panel prints it, [`render_row`] does not mirror that panel.
+        "v_group_min_at" => {
+            let sensed = row.sensed.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "a claim reads the BMS's voltage sensors at t = {} s on a step that                      runs with no BMS. Such a pack has no sensors to read.",
+                    row.t_s
+                )
+            });
+            assert!(
+                row.t_s > 0.0,
+                "a claim reads `v_group_min_at` off the zero-length probe. A `dt = 0` step                  samples no sensors, so the frame there is the boot read rather than a                  measurement of anything the reader is watching."
+            );
+            assert!(
+                (sensed.sampled_at_s - row.t_s).abs() <= 1e-9,
+                "the sensor frame at t = {} s was sampled at {} s — {} s behind, so a claim                  measured here would be quoting a reading of some other instant.",
+                row.t_s,
+                sensed.sampled_at_s,
+                row.t_s - sensed.sampled_at_s
+            );
+            sensed.v_group_min.unwrap_or_else(|| {
+                panic!(
+                    "a claim reads `v_group_min_at` at t = {} s on a BMS whose frame                      carries no group voltages at all.",
+                    row.t_s
+                )
+            })
+        }
         _ => return None,
     })
 }
@@ -2911,6 +3023,29 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
          the probe is a single read taken before the first step, with no history behind \
          it. Drop `probe` and give the claim the instant it is really read at."
     );
+    // The two **cost** quantities take an instant tag too, on the same terms as a row
+    // quantity's above — and it is stripped *here*, past the `!probe` assert, rather than
+    // up there with the rest. That position is load-bearing: both are differences from the
+    // zero-length probe, so a tagged one resolved in front of that assert would answer zero
+    // by construction and go green about a measurement nobody made.
+    //
+    // Step 18 is what needed it. Its base run states its temperature rise twice — the
+    // 0.96 K the tooth leaves at 60.5 s and the 0.92 K still there at the 90 s mark — and
+    // the step next door quotes one of them, which [`Tie::Quoted`] cannot do while two
+    // claims answer to one name.
+    let quantity = match quantity
+        .split_once(':')
+        .and_then(|(name, tag)| tag.parse::<f64>().ok().map(|tag| (name, tag)))
+    {
+        Some((name, tag)) if matches!(name, "soc_lost_pts_at" | "t_rise_k_at") => {
+            assert!(
+                (tag - at_s).abs() < run.dt * 0.5,
+                "a claim reads `{quantity}`, whose tag names t = {tag} s, and declares                  `read_at_s = {at_s}`. The tag is the instant the reading is taken at and                  not a label, so the two cannot disagree."
+            );
+            name
+        }
+        _ => quantity,
+    };
     // Three families take an argument after a colon, because the thing being read is not
     // a fixed time: a flag's arrival, the voltage at a charge level, and the instant a
     // voltage threshold is crossed.
@@ -3399,7 +3534,8 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
              deficit_pts_at, deficit_pts_min_at, deficit_zero_s, deficit_leaves_zero_s, \n             deficit_all_owed_s, deficit_crossing_spread_s, deficit_worst_cell_series_at, \n             deficit_worst_cell_parallel_at, deficit_best_cell_series_at, \n             deficit_best_cell_parallel_at, delivered_ah, cccv_taper_s, \
              cccv_cc_ends_s, pulse_sag_mv:<tooth>, pulse_jump_mv:<tooth>, \
              pulse_rebound_mv:<tooth>, pulse_lost_mv:<tooth>, pulse_rebound_arrived:<tooth>, \
-             soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, \
+             soc_lost_pts_at, t_rise_k_at (both of which take an instant tag too), 
+             soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, v_group_min_at, \
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>, overpotential_mv_at, \
              rc_overpotential_mv_at, diffusion_overpotential_mv_at, leg_delivered_ah, \
@@ -5347,6 +5483,81 @@ enum Tie {
         /// What it does it to, in the order the operation takes them.
         operands: &'static [Operand],
     },
+    /// A digit that is part of a **control's label**, read out of `web/index.html` by the
+    /// control's `id`.
+    ///
+    /// [`Tie::Name`]'s twin one file over. Step 18 tells the reader to *"press **Step 1**
+    /// twice"*, and that `1` is no more a quantity than the `50` of an LG M50 is: it is
+    /// half the name of a button. Nothing measures it, no scenario or chemistry field holds
+    /// it, and the sentence would be *wrong* without it, because a reader has to find that
+    /// button on the page.
+    ///
+    /// **Anchored on the `id`, and the `prefix` makes it exact**, both for [`Tie::Name`]'s
+    /// reasons: the markup is long enough that an unanchored search would account almost any
+    /// token, which is the generous match the whole table refuses. The label is read from the
+    /// `id` to the next tag, so `<button id="stepone">Step 1</button>` with `prefix = "Step "`
+    /// resolves to `[1]` and nothing else on the page can answer.
+    ///
+    /// Rename the button and the sentence goes red, which is the property that makes it a
+    /// tie. That is not hypothetical bookkeeping — the path's instructions name eight
+    /// controls by their printed labels, and a label is the one thing about a control that a
+    /// reader cannot infer.
+    Label {
+        /// The control's `id` attribute, as `web/index.html` writes it.
+        id: &'static str,
+        /// The characters the digits follow inside that control's label.
+        prefix: &'static str,
+    },
+    /// **How many entries** the array at this scenario path has.
+    ///
+    /// Every other arm here reads a value out of a file; this one reads the file's *shape*.
+    /// Step 18 says **Clear queued** *"counts the short it removed as **1 fault**"*, and the
+    /// number is neither a resistance nor an instant nor anything the engine reports — it is
+    /// how many faults the scenario declares, rendered by a note on the page. Put a second
+    /// `[[faults]]` block in the file and the sentence is wrong, which is exactly what this
+    /// makes fail.
+    ///
+    /// **Refuses anything that is not an array.** A count of a table or of a scalar would be
+    /// a number this arm invented rather than one the file states, and one is the answer it
+    /// would most often invent — the value that makes a wrong sentence look right here.
+    Count(&'static str),
+    /// The chemistry's **open-circuit voltage at a charge the inner tie names** \[V\], per
+    /// cell, interpolated off the `[ocv]` table exactly as `sim-core` reads it.
+    ///
+    /// A wrapper on [`Tie::Elsewhere`]'s and [`Tie::Hours`]'s terms, and the only one that
+    /// answers a question about the *curve* rather than about a point of it. Step 18's last
+    /// aside is what needed it: *"on this plateau half a percent of charge moves the
+    /// open-circuit voltage by 0.4 mV"*. That figure is in no file. It is the difference
+    /// between the curve at the charge the pack started from and the curve at the charge the
+    /// tooth left it with, times the four cells in series — and LFP's plateau is the whole
+    /// point of the sentence, so a tie that could not read the curve could not carry it.
+    ///
+    /// **Linear interpolation, clamped at both ends**, which is what
+    /// `sim_core`'s lookup does and what the chemistry file's own comment promises. This is
+    /// a second implementation of that lookup and so a second source of truth, on the same
+    /// terms as the page's demand programs: the reason it is acceptable here is that it
+    /// reads the same table the engine reads, so a re-fit moves both together.
+    ///
+    /// **What WOULD part them, named rather than left to "the interpolation rule might
+    /// change".** `CLAUDE.md` reserves two optional additions to this path: a `dOCV/dT` table
+    /// for temperature correction, and a per-chemistry hysteresis term. Either lands inside
+    /// the engine's open-circuit read and neither would touch the `[ocv]` table, so this
+    /// mirror would go on interpolating the bare curve for a pack that is a kelvin above
+    /// ambient and the rule would stay green. That is the same standing hazard [`MIRRORED`]
+    /// exists for on the page's side, and it is written down here for the same reason.
+    ///
+    /// **Compared like a computed tie.** An interpolated value lands between two nodes by
+    /// construction, so exactness would be spurious — [`Tie::Product`]'s reasoning. Its one
+    /// user today sits two levels inside a `Product`, which is where `Hours` was when its
+    /// rounding was found to be unreachable, so [`an_ocv_tie_rounds_the_way_a_computed_tie_does`]
+    /// asks the question directly rather than leaving this paragraph to stand on nothing.
+    ///
+    /// **What it does NOT settle, said here rather than left to a green rule to imply**: the
+    /// step's sentence says "half a percent", and both a round 0.5 points and the measured
+    /// 0.557 print `0.4 mV` through this rule. It cannot tell those two readings apart. What
+    /// it catches is a re-fit of the plateau, a change of series count, or a different
+    /// starting charge — which is what the sentence actually rests on.
+    Ocv(&'static Tie),
     /// The same question asked of **a different lesson** — the inner tie, resolved against
     /// the named step's block, scenario and chemistry.
     ///
@@ -5576,6 +5787,18 @@ enum Control {
     /// a step that leaves the slider alone resolves to nothing rather than to the page's
     /// default, because a sentence printing a multiplier is printing one this block set.
     Speed,
+    /// The **`dt` box** \[s\] — the step length the page hands the engine.
+    ///
+    /// The last of the boxes to get a variant here, and step 18 is why: it is the first
+    /// ledgered step whose subject *is* the step length, so it is the first whose prose
+    /// prints one as a setting rather than assuming it. Three sentences do — *"puts it
+    /// back to 0.5"*, *"Put it back to 0.5 before moving on"*, and, through
+    /// [`Tie::OnArm`], *"Put `dt` up to 5 s"*.
+    ///
+    /// [`Accounted::Setting`] has read the same box since it was built, off the claim's own
+    /// trajectory; this is the ledger's side of it, read off the lesson block or off a named
+    /// arm. The two scans answer different sentences, exactly as they do for the ambient.
+    Dt,
     /// The CC-CV taper \[A\] — the current the page's completion test compares against.
     ///
     /// A control in the same sense [`Self::DemandValue`] is: it is a field of the demand box
@@ -7018,7 +7241,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
             Tie::Quoted {
                 step: "one-step-that-got-through",
                 arm: None,
-                quantity: "t_rise_k_at",
+                quantity: "t_rise_k_at:90",
                 states: QuotedAs::Same,
             },
         ])],
@@ -7028,6 +7251,146 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "this step's mark is {n} s",
         ties: &[Tie::Setting(Control::Until)],
         pow10: 0,
+    },
+    // Step 18 — the twin of the block above, and the first ledgered step whose subject is
+    // the step LENGTH. Thirteen rules for fourteen of its thirty-one numerals (`**Step {n}**`
+    // covers two); five more numerals became claims, two of them on the BMS's voltage
+    // sensors, and one left the page.
+    //
+    // THE TWO NUMBERS IN THAT SENTENCE WERE WRONG WHEN IT WAS FIRST WRITTEN — it said
+    // "fifteen of its thirty-five" — because it was written before the scan had been run and
+    // nothing checks a count spelled in a comment. The step's own `[ledger]` entry carries
+    // the same figure with a derivation behind it, which is why that one was right; this one
+    // is a neighbour of a derived number, the shape three slices have now recorded as the way
+    // these files rot.
+    //
+    // The fault, in the sentence that springs it. Written with the whole bracketed phrase
+    // because the twin step next door says "the short is 100 milliohms instead of 30" —
+    // two ledgered steps, one file apart, both printing a resistance in the same unit, and
+    // a phrase like "{n} milliohm" would reach across.
+    LedgerRule {
+        phrase: "**{n} milliohm short across the pack's terminals**",
+        ties: &[Tie::Scenario("faults.*.fault.ExternalShort.ohms")],
+        pow10: 3,
+    },
+    LedgerRule {
+        phrase: "like the leak in step {n}",
+        ties: &[Tie::Ordinal("lying-sensor")],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "The pack was at {n} % when the short landed",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    // The rung that fires, assembled out of two files the way step 19's temperature rung is
+    // — and this is the voltage half of that pair. `cell.v_min` is what the cell may reach
+    // and `v_hard_margin_v` is how far past it the BMS calls a fault rather than a number to
+    // derate from, which is what the scenario's own comment says in so many words.
+    LedgerRule {
+        phrase: "well under the {n} V that this file calls a fault",
+        ties: &[Tie::Difference(&[
+            Tie::Chemistry("cell.v_min"),
+            Tie::Scenario("pack.bms.protection.v_hard_margin_v"),
+        ])],
+        pow10: 0,
+    },
+    // The `dt` box, three times: once as the arm's own setting and twice as the step's.
+    // `Control::Dt` is new for these — before it, the ledger could read every box on the
+    // page except the one this step is about.
+    LedgerRule {
+        phrase: "Put `dt` up to {n} s",
+        ties: &[Tie::OnArm {
+            arm: "dt 5",
+            tie: &Tie::Setting(Control::Dt),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "`dt` included, and puts it back to {n}",
+        ties: &[Tie::Setting(Control::Dt)],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "Put it back to {n} before moving on",
+        ties: &[Tie::Setting(Control::Dt)],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "At this step's {n}\u{d7} that tooth",
+        ties: &[Tie::Setting(Control::Speed)],
+        pow10: 0,
+    },
+    // The button, twice, and the one arm in this table that reads the markup. See
+    // [`Tie::Label`]: the digit is half a name, not a quantity.
+    LedgerRule {
+        phrase: "**Step {n}**",
+        ties: &[Tie::Label {
+            id: "stepone",
+            prefix: "Step ",
+        }],
+        pow10: 0,
+    },
+    // What **Clear queued** removed, counted by the page's own note — so the number is the
+    // shape of the scenario file rather than any value in it.
+    LedgerRule {
+        phrase: "counts the short it removed as *{n} fault*",
+        ties: &[Tie::Count("faults")],
+        pow10: 0,
+    },
+    // The two teeth against each other. Neither operand is in this sentence, which is what
+    // separates `Tie::Difference` from `Tie::Derived` — the sentence prints the answer and
+    // nothing else — and both are this step's own claims on two of its own trajectories.
+    // Order is the claim: reversed, the second tooth would be the smaller one and the whole
+    // paragraph after it would be about the wrong sign.
+    LedgerRule {
+        phrase: "It is {n} A *bigger* than the first tooth",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "one-step-that-got-through",
+                arm: Some("unlatched"),
+                quantity: "i_at",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "one-step-that-got-through",
+                arm: None,
+                quantity: "i_at",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    // The step quoting its own mark-side reading in a later sentence — the 90 s rise, not
+    // the 60.5 s peak, which is why both are tagged.
+    LedgerRule {
+        phrase: "left the cells about {n} K warmer",
+        ties: &[Tie::Quoted {
+            step: "one-step-that-got-through",
+            arm: None,
+            quantity: "t_rise_k_at:90",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    // The plateau itself. Four cells in series, times what the curve does between the charge
+    // the pack started at and the charge the tooth left it with. See [`Tie::Ocv`], including
+    // what this does not settle.
+    LedgerRule {
+        phrase: "moves the open-circuit voltage by {n} mV",
+        ties: &[Tie::Product(&[
+            Tie::Scenario("pack.series"),
+            Tie::Difference(&[
+                Tie::Ocv(&Tie::Scenario("pack.initial_soc")),
+                Tie::Ocv(&Tie::Quoted {
+                    step: "one-step-that-got-through",
+                    arm: None,
+                    quantity: "soc_at",
+                    states: QuotedAs::Same,
+                }),
+            ]),
+        ])],
+        pow10: 3,
     },
 ];
 
@@ -7127,6 +7490,7 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
         Control::Ambient => Some(lesson.ambient_c),
         Control::Until => Some(lesson.until_s),
         Control::Speed => lesson.speed_x,
+        Control::Dt => Some(lesson.dt),
     }
 }
 
@@ -7140,6 +7504,7 @@ fn arm_control_value(control: Control, arm: &Arm) -> Option<f64> {
     match control {
         Control::DemandValue => arm.demand_a,
         Control::Ambient => arm.ambient_c,
+        Control::Dt => arm.dt,
         // An arm overrides the demand box, the `dt` box, the BMS checkbox and the ambient
         // slider, and nothing else. The pulse legs, the taper, the mark and the speed are
         // the step's for the whole of it, so a rule asking an arm for one is asking a
@@ -7500,12 +7865,79 @@ fn tie_values(
             }
         }
         Tie::Name { field, prefix } => digits_after(&string_at_path(chemistry, field), prefix),
+        Tie::Label { id, prefix } => digits_after(&control_label(id), prefix),
+        Tie::Count(path) => array_len(scenario, path)
+            .map(|n| vec![n as f64])
+            .unwrap_or_default(),
+        Tie::Ocv(tie) => {
+            let [soc] = tie_values(tie, lesson, lessons, scenario, chemistry, ctx)[..] else {
+                return Vec::new();
+            };
+            ocv_at(chemistry, soc).map(|v| vec![v]).unwrap_or_default()
+        }
         Tie::Ordinal(step) => lessons
             .iter()
             .position(|l| l.id == *step)
             .map(|i| vec![(i + 1) as f64])
             .unwrap_or_default(),
     }
+}
+
+/// The **label of one control** in `web/index.html`, or `None` if no element carries that
+/// `id`.
+///
+/// From the `id` attribute to the next `<`, which on this page's markup is the element's own
+/// text and nothing else. Deliberately not a parse of the HTML: a tie reads one anchored
+/// span the way [`Tie::Name`]'s prefix does, and a document walker would find a number for
+/// almost any token.
+fn control_label(id: &str) -> Option<String> {
+    let markup = index_html();
+    let at = markup.find(&format!("id=\"{id}\""))?;
+    let rest = &markup[at..];
+    let open = rest.find('>')? + 1;
+    let close = rest[open..].find('<')? + open;
+    Some(rest[open..close].to_string())
+}
+
+/// How many entries the array at this dotted key path has, or `None` if the path names
+/// something that is not an array.
+///
+/// `None` and never zero: "there is no such array" and "it is empty" are different facts
+/// about the file, and only the second is a number a sentence could be printing.
+fn array_len(value: &toml::Value, path: &str) -> Option<usize> {
+    let mut here = value;
+    for seg in path.split('.') {
+        here = here.as_table()?.get(seg)?;
+    }
+    here.as_array().map(Vec::len)
+}
+
+/// The chemistry's open-circuit voltage at `soc` \[V\], per cell.
+///
+/// Linear interpolation over the `[ocv]` table with both ends clamped, which is what
+/// `sim_core` does and what the table's own comment promises. `None` if the file has no
+/// such table, or if its two arrays are not the same length — a shape this cannot average
+/// over and must not guess at.
+fn ocv_at(chemistry: &toml::Value, soc: f64) -> Option<f64> {
+    let xs = numbers_at_path(chemistry, "ocv.soc.*");
+    let ys = numbers_at_path(chemistry, "ocv.volts.*");
+    if xs.len() < 2 || xs.len() != ys.len() {
+        return None;
+    }
+    if soc <= xs[0] {
+        return Some(ys[0]);
+    }
+    if soc >= xs[xs.len() - 1] {
+        return Some(ys[ys.len() - 1]);
+    }
+    let i = xs.windows(2).position(|w| soc >= w[0] && soc <= w[1])?;
+    let (x0, x1) = (xs[i], xs[i + 1]);
+    let f = if (x1 - x0).abs() < f64::EPSILON {
+        0.0
+    } else {
+        (soc - x0) / (x1 - x0)
+    };
+    Some(ys[i] + f * (ys[i + 1] - ys[i]))
 }
 
 /// One string field at a dotted key path, or `None` — the string twin of
@@ -7573,6 +8005,14 @@ fn tie_describe(tie: &Tie) -> String {
         Tie::Span(path) => format!("the span of the chemistry's `{path}`"),
         Tie::Clock => "the `sim time` row's rendering of the step's mark".to_string(),
         Tie::Page(name) => format!("the page's `{name}` constant"),
+        Tie::Label { id, prefix } => {
+            format!("the digits after `{prefix}` in the label of the control `{id}`")
+        }
+        Tie::Count(path) => format!("how many entries the scenario's `{path}` has"),
+        Tie::Ocv(tie) => format!(
+            "the chemistry's open-circuit voltage at the charge {} gives",
+            tie_describe(tie)
+        ),
         Tie::Derived { op, operands } => format!(
             "this sentence's own {}",
             operands
@@ -7638,6 +8078,9 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Derived { .. } => "derived",
         Tie::Elsewhere { .. } => "another lesson",
         Tie::Quoted { .. } => "quoted claim",
+        Tie::Label { .. } => "control label",
+        Tie::Count(_) => "array length",
+        Tie::Ocv(_) => "open-circuit voltage at a charge",
     }
 }
 
@@ -7665,6 +8108,7 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
         | Tie::Hours(_)
         | Tie::Span(_)
         | Tie::Derived { .. }
+        | Tie::Ocv(_)
         | Tie::Quoted { .. } => values.iter().all(|v| {
             let places = decimals_of(&written).max(0) as usize;
             to_fixed(v * scale, places) == written
@@ -8020,6 +8464,34 @@ fn an_hours_tie_rounds_the_way_a_computed_tie_does() {
         "a constant tie must refuse the same pair, or the distinction this test is about \
          does not exist — and the `15.46` that could not be tied to the demand box would \
          have had an arm all along."
+    );
+}
+
+/// [`Tie::Ocv`] rounds like a computed tie, asked directly for [`Tie::Hours`]'s reason.
+///
+/// Its one user sits two levels inside a [`Tie::Product`] — four cells in series times the
+/// difference of the curve at two charges — and [`tie_agrees`] is asked about a rule's
+/// *outermost* tie, so the product decides step 18's `0.4 mV` and this variant's own arm is
+/// never entered. Measured rather than reasoned, exactly as its neighbour was: lifting
+/// `Tie::Ocv` out of the rounding group leaves the whole suite green.
+///
+/// The numbers are step 18's own. LFP's `[ocv]` table has nodes at 85 % and 90 % charge, so
+/// the curve at the 89.4428 % the tooth leaves behind is an interpolation and lands on
+/// 3.31408856 — a figure with no round spelling, which is the whole reason an interpolated
+/// value cannot be compared exactly. The second half is what makes this a test rather than a
+/// restatement: a constant tie handed the identical pair must REFUSE.
+#[test]
+fn an_ocv_tie_rounds_the_way_a_computed_tie_does() {
+    let curve = Tie::Ocv(&Tie::Scenario("pack.initial_soc"));
+    let exact = Tie::Chemistry("cell.v_min");
+    let between_nodes = 3.314_088_56;
+    assert!(
+        tie_agrees(&curve, &[between_nodes], "3.3141", 0),
+        "an open-circuit voltage read between two nodes is a computed quantity and has to          be compared at the prose's own precision: {between_nodes} does not spell round,          and no sentence would print it whole."
+    );
+    assert!(
+        !tie_agrees(&exact, &[between_nodes], "3.3141", 0),
+        "a constant tie must refuse the same pair, or the distinction this test is about          does not exist."
     );
 }
 
@@ -9427,9 +9899,10 @@ fn n_ledger_arms(_f: &Facts) -> usize {
                     walk(tie, used);
                 }
             }
-            Tie::Hours(tie) | Tie::Elsewhere { tie, .. } | Tie::OnArm { tie, .. } => {
-                walk(tie, used)
-            }
+            Tie::Hours(tie)
+            | Tie::Ocv(tie)
+            | Tie::Elsewhere { tie, .. }
+            | Tie::OnArm { tie, .. } => walk(tie, used),
             _ => {}
         }
     }

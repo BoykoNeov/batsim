@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Sixteen steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Seventeen steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -142,7 +142,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  178 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  183 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  27 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -197,7 +197,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 27 claims.
 #
-#   same        191 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        196 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -243,8 +243,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 196 of the 230 numbers the
-#            133 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 201 of the 235 numbers the
+#            138 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -275,7 +275,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 133 claimed sentences need none. A future literal printing a chemistry constant will
+# the 138 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -290,7 +290,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — sixteen steps of the twenty-four so far.
+# of this file — seventeen steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -1163,20 +1163,137 @@ of the stored 4.181, and every value inside that window renders as `4.18 W`.
 
 # --- step 18: the one step that got through --------------------------------------
 #
-# The first step whose claims are all on ARMS — trajectories the reader produces by
-# pressing something. Three of them are claimed here and a fourth pair asserts the one
-# sentence in this step that is not about a number at all.
+# THE STEP IS LEDGERED NOW — claims: 14, on six arms. It used to be the step whose claims
+# were all on ARMS, trajectories the reader produces by pressing something; the five added
+# when it was scanned are all on its own run, so that is no longer true of it.
 #
-# THE HEADLINE SENTENCE IS NOW CLAIMED, at the bottom of this file with the `dt 10` arm
+# THE HEADLINE SENTENCE IS CLAIMED, at the bottom of this file with the `dt 10` arm
 # it needed. What stood here was that the trajectories existed and check 6 was the
 # blocker — the sentence prints `0.5`, `5` and `10` as CONTROL SETTINGS and the accounting
 # knew only `spelled`, `read at` and `shown`. `Accounted::Setting` is that fourth arm.
 #
-# What is still not claimed on this step: "It is 0.7 A *bigger* than the first tooth even
-# though the pack now holds half a percent less charge", and the three-way decomposition
-# that follows it. The 0.7 is a difference between two teeth on two trajectories, and the
-# decomposition is a counterfactual — hold the charge fixed, hold the temperature fixed —
-# which is not a trajectory a reader can produce at all.
+# TWO OF THE THREE THINGS THIS NOTE SAID WERE UNCLAIMABLE ARE TIED NOW, and neither by a
+# claim. "It is 0.7 A *bigger* than the first tooth" is a difference between two teeth on
+# two trajectories, which is `Tie::Difference` over this step's own two `i_at` claims; and
+# "half a percent of charge moves the open-circuit voltage by 0.4 mV" is `Tie::Ocv`, the
+# curve read at two charges. What is still unclaimable is the middle of that
+# decomposition — hold the charge fixed, hold the temperature fixed — which is a
+# counterfactual no trajectory produces, and which prints no digits at all: the scan
+# cannot see it either, and it is named in the slice doc rather than left to be assumed.
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "The pack draws **183.84 A** for a single step with *no flag raised at all*"
+quantity = "i_at"
+value = 183.84181
+tol = 5e-3
+tol_from = "spelled"
+spells = "183.84"
+states = "same"
+read_at_s = 60.5
+note = """
+The tooth itself, on the step's own run — the number the `dt 5` claim below calls "the
+same". Both had to exist for that sentence to mean anything: until this one was written
+the base trajectory's spike was in the prose twice and in the file never, so "the same
+183.84 A" was a comparison with a number nothing measured.
+
+One step, and the step is the whole event: the contactor is open by 61 s, so this row is
+the only one on the whole run with a current in it.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "it is at **89.44 %** for the rest of the run"
+quantity = "soc_at"
+value = 0.894428
+tol = 5e-5
+tol_from = "spelled"
+spells = "89.44"
+spells_pow10 = 2
+states = "same"
+read_at_s = 90.0
+note = """
+The level the headline states as a difference. `soc_lost_pts_at` below claims the same
+fact as the 0.56 points the headline prints; this claims it as the number THIS sentence
+prints, which is where the charge ended up.
+
+Read at the mark rather than at 60.5 s, because the sentence's claim is "for the rest of
+the run" and the mark is where the rest of the run ends. Nothing moves in between: the
+contactor is open and the current is zero from 61 s on.
+
+No `display`. The `soc (true)` row prints one decimal — `89.4 %` — and this sentence
+prints two, so the row's string is not what is being quoted.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "half a percent, and 0.96 K, is the whole cost of a dead short"
+quantity = "t_rise_k_at:60.5"
+value = 0.96212
+tol = 5e-3
+tol_from = "spelled"
+spells = "0.96"
+states = "same"
+read_at_s = 60.5
+note = """
+The PEAK rise, at the instant the tooth lands, and the reason `t_rise_k_at` on this step
+now carries instant tags. Its sibling — "the cell ends 19 K hotter instead of 1" — is the
+same quantity on the same trajectory at the 90 s mark, where the pack has already shed
+0.04 K to ambient and reads 0.92491. Two true readings, one name, and `Tie::Quoted`
+cannot borrow either while that is so; step 19's twin sentence borrows the 90 s one.
+
+`states = "same"` and not a difference-of-instants frame: the number IS the rise from the
+zero-length probe, which is what `t_rise_k_at` measures.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "which still read a resting 3.3142 V per group"
+quantity = "v_group_min_at"
+value = 3.3142
+tol = 5e-5
+tol_from = "spelled"
+spells = "3.3142"
+states = "same"
+read_at_s = 60.0
+note = """
+The first claim in this file measured on the BMS's VOLTAGE sensors rather than on the
+pack. The sentence is about what protection had to decide from — the frame sampled at the
+end of the previous step — so the quantity is the frame's own lowest group voltage and not
+`v_cell_min_at`.
+
+Measured, and stated because a green claim would otherwise imply more than it checks: on
+this pack the two are the same number to the last bit. `sim-core` gives the current sensor
+an offset and a noise term and gives the voltage sensor neither, so a group's measured
+voltage IS its true one today. The claim is pointed at the sensor because that is what the
+sentence is about, and because the day a voltage-noise term lands a truth-side claim would
+go on passing about a number this sentence does not name.
+
+3.3142 is also the `[ocv]` table's node at 90 % charge, which is not a coincidence: the
+pack has been resting since t = 0 and every cell is exactly where the scenario put it.
+
+No `display`. The BMS panel prints this and `render_row` does not mirror that panel.
+"""
+
+[[claim]]
+step = "one-step-that-got-through"
+literal = "The frame taken after the spike reads **1.3336 V**"
+quantity = "v_group_min_at"
+value = 1.3335898
+tol = 5e-5
+tol_from = "spelled"
+spells = "1.3336"
+states = "same"
+read_at_s = 60.5
+note = """
+The other half of the same sentence, one step later: the frame that does trip the rung.
+The LOWEST group, which is the one the hard under-voltage test is judged on — the four
+groups sag unequally (1.4177, 1.3846, 1.3621, 1.3336) because the scatter gave them
+different resistances, and the deepest is what latches the contactor.
+
+That spread is why this is `v_group_min_at` and not a mean: a rule reading the average
+would answer 1.3745 and the sentence would be wrong about which number protection saw.
+"""
 
 [[claim]]
 step = "one-step-that-got-through"
@@ -3004,7 +3121,7 @@ a temperature) would not show up in the probe's own telemetry at all. The real g
 [[arm]]
 step = "one-step-that-got-through"
 name = "dt 5"
-instruction = "Put `dt` up to 5 s and press **Restart**, which rebuilds this pack at t = 0 from the same file — fault and all — without touching the controls you just set, and then Run."
+instruction = "Put `dt` up to 5 s and press **Restart**, which rebuilds this pack from the start, from the same file — fault and all — without touching the controls you just set, and then Run."
 start = "restart"
 dt = 5.0
 actions = [{ do = "run", to_s = 90.0 }]
@@ -3159,8 +3276,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: sixteen
-# steps, 313 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: seventeen
+# steps, 344 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -3226,7 +3343,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are nineteen of them. An arm says what decides a number: a
+# THE ARMS THEMSELVES, and there are twenty-two of them. An arm says what decides a number: a
 # NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, the SPAN of a
@@ -3357,7 +3474,7 @@ to account the sentence's `10` off the wrong field.
 [[claim]]
 step = "one-step-that-got-through"
 literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 19 K hotter instead of 1"
-quantity = "t_rise_k_at"
+quantity = "t_rise_k_at:90"
 value = 0.92491
 tol = 5e-3
 tol_from = "tighter"
@@ -6124,8 +6241,24 @@ steps = [
                      # no claim quotes, and the floor step 14 measured, which cost that step
                      # its three untagged voltages. A quotation needs an address and `v_at`
                      # there was three readings under one name
+  "one-step-that-got-through", # 31: the first step in the path whose subject IS the step
+                     # length, and the first whose prose names a BUTTON with a digit in it.
+                     # Seventeen of the thirty-one sit inside a claimed sentence — five of
+                     # those claims were written for this scan, including the two the BMS's
+                     # voltage sensors answer. The other fourteen are the rule side, named
+                     # rather than counted: the short's resistance, the charge the pack
+                     # starts at, the trip point two files assemble between them, the `dt`
+                     # box three times and the speed slider once, an ordinal pointing back
+                     # at step 5, the **Step 1** button twice, the fault count the page's
+                     # own note prints, the gap between this step's two teeth, its own
+                     # mark-side warming quoted in a later sentence, and what half a percent
+                     # of charge is worth on LFP's plateau. It cost three new arms —
+                     # a control's label, an array's length, and the open-circuit curve read
+                     # at a charge — plus `Control::Dt`, and ONE number left the page: the
+                     # `0` of "at t = 0", which is notation for the origin of the clock and
+                     # which nothing in the tree decides
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: eight of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: seven of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
@@ -6138,8 +6271,6 @@ unledgered = [
                                     # second scenario file
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
-  "one-step-that-got-through",      # claims: 9, on six arms. Its headline sentence is
-                                    # claimed now — `Accounted::Setting` was the blocker
   "past-empty",                     # claims: 13
   "what-it-cost",                   # claims: 19
 ]
