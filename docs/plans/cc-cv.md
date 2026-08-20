@@ -84,12 +84,13 @@ CC-CV to each cell's own `v_max`, 1S1P, from 20 % SOC, 25 °C, taper at 0.05 C:
 
 The LFP cell tops out at **3.6357 V — 14.3 mV short of its own 3.65 V limit** — and then
 sits there while the coulomb counter clamps. The arithmetic is the plateau: this file's
-`[ocv]` ends at 3.60 V, its `[r0]` is ~21 mΩ at the top, and 0.5 C is 1.15 A, so
-3.60 + 0.024 never crosses 3.65. **The pack fills before it reaches its voltage limit.**
+`[ocv]` ends at 3.60 V, its `[r0]` is ~21 mΩ at the top and its `[[rc]]` pair adds
+another 10 — ~31 mΩ at DC — and 0.5 C is 1.15 A, so 3.60 + 0.036 never crosses 3.65. **The pack fills before it reaches its voltage limit.**
 
 State it as this parameter set's behaviour, not as a fact about LFP cells: real LFP is
-charged CC-CV to 3.65 V, and both halves of that arithmetic — where the OCV table ends
-and how big R0 is — are hand-fitted numbers in a file that says so. What is *not*
+charged CC-CV to that same limit, and the numbers in that arithmetic — where the OCV
+table ends, and how big R0 and the RC resistance are — are hand-fitted values in a file
+that says so. What is *not*
 parameter-dependent is the shape of the argument: a chemistry whose OCV barely moves has
 almost nothing left for a CV leg to do. Steps 1 and 2 of the guided path already teach
 the discharge half (168 mV of span against NMC's 481); this is the charge half, and it

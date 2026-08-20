@@ -84,7 +84,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is eighteen steps and 372 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is nineteen steps and 401 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -182,12 +182,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the six steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the five steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed eighteen whole steps — but only eighteen. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other six have their claimed sentences
+//!   has now closed nineteen whole steps — but only nineteen. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other five have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all six, one line each, so this list cannot go quietly out of date.
+//!   names all five, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -1929,7 +1929,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 190 of 226 claims.
+    /// number's last printed place. The default shape: 193 of 229 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1940,12 +1940,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 31 of 226.
+    /// the number was always right and only the declaration was wrong. 31 of 229.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 5 of 226, every
+    /// the engine either hits the claimed step or misses by a whole one. 5 of 229, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1985,7 +1985,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 205 of 226, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 208 of 229, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -7742,6 +7742,206 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
             arm: "cold",
             tie: &Tie::Setting(Control::Ambient),
         })],
+        pow10: 0,
+    },
+    // Step 10 - the charge whose second leg never arrives, and the cheapest of the six that
+    // were left. Twenty-three of its numerals were unaccounted and NOT ONE OF THEM NEEDED AN
+    // ARM: every reading this step prints is on its own run to the 7000 s mark. The step
+    // prints `3.65` three times and `3.60` three times, so every phrase below is long enough
+    // to be unique inside the step as well as across the path - the trap the
+    // "subject of step {n}" rule records.
+    LedgerRule {
+        // Which cell it is. Step 1's LFP, charged instead of discharged, and the shared file
+        // is the whole reason step 1's plateau argument carries over to this end of it.
+        phrase: "on the LFP cell from step {n}",
+        ties: &[Tie::Ordinal("bare-curve")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How far short the charge stalls, worked out from the two voltages the same
+        // sentence prints: the cell's limit less the stall. Neither operand is free - the
+        // limit is the rule below and the stall is this step's own claim - so this is the
+        // subtraction and nothing else.
+        phrase: "and stops \u{2014} {n} mV short",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Difference,
+            operands: &[Operand::Sibling("3.65"), Operand::Sibling("3.6357")],
+        }],
+        pow10: 3,
+    },
+    LedgerRule {
+        // THE FIRST OF THIS STEP'S THREE READINGS OF 3.65, and the phrase carries "this
+        // cell's own" because that is what picks it out: `cell.v_max`, the ceiling the file
+        // declares. The second is the CC-CV box the page aims at (four rules down), and the
+        // third - the voltage real LFP cells are charged to - is a fact about the world that
+        // no file in this tree decides, so it now prints no number at all. See
+        // `docs/plans/path-ledger-leg-that-is-not-there.md`.
+        phrase: "short of this cell's own {n} V limit",
+        ties: &[Tie::Chemistry("cell.v_max")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same ordinal again, in the sentence that does the arithmetic. Two rules rather
+        // than one loose one, on step 6's terms.
+        phrase: "the plateau from step {n}",
+        ties: &[Tie::Ordinal("bare-curve")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Where the open-circuit table ends: the last entry of `[ocv].volts`, which on this
+        // chemistry is 3.6000 and is the number the whole step turns on. Indexed rather than
+        // starred - `*` would demand every node be 3.60 - and 33 is the last of the table's
+        // thirty-four, so a shortened table fails here as a broken rule rather than reading
+        // some interior node.
+        phrase: "curve tops out at {n} V",
+        ties: &[Tie::Chemistry("ocv.volts.33")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // THE SENTENCE THIS SLICE REWROTE. It used to name R0 alone - "its resistance is
+        // about 21 milliohms" - and then add 0.024 V to 3.60, which is two thirds of the
+        // drop and lands at 3.624 where the step's own headline says 3.6357. The RC pair is
+        // the missing third: at 5769 s it has been carrying the same current for eleven time
+        // constants, so it contributes its full `I*R` and the DC resistance is 21 + 10
+        // milliohms. All three numbers are off the chemistry file, which is why one rule
+        // carries them: the sum first, because that is what the sentence leads with.
+        //
+        // `r0.ohms.2.1` is the grid position, and the path does not say why it is the right
+        // one: `[r0].soc` is `[0, 0.5, 1]` and `[r0].temp_k` is `[263.15, 298.15, 318.15]`,
+        // so index `2.1` is the top of the charge range at 25 C - which is where this cell
+        // sits for the whole stretch the sentence is about, on a scenario that is isothermal
+        // at exactly 298.15 K.
+        phrase:
+            "resistances come to about {n} m\u{3a9} ({n} of ohmic drop, and a {n} m\u{3a9} RC pair",
+        ties: &[
+            Tie::Sum(&[Tie::Chemistry("r0.ohms.2.1"), Tie::Chemistry("rc.0.r_ohms")]),
+            Tie::Chemistry("r0.ohms.2.1"),
+            Tie::Chemistry("rc.0.r_ohms"),
+        ],
+        pow10: 3,
+    },
+    LedgerRule {
+        // The rate and the box, in one rule because the sentence is one clause - step 11's
+        // shape, and `pack.parallel` is kept in the denominator though it is 1 here, because
+        // the arithmetic a reader is being shown is the pack's capacity and not the cell's.
+        phrase: "and {n} C is {n} A",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Product(&[
+                    Tie::Chemistry("cell.capacity_ah"),
+                    Tie::Scenario("pack.parallel"),
+                ]),
+            ]),
+            Tie::Setting(Control::DemandValue),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The table's end again, now as the first term of the sentence's own sum.
+        phrase: "so {n} + ",
+        ties: &[Tie::Chemistry("ocv.volts.33")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // And the second term: the DC resistance this sentence just gave, times the current
+        // it just gave. Both operands are tied by the two rules above, so what this adds is
+        // the multiplication - and it is the number that moved when the RC pair was named.
+        phrase: "+ {n} never reaches",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Product,
+            operands: &[Operand::Sibling("31"), Operand::Sibling("1.15")],
+        }],
+        pow10: -3,
+    },
+    LedgerRule {
+        // THE SECOND READING OF 3.65: what the CC-CV controller is aiming at, which is
+        // `ccCvNote`'s own arithmetic (the box times the series count) and not the cell's
+        // ceiling three sentences up. They spell the same digits on this pack for the same
+        // reason step 11's `16.80` and `4.20` do, and they are read off different files for
+        // the same reason: retype the page's CC-CV box and this number moves while
+        // `cell.v_max` stays. What "never reaches" is about is the leg change, and the leg
+        // change is the box's.
+        phrase: "never reaches {n}",
+        ties: &[Tie::Product(&[
+            Tie::Setting(Control::CcCvVoltage),
+            Tie::Scenario("pack.series"),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The `0` of `R0` - a section of the chemistry file, in the same position as step
+        // 1's `I*R0` and step 13's `[r0]`. The provenance string is where this file DECLARES
+        // R0 a placeholder, which is exactly what the sentence says about it. `RC` sits two
+        // characters later in the same string with an empty digit run after it, so the
+        // prefix reaches one number and not two - and this sentence now names the RC pair as
+        // well, in words, which is the other half of what this slice fixed.
+        phrase: "how large R{n} and the RC pair are",
+        ties: &[Tie::Name {
+            field: "meta.provenance",
+            prefix: "R",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The charge current a third time, and the ceiling a third time, in the sentence
+        // that prices the side reaction. Both are pow10 0, which is what lets one rule carry
+        // the clause.
+        phrase: "because {n} A at this cell's {n} V open-circuit ceiling",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Chemistry("ocv.volts.33"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What the refused current costs, worked out from the two numbers the same sentence
+        // prints one clause earlier. The engine's own figure for it is 4.181 W less the
+        // 0.041 W of resistive loss, which is this product to four places - but the sentence
+        // states it as an argument a reader can do, so the arm is the multiplication.
+        phrase: "ceiling is {n} W of side reaction",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Product,
+            operands: &[Operand::Sibling("1.15"), Operand::Sibling("3.60")],
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same heat this step claims at 5000 s, in milliwatts - the step quoting its own
+        // measurement, which is what `Tie::Quoted` allows and what the instant tag on
+        // `q_gen_at` is for. Not a derivation over the sentence's `0.041`: that would say
+        // only that the sentence is consistent with itself, where this answers to the engine
+        // through a claim that check 7 runs.
+        phrase: "against {n} mW of ohmic loss",
+        ties: &[Tie::Quoted {
+            step: "leg-that-is-not-there",
+            arm: None,
+            quantity: "q_gen_at:5000",
+            states: QuotedAs::Same,
+        }],
+        pow10: 3,
+    },
+    LedgerRule {
+        // WHERE THE ENTRY STEP IS, and the step quoting its own flag claim a second time.
+        // The cheap route was to grow that claim's literal until the instant sat inside it
+        // and let `read at` account for it; check 6 refuses exactly that, because a sentence
+        // naming the moment something happens is claiming the moment and not the reading.
+        // So the tie is to the event: move the flag and this reddens on the prose a reader
+        // is shown.
+        phrase: "Watch the entry step at {n} s",
+        ties: &[Tie::Quoted {
+            step: "leg-that-is-not-there",
+            arm: None,
+            quantity: "flag_first_s:SOC_CLAMPED_HIGH",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The charge current a fourth time, as the thing the entry step's refusal is
+        // measured against. The `0.822` beside it is inside a claim's literal; this is not.
+        phrase: "rather than the full {n}",
+        ties: &[Tie::Setting(Control::DemandValue)],
         pow10: 0,
     },
 ];

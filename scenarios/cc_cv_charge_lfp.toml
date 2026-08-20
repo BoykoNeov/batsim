@@ -12,18 +12,19 @@
 # coulomb counter reaches 100 % and raises SOC_CLAMPED_HIGH, and the pack sits full with
 # the charge current still flowing into it.
 #
-# The arithmetic is the plateau, and both halves of it are in this file: [ocv] ends at
-# 3.60 V, [r0] is about 21 mOhm at the top of the range, and 0.5 C is 1.15 A — so
-# 3.60 + 0.024 never crosses 3.65. **This cell fills up before it reaches its voltage
+# The arithmetic is the plateau, and all of it is in this file: [ocv] ends at 3.60 V,
+# [r0] is about 21 mOhm at the top of the range and the [[rc]] pair adds another 10, so
+# the DC resistance is about 31 mOhm; 0.5 C is 1.15 A, and 3.60 + 0.036 never crosses
+# 3.65. **This cell fills up before it reaches its voltage
 # limit.** Raise the rate to 1 C and the extra IR drop does cross the limit, but only at
 # 99.99 % SOC, which is a knee in name only.
 #
 # ## What that is and is not
 #
 # It is this parameter set's behaviour, integrated honestly. It is *not* a claim that
-# real LFP cells have no CV phase — they are charged CC-CV to 3.65 V routinely, and both
-# numbers that decide the outcome here (where the OCV table ends, how large R0 is) are
-# hand-fitted values this chemistry file labels as such.
+# real LFP cells have no CV phase — they are charged CC-CV to that same limit routinely,
+# and the numbers that decide the outcome here (where the OCV table ends, how large R0
+# and the RC resistance are) are hand-fitted values this chemistry file labels as such.
 #
 # What does generalise is the shape of the argument. The CV leg's job is to deliver the
 # charge that the constant-current leg cannot, because the cell's open-circuit voltage
