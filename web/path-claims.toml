@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Seventeen steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Eighteen steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -142,8 +142,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  183 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  27 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  190 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  31 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -195,11 +195,11 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 27 claims.
+# bounds the engine against `value` and is deliberately tighter on 31 claims.
 #
-#   same        196 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        205 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
-#   magnitude    5. The sentence prints the size and the sign is a word — `refused
+#   magnitude    7. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
 #               −1.31397. Fenced to negative values; on a positive one it is a silent
 #               alias for `same`.
@@ -243,8 +243,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 201 of the 235 numbers the
-#            138 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 212 of the 247 numbers the
+#            149 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -275,7 +275,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 138 claimed sentences need none. A future literal printing a chemistry constant will
+# the 149 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -290,7 +290,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — seventeen steps of the twenty-four so far.
+# of this file — eighteen steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -3276,8 +3276,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: seventeen
-# steps, 344 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: eighteen
+# steps, 372 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -3343,7 +3343,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are twenty-two of them. An arm says what decides a number: a
+# THE ARMS THEMSELVES, and there are twenty-three of them. An arm says what decides a number: a
 # NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, the SPAN of a
@@ -4545,7 +4545,360 @@ cut-off with an eighth of its rated charge still counted, which is the whole sub
 the step after next.
 """
 
-# --- step 11: the cold charge the protection stops, and what stops nothing ----------
+# --- step 11: what the protection costs ----------------------------------------------
+#
+# THE STEP IS LEDGERED NOW — 14 claims on four arms, and the step is the eleventh lesson:
+# the first place on the page where the BMS does something a reader can watch. Its prose
+# runs on two trajectories the step does not configure — the same pack with protection off,
+# and the same pack asked for twice the current. The two cold arms below were here before
+# the scan; the two above it are what the scan needed.
+#
+# THE HEADLINE IS A SUBTRACTION BETWEEN TWO ARMS. "Those 4.6 points are what protection
+# costs" prints neither operand, so it is tied in the vocabulary as the difference of two
+# claims quoted by address — which is why the two charge-level claims carry instant tags
+# they would not otherwise need.
+
+[[arm]]
+step = "what-protection-costs"
+name = "unprotected"
+instruction = "Then run it again with the BMS unchecked, and compare where the two stop. The unprotected charge outlives this step's mark — it is still pushing 2.1 A at 4100 s — so press Run again when the mark passes and let it finish."
+start = "restart"
+bms = false
+actions = [
+  { do = "run", to_s = 4100.0 },
+  { do = "run", to_s = 5200.0 },
+]
+note = """
+THE COMPARISON THE STEP IS NAMED FOR. Everything this step calls "what protection costs" is
+a subtraction between this arm and the step's own run, and until it existed the two numbers
+either side of that subtraction were tied to nothing.
+
+`restart` because the page's BMS checkbox clicks Reset — the same reason the cold arm with
+the box cleared gives. TWO run actions rather than one, and they are the sentence: the mark
+stops the page at 4100 s and the reader is told in so many words to "press Run again when
+the mark passes and let it finish". A single `run` to 5200 would be a trajectory nobody is
+instructed to produce, and the two are not the same thing to the harness even where they
+are to the engine.
+
+5200 s is 380 s past the last thing claimed here and 1100 past the mark. The charge is over
+well before it: the current crosses the 0.3 A cutoff at 4817.5 s and the page stops inside
+the window that closes at 4820. What the extra stretch buys is that "reachable" is not a
+statement about how far this file chose to run — see the note on `cccv_window_close_s`,
+which needs a crossing to exist inside `rows` at all.
+
+The instruction is the whole two-sentence span, ASCII-minus normalised, because the second
+sentence is what licenses running past the mark and the first is what names the checkbox.
+"""
+
+[[arm]]
+step = "what-protection-costs"
+name = "one C"
+instruction = "ask for 6 A and the BMS derates it to exactly 4.2 A"
+start = "restart"
+cc_cv_a = 6.0
+actions = [{ do = "run", to_s = 4100.0 }]
+note = """
+THE FIRST ARM IN THIS FILE THAT TYPES INTO THE CC-CV GROUP rather than the simple demand
+box, and the field it sets is new for it. The two boxes are different controls: `demand_a`
+is discharge-positive and replaces the whole program, so a `demand_a = 6` here would have
+run a 6 A DISCHARGE under a sentence about a charge — green arithmetic on the wrong
+trajectory. See `Arm::cc_cv_a`.
+
+6 A is 1.0 C of this pack (3.0 Ah x 2 in parallel) where the step asks for 0.5 C, which is
+why the sentence says "ask for 6 A" and not "ask for more".
+
+`restart`: typing in the box rebuilds nothing, so the trajectory is the one Restart gives —
+a fresh pack at t = 0 with the controls as the reader left them. Same reasoning as the cold
+arm one entry down, which drags a slider instead.
+
+Runs to the step's own mark rather than to a length invented here, and the derate is
+immediate: `OC` is raised on the very first step and `i_actual` is 4.2 A from 0.5 s onward.
+Nothing else claimed here needs the distance — it is run to the mark so that "it derates it"
+is a statement about the run and not about its first frame.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "`BALANCING` at 3111 s"
+quantity = "flag_first_s:BALANCING"
+value = 3111.0
+tol = 0.25
+tol_from = "tighter"
+states = "same"
+spells = "3111"
+read_at_s = 3111.0
+note = """
+The first of the four charge-only flags to arrive, and the only one in this path that is
+not a protection trip: it is the bleed resistor switching in above `v_threshold_v`. The
+pack has been charging for fifty minutes of simulation when it happens.
+
+The sentence prints the instant itself, so `states = "same"` and `spells` carries it —
+which makes the tolerance `tighter` rather than `grid`: a whole second is what "3111"
+licenses and half a step at dt = 0.5 is a quarter of that. A flag lands on a step or a
+whole one away, so the grid is the only bound with meaning here.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "then `OV` at 3986 s"
+quantity = "flag_first_s:OV"
+value = 3986.0
+tol = 0.25
+tol_from = "tighter"
+states = "same"
+spells = "3986"
+read_at_s = 3986.0
+note = """
+The trip that ends the charge, 875 s after the balancer started work. Both instants are
+claimed rather than one, because the gap between them is the sentence's argument: the
+balancer had fourteen minutes and did not close an 11 mV spread.
+
+That gap is not itself claimed — the prose prints no number for it — so it is arithmetic a
+reader does and this file does not check.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "the charge stops at **94.9 %**"
+quantity = "soc_at:3986"
+value = 0.94876
+tol = 5e-4
+tol_from = "spelled"
+spells = "94.9"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3986.0
+display = "soc (true)"
+shows = "94.9 %"
+note = """
+ONE HALF OF THE SUBTRACTION THIS STEP IS ABOUT. Read at the trip and not at the mark, and
+the tag says so: the charge stops here, but the pack goes on cooling and self-discharging
+for another 114 s of simulation and reads 94.8 % at 4100 s. A claim at the mark would be
+green on a different number and the sentence would be wrong.
+
+Tagged because this step reads `soc_at` on two trajectories at two instants — this one and
+99.5 % on the unprotected arm — and `Tie::Quoted` needs an address, which is what the
+4.6-point difference below is quoted through.
+
+The scenario file's header says 94.9 % too, and it also records that it was 95.1 % before
+the protection rungs gained hysteresis. Nothing checks the header; this checks the sentence.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "the same pack runs on to **99.5 %**"
+quantity = "soc_at:4820"
+arm = "unprotected"
+value = 0.995223
+tol = 5e-4
+tol_from = "spelled"
+spells = "99.5"
+spells_pow10 = 2
+states = "same"
+read_at_s = 4820.0
+display = "soc (true)"
+shows = "99.5 %"
+note = """
+THE OTHER HALF. Read at 4820 s, which is where the charge has ended by — see the claim on
+`cccv_window_close_s` in the next sentence, and its note on why the instant is a bound and
+not a stop.
+
+The reading is robust across that bound: the page could stop anywhere from the 4817.5 s
+crossing to 4820, and the pack reads 99.5 % across the whole of it (99.5197 % at the
+crossing, 99.5223 % here). So the sentence's number does not depend on the frame schedule
+even though the instant it is read at is the only end of the interval that is a fact about
+the simulation.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "and the charge ends by 4820 s"
+quantity = "cccv_window_close_s"
+arm = "unprotected"
+value = 4820.0
+tol = 0.25
+tol_from = "tighter"
+states = "same"
+spells = "4820"
+read_at_s = 4820.0
+note = """
+A BOUND, AND THE SENTENCE SAYS SO. This used to read "which it reaches at 4820 s", and
+neither half of that was checkable. The pack passes 99.5 % well before 4820, and the page's
+own stopping instant is not a function of the simulation at all: `ccCvDone` is evaluated at
+the end of each chopped chunk, a chunk ends at a decision boundary OR wherever the frame's
+step budget ran out, and the budget comes from wall-clock elapsed time. The current crosses
+the 0.3 A cutoff at 4817.5 s, so the reader is told somewhere in (4817.5, 4820] and only the
+far end is decided by the trajectory.
+
+`cccv_taper_s` — the quantity step 9 uses for the same event — refuses here for exactly
+that reason: it asserts the crossing lands on a window boundary and 4817.5 s is step 9635
+at dt = 0.5, which 20 does not divide. Step 9's 6210 s does, which is why that step can say
+"stops at" and this one says "ends by".
+
+`tighter` for the tolerance, at the step grid's quarter-second. The number this quantity
+answers is always a multiple of `CCCV_PERIOD_S`, so anything short of five seconds is
+equally safe and the tightest available bound is the honest one to declare.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "it is still pushing 2.1 A at 4100 s"
+quantity = "i_at"
+arm = "unprotected"
+value = -2.0754
+tol = 0.05
+tol_from = "spelled"
+spells = "2.1"
+states = "magnitude"
+read_at_s = 4100.0
+note = """
+WHY THE READER IS TOLD TO PRESS RUN AGAIN. At the mark the unprotected charge is still
+taking 2.1 A — nowhere near the 0.3 A cutoff — so a reader who stops at the mark sees a run
+that has not finished and no comparison at all.
+
+`magnitude`, because the page's sign convention is discharge-positive and this is a charge:
+`i_actual` is -2.0754 A and the sentence writes the direction in the word *pushing*. The
+same variant, for the same reason, as step 4's sensor gap.
+
+No `display`: the `current` row prints what the pack is doing to a different precision than
+this sentence does, and a claim quoting a row it has not asserted would be pinning a
+rendering nothing checks.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "the pack is at 16.775 V"
+quantity = "v_at:3985.5"
+value = 16.77506
+tol = 5e-4
+tol_from = "spelled"
+spells = "16.775"
+states = "same"
+read_at_s = 3985.5
+note = """
+ONE STEP BEFORE THE TRIP, and the tag is the whole point: at 3986 s the contactor has
+opened and the same quantity reads 16.670. The sentence says "one step before the trip"
+in words and the tag says it in seconds, which is what makes the pair checkable — move the
+trip and this reading has to move with it.
+
+The scenario file's header records the same instant and the same reasoning ("Read the step
+before the trip rather than the one after it"), and gives 24.9 mV where the sentence says
+25. Both are the same measurement; see the claim on the gap.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "only 25 mV short"
+quantity = "v_below_cccv_target_mv_at:3985.5"
+value = 24.942
+tol = 0.5
+tol_from = "spelled"
+spells = "25"
+states = "same"
+read_at_s = 3985.5
+note = """
+THE SAME INSTANT, AS A GAP. `v_at` above is where the pack is; this is how far that is from
+where it is going, and the page shows both sides of the subtraction in one string —
+`terminal 16.775 V of 16.800 V` — without ever printing the difference.
+
+Claimed rather than worked out from the sentence's own 16.80 and 16.775. The arithmetic
+over those two comes to exactly 25.0 and would have been green forever, because both are
+figures the sentence prints; what this pins is the engine, at half a millivolt. The
+sentence rounds UP from 24.942, which is worth knowing rather than discovering: it is 12 %
+of the way through the rounding a whole millivolt licenses, so this one has room in a way
+the 60.8 % claim four entries down does not.
+
+No `display`: the page prints the two voltages, never the gap.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "spread over 11 mV"
+quantity = "v_cell_spread_mv_at:3985.5"
+value = 11.023
+tol = 0.5
+tol_from = "spelled"
+spells = "11"
+states = "same"
+read_at_s = 3985.5
+note = """
+THE ARGUMENT FOR BALANCING, IN ONE NUMBER. Eight cells, four sensed group voltages, and the
+distance from the lowest to the highest at the step before the trip. The balancer has been
+bleeding the top group since 3111 s and this is what it has not managed to close.
+
+Read at the same tagged instant as the two above, because all three are the same sentence
+describing one frame. Cells rather than groups is the prose's word and the same number
+either way — a parallel group has one node voltage, so `v_cell_min` and `v_cell_max` are
+per-GROUP readings and every cell in a group sits at its group's voltage.
+
+No `display`: `cell v` prints the two ends and not their distance.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "The 130 mV gap you see"
+quantity = "v_below_cccv_target_mv_at:3986"
+value = 130.188
+tol = 0.5
+tol_from = "spelled"
+spells = "130"
+states = "same"
+read_at_s = 3986.0
+note = """
+THE SAME GAP ONE STEP LATER, and the pair is why the quantity exists: 24.942 mV under
+charge and 130.188 mV with the current at zero, a step apart. Two tagged readings of one
+name, which is what `v_at` had to learn on step 15.
+
+WHAT THIS CLAIM DOES NOT CHECK, and the sentence is loose about it: "it is the IR drop
+vanishing when the current stops" accounts for 105 mV of the 130, not all of it. The other
+25 were already there — they are the claim three entries up. The sentence is right that
+what a reader sees *change* at the trip is the IR drop and not imbalance, which is what it
+is arguing against; it is wrong if read as "the gap IS the IR drop". Left as prose rather
+than rewritten, because the two readings differ only in whether "the 130 mV gap" is the
+subject of "is" or the thing the change is measured on — and no number moves either way.
+
+Not the cell spread, which is 10.4 mV here and 11.0 mV a step earlier: the trip barely
+touches it, which is the sentence's actual point.
+"""
+
+[[claim]]
+step = "what-protection-costs"
+literal = "the BMS derates it to exactly 4.2 A"
+quantity = "i_at"
+arm = "one C"
+value = -4.2
+tol = 5e-4
+tol_from = "tighter"
+spells = "4.2"
+states = "magnitude"
+read_at_s = 0.5
+note = """
+"EXACTLY" IS THE ASSERTION, so this is a claim and not a product. 4.2 A is arithmetically
+`max_charge_c` x `capacity_ah` x `parallel`, and a rule tying it to those three would have
+covered the digit while checking nothing about the BMS — the sentence is not about what
+0.7 C comes to, it is about the derate landing on it. The 0.7 in the same sentence IS that
+constant and is tied to the chemistry file, which is the half of this that is a lookup.
+
+`magnitude` for `i_at`'s sign, as on the unprotected arm above.
+
+`tighter`, at a hundredth of what "4.2" licenses, and the word "exactly" is the licence:
+the derate is a rating multiplied out, not a controller settling, so the engine returns
+4.20000 A and a claim allowing it to be 4.24 would not be checking what the sentence says.
+This is the one claim in the file whose tolerance is set by an adverb.
+
+READ AT THE FIRST STEP, which is where the sentence says to look: "`OC` raised from the
+first step". The derate is flat at 4.20000 A from 0.5 s onward because the limit is a rating
+and not a controller — but it is not flat to the mark, and a first draft of this claim read
+4100 s and found zero. At 1.0 C this pack trips `OV` at 2729 s, an hour earlier than the
+0.5 C run the step itself watches, so by the mark the charge is long over. The arm still
+runs to the mark: what it shows past this reading is that asking for more current buys a
+SHORTER charge, which is the sentence's implication and which no number in the prose states.
+
+`OC` itself is raised on that same first step, which the sentence also says and which
+nothing here claims — a flag with no number in the prose has nothing for a claim to state.
+"""
+
+# --- step 11's cold arms: the charge the protection stops, and what stops nothing ----
 #
 # The first arms in this file that drag the ambient slider, and they exist because of what
 # the sentence they follow asserts: two flags "at the same instant". No mechanism here
@@ -6257,15 +6610,33 @@ steps = [
                      # at a charge — plus `Control::Dt`, and ONE number left the page: the
                      # `0` of "at t = 0", which is notation for the origin of the clock and
                      # which nothing in the tree decides
+  "what-protection-costs", # 28: the eleventh lesson, and the first ledgered step whose
+                     # prose runs on FOUR trajectories — the step's own, the same pack with
+                     # protection off, the same pack asked for twice the current, and the
+                     # two cold ones that were here already. Thirteen of the twenty-eight
+                     # sit inside a claimed sentence; eleven of those claims were written
+                     # for this scan, including the two that make the headline a
+                     # subtraction between two arms. Of the fifteen a rule accounts for,
+                     # two are the scatter and are covered by STEP 3's vocabulary rather
+                     # than by anything written here. The other thirteen, named rather than
+                     # counted: the topology, the bleed threshold in two sentences, the
+                     # demand box and the rate it works out to, the mark's own distance
+                     # from where the unprotected charge ends, the cost in points, the
+                     # target the charge aims at, the cell's ceiling, the current the
+                     # reader retypes, the chemistry's charge rating, and the ambient the
+                     # cold arms are dragged to — the first negative number in this
+                     # vocabulary and the only user of `Tie::Magnitude`. One number left
+                     # the page: "which it reaches at 4820 s" became "the charge ends by
+                     # 4820 s", because where the page STOPS is a fact about the browser's
+                     # frame schedule and only the window it stops inside is a fact about
+                     # the simulation
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: seven of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: six of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
   "same-discharge-other-chemistry", # claims: 5
   "leg-that-is-not-there",          # claims: 6
-  "what-protection-costs",          # claims: 3, on two ambient arms. Also two perf
-                                    # ratios no trajectory can settle
   "three-times-the-current",        # claims: 6, on one tooth and the floor below empty.
                                     # Its ratios need step 13's run; its circuit figures a
                                     # second scenario file

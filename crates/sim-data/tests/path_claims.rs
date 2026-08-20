@@ -84,11 +84,11 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is seventeen steps and 344 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is eighteen steps and 372 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
-//! Twenty-two arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! Twenty-three arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, the span of a
 //! chemistry table, a node of one, digits inside a name, the position of another lesson,
@@ -182,12 +182,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the seven steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the six steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed seventeen whole steps — but only seventeen. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other seven have their claimed sentences
+//!   has now closed eighteen whole steps — but only eighteen. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other six have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all seven, one line each, so this list cannot go quietly out of date.
+//!   names all six, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -892,6 +892,30 @@ enum Prog {
     Pulse { i: f64, on_s: f64, off_s: f64 },
 }
 
+/// The demand program an **arm** runs under: the step's, unless the reader typed a current.
+///
+/// The two current boxes behave differently on purpose, and the difference is the page's.
+/// `demand_a` is the *simple* box, which carries a mode of its own — typing into it leaves
+/// whatever program was selected, so a number there on a `Pulse` step ends the pulse train.
+/// `cc_cv_a` is the CC-CV group's charge current, one field of three; typing into it changes
+/// that field and nothing else, so the charge stays a charge. Collapsing the two would turn
+/// step 11's *"ask for 6 A"* into a 6 A **discharge**, because the simple box is
+/// discharge-positive and the CC-CV one is not.
+///
+/// Both being set is refused where the arms are checked, so the order of these arms is not a
+/// preference.
+fn arm_prog(arm: &Arm, step_demand: Prog) -> Prog {
+    match (arm.cc_cv_a, arm.demand_a, step_demand) {
+        (Some(i), _, Prog::CcCv { v_cell, taper, .. }) => Prog::CcCv { i, v_cell, taper },
+        // Unreachable on a well-formed file — `cc_cv_a` is refused off a CC-CV step where
+        // the arms are checked — and written out rather than left to a catch-all so that
+        // adding a fourth program cannot silently drop the field.
+        (Some(_), _, other) => other,
+        (None, Some(i), _) => Prog::Current(i),
+        (None, None, other) => other,
+    }
+}
+
 /// Pull `key: <number>` out of a lesson block.
 fn num_field(block: &str, key: &str) -> Option<f64> {
     let marker = format!("\n    {key}: ");
@@ -1454,6 +1478,14 @@ struct Run {
     /// decision grid `CCCV_PERIOD_S / dt` sets, and neither is recoverable from telemetry.
     /// Everything else in [`measure`] reads the trajectory alone.
     prog: Prog,
+    /// How many groups the pack has in series.
+    ///
+    /// Carried for the same reason `prog` is, and used with it: the CC-CV target a reader
+    /// sees is `v_cell * series`, which is `ccCvNote`'s own arithmetic and not a field of
+    /// any file. `v_below_cccv_target_mv_at` is the only quantity that needs it. Read off
+    /// the built pack rather than off the scenario so an arm that walks next door for its
+    /// pack cannot be measured against the declaring step's topology.
+    series: f64,
     dt: f64,
 }
 
@@ -1786,7 +1818,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
     // a probe on a restart arm that types a current. Written the correct way round rather
     // than the reachable way round, on the same terms as the ambient split above.
     let probe_prog = match arm {
-        Some(a) if a.start == Start::Restart => a.demand_a.map_or(lesson.demand, Prog::Current),
+        Some(a) if a.start == Start::Restart => arm_prog(a, lesson.demand),
         _ => lesson.demand,
     };
     let probe_telemetry = pack.step(0.0, demand_now(probe_prog, &pack, dt, None), &before);
@@ -1842,7 +1874,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
         // if it typed one in, else whatever the step dialled in. Note that typing a current
         // replaces the step's *program* — a reader who types a number into the box on a
         // `Pulse` step has left the pulse train, which is what the box does.
-        let prog = arm.demand_a.map_or(lesson.demand, Prog::Current);
+        let prog = arm_prog(arm, lesson.demand);
         for action in &arm.actions {
             match action {
                 // Neither button advances the clock, which is the whole of the step-18
@@ -1877,9 +1909,8 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
         // The program the trajectory's last stretch ran under, which for an arm that typed
         // a current into the box is that current and not the step's own. Same rule the
         // stepping loop above uses, because it is the same fact.
-        prog: arm
-            .and_then(|a| a.demand_a)
-            .map_or(lesson.demand, Prog::Current),
+        prog: arm.map_or(lesson.demand, |a| arm_prog(a, lesson.demand)),
+        series: f64::from(pack.series()),
         dt,
     }
 }
@@ -1898,7 +1929,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 183 of 215 claims.
+    /// number's last printed place. The default shape: 190 of 226 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1909,12 +1940,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 27 of 215.
+    /// the number was always right and only the declaration was wrong. 31 of 226.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 5 of 215, every
+    /// the engine either hits the claimed step or misses by a whole one. 5 of 226, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1954,7 +1985,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 196 of 215, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 205 of 226, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2544,6 +2575,25 @@ struct Arm {
     /// arm changes it. Must be spelled inside `instruction`.
     #[serde(default)]
     demand_a: Option<f64>,
+    /// The **charge current** the reader types into the CC-CV group \[A\], if this arm
+    /// changes it. Positive charges, which is the opposite sign convention to `demand_a`
+    /// and is the page's, not this file's.
+    ///
+    /// A second field rather than a mode-aware `demand_a`, because the page has two boxes
+    /// and shows one at a time. `applyDemandMode`'s own comment says why: *"The single
+    /// `value` box cannot serve CC-CV: the mode needs three numbers, and one of them is
+    /// entered with the opposite sign convention to everything else on this page."* Typing
+    /// into the simple box on a CC-CV step is not a thing a reader can do — the box is
+    /// hidden — so an arm that set `demand_a` there would be describing a trajectory the
+    /// page cannot reach, and `demand_a`'s own doc already says that typing into it
+    /// *replaces the program*. Keeping them separate is what stops step 11's "ask for 6 A"
+    /// silently becoming a 6 A discharge.
+    ///
+    /// Same contract as `demand_a` otherwise: must be spelled inside `instruction`, must
+    /// differ from the step's own, and only the two of them together decide
+    /// [`Control::DemandValue`] on an arm.
+    #[serde(default)]
+    cc_cv_a: Option<f64>,
     /// The step length the reader types into the `dt` box \[s\], if this arm changes it.
     /// Must be spelled inside `instruction`, and must differ from the step's own.
     #[serde(default)]
@@ -2695,6 +2745,25 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
         // backwards is about the *spread* between them.
         "v_cell_min_at" => t.v_cell_min,
         "v_cell_max_at" => t.v_cell_max,
+        // The distance between those two ends, in millivolts — the unit the sentence that
+        // needs it speaks ("spread over 11 mV", "the 130 mV gap you see *after* the trip").
+        //
+        // A separate quantity rather than two claims on the ends, and the paragraph above
+        // is not an argument against it: that one says a claim states ONE number, which is
+        // exactly what this is. Step 11's prose never prints either end — it prints the
+        // distance and nothing else — so claiming `v_cell_min_at` and `v_cell_max_at`
+        // there would be stating two numbers the sentence does not contain. This is the
+        // same shape as `soc_gap_pts_at` and `t_gap_k_at` below: a gap the page shows and
+        // never prints, with the reader doing the subtraction off the `cell v` row.
+        //
+        // No `display` may be named on a claim measured here, for `t_gap_k_at`'s narrower
+        // reason: `cell v` IS in the [`render_row`] mirror, but it prints the two ends and
+        // not their difference, so there is no asserted string a claim could quote.
+        //
+        // Millivolts because the sentence is: a pack whose groups sit 0.011 V apart is a
+        // pack nobody would describe that way, and a claim that stated 0.011 could not be
+        // checked against a prose that spells 11.
+        "v_cell_spread_mv_at" => (t.v_cell_max - t.v_cell_min) * 1000.0,
         "soc_at" => t.soc_true,
         "i_at" => t.i_actual,
         "t_max_at" => t.t_max,
@@ -3037,7 +3106,12 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
         .split_once(':')
         .and_then(|(name, tag)| tag.parse::<f64>().ok().map(|tag| (name, tag)))
     {
-        Some((name, tag)) if matches!(name, "soc_lost_pts_at" | "t_rise_k_at") => {
+        Some((name, tag))
+            if matches!(
+                name,
+                "soc_lost_pts_at" | "t_rise_k_at" | "v_below_cccv_target_mv_at"
+            ) =>
+        {
             assert!(
                 (tag - at_s).abs() < run.dt * 0.5,
                 "a claim reads `{quantity}`, whose tag names t = {tag} s, and declares                  `read_at_s = {at_s}`. The tag is the instant the reading is taken at and                  not a label, so the two cannot disagree."
@@ -3462,6 +3536,79 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
             );
             run.rows[first_hold - 1].t_s
         }
+        // How far the pack is **below the CC-CV target** \[mV\] — the target being
+        // `v_cell * series`, which is `ccCvNote`'s own arithmetic and no file's field.
+        //
+        // Step 11 prints this quantity twice and prints the target once: *"only 25 mV short
+        // of the 16.80 V it is aiming for"* one step before the over-voltage trip, and
+        // *"the 130 mV gap you see after the trip"* one step after it. The page shows both
+        // sides of the subtraction in one string — `terminal 16.775 V of 16.800 V` — and
+        // never the difference, so this is a gap the reader does the arithmetic for, on the
+        // same terms as `soc_gap_pts_at` and `t_gap_k_at`. No `display` may be named on a
+        // claim measured here.
+        //
+        // **Not in [`measure_row`], and the reason is a fact rather than a fence**: a row
+        // does not know what it was being charged toward. This needs `run.prog` and
+        // `run.series`, which is also what makes it unreadable from a probe — the right
+        // answer, since neither of this step's two readings exists before the run.
+        //
+        // Millivolts, for `v_cell_spread_mv_at`'s reason: the sentence speaks them.
+        //
+        // Refuses on any program but CC-CV rather than falling back to some other target. A
+        // pack on a `Current` demand is being charged toward nothing, so the quantity does
+        // not exist there — it is not zero.
+        "v_below_cccv_target_mv_at" => {
+            let Prog::CcCv { v_cell, .. } = run.prog else {
+                panic!(
+                    "a claim reads how far the pack is below its CC-CV target on a step \
+                     whose demand program is {:?}. Only a CC-CV charge has a target; on \
+                     anything else the quantity does not exist rather than being zero.",
+                    run.prog
+                );
+            };
+            (v_cell * run.series - run.at(at_s).v_terminal) * 1000.0
+        }
+        // **By when** a CC-CV charge has finished \[s\]: the first decision-window boundary
+        // at or after the taper crossing.
+        //
+        // `cccv_taper_s` below answers "where the page stops" and refuses unless the
+        // crossing is itself a boundary, because off a boundary the stop instant is a fact
+        // about the browser's frame schedule rather than about the simulation. Step 11 is
+        // the case that refusal leaves with nothing to say: its unprotected charge crosses
+        // the taper at 4817.5 s, which is step 9635 at dt = 0.5 and not a multiple of the
+        // 20-step window. The reader is told somewhere in (crossing, next boundary], and
+        // only the far end of that interval is a function of the simulation.
+        //
+        // So this is a **bound and is worded as one wherever it is claimed** — "the charge
+        // ends by 4820 s" is true whatever the frame rate; "at 4820 s" would not be. A
+        // sentence that wants the instant itself needs a trajectory whose crossing lands on
+        // a boundary, which is what step 9 has and says so.
+        //
+        // The crossing is found the same way `cccv_taper_s` finds it, and the window is
+        // `CCCV_PERIOD_S` read out of the page rather than restated here.
+        "cccv_window_close_s" => {
+            let Prog::CcCv { taper, .. } = run.prog else {
+                panic!(
+                    "a claim reads a CC-CV decision boundary on a step whose demand \
+                     program is {:?}. Only a CC-CV charge has decision windows.",
+                    run.prog
+                );
+            };
+            let crossed = run
+                .rows
+                .iter()
+                .position(|r| r.telemetry.i_actual.abs() < taper)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "the current never falls under the {taper} A taper on this \
+                         trajectory, so there is no window for the charge to end in. \
+                         Either the run is too short or the claim is on the wrong arm."
+                    )
+                });
+            let period = cccv_period_s();
+            let t_s = run.rows[crossed].t_s;
+            (t_s / period).ceil() * period
+        }
         // When a CC-CV charge finishes \[s\]: the first row whose current has fallen to the
         // taper the page is comparing against.
         //
@@ -3529,12 +3676,14 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
         }
         other => panic!(
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
-             Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, soc_at, i_at, \
+             Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, v_cell_spread_mv_at, \
+             soc_at, i_at, \
              t_max_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
-             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, deficit_leaves_zero_s, \n             deficit_all_owed_s, deficit_crossing_spread_s, deficit_worst_cell_series_at, \n             deficit_worst_cell_parallel_at, deficit_best_cell_series_at, \n             deficit_best_cell_parallel_at, delivered_ah, cccv_taper_s, \
+             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, deficit_leaves_zero_s, \n             deficit_all_owed_s, deficit_crossing_spread_s, deficit_worst_cell_series_at, \n             deficit_worst_cell_parallel_at, deficit_best_cell_series_at, \n             deficit_best_cell_parallel_at, delivered_ah, \n             v_below_cccv_target_mv_at, cccv_taper_s, cccv_window_close_s, \
              cccv_cc_ends_s, pulse_sag_mv:<tooth>, pulse_jump_mv:<tooth>, \
              pulse_rebound_mv:<tooth>, pulse_lost_mv:<tooth>, pulse_rebound_arrived:<tooth>, \
-             soc_lost_pts_at, t_rise_k_at (both of which take an instant tag too), 
+             soc_lost_pts_at, t_rise_k_at and 
+             v_below_cccv_target_mv_at (all three of which take an instant tag too), 
              soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, v_group_min_at, \
              surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>, overpotential_mv_at, \
@@ -3843,6 +3992,8 @@ fn every_arm_is_instructed_by_its_own_step() {
                 arm.instruction
             );
         }
+
+        check_cc_cv_current(arm, pack_lesson, &instruction);
 
         if let Some(dt) = arm.dt {
             let spelled = Arm::spelled(dt);
@@ -5558,6 +5709,30 @@ enum Tie {
     /// it catches is a re-fit of the plateau, a change of series count, or a different
     /// starting charge — which is what the sentence actually rests on.
     Ocv(&'static Tie),
+    /// The **magnitude** of the thing it wraps, for a sentence that puts the sign in its own
+    /// words instead of in the number.
+    ///
+    /// [`written_numbers`] finds digits and never a leading minus, so every token this scan
+    /// is handed is unsigned. That is harmless while the files answer with positive numbers,
+    /// and step 11 is the first ledgered sentence where one does not: *"drag the ambient to
+    /// −5 °C"* is an arm whose `ambient_c` is `-5`, and comparing 5 against it fails on the
+    /// sign alone.
+    ///
+    /// The claim side has carried the same variant since it was written — `states =
+    /// "magnitude"`, for a sentence that "prints the magnitude and puts the sign in the word
+    /// *late*" — and this is its ledger twin, with the same fence: **refused on a value that
+    /// is not negative**, because on a positive one it is the tie it wraps with extra words
+    /// and would go green for the wrong reason. Unreachable from the claims file, so the
+    /// fence is priced by [`a_magnitude_refuses_a_value_that_is_not_negative`].
+    ///
+    /// **The sign has to be in the phrase.** A rule reading a magnitude off a sentence that
+    /// does not write the minus would account a `5` that means five degrees above freezing
+    /// against a slider dragged five below, so the phrase this wraps carries the `-`
+    /// itself and the placeholder picks up the digits after it.
+    ///
+    /// Compared the way the thing it wraps compares, on [`Tie::Elsewhere`]'s terms: taking
+    /// an absolute value does not turn a file read into a computed quantity.
+    Magnitude(&'static Tie),
     /// The same question asked of **a different lesson** — the inner tie, resolved against
     /// the named step's block, scenario and chemistry.
     ///
@@ -5812,6 +5987,24 @@ enum Control {
     /// currents in the path: a `Pulse` step has no taper, and a rule asking for one there is
     /// a rule on the wrong step.
     Taper,
+    /// The CC-CV **per-cell target** \[V\] — the voltage each cell is being charged toward.
+    ///
+    /// The third of the CC-CV group's three fields to get a variant, after the charge
+    /// current ([`Self::DemandValue`]) and [`Self::Taper`]. Step 11 is why: it is the first
+    /// ledgered step whose prose prints the target the page is aiming at rather than the
+    /// current it is aiming with — *"only 25 mV short of the 16.80 V it is aiming for"* —
+    /// and 16.80 is this box times the series count, which is `ccCvNote`'s own arithmetic
+    /// (`const target = cfg.v_cell * series`).
+    ///
+    /// **Not the chemistry's ceiling, though the two spell the same digits here.** This
+    /// step also says the top cell *"has already crossed 4.20"*, and that 4.20 is
+    /// `cell.v_max` — the limit the over-voltage rung trips on. A page whose CC-CV box was
+    /// retyped to 4.15 would move the first number and leave the second where it is, which
+    /// is the whole reason they are read off different files rather than off whichever one
+    /// was reached first. See `docs/plans/path-ledger-what-protection-costs.md`.
+    ///
+    /// Reads as nothing on any program but CC-CV, exactly as the taper does.
+    CcCvVoltage,
 }
 
 /// The vocabulary, one entry per way a ledgered step names a number some file decides.
@@ -7392,6 +7585,155 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ])],
         pow10: 3,
     },
+    // Step 11 — what the protection costs. Thirteen of its twenty-five numerals are here and
+    // the other twelve are claims: this is the first ledgered step whose prose runs on four
+    // trajectories, and every one of the four is a control a reader is told to change.
+    LedgerRule {
+        // The topology, in the sentence that opens the step. Step 6's "cells in {n}S{n}P is"
+        // and step 3's two spelled-out rules already read the same two fields; a third
+        // vocabulary because a third sentence says it a third way, on the terms those two
+        // set. Note this one has NMC in it, which is what stops it reaching the LFP steps
+        // that open the same way.
+        phrase: "A {n}S{n}P NMC pack with",
+        ties: &[Tie::Scenario("pack.series"), Tie::Scenario("pack.parallel")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The bleed threshold, in the sentence that lists what the step is configured with.
+        // Its twin two rules down reads the same field out of the sentence that watches the
+        // flag arrive — two sentences, two vocabularies, as everywhere else here.
+        phrase: "passive balancing above {n} V per group",
+        ties: &[Tie::Scenario("pack.bms.balancing.v_threshold_v")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The demand box and what it comes to as a rate, in one sentence and one rule
+        // because the sentence is one clause: "3 A is 0.5 C". The rate is the box over the
+        // pack's own capacity — cells in parallel add amp-hours — which is the same
+        // arithmetic step 6's "is {n} Ah at pack level" does one factor short of.
+        //
+        // Two placeholders, so the rule cannot be satisfied by the demand alone: an edit
+        // that changed the box without changing the rate reddens on the second tie.
+        phrase: "per group. {n} A is {n} C",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Product(&[
+                    Tie::Chemistry("cell.capacity_ah"),
+                    Tie::Scenario("pack.parallel"),
+                ]),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the first group crosses {n} V",
+        ties: &[Tie::Scenario("pack.bms.balancing.v_threshold_v")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How far past the mark the unprotected charge runs. Both operands are numbers this
+        // file already answers for — the boundary is a claim on the arm, the mark is the
+        // step's own control — so the rule is the subtraction and nothing else.
+        //
+        // Not a `Derived`: that arm reads the sentence's printed siblings and the mark is
+        // not printed in this sentence. It is named in words ("past the mark"), which the
+        // phrase pins and the tie reads off the lesson block.
+        phrase: "{n} s past the mark",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "what-protection-costs",
+                arm: Some("unprotected"),
+                quantity: "cccv_window_close_s",
+                states: QuotedAs::Same,
+            },
+            Tie::Setting(Control::Until),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // THE HEADLINE. The step's title is "what the protection costs" and this is the
+        // number: the unprotected charge's finish less the protected one's, in points. Both
+        // sides are this step's own claims, quoted by address — which is why both of those
+        // claims carry an instant tag, and why the two trajectories are two arms rather
+        // than one run read twice.
+        //
+        // The sentence prints neither operand, so nothing here rests on the prose being
+        // consistent with itself: move either trajectory and this reddens on the number a
+        // reader is shown.
+        phrase: "Those {n} points are what protection costs",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "what-protection-costs",
+                arm: Some("unprotected"),
+                quantity: "soc_at:4820",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "what-protection-costs",
+                arm: None,
+                quantity: "soc_at:3986",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // What the charge is aiming at, which is `ccCvNote`'s own arithmetic:
+        // `const target = cfg.v_cell * series`. The per-cell half is the CC-CV box and NOT
+        // the chemistry's ceiling, though the two spell the same digits on this pack — see
+        // [`Control::CcCvVoltage`], and the rule two entries down that reads the ceiling.
+        phrase: "short of the {n} V it is aiming for",
+        ties: &[Tie::Product(&[
+            Tie::Setting(Control::CcCvVoltage),
+            Tie::Scenario("pack.series"),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The per-cell limit the over-voltage rung trips on, which is what "already crossed"
+        // is about: the pack is short of its target and one cell is not. `cell.v_max`, the
+        // same field step 1 reads for the other end of the same chemistry.
+        phrase: "the top one has already crossed {n}",
+        ties: &[Tie::Chemistry("cell.v_max")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The current the reader types into the CC-CV group on the `one C` arm. `OnArm`
+        // rather than `Setting`, because the step itself asks for 3 A and a rule reading the
+        // step here would account 6 against 3 and fail — or, worse on some other lesson,
+        // succeed.
+        phrase: "ask for {n} A",
+        ties: &[Tie::OnArm {
+            arm: "one C",
+            tie: &Tie::Setting(Control::DemandValue),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The rating the derate lands on. A chemistry constant, and the sentence's other
+        // number — the 4.2 A itself — is a claim, because "exactly" is an assertion about
+        // the BMS and not about what 0.7 C multiplies out to.
+        phrase: "{n} C, its charge rating",
+        ties: &[Tie::Chemistry("cell.max_charge_c")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The ambient the two cold arms are dragged to. The minus is in the phrase and the
+        // tie takes the magnitude, because the scanner finds digits and never a sign — see
+        // [`Tie::Magnitude`], which this is the only user of.
+        //
+        // Reads the `cold` arm rather than `cold, protection off`: they set the same -5 and
+        // either would answer, so the choice is arbitrary and the first is the one the
+        // sentence's first clause is about.
+        phrase: "drag the ambient to -{n} \u{b0}C",
+        ties: &[Tie::Magnitude(&Tie::OnArm {
+            arm: "cold",
+            tie: &Tie::Setting(Control::Ambient),
+        })],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -7487,6 +7829,10 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
             Prog::CcCv { taper, .. } => Some(taper),
             _ => None,
         },
+        Control::CcCvVoltage => match lesson.demand {
+            Prog::CcCv { v_cell, .. } => Some(v_cell),
+            _ => None,
+        },
         Control::Ambient => Some(lesson.ambient_c),
         Control::Until => Some(lesson.until_s),
         Control::Speed => lesson.speed_x,
@@ -7502,18 +7848,26 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
 /// vocabulary refuses.
 fn arm_control_value(control: Control, arm: &Arm) -> Option<f64> {
     match control {
-        Control::DemandValue => arm.demand_a,
+        // The current in whichever field group is on screen. `demand_a` is the simple box
+        // and `cc_cv_a` is the CC-CV group's charge current; `applyDemandMode` shows one of
+        // the two and hides the other, so at most one of these is ever set and the `or` is
+        // not a preference between them. See [`Arm::cc_cv_a`].
+        Control::DemandValue => arm.cc_cv_a.or(arm.demand_a),
         Control::Ambient => arm.ambient_c,
         Control::Dt => arm.dt,
         // An arm overrides the demand box, the `dt` box, the BMS checkbox and the ambient
-        // slider, and nothing else. The pulse legs, the taper, the mark and the speed are
-        // the step's for the whole of it, so a rule asking an arm for one is asking a
-        // question the page cannot answer. (`demand_a` is the box's *current*, which is what
-        // an arm types; an arm that switched the mode to CC-CV would be a different
-        // trajectory and not an override.)
-        Control::PulseOn | Control::PulseOff | Control::Until | Control::Speed | Control::Taper => {
-            None
-        }
+        // slider, and nothing else. The pulse legs, the taper, the CC-CV target, the mark
+        // and the speed are the step's for the whole of it, so a rule asking an arm for one
+        // is asking a question the page cannot answer. (`demand_a` is the simple box's
+        // *current*, which is what an arm types; an arm that switched the *mode* would be a
+        // different trajectory and not an override — which is exactly why `cc_cv_a` is a
+        // second field rather than `demand_a` learning to read the mode.)
+        Control::PulseOn
+        | Control::PulseOff
+        | Control::Until
+        | Control::Speed
+        | Control::Taper
+        | Control::CcCvVoltage => None,
     }
 }
 
@@ -7793,6 +8147,22 @@ fn tie_values(
             });
             vec![value]
         }
+        Tie::Magnitude(tie) => {
+            let inner = tie_values(tie, lesson, lessons, scenario, chemistry, ctx);
+            for v in &inner {
+                assert!(
+                    *v < 0.0,
+                    "a rule reads the magnitude of {}, which resolves to {v} — not a \
+                     negative number. On a value that is already positive this wrapper is \
+                     `{}` with extra words, and it would go green for a reason the \
+                     sentence does not state. Same fence, same wording, as the claim \
+                     side's `states = \"magnitude\"`.",
+                    tie_describe(tie),
+                    tie_arm_name(tie),
+                );
+            }
+            inner.into_iter().map(f64::abs).collect()
+        }
         Tie::Elsewhere { step, tie } => {
             assert!(
                 lesson.id != *step,
@@ -8028,6 +8398,7 @@ fn tie_describe(tie: &Tie) -> String {
                     LedgerOp::Ratio => " divided by ",
                 })
         ),
+        Tie::Magnitude(tie) => format!("the magnitude of {}", tie_describe(tie)),
         Tie::Elsewhere { step, tie } => {
             format!("{}, read on the lesson `{step}`", tie_describe(tie))
         }
@@ -8081,6 +8452,7 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Label { .. } => "control label",
         Tie::Count(_) => "array length",
         Tie::Ocv(_) => "open-circuit voltage at a charge",
+        Tie::Magnitude(_) => "magnitude",
     }
 }
 
@@ -8099,8 +8471,9 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32) -> bool {
     let scale = 10f64.powi(pow10);
     match tie {
         // A wrapper compares the way the thing it wraps compares: `Elsewhere` changes
-        // WHICH lesson answers, never how exactly the answer has to match.
-        Tie::Elsewhere { tie, .. } => tie_agrees(tie, values, token, pow10),
+        // WHICH lesson answers and `Magnitude` drops a sign the sentence carries in its
+        // own characters, never how exactly the answer has to match.
+        Tie::Elsewhere { tie, .. } | Tie::Magnitude(tie) => tie_agrees(tie, values, token, pow10),
         Tie::Product(_)
         | Tie::Ratio(_)
         | Tie::Difference(_)
@@ -8828,6 +9201,7 @@ fn walkable_probe(step: &str, pack_from: &str, start: Start) -> Arm {
         instruction: String::new(),
         start,
         demand_a: None,
+        cc_cv_a: None,
         dt: None,
         bms: None,
         ambient_c: None,
@@ -9888,6 +10262,13 @@ fn n_ledger_arms(_f: &Facts) -> usize {
     /// and a duration read in hours, so the conversion never appears at the top of a rule.
     /// A count that missed it would have the file's own prose list one more arm than the
     /// count beside it, which is exactly the drift these tallies exist to catch.
+    ///
+    /// **[`Tie::Magnitude`] is in this list and its being here is unobservable today.**
+    /// Measured, not assumed: dropping it leaves the whole suite green, because the
+    /// `OnArm` it wraps and the `Setting` inside that are both some other rule's outermost
+    /// tie. It is written the correct way round rather than the reachable way round, on the
+    /// same terms as the environment split in [`run`] — the day a wrapper holds the only
+    /// use of what it wraps, a walker that stopped here would undercount silently.
     fn walk(tie: &'static Tie, used: &mut Vec<&'static str>) {
         let name = tie_arm_name(tie);
         if !used.contains(&name) {
@@ -9901,6 +10282,7 @@ fn n_ledger_arms(_f: &Facts) -> usize {
             }
             Tie::Hours(tie)
             | Tie::Ocv(tie)
+            | Tie::Magnitude(tie)
             | Tie::Elsewhere { tie, .. }
             | Tie::OnArm { tie, .. } => walk(tie, used),
             _ => {}
@@ -10023,7 +10405,7 @@ fn n_mark_arms_on_step_18(f: &Facts) -> usize {
 fn n_claims_on_step_18(f: &Facts) -> usize {
     f.claims_on("one-step-that-got-through")
 }
-fn n_ambient_arms(f: &Facts) -> usize {
+fn n_arms_on_step_11(f: &Facts) -> usize {
     f.arms
         .iter()
         .filter(|a| a.step == "what-protection-costs")
@@ -10303,8 +10685,8 @@ const TALLIES: &[Tally] = &[
     },
     Tally {
         prose: Prose::ClaimsFile,
-        phrase: "claims: {n}, on {w} ambient arms.",
-        of: &[n_claims_on_what_protection_costs, n_ambient_arms],
+        phrase: "{n} claims on {w} arms, and the step is the eleventh lesson",
+        of: &[n_claims_on_what_protection_costs, n_arms_on_step_11],
     },
 ];
 
@@ -10621,4 +11003,144 @@ fn every_count_beside_a_ledger_entry_is_derived() {
             ),
         }
     }
+}
+
+/// The `cc_cv_a` half of an arm's override checks, split out so its three refusals can be
+/// priced.
+///
+/// Every one of them is unreachable from `path-claims.toml` the moment it works — the one
+/// arm in the file that sets this field satisfies all three — which is the shape
+/// [`an_on_arm_may_only_wrap_a_setting`] established a fence has to be asked about directly
+/// rather than left as a paragraph. See [`an_arm_may_not_type_into_both_current_boxes`] and
+/// [`a_cc_cv_current_needs_a_cc_cv_step`].
+///
+/// `pack_lesson` rather than the declaring one, on the same terms as every other override
+/// check beside it: what the reader is holding when they type is the lesson the pack comes
+/// from.
+fn check_cc_cv_current(arm: &Arm, pack_lesson: &Lesson, instruction: &str) {
+    let Some(cc_cv_a) = arm.cc_cv_a else {
+        return;
+    };
+    let spelled = Arm::spelled(cc_cv_a);
+    assert!(
+        contains_number(instruction, &spelled),
+        "arm `{}` on step `{}` types {cc_cv_a} A into the CC-CV charge-current box, and \
+         `{spelled}` does not appear as a number in its instruction:\n  {}\n\
+         Same contract as the simple box. Note the sign: this box charges with a POSITIVE \
+         number, so an instruction that spells the current the page's other way round \
+         fails here — see `contains_number`.",
+        arm.name,
+        arm.step,
+        arm.instruction
+    );
+    assert!(
+        arm.demand_a.is_none(),
+        "arm `{}` on step `{}` sets both `demand_a` and `cc_cv_a`. Those are two different \
+         boxes and `applyDemandMode` shows one at a time, so no reader can type in both — \
+         and `arm_control_value` would have to prefer one, which is a preference nothing \
+         in the page justifies.",
+        arm.name,
+        arm.step
+    );
+    let Prog::CcCv { i, .. } = pack_lesson.demand else {
+        panic!(
+            "arm `{}` on step `{}` types into the CC-CV charge-current box, but the lesson \
+             its pack comes from (`{}`) is not on the CC-CV demand mode. That box is not \
+             on screen there. An arm that switched the mode would be a different \
+             trajectory and not an override — see `Arm::cc_cv_a`.",
+            arm.name, arm.step, pack_lesson.id
+        );
+    };
+    assert!(
+        (cc_cv_a - i).abs() > f64::EPSILON,
+        "arm `{}` on step `{}` declares a charge current of {cc_cv_a} A, which is what the \
+         lesson its pack comes from (`{}`) already asks for. An override that changes \
+         nothing is a control the reader was never asked to touch.",
+        arm.name,
+        arm.step,
+        pack_lesson.id
+    );
+}
+
+/// [`Tie::Magnitude`] refuses a value that is not already negative.
+///
+/// Unreachable from `path-claims.toml` for [`an_on_arm_may_only_wrap_a_setting`]'s reason —
+/// a rule is code, and the one `Magnitude` in the vocabulary wraps the ambient slider at
+/// -5 °C, which satisfies the fence. So the question is asked directly rather than left to
+/// a paragraph: on a positive value this wrapper is the tie it wraps with extra words, and
+/// a sentence accounted through it would be green for a reason the sentence does not state.
+///
+/// Step 11's own step-side ambient stands in for that positive value: the slider the lesson
+/// block arrives with is +25 °C, and it is the number the *arm* moves away from.
+#[test]
+#[should_panic(expected = "not a negative number")]
+fn a_magnitude_refuses_a_value_that_is_not_negative() {
+    let lessons = lessons();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "what-protection-costs")
+        .expect("step 11 is still in the path");
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let arms = arms();
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &arms,
+        derived: &[],
+    };
+    let tie = Tie::Magnitude(&Tie::Setting(Control::Ambient));
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
+/// An arm may not type into both current boxes.
+///
+/// `applyDemandMode` shows one field group at a time, so no reader can set both — and if
+/// one ever did, [`arm_control_value`] would have to prefer one, which is a preference
+/// nothing in the page justifies. Unreachable from the claims file the moment the fence
+/// works, which is why it is priced here.
+#[test]
+#[should_panic(expected = "two different boxes")]
+fn an_arm_may_not_type_into_both_current_boxes() {
+    let lessons = lessons();
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == "what-protection-costs")
+        .expect("step 11 is still in the path");
+    let mut arm = walkable_probe(&lesson.id, &lesson.id, Start::Restart);
+    arm.pack_from = None;
+    arm.instruction = "ask for 6 A".to_string();
+    arm.demand_a = Some(-2.0);
+    arm.cc_cv_a = Some(6.0);
+    check_cc_cv_current(&arm, lesson, &arm.instruction.clone());
+}
+
+/// And it may only type into the CC-CV box on a step that is on the CC-CV demand mode.
+///
+/// The box is not on screen anywhere else, so an arm setting it there would be describing a
+/// trajectory the page cannot reach — and [`arm_prog`]'s second match arm, which exists so a
+/// fourth demand program cannot silently drop the field, would hand back the step's own
+/// program and the arm would be the step under a second name.
+#[test]
+#[should_panic(expected = "not on the CC-CV demand mode")]
+fn a_cc_cv_current_needs_a_cc_cv_step() {
+    let lessons = lessons();
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == "circuit-repeats-itself")
+        .expect("step 12 is still in the path");
+    let mut arm = walkable_probe(&lesson.id, &lesson.id, Start::Restart);
+    arm.pack_from = None;
+    arm.instruction = "ask for 6 A".to_string();
+    arm.cc_cv_a = Some(6.0);
+    check_cc_cv_current(&arm, lesson, &arm.instruction.clone());
 }
