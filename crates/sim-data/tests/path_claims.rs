@@ -84,7 +84,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is fifteen steps and 275 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is sixteen steps and 313 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -182,12 +182,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the nine steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the eight steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed fifteen whole steps — but only fifteen. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other nine have their claimed sentences
+//!   has now closed sixteen whole steps — but only sixteen. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other eight have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all nine, one line each, so this list cannot go quietly out of date.
+//!   names all eight, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -6007,8 +6007,171 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ],
         pow10: 0,
     },
+    // Step 15 — the single-particle half of the pair, scanned whole a slice after its twin
+    // and for the opposite reason: step 16 was expensive because it quotes its neighbour
+    // constantly, and this one is cheap because its neighbour already made it quotable.
+    // Thirty-eight numerals, nineteen of them inside the three sentences its own claims
+    // quote. Of the nineteen left, eleven of the rules below carry them — nine constants and
+    // controls, three ordinals, three pieces of arithmetic and four quotations. Only one arm
+    // needed anything of another file: `v_at` on step 14 was three readings under one name,
+    // so quoting the floor from here meant tagging them. See
+    // `docs/plans/path-ledger-spm-step.md`.
+    LedgerRule {
+        // The demand box and the rate it works out to, in one breath. The rate is arithmetic
+        // and not a constant — this cell's nameplate is 5.153198 Ah and three of them is the
+        // box exactly — which is what makes the sentence fail if either half moves.
+        phrase: "`Current` at {n} A \u{2014} {n} C for this cell",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Four numbers in one sentence and one rule for all four, because the sentence is a
+        // list of things that have NOT changed and a phrase covering part of it would be
+        // generous exactly where the sentence is specific. The part number is read the way
+        // step 12 reads it; the two ordinals are where those lessons sit in `const LESSONS`,
+        // so inserting a step ahead of either turns this sentence red.
+        phrase: "Same LG M{n}, same single-particle model as steps {n} and {n}, same {n} \
+                 shells",
+        ties: &[
+            Tie::Name {
+                field: "meta.name",
+                prefix: "M",
+            },
+            Tie::Ordinal("particle-remembers"),
+            Tie::Ordinal("three-times-the-current"),
+            Tie::Scenario("pack.cell_model.Spm.shells"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What this pack starts at against what the two steps before it start at. Steps 13
+        // and 14 are both `pulse_train_spm.toml`, so the `Elsewhere` could name either and
+        // names the first — the sentence's own "steps 13 and 14" is the reason both are
+        // right, and if that file's charge ever moved the sentence would be wrong about both.
+        phrase: "the starting charge ({n} % rather than {n} %)",
+        ties: &[
+            Tie::Scenario("pack.initial_soc"),
+            Tie::Elsewhere {
+                step: "particle-remembers",
+                tie: &Tie::Scenario("pack.initial_soc"),
+            },
+        ],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The cut-off, which is the chemistry's own lower limit rather than anything this
+        // scenario chooses — no BMS is built here, so nothing enforces it and the number is
+        // the reader's mark rather than the engine's.
+        phrase: "it crosses the {n} V cut-off",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same shape as step 16's amp-hour sentence and deliberately the same ties: the
+        // box, this step's own crossing claim, and the product of the two in hours. The
+        // sentence used to write the box as `15.46`, which a constant tie compares exactly
+        // and would have refused; it prints the number whole now, for the reason step 16's
+        // `5.15` and `15.46` do. An arm that accepts rounded constants still does not exist.
+        phrase: "{n} A for {n} s is **{n} A\u{b7}h**",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Quoted {
+                step: "looks-fine-from-outside",
+                arm: Some("carries on"),
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+            Tie::Product(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Hours(&Tie::Quoted {
+                    step: "looks-fine-from-outside",
+                    arm: Some("carries on"),
+                    quantity: "t_at_v_below:2.5",
+                    states: QuotedAs::Same,
+                }),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What fraction of the nameplate that is — the same product again, over the capacity.
+        // A separate rule from the sentence above it because a percentage and a voltage
+        // cannot share a `pow10`, which is the seam this table splits on throughout.
+        phrase: "\u{2014} {n} % of this cell's",
+        ties: &[Tie::Ratio(&[
+            Tie::Product(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Hours(&Tie::Quoted {
+                    step: "looks-fine-from-outside",
+                    arm: Some("carries on"),
+                    quantity: "t_at_v_below:2.5",
+                    states: QuotedAs::Same,
+                }),
+            ]),
+            Tie::Chemistry("cell.capacity_ah"),
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The nameplate itself, the third number of that same clause.
+        phrase: "of this cell's {n}, in the eighteen minutes",
+        ties: &[Tie::Chemistry("cell.capacity_ah")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The floor, quoted from the step that measured it rather than re-measured here —
+        // reaching it costs eight more marks of simulation on an arm that belongs to step 14.
+        // The sentence gives one decimal where that step gives four, which is what the
+        // quotation arm's rounding is for; and the ordinal beside it is the same step, named
+        // twice in one sentence for two different reasons.
+        phrase: "it eventually pins near {n} V, which is the floor step {n} mentions",
+        ties: &[
+            Tie::Quoted {
+                step: "three-times-the-current",
+                arm: Some("past the clamp"),
+                quantity: "v_at:12600",
+                states: QuotedAs::Same,
+            },
+            Tie::Ordinal("three-times-the-current"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The mark, in the closing instruction to hold onto what it reads.
+        phrase: "Hold onto the {n} s reading",
+        ties: &[Tie::Setting(Control::Until)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // And the two readings themselves, both of them this step's own claims restated in a
+        // sentence no claim quotes — the case `Tie::Quoted` allows a step to make of itself.
+        phrase: "s reading \u{2014} {n} V,",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            arm: None,
+            quantity: "v_at:500",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "V, {n} % \u{2014} because the next step",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            arm: None,
+            quantity: "soc_at:500",
+            states: QuotedAs::Same,
+        }],
+        pow10: 2,
+    },
     // Step 16 — the Doyle-Fuller-Newman half of the pair, and the densest step in the path:
-    // 40 numerals, of which 12 are claimed on its own pack. Ten of the rest are readings the
+    // 38 numerals, of which 15 are claimed on its own pack. Nine of the rest are readings the
     // step NEXT DOOR measured, quoted rather than re-measured, because a claim is checked by
     // running its own step's scenario and this step's whole argument is about the other one.
     // Four more are readings of its OWN pack that a claim elsewhere in the step decides —

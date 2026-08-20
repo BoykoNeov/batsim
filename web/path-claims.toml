@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Fifteen steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Sixteen steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -290,7 +290,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — fifteen steps of the twenty-four so far.
+# of this file — sixteen steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -3159,8 +3159,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: fifteen
-# steps, 275 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: sixteen
+# steps, 313 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -5960,7 +5960,7 @@ values could not catch even if one existed. The sentence that replaced it is now
 [[claim]]
 step = "three-times-the-current"
 literal = "the particle is down to **0.61 V**"
-quantity = "v_at"
+quantity = "v_at:11280"
 arm = "past the clamp"
 value = 0.612147
 tol = 5e-3
@@ -5982,7 +5982,7 @@ Not quoted: the row prints three decimals and the sentence gives two.
 [[claim]]
 step = "three-times-the-current"
 literal = "it pins at **0.3095 V** and stays there"
-quantity = "v_at"
+quantity = "v_at:12600"
 arm = "past the clamp"
 value = 0.309467
 tol = 5e-5
@@ -6005,7 +6005,7 @@ rather than about the readout, so this claim is not `quoted`.
 [[claim]]
 step = "three-times-the-current"
 literal = "it pins at **0.3095 V** and stays there"
-quantity = "v_at"
+quantity = "v_at:13260"
 arm = "past the clamp"
 value = 0.309467
 tol = 5e-5
@@ -6053,7 +6053,7 @@ steps = [
                      # DOOR measured. Ten of the nineteen are claimed measurements, and
                      # not one of the other nine is a measurement at all, which is why
                      # this step needed no new claim
-  "the-electrolyte-starves", # 38: the densest step in the path by a wide margin. Fourteen
+  "the-electrolyte-starves", # 38: the densest step in the path by a wide margin. Fifteen
                      # are claimed on its own packs; nine are readings the twin measured, or
                      # arithmetic over them; six more are worked out from this step's own
                      # claims, in sentences no claim quotes; and the last eight are the two
@@ -6112,8 +6112,20 @@ steps = [
                      # of those are an ADDRESS — the cells that cross empty first and
                      # last, which needed no new arm because a coordinate is a
                      # measurement of the run
+  "looks-fine-from-outside", # 38, and they divide exactly in half: nineteen sit inside the
+                     # three sentences this step's thirteen claims already quote, and
+                     # nineteen did not. Of those nineteen, nine are constants and controls
+                     # — the demand box twice, the part number, the shell count, the charge
+                     # it starts at, the charge steps 13 and 14 start at, the cut-off, the
+                     # nameplate and the mark. Three are ordinals pointing next door, three
+                     # are arithmetic over the others — the rate the box works out to, the
+                     # amp-hours it delivers, and what fraction of the nameplate that is —
+                     # and four are quotations: three of this step's own claims in sentences
+                     # no claim quotes, and the floor step 14 measured, which cost that step
+                     # its three untagged voltages. A quotation needs an address and `v_at`
+                     # there was three readings under one name
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: nine of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: eight of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
@@ -6124,7 +6136,6 @@ unledgered = [
   "three-times-the-current",        # claims: 6, on one tooth and the floor below empty.
                                     # Its ratios need step 13's run; its circuit figures a
                                     # second scenario file
-  "looks-fine-from-outside",        # claims: 13, on both sides of one continuation
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
   "one-step-that-got-through",      # claims: 9, on six arms. Its headline sentence is
