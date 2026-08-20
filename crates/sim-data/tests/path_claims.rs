@@ -84,7 +84,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty-one steps and 499 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty-one steps and 500 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -8698,9 +8698,26 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
-        // How much smaller the refilled cell is: the complement of its own capacity health
-        // at the mark, which is why the two amp-hour figures differ at all.
-        phrase: "refilled is {n} % smaller",
+        // What FRACTION of the charge came back, read off the sentence's own two amp-hour
+        // figures. It is here because the sentence used to offer the 4.8 % below as the
+        // reason for a gap that is half that size, which is the "the prose's own arithmetic
+        // does not close" defect `docs/plans/path-ledger-leg-that-is-not-there.md` records.
+        // Printing the ratio is what makes the next clause necessary and checkable.
+        phrase: "took out — **{n} %** of it",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Ratio,
+            operands: &[Operand::Sibling("0.2128"), Operand::Sibling("0.2182")],
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // How much smaller the refilled cell ENDS UP: the complement of its own capacity
+        // health at the mark. It is the direction of the effect and not its magnitude - the
+        // shrink accrued while the charge was still coming out, so the charge-out integral
+        // was billed against an average health well above this one, and the gap above is
+        // 2.5 % against this 4.8. The sentence says so now instead of leaving the reader to
+        // multiply.
+        phrase: "Not by the whole **{n} %** it is down at the mark",
         ties: &[Tie::Quoted {
             step: "what-it-cost",
             arm: None,

@@ -177,9 +177,15 @@ dozen seconds of *simulation* behind. That is not hypothetical and not calculate
 browser walk below caught the row reading **9.438 pts** at the instant the run stopped at
 its mark and **9.704 pts** on the next sample after the pause. (A quarter-second is the
 *throttle*, so it is the bound on how long the row can stay wrong once nothing is moving —
-not a measured interval; the driver's own gap was longer.) Both numbers are in the step's prose,
-because the useful lesson is that the lag exists and closes on a pause, not that it does not
-exist. `soh cap` and `soh res` have no such lag.
+not a measured interval; the driver's own gap was longer.) The useful lesson is that the lag
+exists and closes on a pause, not that it does not exist.
+
+> **Only the second number is in the step's prose now**, and this paragraph is why. `9.438`
+> is what one browser run happened to catch: it is neither the throttle bound — the sentence
+> above says so — nor a fact about the simulation, so nothing in the tree decides it and the
+> ledger could not account for it. It became *"that row was still behind"* when step 21 was
+> scanned (`docs/plans/path-ledger-what-it-cost.md`). `9.704` stayed, because it is the
+> mark's own claimed reading. `soh cap` and `soh res` have no such lag.
 
 This applies to step 20's mid-run deficit figures too, which are engine-true and were
 measured that way. They are not falsified — the step never promises the row will show them

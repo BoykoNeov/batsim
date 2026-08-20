@@ -1,11 +1,12 @@
 # The step with a control arm, ledgered
 
-`what-it-cost` is scanned whole: **twenty-one of the twenty-four steps, 499 numerals**.
-Fifty-seven of them are this step's, and thirty-three had nothing accounting for them when
-the scan was pointed here. Four became claims, twenty-eight became vocabulary rules, and one
-left the page.
+`what-it-cost` is scanned whole: **twenty-one of the twenty-four steps, 500 numerals**.
+Fifty-eight of them are this step's, and thirty-three had nothing accounting for them when
+the scan was pointed here. Four became claims, twenty-nine are accounted by rule, one left
+the page, and one arrived — a ratio a sentence had been leaving to the reader to work out
+wrongly.
 
-It cost **one new kind of arm**, four claims, eighteen vocabulary rules, one new word
+It cost **one new kind of arm**, four claims, nineteen vocabulary rules, one new word
 numeral, and no new tie — the taxonomy's twenty-three arms are untouched. It also cost an
 hour to a scratch harness that captured its baseline from a tree an earlier scratch harness
 had left half-edited, which is the most transferable thing in this document and is written
@@ -78,8 +79,8 @@ and read it; this one is quoted by the prose instead.
 
 ## The arithmetic, and the trap in it
 
-Fourteen of the twenty-eight rule-accounted numerals are arithmetic the sentences do in front
-of the reader. Three of them are worth stating.
+Fifteen of the twenty-nine rule-accounted numerals are arithmetic the sentences do in front
+of the reader. Three of them are worth stating, and a fourth is what no check could see.
 
 **The `1.5` is the trap.** The sentence says the sag divides into *"3.2 of it from the instant
 resistance and 1.5 from the slow one"*, in millivolts. `aging.r_growth_per_capacity_loss` is
@@ -108,6 +109,42 @@ per amp-hour —
 
 — which ties the sentence to the control arm as well, and makes *"even the arithmetic is
 exact"* exact about a quantity the engine never prints.
+
+## The number the ledger was structurally blind to
+
+The step's closing arithmetic said:
+
+> it took **0.2128 A·h** to put back what **0.2182 A·h** took out, less in than came out,
+> because the cell being refilled is **4.8 %** smaller than the one that was emptied.
+
+Every numeral there is tied and every tie agrees. The gap between the two amp-hour figures
+is **2.5 %**. The sentence offers 4.8 as its reason, and `0.2182 × 0.952` is `0.2077`, not
+`0.2128`.
+
+Both numbers are true. `4.8 %` is exactly how much smaller the cell is at the mark. What is
+wrong is the "because": **the shrink accrued while the charge was still coming out**, so the
+charge-out integral was billed against an average health well above the final one, and only
+about half the shrink was ever in place to discount anything. Measured: the gap is 0.511 of
+the shrink, and the cell at the knee was 5.06 % larger than the cell at the mark.
+
+The ledger cannot see this and never could. It accounts each numeral against a source and
+never reads the causal link *between* numerals in one sentence — the same structural
+blindness `docs/plans/path-ledger-leg-that-is-not-there.md` recorded when a sentence's own
+arithmetic named `R0` alone and the RC pair was a third of the drop. Two slices, two
+sentences, one shape: **prose that hands a reader a multiplication which does not close, with
+every number in it individually correct.**
+
+Repaired by printing the ratio and saying what the 4.8 is:
+
+> it took **0.2128 A·h** to put back what **0.2182 A·h** took out — **97.5 %** of it —
+> because the cell being refilled is smaller than the one that was emptied. Not by the whole
+> **4.8 %** it is down at the mark, though: that shrink accrued while the charge was coming
+> out, so on average only about half of it was ever in place to discount anything.
+
+`97.5` is a `Tie::Derived` ratio of the sentence's own two amp-hour figures, so the step now
+prints the number a reader would otherwise have got wrong, and the ledger holds it to the two
+figures beside it. It is the one numeral in this step that was *added* rather than accounted,
+and it is why the step went in at 58, closed at 57, and ends at 58 again.
 
 ## `pow10` belongs to the rule, and one rule had to be two
 
@@ -204,7 +241,7 @@ test I happened to run.
 
 ## Where the ledger stands
 
-Twenty-one of twenty-four steps scanned whole, 499 numerals, 193 vocabulary rules, and the
+Twenty-one of twenty-four steps scanned whole, 500 numerals, 194 vocabulary rules, and the
 same twenty-three arms in the taxonomy. Twenty `[[arm]]` blocks, one of which is a
 counterfactual. **Three steps left.**
 
@@ -216,7 +253,7 @@ counterfactual. **Three steps left.**
 
 Those counts are the previous slice's and were **not** re-measured here. That is a deliberate
 statement rather than an omission: this slice changed nothing in those three steps' prose, but
-it did add sixteen rules, and a rule's phrase can in principle match a sentence in a step it
+it did add nineteen rules, and a rule's phrase can in principle match a sentence in a step it
 was not written for. The next slice should point the scan at its own target and read the
 number, exactly as this one did — the recorded sizing was right twice running, and it has been
 wrong before by 13×.

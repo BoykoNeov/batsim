@@ -3697,7 +3697,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # claimed — all of them.
 #
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-one
-# steps, 499 numerals, and no longer all of them scenario constants. This count is NOT
+# steps, 500 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -7081,28 +7081,32 @@ steps = [
                      # cells are charged to, which is a fact about the world that no file
                      # in this tree decides — and one sentence was rewritten, because its
                      # arithmetic named R0 alone and the RC pair is a third of the drop
-  "what-it-cost",    # 57: the step that says what the excursion COST, and the first
+  "what-it-cost",    # 58: the step that says what the excursion COST, and the first
                      # ledgered step whose prose runs on a trajectory NO READER CAN
-                     # PRODUCE. It went in at 58 and closes at 57 - re-measure AFTER the
-                     # edits, always. Thirty-three of the fifty-eight were unaccounted,
+                     # PRODUCE. It went in at 58, closed at 57 when a number the ledger
+                     # could not account for left the page, and came back to 58 when a
+                     # sentence had to print a ratio it had been leaving to the reader -
+                     # re-measure AFTER the edits, always, and after the SECOND round of
+                     # them. Thirty-three of the original fifty-eight were unaccounted,
                      # which made it the second cheapest of the four that were left and the
                      # one the previous slice handed off to. FOUR needed claims: the
                      # terminal's crossing of zero, the resistance health at the knee, the
                      # flat 100 both traces leave on the state-of-health plot, and the
                      # CONTROL - the same run with the over-discharge coefficient set to
                      # zero, which cost a new kind of arm and is what turns this step's
-                     # headline from an inference into a subtraction. Of the twenty-eight a
+                     # headline from an inference into a subtraction. Of the twenty-nine a
                      # rule accounts for, ten are constants and controls: the charge it
                      # starts at, the two resistances and their sum in three separate
                      # sentences, the `0` of `R0`, the ambient the resistance table is read
                      # at, and the demand box on each of this step's two legs. Four are
                      # STEP 20'S, quoted rather than re-measured - its floor, printed three
                      # times, and its demand box beside it, which is 2 A on both steps and
-                     # would have been right off the wrong field. The last fourteen are
+                     # would have been right off the wrong field. The last fifteen are
                      # arithmetic the sentences do in front of the reader: five products,
                      # the two differences that make the attribution, the amp-hours in and
-                     # the amp-hours out, the floor times the resistance health, and four
-                     # sentences quoting this step's own claims. ONE number left the page -
+                     # the amp-hours out and the ratio between them, the floor times the
+                     # resistance health, and four sentences quoting this step's own claims.
+                     # ONE number left the page -
                      # what one browser run happened to catch on a throttled row, which is
                      # a fact about a wall clock and not about the simulation
   "past-empty",      # 41, of which 23 sit inside a claimed sentence and 18 are a rule's.
