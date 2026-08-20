@@ -256,3 +256,31 @@ Counting them together would hide that.
 step.** That sentence was written from the shape of the phrases rather than from a run, and the
 sweep falsified it — which is the same defect, in this file, as the two the slice found
 elsewhere.
+
+---
+
+> **Correction, 2026-08-20 — the dependency this document recorded was already gone when it
+> was written, and two later slices carried it forward as an open hole.**
+>
+> The paragraph above says of the rewritten sentence: *"`what-protection-costs` is the
+> eleventh lesson and the last step before this one where protection derates a demand. The
+> sentence rewritten above now depends on that being true, by inspection rather than by
+> assertion."* `docs/plans/path-ledger-what-protection-costs.md` repeated it, and
+> `docs/plans/path-ledger-leg-that-is-not-there.md` closed with *"the hole the last slice
+> opened is still open"*.
+>
+> Read against the page, it is not a hole. Step 18's third paragraph is
+>
+> > A derate clamps a demand; a charge inhibit stops one. This short is neither, because
+> > there is no demand at all — and that is what the contactor is for.
+>
+> and its `expect` names no other lesson's protection at all. The sentence *defines* both
+> mechanisms and then says this fault is neither. It makes no statement about any other
+> step, so no other step can falsify it — which is exactly the property this document says
+> the rewrite was for: *"It carries no count, claims nothing about any other lesson."* The
+> note recording a residual dependency was describing the draft that had just been deleted.
+>
+> The lesson is one this file has recorded before in the other direction: **a note about why
+> something is still open outlives the thing that closed it.** The cost here was three
+> slices carrying a to-do that nothing needed, and one slice's budget nearly spent building
+> a check for a sentence that did not want one.

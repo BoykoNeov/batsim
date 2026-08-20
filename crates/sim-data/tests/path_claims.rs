@@ -84,7 +84,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is nineteen steps and 401 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty steps and 442 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -182,12 +182,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the five steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the four steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed nineteen whole steps — but only nineteen. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other five have their claimed sentences
+//!   has now closed twenty whole steps — but only twenty. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other four have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all five, one line each, so this list cannot go quietly out of date.
+//!   names all four, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -1929,7 +1929,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 193 of 229 claims.
+    /// number's last printed place. The default shape: 198 of 237 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1940,12 +1940,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 31 of 229.
+    /// the number was always right and only the declaration was wrong. 33 of 237.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 5 of 229, every
+    /// the engine either hits the claimed step or misses by a whole one. 6 of 237, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1985,7 +1985,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 208 of 229, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 214 of 237, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -3157,6 +3157,49 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
     // chemistry file, and a claim that took it from there would be asserting the crossing
     // of whatever that field says rather than of the number its own sentence prints. The
     // day the `Chemistry` accounting arm lands, tying the two together is that arm's job.
+    // When the debt falls back through a stated depth, **on the way down**.
+    //
+    // The threshold is the sentence's own number and not a field, on `t_at_v_below`'s terms:
+    // step 20 says the voltage starts climbing "when the deficit re-enters the 2-point ramp",
+    // and the 2 there is what the ledger ties to the chemistry separately. A quantity that
+    // read `[reversal]` itself would be asserting the crossing of whatever that file says.
+    //
+    // **After the peak, which is what makes it the way down.** A charge leg's rows include
+    // everything before the mark, so the debt crosses every depth twice — once while it is
+    // being run up and once while it is being repaid — and a first-match search would answer
+    // with the outward crossing and look right. The peak is read rather than assumed to be
+    // the mark: an arm that kept discharging past the mark would move it, and this should
+    // follow the run.
+    if let Some(pts) = quantity.strip_prefix("deficit_falls_below_pts:") {
+        let pts: f64 = pts
+            .parse()
+            .unwrap_or_else(|_| panic!("`{pts}` is not a depth in points"));
+        let peak = run
+            .rows
+            .iter()
+            .position(|r| {
+                r.deficit_max
+                    == run
+                        .rows
+                        .iter()
+                        .map(|r| r.deficit_max)
+                        .fold(f64::MIN, f64::max)
+            })
+            .expect("a run has rows, so it has a deepest one");
+        return run.rows[peak..]
+            .iter()
+            .find(|r| r.deficit_max * 100.0 <= pts)
+            .unwrap_or_else(|| {
+                panic!(
+                    "the debt peaks at {:.4} points at t = {} s and is still {:.4} at                      t = {} s, so it never comes back through {pts}. The leg is too short,                      or nothing is repaying it.",
+                    run.rows[peak].deficit_max * 100.0,
+                    run.rows[peak].t_s,
+                    run.rows.last().expect("rows").deficit_max * 100.0,
+                    run.rows.last().expect("rows").t_s,
+                )
+            })
+            .t_s;
+    }
     if let Some(volts) = quantity.strip_prefix("t_at_v_below:") {
         let volts: f64 = volts
             .parse()
@@ -3402,6 +3445,48 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
                  of the run can change under a green claim."
             );
             ends - measure("deficit_leaves_zero_s", run, at_s, probe, mark_s)
+        }
+        // The first instant the trace reaches the floor it never leaves — where the
+        // collapse below empty *stops*, which is what step 20's "the fall simply stops"
+        // names and what the 83 seconds that sentence's neighbour prints is measured to.
+        //
+        // Defined off the run's own minimum rather than off `[reversal].floor_v`, for the
+        // reason `t_at_v_below` gives about taking its threshold from the chemistry file: a
+        // quantity that read the declared floor would be asserting the crossing of whatever
+        // that field says rather than the flattening a reader is watching. The terminal
+        // voltage is the open-circuit floor minus `I·R`, so the two are not the same number
+        // anyway — 0 V declared, −0.064 V on the trace.
+        //
+        // **Two fences, because a minimum has neither an instant nor a duration of its own.**
+        // The row must not be the last one, or "stays there for as long as you care to run"
+        // would be a claim about a run that ended; and the voltage must still be within a
+        // microvolt of it at the end, which is what makes "the fall stopped" different from
+        // "the fall paused here".
+        "v_floor_s" => {
+            let floor = run
+                .rows
+                .iter()
+                .map(|r| r.telemetry.v_terminal)
+                .fold(f64::MAX, f64::min);
+            let last = run.rows.last().expect("rows");
+            let at = run
+                .rows
+                .iter()
+                .find(|r| (r.telemetry.v_terminal - floor).abs() < 1e-9)
+                .expect("the minimum is attained by the row it was taken from");
+            assert!(
+                at.t_s < last.t_s,
+                "the run's lowest terminal voltage is on its final row, at t = {} s. A                  floor is a voltage the trace stays at, and a run that stops on it cannot                  say whether it would have.",
+                at.t_s,
+            );
+            assert!(
+                (last.telemetry.v_terminal - floor).abs() < 1e-6,
+                "the trace reaches {floor:.6} V at t = {} s and is at {:.6} V by t = {} s,                  so it did not stay there. This quantity is the instant the fall STOPS; a                  run that turns round again has a minimum but no floor.",
+                at.t_s,
+                last.telemetry.v_terminal,
+                last.t_s,
+            );
+            at.t_s
         }
         // When the debt is paid off: the first step at zero deficit after a step that had
         // one. Measured rather than assumed because it is the instant two of this path's
@@ -4294,8 +4379,14 @@ fn every_tolerance_follows_its_declared_rule() {
                     c.spells,
                     c.spells_pow10
                 );
-                let grid_quantity =
-                    c.quantity.starts_with("flag_first_s:") || c.quantity == "deficit_zero_s";
+                // The four names the engine answers on the step grid, and the list is
+                // deliberately a list: every one of them returns the `t_s` of a ROW, so
+                // half a step is the tightest bound that means anything, and a quantity
+                // whose value is interpolated or continuous has no business here.
+                let grid_quantity = c.quantity.starts_with("flag_first_s:")
+                    || c.quantity.starts_with("deficit_falls_below_pts:")
+                    || c.quantity == "deficit_zero_s"
+                    || c.quantity == "v_floor_s";
                 assert!(
                     grid_quantity,
                     "claim `{}` on step `{}` is marked `grid`, and `{}` is not a quantity \
@@ -7944,6 +8035,219 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Setting(Control::DemandValue)],
         pow10: 0,
     },
+    // Step 20 - what a cell does when you keep pulling past empty. When the scan was pointed
+    // at it, 27 of its 42 numerals were unaccounted: the fewest of the five steps that were
+    // left, and the shape is the reason. Half of them are constants of ONE chemistry file,
+    // whose `[reversal]` section no earlier ledgered step reads at all. The step runs on two
+    // trajectories - its own to the mark, and the charge leg the reader types `-2` into - so
+    // two of the rules below read a control off the ARM rather than off the step. (It ends
+    // at 41 numerals, and the difference is this slice's own: the prose lost a pair of
+    // volts no file decides and gained an amp-hour total. Re-measure AFTER an edit; the
+    // count beside the ledger entry is derived and checked.)
+    LedgerRule {
+        // Where the cell comes from and what it is asked for, in the sentence that opens the
+        // step. Step 1's file and step 1's current, which is the whole comparison: this is
+        // the first run in the path that does not stop at the knee.
+        phrase: "The cell from step {n}, the same {n} A",
+        ties: &[
+            Tie::Ordinal("bare-curve"),
+            Tie::Setting(Control::DemandValue),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The interval the charge state is confined to, which is the sentence's own reason
+        // for carrying a deficit beside it. Both ends off the chemistry's charge column -
+        // the table the next clause says stays indexable - and each read EXACTLY: the low
+        // end is that column's first node, the high end is its span. A `Tie::Member` would
+        // have accounted either token against any node of the table, so `[0, 0.4]` would
+        // have gone green.
+        phrase: "confined to `[{n}, {n}]`",
+        ties: &[Tie::Chemistry("ocv.soc.0"), Tie::Span("ocv.soc.*")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The low end again, in the sentence that says what the clamp buys. Same field, two
+        // rules, on step 6's terms.
+        phrase: "`soc` stays pinned at {n}",
+        ties: &[Tie::Chemistry("ocv.soc.0")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How long the whole event takes: the instant the fall stops, less the knee. Neither
+        // number is in any file and both are this step's own claims, which is what a
+        // difference of two quotations is for - and the lesson block's own comment sizes the
+        // playback speed off this same 83 s, so a trajectory that moved would leave the
+        // comment stale with the prose.
+        phrase: "happens in the {n} seconds after the knee",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "v_floor_s",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The demand box, in the clause that says why the debt keeps growing after the
+        // voltage stops moving.
+        phrase: "because {n} A is still leaving",
+        ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The cell's format, inside the chemistry file's own name. A part number in the same
+        // position as step 12's `M50` and step 1's `R0`, and anchored on `meta.id` rather
+        // than on the prose's filename: the two agree by construction, since `sim-data`
+        // loads `chemistries/<id>.toml`.
+        phrase: "placeholders in `lfp_{n}_generic.toml`",
+        ties: &[Tie::Name {
+            field: "meta.id",
+            prefix: "lfp_",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How fast the open-circuit voltage falls below empty - the first `[reversal]` field
+        // any ledgered step has read.
+        phrase: "the fall is `v_per_soc = {n}`",
+        ties: &[Tie::Chemistry("reversal.v_per_soc")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // And how wide that fall is, which is the arithmetic the chemistry file's own
+        // provenance comment states: the empty-endpoint open-circuit voltage over the rate
+        // it falls at. Not `cell.v_min`, though the two spell 2.00 on this chemistry - the
+        // ramp starts where the OCV TABLE ends, and a file whose declared cutoff sat above
+        // its own curve would move one and not the other.
+        phrase: "collapses over {n} % of its capacity",
+        ties: &[Tie::Ratio(&[
+            Tie::Difference(&[
+                Tie::Chemistry("ocv.volts.0"),
+                Tie::Chemistry("reversal.floor_v"),
+            ]),
+            Tie::Chemistry("reversal.v_per_soc"),
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // Where the fall stops, declared rather than measured - which is what the sentence
+        // says about it.
+        phrase: "the floor is `floor_v = {n}`",
+        ties: &[Tie::Chemistry("reversal.floor_v")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What the reader types to start the second half of the step. The minus is in the
+        // phrase and the tie takes the magnitude, on step 11's terms - and the phrase runs
+        // to "which charges at the same rate" because step 21 tells a reader to put the same
+        // box to the same `-2`, and both steps declare a `charge leg`.
+        phrase: "put the demand box to **-{n}**, which charges at the same rate",
+        ties: &[Tie::Magnitude(&Tie::OnArm {
+            arm: "charge leg",
+            tie: &Tie::Setting(Control::DemandValue),
+        })],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same width as the `2 %` above, named as a depth of debt rather than as a
+        // fraction of capacity, because that is the axis the sentence is on. Two rules for
+        // one arithmetic, in the two sentences that print it.
+        phrase: "re-enters the {n}-point ramp",
+        ties: &[Tie::Ratio(&[
+            Tie::Difference(&[
+                Tie::Chemistry("ocv.volts.0"),
+                Tie::Chemistry("reversal.floor_v"),
+            ]),
+            Tie::Chemistry("reversal.v_per_soc"),
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // THE SENTENCE THIS SLICE REWROTE, and the two amp-hour figures are not the same
+        // number. `254 s at 2 A` is 0.1411 A*h - the duration the debt takes to clear, times
+        // the current the reader typed. What came out below empty is 0.1410 - the debt at
+        // the mark, times the nameplate. They differ by one in the last place because the
+        // clock is on a half-second grid and the debt really clears 253.79 s in, and the
+        // sentence used to print the second while showing the arithmetic for the first.
+        //
+        // Four slots, and every one of them is read somewhere else: the duration is this
+        // step's own claim less its mark, the current is the arm's box, and the two totals
+        // are the products those make with the hour and with the cell.
+        phrase: "And {n} s at {n} A is {n} A\u{b7}h",
+        ties: &[
+            Tie::Difference(&[
+                Tie::Quoted {
+                    step: "past-empty",
+                    arm: Some("charge leg"),
+                    quantity: "deficit_zero_s",
+                    states: QuotedAs::Same,
+                },
+                Tie::Setting(Control::Until),
+            ]),
+            Tie::Magnitude(&Tie::OnArm {
+                arm: "charge leg",
+                tie: &Tie::Setting(Control::DemandValue),
+            }),
+            Tie::Product(&[
+                Tie::Hours(&Tie::Difference(&[
+                    Tie::Quoted {
+                        step: "past-empty",
+                        arm: Some("charge leg"),
+                        quantity: "deficit_zero_s",
+                        states: QuotedAs::Same,
+                    },
+                    Tie::Setting(Control::Until),
+                ])),
+                Tie::Magnitude(&Tie::OnArm {
+                    arm: "charge leg",
+                    tie: &Tie::Setting(Control::DemandValue),
+                }),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The other half of that sentence, and a SECOND rule rather than a fourth slot on
+        // the one above: `pow10` belongs to the rule, and these two products are in
+        // different units. The debt is in points, so the cell's nameplate times it is a
+        // hundred times an amp-hour figure; the duration times the current is already one.
+        // A rule spanning both would have to scale them alike and could only be right about
+        // one.
+        phrase: "against the {n} A\u{b7}h that came out below empty",
+        ties: &[Tie::Product(&[
+            Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "deficit_pts_at:4400",
+                states: QuotedAs::Same,
+            },
+            Tie::Chemistry("cell.capacity_ah"),
+        ])],
+        pow10: -2,
+    },
+    LedgerRule {
+        // What the engine used to do, and the number is this step's own knee: with no
+        // deficit to fall through, an empty cell held the voltage it emptied at forever.
+        // Quoted rather than re-measured, because the run that would produce it does not
+        // exist any more - which is the point of the sentence.
+        phrase: "a flat line at {n} V that never ended",
+        ties: &[Tie::Quoted {
+            step: "past-empty",
+            arm: None,
+            quantity: "v_at:4146.5",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -11353,4 +11657,86 @@ fn a_cc_cv_current_needs_a_cc_cv_step() {
     arm.instruction = "ask for 6 A".to_string();
     arm.cc_cv_a = Some(6.0);
     check_cc_cv_current(&arm, lesson, &arm.instruction.clone());
+}
+
+/// `v_floor_s` refuses a run that STOPS on its lowest row.
+///
+/// Unreachable from `path-claims.toml` for [`a_magnitude_refuses_a_value_that_is_not_negative`]'s
+/// reason: the one claim that reads this quantity is on step 20, whose run carries 340 more
+/// rows of flat trace after the floor arrives. So the question is asked directly, with the
+/// step's own run truncated at the row the fence is about — a run that would answer 4229.5 s
+/// exactly as the real one does, while having no evidence at all that the fall had stopped
+/// rather than paused.
+///
+/// **The `expected` fragment belongs to this fence and to nothing else in the file**, which is
+/// the trap `docs/plans/path-instant-tag.md` recorded: a `should_panic` satisfied by a phrase
+/// the test itself supplies — a lookup's own `expect`, say — passes while proving nothing.
+#[test]
+#[should_panic(expected = "is on its final row")]
+fn a_floor_refuses_a_run_that_ends_on_it() {
+    let lessons = lessons();
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == "past-empty")
+        .expect("step 20 is still in the path");
+    let mut run = run(lesson, None, &[], &lessons);
+    let floor = run
+        .rows
+        .iter()
+        .map(|r| r.telemetry.v_terminal)
+        .fold(f64::MAX, f64::min);
+    let at = run
+        .rows
+        .iter()
+        .position(|r| (r.telemetry.v_terminal - floor).abs() < 1e-9)
+        .expect("the collapse reaches its floor before the mark");
+    run.rows.truncate(at + 1);
+    measure("v_floor_s", &run, 0.0, false, lesson.until_s);
+}
+
+/// And it refuses a run whose lowest row is not a floor at all.
+///
+/// The charge leg is that run and it needs no construction: it falls to −0.064 V at 4229.5 s,
+/// sits there while the reader retypes the demand box, and then climbs to 2.07 V. A minimum
+/// is not a floor unless the trace is still at it when the run ends, and that is the half of
+/// "the fall simply stops" a first-match search cannot see.
+#[test]
+#[should_panic(expected = "so it did not stay there")]
+fn a_floor_refuses_a_minimum_the_run_climbs_out_of() {
+    let lessons = lessons();
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == "past-empty")
+        .expect("step 20 is still in the path");
+    let arms = arms();
+    let leg = arms
+        .iter()
+        .find(|a| a.step == "past-empty" && a.name == "charge leg")
+        .expect("step 20 still declares its charge leg");
+    let run = run(lesson, Some(leg), &[], &lessons);
+    measure("v_floor_s", &run, 0.0, false, lesson.until_s);
+}
+
+/// `deficit_falls_below_pts` refuses a run where the debt never comes back.
+///
+/// Step 20's own run to the mark is that run, and it is the trajectory the SAME step's prose
+/// is mostly about: the debt climbs to 6.121 points and the run ends there. Only the charge
+/// leg repays it, which is why the claim reading this quantity names an arm — and this is
+/// what stops a claim that forgot to.
+#[test]
+#[should_panic(expected = "never comes back through")]
+fn a_repayment_refuses_a_run_that_never_repays() {
+    let lessons = lessons();
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == "past-empty")
+        .expect("step 20 is still in the path");
+    let run = run(lesson, None, &[], &lessons);
+    measure(
+        "deficit_falls_below_pts:2",
+        &run,
+        0.0,
+        false,
+        lesson.until_s,
+    );
 }
