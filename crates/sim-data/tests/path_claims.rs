@@ -3554,6 +3554,12 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
         //
         // Millivolts, for `v_cell_spread_mv_at`'s reason: the sentence speaks them.
         //
+        // **The target moves with an arm that retypes the charge current, and no claim has
+        // exercised that.** `run.prog` is the arm's program where one is set, so an arm
+        // with `cc_cv_a` shifts what the pack is aiming at — correct, and unobserved: both
+        // of step 11's readings are on the step's own run. Worth knowing before a step with
+        // no constant-voltage leg claims this on a retyped arm.
+        //
         // Refuses on any program but CC-CV rather than falling back to some other target. A
         // pack on a `Current` demand is being charged toward nothing, so the quantity does
         // not exist there — it is not zero.
@@ -7612,8 +7618,12 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // pack's own capacity — cells in parallel add amp-hours — which is the same
         // arithmetic step 6's "is {n} Ah at pack level" does one factor short of.
         //
-        // Two placeholders, so the rule cannot be satisfied by the demand alone: an edit
-        // that changed the box without changing the rate reddens on the second tie.
+        // Two placeholders, so the rule cannot be satisfied by the demand alone. What is
+        // measured: moving the box reddens (on the FIRST tie, which the scan reaches first
+        // in text order) and moving the prose's own `0.5 C` reddens on the second. What is
+        // NOT measured is the pairing — nothing here shows the rule would refuse two
+        // placeholders satisfied from unrelated positions, because no single edit produces
+        // that state.
         phrase: "per group. {n} A is {n} C",
         ties: &[
             Tie::Setting(Control::DemandValue),

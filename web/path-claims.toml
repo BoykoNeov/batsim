@@ -4832,6 +4832,15 @@ either way — a parallel group has one node voltage, so `v_cell_min` and `v_cel
 per-GROUP readings and every cell in a group sits at its group's voltage.
 
 No `display`: `cell v` prints the two ends and not their distance.
+
+THE THINNEST MARGIN IN THIS STEP, and worth knowing rather than discovering. The spread is
+11.023 mV here and 10.388 mV one step later, so the two readings are 0.635 mV apart against
+a tolerance of 0.5 — the perturbation that moves this claim to the next step reddens with
+0.135 mV to spare. It is a real discrimination and a narrow one: its two
+neighbours each move 105 mV across that same step — they are the one voltage drop seen from
+two sides — while the spread barely notices the trip at all.
+That is the sentence's own point, and it is also why this claim is the one to re-measure
+first if the trajectory ever shifts.
 """
 
 [[claim]]

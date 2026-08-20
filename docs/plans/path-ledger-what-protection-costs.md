@@ -73,8 +73,11 @@ The sentence said:
 > past the mark.
 
 **Neither half of "which it reaches at 4820 s" was checkable, for two different reasons.**
-The pack passes 99.5 % well before 4820 — it is at 99.5 % from roughly 4740 s to 4855 s, so
-the instant is not an arrival. And the page's own stopping instant is not a function of the
+The pack passes 99.5 % well before 4820: it reads 99.5012 % at 4800 s, already inside the
+tenth the sentence prints and twenty seconds before the boundary. (How much earlier than
+that is not stated here, because it was not measured — an interpolated interval quoted to
+the second, in a document about numbers that have to be read off a run, is the shape this
+project keeps finding.) So the instant is not an arrival. And the page's own stopping instant is not a function of the
 simulation at all. `ccCvDone` is evaluated at the end of each *chopped chunk*; a chunk ends
 at a decision-window boundary **or** wherever the frame's step budget ran out, and that
 budget comes from `elapsed * speed / dt` — wall-clock time. The current crosses the 0.3 A
@@ -169,8 +172,12 @@ charge current and the taper.
 ## The perturbation record
 
 Thirty edits ran, each with the panic message captured rather than the exit code alone,
-because this suite has reddened on the wrong assertion more than once. Twenty-nine are red;
-one is green and that green is the result. Two more were malformed and never ran — an anchor
+because this suite has reddened on the wrong assertion more than once. Twenty-nine are red
+and one is green — but **twenty-seven** is the number that means anything: two of the reds
+came from a different assertion than the one they were aimed at, and were superseded by
+re-aimed edits which are counted among the twenty-seven. The green is the result, not a
+miss. Counting 29 clean falsifications would be exactly the mistake
+`path-ledger-bare-curve.md` records — a perturbation's red coming from the wrong claim. Two more were malformed and never ran — an anchor
 naming a field the claim does not carry, and one that matched both cold arms at once — and
 both were re-aimed. An edit that changes nothing is not a passing test, which is the same
 note the last slice wrote about adding an unknown TOML key. Three things worth keeping:
