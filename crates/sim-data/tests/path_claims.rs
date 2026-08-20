@@ -3171,9 +3171,28 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
         // literals of their own, so a derivation could not reach them, and a spread is in
         // any case the thing the sentence is about — it moves when the scatter moves, which
         // is the failure a reader would care about.
+        //
+        // **`read_at_s` is asserted rather than ignored**, on `soc_gap_pts_min`'s terms and
+        // for its reason. A duration has no instant of its own, so this arm ignores `at_s`
+        // entirely — which makes a claim's declared instant free, and a free field beside a
+        // number is the shape this file keeps being caught by. Measured, not feared: with
+        // no assert, moving this claim's `read_at_s` to 200 s left all 35 tests green while
+        // its own note said the reading was taken "where the spread is complete".
+        //
+        // The instant it has to name is the LATER crossing, which is the first moment the
+        // spread is a whole number rather than a lower bound. The two grid quantities
+        // either side of this one need no such fence: each returns the instant it is read
+        // at, exactly as `flag_first_s:*` and `deficit_zero_s` do.
         "deficit_crossing_spread_s" => {
-            measure("deficit_all_owed_s", run, at_s, probe, mark_s)
-                - measure("deficit_leaves_zero_s", run, at_s, probe, mark_s)
+            let ends = measure("deficit_all_owed_s", run, at_s, probe, mark_s);
+            assert!(
+                (at_s - ends).abs() < f64::EPSILON,
+                "the pack finishes crossing empty at t = {ends} s and this claim reads at \
+                 t = {at_s} s. A spread has no instant of its own, so it has to be read \
+                 where it is complete — otherwise `read_at_s` says nothing and the shape \
+                 of the run can change under a green claim."
+            );
+            ends - measure("deficit_leaves_zero_s", run, at_s, probe, mark_s)
         }
         // When the debt is paid off: the first step at zero deficit after a step that had
         // one. Measured rather than assumed because it is the instant two of this path's

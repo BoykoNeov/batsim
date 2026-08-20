@@ -4,9 +4,17 @@
 pack. It is the **fifteenth of twenty-four** steps scanned whole, and it was picked by
 measurement, which for the second slice running agreed with the recorded ranking.
 
-It cost five vocabulary rules, eight claims, six new quantities and two new fields on the
-harness's row — and **no new arm**. That is the second slice in a row at nineteen, after
-three that each cost a new kind of tie.
+It cost five vocabulary rules, eight claims, seven new quantities and two new fields on
+the harness's row — and **no new arm**. That is the second slice in a row at nineteen,
+after three that each cost a new kind of tie.
+
+> The commit that landed this slice says "six new quantities" in two places, and the count
+> is seven: three about the crossing instants and four about the addresses. The error is
+> left in the commit message and corrected here, which is the same rule this file applies
+> to prose — a wrong number gets a correction beside it rather than a rewritten history.
+> It is worth noticing *where* it slipped: every count in the claims file and in the test
+> is derived and moved correctly, and the one that went wrong is in a sentence nothing
+> scans.
 
 ## The ranking, re-measured — and it did not move
 
@@ -56,7 +64,8 @@ claims once they have one.
 The claim to that had to be paid on the harness side rather than in the taxonomy: `Row` now
 carries the address of each end of the deficit spread beside its value, off the same walk, so
 an argument about *which* cell is worst can never be read off a different loop from the number
-beside it.
+beside it. Seven quantities read the new state — `deficit_leaves_zero_s`,
+`deficit_all_owed_s`, `deficit_crossing_spread_s`, and one per coordinate of the two ends.
 
 **The splitting the note called a cost is a requirement.** The note's other objection was that
 claiming the sentence would mean "splitting a literal down to fragments that do not read as
@@ -100,6 +109,14 @@ not, for two reasons. A derivation's operands have to be numbers its *own* liter
 which would have forced the crossing pair back into one literal and undone the split above.
 And a spread is the better instrument anyway: it is what the sentence is about, and it goes
 red when the scatter moves even if both ends move together.
+
+**The spread's read instant is asserted, because without the assert it was free.** A
+duration has no instant of its own, so the match arm ignores the `at_s` it is handed —
+which makes the claim's `read_at_s` decorative. Measured rather than reasoned: moving it
+to 200 s left all thirty-five tests green while the claim's own note said the reading was
+taken "where the spread is complete". It now has to name the later crossing, on
+`soc_gap_pts_min`'s terms. The two grid quantities either side of it need no such fence:
+each returns the instant it is read at, exactly as `flag_first_s:*` already does.
 
 **One of the new quantities agrees with an old one by construction, and the note says so.**
 `deficit_leaves_zero_s` returns the same 345.0 as `flag_first_s:SOC_CLAMPED_LOW`, and always
