@@ -84,7 +84,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty steps and 442 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty-one steps and 499 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -182,12 +182,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the four steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the three steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed twenty whole steps — but only twenty. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other four have their claimed sentences
+//!   has now closed twenty-one whole steps — but only twenty-one. Steps here carrying
+//!   neither a claim nor a ledger entry: none. The other three have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all four, one line each, so this list cannot go quietly out of date.
+//!   names all three, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -1125,6 +1125,26 @@ fn build_with_bms(lesson: &Lesson, enabled: bool) -> Pack {
     pack
 }
 
+/// The pack an author builds to ask what a mechanism was worth: the same scenario, the same
+/// controls, one chemistry coefficient overwritten.
+///
+/// Nothing on the page reaches this. It is the counterfactual half of step 21's attribution,
+/// and it edits the *parsed* chemistry rather than a file on disk — so the shipped
+/// `chemistries/*.toml` is what every other trajectory in this suite still reads, and no
+/// ordering between tests can leak the override. See [`Arm::fade_per_ah`] for why an arm is
+/// allowed to be unwalkable and what that costs it.
+///
+/// `enabled` is the BMS as the arm or the lesson decides it, resolved by the caller for the
+/// same reason [`build`] resolves it: the scenario is loaded twice otherwise.
+fn build_with_reversal_fade(lesson: &Lesson, enabled: bool, fade_per_ah: f64) -> Pack {
+    let (scenario, mut chem) = load(&lesson.scenario);
+    chem.reversal.fade_per_ah = fade_per_ah;
+    let (pack, _dropped) = scenario
+        .build_pack_with_bms(chem, enabled)
+        .expect("pack builds");
+    pack
+}
+
 /// `pulsePhase`: the on-leg iff `round(t/dt) % (kOn + kOff) < kOn`.
 ///
 /// The phase is counted in **steps** off the pack's own `sim_time_s`, never off an
@@ -1753,9 +1773,18 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
     // wrong pack, so it panics.
     let lesson = pack_lesson_of(arm, lesson, lessons);
     let dt = arm.and_then(|a| a.dt).unwrap_or(lesson.dt);
-    let mut pack = match arm.and_then(|a| a.bms) {
-        Some(bms) => build_with_bms(lesson, bms),
-        None => build(lesson),
+    let mut pack = match (arm.and_then(|a| a.bms), arm.and_then(|a| a.fade_per_ah)) {
+        // The counterfactual comes first because it has to resolve the BMS itself: an arm
+        // that overrides both would otherwise get one branch or the other rather than both.
+        // No arm does today, and this is written the correct way round rather than the
+        // reachable way round — see `Arm::fade_per_ah`.
+        (bms, Some(fade)) => {
+            let (scenario, _) = load(&lesson.scenario);
+            let enabled = bms.or(lesson.bms).unwrap_or(scenario.pack.bms.is_some());
+            build_with_reversal_fade(lesson, enabled, fade)
+        }
+        (Some(bms), None) => build_with_bms(lesson, bms),
+        (None, None) => build(lesson),
     };
     // TWO environments, split at the mark: the step's slider before it, the arm's after.
     //
@@ -1929,7 +1958,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 198 of 237 claims.
+    /// number's last printed place. The default shape: 201 of 241 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1940,12 +1969,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 33 of 237.
+    /// the number was always right and only the declaration was wrong. 34 of 241.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 6 of 237, every
+    /// the engine either hits the claimed step or misses by a whole one. 6 of 241, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1985,7 +2014,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 214 of 237, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 218 of 241, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2235,7 +2264,16 @@ fn decimals_of(s: &str) -> i32 {
 /// [`written_numbers`] still finds digits only, so a word quantity in a ledgered step's
 /// prose is invisible to the scan whether or not something in here translates it — see the
 /// note in [`every_numeral_in_a_ledgered_step_is_accounted_for`].
-const WORD_NUMERALS: &[(&str, f64)] = &[("three", 3.0), ("six", 6.0), ("fifty", 50.0)];
+const WORD_NUMERALS: &[(&str, f64)] = &[
+    ("three", 3.0),
+    ("six", 6.0),
+    ("fifty", 50.0),
+    // Read by neither a claim nor a rule but by an ARM: step 21's counterfactual sets the
+    // over-discharge coefficient "to zero", and `Arm::fade_per_ah` is held to the same
+    // "the value must be spelled in the instruction" rule as the demand box and the `dt`
+    // box. `contains_number` already bounds a word match the way it bounds a digit one.
+    ("zero", 0.0),
+];
 
 /// The number `spells` names, in the unit the sentence writes it in, or `None` if the
 /// string is neither digits nor a word this file knows.
@@ -2603,6 +2641,39 @@ struct Arm {
     /// is a declaration with no fact under it.
     #[serde(default)]
     bms: Option<bool>,
+    /// The chemistry's `[reversal] fade_per_ah` this arm's pack is **built with**, if it is
+    /// not the file's own \[capacity fraction per Ah past empty\].
+    ///
+    /// **The one arm in this file no reader can walk, and it says so rather than pretending
+    /// otherwise.** Every other override here is a box, a checkbox or a slider — something on
+    /// the page. This one edits the parsed chemistry between `parse_chemistry` and
+    /// `Pack::new`, which is a thing an author does and a reader cannot. It exists because
+    /// step 21's whole argument is an attribution, and an attribution needs a control:
+    ///
+    /// > Measured rather than assumed: the identical run with the over-discharge coefficient
+    /// > set to zero and nothing else touched ends the same ten minutes at **99.96 %**.
+    ///
+    /// Without it the step's headline — 4.80 of the 4.82 points are the reversal — is an
+    /// inference, and the two numbers that carry it are tied to nothing. With it the
+    /// subtraction is between two measured trajectories and the ledger can check both ends.
+    /// `docs/plans/reversal-damage-ui.md` measured this control out of tree when the step was
+    /// written; this field is that measurement moved into the suite.
+    ///
+    /// **`instruction` is read as the sentence that REPORTS the change, not one that asks for
+    /// it.** The substring check is unchanged — the sentence still has to be in the step's own
+    /// prose, so a reword still reddens — but a reader is being told what was measured rather
+    /// than told to go and measure it. That is the honest reading of the sentence above, and
+    /// the distinction is worth keeping visible: an arm nobody can walk may only ever assert
+    /// what the prose *claims about* a counterfactual.
+    ///
+    /// Four fences, all in [`every_arm_is_instructed_by_its_own_step`]: the value must be
+    /// spelled in the instruction (in digits or in letters, through [`WORD_NUMERALS`] — this
+    /// sentence writes "zero"), it must differ from what the chemistry file already says, it
+    /// implies [`Start::Restart`] because a pack cannot be rebuilt halfway through its own
+    /// run, and it may not be combined with `pack_from`, which would be two exotic overrides
+    /// composed with no sentence asking for either.
+    #[serde(default)]
+    fade_per_ah: Option<f64>,
     /// The ambient slider \[°C\], if this arm drags it. Must be spelled inside
     /// `instruction`, and must differ from the step's own.
     ///
@@ -4153,6 +4224,59 @@ fn every_arm_is_instructed_by_its_own_step() {
             );
         }
 
+        if let Some(fade) = arm.fade_per_ah {
+            let spelled = Arm::spelled(fade);
+            let word = WORD_NUMERALS
+                .iter()
+                .find(|(_, v)| (v - fade).abs() < f64::EPSILON)
+                .map(|(w, _)| *w);
+            assert!(
+                contains_number(&instruction, &spelled)
+                    || word.is_some_and(|w| contains_number(&instruction, w)),
+                "arm `{}` on step `{}` rebuilds the pack with `fade_per_ah = {fade}`, and \
+                 neither `{spelled}` nor any word for it appears as a number in the \
+                 sentence it claims to be reporting:\n  {}\n\
+                 The coefficient and the sentence that tells a reader what it was set to \
+                 are two statements of one fact. A counterfactual whose value is not in \
+                 the prose is the worst case of all - nothing a reader sees would move if \
+                 it changed.",
+                arm.name,
+                arm.step,
+                arm.instruction
+            );
+            let (_, chem) = load(&pack_lesson.scenario);
+            assert!(
+                (fade - chem.reversal.fade_per_ah).abs() > f64::EPSILON,
+                "arm `{}` on step `{}` declares `fade_per_ah = {fade}`, which is what \
+                 `{}`'s own chemistry file already says. The arm is then that lesson's run \
+                 under a second name, and the subtraction its claims are for comes to zero \
+                 while every check stays green.",
+                arm.name,
+                arm.step,
+                pack_lesson.id
+            );
+            assert!(
+                arm.start == Start::Restart,
+                "arm `{}` on step `{}` changes a chemistry coefficient on a continuation. \
+                 There is no such trajectory: the coefficient is read when the pack is \
+                 BUILT, so a pack that reached the mark under the shipped value cannot \
+                 have been running under this one. Unlike the `dt` fence next door this is \
+                 a fidelity refusal and not a scoping one - the page cannot do it and \
+                 neither can the engine.",
+                arm.name,
+                arm.step
+            );
+            assert!(
+                arm.pack_from.is_none(),
+                "arm `{}` on step `{}` combines a chemistry override with `pack_from`. \
+                 Each of those is an unusual thing for one arm to do and no sentence in \
+                 the path asks for both at once; composed, what the reader is told they \
+                 are looking at would be two removes from the step they are on.",
+                arm.name,
+                arm.step
+            );
+        }
+
         if let Some(ambient_c) = arm.ambient_c {
             let spelled = Arm::spelled(ambient_c);
             assert!(
@@ -4456,10 +4580,22 @@ fn every_word_numeral_is_read_by_something() {
                 _ => false,
             })
         });
+        // The third reader, and the one that made this a list rather than a pair: an ARM
+        // whose override is spelled in letters. `Arm::fade_per_ah` is held to the same
+        // rule as the demand box - the value must be in the instruction - and step 21s
+        // sentence writes its value as "zero". Read here through the same table for the
+        // same reason the other two are: a word means one number in this file however it
+        // is reached.
+        let instructed = arms().iter().any(|a| {
+            a.fade_per_ah
+                .is_some_and(|f| (f - *value).abs() < f64::EPSILON)
+                && contains_number(&ascii_minus(&a.instruction), word)
+        });
         assert!(
-            spelled || derived,
+            spelled || derived || instructed,
             "WORD_NUMERALS translates `{word}` to {value} and nothing in \
-             web/path-claims.toml spells it and no ledger rule derives from it. Either the \
+             web/path-claims.toml spells it, no ledger rule derives from it and no \
+             arm's instruction spells an override with it. Either the \
              sentence it was added for was reworded — in which case its claim is failing \
              elsewhere and this entry is why that is hard to see — or the word was never \
              used. Add words when a claim or a rule needs them; a table read by nothing is \
@@ -8248,6 +8384,357 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         }],
         pow10: 0,
     },
+    // Step 21 - what the excursion COST, and the first ledgered step whose prose runs on a
+    // trajectory no reader can produce. Thirty-three of its fifty-eight numerals were
+    // unaccounted when the scan was pointed here. Four needed claims - the crossing, the
+    // resistance at the knee, the plot's own origin, and the control's mark reading - and
+    // the rest divide into constants a file decides and arithmetic the sentences do in
+    // front of the reader. This is the densest product-and-derivation block in the
+    // vocabulary, because the step's whole method is "here is the number and here is the
+    // multiplication that gives it".
+    LedgerRule {
+        // Where this scenario starts, which is the one thing separating it from step 20's:
+        // 5 % rather than full, so the knee is three and a half minutes in.
+        phrase: "starting at {n} % charge so that empty",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The attribution, first half: this step's own subtraction, the knee against the
+        // mark.
+        phrase: "So of the {n} points lost after the knee",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: None,
+                quantity: "soh_cap_at:207.5",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: None,
+                quantity: "soh_cap_at:600",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // And the second half, which is the same subtraction against the CONTROL and is
+        // the whole reason `Arm::fade_per_ah` exists. Move the control arm and this number
+        // moves with it, which is what makes the sentence a measurement rather than an
+        // author's arithmetic.
+        phrase: "**{n} are the reversal**",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: Some("no reversal damage"),
+                quantity: "soh_cap_at:600",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: None,
+                quantity: "soh_cap_at:600",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // Step 20's floor, quoted for the first of three times. The step next door claims
+        // it at its own mark; this step says it was flat there and is not flat here, so the
+        // tie has to be to THAT reading and not to anything on this trajectory. It is why
+        // `past-empty`'s ten `v_at` claims now include one tagged instant.
+        phrase: "floor was a flat line at -{n} V",
+        ties: &[Tie::Magnitude(&Tie::Quoted {
+            step: "past-empty",
+            arm: None,
+            quantity: "v_at:4400",
+            states: QuotedAs::Same,
+        })],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same reading a second time, and STEP 20'S demand box beside it - not this
+        // step's, though both are 2 A. The sentence is about what the last step's floor was
+        // made of, so a rule pointed at this step's `Setting(DemandValue)` would be right
+        // off the wrong field: retype step 21's box and the sentence would still be about
+        // step 20's cell. That is the hazard `docs/plans/path-setting-arm.md` records, met
+        // a second time and refused the same way.
+        phrase: "The last step's -{n} V is `{n} A × {n} Ω`, and that",
+        ties: &[
+            Tie::Magnitude(&Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "v_at:4400",
+                states: QuotedAs::Same,
+            }),
+            Tie::Elsewhere {
+                step: "past-empty",
+                tie: &Tie::Setting(Control::DemandValue),
+            },
+            Tie::Sum(&[Tie::Chemistry("r0.ohms.0.1"), Tie::Chemistry("rc.0.r_ohms")]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same sum, in the clause that takes it apart. `[r0]` is a grid over charge and
+        // temperature and this cell sits at the bottom of it at 25 degC, so the path names
+        // the row and the column rather than letting a `*` find whichever 0.022 it reached
+        // first - the generous match the whole table refuses.
+        phrase: "and that {n} has two parts",
+        ties: &[Tie::Sum(&[
+            Tie::Chemistry("r0.ohms.0.1"),
+            Tie::Chemistry("rc.0.r_ohms"),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The `0` of `R0`, a section of the chemistry file rather than a quantity, in the
+        // same position as step 1's and step 11's. Same chemistry, same provenance string,
+        // same prefix.
+        phrase: "this cell's `R{n}` is",
+        ties: &[Tie::Name {
+            field: "meta.provenance",
+            prefix: "R",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The two numbers that make the 0.032, read off the two places the chemistry file
+        // keeps them - and the ambient the table is read AT, which is the slider and not a
+        // column heading: `[r0].temp_k` spells 298.15 and this sentence spells 25.
+        phrase:
+            "is {n} Ω at the bottom of its table at {n} °C, and its one RC pair adds {n} Ω more",
+        ties: &[
+            Tie::Chemistry("r0.ohms.0.1"),
+            Tie::Setting(Control::Ambient),
+            Tie::Chemistry("rc.0.r_ohms"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How much aging has grown them by, as a percentage - and it is NOT measured here.
+        // It is the coupling CLAUDE.md will not let a chemistry model alone: resistance
+        // growth is capacity loss times `r_growth_per_capacity_loss`. So the tie is that
+        // constant against this step's own claimed capacity loss, and the `soh res` claim
+        // at the mark is left for the arithmetic sentence to quote. Two readings of one
+        // number, and this is the one that would notice the coupling constant moving.
+        phrase: "grows **both** by the same {n} %",
+        ties: &[Tie::Product(&[
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: None,
+                quantity: "soh_cap_at:600",
+                states: QuotedAs::Complement,
+            },
+            Tie::Chemistry("aging.r_growth_per_capacity_loss"),
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The arithmetic sentence, in four rules. This one is the three FACTORS it
+        // multiplies: this step's own demand box, the sum of the two resistances, and the
+        // growth as a fraction. Its product is a rule of its own next door, because
+        // `pow10` belongs to the rule and not to the tie - these three are amps, ohms and a
+        // bare fraction, and the answer is in millivolts. Writing them as one rule is the
+        // mistake this pair records: it scales every tie it carries, so the demand box came
+        // out as 2000 A.
+        phrase: "the extra sag is {n} A × {n} Ω × {n} =",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Sum(&[Tie::Chemistry("r0.ohms.0.1"), Tie::Chemistry("rc.0.r_ohms")]),
+            Tie::Product(&[
+                Tie::Quoted {
+                    step: "what-it-cost",
+                    arm: None,
+                    quantity: "soh_cap_at:600",
+                    states: QuotedAs::Complement,
+                },
+                Tie::Chemistry("aging.r_growth_per_capacity_loss"),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // And the answer, read off the sentence's OWN three numbers rather than off the
+        // files they came from. That is the honest reading - a reader multiplies what is
+        // printed - and it is also the safe one: a `Tie::Sum` of the two halves the
+        // sentence prints next would give 4.7 and be wrong about a number that is right.
+        phrase: "= **{n} mV**",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Product,
+            operands: &[
+                Operand::Sibling("2"),
+                Operand::Sibling("0.032"),
+                Operand::Sibling("0.0726"),
+            ],
+        }],
+        pow10: 3,
+    },
+    LedgerRule {
+        // The two halves of that sag, each a product of four file-and-claim facts. NOT
+        // siblings: the resistances they need are in the sentence BEFORE this one, and
+        // `Operand::Sibling` reaches one sentence only.
+        //
+        // **The `1.5` is this step's trap.** `aging.r_growth_per_capacity_loss` is also
+        // 1.5, and a rule pointed at it would have gone green on a number that means
+        // millivolts. Read the sentence: the slow half is 2 A across the RC pair grown by
+        // 7.26 %, which is 1.4529 mV and prints 1.5 by rounding. The coupling constant is a
+        // FACTOR of it and not the number.
+        phrase: "{n} of it from the instant resistance and {n} from the slow one",
+        ties: &[
+            Tie::Product(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Chemistry("r0.ohms.0.1"),
+                Tie::Quoted {
+                    step: "what-it-cost",
+                    arm: None,
+                    quantity: "soh_cap_at:600",
+                    states: QuotedAs::Complement,
+                },
+                Tie::Chemistry("aging.r_growth_per_capacity_loss"),
+            ]),
+            Tie::Product(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Chemistry("rc.0.r_ohms"),
+                Tie::Quoted {
+                    step: "what-it-cost",
+                    arm: None,
+                    quantity: "soh_cap_at:600",
+                    states: QuotedAs::Complement,
+                },
+                Tie::Chemistry("aging.r_growth_per_capacity_loss"),
+            ]),
+        ],
+        pow10: 3,
+    },
+    LedgerRule {
+        // The closing arithmetic: step 20's floor times this step's resistance health is
+        // this step's floor. Three tokens, one rule, and no literal digit in the phrase -
+        // the third is the product of the first two as the sentence writes them.
+        phrase: "and -{n} × {n} = -{n} V is the reading",
+        ties: &[
+            Tie::Magnitude(&Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "v_at:4400",
+                states: QuotedAs::Same,
+            }),
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: None,
+                quantity: "soh_res_at:600",
+                states: QuotedAs::Same,
+            },
+            Tie::Derived {
+                op: LedgerOp::Product,
+                operands: &[Operand::Sibling("0.0640"), Operand::Sibling("1.0726")],
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The charge leg's own demand box. Step 20's twin phrase ends "which charges at the
+        // same rate"; this one ends where this sentence does, which is what keeps the two
+        // rules off each other.
+        phrase: "put the demand box to **-{n}** and press Run, and compare",
+        ties: &[Tie::Magnitude(&Tie::OnArm {
+            arm: "charge leg",
+            tie: &Tie::Setting(Control::DemandValue),
+        })],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The amp-hours in and the amp-hours out, read two different ways because they ARE
+        // two different measurements.
+        //
+        // In: the leg's own duration times its own current, which is arithmetic step 20
+        // does in front of the reader and this step does not.
+        //
+        // Out: NOT the deficit at the mark valued at the cell's final capacity - that is
+        // 0.2127 and this sentence says 0.2182. The engine bills each step's charge past
+        // empty against the capacity the cell had ON THAT STEP, and the cell shrank 4.8 %
+        // while it was down there, so no endpoint product recovers the integral. What does
+        // is the damage itself: the capacity the reversal cost, over the cost per amp-hour.
+        // So this number is tied to the control arm too, and "even the arithmetic is exact"
+        // is exact about a quantity the engine never prints.
+        phrase: "it took **{n} A·h** to put back what **{n} A·h** took out",
+        ties: &[
+            Tie::Product(&[
+                Tie::Hours(&Tie::Difference(&[
+                    Tie::Quoted {
+                        step: "what-it-cost",
+                        arm: Some("charge leg"),
+                        quantity: "deficit_zero_s",
+                        states: QuotedAs::Same,
+                    },
+                    Tie::Setting(Control::Until),
+                ])),
+                Tie::Magnitude(&Tie::OnArm {
+                    arm: "charge leg",
+                    tie: &Tie::Setting(Control::DemandValue),
+                }),
+            ]),
+            Tie::Ratio(&[
+                Tie::Difference(&[
+                    Tie::Quoted {
+                        step: "what-it-cost",
+                        arm: Some("no reversal damage"),
+                        quantity: "soh_cap_at:600",
+                        states: QuotedAs::Same,
+                    },
+                    Tie::Quoted {
+                        step: "what-it-cost",
+                        arm: None,
+                        quantity: "soh_cap_at:600",
+                        states: QuotedAs::Same,
+                    },
+                ]),
+                Tie::Chemistry("reversal.fade_per_ah"),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How much smaller the refilled cell is: the complement of its own capacity health
+        // at the mark, which is why the two amp-hour figures differ at all.
+        phrase: "refilled is {n} % smaller",
+        ties: &[Tie::Quoted {
+            step: "what-it-cost",
+            arm: None,
+            quantity: "soh_cap_at:600",
+            states: QuotedAs::Complement,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The mark's health printed a second time, in the sentence about the row that never
+        // turns round. Quoted rather than re-claimed, on the terms this file has settled
+        // on: one reading, one claim, and every other sentence that prints it says so.
+        phrase: "never turns round: {n} % at the mark",
+        ties: &[Tie::Quoted {
+            step: "what-it-cost",
+            arm: None,
+            quantity: "soh_cap_at:600",
+            states: QuotedAs::Same,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // And the debt at the mark printed a second time, in the caveat about the sampler.
+        // The sentence's point is that the row catches up on a pause, so the number it
+        // catches up TO is the step's own claimed reading.
+        phrase: "after the pause read {n}, which is the mark's own value",
+        ties: &[Tie::Quoted {
+            step: "what-it-cost",
+            arm: None,
+            quantity: "deficit_pts_at",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -9718,6 +10205,7 @@ fn walkable_probe(step: &str, pack_from: &str, start: Start) -> Arm {
         cc_cv_a: None,
         dt: None,
         bms: None,
+        fade_per_ah: None,
         ambient_c: None,
         actions: vec![Action::Run { to_s: 1.0 }],
         identical_to: None,

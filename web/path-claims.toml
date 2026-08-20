@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not.Twenty steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Twenty-one steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -85,8 +85,11 @@
 #              an absolute time, or a magnitude where the value is negative.
 #              A sentence may spell its number in LETTERS — "about three points" spells
 #              `"three"` — and one does. `WORD_NUMERALS` in path_claims.rs is the
-#              translation, three entries, and a word in it that no claim spells fails the
-#              test. A word commits to no decimal place, so the rule it licenses is half
+#              translation, four entries, and a word in it that NOTHING reads fails the
+#              test — nothing meaning no claim spelling it, no ledger rule deriving from
+#              it, and no arm's instruction spelling an override with it, which is what
+#              the fourth entry is for and the only one of the three that is not a claim.
+#              A word commits to no decimal place, so the rule it licenses is half
 #              a unit of the unit it is written in: half a point, for that one.
 #   spells_pow10  how many powers of ten larger `spells`'s unit is than `value`'s. 2 for a
 #              prose percentage or points-of-a-hundred against a fraction; 0 otherwise,
@@ -142,8 +145,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  198 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  33 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  201 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  34 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -195,9 +198,9 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 33 claims.
+# bounds the engine against `value` and is deliberately tighter on 34 claims.
 #
-#   same        214 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        218 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    7. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -243,8 +246,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 222 of the 258 numbers the
-#            156 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 226 of the 262 numbers the
+#            160 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -275,7 +278,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 156 claimed sentences need none. A future literal printing a chemistry constant will
+# the 160 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -290,7 +293,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file —twenty steps of the twenty-four so far.
+# of this file — twenty-one steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -1964,7 +1967,7 @@ answers to one name and two values is refused rather than resolved by file order
 [[claim]]
 step = "past-empty"
 literal = "at **−0.0640 V**"
-quantity = "v_at"
+quantity = "v_at:4400"
 value = -0.0640
 tol = 5.0e-5
 tol_from = "spelled"
@@ -1979,6 +1982,13 @@ The floor, at the mark. This is the number step 21 takes apart: it is 2 A across
 there. The row prints an ASCII minus and the prose a typographic one, which is the
 single difference the quoted check would forgive — but this claim is not quoted
 anyway, because the sentence gives four decimals.
+
+Instant-tagged because step 21 now quotes it three times — once for the floor it says was
+flat, once for the resistance it multiplies, and once inside the product that gives
+−0.0686. This step files ten readings under `v_at`, which is the ambiguity `Tie::Quoted`
+refuses by name; the tag is how the one that is quoted says which it is. The other nine
+are untagged and stay that way: a tag is an address a quoting sentence needs, not a
+decoration every reading gets.
 """
 
 # The charge leg. Everything below is read after the reader has put the demand box to
@@ -2288,7 +2298,7 @@ pointing at the `10` in "t = 10 s"; the sibling above is what stops it.
 [[claim]]
 step = "what-it-cost"
 literal = "**99.98 %** when the cell empties at **207.5 s and 1.9306 V**"
-quantity = "soh_cap_at"
+quantity = "soh_cap_at:207.5"
 value = 0.9997525
 tol = 5.0e-6
 tol_from = "tighter"
@@ -2401,7 +2411,7 @@ long as the discharge continues.
 [[claim]]
 step = "what-it-cost"
 literal = "95.16 % at the ten-minute mark"
-quantity = "soh_cap_at"
+quantity = "soh_cap_at:600"
 value = 0.9515697
 tol = 5.0e-5
 tol_from = "spelled"
@@ -2416,12 +2426,88 @@ note = """
 The third, at the mark, where a reader can stop and compare it against the control
 figure the sentence gives two lines later. 4.82 points lost after the knee, of which
 4.80 are the reversal.
+
+The instant is in the quantity because four of this step's ledger rules quote this
+reading and one quotes its complement: the two points of the subtraction that makes the
+attribution, the second time the prose prints 95.16, and the 4.8 % the refilled cell is
+smaller by. Six `soh_cap_at` claims on one step is exactly the ambiguity `Tie::Quoted`
+refuses, so the two the ledger borrows say which instant they are.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "through zero at 287.5 s"
+quantity = "t_at_v_below:0"
+value = 287.5
+tol = 0.05
+tol_from = "spelled"
+spells = "287.5"
+states = "same"
+read_at_s = 287.5
+note = """
+The same collapse as the last step's, eighty seconds past this step's own knee, and the
+sentence says so — "the same collapse as the last step runs". Step 20's twin claim reads
+the same quantity on its own trajectory at 4226.5 s; the two are the same shape at
+different starting charges, which is the only difference between the two scenarios.
+
+Read off the trace and not off `[reversal]`, for the reason step 20's note gives at
+length: the declared floor is 0 V of OPEN-CIRCUIT voltage and the terminal crosses zero
+some seconds before the open-circuit one lands on it.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "`soh res` up from 1.0004"
+quantity = "soh_res_at:207.5"
+value = 1.0003712
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.0004"
+states = "same"
+read_at_s = 207.5
+display = "soh res"
+shows = "1.0004 ×"
+note = """
+Where the resistance climb starts from: the knee, the same instant `soh cap` is claimed
+at 99.98 % four claims above. The sentence's "up from" is that reading and not the one
+before it — measured, and unambiguous by a wide margin: 250 s already shows 1.0082, and
+1.0004 is printed only between the aging tick at 200 s and the one at 250.
+
+Not `quoted`, and the distinction is the sentence's own: the prose writes the unit once,
+after the second number, so `1.0004 ×` is what the row shows and not what the page's
+reader is given. The display half still asserts the row renders it that way.
+"""
+
+[[claim]]
+step = "what-it-cost"
+literal = "the two traces leave 100 in opposite directions"
+quantity = "soh_res_at:0.5"
+value = 1.0
+tol = 1.0e-12
+tol_from = "tighter"
+spells = "100"
+spells_pow10 = 2
+states = "same"
+read_at_s = 0.5
+note = """
+The origin of the plot's other trace. `soh cap` leaving 100.00 % is claimed twice at the
+top of this step; nothing said where the RESISTANCE trace starts, and the sentence is
+about both of them. A pack is built at `soh_resistance = 1` exactly — the state-of-health
+plot renders both series as a percentage of new, so both leave the same 100.
+
+The tolerance is not a measurement tolerance, on the same terms as the 100.00 % claim
+above: nothing has happened yet, and a pack that started anywhere else would be a
+different bug from a drift.
+
+No display: this claim is about the PLOT, whose two traces are `soh_capacity * 100` and
+`soh_resistance * 100`, and the `soh res` ROW prints a multiplier rather than a percent.
+A `shows` of `1.0000 ×` would be true and would be about the wrong instrument.
 """
 
 [[claim]]
 step = "what-it-cost"
 literal = "**1.0726 ×**"
-quantity = "soh_res_at"
+quantity = "soh_res_at:600"
 value = 1.0726455
 tol = 5.0e-5
 tol_from = "spelled"
@@ -2436,6 +2522,10 @@ The other half of the coupling CLAUDE.md will not let a chemistry model alone, r
 at the same instant as 95.16 % above. Quoted including the multiplication sign,
 because that is what the row prints — this claim would notice the row losing its unit
 as readily as it would notice the number moving.
+
+Instant-tagged for the reason the mark's `soh cap` is: the step now carries three
+`soh_res_at` claims — this one, the 1.0004 it climbs from, and the flat 1 both traces
+leave on the plot — and the arithmetic sentence two paragraphs later quotes this one.
 """
 
 [[claim]]
@@ -2474,6 +2564,40 @@ note = """
 And the same floor 300 s later, 4.6 mV lower. The sentence says the reader can "stop
 and check it", which is exactly the promise this check enforces: the three decimals
 it quotes are the three decimals the row prints.
+"""
+
+# The control. Not a leg and not a trajectory a reader can produce: the same scenario, the
+# same controls, one chemistry coefficient set to zero. See the `[[arm]]` at the foot of the
+# file and `Arm::fade_per_ah` for why this file allows an arm nobody can walk.
+
+[[claim]]
+step = "what-it-cost"
+literal = "ends the same ten minutes at **99.96 %**"
+quantity = "soh_cap_at:600"
+value = 0.9995692
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.96"
+spells_pow10 = 2
+states = "same"
+read_at_s = 600.0
+arm = "no reversal damage"
+note = """
+The other end of the subtraction, and the claim the step's headline rests on. Without it
+"4.80 of the 4.82 points are the reversal" is an inference from one trajectory; with it
+the attribution is a difference between two measured ones, and the ledger can tie both
+`4.82` and `4.80` to claims rather than to an author's arithmetic.
+
+No display, and that is not an omission. This trajectory is not on the page — no reader
+can zero a chemistry coefficient — so there is no row rendering it and a `shows` here
+would be asserting a string nobody is shown. Every other claim in this step quotes a row
+BECAUSE a reader is told to go and read it; this one is quoted by the prose instead.
+
+The two arms are identical to the last decimal until the knee, which is what they should
+be: nothing has gone past empty yet, and calendar and cycle fade do not know about
+`[reversal]`. Measured at 207.5 s both read 0.99975252. That identity is a check on the
+instrument as much as on the engine, and it is why the sentence can say "nothing else
+touched" without hedging.
 """
 
 # The charge leg. This is the step whose two defects the display check was built for, and
@@ -3519,6 +3643,32 @@ The extra 26 s is so the furthest claim is not sitting on the final row of the r
 
 [[arm]]
 step = "what-it-cost"
+name = "no reversal damage"
+instruction = "the identical run with the over-discharge coefficient set to zero and nothing else touched"
+start = "restart"
+fade_per_ah = 0.0
+actions = [{ do = "run", to_s = 600.0 }]
+note = """
+The file's one counterfactual arm, and the only one whose instruction is a REPORT rather
+than an instruction: nothing on the page can zero a chemistry coefficient, so a reader is
+being told what was measured rather than told to measure it. `Arm::fade_per_ah` argues at
+length for allowing that, and the four fences it carries are what keep it from becoming a
+way to run any trajectory at all under a sentence that mentions it.
+
+**It stops exactly at the step's own mark, and that is the one place this file's usual
+"run past the furthest claim" habit would be wrong.** Step 18's repaired arm runs ten
+seconds long so that "reachable" means more than "I ran long enough"; here the sentence is
+*"ends the same ten minutes at 99.96 %"*, and the comparison it makes is only a comparison
+if both arms stop at the same instant. The length is the sentence's, not a length chosen
+to reach a number.
+
+Its claim is the mark reading. What the arm asserts beyond that claim is in the claim's
+own note: the two trajectories agree to the last decimal up to the knee, because
+`[reversal]` is the only thing between them and nothing has gone past empty yet.
+"""
+
+[[arm]]
+step = "what-it-cost"
 name = "charge leg"
 instruction = "Now put the demand box to **−2** and press Run"
 start = "mark"
@@ -3546,8 +3696,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim:twenty
-# steps, 442 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-one
+# steps, 499 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -6931,6 +7081,30 @@ steps = [
                      # cells are charged to, which is a fact about the world that no file
                      # in this tree decides — and one sentence was rewritten, because its
                      # arithmetic named R0 alone and the RC pair is a third of the drop
+  "what-it-cost",    # 57: the step that says what the excursion COST, and the first
+                     # ledgered step whose prose runs on a trajectory NO READER CAN
+                     # PRODUCE. It went in at 58 and closes at 57 - re-measure AFTER the
+                     # edits, always. Thirty-three of the fifty-eight were unaccounted,
+                     # which made it the second cheapest of the four that were left and the
+                     # one the previous slice handed off to. FOUR needed claims: the
+                     # terminal's crossing of zero, the resistance health at the knee, the
+                     # flat 100 both traces leave on the state-of-health plot, and the
+                     # CONTROL - the same run with the over-discharge coefficient set to
+                     # zero, which cost a new kind of arm and is what turns this step's
+                     # headline from an inference into a subtraction. Of the twenty-eight a
+                     # rule accounts for, ten are constants and controls: the charge it
+                     # starts at, the two resistances and their sum in three separate
+                     # sentences, the `0` of `R0`, the ambient the resistance table is read
+                     # at, and the demand box on each of this step's two legs. Four are
+                     # STEP 20'S, quoted rather than re-measured - its floor, printed three
+                     # times, and its demand box beside it, which is 2 A on both steps and
+                     # would have been right off the wrong field. The last fourteen are
+                     # arithmetic the sentences do in front of the reader: five products,
+                     # the two differences that make the attribution, the amp-hours in and
+                     # the amp-hours out, the floor times the resistance health, and four
+                     # sentences quoting this step's own claims. ONE number left the page -
+                     # what one browser run happened to catch on a throttled row, which is
+                     # a fact about a wall clock and not about the simulation
   "past-empty",      # 41, of which 23 sit inside a claimed sentence and 18 are a rule's.
                      # It was the cheapest of the five that were left — 27 unaccounted of
                      # 42, measured with the ledger's own scan rather than ranked by the
@@ -6953,7 +7127,7 @@ steps = [
                      # the page — how far a real reversed cell goes, which nothing but the
                      # chemistry file's PROVENANCE COMMENT decides
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: four of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: three of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
@@ -6963,5 +7137,4 @@ unledgered = [
                                     # second scenario file
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
-  "what-it-cost",                   # claims: 19
 ]

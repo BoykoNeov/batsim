@@ -63,6 +63,13 @@ describes, with a `rev-damage` run added. Two arms, not one:
 * **a control with `[reversal] fade_per_ah` zeroed in the parsed chemistry and nothing else
   touched.**
 
+> **The control is in the tree now.** It was measured here and nowhere else for as long as
+> step 21 was unledgered. `Arm::fade_per_ah` — `docs/plans/path-ledger-what-it-cost.md` —
+> makes it an `[[arm]]` of `web/path-claims.toml`, so `99.96 %` and the `4.80 are the
+> reversal` that hangs off it are now claims the suite runs rather than numbers this
+> document remembers. It is the one arm in that file no reader can walk, and the four fences
+> that keep that honest are described there.
+
 The control is the point. "The cell lost 4.84 % of its capacity" invites a reader to credit
 all of it to the over-discharge, and calendar and cycle fade are running the whole time.
 Subtracting one arm from the other turns that attribution from an inference into a
