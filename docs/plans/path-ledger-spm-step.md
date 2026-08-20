@@ -101,6 +101,17 @@ names exactly one claim and would have resolved cleanly. The case that justifies
 is untagging all three **and** pointing the rule at `v_at`, and only that one produces the
 message above. A perturbation has to remove the thing it is arguing about.
 
+**And the retag changed a fact, so the tree was swept for prose still asserting the old
+one** — the defect this repo has recorded four times, where a note explaining why something
+could not be done outlives the reason. Grepping the test, the claims file and every plan doc
+for "untagged", "unquotable", "cannot be quoted" and "three readings" turns up nothing that
+states step 14's voltages share a name: the claims file's one such note is about step 8 and
+is correct, and the test's are about step 15 and are correct. The one near miss is
+`path-ledger-particle-step.md`, which says step 15's readings "cannot be quoted until those
+readings are split into per-instant quantity names" — a record of that slice's moment, which
+names the payment as the next slice's and got it. A clean sweep is a result and is written
+down as one.
+
 ## Perturbations
 
 Sixteen cases, each one edit, run, revert, with the exit code read off the process rather
@@ -146,8 +157,18 @@ The twin, step 16, is described in two places and both had drifted:
   numbers inside its claimed literals are **fifteen**, and 15 + 9 + 6 + 8 is 38. One word,
   and the arithmetic closes.
 * The vocabulary table's section comment says *"40 numerals, of which 12 are claimed on its
-  own pack. **Ten** of the rest are readings the step NEXT DOOR measured"*. Measured today:
-  38, 15, and nine.
+  own pack. **Ten** of the rest are readings the step NEXT DOOR measured … **Four** more are
+  readings of its OWN pack that a claim elsewhere in the step decides"*. Measured today: 38,
+  15, nine, and five — with a sixth worked out from two of those five by `Tie::Derived`,
+  which is the number the `[ledger]` entry's "six more" counts and the reason the two
+  descriptions looked as though they disagreed. Every numeral of that step now falls in
+  exactly one bucket: 15 claimed, 9 involving the twin, 5 quoting itself, 1 derived from two
+  of those, 8 constants and controls — 38.
+
+  The fourth number in that sentence was left stale in the first pass of this slice, with
+  the three around it corrected. That is worse than leaving all four alone: three corrected
+  numbers are a signal that the sentence was checked. It was caught in review, and the fix
+  is to state the categories so both descriptions count the same way.
 
 Both are prose about a *derived* number, sitting next to the derivation that keeps the
 derived one honest — the shape three slices have now recorded as the way these files rot.

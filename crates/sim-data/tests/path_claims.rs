@@ -6174,9 +6174,13 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
     // 38 numerals, of which 15 are claimed on its own pack. Nine of the rest are readings the
     // step NEXT DOOR measured, quoted rather than re-measured, because a claim is checked by
     // running its own step's scenario and this step's whole argument is about the other one.
-    // Four more are readings of its OWN pack that a claim elsewhere in the step decides —
+    // Five more are readings of its OWN pack that a claim elsewhere in the step decides —
     // `Tie::Quoted` naming this same lesson, which is the only arm that reaches a measurement
-    // in a sentence no claim quotes. See `docs/plans/path-ledger-dfn-step.md`.
+    // in a sentence no claim quotes — and a sixth is worked out from two of those by
+    // `Tie::Derived`. The last eight are constants and controls, which is what the entry in
+    // `[ledger]` means by "six more … and the last eight": that entry's four parts are
+    // 15 + 9 + 6 + 8, and they close on 38 only when both descriptions count the same way.
+    // See `docs/plans/path-ledger-dfn-step.md` and `path-ledger-spm-step.md`.
     LedgerRule {
         // The charge it starts from, which is the one number in the opening sentence that is
         // not a control. A different phrase from step 13's "the same {n} %, the same train"
