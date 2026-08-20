@@ -84,10 +84,10 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is fourteen steps and 251 numbers —
-//! a collision of counts and not one number: the first fourteen were the steps with no
-//! claim when this paragraph was written, this fourteen is the steps scanned whole today,
-//! and only the second of them moves.
+//! (`[ledger]` in `path-claims.toml`) and today it is fifteen steps and 275 numbers —
+//! which for one slice collided with the fourteen above and no longer does: that fourteen
+//! is the steps that had no claim when this paragraph was written and is frozen, and this
+//! count is the steps scanned whole today, which moves every time one is.
 //! Nineteen arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, the span of a
@@ -182,12 +182,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the ten steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the nine steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed fourteen whole steps — but only fourteen. Steps here carrying neither a
-//!   claim nor a ledger entry: none. The other ten have their claimed sentences
+//!   has now closed fifteen whole steps — but only fifteen. Steps here carrying neither a
+//!   claim nor a ledger entry: none. The other nine have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all ten, one line each, so this list cannot go quietly out of date.
+//!   names all nine, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -1136,6 +1136,25 @@ struct Row {
     /// rather than the row. Value-only for the same reason [`Self::deficit_max`] is, and
     /// one reason more: the grid is per-cell, so no single string renders it.
     deficit_min: f64,
+    /// **Which cell** [`Self::deficit_max`] belongs to — `(series, parallel)`, from zero,
+    /// the two numbers the pack grid's tiles are addressed by.
+    ///
+    /// An address rather than a quantity, and it is a measurement all the same: at the
+    /// instant the first cell crosses empty it is the only cell with a debt, so the worst
+    /// cell *is* the first crosser. That is the reading step 7's *"(0,0) first at 345.0 s"*
+    /// rests on, and it is a proxy rather than an identity — read at any later instant this
+    /// field says which cell owes most, which is a different sentence.
+    ///
+    /// **Before anything crosses it is (0, 0) by tie**, since every deficit is zero and
+    /// [`deficit_range`] keeps the first cell it walks. Nothing may read an address at such
+    /// an instant; a claim that did would be asserting the walk order rather than the pack.
+    deficit_max_cell: (usize, usize),
+    /// Which cell [`Self::deficit_min`] belongs to, read the same way.
+    ///
+    /// The mirror of the note above: at the instant the *last* cell crosses, it is the only
+    /// one whose debt is still near zero, so the cell that owes least is the one that has
+    /// just arrived. Step 7's *"(1,1) last at 356.5"*.
+    deficit_min_cell: (usize, usize),
     /// The `surface gap` row's two numbers, bulk minus surface on each electrode, as
     /// fractions — `None` on an equivalent circuit, which has no electrodes.
     ///
@@ -1289,19 +1308,59 @@ fn surface_gap(pack: &Pack) -> Option<(f64, f64)> {
 ///
 /// Both walk the same loop rather than being two functions, so the pair can never be read
 /// off two different sets of cells.
-fn deficit_range(pack: &Pack) -> (f64, f64) {
-    let mut worst = 0.0f64;
-    let mut best = f64::INFINITY;
+///
+/// **Each end carries the cell it belongs to**, which is what lets step 7 name the cells
+/// that cross empty first and last. The addresses come off the same walk as the values for
+/// the same reason the two values do: an argument about *which* cell is worst, read off a
+/// second loop, could disagree with the number beside it.
+fn deficit_range(pack: &Pack) -> (DeficitEnd, DeficitEnd) {
+    let mut worst = DeficitEnd {
+        pts: 0.0,
+        series: 0,
+        parallel: 0,
+    };
+    let mut best = DeficitEnd {
+        pts: f64::INFINITY,
+        series: 0,
+        parallel: 0,
+    };
     for s in 0..usize::from(pack.series()) {
         for p in 0..usize::from(pack.parallel()) {
             let cell = pack
                 .cell(s, p)
                 .unwrap_or_else(|| panic!("pack has no cell at {s}S{p}P"));
-            worst = worst.max(cell.soc_deficit);
-            best = best.min(cell.soc_deficit);
+            // Strictly greater / strictly less, so a tie stays with the cell the walk
+            // reached first. It matters before anything crosses, where every deficit is
+            // zero and both ends are (0, 0) by tie rather than by physics — which is why
+            // nothing reads an address at such an instant. See `Row::deficit_max_cell`.
+            if cell.soc_deficit > worst.pts {
+                worst = DeficitEnd {
+                    pts: cell.soc_deficit,
+                    series: s,
+                    parallel: p,
+                };
+            }
+            if cell.soc_deficit < best.pts {
+                best = DeficitEnd {
+                    pts: cell.soc_deficit,
+                    series: s,
+                    parallel: p,
+                };
+            }
         }
     }
     (best, worst)
+}
+
+/// One end of the pack's deficit spread: how far past empty, and which cell.
+#[derive(Debug, Clone, Copy)]
+struct DeficitEnd {
+    /// The cell's `soc_deficit`, as a fraction of capacity.
+    pts: f64,
+    /// Its series index, counted from zero — the first number of the pack grid's `(s, p)`.
+    series: usize,
+    /// Its index within that parallel group, also from zero.
+    parallel: usize,
 }
 
 /// One step's trajectory, sampled every engine step — including its charge leg, if the
@@ -1563,8 +1622,10 @@ fn drive(
         trace.rows.push(Row {
             t_s: now,
             telemetry: t,
-            deficit_max,
-            deficit_min,
+            deficit_max: deficit_max.pts,
+            deficit_min: deficit_min.pts,
+            deficit_max_cell: (deficit_max.series, deficit_max.parallel),
+            deficit_min_cell: (deficit_min.series, deficit_min.parallel),
             surface_gap: surface_gap(pack),
             sensed: sensed(pack),
             rest_v,
@@ -1684,8 +1745,10 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
     let probe = Row {
         t_s: pack.sim_time_s(),
         telemetry: probe_telemetry,
-        deficit_max: probe_deficit_max,
-        deficit_min: probe_deficit_min,
+        deficit_max: probe_deficit_max.pts,
+        deficit_min: probe_deficit_min.pts,
+        deficit_max_cell: (probe_deficit_max.series, probe_deficit_max.parallel),
+        deficit_min_cell: (probe_deficit_min.series, probe_deficit_min.parallel),
         surface_gap: surface_gap(&pack),
         sensed: sensed(&pack),
         // The open-circuit end of the first tooth's sag, and the only place to get it: at
@@ -1786,21 +1849,23 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 174 of 202 claims.
+    /// number's last printed place. The default shape: 178 of 210 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
     /// the rule it beats is still computable. Used where a claim is pinned harder than
     /// the sentence needs (a chemistry constant, an exactly-1.0 starting point), where
-    /// the prose hedges a round number the engine misses by more than its last place, and
-    /// for four grid times whose prose *does* spell them: half a step is tighter than the
-    /// whole second those sentences print, so the number was always right and only the
-    /// declaration was wrong. 23 of 202.
+    /// the prose hedges a round number the engine misses by more than its last place, for
+    /// an **address** — step 7 names the cells that cross empty first and last, and an
+    /// index is an integer the engine either reports or does not, so half a unit in its
+    /// last place is slack with no meaning — and for four grid times whose prose *does*
+    /// spell them: half a step is tighter than the whole second those sentences print, so
+    /// the number was always right and only the declaration was wrong. 27 of 210.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 5 of 202, every
+    /// the engine either hits the claimed step or misses by a whole one. 5 of 210, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -1840,7 +1905,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 183 of 202, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 191 of 210, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2587,6 +2652,18 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
         // The shallow end of the same spread. No row prints it — see `Row::deficit_min` —
         // so a claim measured here may name no `display` either.
         "deficit_pts_min_at" => row.deficit_min * 100.0,
+        // WHICH cell each end of that spread is, as the pack grid addresses it. Four
+        // quantities and not two pairs, because a claim states one number and the prose
+        // prints two: `(0,0)` is a series index beside a parallel one, and a claim that
+        // carried both could not be spelled by either digit.
+        //
+        // Value-only, and no `display` may be named: the grid renders a tile per cell and
+        // labels none of them with its address — the reader is told which tile they are
+        // looking at by where it sits, which is not a string this file can mirror.
+        "deficit_worst_cell_series_at" => row.deficit_max_cell.0 as f64,
+        "deficit_worst_cell_parallel_at" => row.deficit_max_cell.1 as f64,
+        "deficit_best_cell_series_at" => row.deficit_min_cell.0 as f64,
+        "deficit_best_cell_parallel_at" => row.deficit_min_cell.1 as f64,
         // The two halves of the `surface gap` row, each in points of charge — the units
         // the row prints and the prose speaks. Separate quantities and not a pair, because
         // a claim states one number: step 18's whole argument is that these two do
@@ -3048,6 +3125,56 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
                 .map(|r| r.telemetry.i_actual * dt / 3600.0)
                 .sum()
         }
+        // When the debt STARTS: the first step at which any cell is past empty, which is
+        // what the `past empty` readout coming off zero is.
+        //
+        // **Equal to `flag_first_s:SOC_CLAMPED_LOW` by construction, not by coincidence** —
+        // the flag is raised on the step the coulomb counter clamps, which is the step the
+        // deficit it carries becomes non-zero. So this quantity is not independent evidence
+        // for that instant and is not here as a cross-check: it exists because step 7's
+        // sentence is about the readout rather than about the flag, and a sentence has to be
+        // tied to the thing it names. Two quantities agreeing by construction is the
+        // structural blindness this file has been caught by before; it is stated here rather
+        // than discovered later.
+        "deficit_leaves_zero_s" => run
+            .rows
+            .iter()
+            .find(|r| r.deficit_max > 0.0)
+            .unwrap_or_else(|| {
+                panic!(
+                    "the run never went past empty: the worst cell still owes nothing \
+                     at t = {} s, so no cell ever crossed and the claim is about an \
+                     instant that does not exist.",
+                    run.rows.last().expect("rows").t_s
+                )
+            })
+            .t_s,
+        // And when the LAST cell crosses: the first step at which every cell owes
+        // something. `deficit_min` is the shallowest debt in the pack, so it leaves zero on
+        // the step the final cell arrives.
+        "deficit_all_owed_s" => run
+            .rows
+            .iter()
+            .find(|r| r.deficit_min > 0.0)
+            .unwrap_or_else(|| {
+                panic!(
+                    "some cell in this pack never went past empty — the shallowest debt \
+                     is still {:.6} at t = {} s, and \"the eight cells cross\" is a \
+                     sentence about all of them.",
+                    run.rows.last().expect("rows").deficit_min,
+                    run.rows.last().expect("rows").t_s
+                )
+            })
+            .t_s,
+        // How long the pack takes to cross empty end to end. A measurement rather than the
+        // sentence's own arithmetic over the two instants beside it: those two sit in
+        // literals of their own, so a derivation could not reach them, and a spread is in
+        // any case the thing the sentence is about — it moves when the scatter moves, which
+        // is the failure a reader would care about.
+        "deficit_crossing_spread_s" => {
+            measure("deficit_all_owed_s", run, at_s, probe, mark_s)
+                - measure("deficit_leaves_zero_s", run, at_s, probe, mark_s)
+        }
         // When the debt is paid off: the first step at zero deficit after a step that had
         // one. Measured rather than assumed because it is the instant two of this path's
         // claims are read at, and a hardcoded time would go quietly stale if the
@@ -3250,7 +3377,7 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, soc_at, i_at, \
              t_max_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
-             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, delivered_ah, cccv_taper_s, \
+             deficit_pts_at, deficit_pts_min_at, deficit_zero_s, deficit_leaves_zero_s, \n             deficit_all_owed_s, deficit_crossing_spread_s, deficit_worst_cell_series_at, \n             deficit_worst_cell_parallel_at, deficit_best_cell_series_at, \n             deficit_best_cell_parallel_at, delivered_ah, cccv_taper_s, \
              cccv_cc_ends_s, pulse_sag_mv:<tooth>, pulse_jump_mv:<tooth>, \
              pulse_rebound_mv:<tooth>, pulse_lost_mv:<tooth>, pulse_rebound_arrived:<tooth>, \
              soc_lost_pts_at, t_rise_k_at, soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, \
@@ -5638,6 +5765,75 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
     LedgerRule {
         phrase: "the demand box still reads {n}",
         ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
+    },
+    // Step 7 — the same demand with the BMS taken out. Five of its fifteen unaccounted
+    // numerals are constants, and four of the five are the two controls this step is about:
+    // the demand box, printed in three separate sentences, and the mark. The fifth is the
+    // floor the chemistry declares. Everything else in the step is a measurement.
+    LedgerRule {
+        // The demand box, in the sentence that opens the step by saying nothing about it
+        // has changed. Its own rule rather than a share of step 6's, because a phrase is
+        // matched against whichever step is being scanned and step 6's two say "asking for"
+        // and "the demand box still reads" — neither of which this sentence carries.
+        phrase: "Same pack, same {n} A, BMS removed",
+        ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The floor the datasheet would print, which on this page is the chemistry file's
+        // own `v_min` and not a number the step chose. Step 1 states the same constant in
+        // its own words ("gone under the {n} V this chemistry file declares"), and the two
+        // phrases share nothing but the number — which is the point of keeping them apart.
+        phrase: "dives well under the {n} V the datasheet allows",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The demand box beside the number step 6 MEASURED under it. This is the sentence
+        // `path-claims.toml`'s note on `pinned near 14 A` was written for: the ledger's
+        // claimed arm is positional, so a `14` here is not accounted by step 6's claim on
+        // its own prose — it has to be quoted, and quoting is what makes this sentence go
+        // red if step 6's clamp ever moves.
+        //
+        // Both of step 6's `i_at` claims answer 13.8207, which is what `Tie::Quoted`'s
+        // agreement fence requires, and `about 14` is that value at the precision this
+        // sentence prints.
+        phrase: "the BMS clamped your {n} A down to about {n} and",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Quoted {
+                step: "protection-on",
+                arm: None,
+                quantity: "i_at",
+                states: QuotedAs::Same,
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The two numbers the rest of the step follows from: how hard the pack is pulled,
+        // and for how long. The mark is a control in `Control::Until`'s sense — the page
+        // stops there — and this sentence is the one that tells the reader so.
+        phrase: "{n} A for {n} s is more charge than this pack holds",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Setting(Control::Until),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The back-reference at the end of the step: the spread the eight cells cross over
+        // is the manufacturing scatter step 3 introduced. An ordinal, so inserting a step
+        // ahead of `pack-disagrees` turns this sentence red rather than leaving it quietly
+        // pointing at the wrong lesson.
+        //
+        // The phrase carries `capacity` and `of step` on purpose. Last slice's sweep found
+        // three rules in this table that reach a step they were not written for, two of
+        // them step 3's own scatter rules; a bare `step {n}` here would have been a fourth
+        // and would have matched every cross-reference in the path.
+        phrase: "the capacity scatter of step {n}",
+        ties: &[Tie::Ordinal("pack-disagrees")],
         pow10: 0,
     },
     // Step 12 — the pulse train. Its two leg lengths are the demand program the PAGE runs,

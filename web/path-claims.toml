@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Fourteen steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Fifteen steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -142,8 +142,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  174 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  23 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  178 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  27 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -153,6 +153,10 @@
 #             two claims on step 4's estimator gap, where the sentence's own word
 #             ("three") licenses half a point and the tolerance taken is half of the
 #             last place a reader could compute the gap to from the two rows behind it.
+#             And for the four ADDRESS claims on step 7, which name the cells that cross
+#             empty first and last: an index is an integer the engine either reports or
+#             does not, so half a unit in its last printed place — 0.5, on a `0` — is
+#             slack with no meaning at all.
 #   grid      5 claims. The quantity is a time the engine can only report on the step
 #             grid (`flag_first_s:*`, `deficit_zero_s`) and the prose spells no number
 #             in it — it gives a consequence, or a rendering of the clock. `tol` is
@@ -191,9 +195,9 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 23 claims.
+# bounds the engine against `value` and is deliberately tighter on 27 claims.
 #
-#   same        183 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        191 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    5. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -239,8 +243,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 188 of the 222 numbers the
-#            129 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 196 of the 230 numbers the
+#            133 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -271,7 +275,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 129 claimed sentences need none. A future literal printing a chemistry constant will
+# the 133 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -286,7 +290,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — fourteen steps of the twenty-four so far.
+# of this file — fifteen steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -3155,11 +3159,12 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: fourteen
-# steps, 251 numerals, and no longer all of them scenario constants. This fourteen is
-# NOT the fourteen a few lines above: that one is frozen, and counts the steps that had
-# no claim when the ledger was written. The two happen to be equal today and only this
-# one moves. The first
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: fifteen
+# steps, 275 numerals, and no longer all of them scenario constants. This count is NOT
+# the fourteen a few lines above: that one is frozen, and counts the steps that had no
+# claim when the ledger was written. They were equal for one slice and have now parted,
+# which is what the last slice said would happen — a live count moves and a frozen one
+# does not. The first
 # three were picked because the same measuring pass found they carry no
 # measurement-shaped figure at all, so they could be closed before a single number was
 # measured. The fourth could not be: step 6's opening sentence prints the pack, the pack's
@@ -3442,12 +3447,24 @@ and not exact, which is the physics rather than a rounding.
 # had nothing guarding it. Everything here is the step AS CONFIGURED — `bms: false` is in
 # the lesson block — so none of it needs an arm.
 #
-# WHAT IS STILL NOT CLAIMED, and why: "(0,0) first at 345.0 s, (1,1) last at 356.5". The
-# cell indices are numbers in the sentence and no accounting arm reaches them — they are
-# neither measurements, nor instants, nor settings, nor anything a row prints. Claiming
-# that sentence would mean either splitting a literal down to fragments that do not read
-# as sentences, or a fifth arm for "an address in the pack". The crossing times are real
-# and reproduce; the sentence stays unclaimed until something can account for a coordinate.
+# THE STEP IS LEDGERED NOW, and the note that used to stand here was wrong. It said of
+# "(0,0) first at 345.0 s, (1,1) last at 356.5" that the cell indices "are neither
+# measurements, nor instants, nor settings, nor anything a row prints", and that the
+# sentence would stay unclaimed "until something can account for a coordinate". No arm was
+# needed: an address IS a measurement of the run. Which cell owes most at the instant the
+# first debt appears is a fact the engine decides, exactly as much as the 345.0 beside it,
+# and the cell that owes least when the last one arrives is the same fact from the other
+# end. `deficit_worst_cell_series_at` and its three siblings read it, and the four claims
+# below are ordinary `spells` claims.
+#
+# The other half of the old note — that claiming the sentence would mean "splitting a
+# literal down to fragments that do not read as sentences" — was right about the splitting
+# and wrong about it being a cost. The split is REQUIRED, and by the same argument this
+# file makes everywhere else: `Accounted::Spelled` asks whether ANY claim on the sentence
+# spells the token, so one literal carrying both `(0,0)` and `(1,1)` would stay green with
+# the two pairs swapped. Three literals is what makes each pair answer for itself. That
+# fragments are allowed was already settled by step 6, whose two `14 A` readings are
+# claimed as "just under 14 A" and "pinned near 14 A".
 
 [[claim]]
 step = "protection-off"
@@ -3622,6 +3639,178 @@ reason, stated in `Row::deficit_max`.
 4.3 points of spread between the two ends, on a pack whose cells started within a fraction
 of a point of each other. This is step 3's scatter multiplied by 100 s of being driven
 backwards.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "The `past empty` readout comes off zero at 345.0 s"
+quantity = "deficit_leaves_zero_s"
+value = 345.0
+tol = 0.05
+tol_from = "spelled"
+spells = "345.0"
+states = "same"
+read_at_s = 345.0
+note = """
+The instant the readout stops reading zero — the first step at which any cell in the pack
+is past empty.
+
+**Its value is not independent evidence, and that is stated rather than left to be
+found.** This is the same instant `flag_first_s:SOC_CLAMPED_LOW` claims two sentences
+above, and the two agree BY CONSTRUCTION: the flag is raised on the step the coulomb
+counter clamps, and the debt the readout shows is what that clamp carries. So a reader
+should not take the pair as two measurements confirming each other. It is a second
+quantity because it is a second SENTENCE — one about a flag, one about a readout — and
+this file's rule is that a sentence is tied to the thing it names.
+
+Value-only: `past empty` is sampled on a wall-clock throttle, so no claim off this
+trajectory may name that display. See `Row::deficit_max`.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "they cross over 11.5 seconds"
+quantity = "deficit_crossing_spread_s"
+value = 11.5
+tol = 0.05
+tol_from = "spelled"
+spells = "11.5"
+states = "same"
+read_at_s = 356.5
+note = """
+How long the pack takes to cross empty end to end: the instant every cell owes something,
+less the instant the first one did.
+
+**Measured rather than derived from the two instants beside it.** The sentence prints all
+three numbers, so `[[derived]]` could have accounted this one from the other two — but a
+derivation's operands have to be numbers its own literal prints, which would have forced
+the crossing pair back into a single literal and taken away the split the two claims below
+depend on. It is also the better instrument: a spread is what the sentence is ABOUT, and
+this claim goes red when the scatter moves even if both ends move together.
+
+Read at the later of the two crossings, which is where the spread is complete.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "(0,0) first at 345.0 s"
+quantity = "deficit_leaves_zero_s"
+value = 345.0
+tol = 0.05
+tol_from = "spelled"
+spells = "345.0"
+states = "same"
+read_at_s = 345.0
+note = """
+The same quantity as the claim two above and deliberately a second claim rather than a
+second reading of it, on step 6's terms: this step states the instant TWICE, once as the
+readout coming off zero and once as when the first cell arrives, and the ledger's claimed
+arm is positional — a number is accounted only inside the literal of a sentence some claim
+quotes. Without this the `345.0` in the crossing clause would be tied to nothing.
+
+The literal stops before the comma. `(1,1) last at 356.5` is a claim of its own for the
+reason given in this section's header: one literal carrying both pairs would be green with
+them swapped.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "(0,0) first at 345.0 s"
+quantity = "deficit_worst_cell_series_at"
+value = 0.0
+tol = 1.0e-12
+tol_from = "tighter"
+spells = "0"
+states = "same"
+read_at_s = 345.0
+note = """
+Which cell that is: series index 0, the first number of the pack grid's address.
+
+**An address is a measurement.** At 345.0 s exactly one cell in the pack is past empty, so
+the cell with the largest debt IS the one that just crossed. That is a proxy rather than an
+identity and it is sound only at this instant — read a minute later the same quantity says
+which cell owes most, which is a different sentence. See `Row::deficit_max_cell`.
+
+`tighter` rather than `spelled`: an index is an integer the engine either reports or does
+not, so half a unit in the last printed place — 0.5 here — is slack with no meaning. The
+rule it beats is still computable, which is all `tighter` asks.
+
+What this pair CANNOT tell apart is the two axes, and the reason is the pack rather than
+the check: both coordinates of this address are 0, so a harness that read the parallel
+index where the series index belongs would agree with the prose. The claims are each tied
+to their own quantity, so neither is decorative; the sentence just has no way to
+distinguish them. Stated because a reader of this note would otherwise assume it does.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "(0,0) first at 345.0 s"
+quantity = "deficit_worst_cell_parallel_at"
+value = 0.0
+tol = 1.0e-12
+tol_from = "tighter"
+spells = "0"
+states = "same"
+read_at_s = 345.0
+note = """
+The second half of the same address: cell 0 of that series group. Four claims across the
+two pairs rather than two, because a claim states one number and the prose prints two —
+and a claim carrying a pair could be spelled by neither digit.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "(1,1) last at 356.5"
+quantity = "deficit_all_owed_s"
+value = 356.5
+tol = 0.05
+tol_from = "spelled"
+spells = "356.5"
+states = "same"
+read_at_s = 356.5
+note = """
+The other end: the first step at which every cell in the pack owes something, which is
+when the last one crosses. 11.5 s after the first, on a pack whose cells were built within
+a couple of per cent of each other.
+
+Value-only for `deficit_leaves_zero_s`'s reason and one more: this end of the spread is on
+the pack grid rather than in any row, which is exactly what the sentence tells the reader
+to switch on.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "(1,1) last at 356.5"
+quantity = "deficit_best_cell_series_at"
+value = 1.0
+tol = 1.0e-12
+tol_from = "tighter"
+spells = "1"
+states = "same"
+read_at_s = 356.5
+note = """
+Series index 1 — the group the soft short will later appear in, though not in this step:
+the fault queue fires at 600 s and this run stops at 450.
+
+The mirror of the argument on the pair above. At 356.5 s the cell that owes LEAST is the
+one that has only just started owing anything: it is at 0.0614 points against the worst
+cell's 2.87, so the identification is not a close call.
+"""
+
+[[claim]]
+step = "protection-off"
+literal = "(1,1) last at 356.5"
+quantity = "deficit_best_cell_parallel_at"
+value = 1.0
+tol = 1.0e-12
+tol_from = "tighter"
+spells = "1"
+states = "same"
+read_at_s = 356.5
+note = """
+And cell 1 of that group. The same axis caveat as the `(0,0)` pair: both digits here are 1,
+so the sentence cannot distinguish the two coordinates even though each claim is tied to
+its own quantity.
 """
 
 # --- step 19's protected half ------------------------------------------------------
@@ -5912,13 +6101,23 @@ steps = [
                      # of `R0`, a section of the chemistry file rather than a quantity.
                      # The last three needed claims — the two ends of the flat window, and
                      # the knee in the clock's own language
+  "protection-off",  # 24: the same demand as step 6 with the BMS taken out. Nine of the
+                     # twenty-four were claimed already — the two flags, the voltages
+                     # either side of them and the two ends of the debt at the mark. Of
+                     # the fifteen that were not, five are constants: the demand box in
+                     # three separate sentences, the mark, and the floor the chemistry
+                     # declares. A sixth is step 6's own clamped current, quoted rather
+                     # than re-measured, and a seventh is the ordinal pointing back at
+                     # step 3. The last eight are this step's own measurements, and four
+                     # of those are an ADDRESS — the cells that cross empty first and
+                     # last, which needed no new arm because a coordinate is a
+                     # measurement of the run
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: ten of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: nine of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
   "same-discharge-other-chemistry", # claims: 5
-  "protection-off",                 # claims: 9
   "leg-that-is-not-there",          # claims: 6
   "what-protection-costs",          # claims: 3, on two ambient arms. Also two perf
                                     # ratios no trajectory can settle
