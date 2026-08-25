@@ -1779,6 +1779,21 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
     // `every_arm_is_instructed_by_its_own_step`; here it would be a silent fallback to the
     // wrong pack, so it panics.
     let lesson = pack_lesson_of(arm, lesson, lessons);
+    // The picker, which is the one override that changes the FILE without naming a lesson.
+    // A restart is implied ([`assert_picker`]), so this pack is built from the named file at
+    // t = 0 under the step's own controls — `loadScenario` touches none of them — with the
+    // arm's own overrides on top exactly as they go on top of a walk.
+    let picked;
+    let lesson = match arm.and_then(|a| a.scenario.as_deref()) {
+        Some(file) => {
+            picked = Lesson {
+                scenario: file.to_string(),
+                ..lesson.clone()
+            };
+            &picked
+        }
+        None => lesson,
+    };
     let dt = arm.and_then(|a| a.dt).unwrap_or(lesson.dt);
     let mut pack = match (arm.and_then(|a| a.bms), arm.and_then(|a| a.fade_per_ah)) {
         // The counterfactual comes first because it has to resolve the BMS itself: an arm
@@ -1965,7 +1980,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 209 of 249 claims.
+    /// number's last printed place. The default shape: 213 of 253 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1976,12 +1991,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 34 of 249.
+    /// the number was always right and only the declaration was wrong. 34 of 253.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 6 of 249, every
+    /// the engine either hits the claimed step or misses by a whole one. 6 of 253, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -2021,7 +2036,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 226 of 249, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 230 of 253, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2611,6 +2626,38 @@ struct Arm {
     /// [`Tie::Elsewhere`] states for its own named-lesson read.
     #[serde(default)]
     pack_from: Option<String>,
+    /// The scenario file this arm **loads from the picker**, if it is not the one the step
+    /// is standing on.
+    ///
+    /// [`Arm::pack_from`] models a walk to another *lesson*; this models the picker itself.
+    /// From the reader's side the two are one gesture — `loadScenario` rebuilds from the
+    /// named file at t = 0 and leaves every control alone, which is the reading
+    /// [`assert_walkable`]'s fourth fence already settled for a walk. They are two fields
+    /// because a scenario the path never teaches has no lesson to name, and step 2's third
+    /// cell is exactly that: `cc_discharge_lgm50.toml` is in the `<option>` list of
+    /// `web/index.html` and in no lesson block. Before this field the sentence that sends a
+    /// reader to it had no trajectory behind it, and every number after it — the cell's
+    /// nameplate, the rate, both falls, the time one of them takes and the charge left at
+    /// the mark — was tied to nothing at all.
+    ///
+    /// Five fences, in [`assert_picker`]: the file must differ from the step's own, it must
+    /// be one the picker actually offers, its name must be spelled in the instruction, it
+    /// implies [`Start::Restart`] because loading a file *is* a rebuild, and it may not be
+    /// combined with `pack_from` — which would be two navigations under one sentence asking
+    /// for either.
+    ///
+    /// **What it will change for a tie, and has not yet.** [`Tie::OnArm`] refuses a file
+    /// field on the stated grounds that "an arm overrides controls, not files: asking a
+    /// scenario field under an arm's name would resolve to the same number and claim it came
+    /// from somewhere else". That argument is exactly right for every arm that does not
+    /// carry this field, and false for one that does — the picked file really is the arm's,
+    /// and step 2's third cell prints its nameplate and its own name. The extension is not
+    /// built here because a vocabulary rule is only counted against a *ledgered* step
+    /// ([`every_ledger_rule_is_a_phrase_and_is_used`]), so it would land with no user, which
+    /// is the shape this file has been caught by before. It belongs with the slice that
+    /// ledgers step 2. See `docs/plans/path-third-cell.md`.
+    #[serde(default)]
+    scenario: Option<String>,
     /// The sentence in that step's prose that tells the reader to make this change,
     /// verbatim. Not a paraphrase: it is checked as a substring, like a claim's `literal`.
     instruction: String,
@@ -3239,6 +3286,37 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
             .telemetry
             .v_terminal;
     }
+    // The fall between two charge levels \[mV\]: the voltage at the first row at or below
+    // the higher, less the voltage at the first row at or below the lower.
+    //
+    // **A quantity for a sentence that prints a drop and neither of its ends.** Step 2's own
+    // 481 mV is two claims sharing one literal, because the sentence beside it gives both
+    // voltages ("4.030 V to 3.549"). The two cells it sends the reader to are quoted as
+    // "620 mV" and "618 mV" with no voltage anywhere near either, and the reason is the
+    // lesson: what a reader is meant to carry away is the SHAPE of the curve — how far it
+    // falls across the middle — and not where this particular cell happens to sit. Two
+    // claims on the ends would pin numbers the prose does not print and leave the number it
+    // does print tied to a derivation over them.
+    //
+    // Read on the same first-row-at-or-below rule as `v_at_soc_below`, so the two agree by
+    // construction where a step states an end and the fall in the same paragraph.
+    if let Some(rest) = quantity.strip_prefix("v_fall_mv_soc:") {
+        let (from, to) = rest.split_once(':').unwrap_or_else(|| {
+            panic!("`{rest}` is not a pair of charge fractions separated by a colon")
+        });
+        let at = |frac: &str| -> f64 {
+            let frac: f64 = frac
+                .parse()
+                .unwrap_or_else(|_| panic!("`{frac}` is not a charge fraction"));
+            run.rows
+                .iter()
+                .find(|r| r.telemetry.soc_true <= frac)
+                .unwrap_or_else(|| panic!("the run never fell to soc <= {frac}"))
+                .telemetry
+                .v_terminal
+        };
+        return (at(from) - at(to)) * 1000.0;
+    }
     // When the terminal first falls to or below a threshold \[s\] — the mirror image of
     // `v_at_soc_below:`, which asks what the voltage is at a charge level.
     //
@@ -3295,6 +3373,30 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
                     run.rows[peak].t_s,
                     run.rows.last().expect("rows").deficit_max * 100.0,
                     run.rows.last().expect("rows").t_s,
+                )
+            })
+            .t_s;
+    }
+    // When the charge first falls to or below a level \[s\] — `t_at_v_below`'s sibling, one
+    // axis over. The voltage crossing is what a reader watches on the plot; this is what a
+    // sentence means when it says how long a cell takes to get somewhere on the SOC axis,
+    // and step 2's third cell prints exactly that: the same fall, 5708.5 s to reach it.
+    if let Some(frac) = quantity.strip_prefix("t_at_soc_below:") {
+        let frac: f64 = frac
+            .parse()
+            .unwrap_or_else(|_| panic!("`{frac}` is not a charge fraction"));
+        return run
+            .rows
+            .iter()
+            .find(|r| r.telemetry.soc_true <= frac)
+            .unwrap_or_else(|| {
+                panic!(
+                    "the run never fell to soc <= {frac} — its lowest charge is {:.6}. The \
+                     claim is about a crossing that no longer happens.",
+                    run.rows
+                        .iter()
+                        .map(|r| r.telemetry.soc_true)
+                        .fold(f64::MAX, f64::min)
                 )
             })
             .t_s;
@@ -4047,7 +4149,90 @@ fn pack_lesson_of<'a>(arm: Option<&Arm>, lesson: &'a Lesson, lessons: &'a [Lesso
 /// them is reachable by any arm in the file — the only twin arm satisfies all three — and a
 /// fence no perturbation can enter is the shape this file has been caught by before, so the
 /// three `should_panic` tests below are what price them.
+/// The scenario files the page's own picker offers, as `web/index.html` writes them.
+///
+/// Read out of the markup rather than off the `scenarios/` directory, and the difference is
+/// the whole point of the fence that uses it: a file on disk is not a file a reader can
+/// reach. `loadScenarioList` replaces these options from `GET /scenarios` at run time, so
+/// the served list is the wider one — this is the narrower, static list the page ships with,
+/// and an arm that sends a reader to a file outside it is describing a click that may not be
+/// there. Failing toward red on the smaller list is the safe direction.
+fn picker_files() -> Vec<String> {
+    let markup = index_html();
+    let marker = "<option value=\"";
+    markup
+        .match_indices(marker)
+        .filter_map(|(at, _)| {
+            let rest = &markup[at + marker.len()..];
+            let end = rest.find('"')?;
+            let value = &rest[..end];
+            value.ends_with(".toml").then(|| value.to_string())
+        })
+        .collect()
+}
+
+/// The fences on [`Arm::scenario`] — the picker arm, which changes the file under the
+/// reader's controls.
+///
+/// Separate from [`assert_walkable`] because the two fields model two gestures and only one
+/// of them names a lesson. What they share is the argument: an arm that changes the file has
+/// to change it to something a reader can actually get to, and has to say so in the prose of
+/// the step it is declared on.
+fn assert_picker(arm: &Arm, lesson: &Lesson) {
+    let Some(file) = arm.scenario.as_deref() else {
+        return;
+    };
+    assert_ne!(
+        file, lesson.scenario,
+        "arm `{}` on step `{}` loads `{file}` from the picker, which is the file the step is \
+         already on. Then nothing is loaded and the arm is an ordinary restart wearing a \
+         second name — the same refusal `assert_walkable` makes of a walk to one's own \
+         scenario.",
+        arm.name, arm.step
+    );
+    assert!(
+        picker_files().iter().any(|f| f == file),
+        "arm `{}` on step `{}` loads `{file}`, and `web/index.html`'s picker does not offer \
+         it. The instruction tells a reader to pick a file out of a list; a file that is not \
+         in the list is a click nobody can make, whatever `scenarios/` holds.",
+        arm.name,
+        arm.step
+    );
+    let stem = file.trim_end_matches(".toml");
+    assert!(
+        ascii_minus(&arm.instruction).contains(stem),
+        "arm `{}` on step `{}` loads `{file}`, and `{stem}` does not appear in the \
+         instruction it claims to be following:\n  {}\n\
+         The file and the sentence that sends a reader to it are two statements of one \
+         fact, on the same terms as a typed current — this is the check that keeps \
+         them one.",
+        arm.name,
+        arm.step,
+        arm.instruction
+    );
+    assert!(
+        arm.start == Start::Restart,
+        "arm `{}` on step `{}` loads `{file}` on a continuation. There is no such position: \
+         `loadScenario` closes the backend, rebuilds from the chosen file and starts the \
+         clock at zero, so a picked file is a run from t = 0 whatever the reader had \
+         reached.",
+        arm.name,
+        arm.step
+    );
+    assert!(
+        arm.pack_from.is_none(),
+        "arm `{}` on step `{}` both walks to `{}` and picks `{file}`. Those are two \
+         navigations composed under one sentence, and the second would silently decide \
+         which pack the first was about — the same refusal `fade_per_ah` makes of its own \
+         pairing with a walk.",
+        arm.name,
+        arm.step,
+        arm.pack_from.as_deref().unwrap_or_default()
+    );
+}
+
 fn assert_walkable(arm: &Arm, lesson: &Lesson, pack_lesson: &Lesson) {
+    assert_picker(arm, lesson);
     let Some(id) = arm.pack_from.as_deref() else {
         return;
     };
@@ -10662,6 +10847,7 @@ fn walkable_probe(step: &str, pack_from: &str, start: Start) -> Arm {
         step: step.to_string(),
         name: "probe".to_string(),
         pack_from: Some(pack_from.to_string()),
+        scenario: None,
         instruction: String::new(),
         start,
         demand_a: None,
@@ -10675,6 +10861,114 @@ fn walkable_probe(step: &str, pack_from: &str, start: Start) -> Arm {
         identical_to: None,
         note: String::new(),
     }
+}
+
+/// An arm as [`assert_picker`] wants to see one — the picker's sibling of
+/// [`walkable_probe`], and separate for the same reason the fields are: a walk names a
+/// lesson and a pick names a file.
+fn picker_probe(step: &str, file: &str, start: Start, instruction: &str) -> Arm {
+    Arm {
+        step: step.to_string(),
+        name: "probe".to_string(),
+        pack_from: None,
+        scenario: Some(file.to_string()),
+        instruction: instruction.to_string(),
+        start,
+        demand_a: None,
+        cc_cv_a: None,
+        pulse_a: None,
+        dt: None,
+        bms: None,
+        fade_per_ah: None,
+        ambient_c: None,
+        actions: vec![Action::Run { to_s: 1.0 }],
+        identical_to: None,
+        note: String::new(),
+    }
+}
+
+/// The lesson these fence tests are asked on — step 2, the one step with a picker arm.
+fn picker_step(lessons: &[Lesson]) -> &Lesson {
+    lessons
+        .iter()
+        .find(|l| l.id == "same-discharge-other-chemistry")
+        .expect("step 2 is still in the path")
+}
+
+/// A picked file that is the step's own is refused.
+///
+/// None of these five is reachable from `path-claims.toml` — the one picker arm in the file
+/// satisfies all of them — so each is priced here rather than resting on a paragraph, on the
+/// terms the `pack_from` fences below already established.
+#[test]
+#[should_panic(expected = "the file the step is already on")]
+fn a_picked_file_may_not_be_the_steps_own() {
+    let lessons = lessons();
+    let here = picker_step(&lessons);
+    let arm = picker_probe(&here.id, &here.scenario, Start::Restart, &here.scenario);
+    assert_walkable(&arm, here, here);
+}
+
+/// A picked file the page's own picker does not list is refused.
+#[test]
+#[should_panic(expected = "picker does not offer it")]
+fn a_picked_file_must_be_in_the_picker() {
+    let lessons = lessons();
+    let here = picker_step(&lessons);
+    let missing = "cc_cv_charge_lfp.toml";
+    assert!(
+        !picker_files().iter().any(|f| f == missing),
+        "this test is only evidence while `{missing}` is absent from the picker; it is \
+         listed now, so the fence needs a file that is not."
+    );
+    let arm = picker_probe(&here.id, missing, Start::Restart, missing);
+    assert_walkable(&arm, here, here);
+}
+
+/// A picked file whose name the instruction does not spell is refused.
+#[test]
+#[should_panic(expected = "does not appear in the instruction")]
+fn a_picked_file_must_be_named_in_its_instruction() {
+    let lessons = lessons();
+    let here = picker_step(&lessons);
+    let arm = picker_probe(
+        &here.id,
+        "cc_discharge_lgm50.toml",
+        Start::Restart,
+        "load the other one from the picker",
+    );
+    assert_walkable(&arm, here, here);
+}
+
+/// A picked file on a continuation is refused: loading one *is* a restart.
+#[test]
+#[should_panic(expected = "closes the backend")]
+fn a_picked_file_cannot_continue_this_steps_mark() {
+    let lessons = lessons();
+    let here = picker_step(&lessons);
+    let arm = picker_probe(
+        &here.id,
+        "cc_discharge_lgm50.toml",
+        Start::Mark,
+        "cc_discharge_lgm50",
+    );
+    assert_walkable(&arm, here, here);
+}
+
+/// A picked file composed with a walk is refused: two navigations, one sentence.
+#[test]
+#[should_panic(expected = "two navigations composed")]
+fn a_picked_file_may_not_be_combined_with_a_walk() {
+    let lessons = lessons();
+    let here = picker_step(&lessons);
+    let mut arm = picker_probe(
+        &here.id,
+        "cc_discharge_lgm50.toml",
+        Start::Restart,
+        "cc_discharge_lgm50",
+    );
+    arm.pack_from = Some("bare-curve".to_string());
+    assert_walkable(&arm, here, here);
 }
 
 /// An arm whose pack comes from the step it is declared on is refused.

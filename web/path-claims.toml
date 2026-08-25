@@ -145,7 +145,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  209 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  213 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  34 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -200,7 +200,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 34 claims.
 #
-#   same        226 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        230 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    7. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -246,8 +246,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 232 of the 269 numbers the
-#            166 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 236 of the 273 numbers the
+#            170 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -278,7 +278,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 166 claimed sentences need none. A future literal printing a chemistry constant will
+# the 170 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -472,6 +472,65 @@ The alternative was to reword the minutes away, which would have made the senten
 to read in order to make it checkable. See docs/plans/path-ledger-bare-curve.md.
 """
 
+# THE THIRD CELL. Step 2's closing paragraph sends the reader to a file the path never
+# teaches — `cc_discharge_lgm50.toml`, which is in the picker and in no lesson block — and
+# until these two arms existed that whole passage had no trajectory behind it: the fall at
+# each of two currents, the time one of them takes and the charge left at this step's mark
+# were four numbers about a run nobody could be shown to have made.
+#
+# They are the first arms to use `Arm::scenario`, which models the picker itself rather than
+# a walk to another lesson (`Arm::pack_from`). Both restart, because loading a file IS a
+# restart: `loadScenario` closes the backend, rebuilds from the chosen file and starts the
+# clock at zero, whatever the reader had reached.
+
+[[arm]]
+step = "same-discharge-other-chemistry"
+name = "the third cell"
+scenario = "cc_discharge_lgm50.toml"
+instruction = "Load `cc_discharge_lgm50` from the picker for a third — 620 mV, a 5.153198 Ah cell fitted from PyBaMM's Chen2020, but only if you also put the demand box up to 4.47 A"
+start = "restart"
+demand_a = 4.47
+actions = [{ do = "run", to_s = 4200.0 }]
+note = """
+The same C-rate as the two cells before it, on a cell nearly twice their size: 4.47 A of a
+5.153198 Ah cell is 0.867 C, which is what the two round demand boxes of the first two steps
+work out to as well.
+
+`to_s` is this step's own mark and not the furthest claim on the arm (3320.5 s). A reader who
+picks a file and presses Run is running the same length of experiment they just watched —
+there is no sentence here asking them to stop early, and an arm that ended exactly on its
+claim would make `reachable` mean only "I ran far enough".
+
+**The rate the prose prints moved with this arm.** It said `0.868 C`, which is step 1's
+figure and not this one's: 4.47 / 5.153198 is 0.8675, and the same rounding the sentence uses
+one clause earlier (`0.867 here against step 1's 0.868`) makes that 0.867. Measured, not
+reasoned — see docs/plans/path-third-cell.md.
+"""
+
+[[arm]]
+step = "same-discharge-other-chemistry"
+name = "the third cell at this step's own current"
+scenario = "cc_discharge_lgm50.toml"
+instruction = "Leave `cc_discharge_lgm50` loaded, put the box back to 2.6 A, and the fall is much the same (618 mV) — but this cell takes 5708.5 s to get there"
+start = "restart"
+actions = [{ do = "run", to_s = 5708.5 }]
+note = """
+The same file under the step's OWN demand box, which is the arm that makes the paragraph's
+point: the fall barely moves (618 mV against 620) because it is a property of the chemistry,
+while the time to get there does move, because 2.6 A of a 5.153198 Ah cell is half a C rather
+than 0.867.
+
+No `demand_a`, and that is the arm: what the reader types is 2.6 A, which is what the step
+already has in the box. The only override is the file.
+
+**This arm is why the prose changed.** It used to say the run "takes 5700 s to get there, so
+this step's mark stops you at 41 %" — which tells a reader, correctly, that they cannot
+see the number the same sentence prints. That is the "right but unreachable" shape this repo
+has shipped three times. The sentence now says the mark is passed and Run has to be pressed
+again, which is what this arm's `to_s` does; and the crossing is 5708.5 s, not 5700 — a
+half-second grid does not need an approximation.
+"""
+
 [[claim]]
 step = "same-discharge-other-chemistry"
 literal = "at 4111.5 s"
@@ -590,6 +649,100 @@ one sentence states both numbers, so both claims point at it and either one movi
 reddens the pair. The display halves are read at each end's own time, which is also
 what keeps the two recorded `read_at_s` values honest: they are measured crossings,
 and a shifted trajectory would leave the row rendering something else.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "for a third — 620 mV"
+quantity = "v_fall_mv_soc:0.90:0.20"
+arm = "the third cell"
+value = 620.0709
+tol = 0.5
+tol_from = "spelled"
+spells = "620"
+states = "same"
+read_at_s = 3320.5
+note = """
+The third cell's fall across the same window as this step's own 481 mV and step 1's 168 —
+the number the whole paragraph is for, and the first thing in it that answers to a run.
+
+`v_fall_mv_soc` rather than two claims on the ends, because the sentence prints the drop and
+neither end of it. Two claims would pin numbers the prose does not show a reader and leave
+the one it does show tied to a derivation over them.
+
+Read at the 20 % crossing, which is the later of the two rows the quantity folds — the
+same convention `deficit_crossing_spread_s` and `delivered_ah` follow.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "the fall is much the same (618 mV)"
+quantity = "v_fall_mv_soc:0.90:0.20"
+arm = "the third cell at this step's own current"
+value = 618.0763
+tol = 0.5
+tol_from = "spelled"
+spells = "618"
+states = "same"
+read_at_s = 5708.5
+note = """
+The same cell at half the rate, and the same fall to within two millivolts — which is the
+paragraph's argument: the shape of the curve belongs to the chemistry, not to how hard you
+pull on it.
+
+The pair is what makes it checkable. "Much the same" is a comparison, and a comparison needs
+both of its sides pinned or it can drift while each side stays true — the defect
+`path-numbers.md` found twice on this very step.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "this cell takes 5708.5 s to get there"
+quantity = "t_at_soc_below:0.20"
+arm = "the third cell at this step's own current"
+value = 5708.5
+tol = 0.05
+tol_from = "spelled"
+spells = "5708.5"
+states = "same"
+read_at_s = 5708.5
+display = "sim time"
+shows = "95m"
+note = """
+What DOES move when the rate halves. The fall is the same and the clock is not, which is the
+only way a reader can see that a C-rate and a chemistry are different things.
+
+`t_at_soc_below` is new, and it is `t_at_v_below`'s sibling one axis over: a voltage crossing
+is what the plot shows, a charge crossing is what this sentence means.
+
+The claim reads at its own answer, which is not circular — the quantity is a crossing the
+run either reaches or does not, and `read_at_s` is what the reachability check compares
+against the arm's `to_s`. Pinned to a twentieth of a second where the grid is half of one,
+because the sentence spells the tenth.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "where it still has 41 % left"
+quantity = "soc_at"
+arm = "the third cell at this step's own current"
+value = 0.411369
+tol = 0.005
+tol_from = "spelled"
+spells = "41"
+spells_pow10 = 2
+states = "same"
+read_at_s = 4200.0
+display = "soc (true)"
+shows = "41.1 %"
+note = """
+This step's own mark, read on the third cell: 4200 s in, the bigger cell at half a C still
+has two fifths of its charge, where both of the cells before it are already past empty by
+then.
+
+The one claim on this arm read BEFORE its end. It is what the sentence means by "past this
+step's mark" — the mark is a place on this trajectory rather than its stop, and a reader
+who lets the run pause there sees this row.
 """
 
 [[claim]]
@@ -7407,7 +7560,7 @@ steps = [
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
-  "same-discharge-other-chemistry", # claims: 5
+  "same-discharge-other-chemistry", # claims: 9, on 2 arms
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
 ]
