@@ -118,8 +118,10 @@ anyone chose to make a point.
 Past the SOC clamp both models are finite and bounded — nothing goes NaN — but neither
 is describing a cell any more. **Both figures in this paragraph were wrong and are now
 measured** (2026-08-25, on the guided path's own train at 3 C, clamp at 11 880 s): the SPM
-falls to **0.309467 V** at the bottom of every loaded leg and recovers to about 1.17 V over
-each rest, and the ECM — which this said "pins at 1.79 V" — falls straight through zero,
+falls to **0.309467 V** at the bottom of every loaded leg — the same value every time — and
+climbs back over each rest to somewhere that is *not* the same every time: 1.195187,
+1.171316 and 1.147446 V at the ends of the three rests after the clamp, about 24 mV lower
+each cycle. And the ECM — which this said "pins at 1.79 V" — falls straight through zero,
 because `[reversal]` landed after this was written and gives its open-circuit voltage a ramp
 and a floor. Its teeth settle at **−0.442 V** at the start of each loaded leg and
 **−0.657 V** at the end. Named as a limitation, in the family of the overcharge hole;

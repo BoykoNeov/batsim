@@ -60,7 +60,10 @@
 #   3 C) past the clamp at 11 880 s: this model's terminal falls to 0.309467 V at the
 #   bottom of every loaded leg -- the same value each time, because the surface
 #   concentration has run off the bottom of the OCP table and the table's last entry is
-#   what it reads -- and recovers to about 1.17 V over each rest. Same family as the
+#   what it reads -- and climbs back over each rest, though not to the same place twice:
+#   1.195187 V at the end of the first rest below the clamp, 1.171316 at the end of the
+#   next and 1.147446 at the end of the one after, about 24 mV lower each cycle because
+#   charge is still leaving. Same family as the
 #   overcharge hole: a hole in the model, left visible.
 #
 #   The CIRCUIT does something different and not worse: its open-circuit voltage falls

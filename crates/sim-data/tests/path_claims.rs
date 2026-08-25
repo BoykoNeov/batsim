@@ -75,10 +75,12 @@
 //! Beside all six sits **the ledger**, which is about a *step* rather than about a claim:
 //! [`every_numeral_in_a_ledgered_step_is_accounted_for`] scans a step's whole prose and
 //! requires every numeral in it to be tied to something, claimed or not. Numeral, not
-//! number: a quantity spelled in English is invisible to it, and three ledgered steps state
-//! five measurements that way ("about half a point across the whole grid", "a gap of about
+//! number: a quantity spelled in English is invisible to it, and four ledgered steps state
+//! six measurements that way ("about half a point across the whole grid", "a gap of about
 //! three points" — the last of which now carries two claims of its own, through
-//! [`WORD_NUMERALS`], while remaining invisible to this scan).
+//! [`WORD_NUMERALS`], while remaining invisible to this scan — and step 14's "about ten
+//! times the circuit's arithmetic per step", which is the one figure in that step nothing
+//! ties: write it as "10 times" and the step goes red with nothing to fix it).
 //! A ledgered step is digits-closed, which is less than closed. Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all when
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
@@ -187,7 +189,7 @@
 //!   has now closed twenty-two whole steps — but only twenty-two. Steps here carrying
 //!   neither a claim nor a ledger entry: none. The other two have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all two, one line each, so this list cannot go quietly out of date.
+//!   names the remaining two, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -12105,7 +12107,7 @@ const TALLIES: &[Tally] = &[
     },
     Tally {
         prose: Prose::ThisTest,
-        phrase: "names all {w}, one line each",
+        phrase: "names the remaining {w}, one line each",
         of: &[n_unledgered],
     },
     // Check 6's arm count, stated in this test's docs and derived in the claims file's
@@ -12241,7 +12243,7 @@ const NOT_DERIVED: &[NotDerived] = &[
     },
     NotDerived {
         prose: Prose::ThisTest,
-        phrase: "three ledgered steps state five measurements that way",
+        phrase: "four ledgered steps state six measurements that way",
         because: "a count of quantities spelled in ENGLISH, which is precisely what the \
                   ledger's numeral scan cannot see. Deriving it needs a word SCANNER; \
                   `Operand::Word` reads one word where a rule names it, which is not the \
@@ -12253,7 +12255,7 @@ const NOT_DERIVED: &[NotDerived] = &[
     // reason above; what this adds is that rewording it now reddens.
     NotDerived {
         prose: Prose::ClaimsFile,
-        phrase: "three of the ledgered steps state five MEASUREMENTS that way",
+        phrase: "four of the ledgered steps state six MEASUREMENTS that way",
         because: "the same count, in the file's own header, and unreachable for the same \
                   reason. The word MEASUREMENTS is the scope step 9 made necessary: it \
                   states a word numeral too and it is a count of the path, not a reading.",

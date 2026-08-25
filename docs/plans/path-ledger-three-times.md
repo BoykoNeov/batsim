@@ -111,9 +111,10 @@ than trajectories, so neither check could have found these — the run had to be
 
 * **"It pins at 0.3095 V and stays there."** Two claims pinned 0.3095 V at 12 600 s and
   13 260 s, one whole tooth apart, precisely to make "stays there" checkable. Both are ends
-  of *loaded* legs. Between them the ten-minute rest carries the terminal back to about
-  1.17 V, every time. What repeats exactly is the **bottom of each tooth**, which is what
-  the sentence says now.
+  of *loaded* legs. Between them the ten-minute rest carries the terminal back up — to
+  1.195, 1.171 and 1.147 V at the ends of the three rests after the clamp, decaying about
+  24 mV a cycle as charge keeps leaving. What repeats exactly is the **bottom of each
+  tooth**, and nothing else does; that is what the sentence says now.
 * **"Each tooth now starts at about −0.45 V."** Two things wrong. The hedge: the first frame
   of a tooth is −0.442079 V and the second is −0.450831, so "about −0.45" was true of the
   second frame and not the first, and nothing said which. And "each tooth": the circuit

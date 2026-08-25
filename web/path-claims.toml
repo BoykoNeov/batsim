@@ -126,7 +126,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 68 claims below that set
+#              Be clear about what this buys TODAY: in all 72 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -3732,8 +3732,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # needs now is its own vocabulary and its own measurements. See the plan.
 #
 # NUMERAL, NOT NUMBER, and the difference is load-bearing. The scan finds digits, so a
-# quantity spelled in English goes straight past it — and three of the ledgered steps state
-# five MEASUREMENTS that way (step 9 states a count of the path itself, which is the
+# quantity spelled in English goes straight past it — and four of the ledgered steps state
+# six MEASUREMENTS that way (step 9 states a count of the path itself, which is the
 # paragraph below): "about half a point across the whole grid" and "a quarter of a point"
 # between the two cells of a group (step 3), "a gap of about three points" and "a fraction
 # of a point" of sensor drift (step 4), and "all but three points of what it holds" at the
@@ -6908,8 +6908,9 @@ rather than about the readout, so this claim is not `quoted`.
 
 THE SENTENCE MOVED WHEN THIS STEP WAS LEDGERED. It used to say the model "pins at 0.3095 V
 and stays there", and measured, it does not: the loaded leg drives the surface off the
-bottom of its table and the ten-minute rest carries the terminal back to about 1.17 V every
-time. What repeats exactly is the BOTTOM of each tooth, which is what these two claims read
+bottom of its table and the ten-minute rest carries it back up - to 1.195187 V at the end of
+the first rest below the clamp, 1.171316 at the next and 1.147446 at the one after, which is
+not the same number twice either. What repeats exactly is the BOTTOM of each tooth, which is what these two claims read
 and what the sentence says now. The old wording was true of the two instants claimed here
 and false of everything between them - a claim cannot catch that, because a claim only ever
 looks where it is pointed.
@@ -7084,6 +7085,9 @@ tol_from = "spelled"
 spells = "-0.442"
 states = "same"
 read_at_s = 12540.5
+display = "terminal"
+shows = "-0.442 V"
+quoted = true
 note = """
 THE FIRST FRAME OF THE FIRST WHOLE TOOTH BELOW EMPTY -- the current comes on at 12 540 s
 and this is the row half a step later, which is what a reader sees the instant the tooth
@@ -7115,6 +7119,9 @@ tol_from = "spelled"
 spells = "-0.442"
 states = "same"
 read_at_s = 13200.5
+display = "terminal"
+shows = "-0.442 V"
+quoted = true
 note = """
 "EVERY LATER TOOTH REPEATS THOSE TWO NUMBERS EXACTLY", half of it: the same reading one
 whole period later. Not approximately the same -- both rows are -0.442079 V, because below
@@ -7137,6 +7144,9 @@ tol_from = "spelled"
 spells = "-0.657"
 states = "same"
 read_at_s = 12600.0
+display = "terminal"
+shows = "-0.657 V"
+quoted = true
 note = """
 The bottom of the same tooth, sixty seconds later. The 215 mV between this and the frame it
 started at is the RC pairs charging up over the loaded leg -- the only part of this circuit
@@ -7157,6 +7167,9 @@ tol_from = "spelled"
 spells = "-0.657"
 states = "same"
 read_at_s = 13260.0
+display = "terminal"
+shows = "-0.657 V"
+quoted = true
 note = """
 The other half of "repeats those two numbers exactly", one period on. Bit for bit the same
 as the reading at 12 600 s, for the reason its sibling gives.
