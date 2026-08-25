@@ -723,7 +723,7 @@ because the sentence spells the tenth.
 
 [[claim]]
 step = "same-discharge-other-chemistry"
-literal = "where it still has 41 % left"
+literal = "this cell still has 41 % left"
 quantity = "soc_at"
 arm = "the third cell at this step's own current"
 value = 0.411369
@@ -740,9 +740,17 @@ This step's own mark, read on the third cell: 4200 s in, the bigger cell at half
 has two fifths of its charge, where both of the cells before it are already past empty by
 then.
 
-The one claim on this arm read BEFORE its end. It is what the sentence means by "past this
-step's mark" — the mark is a place on this trajectory rather than its stop, and a reader
-who lets the run pause there sees this row.
+The one claim on this arm read BEFORE its end, and the sentence around it had to be
+measured against the PAGE rather than the engine. `pathArrived` clears `path.until` when a
+step reaches its mark, and `loadScenario` — which is what the picker calls — never re-arms
+it, so there is no pause at 4200 s on this arm: one press of Run carries on until the reader
+stops it, which is what `renderStep`'s fourth branch says in as many words ("running on past
+this step's mark ... nothing will stop it but you").
+
+An earlier wording of this sentence said the reader had to "keep pressing Run", which is the
+page's behaviour on a step that still has its mark and not on this one. Nothing in this file
+would have caught that: no arm models the pause, and `to_s` is arithmetic over the actions.
+See docs/plans/path-third-cell.md.
 """
 
 [[claim]]
@@ -7560,7 +7568,9 @@ steps = [
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
-  "same-discharge-other-chemistry", # claims: 9, on 2 arms
+  "same-discharge-other-chemistry", # claims: 9, on two picker arms — the count of
+                                   # CLAIMS is derived and checked; the arms are not,
+                                   # so they are named rather than counted here
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
 ]

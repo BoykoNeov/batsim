@@ -70,9 +70,27 @@ The paragraph now reads:
 > Load `cc_discharge_lgm50` from the picker for a third — 620 mV, a 5.153198 Ah cell fitted
 > from PyBaMM's Chen2020, but only if you also put the demand box up to 4.47 A, which is the
 > same 0.867 C on the bigger cell. Leave `cc_discharge_lgm50` loaded, put the box back to
-> 2.6 A, and the fall is much the same (618 mV) — but this cell takes 5708.5 s to get there,
-> which is past this step's mark, where it still has 41 % left. You have to keep pressing Run
-> to see it.
+> 2.6 A, and the fall is much the same (618 mV) — but this cell takes 5708.5 s to get there.
+> This step's mark is behind you by then and nothing re-arms it, so one press of Run carries
+> on until you stop it: at the moment the step itself would have ended, this cell still has
+> 41 % left.
+
+### The repair's own first draft was wrong about the page
+
+That last sentence said *"which is past this step's mark, where it still has 41 % left. You
+have to keep pressing Run to see it"* — the step-14 wording, borrowed because step 14's arm
+is the precedent for running past a mark. It is false here, and reading `web/app.js` rather
+than the precedent is what settled it. `pathArrived` clears `path.until` the moment a step
+reaches its mark; `loadScenario`, which is what the picker calls, never re-arms it. So on this
+arm there is no pause at 4200 s and no second press: one press of Run carries on until the
+reader stops it, which is exactly what `renderStep`'s fourth branch already says — *"running
+on past this step's mark … nothing will stop it but you"*.
+
+**Nothing in the harness would have caught it.** An arm's `end_s` is arithmetic over its
+actions; no arm models where the page pauses. A sentence that describes the client's own
+behaviour is checked by reading the client, and this one had been rewritten to fix an
+unreachability defect while quietly asserting a pause that does not happen. That is the same
+class of defect, self-inflicted, one paragraph later.
 
 `620 mV`, `618 mV` and `41 %` were measured and are right: 620.0709, 618.0763, 41.137 %. So is
 `168` for the LFP cell across the same window (168.15), which the plan for this slice flagged
@@ -144,12 +162,14 @@ Three, each applied to the green tree and reverted:
 | arm A's `scenario` pointed at `cc_discharge_lfp.toml` | the instruction fence, **and** the engine check — the 620 mV claim measured 169.3 on the LFP cell. The picker arm really does change the pack |
 | arm B's `to_s` shortened to 5000 s | reachability, naming the 618 mV claim — the same refusal the old prose had earned |
 | the 41 % claim detached from its arm | the engine check: 0 against 0.411369, because step 2's own cell is long past empty at its own mark |
+| the ledger entry's `claims: 9` set to 8 | `every_count_beside_a_ledger_entry_is_derived`, naming both numbers |
+| the same entry's `on 2 arms` set to 3 | **nothing.** That count is not derived — the `TALLIES` entry carrying the phrase `claims: {n}, on {w} arms.` is wired to step 18's counts, not to this one. The clause was replaced with a word and a note saying which half of the line is checked |
 
 ## What is left, and what the next slice looks like
 
 Twenty-two of twenty-four steps are ledgered. This step still is not, and its residual is
 recorded in `[ledger].unledgered` as it always has been — now with the claim count beside it
-(9, on 2 arms).
+(9), which is derived and checked.
 
 The cheap remainder — this step's own constants, the ordinals, the derivations, the two
 `Elsewhere` reads on step 1's files — is one slice's work, now that every arm shape it needs
