@@ -246,7 +246,13 @@ claims nothing has ever touched. In particular, checked and correct:
   same instant, and the 1 C boundary at 12 s in 3484 (0.34 %).
 - **The pulse trio's ratios are exact** — ×1.872, ×6.017, ×2.483 for the particle and
   ×2.992, ×3.000 for the circuit, against ×1.87, ×6.01, ×2.48, ×2.99, ×3.00. All five
-  rebounds (17.3 / 24.3 / 31.7 / 35.4 / 37.2 mV) and all five circuit climbs (74.8 mV,
+  rebounds
+  — **except that ×6.017 is ×6.02 and this line called it green.** Corrected 2026-08-25
+  when step 14 was ledgered. The measurement above is right and the comparison beside it
+  truncated where it should have rounded, which is the one way an eyeball pass over a
+  measured column can still go wrong. `docs/plans/path-ledger-three-times.md` has the
+  repair; the ratio is now a `Tie::Ratio` over two pinned claims, so nothing divides a
+  printed token again. (17.3 / 24.3 / 31.7 / 35.4 / 37.2 mV) and all five circuit climbs (74.8 mV,
   identical to four decimals in volts) land.
 - **Step 18's `dt` table is exact and was previously unmeasured**: 0.5572 / 5.5719 /
   11.1438 points at 0.5 / 5 / 10 s, a 19.24 K rise against 0.96 K, and the spike is

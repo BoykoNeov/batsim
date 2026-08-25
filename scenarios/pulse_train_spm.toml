@@ -45,7 +45,7 @@
 #     over from one pulse to the next. The cell remembers the earlier pulses. The
 #     circuit's rebound is 74.8 mV on all five, identical to four decimals.
 #   * ask for 3 C and the two parts scale in **opposite directions**: the fast part
-#     saturates at x1.87 (Butler-Volmer's asinh), the slow part accelerates to x6.01
+#     saturates at x1.87 (Butler-Volmer's asinh), the slow part accelerates to x6.02
 #     (the OCP is a nonlinear function of surface stoichiometry). They sum to x2.48,
 #     which merely looks mildly sub-linear and hides both. The circuit answers x2.99 and
 #     x3.00 to the same question, because that is what linear means.
@@ -55,10 +55,20 @@
 #
 # ## Two limitations, named rather than avoided
 #
-# * Do not drive this past the SOC clamp. Both models stay finite there, but this one
-#   pins at 0.39-0.50 V — its surface concentration runs to the bottom of the OCP table
-#   — where the circuit cannot leave its own [ocv] and stops at 1.79 V. Same family as
-#   the overcharge hole: a hole in the model, left visible.
+# * Do not drive this past the SOC clamp. Both models stay finite there, but neither is
+#   describing a cell any more. Measured on the guided path's train (60 s on, 600 s off,
+#   3 C) past the clamp at 11 880 s: this model's terminal falls to 0.309467 V at the
+#   bottom of every loaded leg -- the same value each time, because the surface
+#   concentration has run off the bottom of the OCP table and the table's last entry is
+#   what it reads -- and recovers to about 1.17 V over each rest. Same family as the
+#   overcharge hole: a hole in the model, left visible.
+#
+#   The CIRCUIT does something different and not worse: its open-circuit voltage falls
+#   through the [reversal] ramp its chemistry file declares and stops on the floor the
+#   same file declares, so its teeth settle at -0.442 V at the start of each loaded leg
+#   and -0.657 V at the end. This paragraph said "stops at 1.79 V" until 2026-08-25,
+#   which was true before `[reversal]` existed (v13->14) and had not been re-measured
+#   since; the guided path's step 14 now pins all four of these figures.
 # * `shells = 20` is `spm::DEFAULT_SHELLS`, chosen in Phase 6 by the accuracy curve
 #   (flat past 20, cost linear at 29.4 ns/shell). It is a cost knob, not a property of
 #   the material, and it is part of the snapshot layout — which is why it is written out
@@ -74,7 +84,7 @@ running the porous-electrode model on parameters extracted verbatim from PyBaMM'
 Chen2020. `pulse_train_ecm.toml` with one field added. Drive it with the client's pulse \
 mode (60 s on, 600 s off): the rebound after each pulse grows from 17.3 mV to 37.2 mV \
 across five, where the circuit's is identical every time, and three times the current \
-buys x1.87 of the fast part and x6.01 of the slow one."""
+buys x1.87 of the fast part and x6.02 of the slow one."""
 
 [pack]
 series = 1

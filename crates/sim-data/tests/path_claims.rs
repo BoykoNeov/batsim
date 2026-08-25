@@ -84,7 +84,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty-one steps and 500 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty-two steps and 539 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -182,12 +182,12 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the three steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the two steps the ledger has not reached.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed twenty-one whole steps — but only twenty-one. Steps here carrying
-//!   neither a claim nor a ledger entry: none. The other three have their claimed sentences
+//!   has now closed twenty-two whole steps — but only twenty-two. Steps here carrying
+//!   neither a claim nor a ledger entry: none. The other two have their claimed sentences
 //!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names all three, one line each, so this list cannot go quietly out of date.
+//!   names all two, one line each, so this list cannot go quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -905,14 +905,19 @@ enum Prog {
 /// Both being set is refused where the arms are checked, so the order of these arms is not a
 /// preference.
 fn arm_prog(arm: &Arm, step_demand: Prog) -> Prog {
-    match (arm.cc_cv_a, arm.demand_a, step_demand) {
-        (Some(i), _, Prog::CcCv { v_cell, taper, .. }) => Prog::CcCv { i, v_cell, taper },
+    match (arm.cc_cv_a, arm.pulse_a, arm.demand_a, step_demand) {
+        (Some(i), _, _, Prog::CcCv { v_cell, taper, .. }) => Prog::CcCv { i, v_cell, taper },
         // Unreachable on a well-formed file — `cc_cv_a` is refused off a CC-CV step where
         // the arms are checked — and written out rather than left to a catch-all so that
         // adding a fourth program cannot silently drop the field.
-        (Some(_), _, other) => other,
-        (None, Some(i), _) => Prog::Current(i),
-        (None, None, other) => other,
+        (Some(_), _, _, other) => other,
+        // The pulse box: the current changes and the legs do not, which is exactly what the
+        // page's three-field group lets a reader do. Refused off a `Pulse` step in
+        // `check_pulse_current`, and written out here for the same reason its neighbour is.
+        (None, Some(i), _, Prog::Pulse { on_s, off_s, .. }) => Prog::Pulse { i, on_s, off_s },
+        (None, Some(_), _, other) => other,
+        (None, None, Some(i), _) => Prog::Current(i),
+        (None, None, None, other) => other,
     }
 }
 
@@ -1958,7 +1963,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 201 of 241 claims.
+    /// number's last printed place. The default shape: 209 of 249 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1969,12 +1974,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 34 of 241.
+    /// the number was always right and only the declaration was wrong. 34 of 249.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 6 of 241, every
+    /// the engine either hits the claimed step or misses by a whole one. 6 of 249, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -2014,7 +2019,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 218 of 241, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 226 of 249, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2632,6 +2637,27 @@ struct Arm {
     /// [`Control::DemandValue`] on an arm.
     #[serde(default)]
     cc_cv_a: Option<f64>,
+    /// The **pulse current** the reader types into the `Pulse` group \[A\],
+    /// discharge-positive, if this arm changes it.
+    ///
+    /// The third current box, and it is a third field for exactly the reason `cc_cv_a` is a
+    /// second one: `applyDemandMode` hides `demand-simple` on a `Pulse` step just as it does
+    /// on a CC-CV one, because the mode needs three numbers of its own. So an arm that typed
+    /// into the simple box here would be describing a trajectory the page cannot reach — and
+    /// worse than unreachable, [`arm_prog`] reads that box as *replacing the program*, so the
+    /// arm would end the pulse train and run a flat discharge under a sentence about teeth.
+    ///
+    /// Step 14 is what needed it. Its closing instruction sends the reader to the circuit
+    /// with the same train, and every number that follows is per-tooth. Without this field
+    /// the sentence had no trajectory behind it and its five figures were tied to nothing.
+    ///
+    /// Same contract as its two siblings: it must be spelled inside `instruction`, it may not
+    /// be combined with either of the other boxes, the lesson its pack comes from must
+    /// actually be on the `Pulse` mode, and it must differ from that lesson's own current.
+    /// **The legs are not overridable and deliberately so** — `on_s` and `off_s` stay the
+    /// pack lesson's, which is what [`arm_control_value`] already says of them.
+    #[serde(default)]
+    pulse_a: Option<f64>,
     /// The step length the reader types into the `dt` box \[s\], if this arm changes it.
     /// Must be spelled inside `instruction`, and must differ from the step's own.
     #[serde(default)]
@@ -4049,6 +4075,105 @@ fn assert_walkable(arm: &Arm, lesson: &Lesson, pack_lesson: &Lesson) {
         arm.step,
         arm.start
     );
+
+    // The fourth fence, and it is the one that settles which of TWO READINGS of a walk this
+    // field models. `pack_from`'s own docs read it as the reader pressing **Back** — landing
+    // on the named lesson, which re-dials *that* lesson's controls. Step 14's sentence reads
+    // it the other way: *load the other file from the picker*, which changes the scenario and
+    // leaves the controls of the step you are standing on. `docs/plans/path-ledger-what-it-cost.md`
+    // closed by naming that as this slice's first question.
+    //
+    // The two readings differ only where the two lessons' controls differ — and on both arms
+    // in the file they do not, which is what makes the question answerable by a rule instead
+    // of by a choice. So: **a walk may change the file and nothing else.** Where the controls
+    // agree, both readings produce the same trajectory and the sentence is unambiguous; where
+    // they part, the arm would be measuring something the prose does not say, and this refuses
+    // it rather than picking a reading on the author's behalf.
+    //
+    // Everything the arm itself overrides is exempt, because that is the reader typing. What
+    // is compared is what neither the arm nor the sentence touches.
+    let (pack_scenario, _) = load(&pack_lesson.scenario);
+    let (here_scenario, _) = load(&lesson.scenario);
+    let bms_there = pack_lesson.bms.unwrap_or(pack_scenario.pack.bms.is_some());
+    let bms_here = lesson.bms.unwrap_or(here_scenario.pack.bms.is_some());
+    let differences: Vec<String> = [
+        (arm.dt.is_none() && (pack_lesson.dt - lesson.dt).abs() > f64::EPSILON)
+            .then(|| format!("`dt` is {} there and {} here", pack_lesson.dt, lesson.dt)),
+        (arm.ambient_c.is_none()
+            && (pack_lesson.ambient_c - lesson.ambient_c).abs() > f64::EPSILON)
+            .then(|| {
+                format!(
+                    "the ambient is {} °C there and {} °C here",
+                    pack_lesson.ambient_c, lesson.ambient_c
+                )
+            }),
+        (arm.bms.is_none() && bms_there != bms_here)
+            .then(|| format!("the BMS is {bms_there} there and {bms_here} here")),
+        // The demand's *shape*, not its current: which mode the box is in, and — on a pulse
+        // train — how long the legs are. An arm types a current and never a mode or a leg
+        // (`arm_control_value` says so of both legs), so a difference in either is a
+        // difference the reader cannot have made.
+        (!same_shape(pack_lesson.demand, lesson.demand)).then(|| {
+            format!(
+                "the demand program is {:?} there and {:?} here",
+                pack_lesson.demand, lesson.demand
+            )
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    assert!(
+        differences.is_empty(),
+        "arm `{}` on step `{}` walks to `{id}`, and the two lessons disagree about controls \
+         this arm does not type: {}.\n\
+         A walk may change the FILE and nothing else. With the controls in step, pressing \
+         **Back** to `{id}` and loading `{}` from the picker produce the same trajectory, so \
+         the sentence means one thing; where they part, the two readings measure different \
+         runs and this arm would be silently picking one. Say which in the prose and give the \
+         arm the override, or leave the controls alone.",
+        arm.name,
+        arm.step,
+        differences.join(", "),
+        pack_lesson.scenario
+    );
+}
+
+/// Do these two demand programs differ only in the current a reader could type?
+///
+/// Mode, and the pulse legs. Everything else a `Prog` carries is a current, and a current is
+/// what an arm's three boxes are for. See the fourth fence in [`assert_walkable`].
+fn same_shape(a: Prog, b: Prog) -> bool {
+    match (a, b) {
+        (Prog::Current(_), Prog::Current(_)) | (Prog::Rest, Prog::Rest) => true,
+        // The CC-CV target and taper are two more numbers a reader types, and `cc_cv_a`
+        // reaches only the current — so they are compared here rather than exempted.
+        (
+            Prog::CcCv {
+                v_cell: va,
+                taper: ta,
+                ..
+            },
+            Prog::CcCv {
+                v_cell: vb,
+                taper: tb,
+                ..
+            },
+        ) => (va - vb).abs() < f64::EPSILON && (ta - tb).abs() < f64::EPSILON,
+        (
+            Prog::Pulse {
+                on_s: ona,
+                off_s: offa,
+                ..
+            },
+            Prog::Pulse {
+                on_s: onb,
+                off_s: offb,
+                ..
+            },
+        ) => (ona - onb).abs() < f64::EPSILON && (offa - offb).abs() < f64::EPSILON,
+        _ => false,
+    }
 }
 
 /// Does this claim read a continuation of the step's own run, past its mark?
@@ -4156,6 +4281,7 @@ fn every_arm_is_instructed_by_its_own_step() {
         }
 
         check_cc_cv_current(arm, pack_lesson, &instruction);
+        check_pulse_current(arm, pack_lesson, &instruction);
 
         if let Some(dt) = arm.dt {
             let spelled = Arm::spelled(dt);
@@ -6656,6 +6782,323 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ],
         pow10: 0,
     },
+    // Step 14 — three times the current, and the last of the three pulse steps. Nineteen of
+    // its thirty-one unaccounted numerals are here; the other twelve are claims, eight of
+    // them on a new arm that walks to the circuit's file. What is striking about this step's
+    // vocabulary is how much of it QUOTES: eight of these placeholders resolve to a claim on
+    // step 12 or step 13 rather than to any field, because a step whose subject is "what does
+    // three times the current buy" prints one measurement of its own for every one it is
+    // comparing against.
+    LedgerRule {
+        // The charge all three pulse steps start from, in this step's own words. A third
+        // phrase for one field, on the terms step 13's rule already states: a phrase generous
+        // enough to cover two of them would be generous enough to cover a third.
+        phrase: "back at {n} %",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The rate this step's box works out to. The box is 15.459 A and the cell holds
+        // 5.153198 Ah, so the quotient is 2.99989 and the sentence's `3` is that rounded to
+        // the place it prints — a computed tie, on `Tie::Product`'s terms.
+        phrase: "pulse current tripled to {n} C",
+        ties: &[Tie::Ratio(&[
+            Tie::Setting(Control::DemandValue),
+            Tie::Chemistry("cell.capacity_ah"),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The question the step is about, and the two rates in it are two different lessons'
+        // boxes over one cell's nameplate. `Elsewhere` for the first because 1 C is step 13's
+        // run and this step never drives it.
+        phrase: "does at {n} C, do I know what it does at {n} C?",
+        ties: &[
+            Tie::Elsewhere {
+                step: "particle-remembers",
+                tie: &Tie::Ratio(&[
+                    Tie::Setting(Control::DemandValue),
+                    Tie::Chemistry("cell.capacity_ah"),
+                ]),
+            },
+            Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "For the circuit of step {n} the answer",
+        ties: &[Tie::Ordinal("circuit-repeats-itself")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The circuit's 1 C figures, quoted from the lesson that measured them. The phrase
+        // stops at the arrow in both cases, because what follows it is a measurement THIS
+        // step makes and a claim on the new arm accounts for it — two readings of one number
+        // is what `cover_by_rule`'s double-cover panic exists to refuse.
+        phrase: "Its jump goes {n} \u{2192} ",
+        ties: &[Tie::Quoted {
+            step: "circuit-repeats-itself",
+            arm: None,
+            quantity: "pulse_jump_mv:1",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "its slow climb {n} \u{2192} ",
+        ties: &[Tie::Quoted {
+            step: "circuit-repeats-itself",
+            arm: None,
+            quantity: "pulse_rebound_mv:1",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The circuit's two ratios, each the arm's own claim over step 12's. **This is the
+        // first rule in the file whose `Ratio` divides two QUOTED measurements**, and it is
+        // what makes "triple the current and every term triples" an assertion rather than a
+        // remark: move either lesson's box and the quotient moves off the printed number.
+        phrase: "mV: **\u{d7}{n} and \u{d7}{n}**",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Quoted {
+                    step: "three-times-the-current",
+                    arm: Some("the circuit at 3 C"),
+                    quantity: "pulse_jump_mv:1",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "circuit-repeats-itself",
+                    arm: None,
+                    quantity: "pulse_jump_mv:1",
+                    states: QuotedAs::Same,
+                },
+            ]),
+            Tie::Ratio(&[
+                Tie::Quoted {
+                    step: "three-times-the-current",
+                    arm: Some("the circuit at 3 C"),
+                    quantity: "pulse_rebound_mv:1",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "circuit-repeats-itself",
+                    arm: None,
+                    quantity: "pulse_rebound_mv:1",
+                    states: QuotedAs::Same,
+                },
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The particle's 1 C figures, the same shape one model over.
+        phrase: "instantaneous jump goes {n} \u{2192} ",
+        ties: &[Tie::Quoted {
+            step: "particle-remembers",
+            arm: None,
+            quantity: "pulse_jump_mv:1",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The saturating half — x1.87 — and the x3 it is NOT. That second number is the only
+        // one in the sentence that is a ratio of two demand boxes rather than of two
+        // measurements, which is exactly what the sentence is saying: the current tripled and
+        // the answer did not.
+        phrase: "mV \u{2014} **\u{d7}{n}**, not \u{d7}{n} \u{2014}",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Quoted {
+                    step: "three-times-the-current",
+                    arm: None,
+                    quantity: "pulse_jump_mv:1",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "particle-remembers",
+                    arm: None,
+                    quantity: "pulse_jump_mv:1",
+                    states: QuotedAs::Same,
+                },
+            ]),
+            Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Elsewhere {
+                    step: "particle-remembers",
+                    tie: &Tie::Setting(Control::DemandValue),
+                },
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "Its slow climb goes {n} \u{2192} ",
+        ties: &[Tie::Quoted {
+            step: "particle-remembers",
+            arm: None,
+            quantity: "pulse_rebound_mv:1",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The accelerating half, and the number this slice MOVED. The prose said x6.01, which
+        // is 103.9 divided by 17.3 — the two already-rounded millivolt figures beside it. The
+        // measurements are 103.905970 and 17.268344 and their quotient is 6.0171, so the
+        // sentence prints 6.02 now. It is the same defect `pulse_train_spm.toml`'s own header
+        // records for its 4.5 mV ("subtracted from the three ROUNDED parts instead of
+        // measured"), and this rule is what stops it recurring: nothing here divides a token.
+        phrase: "which is **\u{d7}{n}** \u{2014} accelerating",
+        ties: &[Tie::Ratio(&[
+            Tie::Quoted {
+                step: "three-times-the-current",
+                arm: None,
+                quantity: "pulse_rebound_mv:1",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "particle-remembers",
+                arm: None,
+                quantity: "pulse_rebound_mv:1",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "without pausing, goes {n} \u{2192} ",
+        ties: &[Tie::Quoted {
+            step: "particle-remembers",
+            arm: None,
+            quantity: "pulse_sag_mv:1",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The sag's ratio — the one of the three a reader can take off the plot without
+        // pausing, and the one that hides both effects under a mild-looking number.
+        phrase: "mV: \u{d7}{n} \u{2014} a number that looks like",
+        ties: &[Tie::Ratio(&[
+            Tie::Quoted {
+                step: "three-times-the-current",
+                arm: None,
+                quantity: "pulse_sag_mv:1",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "particle-remembers",
+                arm: None,
+                quantity: "pulse_sag_mv:1",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The step's headline, restating its own two ratios. Tied to the same pairs rather
+        // than to the tokens two sentences up, so a sentence that drifted from its own
+        // argument fails here instead of agreeing with a stale neighbour.
+        phrase: "resistance can be {n} and {n} at once",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Quoted {
+                    step: "three-times-the-current",
+                    arm: None,
+                    quantity: "pulse_jump_mv:1",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "particle-remembers",
+                    arm: None,
+                    quantity: "pulse_jump_mv:1",
+                    states: QuotedAs::Same,
+                },
+            ]),
+            Tie::Ratio(&[
+                Tie::Quoted {
+                    step: "three-times-the-current",
+                    arm: None,
+                    quantity: "pulse_rebound_mv:1",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "particle-remembers",
+                    arm: None,
+                    quantity: "pulse_rebound_mv:1",
+                    states: QuotedAs::Same,
+                },
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What the cost sentence is a cost OF: the shell count and the topology, all three
+        // out of this step's own scenario file.
+        phrase: "per step at {n} shells on a {n}S{n}P pack",
+        ties: &[
+            Tie::Scenario("pack.cell_model.Spm.shells"),
+            Tie::Scenario("pack.series"),
+            Tie::Scenario("pack.parallel"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The next step's rate, over the same cell's nameplate. `Elsewhere` because the box
+        // is step 15's — 15.459594 A, four digits finer than this step's own.
+        phrase: "same model from full at {n} C and stops at",
+        ties: &[Tie::Elsewhere {
+            step: "looks-fine-from-outside",
+            tie: &Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The cut-off the next step stops at. The chemistry's own lower limit, and this
+        // step's cell is that cell — no `Elsewhere` needed, and one would say less: the
+        // number is a property of the LG M50 rather than of either lesson.
+        phrase: "and stops at {n} V with",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // And what is left on the readout when it does — step 15's claim, quoted to two
+        // places where that step's sentence prints one. The address needs the ARM half: step
+        // 15's mark is at 500 s and the cut-off is 560 s past it, so that reading lives on
+        // its `carries on` continuation and `None` — the step's own run — answers nothing.
+        // The trailing words are what keep this
+        // phrase off step 15's `with 58.3 % still showing`, which is a different quantity in
+        // a step this vocabulary is also scanned against.
+        phrase: "V with {n} % still showing, nowhere near it",
+        ties: &[Tie::Quoted {
+            step: "looks-fine-from-outside",
+            arm: Some("carries on"),
+            quantity: "soc_at:1060",
+            states: QuotedAs::Same,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The current the reader carries next door, which is this step's own box.
+        phrase: "give it the same {n} A on the same train",
+        ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The two steps this one hands off to.
+        phrase: "Step {n} of this path is about that choice, and step {n} is about",
+        ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("what-it-cost")],
+        pow10: 0,
+    },
     // Step 15 — the single-particle half of the pair, scanned whole a slice after its twin
     // and for the opposite reason: step 16 was expensive because it quotes its neighbour
     // constantly, and this one is cheap because its neighbour already made it quotable.
@@ -8866,11 +9309,12 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
 /// vocabulary refuses.
 fn arm_control_value(control: Control, arm: &Arm) -> Option<f64> {
     match control {
-        // The current in whichever field group is on screen. `demand_a` is the simple box
-        // and `cc_cv_a` is the CC-CV group's charge current; `applyDemandMode` shows one of
-        // the two and hides the other, so at most one of these is ever set and the `or` is
-        // not a preference between them. See [`Arm::cc_cv_a`].
-        Control::DemandValue => arm.cc_cv_a.or(arm.demand_a),
+        // The current in whichever field group is on screen. `demand_a` is the simple box,
+        // `cc_cv_a` is the CC-CV group's charge current and `pulse_a` is the pulse group's;
+        // `applyDemandMode` shows one of the three and hides the other two, so at most one of
+        // these is ever set and the `or` chain is not a preference between them. See
+        // [`Arm::cc_cv_a`] and [`Arm::pulse_a`].
+        Control::DemandValue => arm.cc_cv_a.or(arm.pulse_a).or(arm.demand_a),
         Control::Ambient => arm.ambient_c,
         Control::Dt => arm.dt,
         // An arm overrides the demand box, the `dt` box, the BMS checkbox and the ambient
@@ -10220,6 +10664,7 @@ fn walkable_probe(step: &str, pack_from: &str, start: Start) -> Arm {
         start,
         demand_a: None,
         cc_cv_a: None,
+        pulse_a: None,
         dt: None,
         bms: None,
         fade_per_ah: None,
@@ -12079,6 +12524,102 @@ fn check_cc_cv_current(arm: &Arm, pack_lesson: &Lesson, instruction: &str) {
         arm.step,
         pack_lesson.id
     );
+}
+
+/// The same four questions of the pulse group's current box. See [`Arm::pulse_a`].
+///
+/// A sibling of [`check_cc_cv_current`] rather than a branch inside it, because the two boxes
+/// are refused on *different* steps — one wants a CC-CV program and the other a pulse train —
+/// and a single function taking "whichever current is set" would have to name the mode it was
+/// looking for, which is the thing being checked.
+fn check_pulse_current(arm: &Arm, pack_lesson: &Lesson, instruction: &str) {
+    let Some(pulse_a) = arm.pulse_a else {
+        return;
+    };
+    let spelled = Arm::spelled(pulse_a);
+    assert!(
+        contains_number(instruction, &spelled),
+        "arm `{}` on step `{}` types {pulse_a} A into the pulse group's current box, and \
+         `{spelled}` does not appear as a number in its instruction:\n  {}\n\
+         Same contract as the other two boxes: the current and the sentence that tells the \
+         reader to type it are two statements of one fact.",
+        arm.name,
+        arm.step,
+        arm.instruction
+    );
+    assert!(
+        arm.demand_a.is_none() && arm.cc_cv_a.is_none(),
+        "arm `{}` on step `{}` sets `pulse_a` alongside another current box. Those are two \
+         different boxes and `applyDemandMode` shows one at a time, so no reader can type in \
+         both — and `arm_control_value` would have to prefer one, which is a preference \
+         nothing in the page justifies.",
+        arm.name,
+        arm.step
+    );
+    let Prog::Pulse { i, .. } = pack_lesson.demand else {
+        panic!(
+            "arm `{}` on step `{}` types into the pulse group's current box, but the lesson \
+             its pack comes from (`{}`) is not on the Pulse demand mode. That box is not on \
+             screen there, and the simple box that IS on screen would replace the program \
+             rather than retime it — see `Arm::pulse_a`.",
+            arm.name, arm.step, pack_lesson.id
+        );
+    };
+    assert!(
+        (pulse_a - i).abs() > f64::EPSILON,
+        "arm `{}` on step `{}` declares a pulse current of {pulse_a} A, which is what the \
+         lesson its pack comes from (`{}`) already runs. An override that changes nothing is \
+         a control the reader was never asked to touch.\n\
+         Note which lesson that is: on a `pack_from` arm the box the reader is holding is the \
+         OTHER lesson's, so this compares against the pack's lesson and not against the step \
+         the arm is declared on. Step 14's own box is 15.459 A and its walk to the circuit \
+         types the same number — identical to this step, and a threefold change to the lesson \
+         it is typed into.",
+        arm.name,
+        arm.step,
+        pack_lesson.id
+    );
+}
+
+/// An arm may not type into the pulse box and another current box at once.
+///
+/// [`an_arm_may_not_type_into_both_current_boxes`]'s third case, and unreachable from the
+/// claims file for the same reason: no arm sets two.
+#[test]
+#[should_panic(expected = "alongside another current box")]
+fn an_arm_may_not_type_into_the_pulse_box_and_another() {
+    let lessons = lessons();
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == "circuit-repeats-itself")
+        .expect("step 12 is still in the path");
+    let mut arm = walkable_probe(&lesson.id, &lesson.id, Start::Restart);
+    arm.pack_from = None;
+    arm.instruction = "type the same 15.459 A".to_string();
+    arm.demand_a = Some(15.459);
+    arm.pulse_a = Some(15.459);
+    check_pulse_current(&arm, lesson, &arm.instruction.clone());
+}
+
+/// And it may only type into the pulse box on a step whose pack lesson runs a pulse train.
+///
+/// [`a_cc_cv_current_needs_a_cc_cv_step`] one box over, and the failure it prices is worse
+/// than that one's: [`arm_prog`]'s `(None, Some(_), _, other)` arm hands back the step's own
+/// program, so such an arm would be the lesson under a second name while its claims read as
+/// though a current had been typed.
+#[test]
+#[should_panic(expected = "not on the Pulse demand mode")]
+fn a_pulse_current_needs_a_pulse_step() {
+    let lessons = lessons();
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == "looks-fine-from-outside")
+        .expect("step 15 is still in the path");
+    let mut arm = walkable_probe(&lesson.id, &lesson.id, Start::Restart);
+    arm.pack_from = None;
+    arm.instruction = "type the same 15.459 A".to_string();
+    arm.pulse_a = Some(15.459);
+    check_pulse_current(&arm, lesson, &arm.instruction.clone());
 }
 
 /// [`Tie::Magnitude`] refuses a value that is not already negative.

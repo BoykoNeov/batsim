@@ -76,7 +76,7 @@ Pulse 1, in volts:
 | | Ecm 1 C | Ecm 3 C | ratio | Spm/20 1 C | Spm/20 3 C | ratio |
 |---|---|---|---|---|---|---|
 | **jump** when the current stops | 0.1328 | 0.3973 | **×2.99** | 0.1139 | 0.2132 | **×1.87** |
-| **climb** over the next 600 s | 0.0748 | 0.2243 | **×3.00** | 0.0173 | 0.1039 | **×6.01** |
+| **climb** over the next 600 s | 0.0748 | 0.2243 | **×3.00** | 0.0173 | 0.1039 | **×6.02** |
 | **total sag** (what the plot shows) | 0.2128 | 0.6374 | **×3.00** | 0.1357 | 0.3370 | **×2.48** |
 
 The `jump` is taken with a `dt = 0` probe under `Rest`: no time passes, so what
@@ -87,7 +87,7 @@ that is the `climb`.
 **Ask a circuit for three times the current and every part of its answer is three times
 bigger.** That is not a property of these coefficients; it is what "linear" means, and no
 choice of `R0` and RC can escape it. The particle's fast part *saturates* (1.87, Butler–
-Volmer's `asinh`) while its slow part *accelerates* (6.01, because the OCP is a nonlinear
+Volmer's `asinh`) while its slow part *accelerates* (6.02, because the OCP is a nonlinear
 function of surface stoichiometry) — and the two sum to a total that merely looks mildly
 sub-linear. A single resistance cannot be both at once, which is the whole lesson.
 
@@ -115,11 +115,15 @@ anyone chose to make a point.
 
 ### 6. Where not to point the reader
 
-Past the SOC clamp both models are finite and bounded — nothing goes NaN — but the SPM
-pins at **0.39–0.50 V** against the ECM's 1.79 V, because its surface concentration runs
-to the bottom of the OCP table while the ECM cannot leave its own `[ocv]`. Named as a
-limitation, in the family of the overcharge hole; lesson parameters stop above the
-cutoff.
+Past the SOC clamp both models are finite and bounded — nothing goes NaN — but neither
+is describing a cell any more. **Both figures in this paragraph were wrong and are now
+measured** (2026-08-25, on the guided path's own train at 3 C, clamp at 11 880 s): the SPM
+falls to **0.309467 V** at the bottom of every loaded leg and recovers to about 1.17 V over
+each rest, and the ECM — which this said "pins at 1.79 V" — falls straight through zero,
+because `[reversal]` landed after this was written and gives its open-circuit voltage a ramp
+and a floor. Its teeth settle at **−0.442 V** at the start of each loaded leg and
+**−0.657 V** at the end. Named as a limitation, in the family of the overcharge hole;
+lesson parameters stop above the cutoff.
 
 ## Part A — the `Pulse` demand mode
 
@@ -239,4 +243,4 @@ Third appearance of "re-read at rest".
 
 The guided path runs 14 steps. A reader can select the single-particle model from the
 picker, drive a pulse train at two currents over both transports, and read the ×2.99 /
-×3.00 that a circuit is obliged to give against the particle's ×1.87 and ×6.01.
+×3.00 that a circuit is obliged to give against the particle's ×1.87 and ×6.02.

@@ -38,7 +38,7 @@
 # x3.00 against the 1 C run. That is not a property of these coefficients — it is what
 # "linear" means, and no choice of R0 and RC can escape it.
 #
-# See `pulse_train_spm.toml` for a model that answers x1.87 and x6.01 to the same
+# See `pulse_train_spm.toml` for a model that answers x1.87 and x6.02 to the same
 # question, and docs/plans/spm-scenario.md for the whole table.
 #
 # ## What is a placeholder here

@@ -288,7 +288,7 @@ three that put charge back in (the two legs of a CC-CV charge, a chemistry whose
 second leg never arrives, and what a BMS costs a charge it decides to stop), three
 that pulse the same cell through two different cell models — a circuit that answers an
 identical pulse identically, a particle that remembers the last one, and three times
-the current buying ×1.87 of one part of the answer and ×6.01 of another — a pair that
+the current buying ×1.87 of one part of the answer and ×6.02 of another — a pair that
 pulls that same cell flat at 3 C through the two *porous-electrode* models and differs
 in one block of one file, where the single-particle model runs smoothly to 4.55 A·h
 with no flag raised and the Doyle–Fuller–Newman one is finished at 1.99 with 61 % still
