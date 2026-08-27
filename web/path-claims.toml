@@ -3819,7 +3819,7 @@ a temperature) would not show up in the probe's own telemetry at all. The real g
 # mid-run there is no single string it can be said to be showing at a given simulation
 # time. This step's own prose says so from the reader's side, and `Row::surface_gap` says
 # so from this file's. Paused, the next sample catches up and stays, which is why the two
-# claims read at 2860 s may name a `display` and the fifteen before them may not.
+# claims read at 2860 s may name a `display` and the sixteen before them may not.
 # -------------------------------------------------------------------------------------
 
 [[claim]]
@@ -8241,8 +8241,8 @@ steps = [
                      # instants a reader actually sees them
   "the-gradient-itself", # 44 numbers, and THE LAST STEP IN THE PATH TO BE LEDGERED. It
                      # is also the one whose numbers are most nearly its own: 29 of the 44
-                     # sit inside a claimed sentence and 25 of those claims were written
-                     # for this scan, on ONE trajectory — a 3 C discharge to the cut-off
+                     # sit inside a claimed sentence, and the step now carries 29 claims
+                     # of which 25 were written for this scan, all on ONE trajectory — a 3 C discharge to the cut-off
                      # and then half an hour of rest, which is what a `Pulse` demand buys
                      # in a single record. The other 15 are named rather than counted:
                      # five ordinals (two into the middle of the path, two spanning its

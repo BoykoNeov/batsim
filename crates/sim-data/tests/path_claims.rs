@@ -644,7 +644,7 @@ fn fmt_gap_pts(x: f64, dp: usize) -> String {
 /// the reader can stop on — the zero-length probe, and the mark — and `past empty` has none
 /// at all, because nothing in the path claims it anywhere but mid-run. That is what lets
 /// step 17's headline (`0.00 / 0.00` before the reader presses Run) be a display claim
-/// rather than a number with no panel behind it, and it is why the fifteen mid-run gap
+/// rather than a number with no panel behind it, and it is why the sixteen mid-run gap
 /// claims on that step are value-only.
 fn render_row(label: &str, row: &Row) -> String {
     let (t, sim_time_s) = (&row.telemetry, row.t_s);
@@ -10945,8 +10945,9 @@ fn claimed_accounting(
 ///
 /// **The twenty-fourth, `the-gradient-itself`, is the last step in the path**, and it is
 /// the one whose numbers are most nearly all its own: twenty-nine of its forty-four sit
-/// inside a claimed sentence, and twenty-five of those claims were written for this scan —
-/// the most heavily claimed step in the path, all of it on one trajectory. It needed no new
+/// inside a claimed sentence, and the step carries twenty-nine claims of which twenty-five
+/// were written for this scan — the most heavily claimed step in the path, all on one
+/// trajectory. It needed no new
 /// tie, no new arm and no new accounting arm; what it needed was a **quantity**,
 /// `gap_neg_zero_s`, because its central sentence is about the instant a readout row first
 /// prints `0.00` and a claim read at an instant an author picked would not have said
