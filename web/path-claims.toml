@@ -247,7 +247,7 @@
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
 #   spelled  a claim on this sentence names it in `spells` — 265 of the 303 numbers the
-#            182 claimed sentences print. Signs are ignored on both sides.
+#            183 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -278,7 +278,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 182 claimed sentences need none. A future literal printing a chemistry constant will
+# the 183 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -1841,7 +1841,7 @@ duration rather than asking the reader to keep going.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "the same 93.29 A on the first frame after the fault, the same 87.02 A thirty seconds later"
-quantity = "i_at"
+quantity = "i_at:60.5"
 arm = "bms off"
 value = 93.28560
 tol = 5e-3
@@ -1863,7 +1863,7 @@ sentence's own precision, not a margin this file chose.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "the same 93.29 A on the first frame after the fault, the same 87.02 A thirty seconds later"
-quantity = "i_at"
+quantity = "i_at:90.5"
 arm = "bms off"
 value = 87.01934
 tol = 5e-3
@@ -1900,7 +1900,7 @@ times already in this file that take their sentence's rule instead.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.6 K and still rising, with 58 A flowing"
-quantity = "t_max_at"
+quantity = "t_max_at:235.5"
 arm = "bms off"
 value = 375.58672
 tol = 5e-2
@@ -1916,7 +1916,7 @@ is a statement about the next ten seconds, and the peak that follows is claimed 
 [[claim]]
 step = "nothing-to-clamp"
 literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.6 K and still rising, with 58 A flowing"
-quantity = "i_at"
+quantity = "i_at:235.5"
 arm = "bms off"
 value = 58.043706
 tol = 0.5
@@ -1938,7 +1938,7 @@ after it are about one instant: if the flag moved, both would move together.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
-quantity = "i_at"
+quantity = "i_at:235.5"
 arm = "bms off"
 value = 58.04371
 tol = 5e-3
@@ -1959,7 +1959,7 @@ of the same failure. These five claims are what stops a fourth.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
-quantity = "i_at"
+quantity = "i_at:240"
 arm = "bms off"
 value = 40.32749
 tol = 5e-3
@@ -1979,7 +1979,7 @@ after.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
-quantity = "i_at"
+quantity = "i_at:250"
 arm = "bms off"
 value = 17.02921
 tol = 5e-3
@@ -1996,7 +1996,7 @@ which the event fence in `every_claim_matches_the_engine` checks rather than ass
 [[claim]]
 step = "nothing-to-clamp"
 literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
-quantity = "i_at"
+quantity = "i_at:300"
 arm = "bms off"
 value = 1.94428
 tol = 5e-3
@@ -2012,7 +2012,7 @@ of a number that is falling fast, and this is what that precision is worth.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "58.04 A at the flag, 40.33 A four and a half seconds later, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
-quantity = "i_at"
+quantity = "i_at:400"
 arm = "bms off"
 value = 0.10339
 tol = 5e-4
@@ -2028,7 +2028,7 @@ and stops mattering" is what a tenth of an amp means.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "it peaks at **376.4 K at 245.5 s**, ten seconds after the flag, and is back to 362 K by 400 s"
-quantity = "t_max_at"
+quantity = "t_max_at:245.5"
 arm = "bms off"
 value = 376.37083
 tol = 5e-2
@@ -2054,7 +2054,7 @@ instant as unresolved.
 [[claim]]
 step = "nothing-to-clamp"
 literal = "it peaks at **376.4 K at 245.5 s**, ten seconds after the flag, and is back to 362 K by 400 s"
-quantity = "t_max_at"
+quantity = "t_max_at:400"
 arm = "bms off"
 value = 362.26141
 tol = 5e-1
@@ -4549,7 +4549,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # claimed — all of them.
 #
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-four
-# steps, 626 numerals, and no longer all of them scenario constants. This count is NOT
+# steps, 628 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -4589,10 +4589,17 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # paragraph below): "about half a point across the whole grid" and "a quarter of a point"
 # between the two cells of a group (step 3), "a gap of about three points" and "a fraction
 # of a point" of sensor drift (step 4), and "all but three points of what it holds" at the
-# end of step 22. All five are engine measurements. Four of them are still checked by
+# end of step 22. All five are engine measurements. THREE of them are still checked by
 # nothing; the estimator gap now has two claims, at the mark and at its narrowest, and they
 # are claims rather than ledger entries — this scan cannot see the sentence they are about.
-# A ledgered step is digits-closed, which is less than closed.
+# The fifth stopped being one in the slice that wrote this line: step 22 is word-scanned now
+# and "all but three points of what it holds" is tied to that step's own charge claim.
+#
+# So "digits-closed is less than closed" is no longer a fact about the whole path — it is a
+# fact about the steps in `word_blind` below, which is seventeen of twenty-four. The sentence
+# stays because the gap it names is real for those seventeen, and because the pairing of
+# `spelled` and `word_blind` is what keeps it honest: a step is now one or the other by
+# declaration, never by silence.
 #
 # AND THE CASE THAT PROVES IT COSTS SOMETHING. Step 9 opened "Eight steps of taking charge
 # out; this one puts it back" — not a measurement but a count of the path itself, and false:
@@ -4615,7 +4622,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are twenty-six of them. An arm says what decides a number: a
+# THE ARMS THEMSELVES, and there are twenty-seven of them. An arm says what decides a number: a
 # NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, the SPAN of a
@@ -5346,7 +5353,7 @@ groups and neither knows about the other.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "at **39.62 %**: against the twin's half a percent, this fault costs **fifty points**"
+literal = "at **39.62 %**"
 quantity = "soc_at"
 value = 0.396189
 tol = 5e-5
@@ -5364,7 +5371,7 @@ sentence gives two decimals and the row prints one.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "at **39.62 %**: against the twin's half a percent, this fault costs **fifty points**"
+literal = "this fault costs **fifty points**"
 quantity = "soc_lost_pts_at"
 value = 50.381100
 tol = 0.5
@@ -5378,9 +5385,13 @@ level: 90.00 % at the probe against 39.62 % when the contactor opens. A word com
 decimal place, so the rule is half a point — which 50.3811 clears comfortably, and which
 is as much precision as "fifty points" asks for.
 
-"against the twin's half a percent" is the other half of the contrast and prints no digits
-at all, so the scan does not see it. The twin's half a percent is step 18's 0.55719, which
-is claimed there.
+The other half of the contrast USED TO read "against the twin's half a percent", and this
+note used to end "the twin's half a percent is step 18's 0.55719, which is claimed there" -
+a figure written down in prose beside a claim, and compared with the twin by nobody. Opening
+the word scan on this step is what turned that into a question: 0.55719 rounds to 0.6 at the
+one decimal place the word "half" commits to, so the sentence was wrong as well as unchecked.
+It reads "0.56 points" now, tied by a ledger rule to step 18's own claim, which puts the two
+shorts' costs in the same unit and makes the contrast a subtraction the reader can do.
 """
 
 [[claim]]
@@ -8070,7 +8081,7 @@ steps = [
                      # boxes, the charge it starts at, the cut-off, the nameplate twice and
                      # the rate. It cost four new arms across two slices, five new claims,
                      # and three numbers that left the page and have not come back
-  "wearing-out-while-idle", # 19: the cheapest of the fourteen, measured
+  "wearing-out-while-idle", # 20: the cheapest of the fourteen, measured
                      # (docs/plans/path-self-description-sweep.md) and not the one the
                      # previous slice recommended. Eight of its numerals are claims on
                      # three trajectories, and the other eleven are the pack, its charge,
@@ -8090,7 +8101,7 @@ steps = [
                      # claimed measurements, and one — the model error, printed twice — is
                      # both. It still needed FOUR new arms, because not one of the eleven is
                      # a field a rule could read straight off a file
-  "nothing-to-clamp", # 34: most of them sit inside a claimed sentence, which is what made
+  "nothing-to-clamp", # 35: most of them sit inside a claimed sentence, which is what made
                      # the densest step left the cheapest one to scan — this step had been
                      # claimed twice over, for its unprotected arm and for its protected
                      # half, before the ledger reached it. What a rule accounts for, named
@@ -8313,7 +8324,8 @@ steps = [
 # the two lists, so silence is not an option; an empty list is a statement and not an
 # omission. What it does NOT say is that the path is checked: a green ledger says every
 # DIGIT is tied to something, and this path states a great many of its quantities in
-# English words that no scan here can see.
+# English words. Some of those are read now — see `spelled` below, and `word_blind` beside
+# it for the steps where they are not.
 unledgered = [
 ]
 
@@ -8327,7 +8339,67 @@ unledgered = [
 # each was measured were tied to nothing.
 #
 # Opt-in per step, exactly as `steps` is, and every entry here must also be in `steps`. What
-# is NOT here is word-blind, which is what the whole path was before this list.
+# is NOT here is in `word_blind` below, by name: the two lists are one partition and
+# `every_lesson_is_word_scanned_or_named_as_not` refuses a step that is in neither.
+#
+# The counts are what the scan finds today, not a budget. Twenty-nine quantities over seven
+# steps, and the second batch of six needed one new SHAPE (a numeral ahead of its fraction,
+# "four and a half seconds"), one new unit noun, and thirteen vocabulary rules — almost all
+# of them for an instant stated RELATIVE to another one, which the first batch never met.
 spelled = [
-  "the-gradient-itself",  # 16 spelled quantities, the most of any step in the path
+  "the-gradient-itself",         # 15 quantities, the most of any step in the path
+  "bare-curve",                  # 1
+  "circuit-repeats-itself",      # 1
+  "sixty-times-the-current",     # 2
+  "slow-and-patient",            # 3
+  "nothing-to-clamp",            # 5
+  "wearing-out-while-idle",      # 2
+]
+
+# The other side of that list: steps whose prose is NOT word-scanned, named.
+#
+# `spelled` on its own said which steps were read and could not say which were not, which is
+# survivable at one step in twenty-four and stops being so at seven. Every lesson is in
+# exactly one of the two lists and `every_lesson_is_word_scanned_or_named_as_not` refuses
+# silence, the same contract `steps` and `unledgered` keep one axis over.
+#
+# The count beside each is what a whole-path scan finds there TODAY, and reading it as the
+# work remaining would be a mistake in two directions. Three shapes this scanner does not
+# read were found by hand in these steps and are stated here rather than left to be inferred
+# from a zero:
+#
+#   * A quantity spelled as an ARTICLE. `the-electrolyte-starves` says "an hour of
+#     simulation" and `past-empty` says "0.062 V a minute in, 0.064 V at two" - the second
+#     being a reading list whose head is an article, so the item after it inherits nothing
+#     either. There is no numeral word in any of them, which is also why
+#     `no_spelled_quantity_is_silently_skipped` cannot see them: it keys on a numeral. Not
+#     built here on purpose - an article reader needs a "not after `of`" fence to keep "a
+#     fraction of a point" from scanning as one point, and a fence written against the cases
+#     an author thought of is how this file's last two scanner defects were built.
+#   * A COUNT the topology settles - "Eight cells in 4S2P", "four healthy groups". In scope
+#     by the rule that admits a measure at all (a scenario field decides it), unlike the
+#     page's own furniture; simply not needed by any step in `spelled` yet.
+#   * A count of ENGINE STEPS - "Seven steps of taking", "eight steps". Settled by the run
+#     length over `dt`, so it needs an arm before it needs a noun.
+#
+# So a `0` below means "no quantity of a shape the scanner reads", never "no quantity".
+word_blind = [
+  "pack-disagrees",              # 3 - the grid's spread, which wants claims that do not exist
+  "belief-drifts",               # 2
+  "lying-sensor",                # 0 read, and one count of groups
+  "protection-on",               # 0 read, and one count of cells
+  "and-it-is-still-in-there",    # 6, all of them hours, three relative to the rest's start
+  "particle-remembers",          # 5
+  "the-electrolyte-starves",     # 0 read, and two hours spelled as articles
+  "two-legs",                    # 0 read, and one count of engine steps
+  "past-empty",                  # 6 read, and a reading list headed by an article
+  "looks-fine-from-outside",     # 2
+  "one-step-that-got-through",   # 5 - three of them only became visible when `percent`
+                                 #     joined the unit nouns for a step in `spelled`
+  "what-protection-costs",       # 0 read, and two counts of engine steps
+  "leg-that-is-not-there",       # 0
+  "what-it-cost",                # 8, the most of any step not scanned
+  "three-times-the-current",     # 3
+  "same-discharge-other-chemistry",  # 0 read, and a "third" this file refuses to value
+  "protection-off",              # 1
 ]

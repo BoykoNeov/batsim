@@ -83,24 +83,31 @@
 //! [`spelled_numbers`] is the other half, opt-in per step through the ledger's `spelled`
 //! list, and merged into the same scan so that one number cannot have two readings. It
 //! finds a numeral and a measure noun ("three minutes", "half an hour", "an eighteen-minute
-//! discharge"), a numeral written after its unit ("the first minute and a half"), and a list
-//! item carrying a unit an earlier item stated ("5.80 at six"). What it does **not** find is
-//! the prose counting its own furniture — "two electrodes", "Four footnotes", "six gap
-//! figures" — because that is a list's length rather than a measure, and it wants an arm
-//! that reads a list. That limit is declared rather than left to be inferred from a green
-//! run, on this paragraph's original terms: nothing here says those numbers are tied to
-//! anything. Word-scanned steps are one today, and every other step in the ledger is
-//! still exactly as digits-closed as this paragraph used to describe.
+//! discharge"), a numeral written after its unit ("the first minute and a half"), a numeral
+//! written before it with a fraction between ("four and a half seconds"), and a list item
+//! carrying a unit an earlier item stated ("5.80 at six").
+//!
+//! **Three things it does not find, all declared rather than left to be inferred from a
+//! green run.** The prose counting its own furniture — "two electrodes", "Four footnotes",
+//! "six gap figures" — because that is a list's length rather than a measure, and it wants
+//! an arm that reads a list. A quantity spelled as an ARTICLE — "an hour of simulation", "a
+//! minute in" — which has no numeral word in it at all, and which
+//! [`no_spelled_quantity_is_silently_skipped`] therefore cannot see either. And a count of
+//! ENGINE STEPS — "eight steps" — which the run length over `dt` settles and which needs an
+//! arm before it needs a noun. Nothing here says any of those numbers is tied to anything.
+//! Word-scanned steps are seven today; the rest are named in the ledger's `word_blind` list
+//! with what a scan finds in each, and are exactly as digits-closed as this paragraph used
+//! to describe the whole path as being.
 //! Check 6 can only
 //! reach the sentences a claim already quotes, and fourteen steps had no claim at all when
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty-four steps and 626 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty-four steps and 628 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
-//! Twenty-six arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! Twenty-seven arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, the span of a
 //! chemistry table, a node of one, digits inside a name, digits inside the name of a file an
@@ -930,6 +937,24 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
         ("1.25".to_string(), 60.0)
     );
 
+    // Shape 4: shape 2 the other way round — the numeral ahead of its fraction and both
+    // ahead of the unit. Not a variant of shape 2: the phrase is a different sequence of
+    // words and only the quantity is the same.
+    assert_eq!(
+        one("40.33 A four and a half seconds later,"),
+        ("4.5".to_string(), 1.0)
+    );
+    assert_eq!(
+        one("about two and a half days — which is"),
+        ("2.5".to_string(), 86400.0)
+    );
+    // ...and it consumes its own tail. Read by shape 1 instead, `half seconds` is 0.5 s, and
+    // on `nothing-to-clamp` — whose step length IS 0.5 s — the ledger tied a sentence saying
+    // 4.5 to a control holding 0.5 and went green. The assertion is `len == 1` inside `one`,
+    // so this case is the whole finding.
+    let both = spelled_numbers("40.33 A four and a half seconds later,");
+    assert_eq!(both.len(), 1, "the tail is not a second quantity: {both:?}");
+
     // Shape 3: a list item inheriting the unit an earlier item stated.
     let list = spelled_numbers("5.71 at three minutes, 5.80 at six, and 5.81 later");
     assert_eq!(
@@ -983,11 +1008,17 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
 /// the five-green version of that story.
 ///
 /// So on a word-scanned step, a numeral word no shape consumed may not have a measure noun
-/// sitting just behind it. *"five and a half minutes"* is the shape this is really about — a
-/// numeral, a fraction and a unit, which none of the three shapes reads and which a scan
-/// without this test would drop on the floor. It is not hypothetical: the plan doc that hand
-/// enumerated this step's spelled quantities listed that very phrase as one of them, and it
-/// does not occur anywhere in `web/app.js`.
+/// sitting just behind it. *"four and a half seconds"* is the shape it was written pointing
+/// at — a numeral, a fraction and a unit, which none of the shapes read at the time — and
+/// **it did its job**: opening the scan on five more lessons, this guard named six such
+/// phrases and refused rather than certifying them, which is what bought shape 4. That the
+/// example in this paragraph is now *read* is the point of the guard, not a hole in it: what
+/// it watches is the gap between what the prose spells and what the scanner has learned, and
+/// that gap is refilled by every lesson added to the list.
+///
+/// What it does **not** see is a quantity with no numeral word in it at all. *"a minute in"*
+/// and *"an hour of simulation"* spell one as an article, and there is nothing here to key
+/// on; see the `word_blind` list for where that is written down.
 #[test]
 fn no_spelled_quantity_is_silently_skipped() {
     let lessons = lessons();
@@ -1090,6 +1121,54 @@ fn no_spelled_quantity_is_silently_skipped() {
 /// The two lists are one contract, in the direction `steps` and `unledgered` already are: a
 /// step whose digits nothing ties has no business claiming its words are tied, and a green
 /// word scan standing beside an unledgered step reads as coverage it is not.
+/// Every lesson is word-scanned or is named as not, and no lesson is both.
+///
+/// [`every_lesson_is_ledgered_or_named_as_not`] one axis over. The argument is the same one
+/// that file makes for its own pairing and it is worth restating, because the temptation to
+/// leave a bare opt-in list is strongest exactly while it is short: an opt-in list says what
+/// is covered, and only a partition says what is *not*. A lesson written next month joins
+/// neither list and this check is what turns that into a red rather than into a step whose
+/// English quantities nothing ever reads.
+#[test]
+fn every_lesson_is_word_scanned_or_named_as_not() {
+    let lessons = lessons();
+    let ledger = ledger();
+
+    let mut listed: Vec<&str> = ledger
+        .spelled
+        .iter()
+        .chain(&ledger.word_blind)
+        .map(String::as_str)
+        .collect();
+    let before = listed.len();
+    listed.sort_unstable();
+    listed.dedup();
+    assert_eq!(
+        before,
+        listed.len(),
+        "a step is in both `[ledger].spelled` and `[ledger].word_blind`. The two \
+         lists are one partition; a step in both makes the file say its words are \
+         read and are not."
+    );
+
+    for lesson in &lessons {
+        assert!(
+            listed.contains(&lesson.id.as_str()),
+            "lesson `{}` is in neither `[ledger].spelled` nor `[ledger].word_blind`. \
+             A lesson that says nothing about its English quantities is word-blind \
+             and unremarked, which is the state this pairing exists to make \
+             impossible — put it in one of the two.",
+            lesson.id,
+        );
+    }
+    for id in &listed {
+        assert!(
+            lessons.iter().any(|l| l.id == **id),
+            "`[ledger]` names `{id}`, which is not a lesson. Both lists follow the path."
+        );
+    }
+}
+
 #[test]
 fn every_word_scanned_step_is_ledgered() {
     let ledger = ledger();
@@ -2712,6 +2791,25 @@ struct Written {
     /// point — a message that said `24` about a sentence reading *twenty-four* would send
     /// an author looking for digits that are not there.
     phrase: String,
+    /// The **unit noun** the words state, as [`UNIT_NOUNS`] spells it, or `""` for a number
+    /// the sentence writes in digits.
+    ///
+    /// [`Written::scale`] cannot answer *"is this a length of time"*: a second, a point, a
+    /// percent and a multiplier all scale by one. The two arms in
+    /// [`accounting_without_arithmetic`] that compare **numbers** — the step length a claim
+    /// was measured under, and the instant it was read at — are both in seconds, and they
+    /// are offered every spelled quantity because a number needs no digits to be compared.
+    ///
+    /// Without this field they were offered quantities that are not durations at all.
+    /// *"against the twin's half a percent"* is `0.5`, `nothing-to-clamp` holds its step
+    /// length at `0.5` s, and check 6 tied a percentage to a duration and reported green —
+    /// the same coincidence, one layer up, that the overlap skip in [`spelled_numbers`]
+    /// exists for, and found the same way: by opening the scan on a lesson whose numbers
+    /// happened to collide.
+    ///
+    /// It only ever **narrows**. A number written in digits carries its unit in the prose
+    /// around it, has always been offered these arms, and is untouched.
+    unit: &'static str,
 }
 
 /// Every number written in `text`, in order, with the offset each one starts at.
@@ -2742,6 +2840,7 @@ fn written_numbers(text: &str) -> Vec<Written> {
                 token,
                 len,
                 scale: 1.0,
+                unit: "",
             });
         }
     }
@@ -2753,6 +2852,7 @@ fn written_numbers(text: &str) -> Vec<Written> {
             token: cur,
             len,
             scale: 1.0,
+            unit: "",
         });
     }
     // `at 5769.` and `1.2.3` both come out of the loop above; keep the leading number.
@@ -2772,6 +2872,7 @@ fn written_numbers(text: &str) -> Vec<Written> {
                 phrase: token.clone(),
                 token,
                 scale: 1.0,
+                unit: "",
             })
         })
         .collect();
@@ -2950,6 +3051,14 @@ const UNIT_NOUNS: &[(&str, f64)] = &[
     // The multiplier — "more than six times the negative's". Unitless, so it scales by one.
     ("time", 1.0),
     ("times", 1.0),
+    // A percentage, spelled. The word and not the sign: `%` is a digit's unit and the digit
+    // scanner has always found it. This is here because *"against the twin's half a
+    // percent"* was unread, and unread is the direction that matters — the sentence quotes
+    // a neighbouring lesson's measurement and nothing was asked to check it. The
+    // fraction-to-percent conversion is a rule's `pow10`, exactly as it is for a number in
+    // digits; this scale is about the *word's* unit and there is one percent to a percent.
+    ("percent", 1.0),
+    ("percentage", 1.0),
 ];
 
 /// Words allowed to sit between the numeral and its unit without breaking the phrase.
@@ -3022,6 +3131,28 @@ fn lookup(table: &[(&str, f64)], word: &str) -> Option<f64> {
     table.iter().find(|(k, _)| *k == word).map(|(_, v)| *v)
 }
 
+/// The [`UNIT_NOUNS`] entry `word` is, **noun and scale together**.
+///
+/// [`lookup`] answers with the scale alone, which is all three shapes needed until
+/// [`Written::unit`] existed. They are different questions: the scale says how to convert
+/// the number, the noun says what kind of quantity it is, and a second and a percent have
+/// the same scale.
+fn unit_noun(word: &str) -> Option<(&'static str, f64)> {
+    UNIT_NOUNS.iter().find(|(k, _)| *k == word).copied()
+}
+
+/// Whether a spelled quantity's unit is a **length of time**.
+///
+/// The gate on the two arms of [`accounting_without_arithmetic`] that compare numbers, both
+/// of which are in seconds. Empty means the sentence wrote digits, which those arms have
+/// always been asked about and which this does not change.
+fn unit_is_time(unit: &str) -> bool {
+    matches!(
+        unit,
+        "" | "second" | "seconds" | "minute" | "minutes" | "hour" | "hours" | "day" | "days"
+    )
+}
+
 /// The numeral, in the unit the sentence writes it, as the shortest decimal string that
 /// says what the words commit to.
 ///
@@ -3057,7 +3188,7 @@ fn spelled_token(value: f64) -> String {
 /// claims are read** — so the digits were tied to the engine while the words saying *when*
 /// each one was measured were tied to nothing.
 ///
-/// Three shapes, and the second and third are not decoration:
+/// Four shapes, and only the first is the obvious one:
 ///
 /// 1. **numeral, unit** — *"three minutes"*, *"fifty simulated seconds"*, *"half an hour"*,
 ///    and the hyphenated attributive *"an eighteen-minute discharge"*. A scale word may sit
@@ -3069,6 +3200,12 @@ fn spelled_token(value: f64) -> String {
 ///    one a naive scanner misses entirely: on the first step scanned, four of the six
 ///    instants its gap claims are read at are written this way, so a scan without it would
 ///    have certified the step while seeing one instant in six.
+/// 4. **numeral, "and a half", unit** — *"four and a half seconds"*, *"two and a half
+///    days"*. Shape 2 the other way round, and the two are one quantity written in the two
+///    orders English allows, so reading one and not the other is reading a word order rather
+///    than a shape. Six phrases across five lessons, and until it existed the closed-list
+///    guard below refused every one of them by name — which is the direction that shape was
+///    supposed to fail in, and did.
 ///
 /// A numeral this cannot value **panics** rather than being skipped, through
 /// [`no_spelled_quantity_is_silently_skipped`]. A scanner that quietly passes over what it
@@ -3097,16 +3234,31 @@ fn spelled_numbers(text: &str) -> Vec<Written> {
     let mut out: Vec<Written> = Vec::new();
 
     for (i, (at, end, word)) in words.iter().enumerate() {
+        // A word already inside a phrase an earlier shape read whole is not the head of a
+        // second one.
+        //
+        // **This is not tidiness, and it was measured.** Before shape 4 existed, *"40.33 A
+        // four and a half seconds later"* was read by shape 1 as the two words `half
+        // seconds` — 0.5 s — and `nothing-to-clamp` holds its step length at exactly 0.5 s,
+        // so the ledger tied that quantity to the step-length control and reported GREEN on
+        // a sentence stating 4.5. A wrong arm that happens to hold the right number is the
+        // hazard the whole taxonomy is arranged against, and here the scanner was handing it
+        // over. Shape 4 reads the phrase whole; this skip is what stops its own tail being
+        // read a second time behind it.
+        if out.iter().any(|w| *at > w.at && *at < w.at + w.len) {
+            continue;
+        }
         // Shape 1, hyphenated: "eighteen-minute". The unit is fused onto the numeral, so
         // neither half is a word of its own to walk from.
         if let Some((head, tail)) = word.split_once('-') {
-            if let (Some(v), Some(scale)) = (numeral_word(head), lookup(UNIT_NOUNS, tail)) {
+            if let (Some(v), Some((unit, scale))) = (numeral_word(head), unit_noun(tail)) {
                 out.push(Written {
                     at: *at,
                     len: end - at,
                     token: spelled_token(v),
                     phrase: text[*at..*end].to_string(),
                     scale,
+                    unit,
                 });
                 continue;
             }
@@ -3119,7 +3271,7 @@ fn spelled_numbers(text: &str) -> Vec<Written> {
         // account for one, and the sentence was free to say 75 s where the claim beside it
         // is read at 90. Narrow-by-accident is the shape this file's own guards keep
         // finding, and it fails toward silence every time.
-        if let Some(scale) = lookup(UNIT_NOUNS, word) {
+        if let Some((unit, scale)) = unit_noun(word) {
             let tail: Vec<&str> = words[i + 1..]
                 .iter()
                 .take(3)
@@ -3136,8 +3288,52 @@ fn spelled_numbers(text: &str) -> Vec<Written> {
                     token: spelled_token(1.0 + f),
                     phrase: text[*at..stop].to_string(),
                     scale,
+                    unit,
                 });
                 continue;
+            }
+        }
+        // Shape 4: "<numeral> and a <fraction> <unit>" — the numeral first, its fraction
+        // next, and the unit behind both.
+        //
+        // Shape 2's mirror image, and the one [`no_spelled_quantity_is_silently_skipped`]
+        // was written pointing at: *"four and a half seconds"*, *"two and a half days"*,
+        // *"eight and a half seconds"*. English writes the same quantity both ways round and
+        // the position of the numeral is the only difference, so a scanner reading one and
+        // not the other is not reading a shape — it is reading a word order.
+        //
+        // It has to be tried BEFORE shape 1, because shape 1 can match this phrase's tail on
+        // its own and come out with the fraction alone. See the skip at the top of the loop
+        // for what that cost.
+        if let Some(v) = numeral_word(word) {
+            let tail: Vec<&str> = words[i + 1..]
+                .iter()
+                .take(3)
+                .map(|(_, _, w)| w.as_str())
+                .collect();
+            if let (["and", "a", _], Some(f)) =
+                (&tail[..], tail.get(2).and_then(|w| lookup(FRACTIONS, w)))
+            {
+                let mut j = i + 4;
+                while words
+                    .get(j)
+                    .is_some_and(|(_, _, w)| FILLERS.contains(&w.as_str()))
+                {
+                    j += 1;
+                }
+                if let Some((_, stop, word)) = words.get(j) {
+                    if let Some((unit, scale)) = unit_noun(word) {
+                        out.push(Written {
+                            at: *at,
+                            len: stop - at,
+                            token: spelled_token(v + f),
+                            phrase: text[*at..*stop].to_string(),
+                            scale,
+                            unit,
+                        });
+                        continue;
+                    }
+                }
             }
         }
         // Shape 1: a numeral, an optional scale word, fillers, then the unit.
@@ -3155,10 +3351,10 @@ fn spelled_numbers(text: &str) -> Vec<Written> {
         {
             j += 1;
         }
-        let Some((_, stop, unit)) = words.get(j) else {
+        let Some((_, stop, noun)) = words.get(j) else {
             continue;
         };
-        let Some(scale) = lookup(UNIT_NOUNS, unit) else {
+        let Some((unit, scale)) = unit_noun(noun) else {
             continue;
         };
         out.push(Written {
@@ -3167,6 +3363,7 @@ fn spelled_numbers(text: &str) -> Vec<Written> {
             token: spelled_token(value),
             phrase: text[*at..*stop].to_string(),
             scale,
+            unit,
         });
     }
 
@@ -3205,6 +3402,10 @@ fn spelled_numbers(text: &str) -> Vec<Written> {
             token: spelled_token(value),
             phrase: text[*at..*n_end].to_string(),
             scale: prior.scale,
+            // The unit is inherited with the scale, because that is the whole shape: the
+            // item states a numeral and nothing else, and what it means comes from the
+            // item ahead of it.
+            unit: prior.unit,
         });
         let _ = end;
     }
@@ -6142,14 +6343,65 @@ fn sentences(all: &[Claim]) -> Vec<(&str, &str)> {
 /// an accounting of their own, and a `Derived` operand would have no floor. Calling this on
 /// the operands is what makes the recursion one level deep by construction rather than by a
 /// depth counter.
-fn accounting_without_arithmetic(
-    token: &str,
-    unit: f64,
+/// One number **as the sentence writes it**, which is what every arm of check 6 reads.
+///
+/// Four fields that had been four parameters, and they travel together because they are one
+/// thing: the characters, the unit the words put it in, the scale that unit is in seconds,
+/// and whether the sentence spelled it in letters at all. Three of the four are consulted by
+/// a *different* arm, and the fourth parameter arrived the day one of those arms turned out
+/// to be answering about a quantity that was not a duration.
+struct Reading<'a> {
+    /// The number as a decimal string — the source characters for a digit, and what the
+    /// words come to for a spelled one. See [`Written::token`].
+    token: &'a str,
+    /// See [`Written::scale`].
+    scale: f64,
+    /// See [`Written::unit`].
+    unit: &'static str,
+    /// Whether the sentence writes it in letters. The arms that compare *characters* are
+    /// asked only about digits; see [`accounting_without_arithmetic`].
     in_words: bool,
+}
+
+impl<'a> Reading<'a> {
+    /// A number the sentence writes in digits — no unit of its own, nothing to convert.
+    fn digits(token: &'a str) -> Self {
+        Self {
+            token,
+            scale: 1.0,
+            unit: "",
+            in_words: false,
+        }
+    }
+}
+
+impl<'a> From<&'a Written> for Reading<'a> {
+    fn from(w: &'a Written) -> Self {
+        Self {
+            token: &w.token,
+            scale: w.scale,
+            unit: w.unit,
+            // A spelled quantity's token is derived from its words, so it differs from the
+            // source text; a digit's is the source text.
+            in_words: w.token != w.phrase,
+        }
+    }
+}
+
+fn accounting_without_arithmetic(
+    read: &Reading,
     group: &[&Claim],
     lesson: &Lesson,
     arms: &[Arm],
 ) -> Option<Accounted> {
+    let (token, unit, unit_name, in_words) = (read.token, read.scale, read.unit, read.in_words);
+    // The two arms below that compare *numbers* — the step length, and the instant a claim
+    // is read at — are both in **seconds**, and a spelled quantity reaches them whatever
+    // noun it was read off, because a number needs no digits to be compared. So a sentence
+    // saying *"half a percent"* offered them `0.5`, and on a lesson whose step length is
+    // 0.5 s one of them took it. See [`Written::unit`]; a number written in digits has an
+    // empty unit here and is unaffected.
+    let timed = unit_is_time(unit_name);
     // A control one of this sentence's own claims is measured under. Compared as a number
     // rather than as text, so a sentence writing `5.0` where the box takes 5 is the same
     // setting — the token is the reader's, the tie is to the run.
@@ -6160,31 +6412,35 @@ fn accounting_without_arithmetic(
     //
     // Taken first although it is tried last, because the three arms below return early and
     // this one has to be able to refuse them. See the fence under `shown`.
-    let setting = group.iter().find_map(|c| {
-        let arm = arm_of(arms, c);
-        let dt = arm.and_then(|a| a.dt).unwrap_or(lesson.dt);
-        let ambient_step = arm
-            .and_then(|a| a.ambient_c)
-            .map(|c| c - lesson.ambient_c)
-            .filter(|d| d.abs() > f64::EPSILON);
-        let n = number_of(token)? * unit;
-        // A step whose two controls landed on one number would hand the token whichever
-        // reading was tried first, which is the hazard this whole taxonomy is arranged
-        // against. Asserted rather than assumed, because nothing else keeps them apart.
-        if let Some(step) = ambient_step {
-            assert!(
+    let setting = timed
+        .then(|| {
+            group.iter().find_map(|c| {
+                let arm = arm_of(arms, c);
+                let dt = arm.and_then(|a| a.dt).unwrap_or(lesson.dt);
+                let ambient_step = arm
+                    .and_then(|a| a.ambient_c)
+                    .map(|c| c - lesson.ambient_c)
+                    .filter(|d| d.abs() > f64::EPSILON);
+                let n = number_of(token)? * unit;
+                // A step whose two controls landed on one number would hand the token whichever
+                // reading was tried first, which is the hazard this whole taxonomy is arranged
+                // against. Asserted rather than assumed, because nothing else keeps them apart.
+                if let Some(step) = ambient_step {
+                    assert!(
                 (step.abs() - dt).abs() > 1e-9,
                 "step `{}` reads a trajectory whose step length is {dt} s and whose ambient \
                  moves by {step} K. Those are the same number, so a token spelling it has \
                  two readings and this function decides which — not the sentence.",
                 lesson.id,
             );
-        }
-        if (n - dt).abs() < 1e-9 {
-            return Some(dt);
-        }
-        ambient_step.filter(|step| (n - step.abs()).abs() < 1e-9)
-    });
+                }
+                if (n - dt).abs() < 1e-9 {
+                    return Some(dt);
+                }
+                ambient_step.filter(|step| (n - step.abs()).abs() < 1e-9)
+            })
+        })
+        .flatten();
     // Two readings of one number, which is the hazard this whole taxonomy is arranged
     // against. Refused rather than resolved by trial order: with an order, an author who
     // meant a measurement and wrote a step length gets whichever arm happens to be tried
@@ -6203,73 +6459,97 @@ fn accounting_without_arithmetic(
         );
     };
 
-    // The three arms that compare *characters* — what a claim spells, what a row shows,
-    // and the clock at the mark — are asked only about a number the sentence writes in
-    // digits. A spelled quantity's `token` is a decimal string this file derived from the
-    // words (`"24"` for *twenty-four*), and a claim spelling `24` in some other sentence of
-    // the group would then account for it by a coincidence of formatting rather than by
-    // anything a reader can see. The arms that compare *numbers* have no such problem and
-    // are asked normally.
-    let spelled = !in_words
-        && group.iter().any(|c| {
-            c.spells
-                .as_deref()
-                .map(|s| ascii_minus(s).trim_start_matches('-').to_string())
-                .is_some_and(|s| s == token)
-        });
+    // The arms that compare *characters* — what a row shows, and the clock at the mark —
+    // are asked only about a number the sentence writes in digits. A spelled quantity's
+    // `token` is a decimal string this file derived from the words (`"24"` for
+    // *twenty-four*), and a row printing `24` would then account for it by a coincidence of
+    // formatting rather than by anything a reader can see. The arms that compare *numbers*
+    // have no such problem and are asked normally.
+    //
+    // **What a claim `spells` is the exception, and it is an exception because `spells` can
+    // itself be a word.** `nothing-to-clamp` carries a claim on the pack's charge loss whose
+    // `spells` is `"fifty"` and whose value is 50.3811, written for the sentence *"this
+    // fault costs **fifty points**"* — the author named the word, and check 5 holds the
+    // measurement to it. Under the blanket refusal above the ledger then reported that same
+    // sentence as tied to nothing, and the repair on offer would have been a vocabulary rule
+    // re-deriving a number the claim beside it already measures. So a word is compared to a
+    // word: the claim's `spells` must be a [`WORD_NUMERALS`] entry whose value is what the
+    // scanner read. No formatting coincidence is available, because neither side is a
+    // rendering — `"fifty"` matches `fifty` and nothing else.
+    //
+    // Compared **without** the unit scale, because `spells` is the number as the sentence
+    // writes it: a claim spelling `"three"` beside *"three minutes"* is naming the three,
+    // not the hundred and eighty.
+    let spelled = group.iter().any(|c| {
+        let Some(spells) = c
+            .spells
+            .as_deref()
+            .map(|s| ascii_minus(s).trim_start_matches('-').to_string())
+        else {
+            return false;
+        };
+        if !in_words {
+            return spells == token;
+        }
+        WORD_NUMERALS.iter().any(|(word, value)| {
+            *word == spells && number_of(token).is_some_and(|n| (n - value).abs() < 1e-9)
+        })
+    });
     if spelled {
         clash("spelled by a claim on it");
         return Some(Accounted::Spelled);
     }
 
-    let read_at = group.iter().find_map(|c| {
-        // Both renderings of the one instant. A continuation's are often written since the
-        // mark — `383.0 s later` — and step 15's are written on the clock, because the
-        // clock is what keeps running while the reader watches: "2.502 V at 1058 s". A
-        // restart arm and the step's own run have only the absolute reading.
-        //
-        // This used to be `since the mark` alone for a continuation, which was an
-        // assumption about how prose is written rather than a fact, and step 15's sentence
-        // falsifies it. Widening cannot let an author try both until one fits, which is
-        // what the single reading was for: the two differ by exactly `until_s`, so no
-        // token can match both — asserted below rather than assumed, because the whole
-        // widening rests on it. What an author gains is the ability to account a number
-        // that is genuinely one of the two true readings of the instant their claim is
-        // measured at, which is the arm's whole statement.
-        let mut instants = vec![c.read_at_s];
-        // And a third reading, on one quantity: **since the current stopped**.
-        //
-        // A rest is a leg with an origin of its own, exactly as a continuation is, and a
-        // sentence about what happens *during* one counts from where it began — step 12's
-        // "99.5 % of it has arrived within the first 300 s" is the claim's own 360 s read
-        // against a tooth whose current went off at 60.
-        //
-        // **Restricted to `pulse_rebound_arrived`, and the restriction is the fence.**
-        // Every other pulse quantity is read at a leg boundary, where this reading would
-        // return the leg length itself — a number the prose writes as the demand program
-        // and that has a vocabulary rule of its own. Two readings of one number is what
-        // this taxonomy is arranged against, so the frame is given only to the one quantity
-        // that is measured at an arbitrary instant inside the rest, which is also the only
-        // one whose sentence has any reason to say how far into it we are.
-        if let (Some(n), Prog::Pulse { on_s, off_s, .. }) = (
-            c.quantity
-                .strip_prefix("pulse_rebound_arrived:")
-                .and_then(|n| n.parse::<usize>().ok()),
-            lesson.demand,
-        ) {
-            let stopped_s = (n.max(1) - 1) as f64 * (on_s + off_s) + on_s;
-            // The same fence the mark carries below: the two readings differ by exactly
-            // this, so no token can match both — asserted, not assumed.
-            assert!(
-                on_s > 0.0,
-                "step `{}` runs a pulse program whose loaded leg is {on_s} s long, so \
+    let read_at = timed
+        .then(|| {
+            group.iter().find_map(|c| {
+                // Both renderings of the one instant. A continuation's are often written since the
+                // mark — `383.0 s later` — and step 15's are written on the clock, because the
+                // clock is what keeps running while the reader watches: "2.502 V at 1058 s". A
+                // restart arm and the step's own run have only the absolute reading.
+                //
+                // This used to be `since the mark` alone for a continuation, which was an
+                // assumption about how prose is written rather than a fact, and step 15's sentence
+                // falsifies it. Widening cannot let an author try both until one fits, which is
+                // what the single reading was for: the two differ by exactly `until_s`, so no
+                // token can match both — asserted below rather than assumed, because the whole
+                // widening rests on it. What an author gains is the ability to account a number
+                // that is genuinely one of the two true readings of the instant their claim is
+                // measured at, which is the arm's whole statement.
+                let mut instants = vec![c.read_at_s];
+                // And a third reading, on one quantity: **since the current stopped**.
+                //
+                // A rest is a leg with an origin of its own, exactly as a continuation is, and a
+                // sentence about what happens *during* one counts from where it began — step 12's
+                // "99.5 % of it has arrived within the first 300 s" is the claim's own 360 s read
+                // against a tooth whose current went off at 60.
+                //
+                // **Restricted to `pulse_rebound_arrived`, and the restriction is the fence.**
+                // Every other pulse quantity is read at a leg boundary, where this reading would
+                // return the leg length itself — a number the prose writes as the demand program
+                // and that has a vocabulary rule of its own. Two readings of one number is what
+                // this taxonomy is arranged against, so the frame is given only to the one quantity
+                // that is measured at an arbitrary instant inside the rest, which is also the only
+                // one whose sentence has any reason to say how far into it we are.
+                if let (Some(n), Prog::Pulse { on_s, off_s, .. }) = (
+                    c.quantity
+                        .strip_prefix("pulse_rebound_arrived:")
+                        .and_then(|n| n.parse::<usize>().ok()),
+                    lesson.demand,
+                ) {
+                    let stopped_s = (n.max(1) - 1) as f64 * (on_s + off_s) + on_s;
+                    // The same fence the mark carries below: the two readings differ by exactly
+                    // this, so no token can match both — asserted, not assumed.
+                    assert!(
+                        on_s > 0.0,
+                        "step `{}` runs a pulse program whose loaded leg is {on_s} s long, so \
                  \"since the current stopped\" and \"on the clock\" are the same number.",
-                lesson.id,
-            );
-            instants.push(c.read_at_s - stopped_s);
-        }
-        if reads_past_the_mark(arms, c) {
-            assert!(
+                        lesson.id,
+                    );
+                    instants.push(c.read_at_s - stopped_s);
+                }
+                if reads_past_the_mark(arms, c) {
+                    assert!(
                 lesson.until_s > 0.0,
                 "step `{}` has a mark at t = {} s, so a continuation's two readings of one \
                  instant — on the clock, and since the mark — are the same number. The \
@@ -6277,13 +6557,15 @@ fn accounting_without_arithmetic(
                 lesson.id,
                 lesson.until_s
             );
-            instants.push(c.read_at_s - lesson.until_s);
-        }
-        number_of(token)
-            .map(|n| n * unit)
-            .filter(|n| instants.iter().any(|i| (n - i).abs() < 1e-9))
-            .map(|_| c.read_at_s)
-    });
+                    instants.push(c.read_at_s - lesson.until_s);
+                }
+                number_of(token)
+                    .map(|n| n * unit)
+                    .filter(|n| instants.iter().any(|i| (n - i).abs() < 1e-9))
+                    .map(|_| c.read_at_s)
+            })
+        })
+        .flatten();
     if let Some(absolute_s) = read_at {
         clash("an instant a claim on it is read at");
         return Some(Accounted::ReadAt(absolute_s));
@@ -6325,15 +6607,14 @@ fn accounting_without_arithmetic(
 /// measurement and also happens to be the ratio of two others gets whichever this function
 /// tried first, and the check becomes a fact about this function.
 fn accounting_for(
-    token: &str,
-    unit: f64,
-    in_words: bool,
+    read: &Reading,
     group: &[&Claim],
     lesson: &Lesson,
     arms: &[Arm],
     derived: &[Derivation],
 ) -> Option<Accounted> {
-    let base = accounting_without_arithmetic(token, unit, in_words, group, lesson, arms);
+    let token = read.token;
+    let base = accounting_without_arithmetic(read, group, lesson, arms);
     let Some((literal, row)) = group
         .first()
         .map(|c| c.literal.as_str())
@@ -6434,7 +6715,7 @@ fn every_number_in_a_claimed_literal_is_accounted_for() {
 
         for token in numeric_tokens(&ascii_minus(literal)) {
             assert!(
-                accounting_for(&token, 1.0, false, &group, lesson, &arms, &derived).is_some(),
+                accounting_for(&Reading::digits(&token), &group, lesson, &arms, &derived).is_some(),
                 "step `{step}`, sentence `{literal}`:\n  it prints `{token}`, and none of \
                  the {} claim(s) on it accounts for that number.\n\
                  Tried, in order:\n  \
@@ -6555,7 +6836,7 @@ fn every_derivation_is_a_sentence_doing_arithmetic() {
                 row.spells, row.step,
             );
             let accounted =
-                accounting_without_arithmetic(operand, 1.0, false, &group, lesson, &arms);
+                accounting_without_arithmetic(&Reading::digits(operand), &group, lesson, &arms);
             assert!(
                 accounted.is_some(),
                 "the `[[derived]]` row for `{}` on step `{}` reads `{operand}`, and nothing \
@@ -6634,11 +6915,21 @@ struct Ledger {
     /// authoring rather than a flag. Every entry must also be in `steps` — a step whose
     /// digits are not tied has no business claiming its words are.
     ///
-    /// The gap this leaves is the honest one and it is large: the steps in `steps` but not
-    /// here are digits-closed and word-blind, exactly as the whole path was before this
-    /// existed.
+    /// Every step not here must be in [`Ledger::word_blind`], which is what stops the gap
+    /// this leaves from being a silence.
     #[serde(default)]
     spelled: Vec<String>,
+    /// Steps whose prose is **not** word-scanned, listed on purpose.
+    ///
+    /// `spelled`'s counterpart, on exactly the terms [`Ledger::unledgered`] is `steps`'s,
+    /// and it exists for the reason that pairing does: at one step in twenty-four the
+    /// omission spoke for itself, and at six it stops speaking. Without this list the file
+    /// can say which steps *are* word-scanned and cannot say which are not — so a lesson
+    /// added tomorrow would be word-blind by default and nothing would ever say so.
+    /// [`every_lesson_is_word_scanned_or_named_as_not`] requires each lesson to be in
+    /// exactly one of the two.
+    #[serde(default)]
+    word_blind: Vec<String>,
 }
 
 /// One phrase the lesson prose uses to print a number some file already decides.
@@ -7239,6 +7530,24 @@ enum Tie {
         /// been read at the same instant, on [`Tie::Quoted`]'s terms and for its reason.
         quantity: &'static str,
     },
+    /// The tie below it, **read in seconds where it answers in hours**.
+    ///
+    /// [`Tie::Hours`]'s mirror, and it exists because of where the two units live. A
+    /// sentence spelling a duration in English has its unit normalised to seconds by the
+    /// scanner — [`Written::scale`] is 3600 for an hour — so every tie a spelled duration is
+    /// compared against has to answer in seconds. Most do, because most read a file that
+    /// holds seconds. A **capacity over a current does not**: `7.2 A·h / 0.36 A` is 20
+    /// *hours*, which is the whole of what step 22's *"7.2 Ah if you take twenty hours over
+    /// it"* says, and without this the comparison divides a figure already in hours by 3600
+    /// again.
+    ///
+    /// **A unit, not a number**, on exactly [`Tie::Hours`]'s terms — an hour is 3600 seconds
+    /// by definition and no author supplies a value. **Compared like a computed tie**, for
+    /// the same reason: a conversion by a non-decimal factor lands off a round number.
+    ///
+    /// Unlike its mirror it is directly reachable — a rule's outermost tie — so it needs no
+    /// test of its own to keep it from being pinned and consulted by nothing.
+    Seconds(&'static Tie),
     /// A rate the prose states **per second** where the page holds a period in
     /// milliseconds — `1000 / ms`.
     ///
@@ -10729,7 +11038,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
 
     // --- step 17, and the first rules written for quantities the prose spells in WORDS ---
     //
-    // Seven of the sixteen spelled quantities on this step needed no rule: they sit inside a
+    // Seven of the fifteen spelled quantities on this step needed no rule: they sit inside a
     // claimed sentence and name the instant that sentence's own claim is read at, so
     // `claimed_accounting` answers them through `Accounted::ReadAt` exactly as it does for a
     // number in digits. These are the nine that do not.
@@ -10837,6 +11146,223 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: -3,
     },
 
+    // --- the second batch of word-scanned steps -------------------------------------
+    //
+    // Six lessons, and the vocabulary they need is almost entirely one shape the first batch
+    // never met: an instant stated RELATIVE to another one. "eight and a half seconds after
+    // it", "thirty seconds later", "ten seconds after the flag" - none of these is a number
+    // any file holds, and each is the difference between two instants that two claims are
+    // read at. `Tie::Instant` and `Tie::Difference` both already existed; what the batch
+    // needed was for the claims at BOTH ends to be addressable, which is why several
+    // readings on `nothing-to-clamp` grew instant tags in the same slice.
+    LedgerRule {
+        // Step 1's two flags, and the gap between them is the whole sentence: the terminal
+        // crosses the chemistry's floor first, and the coulomb counter reports empty after.
+        // Neither instant is in any file - both are pinned by claims asserting that a flag
+        // first appears there.
+        phrase: "`SOC_CLAMPED_LOW`, {n} after it,",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "bare-curve",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+            },
+            Tie::Instant {
+                step: "bare-curve",
+                arm: None,
+                quantity: "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The rest leg of the pulse train, in the minutes the sentence writes it.
+        phrase: "climbs slowly for the rest of the {n}.",
+        ties: &[Tie::Setting(Control::PulseOff)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The step's whole premise: one field of one file changed, and the multiple is this
+        // demand box over the previous lesson's. Neither current is spelled here - the
+        // sentence prints the multiple and the two boxes sit in two different lessons.
+        phrase: "That is 3 C, {n} the last step's current",
+        ties: &[Tie::Ratio(&[
+            Tie::Setting(Control::DemandValue),
+            Tie::Elsewhere {
+                step: "slow-and-patient",
+                tie: &Tie::Setting(Control::DemandValue),
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The step length, spelled. The hyphenated attributive is one token to the scanner
+        // and half a second to the file.
+        phrase: "same {n} step.",
+        ties: &[Tie::Setting(Control::Dt)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The lead-acid rating condition, twice: the label's 7.2 A.h is quoted AT a rate,
+        // and the rate is the capacity over the demand box - which is a number of HOURS,
+        // where every spelled duration is normalised to seconds. Hence `Tie::Seconds`.
+        phrase: "if you take {n} over it",
+        ties: &[Tie::Seconds(&Tie::Ratio(&[
+            Tie::Chemistry("cell.capacity_ah"),
+            Tie::Setting(Control::DemandValue),
+        ]))],
+        pow10: 0,
+    },
+    LedgerRule {
+        // ...and the sentence that says this step meets that condition. Two rules and not
+        // one, because they are two sentences: the first quotes a datasheet and the second
+        // claims the run obeys it, and a phrase loose enough to match both would be loose
+        // enough to match a third.
+        phrase: "This step takes {n} over it.",
+        ties: &[Tie::Seconds(&Tie::Ratio(&[
+            Tie::Chemistry("cell.capacity_ah"),
+            Tie::Setting(Control::DemandValue),
+        ]))],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What is left in the cell at the mark, as the points the sentence says are NOT
+        // delivered. A measurement, so it is quoted from the step's own claim rather than
+        // read off a file.
+        phrase: "gives you all but {n} of what it holds",
+        ties: &[Tie::Quoted {
+            step: "slow-and-patient",
+            arm: None,
+            quantity: "soc_at",
+            states: QuotedAs::Same,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The mark in hours, and the FIRST sentence in the path to reach `Tie::Hours`
+        // directly. Until this one, that variant's only use sat inside a product, which is
+        // why it carries a test asking it the question no rule could.
+        //
+        // The sentence used to say "about two and a half days", which is 2.31 days, and no
+        // fraction this scanner can spell rounds to that. See the plan doc.
+        phrase: "of simulation — about {n} hours — which is",
+        ties: &[Tie::Hours(&Tie::Setting(Control::Until))],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How long the reader waits: the mark over the speed slider. The one control the
+        // trajectory cannot see, and this sentence is entirely about it.
+        phrase: "which is {n} of watching at",
+        ties: &[Tie::Ratio(&[
+            Tie::Setting(Control::Until),
+            Tie::Setting(Control::Speed),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The square-root law, stated as the pair of readings that bracket it: four times
+        // the time for twice the damage. Both instants are claims on this step, so the
+        // multiple is a ratio of two `read_at_s` and not a number an author picked.
+        phrase: "twice the damage for {n} the time",
+        ties: &[Tie::Ratio(&[
+            Tie::Instant {
+                step: "wearing-out-while-idle",
+                arm: None,
+                quantity: "soh_cap_at:200000",
+            },
+            Tie::Instant {
+                step: "wearing-out-while-idle",
+                arm: None,
+                quantity: "soh_cap_at:50000",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The two shorts, which differ in one field of one scenario file and in nothing
+        // else. The sentence prints the multiple; the files hold the two resistances.
+        phrase: "instead of 30. {n} the resistance is a third of the sag",
+        ties: &[Tie::Ratio(&[
+            Tie::Scenario("faults.*.fault.ExternalShort.ohms"),
+            Tie::Elsewhere {
+                step: "one-step-that-got-through",
+                tie: &Tie::Scenario("faults.*.fault.ExternalShort.ohms"),
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What the STRONGER short cost the lesson that caught it, quoted here as the thing
+        // this fault's fifty points are measured against. Before this rule the pair was
+        // compared nowhere: each step measured its own loss, and the note on the claim
+        // beside this sentence recorded the twin's figure in prose rather than reading it.
+        //
+        // The other half of the contrast needs no rule. `nothing-to-clamp`'s own claim
+        // `spells` the word *fifty*, which is what the sentence writes, and that claim
+        // answers to the engine where it lives.
+        phrase: "against the twin's {n} points, this fault costs",
+        ties: &[Tie::Quoted {
+            step: "one-step-that-got-through",
+            arm: None,
+            quantity: "soc_lost_pts_at",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Three relative instants on one step, each the gap between two readings the same
+        // arm takes. The claims carry instant tags so that each end has an address; without
+        // them `Tie::Instant` sees eight readings under one name and refuses, which is that
+        // fence working rather than a limitation.
+        phrase: "the same 87.02 A {n} later",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "nothing-to-clamp",
+                arm: Some("bms off"),
+                quantity: "i_at:90.5",
+            },
+            Tie::Instant {
+                step: "nothing-to-clamp",
+                arm: Some("bms off"),
+                quantity: "i_at:60.5",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "40.33 A {n} later",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "nothing-to-clamp",
+                arm: Some("bms off"),
+                quantity: "i_at:240",
+            },
+            Tie::Instant {
+                step: "nothing-to-clamp",
+                arm: Some("bms off"),
+                quantity: "i_at:235.5",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The peak temperature lags the flag, which is the sentence's whole point: the
+        // current is already collapsing while the cell is still getting hotter.
+        phrase: "s**, {n} after the flag,",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "nothing-to-clamp",
+                arm: Some("bms off"),
+                quantity: "t_max_at:245.5",
+            },
+            Tie::Instant {
+                step: "nothing-to-clamp",
+                arm: Some("bms off"),
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+            },
+        ])],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -11194,6 +11720,13 @@ fn tie_values(
                 return Vec::new();
             };
             vec![seconds / 3600.0]
+        }
+        Tie::Seconds(hours) => {
+            let hours = tie_values(hours, lesson, lessons, scenario, chemistry, ctx);
+            let [hours] = &hours[..] else {
+                return Vec::new();
+            };
+            vec![hours * 3600.0]
         }
         Tie::PerSecond(period_ms) => {
             let ms = tie_values(period_ms, lesson, lessons, scenario, chemistry, ctx);
@@ -11571,6 +12104,7 @@ fn tie_describe(tie: &Tie) -> String {
             .collect::<Vec<_>>()
             .join(" plus "),
         Tie::Hours(seconds) => format!("{}, in hours", tie_describe(seconds)),
+        Tie::Seconds(hours) => format!("{}, in seconds", tie_describe(hours)),
         Tie::Instant {
             step,
             arm,
@@ -11653,6 +12187,7 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Difference(_) => "difference",
         Tie::Sum(_) => "sum",
         Tie::Hours(_) => "duration in hours",
+        Tie::Seconds(_) => "duration in seconds",
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
         Tie::Page(_) => "page constant",
@@ -11695,6 +12230,7 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32, unit: f64) -> 
         | Tie::Difference(_)
         | Tie::Sum(_)
         | Tie::Hours(_)
+        | Tie::Seconds(_)
         | Tie::PerSecond(_)
         | Tie::Span(_)
         | Tie::Derived { .. }
@@ -11817,15 +12353,9 @@ fn claimed_accounting(
                 continue;
             }
             let group = sentence_group(all, step, literal);
-            if let Some(accounted) = accounting_for(
-                &number.token,
-                number.scale,
-                number.token != number.phrase,
-                &group,
-                lesson,
-                arms,
-                derived,
-            ) {
+            if let Some(accounted) =
+                accounting_for(&Reading::from(number), &group, lesson, arms, derived)
+            {
                 return Some(accounted.arm_name());
             }
         }
@@ -12059,6 +12589,75 @@ fn every_numeral_in_a_ledgered_step_is_accounted_for() {
             );
         }
     }
+}
+
+/// A spelled quantity reaches the duration arms only when its unit **is** a duration.
+///
+/// Asked directly, for [`an_hours_tie_rounds_the_way_a_computed_tie_does`]'s reason: no
+/// sentence in the path reaches this fence any more, and a fence nothing reaches is pinned
+/// and consulted by nothing, which is the shape this file rejects everywhere else.
+///
+/// **It was reachable, and that is how it was found.** Adding `percent` to [`UNIT_NOUNS`]
+/// made *"against the twin's half a percent"* visible on `nothing-to-clamp`, whose step
+/// length is exactly 0.5 s. The two arms of [`accounting_without_arithmetic`] that compare
+/// *numbers* are both in seconds and are offered every spelled quantity, so check 6 tied a
+/// percentage to a duration and went **green**. The sentence has since moved — the twin lost
+/// 0.55719 points, which is not half a percent — and with it went the only data that
+/// exercises this. So the question is put here instead, with both sides handed in directly.
+///
+/// The pair is the test: the same token, the same claims, the same lesson, and the *only*
+/// difference is the noun the words were read off. One resolves to the step length and the
+/// other to nothing. Widen [`unit_is_time`] to admit a percent and the second assert fails.
+#[test]
+fn a_spelled_quantity_reaches_the_duration_arms_only_when_it_is_one() {
+    let lessons = lessons();
+    let all = claims();
+    let arms = arms();
+    let step = "nothing-to-clamp";
+    let lesson = lessons
+        .iter()
+        .find(|l| l.id == step)
+        .expect("nothing-to-clamp is a lesson");
+    assert!(
+        (lesson.dt - 0.5).abs() < 1e-12,
+        "this test rests on `{step}` holding its step length at 0.5 s, and it holds {}. \
+         The collision it reproduces is between that number and the token 0.5, so a step \
+         length anywhere else makes both asserts below pass for the wrong reason.",
+        lesson.dt,
+    );
+    let group = sentence_group(&all, step, "this fault costs **fifty points**");
+    assert!(
+        !group.is_empty(),
+        "the sentence this test reads has no claims on it any more; it needs a group whose \
+         trajectory has a step length, or it is asking about nothing."
+    );
+
+    let seconds = Reading {
+        token: "0.5",
+        scale: 1.0,
+        unit: "seconds",
+        in_words: true,
+    };
+    let as_seconds = accounting_without_arithmetic(&seconds, &group, lesson, &arms);
+    assert!(
+        matches!(as_seconds, Some(Accounted::Setting(_))),
+        "half a SECOND is the step length of this trajectory, and the arm that reads a \
+         control did not find it: {as_seconds:?}. Without this half the test below would \
+         pass on an arm that never fires for any unit."
+    );
+
+    let percent = Reading {
+        unit: "percent",
+        ..seconds
+    };
+    let as_percent = accounting_without_arithmetic(&percent, &group, lesson, &arms);
+    assert!(
+        as_percent.is_none(),
+        "half a PERCENT was accounted as {as_percent:?} — the step length, which is 0.5 \
+         SECONDS. The two arms that compare numbers are in seconds; a quantity the prose \
+         writes in some other unit is not a candidate for them, whatever it happens to \
+         equal. See `Written::unit`."
+    );
 }
 
 /// [`Tie::Hours`] rounds like a computed tie, asked directly because no rule can ask it.
@@ -13363,7 +13962,7 @@ fn every_claim_matches_the_engine() {
             }
             for token in numeric_tokens(&ascii_minus(literal)) {
                 let Some(Accounted::ReadAt(at_s)) =
-                    accounting_for(&token, 1.0, false, &group, lesson, &arms, &derived)
+                    accounting_for(&Reading::digits(&token), &group, lesson, &arms, &derived)
                 else {
                     continue;
                 };
@@ -13526,6 +14125,7 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (24, "twenty-four"),
     (25, "twenty-five"),
     (26, "twenty-six"),
+    (27, "twenty-seven"),
     // The ledger's numeral count passed twenty-five with its fifth step and will keep
     // going; the tens are here so the next one does not have to stop and add a word.
     (30, "thirty"),
@@ -13630,6 +14230,15 @@ impl Facts {
         written_numbers(&ascii_minus(&self.lesson(step).text)).len()
     }
 
+    /// How many quantities a step's prose spells in ENGLISH, whether or not it is scanned.
+    ///
+    /// [`Facts::numerals_in`]'s twin, and deliberately answered for `word_blind` steps as
+    /// well: a count beside a step nobody scans is the file's only statement of how much is
+    /// there, and the one it would be easiest to write down once and never look at again.
+    fn spelled_in(&self, step: &str) -> usize {
+        spelled_numbers(&ascii_minus(&self.lesson(step).text)).len()
+    }
+
     /// `(numbers accounted as `spelled`, numbers printed, claimed sentences)`.
     ///
     /// Run through [`accounting_for`] and [`sentences`] rather than re-scanned here. A
@@ -13644,9 +14253,7 @@ impl Facts {
             for token in numeric_tokens(&ascii_minus(literal)) {
                 printed += 1;
                 if let Some(Accounted::Spelled) = accounting_for(
-                    &token,
-                    1.0,
-                    false,
+                    &Reading::digits(&token),
                     &group,
                     lesson,
                     &self.arms,
@@ -13672,9 +14279,7 @@ impl Facts {
             let group = sentence_group(&self.claims, step, literal);
             for token in numeric_tokens(&ascii_minus(literal)) {
                 if let Some(a) = accounting_for(
-                    &token,
-                    1.0,
-                    false,
+                    &Reading::digits(&token),
                     &group,
                     lesson,
                     &self.arms,
@@ -13744,6 +14349,7 @@ fn n_ledger_arms(_f: &Facts) -> usize {
                 }
             }
             Tie::Hours(tie)
+            | Tie::Seconds(tie)
             | Tie::Ocv(tie)
             | Tie::Magnitude(tie)
             | Tie::Elsewhere { tie, .. }
@@ -14410,6 +15016,88 @@ fn first_count(text: &str) -> Option<usize> {
     written_numbers(text)
         .first()
         .and_then(|w| w.token.parse().ok())
+}
+
+/// The count beside every `spelled` and `word_blind` entry is what a scan finds there.
+///
+/// [`every_count_beside_a_ledger_entry_is_derived`] one list over, and written in the same
+/// slice as the lists themselves rather than after the first count went stale. Those entries
+/// carry a number each, and a number an author types beside a name is the shape this repo
+/// has now found stale four separate times — twice in words, where no digit scanner could
+/// see it.
+///
+/// **`word_blind` is checked too, and that is the half that matters.** A step nobody scans
+/// has no other statement of how much English it states, so the count beside it is the only
+/// thing standing between "declared, with its size" and "listed and forgotten". It is also
+/// the number that moves when the SCANNER learns a shape rather than when the prose changes
+/// — the day an article reader lands, several of these zeroes stop being zeroes, and this
+/// is what says so.
+#[test]
+fn every_count_beside_a_word_list_entry_is_derived() {
+    let facts = Facts::gather();
+    let raw = read(&Prose::ClaimsFile.path());
+
+    for (list, steps) in [
+        ("spelled", &facts.ledger.spelled),
+        ("word_blind", &facts.ledger.word_blind),
+    ] {
+        let block = word_list_block(&raw, list);
+        for step in steps {
+            let note = list_note(block, list, step);
+            let stated = first_count(note).unwrap_or_else(|| {
+                panic!(
+                    "`[ledger].{list}` lists `{step}` with no count beside it. Write \
+                     `# {}` there: for a scanned step it is what has to be accounted for, \
+                     and for a word-blind one it is the whole of what this file says about \
+                     the English it states.",
+                    facts.spelled_in(step)
+                )
+            });
+            assert_eq!(
+                stated,
+                facts.spelled_in(step),
+                "web/path-claims.toml: the `{list}` entry for `{step}` says {stated}, and \
+                 the scanner finds {} spelled quantities in that step's prose. Note that \
+                 this count moves when the SCANNER changes as well as when the prose does \
+                 — a new shape reads phrases that were invisible, which is a red here and \
+                 is meant to be.",
+                facts.spelled_in(step),
+            );
+        }
+    }
+}
+
+/// The lines of one of `[ledger]`'s lists, as raw text.
+///
+/// [`ledger_note`] searches the whole file for the first line starting with the step's name,
+/// which is right for `steps` (it comes first) and wrong for anything below it: every step
+/// in `spelled` is also in `steps`, so a whole-file search would read the ledger's count and
+/// compare it against a scan of the words. The block has to be cut first.
+fn word_list_block<'a>(raw: &'a str, list: &str) -> &'a str {
+    let open = format!("\n{list} = [");
+    let from = raw
+        .find(&open)
+        .unwrap_or_else(|| panic!("web/path-claims.toml has no `{list} = [` list"))
+        + open.len();
+    let len = raw[from..]
+        .find("\n]")
+        .unwrap_or_else(|| panic!("`{list} = [` is never closed"));
+    &raw[from..from + len]
+}
+
+fn list_note<'a>(block: &'a str, list: &str, step: &str) -> &'a str {
+    let entry = format!("\"{step}\",");
+    let line = block
+        .lines()
+        .find(|l| l.trim_start().starts_with(&entry))
+        .unwrap_or_else(|| {
+            panic!(
+                "`[ledger].{list}` lists `{step}` and no line of that list starts with \
+                 `{entry}`. The list was reformatted onto one line and the per-step counts \
+                 cannot be read any more."
+            )
+        });
+    line.split_once('#').map_or("", |(_, note)| note)
 }
 
 /// Every per-step count in the ledger's two lists is derived too.
