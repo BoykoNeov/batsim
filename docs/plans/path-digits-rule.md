@@ -2,8 +2,10 @@
 
 The guided path's lesson prose states its numbers in **digits**. A quantity spelled in
 English — *"half an hour"*, *"about ten times"*, *"an hour of simulation"* — is refused by
-`no_lesson_spells_a_quantity_in_english`, and the forty-eight that were already in the prose
-when the rule landed are named one phrase at a time in `[[english]]` in `web/path-claims.toml`.
+`no_lesson_spells_a_quantity_in_english`, and the forty-eight left standing when the rule
+landed are named one phrase at a time in `[[english]]` in `web/path-claims.toml`. Forty-eight
+rather than the thirty-five the survey found, because the ban reads a shape and a set of units
+the reader never did — five of them were in the prose all along and invisible to everything.
 
 This is slice 0 of Phase 8, and it is a prerequisite rather than an improvement: slices B and
 D write new lesson prose, and prose written before the rule is prose written in the old style.
@@ -193,9 +195,24 @@ finds nothing, which makes `no_spelled_quantity_is_silently_skipped` vacuous —
 its own doc comment, because a green over an empty list reads exactly like a green over a full
 one.
 
+### The guard the list needed, which it did not have when it was written
+
+The per-step headers over each `[[english]]` block state how many phrases are under them, and
+for one commit **nothing derived those numbers**. That is the defect class this file guards
+against in four other places and has caught stale four separate times, introduced in the slice
+whose subject is numbers nothing checks — the backlog's own tally counts the list *whole*, so
+it says nothing about the distribution.
+
+`every_count_above_an_english_block_is_derived` closes it, on
+`every_count_beside_a_word_list_entry_is_derived`'s terms. **And perturbing it immediately
+found it half-built.** Walking the steps the list holds misses the case that matters most: a
+step whose *last* phrase is repaired leaves the list entirely, and its header then sits over a
+block of nothing with nothing to compare against — which is precisely what finishing a step
+looks like. Both directions now.
+
 ## Perturbations
 
-Nine cases, each declaring the exact set of tests it expected to redden, run by a harness
+Eleven cases, each declaring the exact set of tests it expected to redden, run by a harness
 that refuses to start unless the baseline is green and restores the tree after every case.
 
 | perturbation | reddened |
@@ -208,6 +225,8 @@ that refuses to start unless the baseline is green and restores the tree after e
 | the list-ellipsis shape stops firing | the ban, and the prose-side superset guard |
 | `1800 s` back to *"half an hour"*, prose alone | six: the ban, the ledger, the rule-usage guard, two derived counts, the self-count tally |
 | `50 points` back to *"fifty points"*, prose **and** its literal | seven: the ban, check 6, the tolerance rule, the unit-gate fence test, two derived counts, the tally |
+| a per-step `[[english]]` header count is wrong by one | the new count guard, alone |
+| an `[[english]]` entry is deleted and its header left behind | the ban, the count guard, and the backlog tally |
 | CONTROL: prose reworded, no number touched | nothing |
 
 **No case rested on the ban alone, and the two that go back to words are the ones worth

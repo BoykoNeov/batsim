@@ -15481,6 +15481,108 @@ fn every_count_beside_a_word_list_entry_is_derived() {
     }
 }
 
+/// The count above every `[[english]]` block is how many phrases that block holds.
+///
+/// [`every_count_beside_a_word_list_entry_is_derived`] one list over, and written in the same
+/// slice as the list rather than after the first count went stale - which is the discipline
+/// this file keeps and which the first draft of that list did NOT keep. The backlog's own
+/// tally (`{n} of them across {w} steps`) counts the list whole, so it says nothing about how
+/// the phrases are distributed; delete one entry and the header above its block silently
+/// over-counts, in a file whose entire subject is numbers nothing checks.
+///
+/// The count is derived from the parsed list rather than from a scan of the prose, and that
+/// is deliberate: [`no_lesson_spells_a_quantity_in_english`] already matches the list against
+/// the prose in both directions, so a count taken off the list is a count of the prose too,
+/// and taking it twice would only add a second way for the two to disagree.
+///
+/// **Both directions, and the second was found by perturbing the first.** Walking the steps
+/// the list holds misses the case that matters most: a step whose LAST phrase is deleted
+/// leaves the list, and its header then describes a block of nothing with nothing to compare
+/// it against. Deleting a step's last entry is what finishing that step looks like.
+#[test]
+fn every_count_above_an_english_block_is_derived() {
+    let facts = Facts::gather();
+    let raw = read(&Prose::ClaimsFile.path());
+    let block = english_block(&raw);
+
+    let mut steps: Vec<&str> = facts.english.iter().map(|(s, _)| s.as_str()).collect();
+    steps.sort_unstable();
+    steps.dedup();
+
+    for step in steps {
+        let opening = format!("# {step} \u{2014} ");
+        let line = block
+            .lines()
+            .find(|l| l.starts_with(&opening))
+            .unwrap_or_else(|| {
+                panic!(
+                    "`[[english]]` has entries for `{step}` and no line of that section \
+                     opens `{opening}`. Every block carries a header saying how many \
+                     phrases are under it and what it would take to write them in digits; \
+                     without one the block's size is stated by nothing."
+                )
+            });
+        let stated = first_count(&line[opening.len()..]).unwrap_or_else(|| {
+            panic!(
+                "the `[[english]]` header for `{step}` states no count. Write `# {step} \
+                 \u{2014} {}: ...`.",
+                facts.english.iter().filter(|(s, _)| s == step).count()
+            )
+        });
+        let held = facts.english.iter().filter(|(s, _)| s == step).count();
+        assert_eq!(
+            stated, held,
+            "web/path-claims.toml: the `[[english]]` header for `{step}` says {stated} and \
+             {held} phrases are listed under it. The backlog may only get shorter, so this \
+             is what an entry being deleted looks like when its header was left behind."
+        );
+    }
+
+    // The other direction, and a perturbation is what found it missing. The loop above walks
+    // the steps the LIST holds, so a step whose last phrase is deleted leaves the list
+    // entirely - and its header sits there describing a block of nothing, seen by no one.
+    // Deleting the last entry of a step is exactly what finishing that step looks like, so
+    // this is the case the guard will meet most often.
+    for line in block.lines() {
+        let Some(rest) = line.strip_prefix("# ") else {
+            continue;
+        };
+        let Some((step, tail)) = rest.split_once(" \u{2014} ") else {
+            continue;
+        };
+        let names_a_step = !step.is_empty()
+            && step
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !names_a_step || first_count(tail).is_none() {
+            continue;
+        }
+        assert!(
+            facts.english.iter().any(|(s, _)| s == step),
+            "web/path-claims.toml: `[[english]]` still heads a block `{step}`, and that step \
+             has no phrases left in the list. If its last one was rewritten in digits the \
+             header goes with it - a heading over an empty block says a step still owes \
+             something it does not, which is the reading this list exists to make impossible."
+        );
+    }
+}
+
+/// The `[[english]]` section as raw text, headers and all.
+///
+/// Cut at the section that follows it for [`word_list_block`]'s reason: a whole-file search
+/// for `# <step> \u{2014}` would find the ledger's own per-step notes, which are a different
+/// list with different numbers beside the same names.
+fn english_block(raw: &str) -> &str {
+    let open = "# ENGLISH \u{2014} THE QUANTITIES THE DIGITS RULE HAS NOT REACHED";
+    let from = raw
+        .find(open)
+        .expect("web/path-claims.toml still heads its `[[english]]` section by name");
+    let len = raw[from..]
+        .find("\n[ledger]")
+        .expect("the `[[english]]` section is still followed by `[ledger]`");
+    &raw[from..from + len]
+}
+
 /// The lines of one of `[ledger]`'s lists, as raw text.
 ///
 /// [`ledger_note`] searches the whole file for the first line starting with the step's name,
