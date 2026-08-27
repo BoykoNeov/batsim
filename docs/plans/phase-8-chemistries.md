@@ -74,7 +74,7 @@ reopening.
 
 | slice | scope | version |
 | ----- | ----- | ------- |
-| **0** | **The digits rule.** Prerequisite, not optional — see below. Rewrite the ~68 English-spelled quantities in `web/app.js` prose into digits, add the check that forbids the practice, retire the seventeen word-blind steps. No engine change. | v17 (no bump) |
+| **0** | **LANDED 2026-08-27** — `docs/plans/path-digits-rule.md`. The digits rule. The count was 70, not 68, and **half of them were tied to nothing**, which is what made this two slices rather than one: the rewrite makes the digit ledger see a quantity, and the ledger has no waiver. Thirty-five rewritten, the ban built path-wide and wider than the reader, the other 48 (as the ban counts them) named phrase by phrase in `[[english]]`. The reader stays for now. No engine change. | v17 (no bump) |
 | **A** | **One cheap-tier chemistry, as a test of principle 10.** A parameter file and nothing else. Sourced numbers, provenance on every one, a discharge test. The hypothesis is zero Rust; the result is the criterion. | v17 (no bump) |
 | **B** | **Wire and teach it.** Scenario file, guided-path steps, claims. | v17 (no bump) |
 | **C** | **The hysteresis state, and NiMH's parameters.** Per-cell memory of drive direction. **Carries the phase's one snapshot bump.** Scoped with lead-acid voltage memory, not separately — see below. | **v17 → v18** |
