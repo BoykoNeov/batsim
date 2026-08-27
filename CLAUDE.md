@@ -392,6 +392,16 @@ the previous one's tests pass.
   `CellModel`, evaluate `diffsol` for the stiff DAE solve, validate against
   PyBaMM directly. Nothing in earlier phases may assume ECM-only internals
   outside the `CellModel` enum.
+- **Phase 7 — the electrolyte.** The `Dfn` half of the bullet above, split out
+  once Phase 6 shipped `Spm` and declined `diffsol` on measurement. Criteria and
+  slice notes in `docs/plans/phase-7-dfn.md`.
+- **Phase 8 — new chemistries.** One cheap-tier lithium parameter set added with
+  **zero Rust changed** (the first real test of "chemistry is data, not code"),
+  then the OCV hysteresis state NiMH needs — scoped together with lead-acid
+  resting-voltage memory, one snapshot bump for both. A chemistry is *done* when
+  a guided-path lesson teaches it. *Exit:* the four criteria in
+  `docs/plans/phase-8-chemistries.md`, with two chemistries taught — **not** when
+  the list of interesting chemistries runs out, because it does not.
 
 ---
 
