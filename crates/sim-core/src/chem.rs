@@ -179,9 +179,19 @@ pub struct SafetyParams {
     ///
     /// Distinct from [`CellLimits::t_charge_min_k`], which is the *BMS's* charge-inhibit
     /// threshold — a policy the protection layer enforces from lagged sensor readings.
-    /// This one is physics, evaluated against ground truth. The two coincide in both
-    /// shipped chemistries, which is exactly what makes the BMS-on/BMS-off contrast
-    /// legible: protection exists to keep the pack out of this region.
+    /// This one is physics, evaluated against ground truth. The two coincide in every
+    /// shipped graphite-anode chemistry, which is exactly what makes the BMS-on/BMS-off
+    /// contrast legible: protection exists to keep the pack out of this region.
+    ///
+    /// # There is no way to say "this cell does not plate"
+    /// `chemistries/lto_20ah_generic.toml` is the first shipped file where the two
+    /// *cannot* coincide. A lithium-titanate anode sits ~1.55 V above the potential at
+    /// which metallic lithium deposits, so it plates at no temperature and at no rate,
+    /// and nothing in [`SafetyParams`] expresses that: zeroing the cost fields still
+    /// raises [`crate::EventFlags::PLATING_RISK`] and merely makes it free, and dropping
+    /// `[safety]` entirely switches off thermal runaway too, because one `Option` covers
+    /// both mechanisms. That file therefore sets this field to a labelled **sentinel**
+    /// below every reachable temperature. See `docs/plans/phase-8-slice-a-lto.md`.
     pub t_plating_min_k: f64,
     /// C-rate above which charging below [`Self::t_plating_min_k`] plates. Must be
     /// finite and `>= 0`; `0` means any charge current at all plates when cold.

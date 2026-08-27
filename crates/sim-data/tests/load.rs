@@ -29,6 +29,24 @@ fn nmc_chemistry_loads_and_validates() {
     assert_eq!(chem.ocv.soc.len(), chem.ocv.volts.len());
 }
 
+/// The shipped LTO chemistry must parse and pass validation. Added with **zero lines of
+/// engine code changed** — the first chemistry in this repo for which that is true, and the
+/// test of `CLAUDE.md` principle 10. See `docs/plans/phase-8-slice-a-lto.md`, and
+/// `tests/lto_chemistry.rs` for what the file can do that the others cannot.
+#[test]
+fn lto_chemistry_loads_and_validates() {
+    let text = include_str!("../../../chemistries/lto_20ah_generic.toml");
+    let chem = parse_chemistry(text).expect("LTO chemistry should load and validate");
+
+    assert_eq!(chem.meta.id, "lto_20ah_generic");
+    assert_eq!(chem.n_rc(), 2);
+    assert!((chem.cell.capacity_ah - 20.0).abs() < 1e-12);
+    assert_eq!(chem.ocv.soc.len(), chem.ocv.volts.len());
+    // The whole point of the file: a 2.7 V lithium cell validates against rules written for
+    // 3.3 V and 3.7 V ones, exactly as the 2 V lead-acid file already showed they would.
+    assert!(chem.cell.v_max < 3.0);
+}
+
 /// A minimal but *valid* chemistry, as a format string with one `{}` hole where a
 /// section can be swapped out. Every rejection test below substitutes exactly one
 /// section, so a failure can only come from that section — and so a missing
@@ -213,6 +231,10 @@ fn shipped_aging_coefficients_give_a_plausible_one_year_fade() {
             "nmc",
             include_str!("../../../chemistries/nmc_18650_generic.toml"),
         ),
+        (
+            "lto",
+            include_str!("../../../chemistries/lto_20ah_generic.toml"),
+        ),
     ] {
         let chem = parse_chemistry(text).expect("shipped chemistry loads");
         let aging = chem
@@ -232,14 +254,24 @@ fn shipped_aging_coefficients_give_a_plausible_one_year_fade() {
             fade * 100.0
         );
 
-        // Cycle fade, same treatment: 500 full cycles of a nominal-capacity cell.
-        // Throughput counts both directions, hence the factor of two.
-        let throughput_ah = 500.0 * 2.0 * chem.cell.capacity_ah;
-        let cyc = sim_core::aging::cycle_increment(aging, throughput_ah, 1.0);
+        // Cycle fade, same treatment, but expressed as the quantity a datasheet
+        // actually quotes: how many full cycles this cell survives before losing a
+        // fifth of its capacity. Throughput counts both directions, hence the factor
+        // of two.
+        //
+        // This used to read "500 full cycles fade 1–50 %", which is the same statement
+        // for a graphite cell and the *wrong* statement for a cell built to outlive
+        // one. The LTO file rates 20,000 cycles, so 500 of them cost it 0.75 % and it
+        // fell out of the bottom of that band while being exactly right. Rewriting the
+        // check per-cell rather than per-500-cycles tightens the floor (200 → 300
+        // cycles) and loosens the ceiling (10,000 → 50,000), and the loosening is the
+        // part LTO needs: a band that cannot admit a long-life chemistry is asserting
+        // a chemistry assumption, not a plausibility one.
+        let per_cycle = sim_core::aging::cycle_increment(aging, 2.0 * chem.cell.capacity_ah, 1.0);
+        let cycles_to_20_percent = 0.2 / per_cycle;
         assert!(
-            (0.01..=0.5).contains(&cyc),
-            "{name}: 500 full cycles fade {:.1} % — outside the plausible 1–50 % band",
-            cyc * 100.0
+            (300.0..=50_000.0).contains(&cycles_to_20_percent),
+            "{name}: {cycles_to_20_percent:.0} full cycles to 20 % capacity loss —              outside the plausible 300–50,000 band, so cyc_fade_per_ah is not a sane              value for this cell"
         );
     }
 }
@@ -274,12 +306,40 @@ fn shipped_plating_coefficients_give_a_plausible_cold_charge_cost() {
             "nmc",
             include_str!("../../../chemistries/nmc_18650_generic.toml"),
         ),
+        (
+            "lto",
+            include_str!("../../../chemistries/lto_20ah_generic.toml"),
+        ),
     ] {
         let chem = parse_chemistry(text).expect("shipped chemistry loads");
         let safety = chem
             .safety
             .as_ref()
             .unwrap_or_else(|| panic!("{name} must ship [safety] coefficients"));
+
+        // A chemistry either prices plating or cannot reach it, and this arm is the
+        // second half of that. LTO's anode plateau sits ~1.55 V above the potential at
+        // which lithium deposits, so the cell has no plating mechanism to price — but
+        // "no coefficients" is also what a half-written file looks like, and the two
+        // must not be confused. So a chemistry that declares no cost has to *also*
+        // show its gate is shut: `t_plating_min_k` strictly below the coldest
+        // temperature the cell is rated to charge at, so the flag cannot rise anywhere
+        // inside its own operating window.
+        //
+        // This is the second place in the repo that assumed every cell plates — the
+        // first being `[safety]` itself, which has no way to express the absence of the
+        // mechanism at all. See docs/plans/phase-8-slice-a-lto.md.
+        let prices_plating =
+            safety.plating_fade_per_ah > 0.0 || safety.plating_short_hazard_per_ah > 0.0;
+        if !prices_plating {
+            assert!(
+                safety.t_plating_min_k < chem.cell.t_charge_min_k,
+                "{name}: no plating cost is declared, so the plating gate must be                  unreachable — but t_plating_min_k {} is not below the cell's own                  charge floor {}. Either the coefficients are missing or the threshold                  is wrong.",
+                safety.t_plating_min_k,
+                chem.cell.t_charge_min_k
+            );
+            continue;
+        }
 
         // One full charge's worth of plated throughput.
         let ah = chem.cell.capacity_ah;
@@ -340,6 +400,10 @@ fn shipped_runaway_coefficients_burn_at_a_plausible_scale() {
         (
             "nmc",
             include_str!("../../../chemistries/nmc_18650_generic.toml"),
+        ),
+        (
+            "lto",
+            include_str!("../../../chemistries/lto_20ah_generic.toml"),
         ),
     ] {
         let chem = parse_chemistry(text).expect("shipped chemistry loads");

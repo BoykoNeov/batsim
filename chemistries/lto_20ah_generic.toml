@@ -1,0 +1,217 @@
+# Generic LTO (lithium titanate) 20 Ah prismatic cell parameters.
+#
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [thermal], [aging],
+# and [safety]. Every physical constant carries a provenance note per the project rule: no
+# unlabeled numbers.
+#
+# This file exists to test a design principle as much as to ship a chemistry.
+# CLAUDE.md principle 10 says "chemistry is data, not code -- adding a chemistry must never
+# require a code change", and until this file every chemistry in the repo shipped alongside
+# Rust that was being written anyway. This one is written with zero Rust changed, against a
+# cell chosen to strain the existing model shape as hard as a lithium cell can:
+#
+#   * its whole voltage window (1.5-2.7 V) sits BELOW the NMC file's discharge cutoff (3.0 V);
+#   * it is rated 10C in both directions, where nothing else shipped exceeds 3C;
+#   * its anode uses ALUMINIUM current collectors, so the over-discharge damage mechanism the
+#     other lithium files bill for does not exist in it at all;
+#   * it cannot plate lithium at any temperature, which [safety] has no way to say.
+#
+# See docs/plans/phase-8-slice-a-lto.md for what that last point cost and what it found.
+
+[meta]
+id         = "lto_20ah_generic"
+name       = "Generic LTO 20 Ah (SCiB-class prismatic)"
+provenance = "Cell limits, mass, dimensions, impedance, power ratings and cycle life are datasheet-class figures for the Toshiba SCiB 20 Ah high-energy prismatic cell (manufacturer product page and distributor spec sheets, read 2026-08-27). The OCV shape is hand-read from the HPPC rest-voltage staircase in Parthasarathy, Laaksonen & Halagi, 'Characterisation and Modelling Lithium Titanate Oxide Battery Cell by Equivalent Circuit Modelling Technique', IEEE PES ISGT Asia 2021 (a 2.9 Ah LTO cell), stretched onto this cell's operating window -- a SHAPE, not a fit, which is why the id says 'generic' rather than naming the part. RC magnitudes are placeholders cross-checked against the datasheet's 10-second power ratings. TODO: fit OCV and R0 against a measured 20 Ah LTO dataset."
+
+[cell]
+capacity_ah     = 20.0     # provenance: rated capacity, SCiB 20 Ah high-energy cell
+v_max           = 2.75     # provenance: protection limit, set 50 mV above the 2.70 V charge-termination voltage -- the same relation the LFP file uses (3.65 protection vs 3.60 OCV top), which is what the BMS over-voltage band is sized from. REJECTED FIGURE, recorded rather than dropped: one distributor sheet quotes a "charge voltage" of 2.9 V for this cell against the 1.5-2.7 V operating window every other source gives. 2.9 V is a fast-charge ceiling, not the window top, and taking it would have put v_max 200 mV above OCV(1.0) -- four times the over-voltage band the BMS is tuned for. The narrower reading is used.
+v_min           = 1.50     # provenance: datasheet discharge cutoff (operating window 1.5-2.7 V)
+max_charge_c    = 10.0     # provenance: manufacturer's recommended maximum charge rate, 10C (200 A on this cell). An order of magnitude above every other chemistry shipped here, and the reason LTO is worth teaching.
+max_discharge_c = 10.0     # provenance: manufacturer's recommended maximum discharge rate, 10C
+# NOT the same number as [safety] t_plating_min_k, and this is the first shipped file where
+# they differ. On a graphite cell the BMS inhibits charging near 0 degC precisely because the
+# anode plates lithium below it. This anode cannot plate (see [safety]), so the charge
+# inhibit is set by the electrolyte's conductivity floor instead, at the bottom of the
+# datasheet's operating range.
+t_charge_min_k  = 243.15   # provenance: -30 degC, the bottom of the datasheet operating range
+t_max_k         = 328.15   # provenance: 55 degC, the top of the datasheet operating range
+
+# Monotone OCV(soc); linear interpolation, clamped at the ends.
+# provenance: shape hand-read from the HPPC rest-voltage staircase of Parthasarathy et al.
+# 2021 Fig. 4 and stretched onto this cell's 1.50-2.70 V window. LTO's own anode plateau sits
+# flat at ~1.55 V vs Li/Li+, so essentially all of the slope below comes from the cathode --
+# which is why the curve is sloped like NMC rather than flat like LFP, and why an LTO pack's
+# resting voltage is worth reading. Roughly 3.4 mV per SOC point across the mid range.
+# Hand-read from a figure, NOT a fit; TODO fit against measured data.
+[ocv]
+soc   = [0.00, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.85, 0.95, 1.00]
+volts = [1.50, 1.72, 1.88, 2.08, 2.17, 2.23, 2.26, 2.31, 2.38, 2.45, 2.56, 2.70]
+
+# Ohmic resistance R0[soc][temp_k], ohms. Bilinear interpolation, clamped.
+#
+# provenance: anchored on the datasheet's 0.53 mOhm impedance at 1 kHz AC, scaled by 1.4x to
+# 0.75 mOhm at 25 degC / 50 % SOC because a 1 kHz measurement misses the charge-transfer
+# resistance a DC pulse sees. Sub-milliohm is not a typo: this is a 20 Ah prismatic cell
+# whose low impedance is the whole point of the chemistry. The temperature spread (~4x from
+# 25 degC to -30 degC) and the SOC spread are placeholders, TODO fit.
+#
+# The low end of the temperature axis is 243.15 K (-30 degC), lower than any other shipped
+# chemistry's grid, so that cold-charge behaviour is INTERPOLATED here rather than clamped
+# off the end of the table. That is the regime this cell exists to be interesting in.
+[r0]
+soc    = [0.0, 0.5, 1.0]
+temp_k = [243.15, 298.15, 318.15]
+ohms   = [[0.00340, 0.00085, 0.00072],
+          [0.00300, 0.00075, 0.00064],
+          [0.00320, 0.00080, 0.00068]]
+
+# Fast charge-transfer RC pair. tau = 0.00030 * 20000 = 6.0 s.
+# provenance: placeholder magnitude, TODO fit. Sized together with R0 and the slow pair
+# against the datasheet's 10-second power ratings -- see the note under [[rc]] below.
+[[rc]]
+r_ohms  = 0.00030
+c_farad = 20000.0
+
+# Slow diffusion RC pair. tau = 0.00025 * 160000 = 40 s.
+# provenance: placeholder magnitude, TODO fit.
+#
+# SCALE CHECK, because R0 and these two pairs only mean anything together. At the
+# datasheet's 10-second measurement point the settled resistance is
+#   0.75 + 0.30*(1 - e^-(10/6)) + 0.25*(1 - e^-(10/40)) = 1.05 mOhm.
+# Discharging from the 2.3 V nominal down to the 1.5 V floor through 1.05 mOhm draws 763 A
+# for 1145 W, against the datasheet's 1200 W output at SOC 50 %, 10 s, 25 degC. Charging
+# from 2.3 V up to the 2.7 V ceiling draws 382 A for 1031 W, against the datasheet's 1100 W
+# input. Two independent checks, both within 5 %, on numbers that were not fitted to them.
+[[rc]]
+r_ohms  = 0.00025
+c_farad = 160000.0
+
+# How the cell behaves below empty, and what it costs.
+#
+# The VOLTAGE half is sized by exactly the rule the LFP and NMC files use -- the cell
+# collapses from its empty-endpoint OCV to the floor over 2 % of capacity -- deliberately,
+# so that this chemistry's one real distinction lands in ONE field rather than being smeared
+# across two. See docs/plans/low-clamp-reversal.md for the mechanism.
+[reversal]
+# provenance: placeholder, sized by the shipped rule: 1.50 V of collapse over 2 % of
+# capacity. TODO fit.
+v_per_soc = 75.0
+# provenance: placeholder -- a declared limit rather than a measured plateau, as in every
+# other shipped file. Bounds an otherwise unbounded ramp.
+floor_v   = 0.0
+# THE ONE THAT IS DIFFERENT IN KIND, NOT IN SIZE.
+#
+# The LFP and NMC files bill over-discharge at ~1e-1 capacity fraction per amp-hour past
+# empty, sized against dissolution of the anode's COPPER current collector. This cell has no
+# copper: the LTO anode sits at ~1.55 V vs Li/Li+, above aluminium's lithiation potential, so
+# both electrodes use aluminium foil and the mechanism the other files bill for does not
+# exist here. The comparative in the over-discharge literature is stark -- graphite-on-copper
+# cells averaged ~84 % capacity loss under repeated over-discharge cycling where
+# LTO-on-aluminium cells lost little or none.
+#
+# provenance: STRUCTURAL, not a missing fit. Zero is what this field's own documentation
+# sanctions for a cell with no over-discharge damage mechanism ("0 = over-discharge is
+# free"). What zero still hides, and is honest to name: cathode over-lithiation and
+# electrolyte reduction are real, far smaller than collector dissolution, and unfitted.
+#
+# Note this does NOT switch off the voltage collapse above -- v_per_soc and floor_v are
+# independent of this field, so the cell still falls through its reversal ramp and the
+# external circuit still pays for the energy. It is the DAMAGE that is free, which is the
+# physics.
+fade_per_ah = 0.0
+
+[thermal]
+# provenance: 510 g datasheet cell mass at ~1000 J/(kg*K), the usual mixed-materials figure
+# for a lithium-ion cell. TODO refine cp.
+heat_capacity_j_per_k = 510.0
+# h*A for a FULLY EXPOSED cell (as on a 1S1P pack); the engine scales it down per cell by the
+# surface fraction not blocked by neighbours.
+# provenance: derived from the datasheet's 116 x 22 x 106 mm case --
+#   2*(0.116*0.106) + 2*(0.116*0.022) + 2*(0.106*0.022) = 0.0344 m^2
+# at a natural-convection h of ~8 W/(m^2*K), a placeholder h on a measured area.
+h_area_w_per_k        = 0.28
+
+# No docv_dt_v_per_k column, so entropic heating is disabled for this chemistry
+# (TODO: add measured dU/dT to enable the reversible heat term).
+
+# Semi-empirical aging. Unlike the other shipped files, the cycle half of this block is a
+# DERIVATION rather than a placeholder.
+[aging]
+# provenance: placeholder pair, TODO fit. cal_pre_exp only means anything alongside the
+# activation energy below. Sized so that
+#   k = 3.4e3 * exp(-50000/(8.314*298.15)) = 5.90e-6
+# and at full charge (soc stress 1.2) over a year (sqrt(3.156e7 s) = 5618) the calendar loss
+# is ~4.0 % (measured: 3.99 %) -- against 13.67 % for the LFP set and 15.86 % for the NMC
+# set computed the same way from their own files. That ordering is the point: LTO's shelf life is its second
+# selling point after its rate capability.
+cal_pre_exp                = 3.4e3
+cal_ea_j_per_mol           = 5.0e4    # provenance: placeholder Arrhenius activation energy, TODO fit
+# provenance: placeholder, and FLATTER than the graphite files on purpose. The high-SOC
+# penalty in a graphite cell represents SEI growth on a charged anode; LTO forms essentially
+# no SEI, which is why its calendar life is barely SOC-dependent.
+cal_soc_stress             = [1.0, 1.0, 1.2]
+# DERIVED, not a placeholder. The datasheet rates this cell at 20,000 charge/discharge cycles
+# to >70 % capacity retention. aging::cycle_increment counts throughput as |I|*dt in BOTH
+# directions, so one full-depth cycle of a 20 Ah cell moves 40 Ah, and
+#   0.30 / (20000 * 40 Ah) = 3.75e-7 per Ah.
+# 53x gentler per amp-hour than the LFP placeholder and 80x gentler than the NMC one, which
+# is the ordering LTO exists for -- and it comes out as 13,333 full cycles to 20 % capacity
+# loss, against 2,171 for LFP and 1,111 for NMC. THE ONE ASSUMPTION is that the rated cycle is
+# full-depth; a rating quoted at a shallower depth would make this figure larger, so this is
+# the optimistic end of the claim.
+cyc_fade_per_ah            = 3.75e-7
+# provenance: 1.0 -- pure throughput counting, no depth dependence at all. Argued rather than
+# guessed: the manufacturer rates this cell's 20,000 cycles at full depth without quoting a
+# shallow-cycle bonus, and LTO's zero-strain lattice is the usual explanation for why depth
+# barely matters to it. Every other shipped chemistry sits above 1 (LFP 1.1, NMC 1.2,
+# lead-acid 1.3); this is the first file to take cycle_increment's exponent == 0 branch.
+cyc_dod_stress_exp         = 1.0
+r_growth_per_capacity_loss = 1.5      # provenance: placeholder -- resistance grows faster than capacity fades, same ratio as the other shipped files pending a fit
+
+# Emergent-failure thresholds. Both halves are live, and the plating half is where this file
+# ran into the schema.
+#
+# RUNAWAY: milder than both lithium sets on every axis, which is the right ordering -- LTO's
+# reputation is built on not doing this. Scale check on the placeholders, which only mean
+# anything TOGETHER:
+#   - adiabatic ceiling = 102 kJ / 510 J/K = 200 K, so a fully-reacted cell peaks near 693 K
+#     (420 degC). LFP's set gives 253 K and NMC's 818 K.
+#   - onset -> vent     = 40 K x 510 J/K = 20.4 kJ, released at 10 W rising to ~62 W across
+#     that span. Integrated through the engine's own reaction_power that is 988 s, roughly
+#     16 minutes -- against 98 s for NMC. Note it is NOT the 12 minutes an average of the
+#     two endpoint powers predicts: the Arrhenius rise is convex, so the cell spends most
+#     of the span near the cold end at 10 W and the endpoint average runs 36 % fast.
+# Both are shape checks, not fits.
+#
+# PLATING: this cell does not plate lithium at any temperature or rate. The LTO anode's
+# plateau is at ~1.55 V vs Li/Li+, a volt and a half above the 0 V where metallic lithium
+# deposits, so the thermodynamic driving force is simply absent; LTO cells are charged at
+# -40 degC in the literature for exactly this reason. THAT IS THE ONE THING THIS SECTION
+# CANNOT SAY. Setting the cost fields to zero would still raise PLATING_RISK and merely make
+# it free, which is a false flag rather than an absent mechanism; dropping [safety] entirely
+# would switch off thermal runaway with it, since one Option covers both. So the temperature
+# gate below is a SENTINEL. See docs/plans/phase-8-slice-a-lto.md.
+[safety]
+t_onset_k           = 493.15   # provenance: ~220 degC exothermic onset placeholder; LTO's missing SEI-decomposition step is what pushes onset above the ~150-170 degC of graphite cells; TODO fit
+t_vent_k            = 533.15   # provenance: ~260 degC vent placeholder; TODO fit
+runaway_energy_j    = 102.0e3  # provenance: placeholder per-cell exothermic budget, set for a 200 K adiabatic rise on this cell's 510 J/K (see the scale check above); TODO fit
+runaway_power_w_at_onset = 10.0    # provenance: placeholder amplitude, 0.5 W per Ah against LFP's ~2.2 and NMC's ~2.7; chosen with the Ea below for a ~12 min adiabatic onset-to-vent; TODO fit
+runaway_ea_j_per_mol     = 1.0e5   # provenance: placeholder activation energy for the decomposition exotherm, order-of-magnitude typical for Li-ion ARC fits; TODO fit
+# SENTINEL, NOT A MEASUREMENT. One kelvin. There is no temperature at which this cell plates
+# lithium, and this field cannot express that -- it is validated finite-and-positive with no
+# cross-check, so "never" has to be spelled as a temperature below every reachable one. The
+# value is deliberately absurd on its face so that no reader mistakes it for a datasheet
+# number. Compare [cell] t_charge_min_k = 243.15, which is a real limit set by electrolyte
+# conductivity; this is the first shipped file where the two do not coincide.
+t_plating_min_k     = 1.0
+# Inert, because the temperature gate above can never open -- and deliberately set to the
+# MOST permissive value the field admits (0 means any charge current at all plates when
+# cold) rather than to a second sentinel. If the temperature gate were ever "corrected"
+# upward by someone who had not read the comment above, this cell would flag plating on the
+# first cold charge, immediately and loudly, instead of drifting into a plausible-looking
+# wrong answer. One sentinel, and a tripwire behind it.
+plating_c_threshold = 0.0
+# plating_fade_per_ah, plating_short_hazard_per_ah and plating_short_ohms are omitted and
+# default to zero. They are unreachable for the reason above; stating costs for a mechanism
+# this cell does not have would be inventing numbers.
