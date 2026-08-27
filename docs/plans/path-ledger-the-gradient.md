@@ -142,7 +142,124 @@ three times.
 
 ## What the perturbations said
 
-PERTURBATION-TABLE-PLACEHOLDER
+Thirty perturbations, one at a time, each against a clean committed tree, each
+followed by the whole `path_claims` suite with **which** tests reddened parsed out of the
+output. Predictions were written down in advance, before the first run, because a green
+where red was predicted is a finding and a green rationalised afterwards is not.
+
+Every one of the twenty-eight exited red. **Two of them were red on the wrong check**, and
+that is the most useful thing the run said.
+
+### The eighteen prose values
+
+Each is the smallest move the printed precision allows — one in the last digit — applied to
+the lesson text and nothing else.
+
+| moved | caught by | on |
+| --- | --- | --- |
+| `5.28` → `5.29` (first negative reading) | literal + scan | the claim's sentence no longer matches |
+| `37.18` → `37.17` (positive at the cut-off) | literal + scan | " |
+| `1041` → `1040` (**the defect this slice fixed**) | scan | radius² over diffusivity, from the chemistry file |
+| `6812` → `6813` (positive diffusion time) | scan | " |
+| `Chen2020` → `Chen2021` | scan | the digits after `Chen` in the chemistry's provenance |
+| `96 %` → `95 %` | scan | the nested ratio of two differences |
+| `33 mV` → `34 mV` | scan | difference of this step's two quoted voltages |
+| `1396 s` → `1398 s` (the crossing) | literal + scan | " |
+| `518 s` → `520 s` (the tick-over) | literal + scan | " |
+| `3.319 V` → `3.320 V` | literal + scan | " |
+| `11.7 %` → `11.8 %` | literal + scan | " |
+| `200×` → `100×` (speed slider) | scan | the lesson's own Speed control |
+| `1S1P` → `1S2P` | scan | the scenario's `pack.parallel` |
+| `15.459594 A` → `…95 A` | scan | the lesson's DemandValue control |
+| "as step 15" → "as step 14" | scan | the twin lesson's position in the array |
+| "steps 1 to 12" → "1 to 11" | scan | the last equivalent-circuit lesson's position |
+| `0.09` → `0.10` (positive gap at the mark) | literal + scan | " |
+| `3.352` → `3.353` (both sentences) | literal + scan | " |
+
+Nothing here needed the engine: a wrong digit in a claimed sentence stops matching its
+claim, and a wrong digit in a ruled sentence stops dividing. The two chemistry-derived ones
+are the interesting pair, because they are the shape of the defect that was actually here —
+a number written down once and never divided again.
+
+### The two file perturbations
+
+| moved | caught by |
+| --- | --- |
+| negative diffusivity `3.3e-14` → `3.4e-14` | the diffusion rule at this step **and** the engine check at step 15 |
+| negative particle radius `5.86e-06` → `5.90e-06` | the same two |
+
+Both reddened in two places at once, which is the point of running them: the rule really
+reads the chemistry file rather than a constant mirrored beside it, and the same file is
+under the trajectory the claims are measured against.
+
+### The page perturbation
+
+Deleting the negative-zero guard from the page's `gapPts` reddens
+`mirrored_constants_still_match_the_page`. That guard is the threshold `gap_neg_zero_s`
+uses, so the new quantity's definition is pinned to the page's own rounding and cannot
+drift away from what a reader sees.
+
+### The prose deletion
+
+Removing the whole tick-over clause — the escape hatch of deleting a sentence to clear the
+scan — reddens three ways: the claim's literal is gone, the `[ledger]` entry's numeral
+count no longer matches the prose (44 against 41), and the file's own tallies stop
+deriving. That route was closed by the previous slice and is still closed.
+
+### The six deletions, and the tripwire that masked two of them
+
+| deleted | verdict | what actually reddened |
+| --- | --- | --- |
+| the tick's first pin (516 s) | RED | accounting: nothing else spells `5.80` |
+| the positive gap at the mark (2860 s) | RED | accounting: nothing else spells `0.09` |
+| the gap reading at the crossing (1396 s) | RED | accounting: nothing else spells `0.00` |
+| the terminal at the crossing (1396 s) | RED | accounting: nothing else spells `3.319` |
+| `gap_neg_zero_s` | **GREEN** | self-count only |
+| `soc_at:1060` | **GREEN** | self-count only |
+
+The last two exited 101 like the other twenty-six, and on the exit code alone this slice
+would have recorded six deletions all correctly caught. They were not. Deleting any claim
+changes the number of claims, and the number of claims is one of the tallies
+`every_count_these_files_state_about_themselves_is_derived` re-derives — so **that check
+fires on every deletion case whatever the accounting did**, and it fired first. Re-run with
+that one test skipped, both cases are green with 50 of 50 passing.
+
+Both greens were predicted, and both are properties of the design rather than holes in it:
+
+* `gap_neg_zero_s` is not what makes `1396` accountable — the two claims read *at* 1396
+  already answer for it through `Accounted::ReadAt`. The crossing claim is what makes the
+  word *first* mean something, and no perturbation of a **number** can reach a word.
+* `soc_at:1060` is one of a pair, and its sibling at the mark spells `11.7` in the same
+  literal. Check 6 asks whether *some* claim accounts for a token, so a redundant second
+  reading is not required by it — the pair exists because the sentence says the figure is
+  the same at both ends, which is a statement about two instants.
+
+The lesson is the one this repo has now written down twice, and this is the first time it
+cost something concrete: **a red exit code can be the wrong check reddening.** The
+enumeration of failing test names is not a nicety on top of the harness — without it, two
+of six deletion cases would have been recorded backwards.
+
+### The two that were missing: does a claim's value answer to the engine?
+
+The first twenty-eight cases moved prose, deleted claims, and edited two files — and not
+one of them moved a claim's **`value`**. So they asked of the twenty-five new claims *is
+this required by the scan?* and *does the prose still match?*, and never *if this number
+were wrong, would the simulation say so?* The table above admits it in a sentence:
+**nothing there needed the engine.** That matters here more than it usually would, because
+this slice already found one new claim that was present, spelled, and scan-green while
+asserting nothing about the run — the tick pin whose tolerance was ten times too loose to
+reach the boundary it existed to pin.
+
+| moved | verdict | what reddened |
+| --- | --- | --- |
+| one mid-run gap claim's `value`, alone (+3× its tolerance) | RED | the engine check **and** the value-against-spelling check |
+| `value`, `spells`, the shared `literal`, and the page's prose, **all together** | RED | the engine check, and nothing else |
+
+The second is the one that answers the question. Every string in the repo agreed with
+itself — the lesson said `34.17`, the claim spelled `34.17`, the sentence matched — and the
+only thing left that could object was the trajectory, which did. So the spelled-tolerance
+claims on this step are load-bearing: their numbers are compared against a simulation, not
+merely against each other.
 
 ## Two things found beside the work
 
@@ -186,3 +303,10 @@ What is open, in rough order of how much it would buy:
 * **Doc comments naming a lesson by position.** Four found here, all stale, none reachable
   by any check. A test that read `//! step N` against the array is cheap and would have
   caught all four.
+* **The self-count check masks every deletion perturbation on this file.** Deleting a claim
+  changes the claim count, so `every_count_these_files_state_about_themselves_is_derived`
+  reddens whatever the accounting did — and it sorts first. Anyone measuring whether a claim
+  earns its place must run with that one test skipped, or read the failing test names, or
+  the answer is meaningless. It cost this slice two of six cases recorded backwards until
+  they were re-run. Making the tally derive from the file as parsed rather than from a
+  written-down number would remove the trap; nothing does that today.
