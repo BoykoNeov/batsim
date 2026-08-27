@@ -96,16 +96,30 @@ paid: a constant in prose either is the file's number or is wrong about it, so i
 exactly. The sentence now prints `2.303451`, which is what step 1's own prose has printed
 since *it* was ledgered.
 
-**`1.111` was printed against the wrong instant.** The sentence read:
+**`1.111` was printed against the wrong instant — and the first repair moved it to the wrong
+subject.** The sentence read:
 
 > Watch the new `past empty` readout come off zero at the same instant the flag appears:
 > 1.111 points of charge taken out of a cell that had none.
 
 The colon puts the number at the flag. At the flag the deficit is **0.0037 points** — three
-ten-thousandths of what the sentence prints. 1.111 is the figure at the mark, 46 s later. The
-sentence now says which instant it belongs to. This is the same family as "right but
-unreachable", which this repo has shipped three times: a true number attached to a moment it
-is not true of.
+ten-thousandths of what the sentence prints. 1.111 is the figure at the mark, 46 s later. That
+is the same family as "right but unreachable", which this repo has shipped three times: a true
+number attached to a moment it is not true of.
+
+The repair said *"by the mark **it reads** 1.111 points"*, and that was the same defect one
+step sideways. "It" is the `past empty` row, and this file's own header names that row as one
+of two that cannot be claimed at all: it is formatted from per-cell state and sampled on a
+250 ms **wall**-clock throttle, so at this step's 800× there is no such thing as what it shows
+at a given simulation time. The number is the cell's and not the panel's. The sentence now
+says so — *"by the mark the cell is 1.111 points past empty"* — which is what step 21 already
+paid for once, where a number **left the page** for being a fact about a wall clock rather
+than about the simulation.
+
+Worth naming because nothing in the harness would have caught it: the claim behind the
+sentence is `deficit_pts_at`, which is ground truth, and a claim on that quantity is forbidden
+a `display` half. A sentence that describes a row while its claim reads the engine is invisible
+to every check here.
 
 **`53` could not be checked as written, and the honest figure is `53.5`.** It is step 1's
 mark less step 1's empty-time, and a computed tie is compared at the prose's own precision —
@@ -163,6 +177,30 @@ are the defences this file has grown since that lesson was written:
 
 A narrower deletion that removes only the quantity and leaves its neighbours still reddens the
 last three. The escape route is closed for any sentence a rule was written for.
+
+## Two things found beside the work
+
+**The arm list in the claims file was five arms short of its own derived count.** The count
+(`n_ledger_arms`, twenty-four with `Tie::Picker`) has been derived and checked for two slices;
+the *prose list* beside it never was, and it had been quietly missing the control label, the
+array length, the open-circuit read, the magnitude wrapper and `OnArm` itself. The same list in
+this test's module docs was four short. Both are now complete — but nothing keeps them so, and
+that is the shape `docs/plans/path-self-counts.md` recorded as "a count of a list caught a
+missing list entry". A tally that pinned the list's *length* rather than the sentence's number
+would close it; it is not built here.
+
+**Step 2 still carries two word numerals nothing reads**: *"two steps from now"* and *"in
+exactly one field"*. Both are true, and both are outside every scan in this file for the same
+reason the two that were fixed were. They sit on nothing a subtraction of claimed numbers could
+answer, which is why they were left rather than converted — said here rather than left to a
+green ledger to imply.
+
+**And one arm of one rule is unfalsifiable at this step, by coincidence.** The 53.5 s rule
+reads step 1's mark through `Tie::Elsewhere`, and both steps mark at 4200 s — so no
+perturbation of that rule can tell the wrapper from a bare `Setting`. What proves the wrapper
+swaps the lesson is the rule two above it, whose `Elsewhere` read of step 1's demand box
+answers `2` where this step's own says `2.6`: the same line of `tie_values`, asked where the
+two lessons disagree. Recorded in the rule's own comment rather than spent as a run.
 
 ## What is left
 

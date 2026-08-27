@@ -94,7 +94,9 @@
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, the span of a
 //! chemistry table, a node of one, digits inside a name, digits inside the name of a file an
-//! arm picks ([`Tie::Picker`]), the position of another lesson,
+//! arm picks ([`Tie::Picker`]), the label of a control read out of `web/index.html`, how many
+//! entries an array of the scenario has, the open-circuit voltage at a charge one of them
+//! names, the magnitude of any of them, the position of another lesson,
 //! the panel's clock at the step's mark, a constant of the page's own policy parsed out of
 //! `web/app.js` ([`Tie::Page`]), a figure the sentence works out from its own
 //! siblings, any of those read on **another lesson** ([`Tie::Elsewhere`]), a control read off
@@ -6913,6 +6915,13 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // `Setting(Until)`, though the two steps mark at the same 4200 s: the sentence is
         // about the run next door, and a rule that read this step's own field would be the
         // right number off the wrong file.
+        //
+        // **The two marks being equal makes this wrapper's own arm unfalsifiable here, and it
+        // is not unfalsifiable in the file.** No perturbation of this rule can tell
+        // `Elsewhere` from a bare `Setting`, because both answer 4200. What proves the
+        // wrapper swaps the lesson for a `Setting` read is the rule two above, whose
+        // `Elsewhere{bare-curve, Setting(DemandValue)}` answers 2 where this step's own box
+        // says 2.6 — the same line of `tie_values`, asked where the two lessons disagree.
         //
         // **The figure moved to make this possible, and it is the honest one.** The sentence
         // said "53 seconds", where the subtraction is 53.5 — step 1's own claim note admits

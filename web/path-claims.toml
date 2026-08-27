@@ -895,7 +895,7 @@ matching the rate — see the lesson block's own comment.
 
 [[claim]]
 step = "same-discharge-other-chemistry"
-literal = "by the mark it reads 1.111 points of charge"
+literal = "by the mark the cell is 1.111 points past empty"
 quantity = "deficit_pts_at"
 value = 1.1111111111192302
 tol = 5.0e-4
@@ -917,6 +917,13 @@ deficit is 0.0037 points — three ten-thousandths of what the sentence prints. 
 figure at the mark, 46 s later. The sentence now says which instant it belongs to, and this
 claim is read there. Right but attached to the wrong moment is the same family as right but
 unreachable; see docs/plans/path-ledger-third-cell-step.md.
+
+**And the first repair said "by the mark IT READS 1.111", which was the same defect one step
+sideways.** "It" is the `past empty` row, and the paragraph above is why no sentence may say
+what that row reads at an instant: at 800x a 250 ms wall-clock throttle is many seconds of
+simulation. The number is the cell's, not the panel's, so the sentence now says so — "by the
+mark the cell is 1.111 points past empty". Step 21 paid this once already, where a number
+LEFT the page for being a fact about a wall clock.
 """
 
 [[claim]]
@@ -4095,12 +4102,15 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, the SPAN of a
 # chemistry table end to end, a NODE of one, digits
-# inside a NAME, digits inside the NAME OF A FILE an arm picks, the POSITION of another
-# lesson in the path, the panel's CLOCK at the step's
+# inside a NAME, digits inside the NAME OF A FILE an arm picks, the LABEL of a control read
+# out of `web/index.html`, HOW MANY ENTRIES an array of the scenario has, the OPEN-CIRCUIT
+# VOLTAGE at a charge one of them names, the MAGNITUDE of any of them, the POSITION of
+# another lesson in the path, the panel's CLOCK at the step's
 # mark, a CONSTANT OF THE PAGE parsed out of `web/app.js`, a figure the sentence works out
 # from its OWN SIBLINGS, the same question asked of
-# ANOTHER LESSON, a measurement some step's CLAIM decides, and a CLAIM whose literal
-# contains the number. Naming the field is the whole point: a generous arm — "the number appears
+# ANOTHER LESSON, the same question asked of ONE OF THIS STEP'S ARMS — a control it
+# overrides, or a field of the file it picks — a measurement some step's CLAIM decides, and
+# a CLAIM whose literal contains the number. Naming the field is the whole point: a generous arm — "the number appears
 # somewhere in the scenario" — accounts for a third of the path's numbers and means
 # nothing, because a scenario file has enough integers in it that a `2` finds `series = 2`
 # by accident. So something has to say which field a sentence is talking about, and that
