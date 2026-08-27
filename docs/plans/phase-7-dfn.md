@@ -13,6 +13,15 @@ projected `~30×` cost below is the live example, and it is labelled where it ap
 
 `CLAUDE.md` has no Phase 7. `Dfn` sits inside the Phase 6 bullet:
 
+> **Dated 2026-08-27: the first sentence is no longer true, and it is left standing because
+> the framing below is built on it.** `CLAUDE.md`'s phase list gained a Phase 7 bullet when
+> Phase 8 was planned (`docs/plans/phase-8-chemistries.md`) — a list that jumped 6 → 8 would
+> have read as a missing phase rather than as a phase argued from inside another one. The
+> bullet points back here and does not restate the criteria. What the sentence was *about*
+> is unchanged: this phase's exit criteria are authored in this document and argued, because
+> `CLAUDE.md` never specified them.
+
+
 > **Phase 6 (future) — porous electrodes.** Add `Spm`/`Dfn` variants to `CellModel`,
 > evaluate `diffsol` for the stiff DAE solve, validate against PyBaMM directly. Nothing
 > in earlier phases may assume ECM-only internals outside the `CellModel` enum.

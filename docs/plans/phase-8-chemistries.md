@@ -102,6 +102,18 @@ already covers all 24 steps — becomes the whole of the coverage.
 Slices B and D write new lesson prose. Prose written before the rule is prose written in the
 old style, and the phase would then close having re-created the gap slice 0 exists to shut.
 
+**"Retire the reader" is a migration, not a subtraction, and the order inside the slice is
+load-bearing.** Some of the 283 claims already in `path-claims.toml` read a spelled
+quantity — the ledger's own comment on `belief-drifts` says so in as many words ("two claims
+on its estimator gap, which the prose spells in words") — and the reading machinery those
+claims depend on is `spelled_numbers`, `word_blind`, `Tie::Hours`, `Tie::Seconds`, the
+silent-skip guard and thirteen vocabulary rules. Deleting any of it while a claim still
+points at a word turns that claim red for a reason that has nothing to do with the physics.
+So, inside slice 0: **add the ban and rewrite the prose first; re-point every claim that
+read a word at the digit form; only then take the reader out** — and if any claim cannot be
+re-pointed, the reader stays and the slice ships the ban alone. A phase that ships a red
+suite has failed whatever else it did.
+
 Two costs, both stated rather than discovered later:
 
 * **The prose reads more clinically.** "0.5 points" for "half a point". Accepted by the
@@ -113,12 +125,27 @@ Two costs, both stated rather than discovered later:
   and a wrong number ships. **That asymmetry is the whole argument**, and it is worth more
   than the seventeen rounds it saves.
 
-Measured before this doc was written, so the scale is known rather than guessed: the survey
-in `path-word-batch-two.md` counted **68 spelled quantities path-wide**. Of the shapes the
-reader refuses, the article form — "an hour of simulation", "a third of the sag", "a tenth
-of a volt" — is **about a dozen sentences** in `web/app.js`, not a hole. They are rewritten
-by hand in this slice, and the fact that no scanner could ever have found them is the
-second argument for the ban.
+Two counts, with different standing, because one of them is weaker than the other and the
+difference matters:
+
+* **68 spelled quantities path-wide** — measured, by the survey in `path-word-batch-two.md`
+  that ran the accounting check over every step with the per-step gate disabled. This is a
+  real measurement and the slice can budget against it.
+* **Roughly 30 article-form phrases** — "an hour of simulation", "a third of the sag", "half
+  a percent", "a tenth of a millivolt" — **hand-counted** from a context grep over
+  `web/app.js`, excluding the code comments the grep also catches and the ordinal uses that
+  are not quantities at all ("a second opinion", "a second 3 C discharge"). **Treat it as a
+  floor, not a count**: the grep keys on a closed list of unit nouns, so a phrase like "a
+  fraction of the run" is only in the list because that noun happened to be in it. The
+  honest statement is "at least thirty, and the instrument cannot say how many more."
+
+That second number is the one that moved while this document was being reviewed. It was
+first written as "about a dozen", which was a miscount — the grep's raw output includes
+`a second pulse` and `a second number beside`, which are ordinals — and correcting it made
+the article form **bigger**, not smaller. It does not weaken the ban; it strengthens it. A
+reader extension would have to cover thirty-plus phrases of a shape the silent-skip guard
+**cannot watch**, because that guard walks numerals and this shape has none. The rewrite
+covers them by construction, and that is the second argument for the ban.
 
 ## Slice A: which chemistry, and what "cheap tier" means
 
@@ -128,8 +155,18 @@ No new state, no new term, no new code — that is the hypothesis under test.
 
 Candidates, with what makes each pedagogically worth a lesson. **No constants are stated
 here on purpose**: `CLAUDE.md` forbids an unlabelled physical number and this document has
-sourced none. Picking between them is the first hour of the slice, and the pick should
-favour whichever has a citable public parameter set.
+sourced none.
+
+**The pick is ruled here rather than left to the slice**, because the candidates test
+exit criterion 1 with very different strength and a free choice lets a future session pick
+the weakest one and call the criterion closed. **The rule: take the candidate that strains
+the existing model shape hardest, subject to a citable public parameter set.** Strain means
+a voltage window unlike the shipped lithium files, a `[reversal]` answer the shipped files
+do not already imply, and a `[safety]` story that differs. A zero-code result is only
+evidence about principle 10 in proportion to how far the file was from what already works.
+
+**On that rule the pick is LTO**, and the other two are named as fallbacks for when the
+parameter set cannot be sourced — the one condition the rule is subject to.
 
 * **Lithium titanate (LTO).** The most distinct of the tier. It charges at rates the other
   lithium cells cannot survive, it does not plate at low temperature the way graphite does,
