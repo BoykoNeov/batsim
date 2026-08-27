@@ -4615,7 +4615,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are twenty-four of them. An arm says what decides a number: a
+# THE ARMS THEMSELVES, and there are twenty-six of them. An arm says what decides a number: a
 # NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, the SPAN of a
@@ -4627,7 +4627,9 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # mark, a CONSTANT OF THE PAGE parsed out of `web/app.js`, a figure the sentence works out
 # from its OWN SIBLINGS, the same question asked of
 # ANOTHER LESSON, the same question asked of ONE OF THIS STEP'S ARMS — a control it
-# overrides, or a field of the file it picks — a measurement some step's CLAIM decides, and
+# overrides, or a field of the file it picks — a measurement some step's CLAIM decides, WHEN
+# that claim was read rather than what it came to, a period the page holds said as the RATE
+# PER SECOND a sentence writes it at, and
 # a CLAIM whose literal contains the number. Naming the field is the whole point: a generous arm — "the number appears
 # somewhere in the scenario" — accounts for a third of the path's numbers and means
 # nothing, because a scenario file has enough integers in it that a `2` finds `series = 2`
@@ -8313,4 +8315,19 @@ steps = [
 # DIGIT is tied to something, and this path states a great many of its quantities in
 # English words that no scan here can see.
 unledgered = [
+]
+
+# Steps whose prose is scanned for quantities spelled in ENGLISH as well as in digits.
+#
+# The ledger above closes a step's *digits*. This is the other half, and until it existed no
+# check in this repo could see a sentence that wrote its measurement in letters — "three
+# thousandths of a point", "twenty-four minutes", "at six". On the first step listed here,
+# nine such quantities were invisible and FIVE OF THEM NAME THE INSTANTS AT WHICH THAT
+# STEP'S OWN CLAIMS ARE READ: the digits were tied to the engine while the words saying when
+# each was measured were tied to nothing.
+#
+# Opt-in per step, exactly as `steps` is, and every entry here must also be in `steps`. What
+# is NOT here is word-blind, which is what the whole path was before this list.
+spelled = [
+  "the-gradient-itself",  # 16 spelled quantities, the most of any step in the path
 ]
