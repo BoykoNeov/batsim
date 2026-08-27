@@ -381,7 +381,7 @@ impl DfnState {
         // `φ_e = 0` is the gauge; `φ_s` is each electrode's own OCP; `j = 0` is a cell at
         // rest, which is what a cell that has not stepped yet is.
         let mut u = vec![0.0; NVAR * n];
-        for (i, chunk) in u.chunks_exact_mut(NVAR).enumerate() {
+        for (i, chunk) in u.as_chunks_mut::<NVAR>().0.iter_mut().enumerate() {
             chunk[CE] = spm.c_e_mol_per_m3;
             if i < n_n {
                 chunk[PHIS] = ocp_lookup(&spm.negative.ocp, x);

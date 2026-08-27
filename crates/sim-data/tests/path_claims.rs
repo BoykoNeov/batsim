@@ -86,18 +86,20 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty-two steps and 539 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty-three steps and 582 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
-//! Twenty-three arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! Twenty-four arms exist — a scenario field, a chemistry field, a control on the lesson block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, the span of a
-//! chemistry table, a node of one, digits inside a name, the position of another lesson,
+//! chemistry table, a node of one, digits inside a name, digits inside the name of a file an
+//! arm picks ([`Tie::Picker`]), the position of another lesson,
 //! the panel's clock at the step's mark, a constant of the page's own policy parsed out of
 //! `web/app.js` ([`Tie::Page`]), a figure the sentence works out from its own
 //! siblings, any of those read on **another lesson** ([`Tie::Elsewhere`]), a control read off
-//! **one of this step's arms** rather than off the step ([`Tie::OnArm`]), a number
+//! **one of this step's arms** rather than off the step — or, where that arm loads another
+//! file from the picker, a field of **that** file ([`Tie::OnArm`]), a number
 //! **another step measured** ([`Tie::Quoted`], which reads that step's claim), and a claim
 //! whose literal contains the number ([`claimed_accounting`], which is
 //! check 6's own accounting asked about a number the ledger found). **None of the taxonomy
@@ -184,12 +186,13 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the two steps the ledger has not reached.**
+//! * **Sentences no claim is about, in the steps the ledger has not reached — one of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed twenty-two whole steps — but only twenty-two. Steps here carrying
-//!   neither a claim nor a ledger entry: none. The other two have their claimed sentences
-//!   checked and the rest of their prose free. `[ledger].unledgered`
-//!   names the remaining two, one line each, so this list cannot go quietly out of date.
+//!   has now closed twenty-three whole steps — but only twenty-three. Steps here carrying
+//!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
+//!   of the prose free: one. `[ledger].unledgered`
+//!   names what is left — one of the twenty-four — one line each, so this list cannot go
+//!   quietly out of date.
 //!   What the remaining steps need is no longer an arm the ledger has not got: the last of
 //!   its six — a figure derived from other figures in the same sentence — is
 //!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
@@ -1980,7 +1983,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 213 of 253 claims.
+    /// number's last printed place. The default shape: 216 of 258 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1991,12 +1994,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 34 of 253.
+    /// the number was always right and only the declaration was wrong. 36 of 258.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 6 of 253, every
+    /// the engine either hits the claimed step or misses by a whole one. 6 of 258, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -2036,7 +2039,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 230 of 253, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 235 of 258, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2646,16 +2649,18 @@ struct Arm {
     /// combined with `pack_from` — which would be two navigations under one sentence asking
     /// for either.
     ///
-    /// **What it will change for a tie, and has not yet.** [`Tie::OnArm`] refuses a file
-    /// field on the stated grounds that "an arm overrides controls, not files: asking a
-    /// scenario field under an arm's name would resolve to the same number and claim it came
-    /// from somewhere else". That argument is exactly right for every arm that does not
-    /// carry this field, and false for one that does — the picked file really is the arm's,
-    /// and step 2's third cell prints its nameplate and its own name. The extension is not
-    /// built here because a vocabulary rule is only counted against a *ledgered* step
-    /// ([`every_ledger_rule_is_a_phrase_and_is_used`]), so it would land with no user, which
-    /// is the shape this file has been caught by before. It belongs with the slice that
-    /// ledgers step 2. See `docs/plans/path-third-cell.md`.
+    /// **What it changed for a tie.** [`Tie::OnArm`] used to refuse a file field outright,
+    /// on the grounds that "an arm overrides controls, not files: asking a scenario field
+    /// under an arm's name would resolve to the same number and claim it came from somewhere
+    /// else". That argument is exactly right for every arm that does not carry this field,
+    /// and false for one that does — the picked file really is the arm's. Step 2's third
+    /// cell prints its nameplate (`5.153198 Ah`), the provenance of its curve (`Chen2020`)
+    /// and its own name (`cc_discharge_lgm50`), and none of those could be tied to anything
+    /// while the refusal was flat. The extension waited for the slice that ledgers step 2
+    /// because a vocabulary rule is only counted against a *ledgered* step
+    /// ([`every_ledger_rule_is_a_phrase_and_is_used`]), so it would have landed with no user
+    /// at all. The name is [`Tie::Picker`]'s job and the two fields are the file half of
+    /// `OnArm`; see `docs/plans/path-ledger-third-cell-step.md`.
     #[serde(default)]
     scenario: Option<String>,
     /// The sentence in that step's prose that tells the reader to make this change,
@@ -6122,7 +6127,8 @@ enum Tie {
     /// refuses. One constant, one parser, and a new one is a new function.
     Page(&'static str),
     /// A [`Tie::Setting`] read off **one of this step's arms** — the value the reader dials
-    /// in, rather than the one the step arrives with.
+    /// in, rather than the one the step arrives with — or, on an arm that loads another file
+    /// from the picker, a field of **that** file.
     ///
     /// Step 8 prints both in two sentences: the slider sits at 25 °C for the first leg, and
     /// *"raise the ambient slider to 45 °C and press Run"* is the second. `Setting(Ambient)`
@@ -6133,21 +6139,33 @@ enum Tie {
     ///
     /// **A wrapper, on [`Tie::Elsewhere`]'s terms**, and the parallel is exact: that one
     /// changes *which lesson* answers a question and leaves the question alone, this one
-    /// changes *which trajectory's controls* answer it. What it wraps is a `Setting` and
-    /// nothing else — a file read does not become a different fact for being asked under an
-    /// arm's name, so wrapping one would be an arm that means nothing.
+    /// changes *which trajectory's controls* answer it.
+    ///
+    /// **It wrapped a `Setting` and nothing else until step 2 was ledgered, and the argument
+    /// for that is still in the tree because it is still right — about the arms it was made
+    /// about.** It read: "a file read does not become a different fact for being asked under
+    /// an arm's name, so wrapping one would be an arm that means nothing". True of every arm
+    /// that changes only controls, and false of one that carries [`Arm::scenario`]: the
+    /// picked file really is the arm's, and step 2's third cell prints its nameplate and the
+    /// provenance of its own curve. So the refusal is narrowed rather than dropped — a file
+    /// tie is read off the picked scenario where there is one, and panics with the original
+    /// wording where there is not.
     ///
     /// **The override must be real.** An arm that leaves the control alone resolves to
     /// nothing and panics by name rather than falling back to the step's own value. That
     /// fallback is the whole hazard: it would account the sentence's 45 against the step's 25
-    /// and go green on a number that is not in any file. Neither fence is reachable from the
-    /// claims file — a rule is code — so each has a `should_panic` test of its own:
-    /// [`an_on_arm_may_only_wrap_a_setting`] and
+    /// and go green on a number that is not in any file. None of the three fences is
+    /// reachable from the claims file — a rule is code — so each has a `should_panic` test of
+    /// its own: [`an_on_arm_may_not_read_a_file_off_an_arm_that_picks_none`],
+    /// [`an_on_arm_may_not_wrap_anything_else`] and
     /// [`an_on_arm_reads_a_control_the_arm_overrides`].
     OnArm {
         /// The arm's `name`, as `[[arm]]` writes it and a claim's `arm` field reads it.
         arm: &'static str,
-        /// What to read off it. A [`Tie::Setting`], and the fences above refuse anything else.
+        /// What to read off it. A [`Tie::Setting`], or — on an arm that picks a file — a
+        /// [`Tie::Chemistry`], [`Tie::Scenario`] or [`Tie::Name`] read against that file.
+        /// The fences above refuse everything else, and refuse all three of those on an arm
+        /// that picks nothing.
         tie: &'static Tie,
     },
     /// The taxonomy's sixth arm: a number the sentence works out **from its own siblings**,
@@ -6203,6 +6221,31 @@ enum Tie {
         /// The control's `id` attribute, as `web/index.html` writes it.
         id: &'static str,
         /// The characters the digits follow inside that control's label.
+        prefix: &'static str,
+    },
+    /// Digits inside the **name of the file an arm picks out of the picker**.
+    ///
+    /// [`Tie::Name`]'s third sibling, after [`Tie::Label`]: `Name` reads a chemistry's own
+    /// name, `Label` reads a control's, and this reads a scenario file's. Step 2 is what
+    /// needed it — its closing paragraph sends the reader to `cc_discharge_lgm50` twice, and
+    /// the `50` in that name is no more a quantity than the `1` of **Step 1** is. It is half
+    /// the name of a file, and a sentence that got it wrong would be sending a reader to a
+    /// file that is not in the list.
+    ///
+    /// **It is not a new guarantee, and saying so is the honest part.** [`assert_picker`]'s
+    /// third fence already requires the picked file's stem to appear inside the arm's
+    /// instruction, and an instruction is a verbatim substring of the step's prose — so the
+    /// day that file is renamed, the arm fails there whether or not this exists. What this
+    /// adds is that the *ledger* names the right decider for those digits instead of leaving
+    /// them unaccounted, which is the difference between a green scan and a covering one.
+    ///
+    /// **Anchored on a prefix**, for [`Tie::Name`]'s reason exactly: `cc_discharge_lgm` is
+    /// what makes it reach the `50` and nothing else. Compared exactly — a file name is a
+    /// constant.
+    Picker {
+        /// The arm whose `scenario` field holds the file. It must carry one.
+        arm: &'static str,
+        /// The characters the digits follow inside that file's name.
         prefix: &'static str,
     },
     /// **How many entries** the array at this scenario path has.
@@ -6625,6 +6668,280 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // are what keep it here: step 2 has neither.
         phrase: "the subject of step {n} of this path, and step {n} is about",
         ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("what-it-cost")],
+        pow10: 0,
+    },
+    // Step 2 — the second cell, the third cell, and the two runs next door it compares
+    // itself with. Sixteen of its numerals are constants or arithmetic over them; the rest
+    // are claims, four of them on arms that leave this step's own file behind.
+    LedgerRule {
+        // The rate, twice, and step 1's rate beside it. Three ratios of a demand box to a
+        // nameplate, printed to two places and then to three — which is why a ratio is
+        // compared at the prose's own precision and a constant is not.
+        //
+        // The last of the four is read through `Elsewhere` rather than spelled: 0.868 is
+        // 2 A of a 2.303451 A·h cell, and both of those are step 1's. A rule that read this
+        // step's own box and cell would answer 0.867 and the sentence would be wrong about
+        // the only thing it is comparing.
+        phrase: "discharged at the same {n} C \u{2014} {n} here against step {n}'s {n}, because",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+            Tie::Ratio(&[
+                Tie::Setting(Control::DemandValue),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+            Tie::Ordinal("bare-curve"),
+            Tie::Elsewhere {
+                step: "bare-curve",
+                tie: &Tie::Ratio(&[
+                    Tie::Setting(Control::DemandValue),
+                    Tie::Chemistry("cell.capacity_ah"),
+                ]),
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The two nameplates and the two demand boxes, in the sentence that puts them side
+        // by side. `2.303451` and not the `2.303` this sentence used to print: a constant is
+        // compared exactly, and a rounded restatement of one is neither the file's number nor
+        // a computed quantity. Step 1's own prose has spelled it whole since it was ledgered
+        // — see `docs/plans/path-ledger-dfn-step.md` for where that rule came from.
+        phrase: "This cell holds {n} Ah against the LFP cell's {n}, so the same C-rate is {n} A rather than {n}.",
+        ties: &[
+            Tie::Chemistry("cell.capacity_ah"),
+            Tie::Elsewhere {
+                step: "bare-curve",
+                tie: &Tie::Chemistry("cell.capacity_ah"),
+            },
+            Tie::Setting(Control::DemandValue),
+            Tie::Elsewhere {
+                step: "bare-curve",
+                tie: &Tie::Setting(Control::DemandValue),
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Both empty-times and the gap between them. The two instants are quoted off the two
+        // steps' own claims — this one quotes ITSELF, which is what `Tie::Quoted` exists to
+        // allow and what keeps the pair from being two free figures — and the gap is this
+        // sentence's own subtraction over them.
+        //
+        // **The gap used to be a word.** It said "within eight seconds of each other", which
+        // is true (the gap is 7.5 s) and invisible: `written_numbers` finds digits only, so
+        // a hedge in letters is outside every scan in this file. Spelling it makes the
+        // sentence exact and puts it on the two numbers it is a subtraction of.
+        phrase: "Both empty within {n} s of each other \u{2014} {n} s and {n} s \u{2014}",
+        ties: &[
+            Tie::Derived {
+                op: LedgerOp::Difference,
+                operands: &[Operand::Sibling("4154.0"), Operand::Sibling("4146.5")],
+            },
+            Tie::Quoted {
+                step: "bare-curve",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "same-discharge-other-chemistry",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+                states: QuotedAs::Same,
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The third cell's file, named twice — once where the reader loads it and once where
+        // they are told to leave it loaded. Two rules rather than one loose one, each naming
+        // the arm whose instruction that sentence is, on step 6's precedent.
+        phrase: "Load `cc_discharge_lgm{n}` from the picker",
+        ties: &[Tie::Picker {
+            arm: "the third cell",
+            prefix: "cc_discharge_lgm",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "Leave `cc_discharge_lgm{n}` loaded",
+        ties: &[Tie::Picker {
+            arm: "the third cell at this step's own current",
+            prefix: "cc_discharge_lgm",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The third cell's nameplate and the parameter set its curve was fitted from — both
+        // read off the file the arm PICKS, which is the half of `Tie::OnArm` this step built.
+        // Neither is in this step's own chemistry: `cc_discharge_nmc` holds 3.0 Ah and has no
+        // PyBaMM source at all, which its own provenance says at length.
+        phrase: "a {n} Ah cell fitted from PyBaMM's Chen{n}",
+        ties: &[
+            Tie::OnArm {
+                arm: "the third cell",
+                tie: &Tie::Chemistry("cell.capacity_ah"),
+            },
+            Tie::OnArm {
+                arm: "the third cell",
+                tie: &Tie::Name {
+                    field: "meta.provenance",
+                    prefix: "Chen",
+                },
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The current the reader types on that arm, and the rate it works out to on that
+        // cell. A ratio of two `OnArm` reads — the box the arm sets over the nameplate of the
+        // file it picked — which is the first tie in this table whose BOTH sides belong to an
+        // arm rather than to the step.
+        //
+        // The rate moved with the arm that measured it: this printed 0.868, which is step 1's
+        // figure. See `docs/plans/path-third-cell.md`.
+        phrase: "put the demand box up to {n} A, which is the same {n} C on the bigger cell",
+        ties: &[
+            Tie::OnArm {
+                arm: "the third cell",
+                tie: &Tie::Setting(Control::DemandValue),
+            },
+            Tie::Ratio(&[
+                Tie::OnArm {
+                    arm: "the third cell",
+                    tie: &Tie::Setting(Control::DemandValue),
+                },
+                Tie::OnArm {
+                    arm: "the third cell",
+                    tie: &Tie::Chemistry("cell.capacity_ah"),
+                },
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The step's own box again, in the sentence that asks the reader to put it back. The
+        // second picker arm overrides nothing, so this is the lesson's control and not an
+        // arm's — which is exactly what the arm's own note says makes it an arm.
+        phrase: "put the box back to {n} A",
+        ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the same pair of flags step {n} ended on",
+        ties: &[Tie::Ordinal("bare-curve")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The floor the operating-point flag is about, on this chemistry. Its twin two
+        // sentences later reads the same field under a different phrase, on step 6's terms:
+        // two rules rather than one loose one.
+        phrase: "This cell's declared floor is {n} V",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How far each cell's voltage flag precedes its coulomb counter — this step's 42.5 s
+        // and step 1's 8.5 s, each the difference between two flag times that step's own
+        // claims already pin. The sentence is the comparison, so both sides are read the same
+        // way and a change to either trajectory reddens it rather than quietly rescaling it.
+        //
+        // Step 1's figure used to be spelled "eight and a half", which is the same
+        // invisible-to-every-scanner shape the 7.5 above was in.
+        phrase: "a full {n} seconds ahead of the counter, where step {n}'s flat cell managed {n} s",
+        ties: &[
+            Tie::Difference(&[
+                Tie::Quoted {
+                    step: "same-discharge-other-chemistry",
+                    arm: None,
+                    quantity: "flag_first_s:SOC_CLAMPED_LOW",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "same-discharge-other-chemistry",
+                    arm: None,
+                    quantity: "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW",
+                    states: QuotedAs::Same,
+                },
+            ]),
+            Tie::Ordinal("bare-curve"),
+            Tie::Difference(&[
+                Tie::Quoted {
+                    step: "bare-curve",
+                    arm: None,
+                    quantity: "flag_first_s:SOC_CLAMPED_LOW",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "bare-curve",
+                    arm: None,
+                    quantity: "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW",
+                    states: QuotedAs::Same,
+                },
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the mark is {n},",
+        ties: &[Tie::Setting(Control::Until)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How long the run goes on after the cell is empty — the mark less the instant it
+        // emptied, both printed in this same sentence. The operands are the sentence's own,
+        // which is what `Tie::Derived` is for, and each is accounted by something that is not
+        // a derivation: the mark by the rule above, the crossing by this step's own claim.
+        phrase: "it spends the last {n} seconds",
+        ties: &[Tie::Derived {
+            op: LedgerOp::Difference,
+            operands: &[Operand::Sibling("4200"), Operand::Sibling("4154")],
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "under the {n} V a datasheet would call the cutoff",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How long step 1's cell goes on past its own knee — that step's mark less the
+        // instant it emptied. Read as step 1's mark through `Elsewhere` and not as
+        // `Setting(Until)`, though the two steps mark at the same 4200 s: the sentence is
+        // about the run next door, and a rule that read this step's own field would be the
+        // right number off the wrong file.
+        //
+        // **The figure moved to make this possible, and it is the honest one.** The sentence
+        // said "53 seconds", where the subtraction is 53.5 — step 1's own claim note admits
+        // its `53` is a truncation with zero margin that "could equally say 54". A computed
+        // tie is compared at the prose's own precision, so 53.5 printed as `53` fails: the
+        // arithmetic rounds to 54. Spelling the half is what a sentence quoting a subtraction
+        // owes it.
+        phrase: "does the same thing for the {n} seconds after its own knee",
+        ties: &[Tie::Difference(&[
+            Tie::Elsewhere {
+                step: "bare-curve",
+                tie: &Tie::Setting(Control::Until),
+            },
+            Tie::Quoted {
+                step: "bare-curve",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Two back-references, and the reason the step-1 rule above had to grow its second
+        // half: `step {n} of this path, and step {n}` matches this sentence too, where the
+        // second slot is step 1 and not `what-it-cost`. Nothing said so until this step was
+        // scanned, because a rule does not know which step it was written for.
+        phrase: "That fall is step {n} of this path, and step {n}'s cell",
+        ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("bare-curve")],
         pow10: 0,
     },
     // Step 3 — the pack's topology and its manufacturing spread.
@@ -9764,14 +10081,6 @@ fn tie_values(
             }
         }
         Tie::OnArm { arm, tie } => {
-            let Tie::Setting(control) = tie else {
-                panic!(
-                    "a rule wraps `{}` in `OnArm`. An arm overrides controls, not files: \
-                     asking a scenario field under an arm's name would resolve to the same \
-                     number and claim it came from somewhere else.",
-                    tie_arm_name(tie),
-                );
-            };
             let found = ctx
                 .arms
                 .iter()
@@ -9785,16 +10094,79 @@ fn tie_values(
                         lesson.id,
                     )
                 });
-            let value = arm_control_value(*control, found).unwrap_or_else(|| {
+            match tie {
+                Tie::Setting(control) => {
+                    let value = arm_control_value(*control, found).unwrap_or_else(|| {
+                        panic!(
+                            "a rule reads the arm `{arm}`'s {control:?} on step `{}`, and that \
+                             arm does not override it. Falling back to the step's own setting \
+                             would account the sentence's number against a control the reader \
+                             was never asked to touch — which is exactly what this arm \
+                             exists to tell apart.",
+                            lesson.id,
+                        )
+                    });
+                    vec![value]
+                }
+                // The file half, and the whole of what an arm may answer for besides a
+                // control. Only an arm that PICKS a file may be asked one: on any other the
+                // original refusal still holds word for word, because the field would
+                // resolve to the step's own number while wearing the arm's name.
+                Tie::Chemistry(_) | Tie::Scenario(_) | Tie::Name { .. } => {
+                    let Some(file) = found.scenario.as_deref() else {
+                        panic!(
+                            "a rule reads {} under the arm `{arm}` on step `{}`, and that arm \
+                             picks no file. An arm overrides controls, not files: asking a \
+                             scenario field under an arm that changed no scenario would \
+                             resolve to the step's own number and claim it came from \
+                             somewhere else.",
+                            tie_describe(tie),
+                            lesson.id,
+                        )
+                    };
+                    let (picked_scenario, picked_chemistry) =
+                        (scenario_toml(file), chemistry_toml(file));
+                    tie_values(
+                        tie,
+                        lesson,
+                        lessons,
+                        &picked_scenario,
+                        &picked_chemistry,
+                        ctx,
+                    )
+                }
+                other => panic!(
+                    "a rule wraps `{}` in `OnArm`. An arm answers for exactly two things — a \
+                     control it overrides, and the file it picks — and anything else under \
+                     its name resolves against the STEP's lesson while reading as the arm's. \
+                     That is the misattribution the original refusal was written against, and \
+                     it survives the file half of this arm unchanged.",
+                    tie_arm_name(other),
+                ),
+            }
+        }
+        Tie::Picker { arm, prefix } => {
+            let found = ctx
+                .arms
+                .iter()
+                .find(|a| a.step == lesson.id && a.name == *arm)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "a rule on step `{}` reads the file the arm `{arm}` picks, and that \
+                         step declares no arm of that name.",
+                        lesson.id,
+                    )
+                });
+            let Some(file) = found.scenario.clone() else {
                 panic!(
-                    "a rule reads the arm `{arm}`'s {control:?} on step `{}`, and that arm \
-                     does not override it. Falling back to the step's own setting would \
-                     account the sentence's number against a control the reader was never \
-                     asked to touch — which is exactly what this arm exists to tell apart.",
+                    "a rule reads the digits after `{prefix}` in the file the arm `{arm}` \
+                     picks on step `{}`, and that arm picks no file. A walk names a lesson \
+                     and a pick names a file; only the second has a name for a sentence to \
+                     spell.",
                     lesson.id,
                 )
-            });
-            vec![value]
+            };
+            digits_after(&Some(file), prefix)
         }
         Tie::Magnitude(tie) => {
             let inner = tie_values(tie, lesson, lessons, scenario, chemistry, ctx);
@@ -10054,6 +10426,9 @@ fn tie_describe(tie: &Tie) -> String {
         Tie::OnArm { arm, tie } => {
             format!("{}, as the arm `{arm}` sets it", tie_describe(tie))
         }
+        Tie::Picker { arm, prefix } => {
+            format!("the digits after `{prefix}` in the name of the file the arm `{arm}` picks")
+        }
         Tie::Quoted {
             step,
             arm,
@@ -10094,7 +10469,8 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
         Tie::Page(_) => "page constant",
-        Tie::OnArm { .. } => "an arm's control",
+        Tie::OnArm { .. } => "an arm's control or picked file",
+        Tie::Picker { .. } => "picked file name",
         Tie::Derived { .. } => "derived",
         Tie::Elsewhere { .. } => "another lesson",
         Tie::Quoted { .. } => "quoted claim",
@@ -11036,15 +11412,23 @@ fn a_pack_from_cannot_continue_this_steps_mark() {
     assert_walkable(&arm, here, there);
 }
 
-/// [`Tie::OnArm`] wraps a control and nothing else.
+/// [`Tie::OnArm`] reads a file only off an arm that **picked** one.
 ///
-/// Neither of this arm's two fences is reachable from `path-claims.toml`, because a rule is
-/// code: the one `OnArm` in the vocabulary satisfies both. So they are asked directly, on the
-/// terms `an_elsewhere_may_not_wrap_another_one` established — a fence no run enters is a
-/// paragraph, and this file has been caught by that twice.
+/// This is the original refusal, kept word for word and narrowed to where it is still true.
+/// `OnArm` used to wrap a control and nothing else, on the argument that "a file read does
+/// not become a different fact for being asked under an arm's name" — which is right for
+/// every arm that changes only controls, and false for one that loads another scenario from
+/// the picker. So the refusal now fires on the arms it was always about: step 8's `hot`
+/// dials the ambient slider and leaves the file alone, and a rule asking it for a scenario
+/// field would be reading step 8's own number while naming an arm.
+///
+/// None of this arm's three fences is reachable from `path-claims.toml`, because a rule is
+/// code. So they are asked directly, on the terms `an_elsewhere_may_not_wrap_another_one`
+/// established — a fence no run enters is a paragraph, and this file has been caught by that
+/// twice.
 #[test]
 #[should_panic(expected = "An arm overrides controls, not files")]
-fn an_on_arm_may_only_wrap_a_setting() {
+fn an_on_arm_may_not_read_a_file_off_an_arm_that_picks_none() {
     let lessons = lessons();
     let from = lessons
         .iter()
@@ -11067,6 +11451,83 @@ fn an_on_arm_may_only_wrap_a_setting() {
     let tie = Tie::OnArm {
         arm: "hot",
         tie: &Tie::Scenario("pack.initial_soc"),
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
+/// [`Tie::OnArm`] wraps a control or a file read, and nothing else.
+///
+/// The fence that survives the file half of this arm. An `Ordinal` — or an `Elsewhere`, or a
+/// `Derived`, or a second `OnArm` — resolves against the **step's** lesson while reading as
+/// the arm's, which is the misattribution the original refusal was written against. Asked on
+/// step 2's picker arm, so the failure is the one this test names rather than the
+/// picks-no-file one above.
+#[test]
+#[should_panic(expected = "answers for exactly two things")]
+fn an_on_arm_may_not_wrap_anything_else() {
+    let lessons = lessons();
+    let from = picker_step(&lessons);
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let arms = arms();
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &arms,
+        derived: &[],
+    };
+    let tie = Tie::OnArm {
+        arm: "the third cell",
+        tie: &Tie::Ordinal("bare-curve"),
+    };
+    let (scenario, chemistry) = (
+        scenario_toml(&from.scenario),
+        chemistry_toml(&from.scenario),
+    );
+    tie_values(&tie, from, &lessons, &scenario, &chemistry, &ctx);
+}
+
+/// [`Tie::Picker`] needs an arm that picks a file.
+///
+/// A walk names a lesson and a pick names a file, and only the second has a name with digits
+/// in it for a sentence to spell. Pointed at step 8's `hot`, which changes the ambient
+/// slider and no scenario at all, this resolves to nothing — and resolving to nothing would
+/// be reported as a restructured file rather than as a rule pointed at the wrong kind of
+/// arm, so it panics by name instead.
+#[test]
+#[should_panic(expected = "only the second has a name")]
+fn a_picker_tie_needs_an_arm_that_picks_a_file() {
+    let lessons = lessons();
+    let from = lessons
+        .iter()
+        .find(|l| l.id == "wearing-out-while-idle")
+        .expect("step 8 is still in the path");
+    let text = ascii_minus(&from.text);
+    let numbers = written_numbers(&text);
+    let cover = vec![None; numbers.len()];
+    let arms = arms();
+    let ctx = SentenceCtx {
+        step: from.id.as_str(),
+        text: &text,
+        numbers: &numbers,
+        cover: &cover,
+        at: 0,
+        all: &[],
+        arms: &arms,
+        derived: &[],
+    };
+    let tie = Tie::Picker {
+        arm: "hot",
+        prefix: "calendar_fade_hot",
     };
     let (scenario, chemistry) = (
         scenario_toml(&from.scenario),
@@ -12374,8 +12835,8 @@ const TALLIES: &[Tally] = &[
         // first wording and it breaks at one and reads as nonsense at zero — which is
         // exactly the moment the work it describes is finished, so a tally that cannot
         // survive its own count reaching zero forces a rewrite at the worst time.
-        phrase: "carrying neither a claim nor a ledger entry: {w}. The other {w} have \
-                 their claimed sentences checked",
+        phrase: "carrying neither a claim nor a ledger entry: {w}. With claimed sentences \
+                 checked and the rest of the prose free: {w}.",
         of: &[n_unledgered_unclaimed, n_unledgered_claimed],
     },
     Tally {
@@ -12391,7 +12852,7 @@ const TALLIES: &[Tally] = &[
     // that a sentence beside a derived sentence is not itself derived.
     Tally {
         prose: Prose::ThisTest,
-        phrase: "in the {w} steps the ledger has not reached",
+        phrase: "in the steps the ledger has not reached — {w} of them",
         of: &[n_unledgered],
     },
     Tally {
@@ -12401,8 +12862,8 @@ const TALLIES: &[Tally] = &[
     },
     Tally {
         prose: Prose::ThisTest,
-        phrase: "names the remaining {w}, one line each",
-        of: &[n_unledgered],
+        phrase: "names what is left — {w} of the {w} — one line each",
+        of: &[n_unledgered, n_lessons],
     },
     // Check 6's arm count, stated in this test's docs and derived in the claims file's
     // header ("{W} accountings, and no {o}:"). Correct today; undeclared until now, which is
@@ -12770,7 +13231,7 @@ fn every_count_beside_a_ledger_entry_is_derived() {
 ///
 /// Every one of them is unreachable from `path-claims.toml` the moment it works — the one
 /// arm in the file that sets this field satisfies all three — which is the shape
-/// [`an_on_arm_may_only_wrap_a_setting`] established a fence has to be asked about directly
+/// [`an_on_arm_may_not_read_a_file_off_an_arm_that_picks_none`] established a fence has to be asked about directly
 /// rather than left as a paragraph. See [`an_arm_may_not_type_into_both_current_boxes`] and
 /// [`a_cc_cv_current_needs_a_cc_cv_step`].
 ///
@@ -12920,7 +13381,7 @@ fn a_pulse_current_needs_a_pulse_step() {
 
 /// [`Tie::Magnitude`] refuses a value that is not already negative.
 ///
-/// Unreachable from `path-claims.toml` for [`an_on_arm_may_only_wrap_a_setting`]'s reason —
+/// Unreachable from `path-claims.toml` for [`an_on_arm_may_not_read_a_file_off_an_arm_that_picks_none`]'s reason —
 /// a rule is code, and the one `Magnitude` in the vocabulary wraps the ambient slider at
 /// -5 °C, which satisfies the fence. So the question is asked directly rather than left to
 /// a paragraph: on a positive value this wrapper is the tie it wraps with extra words, and

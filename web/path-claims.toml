@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Twenty-two steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Twenty-three steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -145,8 +145,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  213 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  34 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  216 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  36 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -198,9 +198,9 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 34 claims.
+# bounds the engine against `value` and is deliberately tighter on 36 claims.
 #
-#   same        230 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        235 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    7. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -246,8 +246,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 236 of the 273 numbers the
-#            170 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 241 of the 278 numbers the
+#            174 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -278,7 +278,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 170 claimed sentences need none. A future literal printing a chemistry constant will
+# the 174 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -293,7 +293,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — twenty-two steps of the twenty-four so far.
+# of this file — twenty-three steps of the twenty-four so far.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -531,6 +531,44 @@ again, which is what this arm's `to_s` does; and the crossing is 5708.5 s, not 5
 half-second grid does not need an approximation.
 """
 
+# THE FIRST CELL, AGAIN. The sentence this arm carries is a comparison — "where the LFP
+# cell fell 168 across the same window" — and until it existed the number on the far side of
+# that comparison was measured on a run this file could not produce. Step 1's own prose never
+# states its 90-to-20 fall, so there was no claim to quote and no trajectory to read: the
+# whole of the step's argument, that a sloped chemistry falls three times as far as a flat
+# one, rested on one figure tied to nothing.
+#
+# `pack_from` is what makes it step 1's pack — the LFP file, its 2 A box, its ambient, its
+# absent BMS — and the only thing this step contributes is the sentence that sends the reader
+# back to it. The instruction is that sentence, and it was written for this arm. That is worth
+# saying plainly: `docs/plans/path-third-cell.md` named the alternative as deleting the
+# comparison, and warned that "a sentence invented to satisfy an arm is the same defect as a
+# number invented to fill a table". What kept it honest is that the gesture is one the path
+# already asks for elsewhere and one a reader wanting the number would make anyway — the
+# sentence tells them how to see a figure the step gives them, rather than telling them to
+# perform a measurement for the harness's benefit.
+
+[[arm]]
+step = "same-discharge-other-chemistry"
+name = "the first cell again"
+pack_from = "bare-curve"
+instruction = "press Back and run the first lesson again to its own mark"
+start = "restart"
+actions = [{ do = "run", to_s = 4200.0 }]
+note = """
+No overrides at all, which makes this the plainest arm in the file: it is step 1, run again,
+because step 2 quotes it. Everything the pack is comes from `bare-curve` — and `assert_walkable`'s
+fourth fence is what makes that unambiguous here, since the two lessons agree about every
+control neither this arm nor the sentence touches (same `dt`, same 25 °C, same absent BMS,
+same `Current` program). The demand box is the one thing that differs, and it is the pack
+lesson's to set.
+
+`to_s` is step 1's own mark and not this arm's last claim (3317 s). A reader who presses Back
+lands on step 1 with its mark armed and Run stops there; running to the claim instead would
+make "reachable" mean only "I ran far enough", which is the refusal
+`every_claim_is_reachable_in_its_own_step` states in as many words.
+"""
+
 [[claim]]
 step = "same-discharge-other-chemistry"
 literal = "at 4111.5 s"
@@ -751,6 +789,134 @@ An earlier wording of this sentence said the reader had to "keep pressing Run", 
 page's behaviour on a step that still has its mark and not on this one. Nothing in this file
 would have caught that: no arm models the pause, and `to_s` is arithmetic over the actions.
 See docs/plans/path-third-cell.md.
+"""
+
+# THE FOUR NUMBERS THE LEDGER NEEDED. Everything above was written before this step was
+# scanned whole; these are what the scan asked for. Two of them pin the window the step's
+# headline fall is measured across, one pins the fall itself, one pins the same fall on step
+# 1's cell, and the last pins what the run owes the cell by the time it stops.
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "Between 90 % and 20 % charge"
+quantity = "soc_at"
+value = 0.8999722222222127
+tol = 1.2037e-4
+tol_from = "tighter"
+spells = "90"
+spells_pow10 = 2
+states = "same"
+read_at_s = 415.5
+display = "soc (true)"
+shows = "90.0 %"
+note = """
+The upper end of the window this step's whole comparison is measured across, on step 1's
+precedent exactly: that step names 20 % and 80 % and had both ends claimed when it was
+scanned, for the same reason — a sentence naming two charge levels reads as a figure of
+speech until something says what decided them.
+
+**Tolerance, derived.** `spells` is a whole percent, so the spelled rule licenses half a
+point (5e-3 as a fraction). This takes one coulomb-counting step instead: 2.6 A for 0.5 s out
+of 3.0 A·h is 1.2037e-4 of the cell, which is the finest a charge level can be named on this
+grid. Forty times tighter than the rule, and the engine sits at 23 % of it.
+
+What it does NOT check is the same thing step 1's pair does not check: nothing here reads the
+open-circuit table, so the sentence's real subject — that this curve slopes where LFP's does
+not — is carried by the fall below and not by these two.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "Between 90 % and 20 % charge"
+quantity = "soc_at"
+value = 0.19989814814807227
+tol = 1.2037e-4
+tol_from = "tighter"
+spells = "20"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3323.5
+display = "soc (true)"
+shows = "20.0 %"
+note = """
+The lower end of the same window, sharing its literal with the claim above: one sentence, two
+ends, two claims. Same derivation of the tolerance, and here the engine sits at 85 % of it
+rather than 23 % — 0.20 falls further from a grid row on this cell than 0.90 does.
+
+Both name the `soc (true)` row as well, which is a second thing entirely: a reader looking for
+the moment this window opens has a row that says `90.0 %`.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "this cell falls 481 mV"
+quantity = "v_fall_mv_soc:0.90:0.20"
+value = 481.1004001424499
+tol = 0.5
+tol_from = "spelled"
+spells = "481"
+states = "same"
+read_at_s = 3323.5
+note = """
+THE STEP'S HEADLINE, and it had never been claimed. The two ends of it were — `4.030 V to
+3.549` — but the drop itself was not, and the sentence's argument is the drop: 481 against
+step 1's 168 is what "a voltage reading tells you the charge level" means here.
+
+Claiming it as well as its two ends is not double-counting: the ends are what a reader sees on
+the panel, and the fall is what the sentence says. The claims file's own rule is that a
+sentence's numbers are claimed where the sentence prints them, and this one prints all three.
+
+Read at the 20 % crossing, the later of the two rows the quantity folds — the convention the
+third cell's two falls already follow.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "the LFP cell fell 168 across the same window"
+quantity = "v_fall_mv_soc:0.90:0.20"
+arm = "the first cell again"
+value = 168.15432408232667
+tol = 0.5
+tol_from = "spelled"
+spells = "168"
+states = "same"
+read_at_s = 3317.0
+note = """
+The far side of the comparison, measured on step 1's own pack. This is the number
+`docs/plans/path-third-cell.md` recorded as the expensive one: it is not quotable, because
+step 1's prose never states its own 90-to-20 fall and a claim on THIS step is measured on this
+step's trajectory. An arm that walks next door is what closes it, and the sentence that sends
+the reader there had to be written for it.
+
+The crossings are step 1's, not this step's: 415 s and 3317 s, against 415.5 and 3323.5 here.
+The two cells are within a few seconds of each other all the way down, which is the point of
+matching the rate — see the lesson block's own comment.
+"""
+
+[[claim]]
+step = "same-discharge-other-chemistry"
+literal = "by the mark it reads 1.111 points of charge"
+quantity = "deficit_pts_at"
+value = 1.1111111111192302
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.111"
+states = "same"
+read_at_s = 4200.0
+note = """
+What the run has taken out of a cell that had none, by the time it stops. No `display` half
+and there cannot be one: `past empty` is formatted from per-cell `soc_deficit`, which is not
+in `Telemetry`, and the page samples it on a 250 ms WALL-clock throttle — so there is no such
+thing as what that row shows at a given simulation time. The claims file's header names it as
+one of the two uncovered rows.
+
+**The sentence moved for this claim, and the defect is one this repo has shipped three
+times.** It read: "come off zero at the same instant the flag appears: 1.111 points of charge
+taken out of a cell that had none". The colon puts the number at the flag, and at the flag the
+deficit is 0.0037 points — three ten-thousandths of what the sentence prints. 1.111 is the
+figure at the mark, 46 s later. The sentence now says which instant it belongs to, and this
+claim is read there. Right but attached to the wrong moment is the same family as right but
+unreachable; see docs/plans/path-ledger-third-cell-step.md.
 """
 
 [[claim]]
@@ -3857,8 +4023,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-two
-# steps, 539 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-three
+# steps, 582 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -3924,12 +4090,13 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are twenty-three of them. An arm says what decides a number: a
+# THE ARMS THEMSELVES, and there are twenty-four of them. An arm says what decides a number: a
 # NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, the SPAN of a
 # chemistry table end to end, a NODE of one, digits
-# inside a NAME, the POSITION of another lesson in the path, the panel's CLOCK at the step's
+# inside a NAME, digits inside the NAME OF A FILE an arm picks, the POSITION of another
+# lesson in the path, the panel's CLOCK at the step's
 # mark, a CONSTANT OF THE PAGE parsed out of `web/app.js`, a figure the sentence works out
 # from its OWN SIBLINGS, the same question asked of
 # ANOTHER LESSON, a measurement some step's CLAIM decides, and a CLAIM whose literal
@@ -7563,14 +7730,27 @@ steps = [
                      # 6.02 rather than 6.01, and the two teeth below empty, which were
                      # hedged at "about -0.45" and "-0.66" and are -0.442 and -0.657 at the
                      # instants a reader actually sees them
+  "same-discharge-other-chemistry", # 43 numbers: 29 to sixteen rules, 14 inside claimed
+                     # sentences. The last step in the path that prints a number about
+                     # ANOTHER run in almost every sentence — two nameplates, two demand
+                     # boxes, two rates and two empty-times belong to step 1 rather than to
+                     # this one, and the third cell's file contributes three more. It cost
+                     # FIVE claims, sixteen rules, one new arm — the third `pack_from` in
+                     # the file, and the plainest, since it overrides nothing at all — one
+                     # new tie (`Tie::Picker`, for the digits inside a picked file's name)
+                     # and the file half of `Tie::OnArm`, which had refused a file field
+                     # outright since it was built. FOUR numbers moved, and two of them
+                     # were words: `2.303` was a rounded restatement of a constant,
+                     # `1.111` was printed against the instant the flag arrives where the
+                     # deficit is 0.0037, and "eight seconds" and "eight and a half" were
+                     # hedges no scanner in this file can see, now 7.5 and 8.5. A fifth
+                     # moved to become checkable at all: `53` is a subtraction that comes
+                     # to 53.5
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: two of them, so
+# Not scanned, and why. Of the steps below, those that carry claims: one of them, so
 # their claimed sentences are checked and the rest of their prose is not. Unchecked
 # entirely: none.
 unledgered = [
-  "same-discharge-other-chemistry", # claims: 9, on two picker arms — the count of
-                                   # CLAIMS is derived and checked; the arms are not,
-                                   # so they are named rather than counted here
   "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
                                     # rest of its numbers are measurements, not constants
 ]
