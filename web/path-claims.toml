@@ -3908,7 +3908,7 @@ step = "the-gradient-itself"
 literal = "the second decimal ticks over from 5.80 to 5.81 once, at **518 s**"
 quantity = "surface_gap_neg_pts:516"
 value = 5.804999
-tol = 1.0e-5
+tol = 1.0e-6
 tol_from = "tighter"
 spells = "5.80"
 states = "same"
@@ -3918,11 +3918,20 @@ THE ROW BEFORE THE TICK, and half of an assertion no single claim can make. `516
 the prose and does not need to be: what the sentence prints is the instant the display
 CHANGES, and a change is two readings.
 
-`tighter`, and this is the one place in the file where the reason is the rounding boundary
-itself. These two rows are 6e-6 points apart — 5.804999 and 5.805005 — and sit either side
-of `to_fixed`'s half-up boundary at 5.805. Under the spelled rule (5e-3) an engine drift of
-a thousandth would leave both claims green while moving the tick-over by minutes, which is
-the only thing this pair asserts. At 1e-5 the pair says what the sentence says.
+`tighter`, and this is the one place in the file where the tolerance is DERIVED FROM A
+ROUNDING BOUNDARY rather than from a printed place. These two rows are 5.96e-6 points apart
+— 5.804998974 and 5.805004937 — and sit either side of `to_fixed`'s half-up boundary at
+5.805. Under the spelled rule (5e-3) an engine drift of a thousandth would leave both claims
+green while moving the tick-over by minutes, which is the only thing this pair asserts.
+
+**1e-6, and the first draft's 1e-5 was decorative.** This row is 1.03e-6 BELOW the boundary,
+so any tolerance above that lets the engine cross it — printing `5.81` where this claim
+asserts the row prints `5.80` — with the claim still green, because check 5 compares `value`
+against `spells` and never the engine against the string. The bound has to be under the
+distance to the boundary, and 1e-6 is: the engine is 2.6e-8 from `value` here and 6.3e-8 on
+the sibling, so both clear it by more than an order of magnitude while neither can reach
+5.805. That is `docs/plans/path-ledger-two-legs-step.md`'s lesson exactly — a new claim is
+decorative until its tolerance is halved.
 
 Note the value check is NOT tightened with it, and cannot be: it compares `value` against
 `spells` at the sentence's own precision, so |5.804999 - 5.80| = 4.999e-3 against a rule of
@@ -3935,7 +3944,7 @@ step = "the-gradient-itself"
 literal = "the second decimal ticks over from 5.80 to 5.81 once, at **518 s**"
 quantity = "surface_gap_neg_pts:518"
 value = 5.805005
-tol = 1.0e-5
+tol = 1.0e-6
 tol_from = "tighter"
 spells = "5.81"
 states = "same"
@@ -3948,7 +3957,8 @@ then", not "it happens then"). What makes it carry the sentence here is its SIBL
 claim above says the row still reads 5.80 two seconds earlier, so the pair addresses the
 instant from both sides and there is no other instant at which both are true.
 
-`tighter` for the reason its sibling gives.
+`tighter` at 1e-6 for the reason its sibling gives, from the other side: this row is
+4.94e-6 ABOVE the boundary, so the bound keeps it there.
 """
 
 [[claim]]
@@ -4044,7 +4054,7 @@ tol = 0.5
 tol_from = "spelled"
 spells = "1396"
 states = "same"
-read_at_s = 0.0
+read_at_s = 1396.0
 note = """
 THE INSTANT THE ROW GIVES UP ON THE NEGATIVE ELECTRODE, and the claim the rest of this
 sentence hangs from. `gap_neg_zero_s` is a reduction over the whole run — the first row
@@ -4056,9 +4066,18 @@ The threshold is the DISPLAY'S, not a number in this file: `fmt_gap_pts(neg, 2)`
 mirrors the page's `gapPts` and carries its negative-zero guard. A
 `gap_neg_below_pts:<x>` would have let the sentence be true of whatever `x` made it true.
 
-`read_at_s = 0` because the quantity folds over the run and reads no row. That is the same
-shape `deficit_zero_s` and `t_at_v_below` take, and it is why this claim carries no
-`display`: there is no row to render a crossing.
+`read_at_s` IS THE CROSSING, and an earlier draft of this claim had it at 0 with a note
+saying so on the grounds that "the quantity folds over the run and reads no row". Both
+halves of that were wrong. `deficit_zero_s` and `t_at_v_below` both declare the instant
+they report — 4654.0 and 1060.0 — so the convention is the opposite of what the note
+claimed; and, worse, a `read_at_s` of 0 makes this claim account for the token `0.00` in
+its own sentence through `Accounted::ReadAt`. Measured: with it at 0, deleting the
+`surface_gap_neg_pts:1396` claim beside it leaves the suite GREEN, because the sentence's
+headline number falls through to "we measured at t = 0". That is exactly the defect
+`Accounted::ReadAt`'s own docs record about step 21's flag, one instant over. At 1396 the
+arm cannot reach it and the deletion reddens.
+
+No `display` all the same: a crossing is a reduction over the run and no row renders one.
 
 THE INSTANT WAS ADDED TO THE PROSE FOR THIS CLAIM. The sentence used to read "By the time
 the negative gap first reads 0.00 the terminal is at 3.319 V", which prints no instant at

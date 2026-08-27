@@ -288,7 +288,13 @@ resupplies it, and the balancing gradient is a function of the current alone. Th
 
 Both facts come from two Chen2020 numbers that are not placeholders. A particle's diffusion
 time is `r²/D`: **1040 s** for the negative (5.86 µm, 3.3e-14) and **6812 s** for the
-positive (5.22 µm, 4.0e-15), a factor of 6.5. The negative has time to settle inside an
+positive (5.22 µm, 4.0e-15), a factor of 6.5.
+
+> **The negative one is 1040.594 and is written here truncated rather than rounded.** This
+> paragraph is where the figure was first computed, and the lesson copied it — where it sat
+> unchecked until the step was ledgered and a computed tie divided it again. The lesson says
+> 1041 now; see `docs/plans/path-ledger-the-gradient.md`. Left as written above, with this
+> note beside it, because a plan doc is a dated record of what was believed. The negative has time to settle inside an
 eighteen-minute discharge; the positive does not. So `off_s` is 1800 s, and the lesson's
 subject is that contrast rather than a joint collapse.
 
