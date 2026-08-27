@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 24 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 26 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -114,7 +114,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty-four steps and 663 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty-six steps and 703 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -220,10 +220,10 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed twenty-four whole steps — but only twenty-four. Steps here carrying
+//!   has now closed twenty-six whole steps — but only twenty-six. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
 //!   of the prose free: none. `[ledger].unledgered`
-//!   names what is left — none of the twenty-four — one line each, so this list cannot go
+//!   names what is left — none of the twenty-six — one line each, so this list cannot go
 //!   quietly out of date; it is empty, and it stays in the file so that the next lesson
 //!   added to the path has somewhere to say it is not checked.
 //!   **What that closes is one axis and not the gap.** Every numeral in every step of the
@@ -2756,7 +2756,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 239 of 283 claims.
+    /// number's last printed place. The default shape: 255 of 300 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -2767,12 +2767,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 38 of 283.
+    /// the number was always right and only the declaration was wrong. 38 of 300.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 6 of 283, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 300, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -2812,7 +2812,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 260 of 283, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 275 of 300, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -11729,6 +11729,203 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                 quantity: "flag_first_s:SOC_CLAMPED_LOW",
             },
         ])],
+        pow10: 0,
+    },
+    // --- step 25: the fifth chemistry, and the rate that costs it nothing --------------
+    //
+    // Eleven of this step's nineteen numerals are constants and controls; the other eight
+    // are claims on three trajectories. What is new here is that two of the constants are
+    // read off a file the READER PICKS rather than off the step's own — `Tie::OnArm`
+    // carrying a `Tie::Chemistry`, which step 2's third cell built and this is the second
+    // user of.
+    LedgerRule {
+        // The nameplate, in the sentence that introduces the cell.
+        phrase: "A {n} Ah prismatic cell",
+        ties: &[Tie::Chemistry("cell.capacity_ah")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The rating this whole step is about, and the one field of this chemistry file
+        // that is datasheet-class rather than a placeholder.
+        phrase: "rates it at {n} C in both directions",
+        ties: &[Tie::Chemistry("cell.max_discharge_c")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The ambient slider, dialled to the temperature the scenario holds the cell at.
+        // The step's own `ambient_c`, not the scenario's `initial_temp_k`: on an isothermal
+        // file the slider decides nothing about the cell, and what the sentence is telling
+        // a reader is what the control in front of them says.
+        phrase: "isothermal, {n} \u{b0}C, with nothing protecting it",
+        ties: &[Tie::Setting(Control::Ambient)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The demand box. Step 1 has a rule for the same box in a sentence with `still` in
+        // it; two rules rather than one loose one, on the same terms as step 6's pair.
+        phrase: "The demand box says {n} A",
+        ties: &[Tie::Setting(Control::DemandValue)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The floor the mark is measured against — the chemistry's, not the page's.
+        phrase: "below the {n} V this chemistry calls empty",
+        ties: &[Tie::Chemistry("cell.v_min")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // What the `sim time` row prints at the mark, which is not the mark: 355.5 s reads
+        // `6m`. Step 22's `19.3h` is the other user of this tie and for the same reason —
+        // the number is in no file at all, it is a formatter's output.
+        phrase: "and the clock reads `{n}m`",
+        ties: &[Tie::Clock],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The control arm's box, which is also this arm's instruction, so the number is
+        // pinned twice: `every_arm_is_instructed_by_its_own_step` requires it inside the
+        // sentence, and this rule requires the sentence's copy to be the arm's.
+        phrase: "Put the demand box to {n} A and press Restart",
+        ties: &[Tie::OnArm {
+            arm: "one-c",
+            tie: &Tie::Setting(Control::DemandValue),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The headline ratio, and it prints neither operand: 200 A against the arm's 20.
+        // Both are settings rather than measurements, which is what keeps this a ratio of
+        // two accounted numbers rather than a derivation over claims.
+        phrase: "the whole cost of {n} \u{d7} the current",
+        ties: &[Tie::Ratio(&[
+            Tie::Setting(Control::DemandValue),
+            Tie::OnArm {
+                arm: "one-c",
+                tie: &Tie::Setting(Control::DemandValue),
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Three numbers about a cell this step never loads: the current the reader types,
+        // the rate that works out to, and the nameplate it is a rate OF. All three are read
+        // against `cc_discharge_nmc.toml`, which is the file the arm picks.
+        phrase: "put the box to {n} A, which is {n} C on that {n} Ah cell",
+        ties: &[
+            Tie::OnArm {
+                arm: "nmc-at-ten-c",
+                tie: &Tie::Setting(Control::DemandValue),
+            },
+            Tie::Ratio(&[
+                Tie::OnArm {
+                    arm: "nmc-at-ten-c",
+                    tie: &Tie::Setting(Control::DemandValue),
+                },
+                Tie::OnArm {
+                    arm: "nmc-at-ten-c",
+                    tie: &Tie::Chemistry("cell.capacity_ah"),
+                },
+            ]),
+            Tie::OnArm {
+                arm: "nmc-at-ten-c",
+                tie: &Tie::Chemistry("cell.capacity_ah"),
+            },
+        ],
+        pow10: 0,
+    },
+    // --- step 26: the same cold fast charge, and a cell that cannot plate ---------------
+    //
+    // The step is a comparison with step 11, which is where this path already taught
+    // cold-charge plating, so two of its numerals are that step's position. The rest split
+    // the way step 25's do: the controls and the two chemistries' own limits by rule, the
+    // measurements by claim on two arms.
+    LedgerRule {
+        // Where the reader met this flag before. Twice in this step, in the sentence that
+        // opens it and the sentence that closes it, so two rules — the same shape step 1's
+        // pair of ordinals takes.
+        phrase: "Step {n} ended with an instruction",
+        ties: &[Tie::Ordinal("what-protection-costs")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The two controls that make this abuse abuse: the slider, and the rate the box
+        // works out to against this cell's nameplate. The slider reads -25 and the sentence
+        // says "25 below zero", which is what `Tie::Magnitude` is for.
+        phrase: "{n} below zero, charging at {n} C",
+        ties: &[
+            Tie::Magnitude(&Tie::Setting(Control::Ambient)),
+            Tie::Ratio(&[
+                Tie::Magnitude(&Tie::Setting(Control::DemandValue)),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Where the charge starts, which is a field of the scenario file.
+        phrase: "into a cell that starts at {n} % charge",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The mark, stated as a duration because that is what a reader experiences, and the
+        // slider again. `Control::Until` is the step's own `until_s`.
+        phrase: "{n} s of hard charging at {n} below zero",
+        ties: &[
+            Tie::Setting(Control::Until),
+            Tie::Magnitude(&Tie::Setting(Control::Ambient)),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The ceiling the terminal crosses three seconds after the mark. This chemistry's
+        // own `v_max`, and the reason the mark is where it is.
+        phrase: "the terminal crossing the {n} V ceiling this chemistry declares",
+        ties: &[Tie::Chemistry("cell.v_max")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The control arm's three numbers, read against the file it picks — the same shape
+        // as step 25's arm above, with a sign in front of the current because a charge is
+        // negative in this page's convention and the sentence prints it that way.
+        phrase: "put the demand box to -{n} A, which is {n} C on that {n} Ah cell",
+        ties: &[
+            Tie::Magnitude(&Tie::OnArm {
+                arm: "nmc-in-the-cold",
+                tie: &Tie::Setting(Control::DemandValue),
+            }),
+            Tie::Ratio(&[
+                Tie::Magnitude(&Tie::OnArm {
+                    arm: "nmc-in-the-cold",
+                    tie: &Tie::Setting(Control::DemandValue),
+                }),
+                Tie::OnArm {
+                    arm: "nmc-in-the-cold",
+                    tie: &Tie::Chemistry("cell.capacity_ah"),
+                },
+            ]),
+            Tie::OnArm {
+                arm: "nmc-in-the-cold",
+                tie: &Tie::Chemistry("cell.capacity_ah"),
+            },
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The other cell's ceiling, read off the file the arm picks. The two ceilings
+        // beside each other are what makes the flag comparable: both cells raise it, and
+        // one of them takes 603 s to do what the other does in five.
+        phrase: "over that cell's own {n} V ceiling",
+        ties: &[Tie::OnArm {
+            arm: "nmc-in-the-cold",
+            tie: &Tie::Chemistry("cell.v_max"),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The closing back-reference to the same step the opening sentence names.
+        phrase: "the flag on step {n} was warning about",
+        ties: &[Tie::Ordinal("what-protection-costs")],
         pow10: 0,
     },
 ];

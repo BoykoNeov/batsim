@@ -1,0 +1,112 @@
+# The fifth chemistry, and the first whose interesting behaviour is that NOTHING HAPPENS
+# when you ask it for far more current than any other cell here would survive.
+#
+# Same shape as the other CC discharge scenarios — 1S1P, full, 25 degC, isothermal,
+# nothing protecting it — so the five are comparable by construction. What differs is what
+# happens when you change the demand box: on `cc_discharge_pba.toml` a hard discharge
+# leaves more than a third of the charge in the cell, and on this one a discharge ten times
+# harder than that one leaves barely a point.
+#
+# A scenario is an *initial condition*, not a demand program. The rate is the client's
+# business; this file is a full LTO cell at room temperature and nothing else.
+#
+# ## Which parts of the chemistry file this reads, and their provenance
+#
+# `lto_20ah_generic.toml` ships with `phase-8-slice-a-lto.md` and its parts are NOT equally
+# trustworthy. What this scenario is about rests on the two that are anchored:
+#
+#   * [cell] capacity_ah, v_min, v_max and max_discharge_c are DATASHEET-CLASS figures for
+#     a 20 Ah SCiB-class prismatic cell. The 10 C rating is the reason this file exists.
+#   * [r0] is anchored on the datasheet's 0.53 mOhm impedance at 1 kHz, scaled to
+#     0.75 mOhm at 25 degC / 50 % charge, and cross-checked against the datasheet's
+#     10-second power ratings. Sub-milliohm is the whole point of the chemistry, and it is
+#     what everything below comes out of.
+#   * [ocv] is a SHAPE hand-read from a published HPPC staircase on a 2.9 Ah LTO cell and
+#     stretched onto this cell's window. Not a fit. Where the curve sits is therefore
+#     order-of-magnitude in a way the rate behaviour is not.
+#   * [[rc]] magnitudes are PLACEHOLDERS sized alongside R0 against those same 10-second
+#     power ratings. At 10 C they contribute about a third of the sag; at 1 C they are
+#     invisible.
+#
+# ## What it shows, measured at dt = 0.5 (the page's default), 25 degC
+#
+# Discharge to this chemistry's own 1.50 V cutoff and read what is LEFT in the cell:
+#
+#     C/2  =  10 A   cutoff at 7195.5 s (119.9m)   0.062 % still showing   19.9861 Ah
+#     1C   =  20 A   cutoff at 3595.5 s ( 59.9m)   0.125 % still showing   19.9722 Ah
+#     2C   =  40 A   cutoff at 1795.5 s ( 29.9m)   0.250 % still showing   19.9444 Ah
+#     3C   =  60 A   cutoff at 1195.5 s ( 19.9m)   0.375 % still showing   19.9167 Ah
+#     5C   = 100 A   cutoff at  715.5 s ( 11.9m)   0.625 % still showing   19.8611 Ah
+#     10C  = 200 A   cutoff at  355.5 s (  5.9m)   1.250 % still showing   19.7222 Ah
+#
+# Twenty times the current, and the cell gives up 1.19 points of its charge for it. The
+# same sweep on `nmc_18650_generic.toml`, which is rated 3 C, is a different kind of curve:
+#
+#     1C   =   3.0 A  cutoff at 3557.0 s ( 59.3m)   1.194 % still showing    2.9638 Ah
+#     3C   =   9.0 A  cutoff at 1157.0 s ( 19.3m)   3.583 % still showing    2.8913 Ah
+#     10C  =  30.0 A  cutoff at  131.5 s (  2.2m)  63.472 % still showing    1.0917 Ah
+#
+# Asked for the same multiple of itself, the graphite cell declares itself empty with
+# nearly two thirds of its charge still inside. Guided path step 25 drives that contrast
+# from this file, with `cc_discharge_nmc.toml` as the arm the reader loads from the picker.
+#
+# ## Why this is NOT the same mechanism as the lead-acid step
+#
+# It looks like Peukert's law and it is not. On `cc_discharge_pba.toml` the charge that
+# does not come out is charge the acid could not reach in time — a DIFFUSION limit, and
+# resting the cell gives some of it back (step 24). Here nothing is unreachable: the cell
+# is simply pushed to its floor by an ohmic drop, `I*(R0 + sum R_rc)`, and every millivolt
+# of that drop comes back the instant the current does. Rest the NMC cell at its 10 C
+# cutoff and it recovers to a perfectly ordinary two-thirds-full open-circuit voltage,
+# because it IS two-thirds full. Two chemistries, two shortfalls that read the same on the
+# charge row, and only one of them is about the electrolyte.
+#
+# ## What it does not do
+#
+#   * NO CHARGE LEG, in the lesson though not in the physics. This cell charges at 10 C
+#     too, and `cold_charge_lto.toml` is where the path does that; keeping the two apart is
+#     what makes each attributable.
+#   * Isothermal. At 10 C this cell makes 55.89 W at the cutoff on a 510 J/K case, so a
+#     thermally coupled version would warm measurably over the six minutes and the run
+#     would drift as R0 fell with temperature. That is a second lesson, and it would move
+#     every number above.
+#   * NO AGING. Deliberate: at this cell's derived `cyc_fade_per_ah` a full 10 C discharge
+#     costs it about 7.5e-6 of its capacity, which the health row cannot print, and a row
+#     that never moves invites the reader to conclude something stronger than the file
+#     supports.
+#   * One cell. A real 24 V LTO string is 10S of this, which multiplies the terminal
+#     voltage and changes nothing this file is about.
+
+chemistry = "lto_20ah_generic"
+
+[meta]
+name = "CC discharge, single LTO cell"
+description = """
+A 1S1P 20 Ah lithium-titanate cell at 100 % SOC and 25 degC, isothermal, no BMS, no \
+aging, no faults. Rated 10 C in both directions, an order of magnitude above every other \
+chemistry here, and its sub-milliohm resistance is what makes that survivable: 200 A out \
+of this cell empties it in 5.9 minutes and leaves 1.250 % behind, against 0.125 % at 1 C. \
+Ask an NMC cell for the same multiple of itself and it stops with 63 % still inside."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+# Unused here (no scatter, no aging, no plating), but the seed is part of the snapshot
+# and every scenario names it rather than inheriting a default.
+seed = 0
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; demands pass through unclamped
+#   [pack.aging]    -> the pack never wears out
+#   [[faults]]      -> nothing scheduled
+#
+# [pack.bms] is absent for the reason `cc_discharge_pba.toml` states and one of its own.
+# The shared reason: protection derates before it opens, and a derate would lower the very
+# current this file exists to ask for. The reason particular to this cell: the BMS reads
+# `max_discharge_c` off the chemistry, which here is 10 C — so on this one file protection
+# would let 200 A through and refuse nothing, which teaches the wrong thing about what a
+# BMS is for. The contrast belongs on a cell whose rating the demand actually exceeds.

@@ -10,6 +10,8 @@ use sim_data::{parse_chemistry, parse_scenario, ChemistrySource, DataError, Scen
 const LFP_TOML: &str = include_str!("../../../chemistries/lfp_26650_generic.toml");
 const CC_DISCHARGE: &str = include_str!("../../../scenarios/cc_discharge_lfp.toml");
 const SOFT_SHORT: &str = include_str!("../../../scenarios/soft_short_under_a_lying_sensor.toml");
+const COLD_CHARGE_LTO: &str = include_str!("../../../scenarios/cold_charge_lto.toml");
+const COLD_CHARGE_NMC: &str = include_str!("../../../scenarios/cold_charge_nmc.toml");
 
 fn env() -> Env {
     Env {
@@ -501,4 +503,48 @@ fn every_shipped_scenario_parses_builds_and_steps() {
             "{name}: a resting first step produced {telemetry:?}"
         );
     }
+}
+
+/// The cold-charge pair really does differ in one field, which is a sentence on the page.
+///
+/// Guided path step 26 sends the reader to `cold_charge_nmc.toml` with the words *"the same
+/// scenario file with the chemistry id changed and nothing else"*, and the whole lesson is an
+/// attribution resting on that: a plating flag on one cell and not on the other means the
+/// chemistry only if everything else is held. Nothing checked it. `path_claims.rs` checks
+/// that the sentence is in the prose and that the arm loads that file; it has no opinion on
+/// whether the two files agree, so an edit to one of them would leave the whole suite green
+/// with the lesson's argument quietly broken.
+///
+/// `PackConfig` is `PartialEq`, so the comparison is the whole struct rather than a list of
+/// fields somebody has to remember to extend — a new field added to the config is covered
+/// here the day it lands.
+#[test]
+fn the_cold_charge_pair_differs_only_in_its_chemistry() {
+    let lto = parse_scenario(COLD_CHARGE_LTO).expect("the LTO cold-charge scenario parses");
+    let nmc = parse_scenario(COLD_CHARGE_NMC).expect("the NMC cold-charge scenario parses");
+
+    assert_eq!(
+        lto.pack, nmc.pack,
+        "the two cold-charge scenarios must differ in their chemistry and in nothing else: \
+         step 26 tells the reader so, and its comparison is only attributable to the \
+         chemistry if the packs are identical"
+    );
+    assert_eq!(lto.faults, nmc.faults, "neither file schedules a fault");
+    assert_eq!(
+        lto.chemistry_source(),
+        ChemistrySource::Id("lto_20ah_generic")
+    );
+    assert_eq!(
+        nmc.chemistry_source(),
+        ChemistrySource::Id("nmc_18650_generic")
+    );
+
+    // The one field the lesson leans on hardest, named rather than left inside the struct
+    // comparison above: aging is ON in both, because the flag's COST is what step 26 reads
+    // off `soh cap` and a pack that cannot wear out has nowhere to put it.
+    assert!(
+        lto.pack.aging.is_some() && nmc.pack.aging.is_some(),
+        "both cold-charge scenarios must have aging on, or the health rows step 26 compares \
+         are two constants"
+    );
 }

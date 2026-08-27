@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Twenty-four steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Twenty-six steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -129,7 +129,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 73 claims below that set
+#              Be clear about what this buys TODAY: in all 84 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -148,7 +148,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  239 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  255 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  38 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -163,7 +163,7 @@
 #             empty first and last: an index is an integer the engine either reports or
 #             does not, so half a unit in its last printed place — 0.5, on a `0` — is
 #             slack with no meaning at all.
-#   grid      6 claims. The quantity is a time the engine can only report on the step
+#   grid      7 claims. The quantity is a time the engine can only report on the step
 #             grid (`flag_first_s:*`, `deficit_zero_s`) and the prose spells no number
 #             in it — it gives a consequence, or a rendering of the clock. `tol` is
 #             half a timestep, which for a grid time is the tightest meaningful bound:
@@ -203,13 +203,13 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 38 claims.
 #
-#   same        260 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        275 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    7. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
 #               −1.31397. Fenced to negative values; on a positive one it is a silent
 #               alias for `same`.
-#   complement   5. The sentence prints how far below one the value is — `0.53 points
+#   complement   6. The sentence prints how far below one the value is — `0.53 points
 #               are gone` of a `soh cap` of 0.9947106.
 #   since_mark   3. A duration since the step's mark — `**383.0 s later**` of an
 #               absolute 983.0 s on a step marking at 600. Fenced to claims read on an
@@ -228,7 +228,7 @@
 #               and cannot stand alone — an earlier claim on the same sentence, quantity
 #               and number must state `same`, or "is not 100.00" would be satisfied by
 #               pointing at any figure in the sentence.
-#   nothing      4. The sentence prints no number about this quantity — `An `OC` flag`.
+#   nothing      5. The sentence prints no number about this quantity — `An `OC` flag`.
 #               Checked rather than trusted: the literal must contain no digit at all,
 #               which is what stops this being the escape hatch that re-opens the hole.
 #
@@ -249,8 +249,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 267 of the 319 numbers the
-#            184 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 283 of the 335 numbers the
+#            201 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -281,7 +281,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 184 claimed sentences need none. A future literal printing a chemistry constant will
+# the 201 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -296,7 +296,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — twenty-four steps of the twenty-four so far, which is all of them.
+# of this file — twenty-six steps of the twenty-six so far, which is all of them.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -4551,8 +4551,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-four
-# steps, 663 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-six
+# steps, 703 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -8300,6 +8300,445 @@ phrase = "four hours"
 step = "and-it-is-still-in-there"
 phrase = "Half an hour"
 
+# --- steps 25 and 26: LTO, the rate that costs nothing and the flag that never comes ----
+#
+# Two lessons on `lto_20ah_generic`, the chemistry `phase-8-slice-a-lto.md` added with zero
+# engine code changed. Both are CONTRASTS, and in both the contrast is an arm the reader
+# walks rather than a second lesson: step 25 asks a graphite cell for the same multiple of
+# itself and watches it stop with most of its charge still inside; step 26 gives a graphite
+# cell the same cold fast charge and watches it plate.
+#
+# What makes them checkable at all is that both comparison cells are ORDINARY packs the
+# picker offers, so `Arm::scenario` reaches them without a new mechanism.
+
+[[arm]]
+step = "ten-c-costs-a-point"
+name = "one-c"
+instruction = "Put the demand box to 20 A and press Restart"
+start = "restart"
+demand_a = 20.0
+actions = [{ do = "run", to_s = 3600.0 }]
+note = """
+The rate control. Same file, same cell, same everything except the box: 20 A is 1 C on this
+20 Ah cell where the step's own 200 A is 10 C, and what the claim on it reads is the charge
+left when the terminal reaches the same 1.50 V floor.
+
+Runs to 3600.0 and not to the 3595.5 its claim reads, on the rule the ARMS section states:
+an arm that stops exactly where its last claim reads makes "reachable" mean only "the arm
+was long enough". The extra 4.5 s carries the cell past empty and raises SOC_CLAMPED_LOW at
+3600.0, which nothing here claims and no sentence mentions - it is what a reader who kept
+pressing Run would see, and steps 20 and 21 are where that is the subject.
+"""
+
+[[arm]]
+step = "ten-c-costs-a-point"
+name = "nmc-at-ten-c"
+instruction = "Load `cc_discharge_nmc` from the picker and put the box to 30 A"
+start = "restart"
+scenario = "cc_discharge_nmc.toml"
+demand_a = 30.0
+actions = [{ do = "run", to_s = 140.0 }]
+note = """
+The chemistry control, and the number the whole step turns on. 30 A is 10 C on that 3.0 Ah
+cell - the same multiple of itself the LTO cell is given - and it stops at its own 3.00 V
+floor with 63.5 % of its charge still in it.
+
+`cc_discharge_nmc.toml` is the file step 2 stands on, so this arm is the picker doing what
+step 2's third-cell arm already does: the scenario supplies the pack, and this arm supplies
+the current typed on top of it.
+"""
+
+[[claim]]
+step = "ten-c-costs-a-point"
+literal = "It stops at `1.481 V`"
+quantity = "v_at_mark"
+value = 1.4805069052
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.481"
+states = "same"
+read_at_s = 355.5
+display = "terminal"
+shows = "1.481 V"
+quoted = true
+note = """
+The mark is the first step whose terminal falls below this chemistry's own 1.50 V, which is
+the rule steps 22 to 24 mark on. The flag that says so - OPERATING_POINT_OUT_OF_WINDOW -
+arrives one step later, at 356.0 s, and is deliberately outside this step: the sentence is
+about where the cell stopped, not about the engine noticing.
+"""
+
+[[claim]]
+step = "ten-c-costs-a-point"
+literal = "**`1.3 %`** still showing on `soc (true)`"
+quantity = "soc_at"
+value = 0.0125
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.3"
+spells_pow10 = 2
+states = "same"
+read_at_s = 355.5
+display = "soc (true)"
+shows = "1.3 %"
+quoted = true
+note = """
+The headline. 1.25 points of charge is what a 10 C discharge leaves in this cell, against
+0.125 on the 1 C arm below and 38.6 points on the lead-acid cell of step 23 at less than a
+third of the rate.
+
+The row rounds 1.25 up rather than down - `toFixed` breaks ties away from zero and the
+value here is exactly 0.0125 - so `1.3 %` is what the panel prints, and the display half of
+this claim is what says so.
+"""
+
+[[claim]]
+step = "ten-c-costs-a-point"
+literal = "19.7222 A·h came out of the cell"
+quantity = "delivered_ah"
+value = 19.7222222222
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "19.7222"
+states = "same"
+read_at_s = 355.5
+note = """
+The same fact in amp-hours rather than in points, and the only one of the two a datasheet
+would print. No display: nothing on this panel shows delivered charge, which is exactly why
+the sentence beside it gives the reader the charge row instead.
+"""
+
+[[claim]]
+step = "ten-c-costs-a-point"
+arm = "one-c"
+literal = "It ends at **`0.1 %`**"
+quantity = "soc_at"
+value = 0.00125
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.1"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3595.5
+display = "soc (true)"
+shows = "0.1 %"
+quoted = true
+note = """
+The control arm, read at its own cut-off: the first step below 1.50 V at 20 A is 3595.5 s,
+where the step's own run reached that floor at 355.5. Ten times the current, and the
+difference between the two readings is the whole of what it costs.
+"""
+
+[[claim]]
+step = "ten-c-costs-a-point"
+arm = "nmc-at-ten-c"
+literal = "it declares itself empty at **`3.000 V`**"
+quantity = "v_at:131.5"
+value = 2.9995858398
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.000"
+states = "same"
+read_at_s = 131.5
+display = "terminal"
+shows = "3.000 V"
+quoted = true
+note = """
+The graphite cell's own cut-off, found by the same rule: the first step below the 3.00 V its
+own file declares. The instant is tagged into the quantity because this step files two
+readings on this arm and each has to be separately quotable.
+"""
+
+[[claim]]
+step = "ten-c-costs-a-point"
+arm = "nmc-at-ten-c"
+literal = "with **`63.5 %`** still inside"
+quantity = "soc_at"
+value = 0.6347222222
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "63.5"
+spells_pow10 = 2
+states = "same"
+read_at_s = 131.5
+display = "soc (true)"
+shows = "63.5 %"
+quoted = true
+note = """
+The contrast the step exists for: 50 times the LTO cell's 1.25 points, at the same multiple
+of the cell. It reads like step 23's lead-acid result and is not the same mechanism - there
+the charge was unreachable in the time available and a rest gave some of it back, here it is
+an ohmic drop that vanishes with the current.
+"""
+
+[[arm]]
+step = "cold-and-nothing-plates"
+name = "run-on"
+instruction = "Run on past the mark and a flag does arrive, at 603.0 s"
+start = "mark"
+actions = [{ do = "run", to_s = 660.0 }]
+note = """
+The step marks at 600 s because that is the last round instant with an empty flag column;
+this arm is the reader carrying on, and what it finds is a VOLTAGE limit rather than a
+plating one. That distinction is the whole lesson, so it needs a trajectory rather than an
+assurance.
+
+Runs 57 s past its own claim, which is the ARMS section's rule about an arm that stops
+exactly where its claim reads. Nothing else happens in those 57 s: SOC_CLAMPED_HIGH is at
+720.5 s, well past the end of this arm.
+"""
+
+[[arm]]
+step = "cold-and-nothing-plates"
+name = "nmc-in-the-cold"
+instruction = "Load `cold_charge_nmc` from the picker — the same scenario file with the chemistry id changed and nothing else — and put the demand box to -12 A"
+start = "restart"
+scenario = "cold_charge_nmc.toml"
+demand_a = -12.0
+actions = [{ do = "run", to_s = 660.0 }]
+note = """
+The control arm, and it is the pair `cc_discharge_lfp.toml` and `cc_discharge_nmc.toml`
+already make one axis over: two scenario files that differ in the chemistry id and in
+nothing else, so everything a reader sees is attributable.
+
+-12 A is 4 C on a 3.0 Ah cell, the same multiple of itself the LTO cell is given at -80 A.
+Three claims read on it - the plating flag on the first step, the ceiling flag five seconds
+later, and the health row at the step's own mark - and the arm runs to 660.0 s so that the
+last of them is not also its end.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+literal = "`soc (true)` reaches **`86.7 %`**"
+quantity = "soc_at"
+value = 0.8666694107
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "86.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 600.0
+display = "soc (true)"
+shows = "86.7 %"
+quoted = true
+note = """
+Where the charge has got to at the mark, and the number that makes the health comparison
+below a comparison at all: the graphite arm reads 86.8 % at the same instant, so the two
+cells have taken essentially the same charge and only one of them has paid for it.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+literal = "`terminal` settles at **`2.747 V`**"
+quantity = "v_at_mark"
+value = 2.7469092782
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "2.747"
+states = "same"
+read_at_s = 600.0
+display = "terminal"
+shows = "2.747 V"
+quoted = true
+note = """
+Three millivolts under this chemistry's 2.75 V ceiling, which is why the flag column is
+still empty at the mark and why it is not empty three seconds later. That margin is what
+makes the mark a choice worth stating: at 603.0 s this same run raises
+OPERATING_POINT_OUT_OF_WINDOW, and the `run-on` arm is where that is claimed.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+literal = "`heat` reads **`22.28 W`**"
+quantity = "q_gen_at"
+value = 22.2845057283
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "22.28"
+states = "same"
+read_at_s = 600.0
+display = "heat"
+shows = "22.28 W"
+quoted = true
+note = """
+The cost of charging a cold cell fast, and the number the scenario file's isothermal note is
+derived from: 22.28 W into a 510 J/K case is about 26 K over ten minutes, which is what a
+thermally coupled version of this run would gain and this one deliberately does not.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+literal = "`soh cap` still prints **`100.00 %`**"
+quantity = "soh_cap_at"
+value = 0.9999924052
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "100.00"
+spells_pow10 = 2
+states = "same"
+read_at_s = 600.0
+display = "soh cap"
+shows = "100.00 %"
+quoted = true
+note = """
+The absence, made into a number. Aging is ON in this scenario - which no other
+constant-current lesson in this path does - so the row is being computed and billed the
+whole way; it prints 100.00 % because 7.6e-6 of capacity is what ten minutes of ordinary
+cycle throughput costs a cell rated at 20,000 cycles, and because there is no plating
+mechanism to bill on top of that.
+
+The claim is on the truth rather than on the string: `states = "same"` compares 99.99924 %
+against the sentence's 100.00, which agree to the two places the row prints.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+arm = "run-on"
+literal = "a flag does arrive, at 603.0 s"
+quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
+value = 603.0
+tol = 5.0e-2
+tol_from = "spelled"
+spells = "603.0"
+states = "same"
+read_at_s = 603.0
+note = """
+The first limit this cell meets, and the point of the sentence is WHICH limit it is. The
+terminal crosses 2.75 V here; PLATING_RISK is not raised at this instant or at any other on
+this trajectory, and no quantity in this file can assert a flag that never fires - what
+stands behind that half of the sentence is
+`crates/sim-data/tests/lto_chemistry.rs::cold_fast_charge_plates_the_nmc_cell_and_not_the_lto_cell`,
+which drives both cells and asserts the absence directly. Written down here rather than left
+to look like coverage.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+arm = "nmc-in-the-cold"
+literal = "`PLATING_RISK` is up on the very first step, and it does not go away"
+quantity = "flag_first_s:PLATING_RISK"
+value = 0.5
+tol = 0.25
+tol_from = "grid"
+states = "nothing"
+read_at_s = 0.5
+note = """
+The first step, and it stays up for the rest of the run. Nothing gradual about it: this
+cell's `t_plating_min_k` is 0 degC and its `plating_c_threshold` is 0.4 C, and the arm is
+charging at 4 C at -25 degC, so the gate is open before the reader has seen a frame.
+
+`states = "nothing"`, and the sentence prints no instant on purpose. It used to say "at
+0.5 s" and that number is also this step's TIMESTEP, so the accounting had two readings of
+it and refused both - the flag really does arrive on the first step, and on a page whose
+step length is 0.5 s there is no way to say so in digits that does not collide. The
+half-step tolerance `grid` gives is the tightest bound a flag time admits anyway.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+arm = "nmc-in-the-cold"
+literal = "by 5.0 s the terminal is over"
+quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
+value = 5.0
+tol = 5.0e-2
+tol_from = "spelled"
+spells = "5.0"
+states = "same"
+read_at_s = 5.0
+note = """
+The same flag the LTO run takes 603.0 s to reach, here in five seconds - because a cold
+graphite cell's resistance puts the terminal over its ceiling almost at once. Two flags on
+one arm and only one of them on the other, which is what the comparison is made of.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+arm = "nmc-in-the-cold"
+literal = "read the health row: **`99.69 %`**"
+quantity = "soh_cap_at"
+value = 0.9969412143
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.69"
+spells_pow10 = 2
+states = "same"
+read_at_s = 600.0
+display = "soh cap"
+shows = "99.69 %"
+quoted = true
+note = """
+The bill. Same mark, same aging sub-clock, same charge taken - and this cell has lost 0.31
+points of capacity where the LTO cell lost 0.0008. Plating fade is billed per amp-hour taken
+while the flag is up, so this number IS the flag, converted into the only currency a battery
+has.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+literal = "much the same charge — 86.7 % here"
+quantity = "soc_at"
+value = 0.8666694107
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "86.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 600.0
+display = "soc (true)"
+shows = "86.7 %"
+note = """
+The same reading as the claim above, quoted a second time in the sentence that compares the
+two cells. Two claims rather than one because check 6 is positional: a number in this
+sentence is accounted for by the claims on THIS sentence, and the earlier one is about a
+different one.
+
+Not `quoted`: the sentence prints the figure bare here rather than sending the reader to the
+row, which it already did once.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+arm = "nmc-in-the-cold"
+literal = "**`86.8 %`** there"
+quantity = "soc_at"
+value = 0.8676707815
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "86.8"
+spells_pow10 = 2
+states = "same"
+read_at_s = 600.0
+display = "soc (true)"
+shows = "86.8 %"
+quoted = true
+note = """
+A tenth of a point apart from the LTO cell at the same instant, and not by construction:
+both cells are charged at 4 C of their own capacity, and the small difference is the
+capacity this one has already lost, which makes each remaining amp-hour a slightly larger
+fraction of what is left.
+"""
+
+[[claim]]
+step = "cold-and-nothing-plates"
+arm = "nmc-in-the-cold"
+literal = "has spent **0.31 points** of its capacity"
+quantity = "soh_cap_at"
+value = 0.9969412143
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "0.31"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 600.0
+display = "soh cap"
+shows = "99.69 %"
+note = """
+The same measurement stated as a loss rather than as a level, which is how the sentence
+comparing the two cells says it. `complement` is the frame that performs the subtraction:
+1 - 0.9969412143 is 0.30588 points, and the sentence rounds it to the two places it prints.
+"""
+
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -8572,6 +9011,16 @@ steps = [
                      # hedges no scanner in this file can see, now 7.5 and 8.5. A fifth
                      # moved to become checkable at all: `53` is a subtraction that comes
                      # to 53.5
+  "ten-c-costs-a-point", # 18: the fifth chemistry, and the first ledgered step whose
+                     # comparison cell is a file the READER PICKS - three of its numerals
+                     # are fields of `cc_discharge_nmc.toml`, read through the arm that
+                     # loads it. Eight are claims on three trajectories, six are the
+                     # chemistry's own nameplate and limits, and the last is the clock
+  "cold-and-nothing-plates", # 22: the flag that never comes, and the first step whose
+                     # subject is a flag NOT rising. Ten are claims across two arms; two are
+                     # step 11's position, where the reader met plating; the rest are the
+                     # two cells' ceilings, the two controls that make the abuse, and the
+                     # mark
 ]
 # Not scanned, and why. THIS LIST IS EMPTY for the first time, which is what the
 # twenty-four entries above amount to: every step of the guided path now has its whole
@@ -8626,6 +9075,8 @@ spelled = [
   "slow-and-patient",            # 0 (3)
   "nothing-to-clamp",            # 0 (5)
   "wearing-out-while-idle",      # 0 (2)
+  "ten-c-costs-a-point",         # 0
+  "cold-and-nothing-plates",     # 0
 ]
 
 # The other side of that list: steps whose prose is NOT word-scanned, named.

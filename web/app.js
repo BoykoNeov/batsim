@@ -3230,6 +3230,68 @@ const LESSONS = [
     expect:
       "Leg one is step 23 run again, and it ends where step 23 ended: at `1.750 V` with `38.6 %` showing. Be told what you will and will not see of that. This step covers four and a quarter hours, so it runs fast, and one frame here can be several minutes of simulation — the panel sails straight past the end of leg one without ever printing `1.750 V`, and step 23, where that instant *is* the mark, is where you can actually read it. What you do see is the jump itself, and you can tell which side of it you are on from the `current` row rather than from the clock: the last reading under load is below the cutoff and falling, and the next one, with `current` at `0.000 A`, is already most of a tenth of a volt higher. Exactly one engine step after the load comes off the terminal is at `1.848 V` — that is the instantaneous resistance, gone the moment the current is — and from there it *keeps climbing*, which is the part this step is about. The first few minutes of that climb are still quick — quick enough that the row will not sit still long enough for you to read a number off it — and then it slows down into something you can: `1.984 V` at half an hour, `2.005 V` at an hour, `2.030 V` at four. Meanwhile `soc (true)` does not move at all. It reads **`38.6 %` for the entire four hours**, because nothing is being added — no charger, open circuit, not one coulomb in. A cell that has stopped emptying is not a cell that has stopped recovering, which is the mirror image of what step 20 had to say about a voltage that had stopped falling. What is recovering is the acid, working its way back through the plate, and the recovery has two stages two orders of magnitude apart on purpose. Half an hour into the rest the fast one is finished — the RC pair is down to 0.05 mV — and the slow one still has 47.66 mV to give and goes on giving it for hours. That is the one place in this path where the `overpotential` tile is the fitted mechanism and nothing else, and it is why a lead-acid battery seems to come back to life if you walk away from it. Then leg two, the identical demand on the identical cell, and the run stops at the same `1.750 V` again — after **237.5 s**, at `18.8 %`. It delivered 1.4220 A·h against the first leg's 4.4190, 32.2 % of it, from a cell that had already told you it was empty. That number was never fitted: the parameters were fitted to a capacity-versus-rate curve, the recovery falls out of it, and `a_rest_recovers_capacity_and_a_harder_discharge_recovers_more` asserts it. One thing this path will not show you on this cell: putting charge back. The diffusion term's charge direction is bounded and the right sign, but nothing has measured it, so unlike steps 20 and 21 there is no instruction here to reverse the demand box — and that omission is the honest one.",
   },
+  {
+    id: "ten-c-costs-a-point",
+    title: "10 C, and the charge it does not cost",
+    // The first lesson on `lto_20ah_generic`, and the first on a chemistry whose
+    // interesting behaviour is that a rate which would wreck any other cell here does
+    // almost nothing to it. One scenario file; the demand box is the whole of both arms.
+    scenario: "cc_discharge_lto.toml",
+    // 10C = 10 x 20 Ah, this chemistry's own `max_discharge_c` and the top of what its
+    // datasheet allows. Nothing else in this path goes above 3 C.
+    demand: { mode: "Current", value: 200 },
+    ambient_c: 25,
+    bms: null,
+    // Six minutes of simulation, slow enough to watch the trace bend at the end.
+    speed_x: 20,
+    // Pinned, and it matters more here than on the lead-acid steps: this cell's fast RC
+    // pair has a 6 s time constant, so a coarse step would smear the one part of the sag
+    // that is not instantaneous. Both arms below are measured on the same grid.
+    dt: 0.5,
+    // The measured cut-off: the first step whose terminal falls below this chemistry's own
+    // v_min of 1.50 V. Same rule as steps 22 to 24, and the mark sits AT it rather than
+    // past it — past the cut-off this cell collapses, which is steps 20 and 21's subject
+    // and not this one's.
+    until_s: 355.5,
+    reload: true,
+    watch: ["plot-v", "readouts"],
+    prose: [
+      "A fifth chemistry: lithium titanate, or LTO. A 20 Ah prismatic cell whose datasheet rates it at 10 C in both directions, an order of magnitude above anything else in this path. One cell, at 100 % charge, isothermal, 25 °C, with nothing protecting it.",
+      "The demand box says 200 A, which is that rating written as a current. The run is marked to stop by itself at the first step whose terminal falls below the 1.50 V this chemistry calls empty.",
+      "Watch `soc (true)` for where it stops. Not when — of course it is quicker — but at what charge.",
+    ],
+    expect:
+      "It stops at `1.481 V` with **`1.3 %`** still showing on `soc (true)`, and the clock reads `6m`. Almost nothing has been left behind: 19.7222 A·h came out of the cell on the way there. Now find out what the rate cost. Put the demand box to 20 A and press Restart — the same file, the same cell, one field different — and let it run on to its own cut-off. It ends at **`0.1 %`**, and that is the whole cost of 10 × the current on this cell: the difference between those two readings and nothing else. Then ask the same question of a graphite cell. Load `cc_discharge_nmc` from the picker and put the box to 30 A, which is 10 C on that 3.0 Ah cell: it declares itself empty at **`3.000 V`** with **`63.5 %`** still inside — most of its charge, on a cell whose terminal has already reached the floor. Nothing was destroyed and nothing leaked, and this is not the lead-acid result of the last lessons wearing a different hat. There the charge that did not come out was charge the acid could not reach in time, and resting the cell gave some of it back. Here the sag is ohmic, and an ohmic drop is not owed to anybody: it comes back the moment the current stops. Take the load off that NMC cell and it is an ordinary, mostly full cell again.",
+  },
+  {
+    id: "cold-and-nothing-plates",
+    title: "A cold cell, charged hard, and the flag that never comes",
+    scenario: "cold_charge_lto.toml",
+    // 4C = 4 x 20 Ah, charging, so negative. Not this cell's limit — it is rated 10 C in
+    // this direction too — but the same multiple of itself the graphite control arm is
+    // given, which is what makes the pair a comparison.
+    demand: { mode: "Current", value: -80 },
+    // The slider's minimum, and cosmetic on this file: the scenario is isothermal, so the
+    // cell sits at its own `initial_temp_k` whatever the ambient says. It is dialled to
+    // match rather than left at 25, so the panel does not describe a cell that is not here.
+    ambient_c: -25,
+    bms: null,
+    speed_x: 30,
+    dt: 0.5,
+    // Chosen rather than measured: the first flag on this trajectory arrives at 603.0 s,
+    // so a mark here is the last round instant at which the flag column is still empty.
+    // The closing paragraph sends the reader past it on purpose.
+    until_s: 600,
+    reload: true,
+    watch: ["readouts", "plot-soc"],
+    prose: [
+      "Step 11 ended with an instruction: drag the ambient below freezing, switch the BMS off, and watch `PLATING_RISK` come up on a pack that is still being charged. That flag is metallic lithium collecting on a graphite anode instead of going into it, and it is the reason a lithium datasheet carries a charge-temperature limit at all.",
+      "This is the same abuse, on the cell of the last lesson, and it is worse abuse: 25 below zero, charging at 4 C, into a cell that starts at 20 % charge. The temperature is a constant of the experiment here rather than something to watch — this scenario has no thermal network, so nothing warms up and nothing cools down.",
+      "Aging is on, which no other constant-current lesson in this path switches on. That is deliberate: a flag is a warning, and a warning nobody pays for teaches nothing. Watch `soh cap`.",
+    ],
+    expect:
+      "600 s of hard charging at 25 below zero, and the flag column stays empty the whole way. `soc (true)` reaches **`86.7 %`**, `terminal` settles at **`2.747 V`**, `heat` reads **`22.28 W`** — and `soh cap` still prints **`100.00 %`**. Run on past the mark and a flag does arrive, at 603.0 s: `OPERATING_POINT_OUT_OF_WINDOW`, the terminal crossing the 2.75 V ceiling this chemistry declares. That is the first limit this cell meets and it is a voltage limit, not plating, and no amount of running will turn it into plating. Now the control arm. Load `cold_charge_nmc` from the picker — the same scenario file with the chemistry id changed and nothing else — and put the demand box to -12 A, which is 4 C on that 3.0 Ah cell. `PLATING_RISK` is up on the very first step, and it does not go away; by 5.0 s the terminal is over that cell's own 4.20 V ceiling as well. Let it run to the same mark and read the health row: **`99.69 %`**. Both cells arrive at much the same charge — 86.7 % here, **`86.8 %`** there — and one of them has spent **0.31 points** of its capacity getting there while the other has spent nothing its health row can print. That is what the flag on step 11 was warning about: the engine bills plating per amp-hour taken while the flag is up, and this cell has no plating to bill. The difference between the two runs is a parameter file.",
+  },
 ];
 
 /** Authored strings, so the escape is belt-and-braces; the backticks are the point. */

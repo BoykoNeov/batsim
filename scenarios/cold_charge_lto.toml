@@ -1,0 +1,109 @@
+# A cold cell being charged fast, and the flag that does not come.
+#
+# The path already teaches cold-charge plating: guided path step 11 drags a 4S2P NMC pack
+# below freezing, watches the BMS inhibit the charge, and then switches the BMS off and
+# watches PLATING_RISK come up instead. That flag is metallic lithium depositing on a
+# graphite anode, and it is the reason every lithium datasheet carries a charge-temperature
+# limit. This file is the counter-example, and it is a counter-example made of PARAMETERS:
+# an LTO anode sits about 1.55 V above the potential at which lithium plates, so there is
+# no temperature and no rate at which this cell can do it. Nothing in the engine
+# distinguishes the two cells.
+#
+# `cold_charge_nmc.toml` is this file with the chemistry id changed and nothing else — the
+# control arm, and the pairing `cc_discharge_lfp.toml` and `cc_discharge_nmc.toml` already
+# use.
+#
+# ## Why the cell starts cold instead of being cooled
+#
+# [pack.thermal] is absent, so this cell sits at initial_temp_k forever. That is a
+# deliberate difference from step 11's pack, which uses [pack.thermal.Network] and cools
+# through the ambient slider, and the reason is attribution: a cooling pack changes its
+# resistance while you watch, so a reader cannot tell an effect of temperature from an
+# effect of time. Here the temperature is a CONSTANT OF THE EXPERIMENT. The ambient control
+# does nothing at all on this file, which is worth knowing before dragging it.
+#
+# The cost of that choice, stated rather than discovered later: a real cell charged at 4 C
+# would warm — this one makes 22.28 W on a 510 J/K case at the mark, so an adiabatic
+# version of this run would gain roughly 26 K over ten minutes — and a warming cell plates
+# less. Isothermal is therefore the HARSHER reading for the graphite control arm, not a
+# kind one.
+#
+# ## Why aging is on, when every other CC scenario here leaves it off
+#
+# Because the flag is not the lesson; the BILL is. PLATING_RISK is a warning, and a warning
+# nobody pays for teaches nothing about why the limit exists. With [pack.aging] on,
+# plating_fade_per_ah bills the graphite cell for every amp-hour it takes while the flag is
+# up, and the `soh cap` row moves where a reader can watch it. On this cell the same row
+# does not move, because there is no mechanism to bill — which is the whole lesson, carried
+# by a number rather than by the absence of one.
+#
+# ## What it does, measured at dt = 0.5 (the page's default), charging at 4 C = 80 A
+#
+#   * t =   0.5 s   2.474 V, and no flag of any kind
+#   * t = 600.0 s   2.747 V, 86.7 % charged, 22.28 W, `soh cap` still reading 100.00 %
+#   * t = 603.0 s   OPERATING_POINT_OUT_OF_WINDOW: the terminal has crossed this
+#                   chemistry's 2.75 V ceiling. THE FIRST LIMIT THIS CELL MEETS IS A
+#                   VOLTAGE, and it arrives three seconds after the guided path's mark.
+#   * t = 720.0 s   SOC_CLAMPED_HIGH at 100 %, and the coulomb counter begins refusing
+#                   current it cannot store. Past there the run is about overcharge, which
+#                   is a different lesson (docs/plans/energy-hole.md).
+#
+# The same run on `cold_charge_nmc.toml`, at that cell's own 4 C:
+#
+#   * t =   0.5 s   PLATING_RISK, on the very first step
+#   * t =   5.0 s   OPERATING_POINT_OUT_OF_WINDOW, over its 4.20 V ceiling
+#   * t = 600.0 s   4.750 V, 86.8 % charged, and `soh cap` down to 99.69 %
+#
+# Two cells at the same temperature, taking the same multiple of themselves, arriving at
+# the same charge level — and one of them has been damaged 400 times as much getting there.
+#
+# ## What it does not do
+#
+#   * NO BMS. With protection on, this cell's charge inhibit is t_charge_min_k = -30 degC
+#     (electrolyte conductivity, not plating) and the graphite cell's is 0 degC, so a
+#     protected version of this pair would refuse one charge, allow the other, and never
+#     show what the refusal is FOR. Step 11 already teaches the refusal.
+#   * NO SCATTER, one cell, one group: nothing here is about imbalance.
+#   * It does not run to a cut-off. There is no cut-off on a charge with no BMS and no
+#     CC-CV policy; the client's mark is what ends the run.
+
+chemistry = "lto_20ah_generic"
+
+[meta]
+name = "Cold fast charge, single LTO cell"
+description = """
+A 1S1P 20 Ah lithium-titanate cell at 20 % SOC and -25 degC, isothermal, no BMS, no \
+faults — and, unlike the CC discharge scenarios, aging is ON so that damage has somewhere \
+to show. Charge at -80 A (4 C) and watch what does NOT happen: no PLATING_RISK, at a \
+temperature and a rate that raise it on the first step of `cold_charge_nmc.toml`. At the \
+ten-minute mark this cell is 86.7 % charged with `soh cap` still printing 100.00 %; the \
+graphite cell reaches the same charge and prints 99.69 %."""
+
+[pack]
+series = 1
+parallel = 1
+# A fifth full: low enough that a 4 C charge has somewhere to go for ten minutes without
+# reaching the clamp, and high enough that the run starts on the flat part of the curve.
+initial_soc = 0.2
+# -25 degC. Inside this chemistry's rated operating range and inside its [r0] grid, whose
+# bottom row is -30 degC, so the resistance here is interpolated rather than clamped off
+# the end of a table. On `nmc_18650_generic.toml` the same temperature IS off the end of
+# the grid (-10 degC is its bottom row), so the control arm's resistance is the coldest
+# value that file holds and its sag is if anything UNDERSTATED.
+initial_temp_k = 248.15
+# The plating short hazard draws from this. Nothing fires on either arm of this pair over
+# the run the guided path takes (checked at seeds 0 and 1), but the draw is real on the
+# graphite file and the seed is part of the snapshot, so it is named rather than inherited.
+seed = 0
+
+# One aging update per 10 s of simulation time, the shipped default. Plating fade is billed
+# per amp-hour taken while the flag is up, so a coarser period changes WHEN the health row
+# moves, never how far.
+[pack.aging]
+sub_clock_period_s = 10.0
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical; one cell, so there is nothing to scatter
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves (see above)
+#   [pack.bms]      -> no BMS at all; nothing may refuse this charge
+#   [[faults]]      -> nothing scheduled

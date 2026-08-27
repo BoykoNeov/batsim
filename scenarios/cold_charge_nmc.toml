@@ -1,0 +1,65 @@
+# The control arm for `cold_charge_lto.toml`: the same experiment on a graphite cell.
+#
+# This file differs from that one in exactly one way — the chemistry id. Read that again,
+# because it is the point: the topology, the starting charge, the temperature, the seed and
+# the aging sub-clock are identical, so anything a reader sees here that they did not see
+# there is the chemistry and only the chemistry. The demand is not a field of either file;
+# the client types it, and 4 C on this 3.0 Ah cell is -12 A where the same 4 C on the 20 Ah
+# LTO cell is -80 A.
+#
+# What it shows, measured at dt = 0.5 charging at -12 A, beside the LTO file's own run:
+#
+#                       LTO 20 Ah                 NMC 18650
+#   PLATING_RISK        never                     t = 0.5 s, the first step
+#   over its ceiling    t = 603.0 s (2.75 V)      t = 5.0 s (4.20 V)
+#   at t = 600.0 s      2.747 V, 86.7 %           4.750 V, 86.8 %
+#   `soh cap` there     100.00 %                  99.69 %
+#
+# The plating gate here is t_plating_min_k = 0 degC and plating_c_threshold = 0.4 C, both
+# of them real statements about a graphite anode. The LTO file's plating gate is a SENTINEL
+# of one kelvin, because [safety] has no way to say "this cell does not plate" — see
+# docs/plans/phase-8-slice-a-lto.md, which is where that cost was paid.
+#
+# Guided path step 26 loads this file from the picker as the arm of the LTO lesson, which
+# is why it is in `web/index.html`'s fallback <option> list: the live picker is a directory
+# scan and needs no HTML edit, but a sentence telling a reader to pick a file is checked
+# against the list the page ships with.
+
+chemistry = "nmc_18650_generic"
+
+[meta]
+name = "Cold fast charge, single NMC cell"
+description = """
+A 1S1P 3.0 Ah NMC cell at 20 % SOC and -25 degC, isothermal, no BMS, no faults, aging ON \
+— `cold_charge_lto.toml` with one field changed. Charge at -12 A (4 C) and PLATING_RISK \
+is up on the first step: below 0 degC a graphite anode plates metallic lithium instead of \
+intercalating it, and with aging on the engine bills for every amp-hour taken while the \
+flag is up. Ten minutes in, this cell is 86.8 % charged and has lost 0.31 % of its \
+capacity; the LTO cell reaches the same charge having lost nothing its health row can \
+print."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.2
+# -25 degC is BELOW the bottom row of this chemistry's [r0] grid (-10 degC), so the
+# resistance used here is clamped to that bottom row rather than extrapolated. The cold sag
+# on this arm is therefore a lower bound on what the real cell would show, which matters
+# because the sag is what puts it over its ceiling five seconds in.
+initial_temp_k = 248.15
+# The plating short hazard draws from this, and on this file the draw is real: the flag is
+# up from the first step, so every amp-hour taken carries plating_short_hazard_per_ah. None
+# fires over the run the guided path takes, checked at seeds 0 and 1.
+seed = 0
+
+# One aging update per 10 s of simulation time, the shipped default — the same value
+# `cold_charge_lto.toml` names, because a comparison of two health rows is only a
+# comparison if they are billed on the same clock.
+[pack.aging]
+sub_clock_period_s = 10.0
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; nothing may refuse this charge
+#   [[faults]]      -> nothing scheduled
