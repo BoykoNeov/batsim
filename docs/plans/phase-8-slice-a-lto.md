@@ -265,8 +265,11 @@ counts against P1 under the registered rule — but neither was free.**
   minutes**. The Arrhenius rise is convex, so the cell spends most of the span near the cold
   end: the true mean power is 20.6 W, the endpoint average runs **36 % fast**, and the
   prediction was **26 % short**. Corrected in the file. *Averaging the endpoints of an
-  exponential is not averaging the exponential* — worth naming because the same arithmetic
-  appears in the LFP and NMC files' comments.
+  exponential is not averaging the exponential.* **And the trap was already in the tree, which
+  was asserted here before it was checked and then checked:** the LFP file claimed "roughly 3
+  minutes" against a measured **263 s**, the same error in the same direction, and has been
+  corrected. The NMC file's "~1.5 min" against a measured 98 s is fine, so the original claim
+  that *both* files used the naive arithmetic was half wrong — one file, not two.
 * **The fade ratio.** The file first said LTO's per-amp-hour cycle fade was "80× gentler than
   the LFP placeholder and 80× gentler than the NMC one". It is **53×** against LFP and 80×
   against NMC; the two were never the same number. Corrected.
@@ -278,6 +281,43 @@ counts against P1 under the registered rule — but neither was free.**
   The fix is a control arm: run to empty, run 72 s past empty, subtract. The shelf time
   cancels and what is left is the damage. **A claim about a rare event measured without a
   control is a claim about whatever else was happening at the time.**
+
+### A fourth: an assertion that could not fail, whose comment named a failure it would pass
+
+Found by reading after the tests were green, and not reachable by any perturbation in the
+sweep below. The over-discharge test closed with
+
+```rust
+assert!(nmc_delta / lto_delta.max(1e-12) > 100.0, "differ in kind, not in size");
+```
+
+Two defects in three lines. It is **implied by its own siblings** — the bounds above it already
+force the ratio past 500 — so it could never fail on its own. And its comment claimed it
+existed to catch "a future edit which fixes the LTO cell by making it refuse to discharge past
+empty", which is **the one outcome it is guaranteed to pass**: a refusing cell drives its own
+fade to zero and the ratio to infinity.
+
+Replaced with the check that actually catches that edit — each arm must have *delivered* the
+charge it was asked for, 2 % of its own capacity in the 72 seconds past empty, within 1 %.
+**No chemistry-file perturbation can expose an assertion its siblings already imply**, which is
+why a perturbation sweep is not a substitute for reading what an assertion says. The
+replacement is also unreachable from the sweep, and for a better reason: it watches the
+*engine*, not the file. That is declared rather than papered over with a case that would only
+prove the test tests itself.
+
+### Two coupling facts, both learned by tripping over them
+
+* **`cargo fmt` rewrites a `\`-continued Rust string literal into literal whitespace.** Three
+  assertion messages in this slice went out reading `"...the shelf time it          shares
+  with..."` — the continuation was collapsed and its indentation baked into the string. Long
+  single-line literals survive `fmt`; continued ones do not. Cosmetic, and invisible until an
+  assertion actually fires, which is the worst moment to discover it.
+* **Editing a *comment* in `lfp_26650_generic.toml` reddens a test in `sim-godot`.** The demo
+  scene bundles a byte-identical copy under `godot/assets/`, and `demo_assets.rs` asserts the
+  two files match exactly. Correcting the LFP onset-to-vent note therefore broke a crate this
+  slice never touched. The guard is right — a demo running different physics from the rest of
+  the repo is a real hazard — but the coupling is worth knowing before a one-word edit turns a
+  workspace red: **every chemistry file edit is a two-file edit for LFP.**
 
 ### And one that was caught before anything ran
 
@@ -310,7 +350,7 @@ physics.
 
 ### Perturbations
 
-Ten cases across two rounds. Each edits one number in the chemistry file and names the check
+Twelve cases across two rounds. Each edits one number in the chemistry file and names the check
 it must redden; the file is restored from an in-memory copy rather than by `git checkout`,
 which would revert the whole slice and flip the line endings.
 
@@ -323,7 +363,7 @@ Round one covered the three band tests in `load.rs`:
 | `runaway_energy_j` 100× too small (2 K ceiling) | the runaway band |
 | `t_plating_min_k` sentinel raised to 273.15 K | the plating band's no-plating arm |
 
-Round two covered the five behavioural tests, one perturbation per claim:
+Round two covered the behavioural tests, one perturbation per claim:
 
 | perturbation | reddened |
 | --- | --- |
@@ -332,7 +372,9 @@ Round two covered the five behavioural tests, one perturbation per claim:
 | the whole `[r0]` grid 10× | the 10C rate claim |
 | `v_max` 2.75 → 3.10 | the window guard, **and** the loading test |
 | `[reversal] fade_per_ah` 0.0 → the NMC value | the over-discharge contrast |
+| `[meta] id` renamed | the id-resolvability test, **and** the loading test |
 | CONTROL: a comment reworded, no number touched | nothing |
+| CONTROL: `h_area_w_per_k` 10× | nothing — **and that is a fact about the suite** |
 
 **Round one was wrong about the first case and reported it green on the wrong check.** With
 `t_plating_min_k` raised, it named only the band test — because `cargo test` stops at the
@@ -340,6 +382,12 @@ first failing *binary*, and `load` fails before `lto_chemistry` ever runs. Round
 `--no-fail-fast` and the cold-charge contrast appears where it should have all along. The trap
 is already recorded in this repo's notes and it was still walked into; a perturbation table
 built without `--no-fail-fast` **understates coverage and cannot tell you it is doing so**.
+
+**The second control is the one that says something.** Rewording a comment proves only that
+comments are not parsed, which is not much of a control. Multiplying `h_area_w_per_k` by ten is
+a real value that a real reader would expect something to notice — and nothing does, because
+every test in this slice is isothermal. The suite does not read that parameter at all. Stated
+here rather than left to be assumed covered.
 
 **The depth-exponent case is the informative one.** Moving `cyc_dod_stress_exp` off 1.0
 reddens the pure-throughput test and *nothing else* — not the aging band, which reads the
@@ -371,8 +419,14 @@ separately rather than assumed covered.
 
 ## What this prices for slice B
 
-The chemistry is reachable by id through the existing scenario mechanism, so nothing blocks
-wiring it up. Two lessons it can carry, both contrasts against steps the guided path already
+The chemistry is reachable by id, and that is now **measured rather than inherited**.
+`sim-server` resolves a scenario's `chemistry = "..."` key as `chem_dir.join("{id}.toml")` after
+validating the id against `[a-z0-9_]+` — a directory lookup, not a registry, so a new file is
+reachable the moment it lands. The failure mode that leaves is an id that disagrees with its
+own filename, which parses and validates perfectly and is then unreachable by every client;
+`the_lto_id_is_the_name_of_its_own_file` pins it, and renaming `[meta] id` reddens it. Checked
+because "reachable through the existing mechanism" is a claim this repo has been wrong about
+before. Two lessons it can carry, both contrasts against steps the guided path already
 has:
 
 1. **The same cold fast charge, a different outcome.** The path already teaches cold-charge

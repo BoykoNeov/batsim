@@ -291,8 +291,9 @@ fn over_discharge_scars_the_nmc_cell_and_costs_the_lto_cell_nothing() {
     const TO_EMPTY_S: usize = 3600;
     const PAST_EMPTY_S: usize = 72;
 
-    /// Capacity lost after `seconds` of 1C discharge, aging live.
-    fn lost_after(chem: &ChemistryParams, seconds: usize) -> f64 {
+    /// Capacity lost, and charge actually delivered, after `seconds` of 1C discharge with
+    /// aging live.
+    fn run_for(chem: &ChemistryParams, seconds: usize) -> (f64, f64) {
         let i = chem.cell.capacity_ah; // 1C, discharge-positive
         let cfg = PackConfig {
             aging: Some(AgingConfig {
@@ -302,17 +303,27 @@ fn over_discharge_scars_the_nmc_cell_and_costs_the_lto_cell_nothing() {
         };
         let mut pack = Pack::new(&cfg, chem.clone()).expect("pack builds");
         let mut tele = pack.step(0.0, Demand::Rest, &env(298.15));
+        let mut ah = 0.0;
         for _ in 0..seconds {
             tele = pack.step(DT, Demand::Current(i), &env(298.15));
+            ah += tele.i_actual * DT / 3600.0;
         }
-        1.0 - tele.soh_capacity
+        (1.0 - tele.soh_capacity, ah)
     }
 
-    let mut rows: Vec<(&str, f64, f64)> = Vec::new();
+    let mut rows: Vec<(&str, f64, f64, f64, f64)> = Vec::new();
     for (name, chem) in [("LTO 20 Ah", lto()), ("NMC 18650", nmc())] {
-        let control = lost_after(&chem, TO_EMPTY_S);
-        let past = lost_after(&chem, TO_EMPTY_S + PAST_EMPTY_S);
-        rows.push((name, control, past - control));
+        let (control, ah_control) = run_for(&chem, TO_EMPTY_S);
+        let (past, ah_past) = run_for(&chem, TO_EMPTY_S + PAST_EMPTY_S);
+        // What the extra 72 seconds were *asked* to deliver, in this cell's own amp-hours.
+        let demanded = chem.cell.capacity_ah * PAST_EMPTY_S as f64 / 3600.0;
+        rows.push((
+            name,
+            control,
+            past - control,
+            ah_past - ah_control,
+            demanded,
+        ));
     }
 
     println!(
@@ -323,7 +334,7 @@ fn over_discharge_scars_the_nmc_cell_and_costs_the_lto_cell_nothing() {
         "{:<12} {:>18} {:>18}",
         "cell", "to empty [%]", "past empty [%]"
     );
-    for &(name, control, delta) in &rows {
+    for &(name, control, delta, ..) in &rows {
         println!(
             "{name:<12} {:>17.4} {:>18.4}",
             control * 100.0,
@@ -335,7 +346,7 @@ fn over_discharge_scars_the_nmc_cell_and_costs_the_lto_cell_nothing() {
     let nmc_delta = rows[1].2;
     assert!(
         lto_delta < 1.0e-5,
-        "over-discharge must cost the LTO cell essentially nothing beyond the shelf time it          shares with the control, cost it {:.5} %",
+        "over-discharge must cost the LTO cell essentially nothing beyond the shelf time it shares with the control, cost it {:.5} %",
         lto_delta * 100.0
     );
     assert!(
@@ -343,11 +354,46 @@ fn over_discharge_scars_the_nmc_cell_and_costs_the_lto_cell_nothing() {
         "the graphite control arm must be scarred by the same excursion, lost only {:.5} %",
         nmc_delta * 100.0
     );
-    // Differ in kind, not in size. Asserted so that a future edit which "fixes" the LTO cell
-    // by making it refuse to discharge past empty fails here rather than quietly passing the
-    // two bounds above.
+    // **Both bounds above are satisfied by a cell that simply refuses to discharge past
+    // empty**, which would be a different bug wearing this test's green. So each arm must
+    // also have *delivered* the charge it was asked for: the extra 72 seconds moved 2 % of
+    // the cell's own capacity out of it, damage or no damage.
+    //
+    // A ratio between the two fade figures — which is what this check was at first — cannot
+    // do that job, and is anti-correlated with it: a refusing cell drives its own fade to
+    // zero and the ratio to infinity, so the check would pass hardest exactly where it
+    // should fail. It was also implied by the two bounds above and could not fail on its
+    // own. No perturbation of the chemistry file can expose an assertion its siblings
+    // already imply, which is why this one had to be found by reading.
+    for &(name, _, _, delivered, demanded) in &rows {
+        assert!(
+            (delivered - demanded).abs() < 0.01 * demanded,
+            "{name}: the past-empty leg delivered {delivered:.4} Ah against {demanded:.4} Ah demanded — the cell did not carry the excursion, so the fade figures above are not measuring over-discharge at all"
+        );
+    }
+}
+
+/// **The id a client asks for has to be the name of the file on disk.**
+///
+/// `sim-server` resolves a scenario's `chemistry = "..."` key by joining the id onto the
+/// chemistry directory as `{id}.toml`, after validating it against `[a-z0-9_]+`. A file whose
+/// `[meta] id` disagrees with its own filename, or whose id carries a character that charset
+/// rejects, parses and validates perfectly and is then unreachable by every client.
+///
+/// Checked rather than assumed, because "reachable through the existing mechanism" is a claim
+/// this repo has been wrong about before — a feature has landed reachable by no client at
+/// all. This does not exercise the server; it pins the one property the server's lookup
+/// depends on.
+#[test]
+fn the_lto_id_is_the_name_of_its_own_file() {
+    let id = lto().meta.id;
+    assert_eq!(
+        id, "lto_20ah_generic",
+        "the id must match chemistries/lto_20ah_generic.toml"
+    );
     assert!(
-        nmc_delta / lto_delta.max(1.0e-12) > 100.0,
-        "the two arms must differ in kind, not in size"
+        id.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+        "the id must satisfy the [a-z0-9_]+ charset the server validates before the path join"
     );
 }

@@ -108,7 +108,11 @@ r_growth_per_capacity_loss = 1.5     # provenance: placeholder — resistance gr
 #   - adiabatic ceiling  = 24 kJ / 95 J/K = 253 K, so a fully-reacted cell peaks near
 #     676 K (403 degC) — hot, survivable-looking for LFP, and comfortably past the vent.
 #   - onset -> vent      = 30 K x 95 J/K = 2.85 kJ, released at 5 W rising to ~33 W
-#     across that span, so an adiabatic cell at onset vents in roughly 3 minutes.
+#     across that span. Integrated through the engine's own reaction_power that is 263 s,
+#     roughly 4.5 minutes. It is NOT the ~3 minutes an average of the two endpoint powers
+#     predicts: the Arrhenius rise is convex, so the cell spends most of the span near the
+#     cold end and the endpoint average runs fast. Corrected against a measurement in
+#     docs/plans/phase-8-slice-a-lto.md, which walked into the same trap writing the LTO set.
 # Both are shape checks, not fits; sim-data pins them against a band.
 #
 # Plating: charging below t_plating_min_k above plating_c_threshold plates metallic

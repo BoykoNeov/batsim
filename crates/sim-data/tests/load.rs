@@ -271,7 +271,7 @@ fn shipped_aging_coefficients_give_a_plausible_one_year_fade() {
         let cycles_to_20_percent = 0.2 / per_cycle;
         assert!(
             (300.0..=50_000.0).contains(&cycles_to_20_percent),
-            "{name}: {cycles_to_20_percent:.0} full cycles to 20 % capacity loss —              outside the plausible 300–50,000 band, so cyc_fade_per_ah is not a sane              value for this cell"
+            "{name}: {cycles_to_20_percent:.0} full cycles to 20 % capacity loss — outside the plausible 300–50,000 band, so cyc_fade_per_ah is not a sane value for this cell"
         );
     }
 }
@@ -334,7 +334,7 @@ fn shipped_plating_coefficients_give_a_plausible_cold_charge_cost() {
         if !prices_plating {
             assert!(
                 safety.t_plating_min_k < chem.cell.t_charge_min_k,
-                "{name}: no plating cost is declared, so the plating gate must be                  unreachable — but t_plating_min_k {} is not below the cell's own                  charge floor {}. Either the coefficients are missing or the threshold                  is wrong.",
+                "{name}: no plating cost is declared, so the plating gate must be unreachable — but t_plating_min_k {} is not below the cell's own charge floor {}. Either the coefficients are missing or the threshold is wrong.",
                 safety.t_plating_min_k,
                 chem.cell.t_charge_min_k
             );
