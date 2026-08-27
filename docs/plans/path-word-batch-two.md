@@ -165,6 +165,40 @@ been pinned and consulted by nothing — the shape this file rejects everywhere 
 a test of its own now, on `an_hours_tie_rounds_the_way_a_computed_tie_does`'s terms: the
 same token, the same claims, the same lesson, and the only difference is the noun.
 
+## Round two, and the wire nothing was watching
+
+The table above was measured **before** `accounting_for`'s four number parameters were
+bundled into a `Reading`, and green-after-a-refactor does not re-establish that a fence still
+*bites*. Re-running it turned up a hole the first round could not have seen.
+
+`Written::unit` reaches the gate through `From<&Written>`, and **nothing exercised that
+conversion**. The fence test hand-builds its `Reading` to ask the predicate a clean question;
+the scanner's own test compared tokens and scales and dropped the noun; and every sentence
+that once collided has been repaired. `unit_is_time("")` is **true** — empty means "the
+sentence wrote digits", which those arms have always been asked about — so a conversion
+passing `""` would have re-opened the collision with the whole suite green.
+
+| perturbation | reddened |
+| --- | --- |
+| `From<&Written>` drops the unit noun | **the new wire test, and nothing else** |
+| shape 4 stops setting the unit noun | the wire test and the scanner's own |
+| `unit_is_time` is widened to admit a percent | the fence, and the wire test |
+| the overlap skip is deleted | the scanner test, the ledger, the word counts, the wire test |
+| CONTROL: prose reworded, no number touched | nothing |
+
+**The first row is the finding.** One test reddens, and it is the one written in this round —
+which is the demonstration that nothing else was watching, rather than an argument that
+nothing was. The general shape is worth naming: *the predicate had a test and the plumbing
+into it did not*, which is the same "pinned and consulted by nothing" defect one level over
+from the one the gate itself exists to fence. A fence is only as live as the wire feeding it,
+and a wire is only watched if a perturbation on it reddens something.
+
+The scanner's own test now returns the noun beside the token and the scale, and asserts it on
+every case — including the list-ellipsis item, which is the one place the noun is *copied*
+from a neighbour rather than looked up, and a non-duration noun, which is the case the gate
+is actually about. Both `percent` and `seconds` scale by one, so the scale can never stand in
+for the noun.
+
 ## One thing the arms did to the code
 
 `accounting_for` reached eight parameters and clippy refused it. The four that describe the

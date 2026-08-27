@@ -892,49 +892,69 @@ fn the_scanner_joins_thousands_groups_and_nothing_else() {
 /// case it quietly misses is coverage nobody asked for and nobody gets.
 #[test]
 fn the_word_scanner_reads_quantities_and_not_pronouns() {
+    // The NOUN is returned beside the token and the scale, and that is not decoration.
+    // `Written::unit` is what `Reading` carries into the gate on check 6's duration arms,
+    // and `unit_is_time("")` is TRUE - an empty unit means "the sentence wrote digits", which
+    // those arms have always been asked about. So a shape that stopped setting the noun, or
+    // a conversion that dropped it, would re-open the collision this slice closed and every
+    // test in this file would stay green, because the one sentence that collided has since
+    // been repaired. This helper is the only place the wire is watched.
     let one = |text: &str| {
         let found = spelled_numbers(text);
         assert_eq!(found.len(), 1, "`{text}` -> {found:?}");
         let w = found.into_iter().next().expect("checked just above");
-        (w.token, w.scale)
+        assert!(
+            !w.unit.is_empty(),
+            "`{text}` scanned to a quantity with no unit noun. Empty means \"written in \
+             digits\" to `unit_is_time`, so a spelled quantity carrying it is offered the \
+             arms that read a step length and an instant - which is the accounting this \
+             field exists to refuse."
+        );
+        (w.token, w.scale, w.unit)
     };
 
     // Shape 1: a numeral and a unit, with the fillers a sentence puts between them.
-    assert_eq!(one("5.71 at three minutes,"), ("3".to_string(), 60.0));
-    assert_eq!(one("rest for half an hour."), ("0.5".to_string(), 3600.0));
+    assert_eq!(
+        one("5.71 at three minutes,"),
+        ("3".to_string(), 60.0, "minutes")
+    );
+    assert_eq!(
+        one("rest for half an hour."),
+        ("0.5".to_string(), 3600.0, "hour")
+    );
     assert_eq!(
         one("jumps of roughly fifty simulated seconds and"),
-        ("50".to_string(), 1.0)
+        ("50".to_string(), 1.0, "seconds")
     );
     // Hyphenated attributive: the unit is fused onto the numeral, so neither half is a word
     // of its own to walk from.
     assert_eq!(
         one("inside an eighteen-minute discharge"),
-        ("18".to_string(), 60.0)
+        ("18".to_string(), 60.0, "minute")
     );
     // A compound cardinal.
     assert_eq!(
         one("takes twenty-four minutes of"),
-        ("24".to_string(), 60.0)
+        ("24".to_string(), 60.0, "minutes")
     );
     // A scale word folds into the value rather than standing as the unit. This is the case
     // that fails toward a WRONG NUMBER rather than toward silence: read as a unit, three
     // thousandths of a point comes out as the number three.
     assert_eq!(
         one("moves by three thousandths of a point in"),
-        ("0.003".to_string(), 1.0)
+        ("0.003".to_string(), 1.0, "point")
     );
 
     // Shape 2: the numeral follows its unit, because English puts it there.
     assert_eq!(
         one("after the first minute and a half, 5.71"),
-        ("1.5".to_string(), 60.0)
+        ("1.5".to_string(), 60.0, "minute")
     );
     // Any fraction, not only a half. Read only halves once, and a perturbation turning
     // this very phrase into a quarter went green because the scanner saw nothing there.
     assert_eq!(
         one("after the first minute and a quarter, 5.71"),
-        ("1.25".to_string(), 60.0)
+        ("1.25".to_string(), 60.0, "minute")
     );
 
     // Shape 4: shape 2 the other way round — the numeral ahead of its fraction and both
@@ -942,11 +962,11 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
     // words and only the quantity is the same.
     assert_eq!(
         one("40.33 A four and a half seconds later,"),
-        ("4.5".to_string(), 1.0)
+        ("4.5".to_string(), 1.0, "seconds")
     );
     assert_eq!(
         one("about two and a half days — which is"),
-        ("2.5".to_string(), 86400.0)
+        ("2.5".to_string(), 86400.0, "days")
     );
     // ...and it consumes its own tail. Read by shape 1 instead, `half seconds` is 0.5 s, and
     // on `nothing-to-clamp` — whose step length IS 0.5 s — the ledger tied a sentence saying
@@ -955,13 +975,21 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
     let both = spelled_numbers("40.33 A four and a half seconds later,");
     assert_eq!(both.len(), 1, "the tail is not a second quantity: {both:?}");
 
+    // A noun that is NOT a duration, read off the shape the gate was found by. Everything
+    // above scales by a time; this one scales by one, exactly as `seconds` does, which is
+    // why the scale cannot stand in for the noun.
+    assert_eq!(
+        one("against the twin's half a percent,"),
+        ("0.5".to_string(), 1.0, "percent")
+    );
+
     // Shape 3: a list item inheriting the unit an earlier item stated.
     let list = spelled_numbers("5.71 at three minutes, 5.80 at six, and 5.81 later");
     assert_eq!(
         list.iter()
-            .map(|w| (w.token.as_str(), w.scale))
+            .map(|w| (w.token.as_str(), w.scale, w.unit))
             .collect::<Vec<_>>(),
-        vec![("3", 60.0), ("6", 60.0)],
+        vec![("3", 60.0, "minutes"), ("6", 60.0, "minutes")],
         "the second item carries the first item's unit"
     );
 
@@ -12658,6 +12686,39 @@ fn a_spelled_quantity_reaches_the_duration_arms_only_when_it_is_one() {
          writes in some other unit is not a candidate for them, whatever it happens to \
          equal. See `Written::unit`."
     );
+}
+
+/// The scanner's unit noun reaches [`Reading`], which is the wire the gate hangs off.
+///
+/// [`a_spelled_quantity_reaches_the_duration_arms_only_when_it_is_one`] asks the *predicate*
+/// the right question and hand-builds its [`Reading`] to do it, so it never crosses this
+/// conversion. Nothing else did either: the scanner's own test compares tokens and scales,
+/// and the ledger's sentences are all repaired. So `From<&Written>` could have passed `""`,
+/// which [`unit_is_time`] reads as "the sentence wrote digits" and admits, and the gate would
+/// have been dead with every test in this file green.
+///
+/// The whole point of the field is that it survives the trip, so the trip is what is asked
+/// about here.
+#[test]
+fn a_spelled_quantitys_unit_survives_the_trip_into_a_reading() {
+    let found = spelled_numbers(
+        "against the twin's half a percent, and 40.33 A four and a half seconds later",
+    );
+    let units: Vec<&str> = found.iter().map(|w| Reading::from(w).unit).collect();
+    assert_eq!(
+        units,
+        vec!["percent", "seconds"],
+        "the noun the scanner read did not arrive in the `Reading` check 6 asks about: {found:?}"
+    );
+    assert!(
+        found.iter().all(|w| Reading::from(w).in_words),
+        "a quantity spelled in words reached a `Reading` that says it was written in \
+         digits, which hands it the arms that compare characters."
+    );
+    // ...and the two halves mean opposite things to the gate, which is the whole reason the
+    // noun is carried rather than the scale: both of these scale by one.
+    assert!(!unit_is_time(Reading::from(&found[0]).unit));
+    assert!(unit_is_time(Reading::from(&found[1]).unit));
 }
 
 /// [`Tie::Hours`] rounds like a computed tie, asked directly because no rule can ask it.
