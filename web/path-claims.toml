@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Twenty-three steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Twenty-four steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -126,7 +126,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 72 claims below that set
+#              Be clear about what this buys TODAY: in all 73 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -145,8 +145,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  216 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  36 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  239 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  38 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -198,9 +198,9 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 36 claims.
+# bounds the engine against `value` and is deliberately tighter on 38 claims.
 #
-#   same        235 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        260 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    7. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -246,8 +246,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 241 of the 278 numbers the
-#            174 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 265 of the 303 numbers the
+#            182 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -278,7 +278,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 174 claimed sentences need none. A future literal printing a chemistry constant will
+# the 182 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -293,7 +293,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — twenty-three steps of the twenty-four so far.
+# of this file — twenty-four steps of the twenty-four so far, which is all of them.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -3705,7 +3705,7 @@ display = "surface gap"
 shows = "0.00 / 0.00 pts"
 note = """
 The first claim in this file read on the zero-length probe, and the step's own headline:
-this row is what step 18 exists to put on the panel, and the sentence a reader meets first
+this row is what step 17 exists to put on the panel, and the sentence a reader meets first
 is about what it says before anything has happened.
 
 The value is a true zero in the sense the sentence means — a particle nobody has asked for
@@ -3807,6 +3807,505 @@ draft of this note said it was. Coulomb counting is `I·dt / (3600·capacity)`, 
 cannot move this number, and a mutation that surfaced only on the NEXT step (an RC state,
 a temperature) would not show up in the probe's own telemetry at all. The real guard is
 `a_zero_length_probe_moves_nothing`, which compares whole snapshots across two probes.
+"""
+
+# -------------------------------------------------------------------------------------
+# THE NEGATIVE ELECTRODE SETTLES, AND THE POSITIVE ONE DOES NOT
+#
+# Twenty-five claims on one trajectory, which makes this the most heavily claimed step in
+# the path. Every one of them is value-only unless it is read at the mark, and that is the
+# throttle rather than caution: the `surface gap` row is formatted from `cells`, which the
+# page samples on `CELLS_PERIOD_MS` (250 ms of WALL clock) rather than per frame — so
+# mid-run there is no single string it can be said to be showing at a given simulation
+# time. This step's own prose says so from the reader's side, and `Row::surface_gap` says
+# so from this file's. Paused, the next sample catches up and stays, which is why the two
+# claims read at 2860 s may name a `display` and the fifteen before them may not.
+# -------------------------------------------------------------------------------------
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "5.28 points after the first minute and a half, 5.71 at three minutes, 5.80 at six, and **5.81 for the whole second half of the discharge**"
+quantity = "surface_gap_neg_pts:90"
+value = 5.282083
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "5.28"
+states = "same"
+read_at_s = 90.0
+note = """
+The negative electrode's gradient a minute and a half in, and the first of four readings
+that between them say a quantity has stopped moving.
+
+The instants are spelled in WORDS — "the first minute and a half", "three minutes", "six" —
+and are therefore invisible to both scans in this file. That is stated here rather than
+left to a green ledger to imply: what the four claims tie is the four gap figures, and what
+puts each one at 90, 180, 360 and 1060 seconds is this claim's `read_at_s` and nothing a
+reader is shown. See the module docs' list of word numerals, which this step roughly
+triples.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "5.28 points after the first minute and a half, 5.71 at three minutes, 5.80 at six, and **5.81 for the whole second half of the discharge**"
+quantity = "surface_gap_neg_pts:180"
+value = 5.711512
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "5.71"
+states = "same"
+read_at_s = 180.0
+note = """
+Three minutes. The gap has covered 0.43 points in the ninety seconds since the last
+reading; it will cover 0.09 in the next hundred and eighty, and 0.003 in the fourteen
+minutes after that. The four claims are chosen at those spacings on purpose — they are what
+"climbs and then simply stops" means, stated as numbers rather than as a shape.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "5.28 points after the first minute and a half, 5.71 at three minutes, 5.80 at six, and **5.81 for the whole second half of the discharge**"
+quantity = "surface_gap_neg_pts:360"
+value = 5.802074
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "5.80"
+states = "same"
+read_at_s = 360.0
+note = """
+Six minutes, and the last instant at which the row still prints `5.80`. The pair of claims
+in the next sentence pins where it stops doing so.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "5.28 points after the first minute and a half, 5.71 at three minutes, 5.80 at six, and **5.81 for the whole second half of the discharge**"
+quantity = "surface_gap_neg_pts:1060"
+value = 5.805159
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "5.81"
+states = "same"
+read_at_s = 1060.0
+note = """
+The end of the discharge — the last instant before the load comes off, and the far end of
+the "whole second half" the sentence claims. The near end is the tick-over at 518 s, which
+is pinned by the two claims in the next sentence rather than here, so that this list stays
+four readings of one quantity and does not double as an assertion about the display.
+
+THE PROSE MOVED TO MAKE THIS SENTENCE TRUE. It used to read "5.81 for the whole remaining
+twelve minutes of the discharge", which — with the `5.80 at six` immediately before it —
+claims 5.81 from 360 s on, and the row prints 5.80 until 518. The old sentence then
+conceded the point in its own next clause ("ticks over ... about halfway through it") in a
+way that contradicted it, and "about halfway" was only true if `it` meant the discharge
+rather than the stretch the clause had just named: halfway through 360 → 1060 is 710 s and
+the tick is at 518. Two readings of one sentence disagreeing is the defect
+`docs/plans/path-ledger-three-times.md` records as "true at every instant a claim read and
+false between them". The sentence now names the instant.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "the second decimal ticks over from 5.80 to 5.81 once, at **518 s**"
+quantity = "surface_gap_neg_pts:516"
+value = 5.804999
+tol = 1.0e-5
+tol_from = "tighter"
+spells = "5.80"
+states = "same"
+read_at_s = 516.0
+note = """
+THE ROW BEFORE THE TICK, and half of an assertion no single claim can make. `516` is not in
+the prose and does not need to be: what the sentence prints is the instant the display
+CHANGES, and a change is two readings.
+
+`tighter`, and this is the one place in the file where the reason is the rounding boundary
+itself. These two rows are 6e-6 points apart — 5.804999 and 5.805005 — and sit either side
+of `to_fixed`'s half-up boundary at 5.805. Under the spelled rule (5e-3) an engine drift of
+a thousandth would leave both claims green while moving the tick-over by minutes, which is
+the only thing this pair asserts. At 1e-5 the pair says what the sentence says.
+
+Note the value check is NOT tightened with it, and cannot be: it compares `value` against
+`spells` at the sentence's own precision, so |5.804999 - 5.80| = 4.999e-3 against a rule of
+5e-3 passes by six millionths. That is the correct behaviour and it is worth seeing once —
+the prose is entitled to the digit the page prints, and the page prints `5.80` here.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "the second decimal ticks over from 5.80 to 5.81 once, at **518 s**"
+quantity = "surface_gap_neg_pts:518"
+value = 5.805005
+tol = 1.0e-5
+tol_from = "tighter"
+spells = "5.81"
+states = "same"
+read_at_s = 518.0
+note = """
+The other half: the first row that prints `5.81`, and the last time this number ever
+changes. `518` in the sentence is accounted for as this claim's `read_at_s` —
+`Accounted::ReadAt` — and that arm is weaker than a spelling on its own ("we measured
+then", not "it happens then"). What makes it carry the sentence here is its SIBLING: the
+claim above says the row still reads 5.80 two seconds earlier, so the pair addresses the
+instant from both sides and there is no other instant at which both are true.
+
+`tighter` for the reason its sibling gives.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "20.02 points at that same first mark, 25.58 at three minutes, 31.27 at six, 34.15 at nine, 36.12 at thirteen, and **37.18 by the end of the discharge**"
+quantity = "surface_gap_pos_pts:90"
+value = 20.019245
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "20.02"
+states = "same"
+read_at_s = 90.0
+note = """
+The positive electrode at the same instant as the negative's first reading — "that same
+first mark" — and already four times it. Six claims on this sentence against the
+negative's four, because this gradient never settles and a list that stopped early would
+be the shape of the argument rather than its evidence.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "20.02 points at that same first mark, 25.58 at three minutes, 31.27 at six, 34.15 at nine, 36.12 at thirteen, and **37.18 by the end of the discharge**"
+quantity = "surface_gap_pos_pts:180"
+value = 25.576167
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "25.58"
+states = "same"
+read_at_s = 180.0
+note = "Three minutes, and 5.56 points added where the negative added 0.43."
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "20.02 points at that same first mark, 25.58 at three minutes, 31.27 at six, 34.15 at nine, 36.12 at thirteen, and **37.18 by the end of the discharge**"
+quantity = "surface_gap_pos_pts:360"
+value = 31.270283
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "31.27"
+states = "same"
+read_at_s = 360.0
+note = "Six minutes. The negative electrode has been within 0.004 points of its final value since about here."
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "20.02 points at that same first mark, 25.58 at three minutes, 31.27 at six, 34.15 at nine, 36.12 at thirteen, and **37.18 by the end of the discharge**"
+quantity = "surface_gap_pos_pts:540"
+value = 34.148584
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "34.15"
+states = "same"
+read_at_s = 540.0
+note = "Nine minutes."
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "20.02 points at that same first mark, 25.58 at three minutes, 31.27 at six, 34.15 at nine, 36.12 at thirteen, and **37.18 by the end of the discharge**"
+quantity = "surface_gap_pos_pts:780"
+value = 36.122951
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "36.12"
+states = "same"
+read_at_s = 780.0
+note = "Thirteen minutes."
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "20.02 points at that same first mark, 25.58 at three minutes, 31.27 at six, 34.15 at nine, 36.12 at thirteen, and **37.18 by the end of the discharge**"
+quantity = "surface_gap_pos_pts:1060"
+value = 37.180748
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "37.18"
+states = "same"
+read_at_s = 1060.0
+note = """
+The end of the discharge, and the number the sentence's closing clause is a ratio of:
+37.180748 over the negative's 5.805159 is 6.40, which the prose gives as "more than six
+times". That comparison is a WORD and is invisible to both scans — and a `Tie::Ratio` over
+the two claims would not have caught much if it had been written, because a computed tie is
+compared at the prose's own precision and `6` accepts anything from 5.5 to 6.5. Said here
+rather than built.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "By the time the **negative gap first reads 0.00**, at **1396 s**, the terminal is at **3.319 V**"
+quantity = "gap_neg_zero_s"
+value = 1396.0
+tol = 0.5
+tol_from = "spelled"
+spells = "1396"
+states = "same"
+read_at_s = 0.0
+note = """
+THE INSTANT THE ROW GIVES UP ON THE NEGATIVE ELECTRODE, and the claim the rest of this
+sentence hangs from. `gap_neg_zero_s` is a reduction over the whole run — the first row
+whose `surface gap` reads `0.00` on the negative half — so it is a statement about
+firstness rather than about an instant an author picked, which is what the word `first` in
+the sentence promises.
+
+The threshold is the DISPLAY'S, not a number in this file: `fmt_gap_pts(neg, 2)`, which
+mirrors the page's `gapPts` and carries its negative-zero guard. A
+`gap_neg_below_pts:<x>` would have let the sentence be true of whatever `x` made it true.
+
+`read_at_s = 0` because the quantity folds over the run and reads no row. That is the same
+shape `deficit_zero_s` and `t_at_v_below` take, and it is why this claim carries no
+`display`: there is no row to render a crossing.
+
+THE INSTANT WAS ADDED TO THE PROSE FOR THIS CLAIM. The sentence used to read "By the time
+the negative gap first reads 0.00 the terminal is at 3.319 V", which prints no instant at
+all — so the two readings beside it could only ever have been claimed at a moment declared
+here and nowhere else, and the word `first` would have been tied to nothing. Printing 1396
+is what turns it from prose into an assertion.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "By the time the **negative gap first reads 0.00**, at **1396 s**, the terminal is at **3.319 V**"
+quantity = "surface_gap_neg_pts:1396"
+value = 0.004862
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "0.00"
+states = "same"
+read_at_s = 1396.0
+note = """
+What the row prints at that instant, which is not the same statement as the claim above it:
+one says WHEN the display first reads zero, this says WHAT the engine is holding when it
+does. 0.004862 points — the gradient is not gone, it is under half of the last digit the
+row can show, and this claim is the one that says so out loud.
+
+The value check passes by a hundred and thirty millionths (|0.004862 - 0| against a rule of
+0.005), which is the whole content of `gapPts`'s threshold: the guard fires exactly where
+the display would otherwise have printed a non-zero digit.
+
+No `display`, and the reason is the throttle rather than the value: 1396 s is mid-run, and
+the `surface gap` row is sampled four times a second in WALL clock, so what it is showing at
+a given simulation time has no single answer while something is moving. See the block
+comment above these claims.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "By the time the **negative gap first reads 0.00**, at **1396 s**, the terminal is at **3.319 V**"
+quantity = "v_at:1396"
+value = 3.319292
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.319"
+states = "same"
+read_at_s = 1396.0
+note = """
+The terminal at the same instant, and the number two ledger rules on this step then quote:
+the `96 %` of the rebound that is already over, and the `33 mV` that is not. Tagged
+(`v_at:1396`) so that they can — a step that files several voltages under one name is
+unquotable, which is the fence `Tie::Quoted` keeps and the reason step 15 tagged its eight.
+
+No `display` for its sibling's reason, one row over: the `terminal` row is redrawn every
+frame and is NOT throttled, but at 200x a reader cannot stop the page here, and this
+step's own prose warns that a gap and a voltage read in one glance are not simultaneous.
+The two claims read at the mark are the ones that name what the panel shows.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "3.352 V is all it will ever reach"
+quantity = "v_at:2860"
+value = 3.352312
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.352"
+states = "same"
+read_at_s = 2860.0
+note = """
+The mark, and the ceiling of the rebound as this step measures it. "All it will ever reach"
+is an EXTRAPOLATION and this claim does not assert it — the voltage is still rising by a
+few microvolts a step when the run stops. What is claimed is the reading at the mark; the
+sentence's "ever" rests on the positive electrode's gradient being down to 0.09 points
+there, which is the claim two sentences later.
+
+Value-only although the mark is a legitimate display instant, because the sentence that
+does name what the panel shows is the one at the end of this paragraph — "0.09 points and
+3.352 V when the run stops" — and two display claims on one row would assert the same
+string twice.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "The positive gap at that same moment is **6.97 points**"
+quantity = "surface_gap_pos_pts:1396"
+value = 6.966481
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "6.97"
+states = "same"
+read_at_s = 1396.0
+note = """
+The whole of the step in one comparison: at the instant the negative electrode's gradient
+has fallen under the panel's last digit, the positive one is at seven points and has
+twenty-four minutes to go. "That same moment" is the crossing the previous sentence names,
+and this claim is read at it — so if `gap_neg_zero_s` moves, this claim's `read_at_s` is
+what has to move with it, and nothing automates that. Said here rather than left implicit.
+
+No `display`, mid-run, for the throttle reason above.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "3.60 points and 3.336 V, then 3.06 and 3.338, and **0.09 points and 3.352 V when the run stops**"
+quantity = "surface_gap_pos_pts:1608"
+value = 3.598044
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "3.60"
+states = "same"
+read_at_s = 1608.0
+note = """
+The first of three pairs, and the sentence's argument is the pairing rather than any one
+number: the gap falls by three and a half points across them while the terminal moves by
+sixteen millivolts. Six claims, three instants.
+
+Neither of the first two instants is printed. That is the honest weakness of this sentence
+and it is the sentence's own shape — it lists what the two rows read "from there" without
+saying when — so the claims declare the instants and the note says they are declared. What
+stops them being chosen to flatter the prose is the third pair, which is at the mark and
+therefore not chosen at all.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "3.60 points and 3.336 V, then 3.06 and 3.338, and **0.09 points and 3.352 V when the run stops**"
+quantity = "v_at:1608"
+value = 3.335527
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.336"
+states = "same"
+read_at_s = 1608.0
+note = "The terminal at the same instant as the gap beside it in the sentence."
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "3.60 points and 3.336 V, then 3.06 and 3.338, and **0.09 points and 3.352 V when the run stops**"
+quantity = "surface_gap_pos_pts:1662"
+value = 3.056668
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "3.06"
+states = "same"
+read_at_s = 1662.0
+note = "Fifty-four seconds later: half a point of gradient for two and a half millivolts."
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "3.60 points and 3.336 V, then 3.06 and 3.338, and **0.09 points and 3.352 V when the run stops**"
+quantity = "v_at:1662"
+value = 3.338118
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.338"
+states = "same"
+read_at_s = 1662.0
+note = "And its terminal."
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "3.60 points and 3.336 V, then 3.06 and 3.338, and **0.09 points and 3.352 V when the run stops**"
+quantity = "surface_gap_pos_pts:2860"
+value = 0.088934
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "0.09"
+states = "same"
+read_at_s = 2860.0
+display = "surface gap"
+shows = "0.00 / 0.09 pts"
+note = """
+The mark, and the one instant on this trajectory where a `surface gap` claim may name what
+the row shows: the page is paused there, so the 250 ms sampler catches up and stays. Both
+halves are in the string because the row prints both, and the negative half being `0.00`
+next to a positive half that is not is the picture the whole step is for.
+
+Not `quoted`: the sentence prints "0.09 points" and never the pair, which is fair for a
+sentence whose subject is the positive electrode alone. `quoted` would require the string
+`0.00 / 0.09 pts` to appear in the prose.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "3.60 points and 3.336 V, then 3.06 and 3.338, and **0.09 points and 3.352 V when the run stops**"
+quantity = "v_at:2860"
+value = 3.352312
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.352"
+states = "same"
+read_at_s = 2860.0
+display = "terminal"
+shows = "3.352 V"
+quoted = true
+note = """
+The same reading as the claim on "3.352 V is all it will ever reach", stated a second time
+because this is a second sentence and check 6 asks each claimed sentence to account for its
+own tokens. The two agree by construction — one quantity, one instant, one value — which is
+also what `Tie::Quoted` requires of the two ledger rules that quote `v_at:2860`.
+
+This is the display claim of the pair, and `quoted` because the sentence hands the reader
+the string: "3.352 V when the run stops".
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "sitting at 11.7 % from the cut-off to the mark"
+quantity = "soc_at:1060"
+value = 0.116667
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "11.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1060.0
+note = """
+The near end of "from the cut-off to the mark". The sentence's claim is that this row does
+not move by one digit across the whole rest, and no quantity in this file says "and it
+stays there" — so it is written as one number asserted at two instants, the same shape step
+14's repeated tooth uses.
+
+Two pins are not a proof that nothing moved BETWEEN them, and that is worth stating: what
+makes it sound here is the physics the sentence itself gives, that resting moves no charge.
+A perturbation that moved the charge mid-rest and put it back would pass. Nothing in this
+file catches that, and nothing plausibly does it.
+"""
+
+[[claim]]
+step = "the-gradient-itself"
+literal = "sitting at 11.7 % from the cut-off to the mark"
+quantity = "soc_at:2860"
+value = 0.116667
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "11.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 2860.0
+note = """
+The far end, twenty-four minutes of rest later, and bit for bit the same number: coulomb
+counting integrates a current of zero. Step 15 claims the same reading at the same instant
+on its own continuation arm (`soc_at:1060`, 0.116667) — the two lessons share a scenario
+file and a demand, so agreeing is a property of the pair rather than a coincidence.
+
+No `display` although this one is at the mark: `soc (true)` prints `11.7 %` here, and the
+sentence quotes that string — but its sibling at 1060 s cannot make the same claim, and a
+display on one end of a two-pin equality would say the panel shows this at the mark while
+leaving the cut-off's reading value-only. The sentence is about the pair.
 """
 
 # =====================================================================================
@@ -4030,8 +4529,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-three
-# steps, 582 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-four
+# steps, 626 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -7740,6 +8239,29 @@ steps = [
                      # 6.02 rather than 6.01, and the two teeth below empty, which were
                      # hedged at "about -0.45" and "-0.66" and are -0.442 and -0.657 at the
                      # instants a reader actually sees them
+  "the-gradient-itself", # 44 numbers, and THE LAST STEP IN THE PATH TO BE LEDGERED. It
+                     # is also the one whose numbers are most nearly its own: 29 of the 44
+                     # sit inside a claimed sentence and 25 of those claims were written
+                     # for this scan, on ONE trajectory — a 3 C discharge to the cut-off
+                     # and then half an hour of rest, which is what a `Pulse` demand buys
+                     # in a single record. The other 15 are named rather than counted:
+                     # five ordinals (two into the middle of the path, two spanning its
+                     # equivalent-circuit half, one at the twin that shares this file), the
+                     # demand box, the speed slider, the topology written `1S1P`, the rate
+                     # the box works out to, a publication year inside the chemistry's own
+                     # provenance string, the two diffusion times the sentence computes
+                     # from four extracted keys in front of the reader, and two figures
+                     # worked out from this step's own claims — the fraction of the
+                     # rebound that is over, which is the first tie in this vocabulary
+                     # where an arithmetic tie NESTS inside another, and the millivolts
+                     # left after it. THREE numbers moved and two of them arrived: `1040 s`
+                     # is 1040.594 and had been truncated rather than rounded, so it is
+                     # 1041; and an instant was added to each of two sentences — 1396 s,
+                     # so that "first reads 0.00" could be a crossing rather than a row an
+                     # author chose, and 518 s, replacing an "about halfway through it"
+                     # that was true of the discharge and false of the stretch the clause
+                     # had just named. It cost one new quantity (`gap_neg_zero_s`) and no
+                     # new tie, arm or accounting arm at all
   "same-discharge-other-chemistry", # 43 numbers: 29 to sixteen rules, 14 inside claimed
                      # sentences. The last step in the path that prints a number about
                      # ANOTHER run in almost every sentence — two nameplates, two demand
@@ -7757,10 +8279,19 @@ steps = [
                      # moved to become checkable at all: `53` is a subtraction that comes
                      # to 53.5
 ]
-# Not scanned, and why. Of the steps below, those that carry claims: one of them, so
-# their claimed sentences are checked and the rest of their prose is not. Unchecked
-# entirely: none.
+# Not scanned, and why. THIS LIST IS EMPTY for the first time, which is what the
+# twenty-four entries above amount to: every step of the guided path now has its whole
+# prose scanned, not only the sentences a claim quotes. Of the steps below, those that
+# carry claims: none of them. Unchecked entirely: none. Both sentences are derived and
+# both now say the same thing.
+#
+# The list stays in the file rather than being deleted, because it is the mechanism by
+# which a step SAYS it is not checked — a new lesson that cannot be ledgered on the slice
+# that adds it belongs here, named, with its claim count beside it.
+# `every_lesson_is_ledgered_or_named_as_not` requires every lesson to be in exactly one of
+# the two lists, so silence is not an option; an empty list is a statement and not an
+# omission. What it does NOT say is that the path is checked: a green ledger says every
+# DIGIT is tied to something, and this path states a great many of its quantities in
+# English words that no scan here can see.
 unledgered = [
-  "the-gradient-itself",            # claims: 4, on the pre-Run probe. Not ledgered — the
-                                    # rest of its numbers are measurements, not constants
 ]

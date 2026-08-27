@@ -86,7 +86,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty-three steps and 582 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty-four steps and 626 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -188,20 +188,24 @@
 //!   [`every_arm_is_instructed_by_its_own_step`]: the sentence telling the reader to make
 //!   this exact change must be in this step's prose, and every control the arm overrides
 //!   must be anchored in that sentence and must be a real change from the step's own.
-//! * **Sentences no claim is about, in the steps the ledger has not reached — one of them.**
+//! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed twenty-three whole steps — but only twenty-three. Steps here carrying
+//!   has now closed twenty-four whole steps — but only twenty-four. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
-//!   of the prose free: one. `[ledger].unledgered`
-//!   names what is left — one of the twenty-four — one line each, so this list cannot go
-//!   quietly out of date.
-//!   What the remaining steps need is no longer an arm the ledger has not got: the last of
-//!   its six — a figure derived from other figures in the same sentence — is
-//!   [`Tie::Derived`], and chemistry constants, ordinals naming other steps, part numbers,
-//!   table nodes, table spans, ratios and the clock at a mark all have one too. What they
-//!   need now is measurement, one step at a time. Both of the *harness* capabilities that
-//!   list used to name have landed — the zero-length probe, and instructed control changes
-//!   — and so has the last of check 6's five accounting arms, [`Accounted::Derived`].
+//!   of the prose free: none. `[ledger].unledgered`
+//!   names what is left — none of the twenty-four — one line each, so this list cannot go
+//!   quietly out of date; it is empty, and it stays in the file so that the next lesson
+//!   added to the path has somewhere to say it is not checked.
+//!   **What that closes is one axis and not the gap.** Every numeral in every step of the
+//!   path is now tied to a file, a control, a claim or a sentence's own arithmetic. What is
+//!   still open is what a *digit scan cannot see*: this path states dozens of its
+//!   quantities in English — "half a point", "three thousandths of a point", "more than six
+//!   times", "about a quarter of the run" — and every one of them is a measurement a reader
+//!   leans on. [`every_word_numeral_is_read_by_something`] guards the small table of words
+//!   a claim or a rule has actually needed; it says nothing about the ones no claim spells.
+//!   Every arm the two scans were waiting for has landed, and that is why the gap that is
+//!   left is not an arm: the zero-length probe, instructed control changes, and the last of
+//!   check 6's five accounting arms, [`Accounted::Derived`].
 //!   **What check 6 still has no arm for is a configured constant** — a threshold a
 //!   scenario file declares — which is why step 11's literal still has to stop short of the
 //!   fragment naming its `343.15`. Check 6 could
@@ -601,7 +605,7 @@ fn to_c(k: f64) -> f64 {
 /// `gapPts`: a surface gap in points of charge, with negative zero spelled `0.00`.
 ///
 /// The guard is the page's and is mirrored rather than simplified away, because it is
-/// exactly what step 18's headline turns on. A uniform particle does not read a hard zero:
+/// exactly what step 17's headline turns on. A uniform particle does not read a hard zero:
 /// measured on that step's own probe, the negative electrode reads `-1.11e-16` — the bulk
 /// side of the difference goes through a volume-weighted mean while the surface side
 /// returns the outermost shell untouched. `toFixed` on that gives `-0.00`, and the step
@@ -631,11 +635,17 @@ fn fmt_gap_pts(x: f64, dp: usize) -> String {
 ///
 /// It is named in the module docs as uncovered rather than left to be inferred.
 ///
-/// **`surface gap` used to sit beside it and no longer does.** It is per-cell in the same
-/// way — `Pack::cell` rather than `Telemetry` — but it carries no throttle, so unlike
-/// `past empty` it *does* have a value at a given simulation time. [`Row`] now carries it
-/// and this renders it, which is what lets step 18's headline (`0.00 / 0.00` before the
-/// reader presses Run) be a display claim rather than a number with no panel behind it.
+/// **`surface gap` used to sit beside it and no longer does, and the reason given here for
+/// nine slices was wrong.** It said that row "carries no throttle, so unlike `past empty` it
+/// *does* have a value at a given simulation time". Both are formatted from `cells`, and
+/// `cells` is sampled on `CELLS_PERIOD_MS` — see [`Row::surface_gap`], where the correction
+/// and what it costs are written out. What actually separates them is narrower: a throttled
+/// row is only behind while something is MOVING, so `surface gap` has a value at an instant
+/// the reader can stop on — the zero-length probe, and the mark — and `past empty` has none
+/// at all, because nothing in the path claims it anywhere but mid-run. That is what lets
+/// step 17's headline (`0.00 / 0.00` before the reader presses Run) be a display claim
+/// rather than a number with no panel behind it, and it is why the fifteen mid-run gap
+/// claims on that step are value-only.
 fn render_row(label: &str, row: &Row) -> String {
     let (t, sim_time_s) = (&row.telemetry, row.t_s);
     match label {
@@ -1245,10 +1255,26 @@ struct Row {
     /// The `surface gap` row's two numbers, bulk minus surface on each electrode, as
     /// fractions — `None` on an equivalent circuit, which has no electrodes.
     ///
-    /// Per-cell like [`Self::deficit_max`] and read the same way, but **unlike** it this
-    /// one is mirrorable: `past empty` is sampled on a 250 ms wall-clock throttle and this
-    /// row is not, so "what does that row show at simulation time t" has an answer. Cell
-    /// `(0, 0)` because the page's readout reads `cells[0]` — the packs that have this
+    /// Per-cell like [`Self::deficit_max`], read the same way — and **on the same throttle**,
+    /// which is what an earlier version of this comment got wrong. It said `past empty` was
+    /// sampled on a 250 ms wall clock "and this row is not"; both are formatted from
+    /// `cells`, and `cells` is sampled on `CELLS_PERIOD_MS` (250 ms) rather than per frame.
+    /// Step 17's own prose says so from the reader's side — *"these two numbers are sampled
+    /// four times a second while everything else is redrawn every frame"* — so the page, the
+    /// lesson and this file now agree.
+    ///
+    /// What that costs is narrower than the wrong version implied and worth stating exactly,
+    /// because it is what decides whether a claim here may name a `display`. A throttled row
+    /// is only behind while something is **moving**: paused, the next sample catches up and
+    /// stays. So the mirror is sound at an instant the reader can stop on — the zero-length
+    /// probe, and the mark — and it is NOT sound mid-run, where the row can be up to a
+    /// quarter-second of wall clock behind the voltage beside it (a dozen seconds of
+    /// simulation at step 17's 200x). Claims read mid-run on this quantity are value-only
+    /// for that reason, and say so in their notes; `past empty` differs only in that it has
+    /// no un-throttled instant to be claimed at, since [`render_row`] refuses to mirror it
+    /// at all.
+    ///
+    /// Cell `(0, 0)` because the page's readout reads `cells[0]` — the packs that have this
     /// quantity are 1S1P, which is a fact the readout's own doc comment turns on.
     surface_gap: Option<(f64, f64)>,
     /// What the BMS had **measured** as of the end of this step — `None` on a pack with no
@@ -1985,7 +2011,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 216 of 258 claims.
+    /// number's last printed place. The default shape: 239 of 283 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -1996,12 +2022,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 36 of 258.
+    /// the number was always right and only the declaration was wrong. 38 of 283.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 6 of 258, every
+    /// the engine either hits the claimed step or misses by a whole one. 6 of 283, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -2041,7 +2067,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 235 of 258, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 260 of 283, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -2963,7 +2989,7 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
         "deficit_best_cell_parallel_at" => row.deficit_min_cell.1 as f64,
         // The two halves of the `surface gap` row, each in points of charge — the units
         // the row prints and the prose speaks. Separate quantities and not a pair, because
-        // a claim states one number: step 18's whole argument is that these two do
+        // a claim states one number: step 17's whole argument is that these two do
         // *different things*, and a claim that averaged them would be about neither.
         //
         // A circuit panics rather than reading zero, for the reason the row prints its
@@ -3427,6 +3453,42 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
                 )
             })
             .t_s;
+    }
+    // When the `surface gap` row's **negative half first prints `0.00`** [s].
+    //
+    // `t_at_v_below`'s shape with the threshold taken out of the author's hands, and that is
+    // the whole reason it is a quantity rather than a claim at an instant an author picked.
+    // Step 17's sentence is about what the ROW says - *"by the time the negative gap first
+    // reads 0.00"* - so the crossing is the display's own rule, `fmt_gap_pts(neg, 2)`, which
+    // is the same mirror the display check runs on and carries `gapPts`'s negative-zero
+    // guard with it. A `gap_neg_below_pts:<x>` would have let the sentence be true of
+    // whatever `x` made it true.
+    //
+    // **The zero has to be final**, and that is asserted rather than assumed. A first-match
+    // search answers a flicker as readily as an arrival, and "first reads 0.00" is a
+    // sentence about a gradient that has finished draining. On this trajectory the gap falls
+    // monotonically through the rest, so the two readings coincide; the assert is what says
+    // so out loud if the trajectory ever stops being monotone there.
+    if quantity == "gap_neg_zero_s" {
+        let zero = |row: &Row| {
+            row.surface_gap
+                .is_some_and(|(neg, _)| fmt_gap_pts(neg, 2) == "0.00")
+        };
+        let first = run.rows.iter().position(zero).unwrap_or_else(|| {
+            panic!(
+                "the `surface gap` row's negative half never prints `0.00` on this run -                  its smallest reading is {:.6} points. The claim is about a crossing that                  no longer happens, or this step's cell model has no surface at all.",
+                run.rows
+                    .iter()
+                    .filter_map(|r| r.surface_gap.map(|(neg, _)| neg * 100.0))
+                    .fold(f64::MAX, f64::min)
+            )
+        });
+        assert!(
+            run.rows[first..].iter().all(zero),
+            "the `surface gap` row's negative half prints `0.00` from t = {} s and then              leaves zero again. `first reads 0.00` is a sentence about a gradient that has              finished draining, and a first match on a flicker would answer it with an              instant the reader would not recognise.",
+            run.rows[first].t_s,
+        );
+        return run.rows[first].t_s;
     }
     // The same crossing, timed from the start of the pulse leg `at_s` is on — step 24's
     // *"the run stops at the same `1.750 V` again — after **237.5 s**"*.
@@ -3984,7 +4046,7 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
              soc_lost_pts_at, t_rise_k_at and 
              v_below_cccv_target_mv_at (all three of which take an instant tag too), 
              soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, v_group_min_at, \
-             surface_gap_neg_pts, surface_gap_pos_pts, flag_first_s:<FLAG>, \
+             surface_gap_neg_pts, surface_gap_pos_pts, gap_neg_zero_s, flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>, overpotential_mv_at, \
              rc_overpotential_mv_at, diffusion_overpotential_mv_at, leg_delivered_ah, \
              leg_s_at_v_below:<volts>.\n\
@@ -9708,6 +9770,195 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         }],
         pow10: 0,
     },
+
+    // Step 17 - the last step in the path to be ledgered, and the one whose numbers are
+    // most nearly all its own: forty-four numerals, twenty-eight of them measurements on a
+    // single trajectory. What is left for a rule is small and unusually varied - two
+    // ordinals into the middle of the path and two more spanning its first twelve steps,
+    // the demand box, the speed slider, the topology, a publication year inside a
+    // parameter set's name, the two diffusion times the sentence works out in front of the
+    // reader, and three figures worked out from this step's own claims. See
+    // `docs/plans/path-ledger-the-gradient.md`.
+    LedgerRule {
+        // The two lessons this step's opening sentence builds on, in the order it names
+        // them. Both point INTO the path rather than back at its start, which is what makes
+        // an ordinal rule here worth more than the usual back-reference: this step sits
+        // between the pair it is comparing.
+        phrase: "Step {n}'s rebound was a gradient relaxing; step {n}'s collapse",
+        ties: &[
+            Tie::Ordinal("particle-remembers"),
+            Tie::Ordinal("the-electrolyte-starves"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The whole equivalent-circuit half of the path, named by its two ends. `1` and `12`
+        // are the positions of the first lesson and of the last one before the porous models
+        // arrive, so inserting a particle step anywhere inside that run turns this sentence
+        // red - which is exactly the sentence's claim, that the row says "no electrodes"
+        // for every one of them.
+        phrase: "on steps {n} to {n} that row says so",
+        ties: &[
+            Tie::Ordinal("bare-curve"),
+            Tie::Ordinal("circuit-repeats-itself"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The demand box, and the twin that shares this file. Step 15 runs the same scenario
+        // at the same current to a mark of 500 s; this one runs it as a pulse to the cut-off
+        // and then rests. The `Setting` reads the pulse group's current, which is the box
+        // `applyDemandMode` puts on screen here - see `Control::DemandValue`.
+        phrase: "The same file and the same {n} A as step {n}",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Ordinal("looks-fine-from-outside"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // A publication year inside a parameter set's name, which is `Tie::Name`'s shape
+        // exactly: the `2020` of Chen2020 is no more a quantity than the `50` of an LG M50.
+        // The prefix reaches one digit run and not two - the provenance names the same
+        // authors again as "Chang-Hui Chen et al.", where the characters after `Chen` are
+        // not digits at all.
+        phrase: "two numbers from Chen{n} that are not placeholders",
+        ties: &[Tie::Name {
+            field: "meta.provenance",
+            prefix: "Chen",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The sentence states its own formula - radius squared over diffusivity - so the
+        // rule is that formula and not a pair of remembered numbers. Both are extracted
+        // Chen2020 keys, which is the sentence's other claim about them.
+        //
+        // **This is where the scan found its arithmetic defect.** The negative electrode's
+        // 5.86e-6 m and 3.3e-14 m^2/s give 1040.594 s, and the prose said `1040 s`. A
+        // computed tie is compared at the precision the sentence commits to and `to_fixed`
+        // rounds away from zero, so the sentence now says 1041; the positive's 6812.100 was
+        // right as written. A figure that had been truncated rather than rounded is the
+        // narrowest kind of prose defect this scan can find, and it is invisible to every
+        // check that ran before this step was ledgered.
+        phrase: "which is **{n} s** for the negative and **{n} s** for the positive",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Product(&[
+                    Tie::Chemistry("spm.negative.particle_radius_m"),
+                    Tie::Chemistry("spm.negative.particle_radius_m"),
+                ]),
+                Tie::Chemistry("spm.negative.diffusivity_m2_per_s"),
+            ]),
+            Tie::Ratio(&[
+                Tie::Product(&[
+                    Tie::Chemistry("spm.positive.particle_radius_m"),
+                    Tie::Chemistry("spm.positive.particle_radius_m"),
+                ]),
+                Tie::Chemistry("spm.positive.diffusivity_m2_per_s"),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How much of the rebound is over at the instant the negative electrode finishes.
+        // Three of this step's own claims and one of step 15's, and not one of the three
+        // voltages the fraction is built from is printed in this clause - the sentence
+        // prints the answer. That is `Tie::Difference`'s own distinction from
+        // `Tie::Derived`, taken one level further: a ratio OF two differences, which is the
+        // first place in this vocabulary where an arithmetic tie nests inside another.
+        //
+        // The floor of the rebound is the cut-off voltage, which this step never prints and
+        // step 15 does - *"2.495 V at 1060 s"*, on its own continuation arm. Reading it
+        // through `Tie::Quoted` rather than re-measuring is what keeps the two lessons'
+        // accounts of one trajectory from drifting apart: they are the same file at the same
+        // current, and step 15's claim is checked against the engine where it lives.
+        phrase: "so about **{n} % of the rebound is already over**",
+        ties: &[Tie::Ratio(&[
+            Tie::Difference(&[
+                Tie::Quoted {
+                    step: "the-gradient-itself",
+                    arm: None,
+                    quantity: "v_at:1396",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "looks-fine-from-outside",
+                    arm: Some("carries on"),
+                    quantity: "v_at:1060",
+                    states: QuotedAs::Same,
+                },
+            ]),
+            Tie::Difference(&[
+                Tie::Quoted {
+                    step: "the-gradient-itself",
+                    arm: None,
+                    quantity: "v_at:2860",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "looks-fine-from-outside",
+                    arm: Some("carries on"),
+                    quantity: "v_at:1060",
+                    states: QuotedAs::Same,
+                },
+            ]),
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // What is left of the rebound after the negative electrode has finished with it,
+        // in millivolts: the mark's terminal less the terminal at that crossing, both of
+        // them this step's own claims. `pow10 = 3` is the sentence's unit against the
+        // engine's, the same conversion a claim's `spells_pow10` carries.
+        phrase: "That final {n} mV takes twenty-four minutes",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "the-gradient-itself",
+                arm: None,
+                quantity: "v_at:2860",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "the-gradient-itself",
+                arm: None,
+                quantity: "v_at:1396",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 3,
+    },
+    LedgerRule {
+        // The speed slider, in the footnote about the instrument rather than the cell. It is
+        // the one control on this step that changes nothing about the trajectory and
+        // everything about what a reader can read off it, which is the footnote's point.
+        phrase: "so at {n}\u{d7} they step in jumps",
+        ties: &[Tie::Setting(Control::Speed)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The topology, in the sentence explaining why this quantity lives on the readout row
+        // rather than in the pack grid. Two ties and not one: `1S1P` is a series count and a
+        // parallel count written together, and a single rule reading `pack.series` twice
+        // would go green on a 1S4P pack.
+        phrase: "this one is {n}S{n}P",
+        ties: &[
+            Tie::Scenario("pack.series"),
+            Tie::Scenario("pack.parallel"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The rate the demand box works out to on this cell, in the closing warning that the
+        // pulse train has come round again. Same shape as step 1's, off this step's own
+        // pulse box and this chemistry's nameplate.
+        phrase: "the start of a second {n} C discharge",
+        ties: &[Tie::Ratio(&[
+            Tie::Setting(Control::DemandValue),
+            Tie::Chemistry("cell.capacity_ah"),
+        ])],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -10691,6 +10942,26 @@ fn claimed_accounting(
 /// the page on the DFN step's precedent — an instruction to run "to about 400 s", which no
 /// file decides and which a tie reading a claim's own `read_at_s` would have declared from
 /// both sides. See `docs/plans/path-ledger-weaker-short.md`.
+///
+/// **The twenty-fourth, `the-gradient-itself`, is the last step in the path**, and it is
+/// the one whose numbers are most nearly all its own: twenty-nine of its forty-four sit
+/// inside a claimed sentence, and twenty-five of those claims were written for this scan —
+/// the most heavily claimed step in the path, all of it on one trajectory. It needed no new
+/// tie, no new arm and no new accounting arm; what it needed was a **quantity**,
+/// `gap_neg_zero_s`, because its central sentence is about the instant a readout row first
+/// prints `0.00` and a claim read at an instant an author picked would not have said
+/// "first". Its one genuinely new shape on this side is a [`Tie::Ratio`] whose two operands
+/// are themselves [`Tie::Difference`]es — the fraction of a rebound that is over, built from
+/// three of this step's own claims and one of step 15's, and printed by a sentence that
+/// shows none of the three voltages it is a ratio of.
+///
+/// **Three numbers moved, and two of them were added rather than corrected.** `1040 s` is
+/// 5.86e-6 squared over 3.3e-14, which is 1040.594 and had been truncated where a computed
+/// tie rounds; it is 1041 now. The other two are instants the prose did not print: 1396 s,
+/// so that "the negative gap first reads 0.00" is a crossing rather than a row; and 518 s,
+/// replacing an "about halfway through it" whose two readings disagreed — true of the
+/// discharge (half of 1060) and false of the stretch the same clause had just named (half of
+/// 360 → 1060 is 710). See `docs/plans/path-ledger-the-gradient.md`.
 ///
 /// **Numeral is the operative word, and it is a real limit rather than pedantry.**
 /// [`written_numbers`] finds digits. A quantity spelled in English is invisible to it, and
