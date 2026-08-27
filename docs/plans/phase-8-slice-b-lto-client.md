@@ -179,6 +179,39 @@ are not the same statement; the claim on the `run-on` arm says what *does* happe
 terminal crosses its ceiling at 603.0 s, a voltage limit and not a plating one) and its
 note records that the absence is asserted elsewhere.
 
+**And the axis under that one: a comparative sentence with no numeral in it is read by
+nothing.** Two of the sentences this slice shipped were false, and both were found by
+review after the suite was green, because neither contains a digit for the ledger to scan
+or an English quantity for the ban to refuse:
+
+* *"rates it at 10 C in both directions, an order of magnitude above anything else in this
+  path"* — true on the charge side (10 against LFP's 1.0) and **false on discharge**, which
+  is the direction the lesson is actually about: `max_discharge_c` is 3.0 on both LFP and
+  lead-acid, so the factor is 3.3. Slice A had attached that phrase to `max_charge_c` alone
+  and this slice widened it without re-reading the field.
+* *"Aging is on, which no other constant-current lesson in this path switches on"* — false:
+  step 21 runs `over_discharge_damage_lfp.toml` on a `Current` demand with `[pack.aging]`,
+  and `soh cap` moving is its entire subject.
+
+Both are repaired, and the repair for the second one turned up neighbour rot it did not
+cause: `over_discharge_damage_lfp.toml`'s own description says *"UNLIKE every other
+scenario here, aging is ON"*, which `calendar_fade_hot.toml`, both external shorts and the
+soft short had already falsified before this slice arrived. Narrowed to the CC discharge
+scenarios, where it is true.
+
+The lesson generalises past these two: **the ledger closes the digit axis on a step and
+says nothing about its comparatives.** "an order of magnitude above", "no other lesson
+does", "the only file that", "nothing else in this path" — every one of those is a claim
+about the repo that ages exactly the way a number does, and this file has now been wrong
+about two of them in one slice. That is the cheapest target the path verification work has
+left, and it is a *different* instrument from the digit scanner rather than an extension
+of it.
+
+One smaller thing of the same shape, named rather than fixed: step 25 closes with *"Take
+the load off that NMC cell and it is an ordinary, mostly full cell again"* — an instruction
+to the reader with no arm and no claim behind it. It is true of an ECM with no diffusion
+state, and it prints no number, so nothing here reaches it.
+
 Adding a `flag_never:` quantity is a slice of its own — it needs a fourth `tol_from`, and
 that is a change to the tolerance taxonomy rather than an entry in it.
 

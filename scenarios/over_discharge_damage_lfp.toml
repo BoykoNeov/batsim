@@ -31,7 +31,7 @@ chemistry = "lfp_26650_generic"
 name = "Over-discharge damage, single LFP cell"
 description = """
 A 1S1P LFP cell at 5 % SOC and 25 degC, isothermal, no BMS, no faults — and \
-UNLIKE every other scenario here, aging is ON. Discharge at 2 A at the default 0.5 s \
+UNLIKE the other CC discharge scenarios here, aging is ON. Discharge at 2 A at the default 0.5 s \
 step. The cell empties at 207.5 s and 1.9306 V, and nothing stops there: \
 `SOC_CLAMPED_LOW` raises, the `past empty` readout comes off zero, and the terminal falls \
 through zero to the floor its chemistry file declares. Watch `soh cap` and `soh res` in \

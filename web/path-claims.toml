@@ -8581,9 +8581,9 @@ display = "soh cap"
 shows = "100.00 %"
 quoted = true
 note = """
-The absence, made into a number. Aging is ON in this scenario - which no other
-constant-current lesson in this path does - so the row is being computed and billed the
-whole way; it prints 100.00 % because 7.6e-6 of capacity is what ten minutes of ordinary
+The absence, made into a number. Aging is ON in this scenario - as it is in the
+over-discharge lesson, the other constant-current step that bills for what it does - so
+the row is being computed and billed the whole way here; it prints 100.00 % because 7.6e-6 of capacity is what ten minutes of ordinary
 cycle throughput costs a cell rated at 20,000 cycles, and because there is no plating
 mechanism to bill on top of that.
 

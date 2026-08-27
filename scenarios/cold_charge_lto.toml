@@ -28,7 +28,7 @@
 # less. Isothermal is therefore the HARSHER reading for the graphite control arm, not a
 # kind one.
 #
-# ## Why aging is on, when every other CC scenario here leaves it off
+# ## Why aging is on, when the CC discharge scenarios here leave it off
 #
 # Because the flag is not the lesson; the BILL is. PLATING_RISK is a warning, and a warning
 # nobody pays for teaches nothing about why the limit exists. With [pack.aging] on,
@@ -74,7 +74,8 @@ name = "Cold fast charge, single LTO cell"
 description = """
 A 1S1P 20 Ah lithium-titanate cell at 20 % SOC and -25 degC, isothermal, no BMS, no \
 faults — and, unlike the CC discharge scenarios, aging is ON so that damage has somewhere \
-to show. Charge at -80 A (4 C) and watch what does NOT happen: no PLATING_RISK, at a \
+to show, which is the choice `over_discharge_damage_lfp.toml` makes and for the same \
+reason. Charge at -80 A (4 C) and watch what does NOT happen: no PLATING_RISK, at a \
 temperature and a rate that raise it on the first step of `cold_charge_nmc.toml`. At the \
 ten-minute mark this cell is 86.7 % charged with `soh cap` still printing 100.00 %; the \
 graphite cell reaches the same charge and prints 99.69 %."""

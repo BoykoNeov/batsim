@@ -3256,7 +3256,7 @@ const LESSONS = [
     reload: true,
     watch: ["plot-v", "readouts"],
     prose: [
-      "A fifth chemistry: lithium titanate, or LTO. A 20 Ah prismatic cell whose datasheet rates it at 10 C in both directions, an order of magnitude above anything else in this path. One cell, at 100 % charge, isothermal, 25 °C, with nothing protecting it.",
+      "A fifth chemistry: lithium titanate, or LTO. A 20 Ah prismatic cell whose datasheet rates it at 10 C in both directions, which no other cell in this path comes close to in either. One cell, at 100 % charge, isothermal, 25 °C, with nothing protecting it.",
       "The demand box says 200 A, which is that rating written as a current. The run is marked to stop by itself at the first step whose terminal falls below the 1.50 V this chemistry calls empty.",
       "Watch `soc (true)` for where it stops. Not when — of course it is quicker — but at what charge.",
     ],
@@ -3287,7 +3287,7 @@ const LESSONS = [
     prose: [
       "Step 11 ended with an instruction: drag the ambient below freezing, switch the BMS off, and watch `PLATING_RISK` come up on a pack that is still being charged. That flag is metallic lithium collecting on a graphite anode instead of going into it, and it is the reason a lithium datasheet carries a charge-temperature limit at all.",
       "This is the same abuse, on the cell of the last lesson, and it is worse abuse: 25 below zero, charging at 4 C, into a cell that starts at 20 % charge. The temperature is a constant of the experiment here rather than something to watch — this scenario has no thermal network, so nothing warms up and nothing cools down.",
-      "Aging is on, which no other constant-current lesson in this path switches on. That is deliberate: a flag is a warning, and a warning nobody pays for teaches nothing. Watch `soh cap`.",
+      "Aging is on, as it is in the over-discharge lesson and for the same reason. That reason is deliberate: a flag is a warning, and a warning nobody pays for teaches nothing. Watch `soh cap`.",
     ],
     expect:
       "600 s of hard charging at 25 below zero, and the flag column stays empty the whole way. `soc (true)` reaches **`86.7 %`**, `terminal` settles at **`2.747 V`**, `heat` reads **`22.28 W`** — and `soh cap` still prints **`100.00 %`**. Run on past the mark and a flag does arrive, at 603.0 s: `OPERATING_POINT_OUT_OF_WINDOW`, the terminal crossing the 2.75 V ceiling this chemistry declares. That is the first limit this cell meets and it is a voltage limit, not plating, and no amount of running will turn it into plating. Now the control arm. Load `cold_charge_nmc` from the picker — the same scenario file with the chemistry id changed and nothing else — and put the demand box to -12 A, which is 4 C on that 3.0 Ah cell. `PLATING_RISK` is up on the very first step, and it does not go away; by 5.0 s the terminal is over that cell's own 4.20 V ceiling as well. Let it run to the same mark and read the health row: **`99.69 %`**. Both cells arrive at much the same charge — 86.7 % here, **`86.8 %`** there — and one of them has spent **0.31 points** of its capacity getting there while the other has spent nothing its health row can print. That is what the flag on step 11 was warning about: the engine bills plating per amp-hour taken while the flag is up, and this cell has no plating to bill. The difference between the two runs is a parameter file.",

@@ -83,8 +83,9 @@ chemistry = "lto_20ah_generic"
 name = "CC discharge, single LTO cell"
 description = """
 A 1S1P 20 Ah lithium-titanate cell at 100 % SOC and 25 degC, isothermal, no BMS, no \
-aging, no faults. Rated 10 C in both directions, an order of magnitude above every other \
-chemistry here, and its sub-milliohm resistance is what makes that survivable: 200 A out \
+aging, no faults. Rated 10 C in both directions, which no other chemistry here \
+comes close to in either - the next hardest discharge rating is 3 C and the next \
+hardest charge rating is 1 C - and its sub-milliohm resistance is what makes that survivable: 200 A out \
 of this cell empties it in 5.9 minutes and leaves 1.250 % behind, against 0.125 % at 1 C. \
 Ask an NMC cell for the same multiple of itself and it stops with 63 % still inside."""
 
