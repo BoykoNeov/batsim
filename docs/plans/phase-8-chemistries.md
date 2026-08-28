@@ -68,7 +68,7 @@ reopening.
 | **1. Principle 10 is settled by measurement — CLOSED, zero-code branch (slice A).** One chemistry is added with **zero lines of Rust changed**, or the code it needed is named, its reason recorded, and `CLAUDE.md`'s principle amended to say what a chemistry can and cannot be. Either outcome closes this; only leaving it untested does not. | slice A |
 | **2. Both new chemistries are taught.** Each has a parameter file with provenance on every constant, a scenario file, guided-path steps, and claims in `path-claims.toml` under the digits rule. | slices B, D |
 | **3. The floor did not move.** Every existing trajectory — ECM, SPM, DFN, lead-acid — is bit-identical before and after the phase, unless a slice argues a measured exception the way slice A of Phase 7 did. A new file that no existing pack loads cannot move one; the hysteresis state in slice C is the place this criterion is actually at risk. | slice C, re-checked by every slice |
-| **4. The nickel cell's end-of-charge signature is emergent.** The voltage of a full NiMH cell on constant current **falls**, and that fall must come out of the physics — the charge the cell stops accepting, the heat that makes, and a negative `docv_dt_v_per_k` — not from a scripted override. `CLAUDE.md` forbids the scripted kind, and this is the phase's one genuinely new emergent behaviour. **Whether the existing overcharge-heat path (`energy-hole.md`) is enough to produce it is the spike question and is not known today.** | slice C spike, then slice D |
+| **4. The nickel cell's end-of-charge signature is emergent.** The voltage of a full NiMH cell on constant current **falls**, and that fall must come out of the physics — the charge the cell stops accepting, the heat that makes, and ~~a negative `docv_dt_v_per_k`~~ **(AMENDED 2026-08-28: that third item works *backwards* as the engine stands. `docv_dt` reaches voltage only as heat, and on charge it cools the cell — arm C of the spike cooled 4 K below ambient before the clamp. Slice D must be measured against a `docv_dt` that is read into OCV, per the spike's recommendation, or against `R0(T)` alone — not against this sentence as originally written.)** — not from a scripted override. `CLAUDE.md` forbids the scripted kind, and this is the phase's one genuinely new emergent behaviour. ~~**Whether the existing overcharge-heat path (`energy-hole.md`) is enough to produce it is the spike question and is not known today.**~~ **ANSWERED 2026-08-28: not on its own.** The fall emerges, but through `R0(T)` alone at roughly half the size needed at the instant a charger detects it, with a one-timestep corner. See `phase-8-slice-c-spike.md`. | slice C spike (**done**), then slice D |
 
 ## Slices
 
@@ -77,7 +77,7 @@ reopening.
 | **0** | **LANDED 2026-08-27** — `docs/plans/path-digits-rule.md`. The digits rule. The count was 70, not 68, and **half of them were tied to nothing**, which is what made this two slices rather than one: the rewrite makes the digit ledger see a quantity, and the ledger has no waiver. Thirty-five rewritten, the ban built path-wide and wider than the reader, the other 48 (as the ban counts them) named phrase by phrase in `[[english]]`. The reader stays for now. No engine change. | v17 (no bump) |
 | **A** | **LANDED 2026-08-27** — `docs/plans/phase-8-slice-a-lto.md`. `chemistries/lto_20ah_generic.toml`, datasheet-anchored on a 20 Ah LTO cell. **Zero engine code changed, so exit criterion 1 closes on the zero-code branch** — with one caveat found by reading rather than running: `[safety]` has **no way to say a cell does not plate**, because zeroing the cost fields still raises the flag and dropping the section switches off runaway too, so the file ships a labelled sentinel. Two *test-side* guards had to be amended, and both had assumed every cell is a graphite cell. | v17 (no bump) |
 | **B** | **LANDED 2026-08-27** — `docs/plans/phase-8-slice-b-lto-client.md`. Three scenario files (a 10 C discharge, and a cold fast charge with its graphite control), guided-path steps 25 and 26, seventeen claims, four arms, eighteen ledger rules. Both steps are LEDGERED, so `unledgered` is still empty. No engine code; the only Rust touched is the claims harness. Found by the checks rather than by reading: the digits rule refused the first sentence written under it, a flag instant that was also the timestep could be accounted two ways and therefore neither, and nineteen self-stated counts were stale. **Exit criterion 2 is half closed** — the LTO cell is taught. | v17 (no bump) |
-| **C** | **The hysteresis state, and NiMH's parameters.** Per-cell memory of drive direction. **Carries the phase's one snapshot bump.** Scoped with lead-acid voltage memory, not separately — see below. | **v17 → v18** |
+| **C** | **The hysteresis state, and NiMH's parameters.** Per-cell memory of drive direction. **Carries the phase's one snapshot bump.** Scoped with lead-acid voltage memory, not separately — see below. **Its spike RAN on 2026-08-28** and is written up in `docs/plans/phase-8-slice-c-spike.md`; the recommendation there adds an OCV temperature correction to this slice's bump. | **v17 → v18** |
 | **D** | **Teach NiMH,** including the falling end-of-charge voltage. Carries exit criterion 4. | v18 (no bump) |
 
 Each slice keeps `cargo test --workspace` and
@@ -207,7 +207,7 @@ reason and with the same structural payoff: a chemistry with no hysteresis block
 different code path rather than a neutral zero, so **no existing chemistry can move by a
 ULP** and exit criterion 3 is structural instead of measured.
 
-### The spike this slice needs first
+### The spike this slice needs first — **RAN 2026-08-28, and one of its premises was false**
 
 Exit criterion 4 asks for a falling voltage at full charge to *emerge*. The ingredients
 that might already be enough:
@@ -215,13 +215,33 @@ that might already be enough:
 * charge the cell stops accepting near full, and the heat that makes — `energy-hole.md`
   built the charge-side path and `i_rejected_a` with it;
 * a negative `docv_dt_v_per_k`, which `OcvTable` already carries as an optional column;
-* the thermal network, which already makes a warming cell's OCV fall.
+* ~~the thermal network, which already makes a warming cell's OCV fall.~~ **FALSE.**
+  `ocv_lookup` is a pure function of SOC (`ecm.rs:672`) and the field's own doc comment
+  says it is not used to temperature-correct OCV. The engine's only temperature → voltage
+  channel is `R0(soc, temp_k)`.
 
 **Whether those three compose into a voltage peak followed by a fall of the right size is
 not known.** It is a half-day spike with a hand-built parameter file, and it must run before
 slice C's schema is designed, because the answer decides whether the phase needs a
 charge-acceptance term as well as a hysteresis term. Phases 6 and 7 both spiked before
 authoring; this is the same discipline.
+
+**The answer, from `docs/plans/phase-8-slice-c-spike.md`** — three arms, seven
+pre-registered numbers, six confirmed and one falsified:
+
+* **It falls, but the shape is not evidence.** The hard SOC clamp pins `OCV(1.0)` while the
+  cell heats, so a peak-then-fall is *structurally guaranteed* on any chemistry. Only
+  magnitudes count.
+* **The magnitude is short by about a factor of two where it matters.** 15.5 mV after a
+  49 K rise, but only **4.589 mV** at the +10 K point where a real charger fires on 5 mV.
+* **The corner is wrong and no parameter fixes it** — the slope reverses 29× in one 0.1 s
+  step, because charge acceptance goes 100 % → 0 % in one step. **So yes, the phase needs a
+  charge-acceptance taper if the lesson is about the shape** — and does not, if it is about
+  the number.
+* **`docv_dt` today reaches −ΔV only through a temperature-history artifact** (it cools the
+  cell 4 K *below ambient* before the clamp), which is why the spike recommends wiring it
+  into voltage as `CLAUDE.md` already specifies. **No shipped chemistry carries a live
+  column**, so that cannot move a trajectory and criterion 3 stays structural.
 
 ## The stopping rule
 
