@@ -29,10 +29,12 @@
 #     from i_rejected_a and needs no [safety] at all. Dropping the section also disables the
 #     plating flag, which is the correct answer for a cell with no lithium in it.
 #     Worth recording against slice A: LTO had to ship a labelled t_plating_min_k SENTINEL
-#     because it still needed the runaway half of [safety]. A NON-LITHIUM chemistry can say
-#     "does not plate" cleanly, by omission, because it does not want the other half either.
-#     So the schema gap slice A found is narrower than it looked: it binds on lithium
-#     chemistries that do not plate, not on every chemistry that does not plate.
+#     because it still needed the runaway half of [safety], while a NON-LITHIUM chemistry
+#     could already say "does not plate" cleanly, by omission, because it does not want the
+#     other half either. That gap is CLOSED as of SNAPSHOT_VERSION 19: the plating gate is
+#     an optional pair, so a cell that keeps [safety] for runaway can drop plating alone.
+#     This file is unaffected either way -- it drops the whole section. See
+#     docs/plans/plating-absence.md.
 #   * No [diffusion]. The RC pairs below are this cell's rate behaviour. NiMH does lose
 #     capacity at high rate, but nobody here has fitted a Peukert exponent for it, and the
 #     lead-acid section exists because that fit WAS done.

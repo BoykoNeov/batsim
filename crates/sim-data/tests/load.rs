@@ -215,6 +215,103 @@ fn a_non_positive_hysteresis_parameter_is_rejected() {
     }
 }
 
+/// The plating gate is a matched pair, and half of it is refused.
+///
+/// `t_plating_min_k` and `plating_c_threshold` became optional at `SNAPSHOT_VERSION` 19 so
+/// that a chemistry can say it has no plating mechanism by omitting them. Omitting exactly
+/// one says nothing coherent: a threshold with no temperature gate parameterises nothing,
+/// and a gate with no threshold cannot be evaluated.
+///
+/// **This rule is also the typo guard, and that is the larger half of its value.** The
+/// loader does not deny unknown TOML keys, so a misspelled key is indistinguishable from an
+/// absent one — and an absent gate now *means* something, where before it was a parse
+/// error. Misspelling one key of a matched pair is caught here; misspelling both is not a
+/// plausible accident. See `docs/plans/plating-absence.md`.
+#[test]
+fn half_a_plating_gate_is_rejected() {
+    for (label, section) in [
+        (
+            "a temperature with no threshold",
+            "t_plating_min_k = 273.15",
+        ),
+        (
+            "a threshold with no temperature",
+            "plating_c_threshold = 0.5",
+        ),
+    ] {
+        let toml = chemistry_with_ocv(&format!(
+            "\n[ocv]\nsoc = [0.0, 1.0]\nvolts = [3.0, 4.2]\n\n[safety]\n\
+             t_onset_k = 423.15\nt_vent_k = 453.15\nrunaway_energy_j = 60.0e3\n{section}\n"
+        ));
+        let err = parse_chemistry(&toml).expect_err("half a plating gate must be refused");
+        assert!(
+            matches!(err, DataError::Invalid(_)),
+            "expected a validation error for {label}, got {err:?}"
+        );
+    }
+}
+
+/// A chemistry with no plating gate must not price plating.
+///
+/// **Deliberately stricter than the convention the surrounding fields use**, and the
+/// strictness is the point. `plating_fade_per_ah`, `plating_short_hazard_per_ah` and
+/// `runaway_power_w_at_onset` all treat zero as "this mechanism is inert", so the local
+/// precedent would be to ignore a stated cost rather than refuse it. Two reasons not to.
+/// A fade-per-amp-hour quoted for a mechanism the cell does not have is an unlabelled
+/// physical constant describing nothing, which `CLAUDE.md`'s provenance rule forbids
+/// outright. And it is what **replaces a tripwire this schema change deleted**: the LTO
+/// file used to spell "never" as a one-kelvin sentinel with a deliberately permissive
+/// threshold behind it, so that anyone "correcting" the absurd temperature upward got a
+/// loud wrong answer instead of a plausible one. There is no number to correct now, and
+/// what is left to catch is the other half — a file that prices plating while claiming to
+/// have none.
+#[test]
+fn plating_costs_without_a_plating_gate_are_rejected() {
+    for (label, cost) in [
+        ("a fade", "plating_fade_per_ah = 2.0e-4"),
+        ("a short hazard", "plating_short_hazard_per_ah = 1.0e-4"),
+        ("a short resistance", "plating_short_ohms = 5.0"),
+    ] {
+        let toml = chemistry_with_ocv(&format!(
+            "\n[ocv]\nsoc = [0.0, 1.0]\nvolts = [3.0, 4.2]\n\n[safety]\n\
+             t_onset_k = 423.15\nt_vent_k = 453.15\nrunaway_energy_j = 60.0e3\n{cost}\n"
+        ));
+        let err = parse_chemistry(&toml)
+            .expect_err("a plating cost with no plating gate must be refused");
+        assert!(
+            matches!(err, DataError::Invalid(_)),
+            "expected a validation error for {label} with no gate, got {err:?}"
+        );
+    }
+}
+
+/// The case the whole change exists for: `[safety]` with the runaway half and **no plating
+/// gate at all** loads, validates, and reads back as an absent mechanism.
+///
+/// This is the shape `chemistries/lto_20ah_generic.toml` ships. Before v19 it was
+/// impossible — a chemistry that wanted thermal runaway had to accept a plating gate too,
+/// because one `Option` covers both mechanisms — and the LTO file spelled "never" as a
+/// one-kelvin sentinel instead. The positive assertion matters as much as the two
+/// rejections above it: a rule that refuses everything is not a rule.
+#[test]
+fn safety_without_a_plating_gate_loads() {
+    let toml = chemistry_with_ocv(
+        "\n[ocv]\nsoc = [0.0, 1.0]\nvolts = [3.0, 4.2]\n\n[safety]\n\
+         t_onset_k = 423.15\nt_vent_k = 453.15\nrunaway_energy_j = 60.0e3\n",
+    );
+    let chem = parse_chemistry(&toml).expect("a safety section with no plating gate is valid");
+    let safety = chem.safety.expect("the section is present");
+    assert_eq!(
+        safety.t_plating_min_k, None,
+        "the gate is absent, which is how this cell says it cannot plate"
+    );
+    assert_eq!(safety.plating_c_threshold, None, "and so is its threshold");
+    // The runaway half is untouched by the absence, which is the thing that was not
+    // separable before v19.
+    assert_eq!(safety.t_onset_k, 423.15);
+    assert_eq!(safety.t_vent_k, 453.15);
+}
+
 /// A minimal but *valid* chemistry, as a format string with one `{}` hole where a
 /// section can be swapped out. Every rejection test below substitutes exactly one
 /// section, so a failure can only come from that section — and so a missing
@@ -485,29 +582,40 @@ fn shipped_plating_coefficients_give_a_plausible_cold_charge_cost() {
             .as_ref()
             .unwrap_or_else(|| panic!("{name} must ship [safety] coefficients"));
 
-        // A chemistry either prices plating or cannot reach it, and this arm is the
-        // second half of that. LTO's anode plateau sits ~1.55 V above the potential at
-        // which lithium deposits, so the cell has no plating mechanism to price — but
-        // "no coefficients" is also what a half-written file looks like, and the two
-        // must not be confused. So a chemistry that declares no cost has to *also*
-        // show its gate is shut: `t_plating_min_k` strictly below the coldest
-        // temperature the cell is rated to charge at, so the flag cannot rise anywhere
-        // inside its own operating window.
+        // A chemistry either prices plating or has no plating gate at all, and this arm
+        // is the second half of that. LTO's anode plateau sits ~1.55 V above the
+        // potential at which lithium deposits, so the cell has no plating mechanism to
+        // price, and it says so by omitting the gate — which `validate` already ties to
+        // the cost fields being absent. Nothing is left to check on that branch beyond
+        // restating the tie, which is done here rather than assumed because this test's
+        // subject is the *shipped files*, not the schema.
         //
-        // This is the second place in the repo that assumed every cell plates — the
-        // first being `[safety]` itself, which has no way to express the absence of the
-        // mechanism at all. See docs/plans/phase-8-slice-a-lto.md.
+        // **This arm got stricter when the schema learned to say "does not plate".** It
+        // used to read "no cost declared, so the gate must be unreachable" — a
+        // temperature strictly below the cell's own charge floor — because a file with
+        // no plating had no other way to be written, and "no coefficients" is also what
+        // a half-written file looks like. The two are now distinguishable at load, so
+        // the weaker rule is replaced by the stronger one: a shipped file that carries a
+        // gate must price it. The schema still permits a priced-at-zero gate ("the flag
+        // is raised and costs nothing"); a shipped file with a `TODO fit` where its
+        // plating cost should be is what this catches. See docs/plans/plating-absence.md.
         let prices_plating =
             safety.plating_fade_per_ah > 0.0 || safety.plating_short_hazard_per_ah > 0.0;
-        if !prices_plating {
+        if safety.t_plating_min_k.is_none() {
             assert!(
-                safety.t_plating_min_k < chem.cell.t_charge_min_k,
-                "{name}: no plating cost is declared, so the plating gate must be unreachable — but t_plating_min_k {} is not below the cell's own charge floor {}. Either the coefficients are missing or the threshold is wrong.",
-                safety.t_plating_min_k,
-                chem.cell.t_charge_min_k
+                !prices_plating,
+                "{name}: no plating gate, so nothing may price plating — and `validate` \
+                 should have refused this file before the test saw it"
             );
             continue;
         }
+        assert!(
+            prices_plating,
+            "{name}: a plating gate is declared at {:?} K but nothing prices plating. \
+             Either the coefficients are missing, or this cell does not plate and the \
+             gate should be dropped entirely.",
+            safety.t_plating_min_k
+        );
 
         // One full charge's worth of plated throughput.
         let ah = chem.cell.capacity_ah;

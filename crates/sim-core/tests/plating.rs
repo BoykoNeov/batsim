@@ -75,8 +75,8 @@ fn safety_params(
         // business being able to catch fire if one of them ever is.
         runaway_power_w_at_onset: 0.0,
         runaway_ea_j_per_mol: 0.0,
-        t_plating_min_k: 273.15,
-        plating_c_threshold: 0.5,
+        t_plating_min_k: Some(273.15),
+        plating_c_threshold: Some(0.5),
         plating_fade_per_ah,
         plating_short_hazard_per_ah,
         plating_short_ohms,
@@ -200,8 +200,48 @@ fn plating_needs_cold_and_charging_and_a_high_c_rate() {
     // At rest nothing plates, however cold.
     assert!(!plating_risk(&s, 0.0, COLD_K, CAP_AH));
     // Exactly at the threshold does not plate — the condition is strictly above it.
-    let at_threshold = -s.plating_c_threshold * CAP_AH;
+    let at_threshold = -s
+        .plating_c_threshold
+        .expect("this fixture has a plating gate")
+        * CAP_AH;
     assert!(!plating_risk(&s, at_threshold, COLD_K, CAP_AH));
+}
+
+/// A chemistry with no plating gate never plates — at any temperature, at any rate.
+///
+/// The unit-level statement of what `chemistries/lto_20ah_generic.toml` relies on. The
+/// three conditions above are not evaluated at all when the gate is absent; the predicate
+/// short-circuits before them. That is deliberate and it is the difference between
+/// *impossible* and *free*: zeroing the cost fields would leave `PLATING_RISK` rising on
+/// every cold fast charge and merely cost nothing, which for a cell that cannot plate is a
+/// false flag. See `docs/plans/plating-absence.md`.
+///
+/// The demand used is the one that plates hardest in the tests above — cold, and well over
+/// the C-rate threshold — so this is the same input reaching the opposite answer, which is
+/// the only way the absence is worth asserting.
+#[test]
+fn a_chemistry_with_no_plating_gate_never_plates() {
+    let mut s = safety_params(0.0, 0.0, 0.0);
+    s.t_plating_min_k = None;
+    s.plating_c_threshold = None;
+
+    assert!(
+        !plating_risk(&s, HARD_CHARGE_A, COLD_K, CAP_AH),
+        "cold and hard: the demand that plates in every test above must not plate here"
+    );
+    // And nothing else about the input can turn it back on. Absolute zero is below any
+    // gate a file could have declared, and 1000C is above any threshold.
+    assert!(!plating_risk(&s, -1000.0 * CAP_AH, 0.0, CAP_AH));
+
+    // The control, on the same fixture: restore the gate and the first demand plates.
+    // Without this the assertions above are satisfied by a broken fixture just as well as
+    // by the missing gate.
+    let with_gate = safety_params(0.0, 0.0, 0.0);
+    assert!(
+        plating_risk(&with_gate, HARD_CHARGE_A, COLD_K, CAP_AH),
+        "the same demand with the gate present must plate, or the absence above is not \
+         what this test measured"
+    );
 }
 
 /// A cell whose capacity has faded reaches the plating C-rate at a *lower* absolute

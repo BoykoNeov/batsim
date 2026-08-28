@@ -289,7 +289,8 @@ raises the flag and dropping the section switches off runaway too — so the LTO
 labelled sentinel `t_plating_min_k = 1.0`. A **non-lithium** chemistry can say it cleanly, by
 omission, because it does not want the other half either. So the schema gap slice A found is
 **narrower than it looked**: it binds on lithium chemistries that do not plate, not on every
-chemistry that does not plate. That does not close it — LTO is still wearing the sentinel —
+chemistry that does not plate. That did not close it — LTO was still wearing the sentinel;
+`docs/plans/plating-absence.md` closed it afterwards by making the gate an optional pair —
 but it bounds it, and it is the kind of thing that is invisible until a second file walks
 into the same section from the other side.
 

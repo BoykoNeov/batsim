@@ -141,8 +141,8 @@ fn aging_chem() -> ChemistryParams {
         runaway_ea_j_per_mol: 0.0,
         // Plating live, and reachable: the packs below run below this temperature so
         // that any charging current above the C-rate threshold plates.
-        t_plating_min_k: 273.15,
-        plating_c_threshold: 0.5,
+        t_plating_min_k: Some(273.15),
+        plating_c_threshold: Some(0.5),
         plating_fade_per_ah: 1.0e-2,
         // High enough that a short actually forms on a useful fraction of the generated
         // inputs. The *draw* happens on every tick with a positive hazard regardless, so

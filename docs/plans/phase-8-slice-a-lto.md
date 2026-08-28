@@ -51,6 +51,14 @@ Four ways this file leaves the shape the shipped lithium files share:
 
 ## The finding that is already certain, from reading rather than running
 
+> **CLOSED 2026-08-28, `SNAPSHOT_VERSION` 18 → 19.** Everything in this section was true
+> when it was written and is now history: the plating gate is an optional pair, the LTO file
+> omits it, and the sentinel below is gone. What replaced the tripwire is a validator rule —
+> a chemistry with no gate may not price plating. See `docs/plans/plating-absence.md`. The
+> pre-registered rule below still stands as written, and its verdict does not change: the
+> sentinel loaded, validated and behaved correctly, so it was never "code the chemistry
+> needed", and criterion 1 closed on the zero-code branch on the evidence available then.
+
 **`[safety]` has no way to say "this cell does not plate lithium."** Established by reading
 `chem.rs::validate` and `plating.rs::plating_risk` before writing a line of TOML:
 
@@ -82,6 +90,9 @@ On that rule the sentinel is **evidence for principle 10 with a caveat**, not ag
 and the caveat is worth writing into the phase's record: the schema expresses "mechanism
 absent" by *section absence* for `[diffusion]`, `[spm]`, `[dfn]` and `[aging]`, but the two
 mechanisms inside `[safety]` share one `Option` and cannot be switched independently.
+
+*(That caveat is what `plating-absence.md` later fixed, by making the plating gate itself an
+optional pair inside the section. The two mechanisms are separable now.)*
 
 ## Predictions, registered before the first run
 

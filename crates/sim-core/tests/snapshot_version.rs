@@ -21,18 +21,37 @@
 //!
 //! # The pair moves with the bump, rather than being renumbered
 //! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13, v13 -> v14,
-//! v14 -> v15, v15 -> v16 and v16 -> v17, each time carrying an assertion that a later
-//! bump needs its own pair. This is the v17 -> v18 pair, and it was re-argued rather than
-//! renamed.
+//! v14 -> v15, v15 -> v16, v16 -> v17 and v17 -> v18, each time carrying an assertion that
+//! a later bump needs its own pair. This is the v18 -> v19 pair, and it was re-argued
+//! rather than renamed.
 //!
-//! **The v16 -> v17 pair could not be kept alongside this one, and the reason is not just
-//! the assertion that says so.** [`retagged`] fabricates a stale blob by writing *this
-//! build's* bytes under a fake tag, and at v18 this build no longer produces v17-shaped
-//! bytes — every `EcmState` carries a `hysteresis` here and carried none there. There is
-//! nothing for a v16 -> v17 pair to be built out of any more, so this is a replacement
-//! rather than an addition. The previous pair predicted its own retirement in these words
-//! — *"the retirement is structural, and it will happen again to this one"* — and this is
-//! that happening.
+//! **The v17 -> v18 pair could not be kept alongside this one**, on the same terms every
+//! retirement here has been made: [`retagged`] fabricates a stale blob by writing *this
+//! build's* bytes under a fake tag, and the only tag those bytes can honestly wear is the
+//! previous version's, not one two back. What is different this time is that the
+//! retirement is **not** structural — see the v19 section below, which is the first bump in
+//! this file's history where the fixture's bytes do not change at all.
+//!
+//! # v19: the fixture's bytes do not move, and the version field is the only thing left
+//! v19 changes `SafetyParams`, not the cell state: `t_plating_min_k` and
+//! `plating_c_threshold` become `Option<f64>`, so a chemistry can say it has **no plating
+//! mechanism** by omitting them rather than by spelling "never" as an absurdly low
+//! temperature. See `docs/plans/plating-absence.md`.
+//!
+//! The chemistry is serialized inside every snapshot, so that is a layout change and it
+//! takes the bump. But this file's fixture chemistry has **`safety: None`**, and an absent
+//! `Option` writes one tag byte whatever is inside it — so a snapshot of this pack is
+//! byte-for-byte identical at v18 and at v19. That is the v10/v11 situation returning after
+//! three bumps of "the stale blob does not parse at all": a genuine v18 blob of *this* pack
+//! is structurally valid here, would restore into a working pack, and the only thing
+//! standing between it and a build it was not written for is `Pack::restore`'s version
+//! check. The pair below is therefore not a fabrication standing in for the real case — for
+//! this fixture it **is** the real case.
+//!
+//! A pack whose chemistry *does* carry `[safety]` is the other half, and it is a
+//! field-level measurement rather than a claim:
+//! [`a_v18_shaped_safety_section_does_not_parse_at_v19`]. What it found is that loudness
+//! there is **value-dependent**, which is a property no earlier bump in this file has had.
 //!
 //! # v16 is the first bump since v11 whose stale blob stays aligned, and the failure is
 //! # silent rather than loud
@@ -228,40 +247,44 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v17-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v18 restore.
+/// A v18-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v19 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// Read the module's v18 section before extending this: the bytes here are this build's,
-/// wearing a v17 label. What a snapshot a v17 build actually wrote does at v18 is a
-/// separate question, and it does not parse at all, which
-/// [`a_v17_shaped_cell_state_does_not_parse_at_v18`] pins directly.
+/// **At this bump the retag is not a stand-in.** Read the module's v19 section: the fixture
+/// chemistry has no `[safety]`, so a v18 build's snapshot of this pack has exactly these
+/// bytes, and "what a real stale blob does here" is answered by this test rather than
+/// deferred to a field-level sibling. The sibling
+/// [`a_v18_shaped_safety_section_does_not_parse_at_v19`] answers the *other* case — a
+/// chemistry that does carry `[safety]` — and the two answers differ, which is why both
+/// exist.
 #[test]
-fn the_version_field_is_what_rejects_a_v17_snapshot() {
+fn the_version_field_is_what_rejects_a_v18_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 18,
-        "this test is written against the v17 -> v18 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 19,
+        "this test is written against the v18 -> v19 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
          the new layout is a fact about that layout change, and the answer has flipped \
          across this file's history — v15 'it does not parse at all', v16 'it parses, \
-         wrongly and silently', v17 and v18 back to 'it does not parse at all'. A \
+         wrongly and silently', v17 and v18 back to 'it does not parse at all', and v19 \
+         'for this fixture it parses fine and the version field is all there is'. A \
          renumbered assertion cannot inherit any of them, and a run of two identical \
          answers is not a rule."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 17);
+    let stale = retagged(&bytes, 18);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 17,
+            found: 18,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v17-tagged snapshot must be refused"
+        "a v18-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -335,13 +358,20 @@ fn the_v15_v_rc_bytes_reinterpret_rather_than_fail() {
 #[test]
 fn only_the_outer_version_tag_is_consulted() {
     let bytes = snapshot_bytes();
-    // Both blobs carry an inner `Pack.version` of 18, because that is what this
+    // Both blobs carry an inner `Pack.version` of 19, because that is what this
     // build wrote. Only the outer tag differs, and only the outer tag decides.
-    assert!(Pack::restore(&retagged(&bytes, 17)).is_err());
+    assert!(Pack::restore(&retagged(&bytes, 18)).is_err());
     assert!(Pack::restore(&retagged(&bytes, SNAPSHOT_VERSION)).is_ok());
 }
 
 /// A v17 cell state does not parse at v18 — and that is the *reassuring* direction.
+///
+/// **v19 did not touch `EcmState`**, so this test's subject is the previous bump and its
+/// assertions are unchanged: what it deserializes into is still the current cell state, and
+/// a v17-shaped one is still eight bytes short of it. It is kept for the reason the v16
+/// shape below is kept — it is the assertion that would notice a future edit *reordering*
+/// the struct — and it is deliberately not renumbered, because renaming it to v19 would
+/// claim it measures a layout change it has nothing to do with.
 ///
 /// The sibling of [`the_v15_v_rc_bytes_reinterpret_rather_than_fail`], asserting the
 /// opposite outcome, because the two bumps are opposite cases and the module's claim that
@@ -407,4 +437,106 @@ fn a_v17_shaped_cell_state_does_not_parse_at_v18() {
         "the new field is the sixth, not the last"
     );
     assert_eq!(state.temp_k, 298.15);
+}
+
+/// A v18-shaped `[safety]` section at v19: **loud for the values every shipped file
+/// carries, and quiet for values none of them do.**
+///
+/// The sibling of [`the_version_field_is_what_rejects_a_v18_snapshot`], which answers this
+/// question for a chemistry with **no** `[safety]` section — there the bytes do not change
+/// at all and the version check is the only refusal available. This is the other case, and
+/// the answer is different, so both are measured rather than one being inferred from the
+/// other.
+///
+/// v19 turns two `f64` fields into `Option<f64>`. `bincode` writes an `Option` as a one-byte
+/// tag followed by the payload, and writes struct fields positionally with no framing, so a
+/// v18 reader's eight raw bytes are read here as *tag, then something else*. Whether that
+/// is loud or quiet depends on **the first byte of the stale `f64`**, which is the low byte
+/// of its mantissa:
+///
+/// * `273.15` — the gate in all three shipped lithium files — begins `0x66`, which is not a
+///   valid `Option` tag, so the parse fails immediately. Loud.
+/// * `273.0` — a rounder number, and the kind a future file might well carry — begins
+///   `0x00`, a valid `None` tag. The parse then consumes one byte where eight were written
+///   and everything after it slides. Quiet, in the v16 sense.
+///
+/// **That value-dependence is the finding**, and it is why the `SNAPSHOT_VERSION` note for
+/// v19 does not claim the loud direction the way v17's and v18's do. Nothing shipped is at
+/// risk — the check refuses every stale blob regardless — but a reader who takes "a stale
+/// safety section cannot be misread" from this bump would be taking it from the values that
+/// happen to be in the files today.
+///
+/// **This is the field, not a snapshot**, on the same terms as its two siblings above:
+/// there is no non-guessing way to locate the chemistry's offset inside a blob, so the
+/// wider claim is not made here or in the version note.
+#[test]
+fn a_v18_shaped_safety_section_does_not_parse_at_v19() {
+    // A v18 `SafetyParams`, in declaration order and all `f64`: `t_onset_k`, `t_vent_k`,
+    // `runaway_energy_j`, `runaway_power_w_at_onset`, `runaway_ea_j_per_mol`,
+    // `t_plating_min_k`, `plating_c_threshold`, `plating_fade_per_ah`,
+    // `plating_short_hazard_per_ah`, `plating_short_ohms`.
+    let v18 = |gate: f64| {
+        bincode::serialize(&(
+            423.15_f64, 453.15_f64, 60.0e3_f64, 8.0_f64, 1.0e5_f64, gate, 0.4_f64, 2.0e-4_f64,
+            1.0e-4_f64, 5.0_f64,
+        ))
+        .expect("a v18-shaped safety section serializes")
+    };
+
+    // The shipped gate. Its low mantissa byte is not 0 or 1, so it cannot be an `Option`
+    // tag and the parse dies on it.
+    let shipped = v18(273.15);
+    assert_eq!(shipped.len(), 80, "ten f64, positional, no framing");
+    assert_eq!(
+        273.15_f64.to_le_bytes()[0],
+        0x66,
+        "the loudness below is a fact about this byte; if the constant ever changes so \
+         does the verdict"
+    );
+    let parsed: Result<sim_core::chem::SafetyParams, _> = bincode::deserialize(&shipped);
+    assert!(
+        parsed.is_err(),
+        "a v18 safety section carrying the shipped 273.15 gate must fail to parse at v19"
+    );
+
+    // And the quiet case, which is the one worth writing down. A round temperature's low
+    // byte is zero — a valid `None` tag — so the same layout change is silently
+    // reinterpreted rather than refused.
+    assert_eq!(273.0_f64.to_le_bytes()[0], 0x00, "a valid `None` tag");
+    let round: sim_core::chem::SafetyParams = bincode::deserialize(&v18(273.0)).expect(
+        "a round gate value makes the stale section parse — if this ever errors, the \
+         value-dependence documented above and in the v19 SNAPSHOT_VERSION note has gone \
+         away and both should be corrected rather than quietly left",
+    );
+    assert!(
+        round.t_plating_min_k.is_none(),
+        "the stale temperature has been read as an absent gate: the cell now claims it \
+         cannot plate"
+    );
+    assert_ne!(
+        round.plating_fade_per_ah, 2.0e-4,
+        "and everything after the gate has slid, which is what makes this the v16 hazard \
+         rather than a harmless default"
+    );
+
+    // The positive control, so the failure above is the layout and not a broken fixture:
+    // the same ten values with the gate written as an `Option` are a v19 section.
+    let v19 = bincode::serialize(&(
+        423.15_f64,
+        453.15_f64,
+        60.0e3_f64,
+        8.0_f64,
+        1.0e5_f64,
+        Some(273.15_f64),
+        Some(0.4_f64),
+        2.0e-4_f64,
+        1.0e-4_f64,
+        5.0_f64,
+    ))
+    .expect("a v19-shaped safety section serializes");
+    let safety: sim_core::chem::SafetyParams =
+        bincode::deserialize(&v19).expect("that is exactly a v19 SafetyParams");
+    assert_eq!(safety.t_plating_min_k, Some(273.15));
+    assert_eq!(safety.plating_c_threshold, Some(0.4));
+    assert_eq!(safety.plating_fade_per_ah, 2.0e-4);
 }

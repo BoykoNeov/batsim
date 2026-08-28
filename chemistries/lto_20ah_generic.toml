@@ -29,11 +29,12 @@ v_max           = 2.75     # provenance: protection limit, set 50 mV above the 2
 v_min           = 1.50     # provenance: datasheet discharge cutoff (operating window 1.5-2.7 V)
 max_charge_c    = 10.0     # provenance: manufacturer's recommended maximum charge rate, 10C (200 A on this cell). An order of magnitude above every other chemistry shipped here, and the reason LTO is worth teaching.
 max_discharge_c = 10.0     # provenance: manufacturer's recommended maximum discharge rate, 10C
-# NOT the same number as [safety] t_plating_min_k, and this is the first shipped file where
-# they differ. On a graphite cell the BMS inhibits charging near 0 degC precisely because the
-# anode plates lithium below it. This anode cannot plate (see [safety]), so the charge
-# inhibit is set by the electrolyte's conductivity floor instead, at the bottom of the
-# datasheet's operating range.
+# There is no [safety] t_plating_min_k to compare this against, and that is the point: this
+# is the first shipped file with a charge floor and no plating gate at all. On a graphite
+# cell the BMS inhibits charging near 0 degC precisely because the anode plates lithium
+# below it. This anode cannot plate (see [safety]), so the charge inhibit is set by the
+# electrolyte's conductivity floor instead, at the bottom of the datasheet's operating
+# range.
 t_charge_min_k  = 243.15   # provenance: -30 degC, the bottom of the datasheet operating range
 t_max_k         = 328.15   # provenance: 55 degC, the top of the datasheet operating range
 
@@ -187,31 +188,30 @@ r_growth_per_capacity_loss = 1.5      # provenance: placeholder -- resistance gr
 # PLATING: this cell does not plate lithium at any temperature or rate. The LTO anode's
 # plateau is at ~1.55 V vs Li/Li+, a volt and a half above the 0 V where metallic lithium
 # deposits, so the thermodynamic driving force is simply absent; LTO cells are charged at
-# -40 degC in the literature for exactly this reason. THAT IS THE ONE THING THIS SECTION
-# CANNOT SAY. Setting the cost fields to zero would still raise PLATING_RISK and merely make
-# it free, which is a false flag rather than an absent mechanism; dropping [safety] entirely
-# would switch off thermal runaway with it, since one Option covers both. So the temperature
-# gate below is a SENTINEL. See docs/plans/phase-8-slice-a-lto.md.
+# -40 degC in the literature for exactly this reason. This section says so by OMITTING
+# t_plating_min_k and plating_c_threshold -- see the note where they used to be, below.
 [safety]
 t_onset_k           = 493.15   # provenance: ~220 degC exothermic onset placeholder; LTO's missing SEI-decomposition step is what pushes onset above the ~150-170 degC of graphite cells; TODO fit
 t_vent_k            = 533.15   # provenance: ~260 degC vent placeholder; TODO fit
 runaway_energy_j    = 102.0e3  # provenance: placeholder per-cell exothermic budget, set for a 200 K adiabatic rise on this cell's 510 J/K (see the scale check above); TODO fit
 runaway_power_w_at_onset = 10.0    # provenance: placeholder amplitude, 0.5 W per Ah against LFP's ~2.2 and NMC's ~2.7; chosen with the Ea below for a ~12 min adiabatic onset-to-vent; TODO fit
 runaway_ea_j_per_mol     = 1.0e5   # provenance: placeholder activation energy for the decomposition exotherm, order-of-magnitude typical for Li-ion ARC fits; TODO fit
-# SENTINEL, NOT A MEASUREMENT. One kelvin. There is no temperature at which this cell plates
-# lithium, and this field cannot express that -- it is validated finite-and-positive with no
-# cross-check, so "never" has to be spelled as a temperature below every reachable one. The
-# value is deliberately absurd on its face so that no reader mistakes it for a datasheet
-# number. Compare [cell] t_charge_min_k = 243.15, which is a real limit set by electrolyte
-# conductivity; this is the first shipped file where the two do not coincide.
-t_plating_min_k     = 1.0
-# Inert, because the temperature gate above can never open -- and deliberately set to the
-# MOST permissive value the field admits (0 means any charge current at all plates when
-# cold) rather than to a second sentinel. If the temperature gate were ever "corrected"
-# upward by someone who had not read the comment above, this cell would flag plating on the
-# first cold charge, immediately and loudly, instead of drifting into a plausible-looking
-# wrong answer. One sentinel, and a tripwire behind it.
-plating_c_threshold = 0.0
-# plating_fade_per_ah, plating_short_hazard_per_ah and plating_short_ohms are omitted and
-# default to zero. They are unreachable for the reason above; stating costs for a mechanism
-# this cell does not have would be inventing numbers.
+# NO PLATING GATE, AND THE ABSENCE IS THE STATEMENT. t_plating_min_k and
+# plating_c_threshold are both omitted, which is how a chemistry says it has no plating
+# mechanism -- the same way absence says it for [spm], [dfn], [aging], [diffusion] and
+# [hysteresis]. plating_risk() then answers false at every temperature and every rate, so
+# PLATING_RISK cannot rise on this cell. It is impossible here, not merely free.
+#
+# This file used to carry a SENTINEL instead: t_plating_min_k = 1.0, one kelvin, because
+# until SNAPSHOT_VERSION 19 the schema had no way to say "does not plate" and "never" had
+# to be spelled as a temperature below every reachable one. Behind it sat
+# plating_c_threshold = 0.0 as a deliberate tripwire, so that anyone "correcting" the
+# absurd temperature upward would get a loud wrong answer rather than a plausible one.
+# Both are gone. What replaces the tripwire is a validator rule: a chemistry with no gate
+# must not price plating, so the three cost fields below stay absent and a file that adds
+# one is REJECTED at load rather than quietly believed. See docs/plans/plating-absence.md,
+# and docs/plans/phase-8-slice-a-lto.md for the sentinel this replaced.
+#
+# plating_fade_per_ah, plating_short_hazard_per_ah and plating_short_ohms are therefore
+# omitted and default to zero, which is now required rather than merely tidy: stating
+# costs for a mechanism this cell does not have would be inventing numbers.

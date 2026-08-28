@@ -151,8 +151,15 @@ fn ten_c_costs_lto_almost_nothing_and_nmc_most_of_its_capacity() {
 ///
 /// Note what is *not* asserted: that the LTO file's `plating_fade_per_ah` is zero. A cell
 /// whose plating flag never rises has no plating cost to check, and the difference between
-/// "free" and "impossible" is exactly the distinction this test exists to draw. See the
-/// sentinel discussion in `docs/plans/phase-8-slice-a-lto.md`.
+/// "free" and "impossible" is exactly the distinction this test exists to draw.
+///
+/// **The LTO arm passes for a different reason than it used to, and that is why the test
+/// below it exists.** Until `SNAPSHOT_VERSION` 19 the file carried a one-kelvin sentinel
+/// and the silence here meant "the gate is shut". The gate is now *absent*, and the silence
+/// means "there is no gate" — the same green from a different cause, which is exactly the
+/// shape that stops a test discriminating. `the_lto_silence_is_caused_by_the_absent_gate`
+/// splices a graphite gate into these same parameters and shows the flag rise, so the
+/// absence is established by subtraction rather than by this test's word.
 #[test]
 fn cold_fast_charge_plates_the_nmc_cell_and_not_the_lto_cell() {
     // −30 °C: the bottom of the LTO cell's rated operating range, and the bottom row of its
@@ -188,6 +195,66 @@ fn cold_fast_charge_plates_the_nmc_cell_and_not_the_lto_cell() {
         seen[1].1,
         "the NMC control arm must raise PLATING_RISK, or this test is not measuring the \
          contrast it claims to"
+    );
+}
+
+/// **The control arm for the test above: the silence is caused by the absent gate, and by
+/// nothing else.**
+///
+/// `cold_fast_charge_plates_the_nmc_cell_and_not_the_lto_cell` asserts that the LTO cell
+/// stays quiet under a cold, fast charge. On its own that green has several possible
+/// causes — the current might not be negative, the C-rate might land under a threshold, the
+/// cell might never get cold — and after `SNAPSHOT_VERSION` 19 it has a *new* one: the
+/// chemistry has no plating gate at all. This test removes the ambiguity the way the repo
+/// removes it elsewhere, by subtraction: take the very same parameters and the very same
+/// demand, splice a **graphite** gate in, and watch the flag rise.
+///
+/// What it therefore pins is a causal claim rather than an outcome: the LTO cell's silence
+/// is the missing gate, not a demand that was never cold or hard enough to plate anything.
+/// If some future edit made this trajectory unable to plate for an unrelated reason, this
+/// test reddens and the one above it would not.
+#[test]
+fn the_lto_silence_is_caused_by_the_absent_gate() {
+    // Identical to the test above, so the only difference between the two runs is the gate.
+    const COLD_K: f64 = 243.15;
+    const C_RATE: f64 = 4.0;
+    const DT: f64 = 1.0;
+    const STEPS: usize = 300;
+
+    let mut spliced = lto();
+    let safety = spliced
+        .safety
+        .as_mut()
+        .expect("the LTO file ships a [safety] section for the runaway half");
+    assert!(
+        safety.t_plating_min_k.is_none() && safety.plating_c_threshold.is_none(),
+        "this test splices a gate into a file that has none; if the shipped file has \
+         grown one, the subtraction below measures nothing"
+    );
+    // The graphite gate, taken from the NMC file rather than invented here: 0 degC and
+    // 0.4 C. Nothing else about the cell is touched.
+    let graphite = nmc().safety.expect("the NMC file ships a [safety] section");
+    safety.t_plating_min_k = graphite.t_plating_min_k;
+    safety.plating_c_threshold = graphite.plating_c_threshold;
+
+    let i = -C_RATE * spliced.cell.capacity_ah;
+    let mut pack = Pack::new(&config(COLD_K, 0.2), spliced).expect("pack builds");
+    let mut plated = false;
+    for _ in 0..STEPS {
+        let t = pack.step(DT, Demand::Current(i), &env(COLD_K));
+        plated |= t.flags.contains(EventFlags::PLATING_RISK);
+    }
+
+    println!(
+        "
+4C charge at -30 degC on LTO parameters WITH a graphite plating gate"
+    );
+    println!("PLATING_RISK raised: {plated}");
+    assert!(
+        plated,
+        "with a graphite gate spliced in, these parameters under this demand must \
+         plate — otherwise the quiet LTO arm next door is quiet for some reason other \
+         than the missing gate, and that test is measuring nothing"
     );
 }
 

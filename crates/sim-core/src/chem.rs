@@ -148,6 +148,12 @@ pub struct ChemistryParams {
     /// [`crate::EventFlags::PLATING_RISK`], the same way one with no
     /// [`OcvTable::docv_dt_v_per_k`] column never generates entropic heat. There is no
     /// configuration for the absence to contradict, so there is nothing to diagnose.
+    ///
+    /// **Dropping the whole section is no longer the only way to switch plating off**, and
+    /// it was the wrong way for a cell that still wants the runaway half. A chemistry can
+    /// keep `[safety]` and omit [`SafetyParams::t_plating_min_k`] and
+    /// [`SafetyParams::plating_c_threshold`] instead, which is what
+    /// `chemistries/lto_20ah_generic.toml` does. See `docs/plans/plating-absence.md`.
     #[serde(default)]
     pub safety: Option<SafetyParams>,
 }
@@ -163,6 +169,15 @@ pub struct ChemistryParams {
 /// Every value in the shipped chemistries is a labelled placeholder. As with
 /// [`AgingParams`], scenarios should assert the *shape* of an outcome, never a number
 /// on it.
+///
+/// # The two halves switch independently
+/// One `Option` on [`ChemistryParams::safety`] covers both mechanisms, so for a long time a
+/// chemistry that wanted thermal runaway had to accept a plating gate with it, and a cell
+/// that cannot plate had to spell "never" as an absurdly low temperature. It does not any
+/// more: [`Self::t_plating_min_k`] and [`Self::plating_c_threshold`] are an optional pair,
+/// and omitting them removes the plating mechanism while leaving the runaway trio alone.
+/// `validate` ties the pair together and refuses a file that prices plating without a gate.
+/// See `docs/plans/plating-absence.md`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SafetyParams {
     /// Cell temperature \[K\] above which exothermic self-heating begins. Must be
@@ -195,8 +210,9 @@ pub struct SafetyParams {
     /// runaway. The accelerating feedback *is* the phenomenon.
     #[serde(default)]
     pub runaway_ea_j_per_mol: f64,
-    /// Cell temperature \[K\] below which charging risks plating metallic lithium.
-    /// Must be finite and `> 0`.
+    /// Cell temperature \[K\] below which charging risks plating metallic lithium, or
+    /// `None` for a chemistry with no plating mechanism at all. Must be finite and
+    /// `> 0` when present.
     ///
     /// Distinct from [`CellLimits::t_charge_min_k`], which is the *BMS's* charge-inhibit
     /// threshold — a policy the protection layer enforces from lagged sensor readings.
@@ -204,19 +220,36 @@ pub struct SafetyParams {
     /// shipped graphite-anode chemistry, which is exactly what makes the BMS-on/BMS-off
     /// contrast legible: protection exists to keep the pack out of this region.
     ///
-    /// # There is no way to say "this cell does not plate"
+    /// # How a cell says it does not plate, and why absence rather than a value
     /// `chemistries/lto_20ah_generic.toml` is the first shipped file where the two
     /// *cannot* coincide. A lithium-titanate anode sits ~1.55 V above the potential at
-    /// which metallic lithium deposits, so it plates at no temperature and at no rate,
-    /// and nothing in [`SafetyParams`] expresses that: zeroing the cost fields still
-    /// raises [`crate::EventFlags::PLATING_RISK`] and merely makes it free, and dropping
-    /// `[safety]` entirely switches off thermal runaway too, because one `Option` covers
-    /// both mechanisms. That file therefore sets this field to a labelled **sentinel**
-    /// below every reachable temperature. See `docs/plans/phase-8-slice-a-lto.md`.
-    pub t_plating_min_k: f64,
+    /// which metallic lithium deposits, so it plates at no temperature and at no rate.
+    /// It says so by **omitting this field and [`Self::plating_c_threshold`] together**,
+    /// which is the same way a chemistry says it has no `[spm]`, `[dfn]`, `[aging]`,
+    /// `[diffusion]` or `[hysteresis]` section: the mechanism is absent, not zeroed.
+    /// [`crate::plating::plating_risk`] then answers `false` at every temperature and
+    /// every rate, so [`crate::EventFlags::PLATING_RISK`] can never rise.
+    ///
+    /// Zeroing the *cost* fields does not do this and never did — it means the flag is
+    /// raised and costs nothing, which for such a cell is a false flag rather than an
+    /// absent mechanism — and dropping `[safety]` entirely switches thermal runaway off
+    /// with it, because one `Option` covers both mechanisms. Until `SNAPSHOT_VERSION` 19
+    /// there was no third answer and that file shipped a labelled one-kelvin **sentinel**.
+    /// See `docs/plans/plating-absence.md`, and `docs/plans/phase-8-slice-a-lto.md` for
+    /// the sentinel it replaced.
+    #[serde(default)]
+    pub t_plating_min_k: Option<f64>,
     /// C-rate above which charging below [`Self::t_plating_min_k`] plates. Must be
-    /// finite and `>= 0`; `0` means any charge current at all plates when cold.
-    pub plating_c_threshold: f64,
+    /// finite and `>= 0` when present; `0` means any charge current at all plates when
+    /// cold.
+    ///
+    /// **Present exactly when [`Self::t_plating_min_k`] is**, and `validate` rejects the
+    /// mismatch: a threshold with no temperature gate parameterises nothing, and a gate
+    /// with no threshold cannot be evaluated. That pairing is also the typo guard — TOML
+    /// keys are not denied when unknown, so a misspelled key reads as an absent one, and
+    /// misspelling exactly one of a matched pair is what gets caught.
+    #[serde(default)]
+    pub plating_c_threshold: Option<f64>,
     /// Capacity fraction lost per amp-hour of charge carried under plating
     /// conditions. Must be finite and `>= 0`; `0` (the default) means plating is
     /// reported but costs nothing.
@@ -1445,19 +1478,76 @@ impl ChemistryParams {
                     return Err(ChemistryError::NotPositive { what, value });
                 }
             }
-            if !is_positive(s.t_plating_min_k) || !s.t_plating_min_k.is_finite() {
-                return Err(ChemistryError::NotPositive {
-                    what: "safety.t_plating_min_k",
-                    value: s.t_plating_min_k,
-                });
+            // The plating gate is a matched pair, and its *absence* is how a chemistry
+            // says it has no plating mechanism — the LTO cell's anode plateau sits well
+            // above the potential at which lithium deposits, so no temperature and no
+            // rate can plate it. See `SafetyParams::t_plating_min_k`.
+            match (s.t_plating_min_k, s.plating_c_threshold) {
+                (Some(t_min), Some(c_threshold)) => {
+                    if !is_positive(t_min) || !t_min.is_finite() {
+                        return Err(ChemistryError::NotPositive {
+                            what: "safety.t_plating_min_k",
+                            value: t_min,
+                        });
+                    }
+                    if !is_non_negative(c_threshold) || !c_threshold.is_finite() {
+                        return Err(ChemistryError::Negative {
+                            what: "safety.plating_c_threshold",
+                            value: c_threshold,
+                        });
+                    }
+                }
+                (None, None) => {
+                    // Deliberately *stricter* than the "zero means inert" convention the
+                    // surrounding cost fields use, and the strictness is the point. A
+                    // fade-per-amp-hour or a short hazard quoted for a mechanism this
+                    // cell does not have is an unlabelled physical constant describing
+                    // nothing, which `CLAUDE.md`'s provenance rule forbids. It is also
+                    // the guard that replaces the sentinel this schema retired: before
+                    // v19 a non-plating cell had to spell "never" as an absurdly low
+                    // temperature, and the file behind it carried a deliberate tripwire
+                    // in case someone "corrected" the absurd number upward. There is no
+                    // number to correct now, so what is left to catch is the other
+                    // half — a file that prices plating while claiming to have none.
+                    let priced: [(&'static str, f64); 3] = [
+                        (
+                            "safety.plating_fade_per_ah is set but there is no plating \
+                             gate: a chemistry with no t_plating_min_k cannot plate, so \
+                             it must not price plating",
+                            s.plating_fade_per_ah,
+                        ),
+                        (
+                            "safety.plating_short_hazard_per_ah is set but there is no \
+                             plating gate: a chemistry with no t_plating_min_k cannot \
+                             plate, so it must not price plating",
+                            s.plating_short_hazard_per_ah,
+                        ),
+                        (
+                            "safety.plating_short_ohms is set but there is no plating \
+                             gate: a chemistry with no t_plating_min_k cannot plate, so \
+                             it must not describe the short plating would cause",
+                            s.plating_short_ohms,
+                        ),
+                    ];
+                    for (what, value) in priced {
+                        if value != 0.0 {
+                            return Err(ChemistryError::BadRange { what });
+                        }
+                    }
+                }
+                _ => {
+                    return Err(ChemistryError::BadRange {
+                        what: "safety.t_plating_min_k and safety.plating_c_threshold \
+                               must be present together or absent together",
+                    });
+                }
             }
-            let non_negative: [(&'static str, f64); 5] = [
+            let non_negative: [(&'static str, f64); 4] = [
                 ("safety.runaway_energy_j", s.runaway_energy_j),
                 (
                     "safety.runaway_power_w_at_onset",
                     s.runaway_power_w_at_onset,
                 ),
-                ("safety.plating_c_threshold", s.plating_c_threshold),
                 ("safety.plating_fade_per_ah", s.plating_fade_per_ah),
                 (
                     "safety.plating_short_hazard_per_ah",

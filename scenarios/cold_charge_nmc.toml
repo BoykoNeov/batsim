@@ -16,9 +16,10 @@
 #   `soh cap` there     100.00 %                  99.69 %
 #
 # The plating gate here is t_plating_min_k = 0 degC and plating_c_threshold = 0.4 C, both
-# of them real statements about a graphite anode. The LTO file's plating gate is a SENTINEL
-# of one kelvin, because [safety] has no way to say "this cell does not plate" — see
-# docs/plans/phase-8-slice-a-lto.md, which is where that cost was paid.
+# of them real statements about a graphite anode. The LTO file has NO plating gate at all —
+# the pair is optional as of SNAPSHOT_VERSION 19 and its absence is how that file says the
+# cell cannot plate. It used to carry a one-kelvin sentinel instead; see
+# docs/plans/plating-absence.md, and docs/plans/phase-8-slice-a-lto.md for the sentinel.
 #
 # Guided path step 26 loads this file from the picker as the arm of the LTO lesson, which
 # is why it is in `web/index.html`'s fallback <option> list: the live picker is a directory

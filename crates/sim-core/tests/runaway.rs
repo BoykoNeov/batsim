@@ -68,8 +68,8 @@ fn safety(runaway_power_w_at_onset: f64) -> SafetyParams {
         runaway_ea_j_per_mol: EA_J_PER_MOL,
         // Plating off: these packs are hundreds of kelvin from the cold end, and a
         // runaway test has no business also being a plating test.
-        t_plating_min_k: 273.15,
-        plating_c_threshold: 0.5,
+        t_plating_min_k: Some(273.15),
+        plating_c_threshold: Some(0.5),
         plating_fade_per_ah: 0.0,
         plating_short_hazard_per_ah: 0.0,
         plating_short_ohms: 0.0,

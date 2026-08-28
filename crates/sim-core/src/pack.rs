@@ -347,7 +347,53 @@ use crate::{Demand, Env, Telemetry};
 /// changes and no telemetry field is added — [`CellView::overpotential_v`] gains a third
 /// contributor on one chemistry, which is what that field was named to allow, exactly as
 /// at v17. See `docs/plans/phase-8-slice-c-hysteresis.md`.
-pub const SNAPSHOT_VERSION: u32 = 18;
+///
+/// v19 (the plating gate becomes optional): [`crate::chem::SafetyParams`]'s
+/// `t_plating_min_k` and `plating_c_threshold` change type from `f64` to `Option<f64>`, and
+/// the chemistry is serialized *inside* the snapshot, so the change is in the bytes.
+///
+/// **What it buys.** A chemistry can now say it has **no plating mechanism at all** by
+/// omitting the pair, the same way absence says it for `[spm]`, `[dfn]`, `[aging]`,
+/// `[diffusion]` and `[hysteresis]`. Before this, `[safety]` could not express it: zeroing
+/// the cost fields leaves [`EventFlags::PLATING_RISK`] rising and merely free, and dropping
+/// `[safety]` switches thermal runaway off with it, because one `Option` covers both
+/// mechanisms. `chemistries/lto_20ah_generic.toml` shipped a labelled one-kelvin sentinel
+/// for exactly that reason and no longer needs one. See `docs/plans/plating-absence.md`.
+///
+/// **Not semantic, and that is the first time this note can say so since v11.** No shipped
+/// trajectory moves by a ULP. Three lithium files keep both keys, so `validate` sees
+/// `Some(..)` and [`crate::plating::plating_risk`] computes what it computed before; the
+/// lead-acid and NiMH files have no `[safety]` at all; and the LTO cell's own predicate was
+/// already constant-`false` at every step, because a one-kelvin gate is below every
+/// reachable temperature. The bump is paid for the layout alone.
+///
+/// **Structurally it is a case this file has not had before: the answer depends on the
+/// chemistry, and for one of them it depends on the numbers in it.** `bincode` writes an
+/// `Option` as a one-byte tag plus payload and writes struct fields positionally, so:
+///
+/// * A pack whose chemistry has **no `[safety]`** is byte-for-byte unchanged — an absent
+///   `Option` is one tag byte whatever is inside it. A genuine v18 blob of such a pack is
+///   structurally valid here and the version check is the only thing that refuses it. That
+///   is the v10/v11 situation returning after three bumps of "it does not parse at all",
+///   and `snapshot_version.rs`'s pair is built on exactly such a fixture, so its retag is
+///   the real case rather than a stand-in.
+/// * A pack whose chemistry **does** carry `[safety]` has eight raw bytes where a tag is
+///   now read, and whether that is loud or quiet depends on the **low mantissa byte of the
+///   stale `t_plating_min_k`**. The shipped `273.15` begins `0x66`, which is not a valid
+///   tag, so the parse fails. A rounder `273.0` begins `0x00` — a valid `None` — and the
+///   section parses into a cell that claims it cannot plate, with every field after the
+///   gate slid along. That is v16's quiet hazard, reachable at v19 by a value no shipped
+///   file happens to carry.
+///
+/// Both halves are measured rather than reasoned about, in
+/// `snapshot_version.rs::a_v18_shaped_safety_section_does_not_parse_at_v19`. Nothing
+/// shipped is at risk either way — the version check refuses every stale blob — but this
+/// note deliberately does **not** claim the loud direction that v17's and v18's do.
+///
+/// `sim_server::API_VERSION` and `sim-wasm`'s constant both stay put: no call signature
+/// changes, no telemetry field moves, and the only difference a client can see is a
+/// chemistry file that omits two keys.
+pub const SNAPSHOT_VERSION: u32 = 19;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///

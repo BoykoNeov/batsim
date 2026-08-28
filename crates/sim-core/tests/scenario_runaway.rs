@@ -130,8 +130,8 @@ fn lfp(runaway_power_w_at_onset: f64) -> ChemistryParams {
             runaway_ea_j_per_mol: 1.0e5,
             // Plating off. This pack is 150 K above the cold end and a runaway
             // scenario has no business also being a plating scenario.
-            t_plating_min_k: 273.15,
-            plating_c_threshold: 0.5,
+            t_plating_min_k: Some(273.15),
+            plating_c_threshold: Some(0.5),
             plating_fade_per_ah: 0.0,
             plating_short_hazard_per_ah: 0.0,
             plating_short_ohms: 0.0,

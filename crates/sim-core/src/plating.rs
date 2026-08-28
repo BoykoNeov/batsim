@@ -46,6 +46,18 @@
 //! cold cycles and checks the trajectory stays far above
 //! [`crate::aging::MIN_SOH_CAPACITY`].
 //!
+//! # A chemistry that has no plating mechanism at all
+//!
+//! Everything above describes a graphite anode. Lithium titanate has no plating mechanism
+//! to describe: its anode plateau sits ~1.55 V above the potential at which metallic
+//! lithium deposits, so the driving force is absent at every temperature and every rate.
+//! Such a chemistry omits `[safety]`'s `t_plating_min_k` and `plating_c_threshold`
+//! together, and [`plating_risk`] then answers `false` unconditionally — a *path*, not an
+//! unreachable threshold, which is what makes plating impossible for that cell rather than
+//! free. `validate` refuses a file that prices plating without a gate, so "no mechanism"
+//! and "a mechanism nobody has fitted a cost for" stay distinguishable. See
+//! `docs/plans/plating-absence.md`.
+//!
 //! # Where the consequences land
 //!
 //! Detection is per cell per step (the flag is an observation, so it is reported even
@@ -87,9 +99,20 @@ fn is_below(x: f64, limit: f64) -> bool {
 
 /// Whether one cell is charging hard enough, cold enough, to plate lithium.
 ///
-/// Three conditions, all against **start-of-step** ground truth (the same state that
-/// produced `i_cell`, so the answer is consistent with the heat and the currents
-/// reported for the same step):
+/// **Zero conditions if the chemistry has no plating gate.** A chemistry whose
+/// [`SafetyParams::t_plating_min_k`] and [`SafetyParams::plating_c_threshold`] are both
+/// absent has no plating mechanism — lithium titanate is the shipped example, its anode
+/// plateau sitting ~1.55 V above the potential at which metallic lithium deposits — and
+/// this returns `false` for it at every temperature and every rate, so
+/// [`crate::EventFlags::PLATING_RISK`] can never rise. That is the whole of how the
+/// absence is implemented: a *path* rather than an unreachable threshold, which is what
+/// makes it impossible rather than merely free. `validate` guarantees the two fields
+/// move together; the `let ... else` below does not rely on that, because this function
+/// is public and a caller may hand it anything.
+///
+/// Otherwise, three conditions, all against **start-of-step** ground truth (the same
+/// state that produced `i_cell`, so the answer is consistent with the heat and the
+/// currents reported for the same step):
 ///
 /// 1. the cell is charging (`i_cell < 0`, per the discharge-positive convention),
 /// 2. its temperature is below [`SafetyParams::t_plating_min_k`],
@@ -103,18 +126,24 @@ fn is_below(x: f64, limit: f64) -> bool {
 /// has gone wrong, and `step` must never panic.
 #[must_use]
 pub fn plating_risk(params: &SafetyParams, i_cell: f64, temp_k: f64, eff_capacity_ah: f64) -> bool {
+    // No gate, no mechanism: this cell does not plate at any temperature or rate.
+    let (Some(t_plating_min_k), Some(plating_c_threshold)) =
+        (params.t_plating_min_k, params.plating_c_threshold)
+    else {
+        return false;
+    };
     // Charging is negative current; a rest or discharge cannot plate.
     if !is_charging(i_cell) {
         return false;
     }
-    if !is_below(temp_k, params.t_plating_min_k) {
+    if !is_below(temp_k, t_plating_min_k) {
         return false;
     }
     if !is_positive(eff_capacity_ah) {
         return false;
     }
     let c_rate = -i_cell / eff_capacity_ah;
-    c_rate > params.plating_c_threshold
+    c_rate > plating_c_threshold
 }
 
 /// Capacity fraction lost to plating from `ah_plating` amp-hours carried under plating
