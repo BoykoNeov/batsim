@@ -1,0 +1,68 @@
+# `nimh_overcharge.toml` with the temperature pinned. The control arm.
+#
+# This file differs from its twin by ONE thing: [pack.thermal.Network] is gone, so the
+# cell reports its heat and never moves in temperature. Everything else -- chemistry,
+# topology, starting charge, ambient, seed -- is identical.
+#
+# ## Why the control is necessary, and why the obvious one is worthless
+#
+# docs/plans/phase-8-slice-c-spike.md measured that a peak-then-fall is STRUCTURALLY
+# GUARANTEED here: the SOC clamp pins the cell at OCV(1.0) while the charger keeps
+# pushing, so on any chemistry whose resistance falls with temperature the terminal must
+# turn over. "It peaks and it falls" is therefore a fact about the clamp and evidence
+# about nothing. Only the magnitude counts, and a magnitude needs something to be measured
+# against.
+#
+# This is that something. With the temperature pinned neither channel can act -- R0(T) is
+# frozen and the OCV temperature correction has a zero temperature difference to work with
+# -- and the fall goes to EXACTLY zero. Measured at the page's dt = 0.5:
+#
+#   * t = 3240.0 s   the cell fills at 1.518599 V, and prints 1.519 V
+#   * t = 3376.5 s   1.518600 V, still printing 1.519 V. Its twin is at 1.509 V here.
+#   * t = 6000.0 s   1.518600 V. The drift over the whole overcharge is 0.0006 mV, which
+#                    is the last of the slow RC pair settling and is four decimal places
+#                    below anything the panel can show.
+#
+# So whatever the twin's fall is, it is temperature and nothing else.
+#
+# ## One honest wrinkle
+#
+# This cell's peak is HIGHER than the live twin's: 1.5186 V against 1.5178 V, about
+# 0.8 mV. That is not an inconsistency. The live cell has already warmed 0.87 K by the
+# time it fills -- 54 minutes of charging at a slightly net-exothermic balance -- so it
+# arrives at the clamp with a little of the fall already spent. The pinned cell arrives
+# with none of it spent, which is what makes it the reference.
+#
+# ## Everything else this file does not do
+#
+# As its twin: no BMS, no scatter, no faults, and no aging (which would be a build error
+# against a chemistry that ships no [aging] section). The ambient control does nothing at
+# all on this file, which is worth knowing before dragging it -- the cell sits at
+# initial_temp_k whatever the slider says, exactly as `cc_discharge_lto.toml` and every
+# other isothermal scenario here does.
+
+chemistry = "nimh_subc_3ah_generic"
+
+[meta]
+name = "Overcharge, single NiMH cell, temperature pinned"
+description = """
+`nimh_overcharge.toml` with [pack.thermal] removed, so the cell reports its heat and \
+never warms. Charge at 1 C into the same overcharge and the terminal climbs to 1.519 V, \
+reaches it when the cell fills, and then does not move: the fall its thermally live twin \
+shows is exactly zero here, to every digit the panel prints and four more. The control \
+arm for the -dV lesson -- whatever the twin loses, it loses to temperature."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.1
+initial_temp_k = 298.15
+seed = 0
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves. THIS IS THE
+#                      ONE DIFFERENCE FROM `nimh_overcharge.toml`.
+#   [pack.scatter]  -> every cell identical; one cell, so there is nothing to scatter
+#   [pack.bms]      -> no BMS at all
+#   [pack.aging]    -> would be a build error against this chemistry
+#   [[faults]]      -> nothing scheduled

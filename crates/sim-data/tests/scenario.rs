@@ -12,6 +12,11 @@ const CC_DISCHARGE: &str = include_str!("../../../scenarios/cc_discharge_lfp.tom
 const SOFT_SHORT: &str = include_str!("../../../scenarios/soft_short_under_a_lying_sensor.toml");
 const COLD_CHARGE_LTO: &str = include_str!("../../../scenarios/cold_charge_lto.toml");
 const COLD_CHARGE_NMC: &str = include_str!("../../../scenarios/cold_charge_nmc.toml");
+const NIMH_OVERCHARGE: &str = include_str!("../../../scenarios/nimh_overcharge.toml");
+const NIMH_OVERCHARGE_ISO: &str =
+    include_str!("../../../scenarios/nimh_overcharge_isothermal.toml");
+const NIMH_MEMORY_CHARGED: &str = include_str!("../../../scenarios/nimh_memory_charged.toml");
+const NIMH_MEMORY_DISCHARGED: &str = include_str!("../../../scenarios/nimh_memory_discharged.toml");
 
 fn env() -> Env {
     Env {
@@ -546,5 +551,121 @@ fn the_cold_charge_pair_differs_only_in_its_chemistry() {
         lto.pack.aging.is_some() && nmc.pack.aging.is_some(),
         "both cold-charge scenarios must have aging on, or the health rows step 26 compares \
          are two constants"
+    );
+}
+
+/// The overcharge pair really does differ in one thing, and that thing is the thermal
+/// network.
+///
+/// Guided path step 28 sends the reader to `nimh_overcharge_isothermal.toml` with the words
+/// *"the same file with the thermal network removed and nothing else"*, and the whole
+/// lesson is an attribution resting on it: a 9 mV fall on one file and none at all on the
+/// other means TEMPERATURE only if everything else is held. `path_claims.rs` checks that
+/// the sentence is in the prose and that the arm loads that file; it has no opinion on
+/// whether the two files agree.
+///
+/// Same instrument as [`the_cold_charge_pair_differs_only_in_its_chemistry`] and the same
+/// argument for it — `PackConfig` is `PartialEq`, so this covers a field added tomorrow —
+/// with one difference: that pair is identical and this one is identical *except* for the
+/// field the sentence names, so the check patches that one field and then compares.
+#[test]
+fn the_overcharge_pair_differs_only_in_its_thermal_network() {
+    let live = parse_scenario(NIMH_OVERCHARGE).expect("the live overcharge scenario parses");
+    let iso = parse_scenario(NIMH_OVERCHARGE_ISO).expect("the isothermal twin parses");
+
+    assert_eq!(
+        live.pack.thermal,
+        ThermalConfig::Network {
+            k_neighbor_w_per_k: 0.0
+        },
+        "the live file is what gives the cell somewhere to put the heat"
+    );
+    assert_eq!(
+        iso.pack.thermal,
+        ThermalConfig::Isothermal,
+        "the control arm's whole job is to take that away"
+    );
+
+    let mut patched = iso.pack.clone();
+    patched.thermal = live.pack.thermal;
+    assert_eq!(
+        live.pack, patched,
+        "the two overcharge scenarios must differ in their thermal configuration and in \
+         nothing else: step 28 tells the reader so, and its 9 mV is only attributable to \
+         temperature if the packs are otherwise identical"
+    );
+    assert_eq!(live.faults, iso.faults, "neither file schedules a fault");
+    assert_eq!(
+        live.chemistry_source(),
+        ChemistrySource::Id("nimh_subc_3ah_generic")
+    );
+    assert_eq!(
+        iso.chemistry_source(),
+        ChemistrySource::Id("nimh_subc_3ah_generic")
+    );
+}
+
+/// The memory pair really does differ only in where it starts.
+///
+/// Guided path step 29's control-arm instruction is *"the same file with `initial_soc`
+/// changed and nothing else"*, and the lesson is the sharpest attribution in this slice:
+/// two cells at the *same* state of charge resting 50 mV apart, and two gauges 59.7 points
+/// apart, means the direction of travel only if the packs are otherwise identical — the
+/// BMS configuration above all, since both estimates come out of it.
+#[test]
+fn the_memory_pair_differs_only_in_where_it_starts() {
+    let up = parse_scenario(NIMH_MEMORY_CHARGED).expect("the charged-up scenario parses");
+    let down = parse_scenario(NIMH_MEMORY_DISCHARGED).expect("the discharged-down twin parses");
+
+    assert_eq!(up.pack.initial_soc, 0.3);
+    assert_eq!(down.pack.initial_soc, 0.7);
+    // Both 20 points from a half-charged cell, in opposite directions, which is what makes
+    // the two runs land on exactly 0.5 after the same 720 s at the same rate.
+    assert!(
+        ((up.pack.initial_soc + down.pack.initial_soc) / 2.0 - 0.5).abs() < 1e-12,
+        "the pair has to straddle the half-charge the lesson reads both cells at"
+    );
+
+    let mut patched = down.pack.clone();
+    patched.initial_soc = up.pack.initial_soc;
+    assert_eq!(
+        up.pack, patched,
+        "the two memory scenarios must differ in `initial_soc` and in nothing else: step \
+         29 tells the reader so, and both of its contrasts are only attributable to the \
+         direction of travel if everything else — the BMS included — is held"
+    );
+    assert_eq!(up.faults, down.faults, "neither file schedules a fault");
+    assert_eq!(
+        up.chemistry_source(),
+        ChemistrySource::Id("nimh_subc_3ah_generic")
+    );
+    assert_eq!(
+        down.chemistry_source(),
+        ChemistrySource::Id("nimh_subc_3ah_generic")
+    );
+
+    // The gauge lesson rests on a BMS that is allowed to correct on this chemistry's
+    // shallow curve at all, and on one whose current sensor is perfect so that every point
+    // of error after the correction belongs to the correction. Both are unusual choices for
+    // this repo and both are argued in the file; this is what stops them being edited back
+    // to the house values without the lesson noticing.
+    let bms = up.pack.bms.as_ref().expect("the memory pair carries a BMS");
+    assert!(
+        bms.protection.is_none() && bms.balancing.is_none(),
+        "monitor-only: this BMS estimates and reports and must never clamp"
+    );
+    assert_eq!(bms.current_offset_a, 0.0);
+    assert_eq!(bms.current_noise_sigma_a, 0.0);
+    assert_eq!(bms.initial_soc_error, 0.0);
+    // Any threshold in (0.05, 0.10] gives identical behaviour, because the guard's whole
+    // decision is which segment of the OCV table the reading lands on: the two rested
+    // readings sit on 0.100 segments and the true midline sits on a 0.050 one. The shipped
+    // value is the midpoint of that interval, and the interval is the assertion.
+    assert!(
+        bms.min_ocv_slope_v_per_soc > 0.05 && bms.min_ocv_slope_v_per_soc <= 0.10,
+        "the OCV-correction guard has to accept the displaced readings and refuse the \
+         midline, which is what makes the lesson about hysteresis rather than about a \
+         threshold somebody picked: {} is outside (0.05, 0.10]",
+        bms.min_ocv_slope_v_per_soc
     );
 }

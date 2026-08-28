@@ -1,0 +1,147 @@
+# A NiMH cell that arrives at half charge from BELOW, and the gauge that believes it.
+#
+# The other half of `CLAUDE.md`'s "NiMH (-dV, hysteresis)". A nickel cell's open-circuit
+# voltage depends on which direction it was last driven, and the memory does NOT decay at
+# rest -- leave the cell alone for a week and it still rests on the branch it was left on.
+# `nimh_subc_3ah_generic.toml` is the first shipped chemistry to declare [hysteresis];
+# the mechanism is docs/plans/phase-8-slice-c-hysteresis.md.
+#
+# `nimh_memory_discharged.toml` is this file with ONE field changed -- initial_soc -- and
+# it arrives at the same half charge from above. The pair is the experiment.
+#
+# ## The experiment
+#
+# Start at 30 %, charge at 1 C for 720 s (0.6 A·h into a 3 A·h cell = 20 points), then
+# open the circuit and wait. The twin starts at 70 % and discharges the same 20 points
+# down to the same 50 %. Both cells are then at exactly the same state of charge, at the
+# same temperature, with the same everything else. Measured at the page's dt = 0.5:
+#
+#                                this file        the twin
+#   under load (t = 720.0 s)     1.377110 V       1.152890 V
+#   rested    (t = 4320.0 s)     1.289832 V       1.240168 V
+#   soc (true)                   50.0 %           50.0 %
+#
+# The two rested voltages are 49.663 mV apart, and the panel prints 1.290 V and 1.240 V.
+# The [ocv] table's own value at 50 % is 1.265 V, and each cell sits 24.83 mV off it --
+# THE TABLE IS THE MIDLINE, which that chemistry file's [ocv] comment says in as many
+# words and no other shipped file's does. The reason it is 24.83 rather than the full
+# half-width is that the memory state crosses the loop asymptotically: 20 points of
+# throughput at this file's gamma gets it 99.3 % of the way over, not all of it.
+#
+# The gap is invisible under load. At the end of the on-leg the two cells are 224 mV
+# apart, nearly all of it the ohmic drop and the RC pairs pointing in opposite directions,
+# and the memory is a fiftieth of that. It only becomes legible once the current stops --
+# which is exactly when a real gauge tries to read it. The terminal reaches its settled
+# printed value at t = 1833 s, so both readings at the mark are long relaxed.
+#
+# ## Why there IS a BMS here, and what it is allowed to do
+#
+# The BMS is monitor-only: no [pack.bms.protection] and no [pack.bms.balancing], so it
+# estimates and reports and never clamps anything. Nothing on this trajectory needs
+# protecting -- it is a 1 C charge into a cell rated for it, then an hour of nothing.
+#
+# The sensor error is set to ZERO on purpose, which is the opposite of what most scenarios
+# here do. `soft_short_under_a_lying_sensor.toml` and friends give the current sensor an
+# offset and noise because their subject is drift. This file's subject is the OCV
+# correction, so the coulomb count has to be exact: with a perfect sensor the estimate
+# tracks truth to the last digit until the correction fires, and every point of error
+# after that is attributable to one thing.
+#
+# ## min_ocv_slope_v_per_soc, which is the number a reader should interrogate
+#
+# That field is the guard against inverting a flat curve: below it the reading is judged
+# to carry no usable SOC information and the correction is skipped. Every other scenario
+# in this repo sets 0.15, and on THIS chemistry 0.15 blocks the correction at every state
+# of charge -- the steepest segment of the NiMH plateau is 0.20 V per unit SOC and the
+# rested readings here land on 0.10 segments. A gauge for this cell that kept the lithium
+# threshold would be pure coulomb counting with no reference at all, which is a real
+# design dead end and not a straw man.
+#
+# So this file lowers it, and the value is DERIVED rather than chosen. Measured on the
+# shipped table with `ocv_invert`:
+#
+#   1.289832 V (this cell, rested)  ->  0.798320,  segment slope 0.100
+#   1.240168 V (the twin, rested)   ->  0.201680,  segment slope 0.100
+#   1.265    V (the true midline)   ->  0.500000,  segment slope 0.050
+#
+# ANY threshold in (0.05, 0.10] produces identical behaviour, because the guard's whole
+# decision is which segment of the table the reading lands on. 0.08 is the midpoint of
+# that measured interval. It is not tuned to produce the answer below; the answer below is
+# what that entire interval produces.
+#
+# And the answer is the lesson. The guard refuses the reading that would have been RIGHT
+# -- the midline, on the flattest part of the curve -- and accepts both readings that are
+# wrong, because hysteresis has displaced the resting voltage onto a steeper part of the
+# table where the guard is satisfied. This cell's gauge settles at 79.8 % and the twin's
+# at 20.2 %, on two cells that are both at exactly 50 %. `ocv_invert` knows nothing about
+# the hysteresis state and is not going to be taught: principle 8 says the BMS sees
+# sensors and nothing else, and this is what that costs.
+#
+# ## What it does not do
+#
+#   * NO AGING, and it could not have any: this chemistry ships no [aging] section, so a
+#     pack configured with AgingConfig against it is a build error.
+#   * NO SCATTER, one cell, one group. A pack would be a second lesson.
+#   * Isothermal, and deliberately: the -dV file next door is where temperature is the
+#     subject, and a cell that warmed while it was being read would put a second
+#     mechanism into a measurement that is about one.
+
+chemistry = "nimh_subc_3ah_generic"
+
+[meta]
+name = "Resting-voltage memory, charged up to half"
+description = """
+A 1S1P 3 A·h NiMH cell at 30 % charge, 25 degC, isothermal, with a monitor-only BMS. \
+Charge it at 1 C for 720 s to reach exactly 50 %, then leave it alone for an hour. It \
+rests at 1.290 V, and `nimh_memory_discharged.toml` -- the same file with one field \
+changed, arriving at the same 50 % from above -- rests at 1.240 V. Same cell, same \
+charge, same temperature, 50 mV apart, for as long as you leave them. The gauge reads \
+79.8 % here and 20.2 % there, because inverting an open-circuit voltage cannot know \
+which way the cell was driven."""
+
+[pack]
+series = 1
+parallel = 1
+# 30 %, so that 720 s at 1 C lands on exactly 0.50. The twin's 0.70 is the mirror.
+initial_soc = 0.3
+initial_temp_k = 298.15
+# Unused (no scatter, no aging, no plating, and the sensor noise below is zero so nothing
+# draws), but the seed is part of the snapshot and every scenario names it.
+seed = 0
+
+[pack.bms]
+# Both zero, and that is the unusual choice this file argues for above: a perfect current
+# sensor, so the coulomb count is exact and every point of estimator error after the OCV
+# correction fires belongs to the correction.
+current_offset_a = 0.0
+current_noise_sigma_a = 0.0
+# One cell, one probe. Nothing here is about spatial under-sampling.
+temp_probes = [[0, 0]]
+# The BMS starts out knowing exactly where the cell is. Same argument as the sensor: this
+# file is about a gauge that goes wrong while doing its job correctly, not about one that
+# started wrong.
+initial_soc_error = 0.0
+# 50 mA, the value every scenario here uses: below this the pack counts as resting.
+rest_current_threshold_a = 0.05
+# Half an hour of rest before an OCV reading is trusted, against the 600 s the protection
+# scenarios use. Longer on purpose. This cell's slow RC pair has a 300 s time constant, so
+# at 600 s the terminal is still visibly relaxing and a correction taken there would be
+# reading an overpotential as well as the memory -- two mechanisms in one number. At
+# 1800 s the terminal has been printing its settled value for eleven minutes.
+rest_time_for_ocv_s = 1800.0
+# A filtered correction rather than a snap, so the row visibly moves rather than
+# teleporting. At this gain and the page's 0.5 s step it is converged within about two
+# minutes of the correction arming, which is 25 minutes before the guided path's mark.
+ocv_correction_gain = 0.02
+# DERIVED, not chosen -- the midpoint of the measured interval (0.05, 0.10] over which
+# behaviour is identical. See the long argument above; the short version is that the
+# repo's usual 0.15 disables the correction entirely on this chemistry.
+min_ocv_slope_v_per_soc = 0.08
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.bms.protection] -> monitor only: it estimates and reports, it never clamps
+#   [pack.bms.balancing]  -> nothing to balance in a 1S1P pack
+#   [pack.scatter]        -> every cell identical
+#   [pack.thermal]        -> Isothermal: heat is reported, temperature never moves
+#   [pack.aging]          -> would be a build error against this chemistry
+#   [[faults]]            -> nothing scheduled

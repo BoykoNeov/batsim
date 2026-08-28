@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 26 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 29 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -114,7 +114,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty-six steps and 703 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is twenty-nine steps and 739 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -220,10 +220,10 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed twenty-six whole steps — but only twenty-six. Steps here carrying
+//!   has now closed twenty-nine whole steps — but only twenty-nine. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
 //!   of the prose free: none. `[ledger].unledgered`
-//!   names what is left — none of the twenty-six — one line each, so this list cannot go
+//!   names what is left — none of the twenty-nine — one line each, so this list cannot go
 //!   quietly out of date; it is empty, and it stays in the file so that the next lesson
 //!   added to the path has somewhere to say it is not checked.
 //!   **What that closes is one axis and not the gap.** Every numeral in every step of the
@@ -2756,7 +2756,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 255 of 300 claims.
+    /// number's last printed place. The default shape: 279 of 324 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -2767,12 +2767,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 38 of 300.
+    /// the number was always right and only the declaration was wrong. 38 of 324.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 300, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 324, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -2812,7 +2812,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 275 of 300, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 296 of 324, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -4243,8 +4243,37 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
         // checked against a prose that spells 11.
         "v_cell_spread_mv_at" => (t.v_cell_max - t.v_cell_min) * 1000.0,
         "soc_at" => t.soc_true,
+        // The BMS's own estimate, as a fraction, so a claim can pin what the `soc (bms)`
+        // row prints rather than only how far that row is from the truth.
+        //
+        // A second quantity beside [`gap_pts`] rather than a replacement for it: the gap
+        // is what a sentence about *error* states, and this is what a sentence quoting the
+        // row states. Step 29 prints both, on two arms that disagree about the row and
+        // agree about the size of the error, so neither number could carry the other.
+        //
+        // Panics rather than reading zero when there is no BMS, on `gap_pts`' terms: that
+        // row is blank on such a step, and a claim naming it there is a claim about
+        // something the reader is not shown.
+        "soc_bms_at" => t.soc_bms.unwrap_or_else(|| {
+            panic!(
+                "a claim reads `soc_bms_at` at t = {} s on a step that runs with no BMS.                  The `soc (bms)` row is blank there; the claim is on the wrong step, or                  the step's `bms:` was turned off.",
+                row.t_s
+            )
+        }),
         "i_at" => t.i_actual,
         "t_max_at" => t.t_max,
+        // The same reading in degrees Celsius, which is what the `cell t` row prints and
+        // what a sentence pointing the reader at that row has to speak.
+        //
+        // A second quantity rather than a scale on the first, for the reason
+        // `v_cell_spread_mv_at` and `deficit_pts_at` are their own quantities: a claim's
+        // `spells_pow10` carries a *scale*, and Celsius against kelvin is an ORIGIN shift,
+        // which no power of ten expresses. Before this every temperature sentence in the
+        // path had to be written in kelvin to be claimable — which is what the three
+        // `t_max_at` claims on `nothing-to-clamp` do — and a lesson that tells a reader to
+        // look at a row printing 25.9 cannot then state 299.06 without describing a
+        // different panel.
+        "t_max_c_at" => t.t_max - 273.15,
         "soh_cap_at" => t.soh_capacity,
         "soh_res_at" => t.soh_resistance,
         // Heat, and the charge the pack would not take. Both exist because the `heat`
@@ -5337,8 +5366,8 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
         other => panic!(
             "path-claims.toml names a quantity this test cannot measure: `{other}`. \
              Known: v_at_mark, v_at, v_cell_min_at, v_cell_max_at, v_cell_spread_mv_at, \
-             soc_at, i_at, \
-             t_max_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
+             soc_at, soc_bms_at, i_at, \
+             t_max_at, t_max_c_at, soh_cap_at, soh_res_at, soh_ratio_at, q_gen_at, i_rejected_at, \
              deficit_pts_at, deficit_pts_min_at, deficit_zero_s, deficit_leaves_zero_s, \n             deficit_all_owed_s, deficit_crossing_spread_s, deficit_worst_cell_series_at, \n             deficit_worst_cell_parallel_at, deficit_best_cell_series_at, \n             deficit_best_cell_parallel_at, delivered_ah, \n             v_below_cccv_target_mv_at, cccv_taper_s, cccv_window_close_s, \
              cccv_cc_ends_s, pulse_sag_mv:<tooth>, pulse_jump_mv:<tooth>, \
              pulse_rebound_mv:<tooth>, pulse_lost_mv:<tooth>, pulse_rebound_arrived:<tooth>, \
@@ -6553,6 +6582,17 @@ struct Derivation {
     /// The operands, in order, each written as the sentence writes it. Every one must be a
     /// number the sentence prints.
     from: Vec<String>,
+    /// How many powers of ten larger the unit the **result** is written in is than the unit
+    /// the operands are written in — `3` for a millivolt difference between two readings
+    /// the sentence prints in volts. Same convention as [`Claim::spells_pow10`] and
+    /// [`LedgerRule::pow10`], and `0` for a ratio, which has no unit to change.
+    ///
+    /// It sits here rather than being inferred because nothing in the sentence says it: a
+    /// difference of two voltages is a voltage, and the only reason the prose writes it in
+    /// millivolts is that a reader would not otherwise be able to see it. The default is
+    /// the identity, so the ratio rows that predate this field are untouched.
+    #[serde(default)]
+    pow10: i32,
     #[allow(
         dead_code,
         reason = "authoring context for a human reader, not asserted"
@@ -6572,6 +6612,15 @@ struct Derivation {
 enum Op {
     /// The first operand divided by the second — `2.84 / 1.06`, printed `2.7×`.
     Ratio,
+    /// The second operand taken from the first — `1.518 - 1.509`, printed `9 mV`.
+    ///
+    /// Built the day a sentence needed it, which is the rule this enum states about itself.
+    /// The sentence is step 28's: a reader watching the `terminal` row across two marks
+    /// subtracts the two strings it printed, and *that* subtraction is the quantity the
+    /// lesson is about. Deliberately not the engine's own difference, which is a little
+    /// smaller — both rows are rounded to the millivolt, and `pow10` carrying the result
+    /// into millivolts is what makes the rounding visible instead of hidden.
+    Difference,
 }
 
 impl Op {
@@ -6582,13 +6631,17 @@ impl Op {
                 [a, b] if *b != 0.0 => Some(a / b),
                 _ => None,
             },
+            Op::Difference => match from {
+                [a, b] => Some(a - b),
+                _ => None,
+            },
         }
     }
 
     /// How many operands it takes.
     fn arity(self) -> usize {
         match self {
-            Op::Ratio => 2,
+            Op::Ratio | Op::Difference => 2,
         }
     }
 }
@@ -7082,6 +7135,7 @@ fn derived_value(row: &Derivation, literal: &str) -> Option<f64> {
     (operands.len() == row.from.len())
         .then(|| row.op.apply(&operands))
         .flatten()
+        .map(|v| v * 10f64.powi(row.pow10))
 }
 
 /// Check 6 — every number a claimed sentence prints is tied to something.
@@ -11928,6 +11982,80 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Ordinal("what-protection-costs")],
         pow10: 0,
     },
+    // --- steps 27 to 29: the nickel cell -----------------------------------------------
+    LedgerRule {
+        // Where the overcharge run starts. Phrased as the sentence phrases it rather than
+        // sharing a rule with step 29's `starts at {n} % charge`: the two sentences are on
+        // different files with different values, and one phrase covering both would be a
+        // rule that could not tell which file it was reading.
+        //
+        // It carries the following `in a` for a second reason, found by the double-cover
+        // panic rather than by reading: step 21 already says `starting at {n} % charge so
+        // that empty`, and a bare phrase here covered that step's number as well.
+        phrase: "starting at {n} % charge in a",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The ambient slider, which on this file really does decide something: the
+        // overcharge scenario carries a thermal network, so the cell cools to this.
+        phrase: "in a {n} \u{b0}C room",
+        ties: &[Tie::Setting(Control::Ambient)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The demand box, negative because it is a charge. The trailing comma is not
+        // decoration: step 25 says `The demand box says {n} A`, and a bare phrase here
+        // covered that step's 200 as well. Found by the double-cover panic.
+        // The minus is in the phrase and the tie takes the magnitude, which is the shape
+        // step 20's charge-leg rule already uses: the scanner's tokens carry no sign.
+        phrase: "The demand box says -{n}, which is",
+        ties: &[Tie::Magnitude(&Tie::Setting(Control::DemandValue))],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The rate that box works out to, and it is the chemistry's own rating rather than
+        // arithmetic over the box: `max_charge_c` is what the file says this cell may be
+        // fast-charged at, and the sentence says exactly that.
+        phrase: "the {n} C fast charge this cell is rated for",
+        ties: &[Tie::Chemistry("cell.max_charge_c")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Step 28's clock, in the same shape as the existing `and the clock reads ...`
+        // rule and deliberately not sharing a phrase with it: this sentence is about a run
+        // that arrived somewhere it was already going, and both marks are on one
+        // trajectory, so a shared phrase would put two steps' clocks under one rule.
+        phrase: "The clock has come round to `{n}m`",
+        ties: &[Tie::Clock],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Where the memory run starts. `This run starts at` rather than `starts at`, for
+        // the reason the two rules above carry their own tails: step 26 says `into a cell
+        // that starts at {n} % charge`, and the bare phrase covered its number too.
+        phrase: "This run starts at {n} % charge",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The on-leg of the pulse program, which is what makes both cells arrive at the
+        // same state of charge from opposite directions.
+        phrase: "in for {n} s",
+        ties: &[Tie::Setting(Control::PulseOn)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The current the reader types into the pulse box on the control arm - positive,
+        // because that box is discharge-positive and the twin has to come DOWN to the same
+        // charge this file's cell comes up to.
+        phrase: "put the pulse current to {n}",
+        ties: &[Tie::OnArm {
+            arm: "discharged",
+            tie: &Tie::Setting(Control::DemandValue),
+        }],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -14714,6 +14842,8 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (25, "twenty-five"),
     (26, "twenty-six"),
     (27, "twenty-seven"),
+    (28, "twenty-eight"),
+    (29, "twenty-nine"),
     // The ledger's numeral count passed twenty-five with its fifth step and will keep
     // going; the tens are here so the next one does not have to stop and add a word.
     (30, "thirty"),

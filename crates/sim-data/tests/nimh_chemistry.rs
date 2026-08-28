@@ -443,3 +443,124 @@ fn the_control_chemistry_has_neither_mechanism() {
          charge, whichever way it arrived: {a} vs {b}"
     );
 }
+
+/// **A nickel cell being charged gets colder before it gets warmer**, which guided path
+/// step 27 tells a reader to look for and which nothing else in this repo would notice.
+///
+/// The entropic term is `−I·T·∂U/∂T`, and with a negative `∂U/∂T` and a negative (charging)
+/// current it is negative: the cell absorbs heat from the reaction rather than giving it
+/// off. Over most of a 1 C charge on this file that term is larger than the irreversible
+/// heating it is fighting, so `q_gen_w` is negative and the cell cools below ambient — and
+/// then, as the overpotentials grow toward the top of the charge, it turns round.
+///
+/// It is also the observable the shipped `docv_dt_v_per_k` was *sized* against: the
+/// chemistry file's own provenance note derives the coefficient from "a NiMH cell on a 1 C
+/// charge stays roughly flat in temperature through the plateau and then heats sharply at
+/// the end". A test that the cell cools first is the nearest thing in this repo to a check
+/// on that derivation, so it is worth having for a second reason.
+#[test]
+fn a_charging_cell_cools_before_it_warms() {
+    let chem = nimh();
+    let trace = charge(
+        &chem,
+        START_SOC,
+        ThermalConfig::Network {
+            k_neighbor_w_per_k: 0.0,
+        },
+        3240.0,
+    );
+    let coolest = trace
+        .iter()
+        .min_by(|a, b| a.temp_k.total_cmp(&b.temp_k))
+        .expect("the charge produces samples");
+    let last = trace.last().expect("the charge produces samples");
+    println!("\n=== the cool part of a NiMH charge ===");
+    println!(
+        "  coolest {:.4} K at t = {:.1} s; full at {:.4} K ({:+.3} K on ambient)",
+        coolest.temp_k,
+        coolest.t,
+        last.temp_k,
+        last.temp_k - ROOM_K
+    );
+    assert!(
+        coolest.temp_k < ROOM_K,
+        "the cell never went below ambient: coolest {:.4} K against {ROOM_K}",
+        coolest.temp_k
+    );
+    assert!(
+        coolest.t < last.t,
+        "the coolest instant is the end of the charge, so nothing turned round"
+    );
+    assert!(
+        last.temp_k > coolest.temp_k,
+        "the cell never warmed again after its minimum"
+    );
+    // And the whole excursion is small, which is the other half of what step 27 says: this
+    // is a cell that has barely noticed a 54-minute charge.
+    assert!(
+        (last.temp_k - ROOM_K).abs() < 2.0 && (ROOM_K - coolest.temp_k) < 2.0,
+        "the charge is supposed to be nearly thermally neutral: {:.4} K coolest, {:.4} K \
+         at the top, against an ambient of {ROOM_K}",
+        coolest.temp_k,
+        last.temp_k
+    );
+}
+
+/// **Nothing turns it round.** Guided path step 28 closes by telling the reader that on
+/// this file the voltage goes on falling and the cell goes on heating for as long as they
+/// care to run it, and that there is nothing in the configuration that will stop it.
+///
+/// That sentence has no numeral in it, so neither the digit ledger nor the English ban can
+/// see it — a shape `phase-8-slice-b-lto-client.md` recorded shipping *false* twice. This
+/// is the instrument for it: over an hour and a half of overcharge, past the peak, the
+/// terminal never rises by a single ULP and the cell never cools by one.
+///
+/// The run is far longer than the lesson's own, deliberately: the claim is about what
+/// happens after a reader stops watching.
+#[test]
+fn past_the_peak_nothing_turns_round() {
+    let chem = nimh();
+    const LONG_S: f64 = 20_000.0;
+    let trace = charge(
+        &chem,
+        START_SOC,
+        ThermalConfig::Network {
+            k_neighbor_w_per_k: 0.0,
+        },
+        LONG_S,
+    );
+    let (pk_i, pk) = peak(&trace);
+    let mut worst_rise = 0.0_f64;
+    let mut worst_cool = 0.0_f64;
+    for w in trace[pk_i..].windows(2) {
+        worst_rise = worst_rise.max(w[1].v - w[0].v);
+        worst_cool = worst_cool.max(w[0].temp_k - w[1].temp_k);
+    }
+    let last = trace.last().expect("the run produces samples");
+    println!("\n=== {LONG_S} s of overcharge ===");
+    println!(
+        "  peak {:.6} V at {:.1} s; end {:.6} V at {:.2} K ({:.1} degC)",
+        pk.v,
+        pk.t,
+        last.v,
+        last.temp_k,
+        last.temp_k - 273.15
+    );
+    assert_eq!(
+        worst_rise, 0.0,
+        "the terminal rose by {worst_rise} V somewhere after the peak"
+    );
+    assert_eq!(
+        worst_cool, 0.0,
+        "the cell cooled by {worst_cool} K somewhere after the peak"
+    );
+    // And it really does go somewhere a cell would not survive, which is the other half of
+    // the sentence. 60 degC is this chemistry's own `t_max_k`.
+    assert!(
+        last.temp_k > chem.cell.t_max_k,
+        "the run ends at {:.2} K, inside this cell's rated {:.2} K, so 'a long way past \
+         anything the cell would survive' is not true of it",
+        last.temp_k,
+        chem.cell.t_max_k
+    );
+}

@@ -3292,6 +3292,100 @@ const LESSONS = [
     expect:
       "600 s of hard charging at 25 below zero, and the flag column stays empty the whole way. `soc (true)` reaches **`86.7 %`**, `terminal` settles at **`2.747 V`**, `heat` reads **`22.28 W`** — and `soh cap` still prints **`100.00 %`**. Run on past the mark and a flag does arrive, at 603.0 s: `OPERATING_POINT_OUT_OF_WINDOW`, the terminal crossing the 2.75 V ceiling this chemistry declares. That is the first limit this cell meets and it is a voltage limit, not plating, and no amount of running will turn it into plating. Now the control arm. Load `cold_charge_nmc` from the picker — the same scenario file with the chemistry id changed and nothing else — and put the demand box to -12 A, which is 4 C on that 3.0 Ah cell. `PLATING_RISK` is up on the very first step, and it does not go away; by 5.0 s the terminal is over that cell's own 4.20 V ceiling as well. Let it run to the same mark and read the health row: **`99.69 %`**. Both cells arrive at much the same charge — 86.7 % here, **`86.8 %`** there — and one of them has spent **0.31 points** of its capacity getting there while the other has spent nothing its health row can print. That is what the flag on step 11 was warning about: the engine bills plating per amp-hour taken while the flag is up, and this cell has no plating to bill. The difference between the two runs is a parameter file.",
   },
+  {
+    id: "the-charge-is-over",
+    title: "The moment it is full, and nothing outside says so",
+    // The first of three lessons on `nimh_subc_3ah_generic`, and the first half of a
+    // continuous run: this step marks the instant the cell fills and the next one carries
+    // the same trajectory 136.5 s further. `applyStep` does not reload a step whose mark
+    // is ahead of the clock on the same scenario, which is what makes the pair one run --
+    // the idiom lessons 2 to 4 already use, and the only way to get two STOPPED readings
+    // out of one voltage curve. The page pauses at a mark and nowhere else.
+    scenario: "nimh_overcharge.toml",
+    // 1C = 1 x 3 A.h, charging, so negative. This chemistry's own `max_charge_c`.
+    demand: { mode: "Current", value: -3 },
+    ambient_c: 25,
+    bms: null,
+    // 54 minutes of simulation to the mark, so about a quarter of a minute of watching.
+    speed_x: 200,
+    dt: 0.5,
+    // One step PAST the clamp at 3240.0, deliberately. At the clamp itself only a sliver
+    // of the current is refused -- `clamp` reads `refused 0.000 A` and `heat` is still
+    // 0.04 W -- and a mark there would show the reader the transition rather than the
+    // state. One step later the refusal is total and the terminal still prints its peak.
+    until_s: 3240.5,
+    reload: true,
+    watch: ["plot-v", "readouts"],
+    prose: [
+      "A sixth chemistry, and the last this path adds: nickel-metal hydride. One sub-C cell — the format that used to power cordless tools and radio-control cars — starting at 10 % charge in a 25 °C room, thermally live, with nothing protecting it.",
+      "The demand box says -3, which is the 1 C fast charge this cell is rated for. There is no charge policy and no BMS here, so the current is constant and nothing on this page will end it.",
+      "The run stops itself at the instant the cell fills. Watch `terminal`, `clamp` and `heat`.",
+    ],
+    expect:
+      "`soc (true)` reads **`100.0 %`** and the clock reads `54m`. Now look at what a charger would have to go on, because it does not have that first row: `current` still reads **`-3.000 A`**, and `terminal` is at the highest it will ever reach — **`1.518 V`** — having climbed all the way to this step. Neither of those says anything is over. One row further down, everything has changed. `clamp` has started printing **`refused 3.000 A`**, which is the coulomb counter declining every amp the charger is still sending, and `heat` reads **`4.24 W`** — the whole of the charger's output arriving in a cell with nowhere to put it. `cell t` has reached **`25.9 °C`** getting here, which is barely anything at all, and for the first part of the climb it was *cooler* than the room rather than warmer: the `heat` row goes negative, because charging this chemistry absorbs heat through its entropy term faster than its resistance makes it. Nickel cells really do this, and `a_charging_cell_cools_before_it_warms` is what holds this page to it. All of that ends here, and the next step is what the cell does about it.",
+  },
+  {
+    id: "and-then-it-falls",
+    title: "The signal a charger stops on",
+    // The same file and the same run as the step before, carried on. Every control below
+    // that the trajectory can see -- scenario, demand, ambient, bms, dt -- is identical to
+    // that step's, and `reload` is absent, so pressing Next continues rather than
+    // rebuilding. The speed slider is the one thing that differs and the one thing no
+    // trajectory can see.
+    scenario: "nimh_overcharge.toml",
+    demand: { mode: "Current", value: -3 },
+    ambient_c: 25,
+    bms: null,
+    // Down from the last step's, because this one covers 136.5 s and the row it is about
+    // moves about a millivolt every 15 s.
+    speed_x: 20,
+    dt: 0.5,
+    // The +10 K point: the first step whose cell is 10 K above the peak's temperature.
+    // Chosen because that is roughly what a real charger sees before it decides, and NOT
+    // moved out to somewhere the digits are prettier -- `phase-8-slice-c-spike.md` records
+    // scoring a pre-registered prediction green over a twenty-minute run where the honest
+    // figure at the instant a charger fires was under half of it.
+    until_s: 3376.5,
+    watch: ["plot-v", "readouts"],
+    prose: [
+      "Nothing has been touched. This is the same run continuing from the last step's mark, on the same cell, with the same current still going in and nothing having been told anything.",
+      "The speed is down so there is time to watch one row move. Watch `terminal`.",
+      "It has stopped climbing, and what it does instead is the reason this chemistry is in this path at all.",
+    ],
+    expect:
+      "`terminal` reads **`1.509 V`** here against the **`1.518 V`** of the last step's mark, so the two printed rows are 9 mV apart. That is the whole signal: a nickel cell held on a constant current past full comes back *down* off its own peak, and that fall is how essentially every fast charger for this chemistry decides to stop — not by measuring charge, which it has no way to do, but by watching for a terminal voltage it has been tracking to turn over. Both of those readings are rounded to the millivolt, so the engine's own difference is a little under what the two rows subtract to. Nothing else moved with it. The clock has come round to `56m`, `clamp` still reads **`refused 3.000 A`** and `soc (true)` is still **`100.0 %`**. The one row that did move is `cell t`, now reading **`35.9 °C`**. That is the mechanism and there is no other candidate: a warmer cell has a lower resistance, so the climb above its open-circuit voltage shrinks, and the open-circuit voltage itself falls with temperature through the entropy coefficient this chemistry states. Both channels are live and neither carries it alone; `the_fall_is_shared_between_the_two_temperature_channels` is where that split is measured. Now take the temperature away. Load `nimh_overcharge_isothermal` from the picker — the same file with the thermal network removed and nothing else — and run it to the same place. `terminal` reads **`1.519 V`**, and it has been reading that since the cell filled: the fall is *exactly* zero, to every digit this panel prints and four more beyond them. Nothing else about that cell is different — `clamp` reads **`refused 3.000 A`** there too and `heat` reads **`4.24 W`**, so the same power is going in and the same charge is being turned away. It simply has nowhere to go. That control matters more than it looks, because a peak followed by a fall is *guaranteed* here by the charge clamp on any cell whose resistance drops as it warms: the shape of the trace is evidence for nothing at all, and only the size of the drop counts. One last thing before you leave this file. Nothing will ever stop it. There is no BMS, and this chemistry ships no thermal-runaway parameters at all because nickel cells have none to ship, so the voltage goes on falling and the cell goes on heating until convection catches up with the charger — a long way past anything the cell would survive.",
+  },
+  {
+    id: "which-way-it-was-driven",
+    title: "Two cells at the same charge, and 50 mV between them",
+    // The other half of what CLAUDE.md asked this chemistry for, and the one lesson in
+    // this path where the interesting quantity is a memory rather than a state.
+    scenario: "nimh_memory_charged.toml",
+    // The client's Pulse mode, which is a pure function of simulation time: `Current` on
+    // the on-leg and `Rest` otherwise. 720 s at 1 C moves 20 points of charge, so the
+    // on-leg ends at exactly 0.50; the off-leg is longer than the rest of the run, so the
+    // cell is never asked for anything again.
+    demand: { mode: "Pulse", value: -3, on_s: 720, off_s: 5400 },
+    ambient_c: 25,
+    // Monitor only -- this scenario's BMS has no protection block and no balancing block,
+    // so it estimates and reports and never clamps. The `soc (bms)` row is the lesson.
+    bms: true,
+    speed_x: 300,
+    dt: 0.5,
+    // The end of the hour of rest. The terminal reaches the value it prints here at
+    // 1833.0 s, so both cells are long settled -- and the BMS's own correction, which
+    // arms at 1800 s of rest, has been converged for most of half an hour.
+    until_s: 4320,
+    reload: true,
+    watch: ["plot-v", "readouts"],
+    prose: [
+      "The same cell once more, and this time the question is what it remembers. This run starts at 30 % charge, puts the same charge current in for 720 s, and then opens the circuit and does nothing at all until the mark.",
+      "There is a BMS this time and it is monitor-only: it estimates and reports and never clamps anything. Watch `soc (true)` and `soc (bms)`, and watch `terminal` through the rest.",
+      "Every other lesson here has been about what a cell does. This one is about what it remembers.",
+    ],
+    expect:
+      "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and it has been resting long enough that `terminal` has stopped moving: **`1.290 V`**. Now the control arm, which is one field away. Load `nimh_memory_discharged` from the picker — the same file with `initial_soc` changed and nothing else — put the pulse current to 3, which is the same rate the other way, and run it to the same mark. That cell started higher and was *discharged* down to where this one was charged up to. It is at the same charge and the same temperature, with the same everything, and `terminal` there reads **`1.240 V`** against this file's **`1.290 V`** — 50 mV apart, read straight off the two panels. And it does not fade — there is no decay term on this state at all, so neither reading will have moved however long you leave them alone. A nickel cell's open-circuit voltage depends on which way it was last driven, and this chemistry's `[ocv]` table is the *midline* between the two branches rather than either one of them, which is a thing no other parameter file in this repo has to say about itself. You cannot see any of it while current is flowing. At the end of the two legs the two cells sat at 1.377 V and 1.153 V, 224 mV apart, and almost all of that is ordinary resistance pointing in opposite directions; the memory is only legible once everything else has stopped, which is exactly when a gauge tries to read it. Which is the last thing here and the one worth taking away. Look at `soc (bms)`. On this file it reads **`79.8 %`** and on the other it reads **`20.2 %`**, against a truth the row above it prints identically on both. Neither BMS is broken and neither has a bad sensor — this scenario gives them perfect ones on purpose. Both did the textbook thing: rest the pack, read the open-circuit voltage, look up where that voltage sits on the chemistry's curve. The curve has one branch and the cell has two, so each of them landed on the wrong one and this file's gauge is out by **29.8 points**, with the other one out by the same amount the other way. The engine knows exactly where both cells are. The BMS is allowed sensors and nothing else, and no sensor can see which way a cell was last driven.",
+  },
 ];
 
 /** Authored strings, so the escape is belt-and-braces; the backticks are the point. */

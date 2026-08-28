@@ -1,0 +1,66 @@
+# `nimh_memory_charged.toml` with one field changed, arriving at half charge from ABOVE.
+#
+# The control arm, and the pairing `cold_charge_lto.toml` / `cold_charge_nmc.toml` and
+# `cc_discharge_lfp.toml` / `cc_discharge_nmc.toml` already use: everything is identical
+# except `initial_soc`, which is 0.7 here and 0.3 there.
+#
+# Read the twin for the whole argument -- the experiment, why the BMS has a perfect
+# current sensor, and why `min_ocv_slope_v_per_soc` is 0.08. What follows is only what
+# this arm measures.
+#
+# Start at 70 % and DISCHARGE at 1 C for 720 s, which takes out the same 20 points the
+# twin puts in, landing on exactly the same 50 %. Then open the circuit and wait.
+# Measured at the page's dt = 0.5:
+#
+#   * t =  720.0 s   1.152890 V under load, and `soc (true)` is at 50.0 %
+#   * t = 1833.0 s   the terminal reaches the value it will print for the rest of the run
+#   * t = 4320.0 s   1.240168 V rested, `soc (true)` 50.0 %, `soc (bms)` 20.2 %
+#
+# Against the twin's 1.289832 V and 79.8 % at that same instant. Two cells at the same
+# charge, 49.663 mV apart because one was last charged and the other last discharged, and
+# two gauges 59.7 points apart because each inverted its own cell's resting voltage
+# through a table that has one curve where the cell has two.
+#
+# The sign of the estimator error is worth naming: THE GAUGE IS WRONG IN THE FLATTERING
+# DIRECTION ON THE TWIN AND THE ALARMING ONE HERE. A cell that has just been discharged
+# reads emptier than it is, so a device using this gauge shuts down early and its user
+# concludes the pack is worn out. That is the everyday failure this chemistry is famous
+# for, and none of it is a fault: every component here is working exactly as specified.
+
+chemistry = "nimh_subc_3ah_generic"
+
+[meta]
+name = "Resting-voltage memory, discharged down to half"
+description = """
+`nimh_memory_charged.toml` with `initial_soc` changed from 0.3 to 0.7 and nothing else. \
+Discharge at 1 C for 720 s to reach exactly the same 50 %, then leave it alone for an \
+hour: it rests at 1.240 V where the twin rests at 1.290 V, and its monitor-only BMS \
+settles at 20.2 % where the twin's settles at 79.8 %. Same cell, same charge, same \
+temperature; the only difference is which way it was last driven."""
+
+[pack]
+series = 1
+parallel = 1
+# 70 %, so that 720 s of 1 C discharge lands on exactly 0.50. THE ONE FIELD THAT DIFFERS
+# FROM `nimh_memory_charged.toml`.
+initial_soc = 0.7
+initial_temp_k = 298.15
+seed = 0
+
+[pack.bms]
+current_offset_a = 0.0
+current_noise_sigma_a = 0.0
+temp_probes = [[0, 0]]
+initial_soc_error = 0.0
+rest_current_threshold_a = 0.05
+rest_time_for_ocv_s = 1800.0
+ocv_correction_gain = 0.02
+min_ocv_slope_v_per_soc = 0.08
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.bms.protection] -> monitor only: it estimates and reports, it never clamps
+#   [pack.bms.balancing]  -> nothing to balance in a 1S1P pack
+#   [pack.scatter]        -> every cell identical
+#   [pack.thermal]        -> Isothermal: heat is reported, temperature never moves
+#   [pack.aging]          -> would be a build error against this chemistry
+#   [[faults]]            -> nothing scheduled

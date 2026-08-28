@@ -1,0 +1,128 @@
+# A NiMH cell charged until it is full, and then charged some more.
+#
+# This is the file `CLAUDE.md`'s "NiMH (-dV, hysteresis)" was asking for on the -dV half.
+# A nickel cell held on a constant current past full does something no lithium cell in
+# this repo does: its terminal voltage stops rising, turns over, and FALLS. That fall is
+# how nearly every NiMH fast charger on earth decides to stop, and it has to come out of
+# the physics rather than out of a script — which is Phase 8's fourth exit criterion.
+#
+# ## Where the fall comes from, and what is NOT in it
+#
+# Past full the coulomb counter refuses the current (SOC_CLAMPED_HIGH, and the `clamp`
+# readout starts printing what it refused). The engine bills the refused charge as heat --
+# see docs/plans/energy-hole.md -- so the whole of the charger's power arrives in a cell
+# that has nowhere to put it. The cell warms, and warming reaches the terminal by exactly
+# two channels:
+#
+#   * R0(soc, temp_k) falls as the cell warms, so the ohmic rise above the open-circuit
+#     voltage shrinks. Available since Phase 0.
+#   * the open-circuit voltage itself falls, through dU/dT and the [ocv] table's t_ref_k.
+#     Added in SNAPSHOT_VERSION 18; docs/plans/phase-8-slice-c-hysteresis.md.
+#
+# Measured on this file at the page's own dt = 0.5, the two are worth about 40 % and 60 %
+# of the fall respectively (crates/sim-data/tests/nimh_chemistry.rs). Neither is a taper:
+# THIS CELL HAS NO CHARGE-ACCEPTANCE MODEL. A real NiMH cell stops taking charge
+# gradually over the last few percent, which rounds the top of the curve; here acceptance
+# goes from all to nothing in one timestep, so the peak is a corner rather than a dome.
+# That cut is deliberate and is argued in docs/plans/phase-8-slice-c-spike.md: the lesson
+# this file carries is about the SIZE of the fall in millivolts, not about the shape of
+# the plot.
+#
+# ## The number this file exists to produce
+#
+# A -dV charger terminates on a fall of roughly 5 to 10 mV per cell, seen within a few
+# minutes of the peak. (That window is the industry convention for the format, quoted
+# across NiMH charging application notes; `DV_BAND_MV` in nimh_chemistry.rs is the same
+# figure and that test asserts against it.) Measured here:
+#
+#   * t = 3240.0 s   the cell fills. 1.517832 V at 25.87 degC -- the peak.
+#   * t = 3240.5 s   one step later the refusal is total: `clamp` reads 3.000 A and `heat`
+#                    jumps from 0.04 W to 4.24 W. The terminal still prints 1.518 V.
+#   * t = 3376.5 s   the cell is 10.03 K hotter and the terminal is 1.509026 V. That is
+#                    8.772 mV below the reading at the mark above, and the rows print
+#                    1.518 V and 1.509 V, so a reader subtracting what is on the screen
+#                    gets 9 mV. Either way it is inside the window.
+#
+# The +10 K instant is the assertion and not an incidental one. The spike recorded scoring
+# a pre-registered prediction green over a twenty-minute run where the honest figure at
+# the instant a charger actually fires was under half of it. A charger sees about ten
+# kelvin of rise before it decides, so that is where this file is read.
+#
+# ## What happens if nobody stops it
+#
+# Measured over 20 000 s: the voltage never rises again and the cell never cools, and the
+# run settles at about 155 degC and 1.454 V, which is a cell that has vented and been
+# thrown away. Nothing in this configuration will intervene -- there is no BMS here, and
+# `nimh_subc_3ah_generic.toml` deliberately ships no [safety], because NiMH has no
+# lithium-style self-sustaining decomposition exotherm to parameterise. The cell simply
+# gets hotter until convection to a 25 degC ambient balances 4 W.
+#
+# ## Why the cell gets COLDER first
+#
+# On the way up the `heat` readout is NEGATIVE: -0.23 W on the first step, and the cell
+# cools to 24.74 degC around t = 300 s before it starts warming again. That is the
+# entropic term, -I*T*dU/dT, which with a negative dU/dT cools on charge; over most of
+# this charge it is bigger than the ohmic heating it is fighting. Nickel cells really do
+# this, and it is the observable this chemistry file's dU/dT was sized against. Pinned by
+# `a_charging_cell_cools_before_it_warms` rather than left as an anecdote.
+#
+# ## What it does not do
+#
+#   * NO BMS. That is the point: something has to notice, and here nothing is watching.
+#     The over-temperature protection an actual pack carries would open the contactor long
+#     before 155 degC, and this file exists to show what it is protecting against.
+#   * NO AGING, and it could not have any: `nimh_subc_3ah_generic.toml` ships no [aging]
+#     section, so a pack configured with AgingConfig against it is a BUILD ERROR rather
+#     than a silently ageless pack. That is the behaviour wanted -- no NiMH cycle-life fit
+#     is in hand and inventing one would be worse than saying so.
+#   * NO SCATTER, one cell, one group: nothing here is about imbalance.
+#   * It does not reach v_max. The cell's protection ceiling is 1.60 V and the peak is
+#     1.518 V, so OPERATING_POINT_OUT_OF_WINDOW never comes up. The only flag on this
+#     whole trajectory is SOC_CLAMPED_HIGH.
+#
+# `nimh_overcharge_isothermal.toml` is this file with the thermal network taken out --
+# the control arm, and the pairing `cold_charge_lto.toml` and `cold_charge_nmc.toml`
+# already use.
+
+chemistry = "nimh_subc_3ah_generic"
+
+[meta]
+name = "Overcharge, single NiMH cell"
+description = """
+A 1S1P 3 A·h sub-C nickel-metal-hydride cell at 10 % charge and 25 degC, thermally live, \
+no BMS, no aging, no faults. Charge it at 1 C and keep charging: 54 minutes in the cell \
+is full, the coulomb counter starts refusing the current, and every watt of the \
+charger's power turns into heat. The terminal voltage peaks at 1.518 V and then FALLS -- \
+8.772 mV over the next 10 K of warming, which is the signal a NiMH fast charger \
+terminates on. `nimh_overcharge_isothermal.toml` is the same file with the temperature \
+pinned, where the fall is exactly zero."""
+
+[pack]
+series = 1
+parallel = 1
+# A tenth full. Not a convenience: at 1 C a charge from here lasts 3240 s, which is eleven
+# time constants of this cell's slow RC pair, so both RC pairs and the hysteresis state
+# have settled long before the cell fills. `nimh_chemistry.rs` records what happens when
+# they have not -- a charge started at 90 % measured 4.4 mV where the ohmic channel alone
+# should have given 5.4, because the slow pair was still filling and LIFTING the voltage
+# against the fall. It is also the realistic experiment: a charger starts from an empty
+# pack.
+initial_soc = 0.1
+initial_temp_k = 298.15
+# Unused here (no scatter, no aging, no plating -- this cell has no [safety] at all), but
+# the seed is part of the snapshot and every scenario names it rather than inheriting a
+# default.
+seed = 0
+
+# LOAD-BEARING, and the one line that separates this file from its twin. The whole -dV
+# signal is temperature reaching the terminal, so a pack that cannot warm has no fall at
+# all. k_neighbor is zero because there is one cell and no neighbour to conduct to; the
+# cooling that matters is h_area_w_per_k to the ambient, which the chemistry file carries.
+[pack.thermal.Network]
+k_neighbor_w_per_k = 0.0
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical; one cell, so there is nothing to scatter
+#   [pack.bms]      -> no BMS at all; nothing may refuse this charge or notice the heat
+#   [pack.aging]    -> would be a build error against this chemistry (see above)
+#   [[faults]]      -> nothing scheduled

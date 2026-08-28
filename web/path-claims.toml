@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Twenty-six steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Twenty-nine steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -129,7 +129,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 84 claims below that set
+#              Be clear about what this buys TODAY: in all 103 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -148,7 +148,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  255 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  279 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  38 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -203,9 +203,9 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 38 claims.
 #
-#   same        275 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        296 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
-#   magnitude    7. The sentence prints the size and the sign is a word — `refused
+#   magnitude    10. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
 #               −1.31397. Fenced to negative values; on a positive one it is a silent
 #               alias for `same`.
@@ -249,8 +249,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 283 of the 335 numbers the
-#            201 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 307 of the 362 numbers the
+#            217 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -281,7 +281,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 201 claimed sentences need none. A future literal printing a chemistry constant will
+# the 217 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -296,7 +296,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — twenty-six steps of the twenty-six so far, which is all of them.
+# of this file — twenty-nine steps of the twenty-nine so far, which is all of them.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -4551,8 +4551,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-six
-# steps, 703 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: twenty-nine
+# steps, 739 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -8739,6 +8739,588 @@ comparing the two cells says it. `complement` is the frame that performs the sub
 """
 
 
+# --- steps 27 to 29: the nickel cell ---------------------------------------------------
+#
+# Three lessons on `nimh_subc_3ah_generic`, the chemistry `phase-8-slice-c-hysteresis.md`
+# added along with the two mechanisms in SNAPSHOT_VERSION 18. Steps 27 and 28 are ONE RUN
+# on one scenario, split at two marks, and that is structural rather than stylistic: the
+# page pauses at a mark and nowhere else (`frame()` clamps to `path.until`, calls
+# `pathArrived` and clears it), the -dV lesson needs the peak AND a reading 136 s later,
+# and the `terminal` row moves a printed digit every 15 s or so. An arm gives this file a
+# trajectory; it gives the READER no stopped instant. Two consecutive steps on one
+# scenario with ascending marks do, because `applyStep` does not reload one - the idiom
+# lessons 2 to 4 already use.
+#
+# Step 29 is the other half of what `CLAUDE.md` asks this chemistry for, and its control
+# arm is the picker again.
+
+[[claim]]
+step = "the-charge-is-over"
+literal = "`soc (true)` reads **`100.0 %`**"
+quantity = "soc_at"
+value = 1.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "100.0"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3240.5
+display = "soc (true)"
+shows = "100.0 %"
+quoted = true
+note = """
+The mark is one step PAST the clamp at 3240.0, which is where this row first prints it.
+At the clamp itself only a sliver of the current is refused - `clamp` reads
+`refused 0.000 A` there and `heat` is still 0.04 W - so a mark there would have shown the
+reader the transition rather than the state on either side of it.
+"""
+
+[[claim]]
+step = "the-charge-is-over"
+literal = "`current` still reads **`-3.000 A`**"
+quantity = "i_at"
+value = -3.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "-3.000"
+states = "same"
+read_at_s = 3240.5
+display = "current"
+shows = "-3.000 A"
+quoted = true
+note = """
+Unchanged, which is the point of the sentence: nothing has told the charger anything and
+the charger is not the sort of thing that finds out. The demand box says -3 and this row
+says -3.000, which are the same number written by two different formatters.
+"""
+
+[[claim]]
+step = "the-charge-is-over"
+literal = "`terminal` is at the highest it will ever reach — **`1.518 V`**"
+quantity = "v_at_mark"
+value = 1.517797898
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.518"
+states = "same"
+read_at_s = 3240.5
+display = "terminal"
+shows = "1.518 V"
+quoted = true
+note = """
+THE PEAK, to the digit the row prints. The raw maximum over the whole trajectory is
+1.517831515 at 3240.0 s - one step earlier and 0.034 mV higher - and it prints `1.518 V`
+too, so the sentence is true of the row at a stopped instant, which is the only place a
+reader can take a voltage off this page. Stating the mark's own reading rather than the
+maximum is deliberate: a number measured at an instant nobody can stop at is the
+"true and unreachable" shape this file has been caught by before.
+
+"The highest it will ever reach" is a claim about the rest of the run and is asserted
+separately, in `nimh_chemistry.rs`: nothing after the peak goes back up, over 20 000 s.
+"""
+
+[[claim]]
+step = "the-charge-is-over"
+literal = "`clamp` has started printing **`refused 3.000 A`**"
+quantity = "i_rejected_at"
+value = -3.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.000"
+states = "magnitude"
+read_at_s = 3240.5
+display = "clamp"
+shows = "refused 3.000 A"
+quoted = true
+note = """
+The whole of the charger's current, turned away. This row is quiet on almost every step in
+this path and it is the one that says what has actually changed - the two rows above it
+are unmoved, and a charger has neither this one nor `soc (true)`.
+"""
+
+[[claim]]
+step = "the-charge-is-over"
+literal = "`heat` reads **`4.24 W`**"
+quantity = "q_gen_at"
+value = 4.239518433
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "4.24"
+states = "same"
+read_at_s = 3240.5
+display = "heat"
+shows = "4.24 W"
+quoted = true
+note = """
+Refused charge billed as heat, which is the path `energy-hole.md` built. It is a hundred
+times what the same row printed one step earlier (0.040434 W), and that jump is not
+claimed: the earlier instant is inside the run rather than at a mark.
+
+Not quite the charger's full 4.5535 W, and the difference is the entropy term still
+cooling: at -3 A, 299 K and this chemistry's dU/dT the reversible term is -0.314 W, so the
+cell absorbs that much of what arrives instead of heating with it.
+"""
+
+[[claim]]
+step = "the-charge-is-over"
+literal = "`cell t` has reached **`25.9 °C`**"
+quantity = "t_max_c_at"
+value = 25.913172
+tol = 5.0e-2
+tol_from = "spelled"
+spells = "25.9"
+states = "same"
+read_at_s = 3240.5
+display = "cell t"
+shows = "25.9 / 25.9 °C"
+quoted = false
+note = """
+0.9 K of warming over the whole of a 54-minute charge, which is what makes the next step's
+10 K in 136 s worth noticing. The first `t_max_c_at` claim in the file: the row prints
+degrees Celsius and every earlier temperature claim states kelvin, which is fine for a
+sentence about the engine and wrong for one that tells a reader to look at this row.
+
+`quoted` is false because the row prints both ends of the pack's temperature spread and
+this pack has one cell, so the string is `25.9 / 25.9 °C` and the sentence sensibly gives
+the number once. The display half is still asserted, so the formatter is still checked.
+"""
+
+[[arm]]
+step = "and-then-it-falls"
+name = "isothermal"
+instruction = "Load `nimh_overcharge_isothermal` from the picker"
+start = "restart"
+scenario = "nimh_overcharge_isothermal.toml"
+actions = [{ do = "run", to_s = 3420.0 }]
+note = """
+The control the whole step rests on. `phase-8-slice-c-spike.md` measured that a
+peak-then-fall is STRUCTURALLY GUARANTEED by the charge clamp on any cell whose resistance
+falls as it warms, so the shape of the trace is evidence about nothing and only the size of
+the drop counts - and a size needs a reference. With the temperature pinned neither channel
+can act and the fall is exactly zero.
+
+Runs to 3420.0 rather than to the 3376.5 its claims read, on the rule the ARMS section
+states. It is also the one arm in this file where overrunning costs the reader nothing:
+past the clamp this cell's terminal does not move at all, to four decimal places beyond
+what the panel prints, so an arm stopped anywhere in the overcharge reads the same string.
+"""
+
+[[claim]]
+step = "and-then-it-falls"
+literal = "`terminal` reads **`1.509 V`** here against the **`1.518 V`** of the last step's mark, so the two printed rows are 9 mV apart"
+quantity = "v_at_mark"
+value = 1.509025847
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.509"
+states = "same"
+read_at_s = 3376.5
+display = "terminal"
+shows = "1.509 V"
+quoted = true
+note = """
+The -dV, at the instant a charger fires. The mark is the first step whose cell is 10 K
+above the peak's temperature, and that instant is the assertion rather than an incidental
+one: `phase-8-slice-c-spike.md` records scoring a pre-registered prediction green over a
+twenty-minute run where the honest figure at the moment a charger decides was under half of
+it. Moving this mark out to somewhere the digits are larger would be that defect again.
+"""
+
+[[claim]]
+step = "and-then-it-falls"
+literal = "`terminal` reads **`1.509 V`** here against the **`1.518 V`** of the last step's mark, so the two printed rows are 9 mV apart"
+quantity = "v_at:3240.5"
+value = 1.517797898
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.518"
+states = "same"
+read_at_s = 3240.5
+display = "terminal"
+shows = "1.518 V"
+quoted = true
+note = """
+The same reading the step before this one marks, claimed again here because check 6 has no
+arm for "the step next door said so" and the sentence prints both ends of its own
+subtraction. It is genuinely reachable on THIS step's trajectory as well - the run passes
+through 3240.5 on its way to the mark, and a reader who presses Back is standing on it.
+"""
+
+[[derived]]
+step = "and-then-it-falls"
+literal = "`terminal` reads **`1.509 V`** here against the **`1.518 V`** of the last step's mark, so the two printed rows are 9 mV apart"
+spells = "9"
+op = "difference"
+from = ["1.518", "1.509"]
+pow10 = 3
+note = """
+The subtraction a reader does off the screen, which is why the operands are the PRINTED
+strings and not the engine's numbers: 1.517797898 - 1.509025847 is 8.772 mV, and both rows
+round to the millivolt in the same direction. The sentence beside this one says so rather
+than leaving the reader to find it, and 9 is still inside the window a charger fires on.
+"""
+
+[[claim]]
+step = "and-then-it-falls"
+literal = "`clamp` still reads **`refused 3.000 A`** and `soc (true)` is still **`100.0 %`**"
+quantity = "i_rejected_at"
+value = -3.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.000"
+states = "magnitude"
+read_at_s = 3376.5
+display = "clamp"
+shows = "refused 3.000 A"
+quoted = true
+note = """
+Unchanged from the last step's mark, which is half of the attribution: the electrical side
+of this cell is doing exactly what it was doing 136 s ago.
+"""
+
+[[claim]]
+step = "and-then-it-falls"
+literal = "`clamp` still reads **`refused 3.000 A`** and `soc (true)` is still **`100.0 %`**"
+quantity = "soc_at"
+value = 1.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "100.0"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3376.5
+display = "soc (true)"
+shows = "100.0 %"
+quoted = true
+note = """
+The other half. The charge state is pinned at the top by the clamp, so nothing the voltage
+does from here is the cell emptying or filling.
+"""
+
+[[claim]]
+step = "and-then-it-falls"
+literal = "`cell t`, now reading **`35.9 °C`**"
+quantity = "t_max_c_at"
+value = 35.907787
+tol = 5.0e-2
+tol_from = "spelled"
+spells = "35.9"
+states = "same"
+read_at_s = 3376.5
+display = "cell t"
+shows = "35.9 / 35.9 °C"
+quoted = false
+note = """
+10.03 K above the last step's mark, and the only row on the panel that moved. That is the
+attribution the whole step turns on, and the isothermal arm below is what closes it.
+"""
+
+[[claim]]
+step = "and-then-it-falls"
+literal = "`terminal` reads **`1.519 V`**"
+quantity = "v_at_mark"
+arm = "isothermal"
+value = 1.518599612
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.519"
+states = "same"
+read_at_s = 3376.5
+display = "terminal"
+shows = "1.519 V"
+quoted = true
+note = """
+The control, at the same instant. It is HIGHER than the live cell's own peak - 1.5186
+against 1.5178 - and that is not an inconsistency: the live cell has already warmed 0.87 K
+by the time it fills, so it arrives at the clamp with a little of the fall already spent.
+
+Between this reading and the end of the run the value moves by 0.0006 mV, which is the
+last of the slow RC pair settling and is four decimal places below anything the panel can
+show. So the row prints one string for the whole overcharge, and the sentence saying it
+has not moved is a statement about the engine as well as about the formatter.
+"""
+
+[[claim]]
+step = "and-then-it-falls"
+literal = "`clamp` reads **`refused 3.000 A`** there too and `heat` reads **`4.24 W`**"
+quantity = "i_rejected_at"
+arm = "isothermal"
+value = -3.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.000"
+states = "magnitude"
+read_at_s = 3376.5
+display = "clamp"
+shows = "refused 3.000 A"
+quoted = true
+note = """
+The same charge refused on the control arm, which is what stops the reader concluding that
+the pinned cell is somehow taking the current. It is not; it simply has no channel through
+which the heat can reach the terminal.
+"""
+
+[[claim]]
+step = "and-then-it-falls"
+literal = "`clamp` reads **`refused 3.000 A`** there too and `heat` reads **`4.24 W`**"
+quantity = "q_gen_at"
+arm = "isothermal"
+value = 4.242741333
+tol = 5.0e-3
+tol_from = "spelled"
+spells = "4.24"
+states = "same"
+read_at_s = 3376.5
+display = "heat"
+shows = "4.24 W"
+quoted = true
+note = """
+And the same heat being made. It prints the same two decimals as the live cell's 4.239518
+at this instant, which is a coincidence of the formatter rather than an equality - the live
+cell is 10 K warmer and its resistance is lower, so it makes slightly less.
+"""
+
+[[arm]]
+step = "which-way-it-was-driven"
+name = "discharged"
+instruction = "Load `nimh_memory_discharged` from the picker — the same file with `initial_soc` changed and nothing else — put the pulse current to 3"
+start = "restart"
+scenario = "nimh_memory_discharged.toml"
+pulse_a = 3.0
+actions = [{ do = "run", to_s = 4400.0 }]
+note = """
+The twin, arriving at the same state of charge from the other direction. The file supplies
+the starting charge and the reader supplies the sign: the pulse box is discharge-positive,
+so 3 takes 20 points OUT of a cell that starts at 0.7 where the step's own -3 puts the same
+20 points INTO one that starts at 0.3. Both land on exactly 0.50.
+
+`the_memory_pair_differs_only_in_where_it_starts` is what holds the "and nothing else" half
+of the instruction, over the whole of `PackConfig` rather than over a list of fields.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and it has been resting long enough that `terminal` has stopped moving: **`1.290 V`**"
+quantity = "soc_at"
+value = 0.5
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "50.0"
+spells_pow10 = 2
+states = "same"
+read_at_s = 4320.0
+display = "soc (true)"
+shows = "50.0 %"
+quoted = true
+note = """
+Exactly half, and exact rather than approximately: 720 s at 3 A is 0.6 A.h into a 3 A.h
+cell, which is 20 points on the nose from a start of 0.3.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and it has been resting long enough that `terminal` has stopped moving: **`1.290 V`**"
+quantity = "i_at"
+value = 0.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.000"
+states = "same"
+read_at_s = 4320.0
+display = "current"
+shows = "0.000 A"
+quoted = true
+note = """
+Open circuit, which is what makes the voltage beside it an open-circuit voltage. The pulse
+program's off-leg is longer than the rest of the run, so nothing is asked of this cell
+again after 720 s.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and it has been resting long enough that `terminal` has stopped moving: **`1.290 V`**"
+quantity = "v_at_mark"
+value = 1.289831719
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.290"
+states = "same"
+read_at_s = 4320.0
+display = "terminal"
+shows = "1.290 V"
+quoted = true
+note = """
+The rested voltage of a cell that was last charged. This row first prints `1.290 V` at
+1833.0 s and does not leave it, so "has stopped moving" is a claim about the formatter that
+the engine agrees with for the last 41 minutes of the run.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "`terminal` there reads **`1.240 V`** against this file's **`1.290 V`** — 50 mV apart"
+quantity = "v_at_mark"
+arm = "discharged"
+value = 1.240168281
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.240"
+states = "same"
+read_at_s = 4320.0
+display = "terminal"
+shows = "1.240 V"
+quoted = true
+note = """
+The rested voltage of a cell that was last discharged, at the same charge, the same
+temperature and the same instant. The chemistry's `[ocv]` table gives 1.265 V at 0.50, so
+each cell sits 24.83 mV off the midline - just short of the 25 mV half-width the file
+declares, because the memory state crosses its loop asymptotically and 20 points of
+throughput gets it 99.3 % of the way over rather than all of it.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "`terminal` there reads **`1.240 V`** against this file's **`1.290 V`** — 50 mV apart"
+quantity = "v_at_mark"
+value = 1.289831719
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.290"
+states = "same"
+read_at_s = 4320.0
+display = "terminal"
+shows = "1.290 V"
+quoted = true
+note = """
+This file's own reading, printed a second time so that the sentence stating the gap prints
+both of its operands. Check 6 groups by sentence, so the earlier claim on the same number
+in a different sentence cannot account for this one.
+"""
+
+[[derived]]
+step = "which-way-it-was-driven"
+literal = "`terminal` there reads **`1.240 V`** against this file's **`1.290 V`** — 50 mV apart"
+spells = "50"
+op = "difference"
+from = ["1.290", "1.240"]
+pow10 = 3
+note = """
+The gap as the two panels print it. The engine's own figure is 49.663 mV, which rounds into
+the same 50 at the precision the sentence writes - and the sentence says "read straight off
+the two panels" rather than claiming the engine's number, which is the honest version of a
+subtraction between two rounded rows.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "the two cells sat at 1.377 V and 1.153 V, 224 mV apart"
+quantity = "v_at:720"
+value = 1.377110013
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.377"
+states = "same"
+read_at_s = 720.0
+note = """
+Under load at the end of the on-leg. NO DISPLAY: 720.0 s is inside the run rather than at a
+mark, so this is a fact about the trajectory and not about a row a reader can stop on - and
+the sentence says so by talking about where the cells "sat" rather than about what any row
+prints.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "the two cells sat at 1.377 V and 1.153 V, 224 mV apart"
+quantity = "v_at:720"
+arm = "discharged"
+value = 1.152889987
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "1.153"
+states = "same"
+read_at_s = 720.0
+note = """
+The twin at the same instant, and the same reason for having no display.
+"""
+
+[[derived]]
+step = "which-way-it-was-driven"
+literal = "the two cells sat at 1.377 V and 1.153 V, 224 mV apart"
+spells = "224"
+op = "difference"
+from = ["1.377", "1.153"]
+pow10 = 3
+note = """
+The gap while current is flowing, which is 4.5 times the rested one and almost entirely
+ohmic: the two cells are being driven in opposite directions through the same resistance.
+The memory is a fiftieth of this and there is no way to see it here.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "On this file it reads **`79.8 %`** and on the other it reads **`20.2 %`**"
+quantity = "soc_bms_at"
+value = 0.798317342
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "79.8"
+spells_pow10 = 2
+states = "same"
+read_at_s = 4320.0
+display = "soc (bms)"
+shows = "79.8 %"
+quoted = true
+note = """
+The gauge on a cell that is at 50 %. Nothing is broken: this scenario gives the BMS a
+perfect current sensor and no initial error, so its coulomb count was exact right up to the
+moment it corrected itself against a rested open-circuit reading - which is the textbook
+thing to do and is what `ocv_invert` is for.
+
+1.289832 V inverts to 0.798320 on this chemistry's table, on a segment whose slope is 0.100
+V per unit charge. The scenario's `min_ocv_slope_v_per_soc` is 0.08, so the guard against
+inverting a flat curve is satisfied - by a reading that is only on that steep segment
+BECAUSE hysteresis displaced it there. The reading that would have been right, 1.265 V at
+the true midline, sits on a 0.050 segment and is the one the guard would refuse.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "On this file it reads **`79.8 %`** and on the other it reads **`20.2 %`**"
+quantity = "soc_bms_at"
+arm = "discharged"
+value = 0.201682658
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "20.2"
+spells_pow10 = 2
+states = "same"
+read_at_s = 4320.0
+display = "soc (bms)"
+shows = "20.2 %"
+quoted = true
+note = """
+The mirror, and the one that matters in practice: a cell that has just been discharged
+reads emptier than it is, so a device using this gauge shuts down early and its owner
+concludes the pack is worn out. 1.240168 V inverts to 0.201680 on a segment of the same
+0.100 slope, one node lower down the same table.
+"""
+
+[[claim]]
+step = "which-way-it-was-driven"
+literal = "this file's gauge is out by **29.8 points**"
+quantity = "soc_gap_pts_at"
+value = 29.8317342
+tol = 5.0e-2
+tol_from = "spelled"
+spells = "29.8"
+states = "same"
+read_at_s = 4320.0
+note = """
+The same fact as the claim two above, stated as the error rather than as the reading, which
+is what the closing sentence says. No display: the panel prints the estimate and the truth
+on two rows and never their difference, so the reader does this subtraction.
+"""
+
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -9021,6 +9603,26 @@ steps = [
                      # step 11's position, where the reader met plating; the rest are the
                      # two cells' ceilings, the two controls that make the abuse, and the
                      # mark
+  "the-charge-is-over",  # 11 numbers: the moment the nickel cell fills, and the first of a PAIR of
+                     # steps on one continuous run. Two of its numerals are the scenario
+                     # and the slider, two are the demand box and the rate the chemistry
+                     # rates it at, one is the clock, and the other six sit inside claimed
+                     # sentences - six rows of one panel read at one stopped instant,
+                     # which is what a step whose whole subject is "nothing outside says
+                     # so" has to print
+  "and-then-it-falls",   # 10 numbers: the -dV itself. One numeral is the clock and every other one is
+                     # claimed: the two ends of the fall, the subtraction between them,
+                     # the three rows that did not move, the one that did, and three
+                     # readings on the isothermal control arm. The first step in this path
+                     # to claim a reading at an instant that is ANOTHER STEP'S MARK, which
+                     # is what a fall between two marks needs and what check 6 has no
+                     # cross-step arm for
+  "which-way-it-was-driven", # 15 numbers: the resting-voltage memory and the gauge that believes it.
+                     # Three numerals are the scenario, the pulse program and the current
+                     # the reader types on the control arm; the other ten are claims and
+                     # two subtractions over them - the rested pair 50 mV apart, the same
+                     # pair 224 mV apart under load where the memory is invisible, and the
+                     # two estimates 59.7 points apart on cells that are both at half
 ]
 # Not scanned, and why. THIS LIST IS EMPTY for the first time, which is what the
 # twenty-four entries above amount to: every step of the guided path now has its whole
@@ -9077,6 +9679,9 @@ spelled = [
   "wearing-out-while-idle",      # 0 (2)
   "ten-c-costs-a-point",         # 0
   "cold-and-nothing-plates",     # 0
+  "the-charge-is-over",          # 0
+  "and-then-it-falls",           # 0
+  "which-way-it-was-driven",     # 0
 ]
 
 # The other side of that list: steps whose prose is NOT word-scanned, named.
