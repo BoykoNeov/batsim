@@ -41,6 +41,7 @@ use sim_core::{CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, Snapshot
 fn spm_chem() -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -123,6 +124,7 @@ fn spm_chem() -> ChemistryParams {
         },
         ocv: OcvTable {
             docv_dt_v_per_k: None,
+            t_ref_k: None,
             soc: vec![0.0, 1.0],
             volts: vec![2.5, 4.2],
         },

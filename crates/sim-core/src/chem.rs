@@ -71,6 +71,27 @@ pub struct ChemistryParams {
     /// a structural claim instead of a measurement.
     #[serde(default)]
     pub diffusion: Option<DiffusionParams>,
+    /// Open-circuit-voltage hysteresis (`[hysteresis]`), or `None` for a chemistry whose
+    /// resting voltage does not depend on which way it was last driven.
+    ///
+    /// `None` is the common case and the case for every chemistry shipped before Phase 8.
+    /// It is not "this cell has no hysteresis" - every real cell has some - it is "this
+    /// parameter set does not describe one, so the OCV table is read as a single curve".
+    /// For lithium at the rates these files cover that is a good approximation and is what
+    /// every published ECM parameter set in the repo assumes; for the nickel chemistries
+    /// it is most of what the model was missing.
+    ///
+    /// Like [`Self::diffusion`] and unlike [`Self::aging`], the absence is **not
+    /// diagnosable and not an error**: nothing in [`crate::PackConfig`] can ask for this
+    /// term, so a file without the section simply never generates one.
+    ///
+    /// **The absence is a path, not a multiplier**, for the reason [`Self::diffusion`]
+    /// spells out: [`crate::ecm::ecm_overpotential_v`] matches on this `Option` and
+    /// returns the sum unchanged when it is `None`, and [`crate::ecm::advance_cell`] never
+    /// executes the state update, so no chemistry without the section can move by so much
+    /// as a ULP. See [`HysteresisParams`] and `docs/plans/phase-8-slice-c-hysteresis.md`.
+    #[serde(default)]
+    pub hysteresis: Option<HysteresisParams>,
     /// Semi-empirical aging coefficients (`[aging]`), or `None` for a chemistry
     /// that carries no aging data.
     ///
@@ -647,13 +668,54 @@ pub struct OcvTable {
     /// endothermic. Not sign-constrained by validation: real coefficients change
     /// sign across the SOC range, so a chemistry may legitimately supply either.
     ///
-    /// `None` (the default, and the case for both shipped chemistries) disables
-    /// the entropic term entirely; the thermal model then carries irreversible
-    /// heat only. When present it must have the same length as `soc`. It is *not*
-    /// used to temperature-correct OCV itself — `ocv_lookup` remains a pure
-    /// function of SOC in this phase.
+    /// `None` (the default, and the case for every chemistry shipped before Phase 8)
+    /// disables the entropic term entirely; the thermal model then carries irreversible
+    /// heat only. When present it must have the same length as `soc`.
+    ///
+    /// # It now reaches voltage too, but only through [`Self::t_ref_k`]
+    /// Through v17 this column was heat-only, and this doc said so: *"It is not used to
+    /// temperature-correct OCV itself — `ocv_lookup` remains a pure function of SOC in
+    /// this phase."* That sentence was a deferral rather than a design, and
+    /// `docs/plans/phase-8-slice-c-spike.md` measured what it cost: the engine had
+    /// exactly one temperature → voltage channel, `R0(soc, temp_k)`, which reaches the
+    /// end-of-charge signature a nickel cell is named for at roughly half the size it
+    /// needs, and only as an ohmic side-effect.
+    ///
+    /// The same `∂U/∂T` is both quantities — that is thermodynamics, not a convenience —
+    /// so it is this column that corrects the potential, and it does so **only when
+    /// [`Self::t_ref_k`] says what temperature the `volts` column was measured at**. A
+    /// chemistry that supplies this column and no reference temperature keeps exactly its
+    /// v17 behaviour: heat only. See [`crate::ecm::open_circuit_v`].
     #[serde(default)]
     pub docv_dt_v_per_k: Option<Vec<f64>>,
+    /// Optional temperature \[K\] at which the [`Self::volts`] column was measured, and
+    /// the switch that turns on the OCV temperature correction:
+    ///
+    /// ```text
+    /// OCV_eff(soc, T) = OCV(soc) + ∂U/∂T(soc) · (T − t_ref_k)
+    /// ```
+    ///
+    /// # Why the gate is this field and not the column above
+    /// The correction needs two things: a coefficient and an origin. The coefficient has
+    /// been an optional column since Phase 2, supplied for **heat** — where no reference
+    /// temperature is needed, because the entropic term reads the cell's absolute
+    /// temperature. Gating the voltage correction on the coefficient alone would
+    /// therefore hand a shift with an undefined origin to any file that had added the
+    /// column for the other reason: a fabricated constant arriving by omission, which is
+    /// the shape `CLAUDE.md`'s provenance rule exists to refuse.
+    ///
+    /// So the gate is a temperature a file has to **state**. `None` — every chemistry
+    /// shipped before Phase 8 — takes a different path in [`crate::ecm::open_circuit_v`]
+    /// rather than adding a neutral zero, so no existing trajectory can move by a ULP.
+    /// That is the same structural argument [`ChemistryParams::diffusion`] makes, and it
+    /// is why Phase 8's exit criterion 3 stays structural rather than measured.
+    ///
+    /// Validation requires a finite, positive kelvin temperature, and requires
+    /// [`Self::docv_dt_v_per_k`] alongside it: a reference temperature with no
+    /// coefficient describes a correction that is identically zero, which is a file
+    /// saying something it does not mean.
+    #[serde(default)]
+    pub t_ref_k: Option<f64>,
 }
 
 /// Ohmic series resistance `R0` over a (soc, temperature) grid (`[r0]`).
@@ -898,6 +960,118 @@ pub struct DiffusionParams {
     pub max_overpotential_v: f64,
 }
 
+/// **Open-circuit-voltage hysteresis** (`[hysteresis]`) - a cell whose resting voltage
+/// depends on which direction it was last driven, and which keeps that memory through an
+/// arbitrarily long rest.
+///
+/// # What this is for, and why it is one section rather than two
+/// `CLAUDE.md` has reserved the room since Phase 0 - *"optional simple hysteresis term per
+/// chemistry (needed to do NiMH/lead-acid justice later; can be stubbed for LFP/NMC v1)"* -
+/// and nothing had ever un-stubbed it. Two later documents independently arrived at the
+/// same scoping: `lead-acid-data-only.md` records that the depletion state is "the *same*
+/// piece of state OCV hysteresis needs, so the two should be scoped together", and
+/// `diffusion-overpotential.md` refused to build this early because "a dead field costs
+/// more than a second small migration". This is that one migration.
+///
+/// # The mechanism, in two lines
+/// One extra state per cell - [`crate::EcmState::hysteresis`], written `h`, a pure number
+/// in `[-1, 1]` - driven toward the *opposite* of the drive direction, and one voltage read
+/// off it:
+///
+/// ```text
+/// h    <-  h*e^(-g*dz) + h_ss*(1 - e^(-g*dz)),   dz = |I|*dt / (3600*Q),   h_ss = -sgn(I)
+/// eta  =  -M * h                                                                      [V]
+/// ```
+///
+/// with `I` discharge-positive and `Q` the cell's capacity today. So `h` goes to `-1` on
+/// discharge and `+1` on charge, and a rested cell sources `OCV + M` after a charge and
+/// `OCV - M` after a discharge: [`Self::scale_v`] is the **half-width** of the loop and
+/// [`Self::gamma`] is how much charge has to move to cross it.
+///
+/// # The decay is in charge, not in time, and that is the whole point
+/// `dz` is a *fraction of capacity moved*, so at `I = 0` it is exactly zero, the
+/// exponential is exactly one, and `h` is returned unchanged. **A resting cell keeps its
+/// memory forever**, which is the lead-acid resting-voltage behaviour named in
+/// `CLAUDE.md`'s chemistry list, and it is why this cannot be an [`RcPair`]: an RC pair
+/// relaxes in *time*, so a rested cell forgets. Nothing else in [`crate::EcmState`] has
+/// this property - `v_rc` decays at rest, [`crate::EcmState::depletion`] decays at rest,
+/// and `soc` does not move at all.
+///
+/// # It is an overpotential, not an OCV shift, and the energy balance is why
+/// The term is added inside [`crate::ecm::ecm_overpotential_v`] rather than inside
+/// [`crate::ecm::open_circuit_v`], which looks inconsistent beside the temperature
+/// correction on [`OcvTable::t_ref_k`] and is not. The two are different physics:
+///
+/// * A temperature correction **moves the equilibrium potential**. Its energy is already
+///   accounted on the thermal side by the reversible term in [`crate::ecm::cell_heat_w`],
+///   which reads the same `dU/dT`. Adding it to the source without touching the
+///   overpotential is what keeps that pair matched.
+/// * Hysteresis is **dissipative**: the area enclosed by the loop is energy the cell does
+///   not give back, and it has no other channel. `ecm_overpotential_v` is the one
+///   expression feeding the solve, [`crate::CellModel::heat_w`] and
+///   [`crate::CellModel::overpotential_v`] - its own doc says that is so they "cannot
+///   disagree about what the cell is losing" - so routing the term through it makes the
+///   heat *follow* from the voltage instead of being a second thing to remember. The
+///   diffusion term is in there for exactly this reason.
+///
+/// The sign works out in both drive directions. `q_irrev = I*(I*R0 + eta)` with `-M*h` in
+/// `eta` gives `+M` on a settled discharge and `-M` on a settled charge, and `I` carries
+/// the matching sign, so the term heats either way and is exactly zero at rest. It can go
+/// briefly negative while `h` is still crossing after a current reversal - the cell
+/// returning stored polarization - which is the standing behaviour of every other
+/// overpotential here and is physical for a lumped model.
+///
+/// # What the BMS sees, which is deliberately nothing
+/// [`crate::ecm::ocv_invert`] - the estimator's rested-OCV correction - inverts the raw
+/// `volts` column and knows nothing about `h`. That is **not** an oversight awaiting a
+/// fix: design principle 8 says the BMS consumes sensor readings and maintains its own
+/// estimate, and a real BMS inverting a curve it only ever measured one direction of is
+/// exactly how a hysteretic chemistry fools one. On a cell with a wide loop the
+/// estimator's correction is biased by up to `M` in volts, in whichever direction the pack
+/// was last driven, and that gap is a feature to expose rather than a bug to hide.
+///
+/// # Not fitted, and the shipped lead-acid cell does not use it
+/// The parameters below are order-of-magnitude for the nickel cell that motivated them and
+/// nothing finer; see their own docs. `pba_agm_2v_generic.toml` is deliberately **not**
+/// given a `[hysteresis]` section in this slice even though the mechanism was scoped with
+/// it in mind, because no fitted lead-acid constant exists: inventing one would both put
+/// Phase 8's exit criterion 3 in play and ship the unlabelled number the provenance rule
+/// forbids. Adding it later is a change to one file and no Rust.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HysteresisParams {
+    /// Half-width `M` \[V\] of the hysteresis loop. Must be finite and `> 0`.
+    ///
+    /// A fully charge-polarized cell rests at `OCV(soc) + M` and a fully discharge-
+    /// polarized one at `OCV(soc) - M`, so the gap a datasheet or a GITT plot shows
+    /// between the two curves is `2*M`, not this.
+    ///
+    /// # Sizing it against the cut-off, which the validator does not do
+    /// Nothing here is checked against [`OcvTable`] or [`CellLimits`], for the reason
+    /// [`DiffusionParams::max_overpotential_v`] gives: a badly sized value binds
+    /// *visibly*, in volts, in the telemetry, rather than going silent. The sizing rule is
+    /// still worth stating for whoever writes a file - `M` shifts the whole curve, so a
+    /// value approaching the headroom between `OCV(1.0)` and `cell.v_max` makes a resting
+    /// full cell trip its own over-voltage limit, and one approaching the headroom at the
+    /// bottom makes a rested empty cell look charged. For the chemistries this section
+    /// exists for it is tens of millivolts against headroom of hundreds.
+    pub scale_v: f64,
+    /// Rate `g` \[dimensionless\] at which `h` crosses the loop, per **fraction of the
+    /// cell's capacity moved**. Must be finite and `> 0`.
+    ///
+    /// The state is within `e^(-g*dz)` of its destination after `dz` of capacity has
+    /// passed through the cell, so `g = 25` puts a reversed cell about 92 % of the way
+    /// across after 10 % of its capacity. Larger is sharper.
+    ///
+    /// # This is a shape parameter, and it is the one that is not sourced
+    /// [`Self::scale_v`] can be read off a charge/discharge OCV pair. `g` cannot: it
+    /// describes how *fast* the transition happens, which needs a partial-cycle
+    /// measurement that neither a datasheet nor a published parameter set generally
+    /// carries. It is a labelled placeholder under `CLAUDE.md`'s provenance rule - chosen
+    /// so the transition occupies a legible fraction of a lesson's charge rather than
+    /// fitted to anything - and any chemistry file using it has to say so.
+    pub gamma: f64,
+}
+
 /// One RC (Thevenin) pair modelling a diffusion/charge-transfer overpotential.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RcPair {
@@ -1000,6 +1174,27 @@ impl ChemistryParams {
                     table: "ocv.docv_dt_v_per_k",
                     a: docv_dt.len(),
                     b: self.ocv.soc.len(),
+                });
+            }
+        }
+        // The OCV table's reference temperature, which is what switches the temperature
+        // correction on. Two checks, and the second is a *cross-section* one of the kind
+        // the `[diffusion]` block below deliberately does not make - the difference being
+        // that this one catches a file going silent rather than a file binding visibly. A
+        // `t_ref_k` with no coefficient column describes a correction that is identically
+        // zero at every temperature, so the file would read as if it had asked for one and
+        // behave as if it had not. See `OcvTable::t_ref_k`.
+        if let Some(t_ref) = self.ocv.t_ref_k {
+            if !is_positive(t_ref) || !t_ref.is_finite() {
+                return Err(ChemistryError::NotPositive {
+                    what: "ocv.t_ref_k",
+                    value: t_ref,
+                });
+            }
+            if self.ocv.docv_dt_v_per_k.is_none() {
+                return Err(ChemistryError::BadRange {
+                    what: "ocv.t_ref_k requires an ocv.docv_dt_v_per_k column: without one \
+                           the temperature correction it switches on is identically zero",
                 });
             }
         }
@@ -1167,6 +1362,25 @@ impl ChemistryParams {
                 ("diffusion.limit_c_rate", d.limit_c_rate),
                 ("diffusion.scale_v", d.scale_v),
                 ("diffusion.max_overpotential_v", d.max_overpotential_v),
+            ];
+            for (what, value) in positive {
+                if !is_positive(value) || !value.is_finite() {
+                    return Err(ChemistryError::NotPositive { what, value });
+                }
+            }
+        }
+
+        // --- Hysteresis (optional) ---
+        //
+        // Both positive-and-finite, and neither checked against another section, for the
+        // reason the diffusion block gives: an over-wide loop binds visibly - a resting
+        // cell sitting outside its own voltage limits - rather than going quiet. The
+        // sizing rule against `OCV(1.0)` and `cell.v_max` stays in
+        // `HysteresisParams::scale_v`'s doc, where a reader can apply judgement to it.
+        if let Some(h) = &self.hysteresis {
+            let positive: [(&'static str, f64); 2] = [
+                ("hysteresis.scale_v", h.scale_v),
+                ("hysteresis.gamma", h.gamma),
             ];
             for (what, value) in positive {
                 if !is_positive(value) || !value.is_finite() {

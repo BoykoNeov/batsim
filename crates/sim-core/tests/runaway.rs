@@ -83,6 +83,7 @@ fn safety(runaway_power_w_at_onset: f64) -> SafetyParams {
 fn chem(safety: Option<SafetyParams>, h_area_w_per_k: f64) -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -111,6 +112,7 @@ fn chem(safety: Option<SafetyParams>, h_area_w_per_k: f64) -> ChemistryParams {
         },
         ocv: OcvTable {
             docv_dt_v_per_k: None,
+            t_ref_k: None,
             soc: vec![0.0, 0.5, 1.0],
             volts: vec![3.00, 3.30, 3.60],
         },

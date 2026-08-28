@@ -45,6 +45,7 @@ fn env() -> Env {
 fn chem() -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -75,6 +76,7 @@ fn chem() -> ChemistryParams {
             soc: vec![0.0, 0.5, 1.0],
             volts: vec![2.60, 3.20, 3.60],
             docv_dt_v_per_k: None,
+            t_ref_k: None,
         },
         r0: R0Table {
             soc: vec![0.0, 1.0],

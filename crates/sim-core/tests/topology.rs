@@ -28,6 +28,7 @@ fn env() -> Env {
 fn flat_chem(v0: f64) -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -60,6 +61,7 @@ fn flat_chem(v0: f64) -> ChemistryParams {
         },
         ocv: OcvTable {
             docv_dt_v_per_k: None,
+            t_ref_k: None,
             soc: vec![0.0, 1.0],
             volts: vec![v0, v0],
         },
@@ -133,6 +135,7 @@ fn rest_circulates_current_between_mismatched_parallel_cells() {
     let mut chem = flat_chem(3.30);
     chem.ocv = OcvTable {
         docv_dt_v_per_k: None,
+        t_ref_k: None,
         soc: vec![0.0, 1.0],
         volts: vec![3.0, 3.6],
     };

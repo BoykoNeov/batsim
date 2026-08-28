@@ -21,17 +21,18 @@
 //!
 //! # The pair moves with the bump, rather than being renumbered
 //! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13, v13 -> v14,
-//! v14 -> v15 and v15 -> v16, each time carrying an assertion that a later bump needs its
-//! own pair. This is the v16 -> v17 pair, and it was re-argued rather than renamed.
+//! v14 -> v15, v15 -> v16 and v16 -> v17, each time carrying an assertion that a later
+//! bump needs its own pair. This is the v17 -> v18 pair, and it was re-argued rather than
+//! renamed.
 //!
-//! **The v15 -> v16 pair could not be kept alongside this one, and the reason is not just
+//! **The v16 -> v17 pair could not be kept alongside this one, and the reason is not just
 //! the assertion that says so.** [`retagged`] fabricates a stale blob by writing *this
-//! build's* bytes under a fake tag, and at v17 this build no longer produces v16-shaped
-//! bytes — every `EcmState` carries a `depletion` here and carried none there. There is
-//! nothing for a v15 -> v16 pair to be built out of any more, so this is a replacement
-//! rather than an addition. That is the same sentence the v14 -> v15 pair was retired
-//! under, which is worth noticing: the retirement is structural, and it will happen again
-//! to this one.
+//! build's* bytes under a fake tag, and at v18 this build no longer produces v17-shaped
+//! bytes — every `EcmState` carries a `hysteresis` here and carried none there. There is
+//! nothing for a v16 -> v17 pair to be built out of any more, so this is a replacement
+//! rather than an addition. The previous pair predicted its own retirement in these words
+//! — *"the retirement is structural, and it will happen again to this one"* — and this is
+//! that happening.
 //!
 //! # v16 is the first bump since v11 whose stale blob stays aligned, and the failure is
 //! # silent rather than loud
@@ -50,15 +51,32 @@
 //! demonstration in the tree of the quiet failure mode. It costs nothing: it constructs
 //! its own bytes and touches no fixture.
 //!
-//! # v17 flips the answer back, and the flip is asserted rather than described
-//! v17 adds a sixth `f64` to every `EcmState`. `bincode` writes struct fields positionally
-//! with no framing, so a v16 cell state is eight bytes short of what v17 reads and there
-//! is no arrangement of a v16 pack whose bytes parse here — the v14/v15 situation exactly,
-//! reached by the v14/v15 mechanism. [`a_v16_shaped_cell_state_does_not_parse_at_v17`] is
-//! the sibling of the v15 field test above and asserts the opposite outcome, so that
-//! "v17 is loud where v16 was quiet" is a measurement in this file rather than a claim
-//! repeated from the version note. **The answer has now changed with three consecutive
-//! bumps**, which is the standing reason a pair here is never renumbered.
+//! # v17 flipped the answer back, and v18 keeps it there — asserted, not described
+//! v17 added a sixth `f64` to every `EcmState` and v18 adds a seventh. `bincode` writes
+//! struct fields positionally with no framing, so a v17 cell state is eight bytes short of
+//! what v18 reads and there is no arrangement of a v17 pack whose bytes parse here — the
+//! v14/v15 situation, reached by the v14/v15 mechanism.
+//! [`a_v17_shaped_cell_state_does_not_parse_at_v18`] is the sibling of the v15 field test
+//! above and asserts the opposite outcome, so that "v18 is loud where v16 was quiet" is a
+//! measurement in this file rather than a claim repeated from the version note. It also
+//! keeps the v16-shaped case, which still fails and for the same reason at one more field
+//! of distance — a free assertion, and the one that would notice a future edit reordering
+//! the struct rather than appending to it.
+//!
+//! **The answer changed with three consecutive bumps and has now held for two**, which is
+//! the standing reason a pair here is never renumbered: a held answer is still a fact about
+//! one specific layout change, and v18's is not v17's.
+//!
+//! # What v18 does *not* inherit from v17, and it is the interesting half
+//! Both bumps are semantic as well as structural, but their `#[serde(default)]` stories are
+//! opposite at the one place it matters. v17's `depletion` defaults to `0.0`, which is the
+//! *correct* reading for a pack that has been resting — the field decays in time. v18's
+//! `hysteresis` decays in **charge moved**, so a rested pack is exactly where the default
+//! is most wrong: a charged-and-rested pack restored at `0.0` comes back sourcing
+//! `hysteresis.scale_v` below the one that was saved. The case v14 and v17 could point at
+//! as safe is the case this bump cannot. That is argued at the field and at
+//! [`SNAPSHOT_VERSION`], and it is why `hysteresis.rs` takes its snapshot **after a rest**
+//! rather than under load.
 //!
 //! # v14 and v15 have no structurally-valid stale blob at all, and that is stated rather
 //! # than papered over
@@ -117,6 +135,7 @@ use sim_core::{
 fn chem() -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -149,6 +168,7 @@ fn chem() -> ChemistryParams {
         },
         ocv: OcvTable {
             docv_dt_v_per_k: None,
+            t_ref_k: None,
             soc: vec![0.0, 1.0],
             volts: vec![3.0, 3.5],
         },
@@ -208,39 +228,40 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v16-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v17 restore.
+/// A v17-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v18 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// Read the module's v17 section before extending this: the bytes here are this build's,
-/// wearing a v16 label. What a snapshot a v16 build actually wrote does at v17 is a
-/// separate question, and it is the *opposite* of v16's answer — it does not parse at
-/// all, which [`a_v16_shaped_cell_state_does_not_parse_at_v17`] pins directly.
+/// Read the module's v18 section before extending this: the bytes here are this build's,
+/// wearing a v17 label. What a snapshot a v17 build actually wrote does at v18 is a
+/// separate question, and it does not parse at all, which
+/// [`a_v17_shaped_cell_state_does_not_parse_at_v18`] pins directly.
 #[test]
-fn the_version_field_is_what_rejects_a_v16_snapshot() {
+fn the_version_field_is_what_rejects_a_v17_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 17,
-        "this test is written against the v16 -> v17 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 18,
+        "this test is written against the v17 -> v18 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
-         the new layout is a fact about that layout change, and the answer has now flipped \
-         twice — v15 'it does not parse at all', v16 'it parses, wrongly and silently', \
-         v17 back to 'it does not parse at all'. A renumbered assertion cannot inherit any \
-         of the three."
+         the new layout is a fact about that layout change, and the answer has flipped \
+         across this file's history — v15 'it does not parse at all', v16 'it parses, \
+         wrongly and silently', v17 and v18 back to 'it does not parse at all'. A \
+         renumbered assertion cannot inherit any of them, and a run of two identical \
+         answers is not a rule."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 16);
+    let stale = retagged(&bytes, 17);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 16,
+            found: 17,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v16-tagged snapshot must be refused"
+        "a v17-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -314,51 +335,76 @@ fn the_v15_v_rc_bytes_reinterpret_rather_than_fail() {
 #[test]
 fn only_the_outer_version_tag_is_consulted() {
     let bytes = snapshot_bytes();
-    // Both blobs carry an inner `Pack.version` of 16, because that is what this
+    // Both blobs carry an inner `Pack.version` of 18, because that is what this
     // build wrote. Only the outer tag differs, and only the outer tag decides.
-    assert!(Pack::restore(&retagged(&bytes, 16)).is_err());
+    assert!(Pack::restore(&retagged(&bytes, 17)).is_err());
     assert!(Pack::restore(&retagged(&bytes, SNAPSHOT_VERSION)).is_ok());
 }
 
-/// A v16 cell state does not parse at v17 — and that is the *reassuring* direction.
+/// A v17 cell state does not parse at v18 — and that is the *reassuring* direction.
 ///
 /// The sibling of [`the_v15_v_rc_bytes_reinterpret_rather_than_fail`], asserting the
 /// opposite outcome, because the two bumps are opposite cases and the module's claim that
-/// v17 is "v14's and v15's situation restored" should be checked rather than repeated.
-/// v16's stale field stayed byte-aligned and was silently reinterpreted; v17 adds an
-/// `f64` to a struct `bincode` writes positionally with no framing, so a v16 `EcmState` is
-/// eight bytes short of what v17 reads. Nothing can be misread — only refused.
+/// v18 is "the v14/v15 situation" should be checked rather than repeated. v16's stale field
+/// stayed byte-aligned and was silently reinterpreted; v18 adds an `f64` to a struct
+/// `bincode` writes positionally with no framing, so a v17 `EcmState` is eight bytes short
+/// of what v18 reads. Nothing can be misread — only refused.
 ///
 /// **This is the field, not a snapshot**, on the same terms and for the same reason its
 /// sibling is: there is no non-guessing way to locate every cell's state inside a blob.
-/// What is proven is the mechanism — a v16-shaped cell state cannot be mistaken for a v17
+/// What is proven is the mechanism — a v17-shaped cell state cannot be mistaken for a v18
 /// one — which is what makes the version check belt to the deserializer's braces here
 /// rather than the only line of defence it was at v16.
+///
+/// The v16 shape is kept alongside, one field further away and still failing. It costs a
+/// line and it is the assertion that would notice a future edit *reordering* `EcmState`
+/// rather than appending to it, which is the one edit that could quietly restore v16's
+/// hazard.
 #[test]
-fn a_v16_shaped_cell_state_does_not_parse_at_v17() {
-    // A v16 `EcmState`, in the fields a v16 build wrote for it and in declaration order:
-    // `soc`, `soc_deficit`, `v_rc`, `temp_k`. No `depletion`.
-    let v16 = bincode::serialize(&(0.6_f64, 0.0_f64, [0.012_f64, 0.0_f64], 298.15_f64))
-        .expect("a v16-shaped cell state serializes");
-    assert_eq!(v16.len(), 40, "five f64, positional, no framing");
+fn a_v17_shaped_cell_state_does_not_parse_at_v18() {
+    // A v17 `EcmState`, in the fields a v17 build wrote and in declaration order: `soc`,
+    // `soc_deficit`, `v_rc`, `depletion`, `temp_k`. No `hysteresis`.
+    let v17 = bincode::serialize(&(0.6_f64, 0.0_f64, [0.012_f64, 0.0_f64], 0.35_f64, 298.15_f64))
+        .expect("a v17-shaped cell state serializes");
+    assert_eq!(v17.len(), 48, "six f64, positional, no framing");
 
-    let parsed: Result<sim_core::EcmState, _> = bincode::deserialize(&v16);
+    let parsed: Result<sim_core::EcmState, _> = bincode::deserialize(&v17);
     assert!(
         parsed.is_err(),
-        "a v16 cell state must FAIL to parse at v17, not parse into the wrong numbers. If \
-         this ever passes, v17 has v16's silent-reinterpretation hazard and the \
+        "a v17 cell state must FAIL to parse at v18, not parse into the wrong numbers. If \
+         this ever passes, v18 has v16's silent-reinterpretation hazard and the \
          SNAPSHOT_VERSION note — which claims the loud one — is wrong."
     );
 
-    // And the positive control, so the failure above is the missing field rather than a
-    // broken fixture: the same five values plus a sixth are exactly a v17 `EcmState`.
-    let v17 = bincode::serialize(&(0.6_f64, 0.0_f64, [0.012_f64, 0.0_f64], 0.35_f64, 298.15_f64))
-        .expect("a v17-shaped cell state serializes");
+    // And the v16 shape, which is shorter still and fails for the same reason. This is the
+    // line that would go green if someone ever inserted a field in the middle rather than
+    // appending one at the end.
+    let v16 = bincode::serialize(&(0.6_f64, 0.0_f64, [0.012_f64, 0.0_f64], 298.15_f64))
+        .expect("a v16-shaped cell state serializes");
+    assert_eq!(v16.len(), 40, "five f64, positional, no framing");
+    let parsed: Result<sim_core::EcmState, _> = bincode::deserialize(&v16);
+    assert!(parsed.is_err(), "a v16 cell state must fail at v18 too");
+
+    // The positive control, so the two failures above are missing fields rather than a
+    // broken fixture: those six values plus a seventh are exactly a v18 `EcmState`.
+    let v18 = bincode::serialize(&(
+        0.6_f64,
+        0.0_f64,
+        [0.012_f64, 0.0_f64],
+        0.35_f64,
+        -0.75_f64,
+        298.15_f64,
+    ))
+    .expect("a v18-shaped cell state serializes");
     let state: sim_core::EcmState =
-        bincode::deserialize(&v17).expect("six f64 in declaration order are a v17 EcmState");
+        bincode::deserialize(&v18).expect("seven f64 in declaration order are a v18 EcmState");
     assert_eq!(
         state.depletion, 0.35,
-        "the new field is the fifth, not the last"
+        "the v17 field is the fifth, and the new one did not displace it"
+    );
+    assert_eq!(
+        state.hysteresis, -0.75,
+        "the new field is the sixth, not the last"
     );
     assert_eq!(state.temp_k, 298.15);
 }

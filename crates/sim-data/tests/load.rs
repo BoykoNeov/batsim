@@ -47,6 +47,174 @@ fn lto_chemistry_loads_and_validates() {
     assert!(chem.cell.v_max < 3.0);
 }
 
+/// The shipped NiMH chemistry must parse and pass validation, and it is the first shipped
+/// file to exercise either of `SNAPSHOT_VERSION` 18's two new schema additions.
+///
+/// Deliberately **not** a zero-code chemistry, unlike the LTO file above: this one is what
+/// the version bump exists for. What it can do lives in `tests/nimh_chemistry.rs`.
+#[test]
+fn nimh_chemistry_loads_and_validates() {
+    let text = include_str!("../../../chemistries/nimh_subc_3ah_generic.toml");
+    let chem = parse_chemistry(text).expect("NiMH chemistry should load and validate");
+
+    assert_eq!(chem.meta.id, "nimh_subc_3ah_generic");
+    assert_eq!(chem.n_rc(), 2);
+    assert!((chem.cell.capacity_ah - 3.0).abs() < 1e-12);
+    assert_eq!(chem.ocv.soc.len(), chem.ocv.volts.len());
+    // A 1.2 V cell validates against rules written for 3.3 V and 3.7 V ones — the same
+    // point the 2 V lead-acid and 2.7 V LTO files already made, one step further down.
+    assert!(chem.cell.v_max < 2.0);
+
+    // The two new sections, and the reason this file is not zero-code.
+    let hyst = chem.hysteresis.expect("NiMH declares [hysteresis]");
+    assert!(hyst.scale_v > 0.0 && hyst.gamma > 0.0);
+    assert_eq!(chem.ocv.t_ref_k, Some(298.15));
+    let docv_dt = chem
+        .ocv
+        .docv_dt_v_per_k
+        .as_ref()
+        .expect("t_ref_k is meaningless without the coefficient, and validation says so");
+    assert_eq!(docv_dt.len(), chem.ocv.soc.len());
+
+    // Three absences that are decisions rather than omissions; see the file's own header.
+    assert!(chem.aging.is_none(), "no fitted NiMH cycle life is in hand");
+    assert!(
+        chem.safety.is_none(),
+        "a cell with no lithium in it neither plates nor runs away, and dropping the \\
+         section is how this file says so"
+    );
+    assert!(chem.diffusion.is_none(), "no fitted NiMH Peukert exponent");
+}
+
+/// **Every other shipped chemistry must have neither new section.** This is Phase 8's exit
+/// criterion 3 written as a test rather than as an argument: both absences are *paths* in
+/// the engine rather than neutral zeros, so an absence here is what makes "no existing
+/// trajectory moved across v18" structural. If a future edit adds either section to one of
+/// these files, that claim stops holding and this is where it says so.
+#[test]
+fn no_chemistry_but_nimh_carries_the_v18_sections() {
+    for (id, text) in [
+        (
+            "lfp_26650_generic",
+            include_str!("../../../chemistries/lfp_26650_generic.toml"),
+        ),
+        (
+            "nmc_18650_generic",
+            include_str!("../../../chemistries/nmc_18650_generic.toml"),
+        ),
+        (
+            "nmc_21700_lgm50",
+            include_str!("../../../chemistries/nmc_21700_lgm50.toml"),
+        ),
+        (
+            "pba_agm_2v_generic",
+            include_str!("../../../chemistries/pba_agm_2v_generic.toml"),
+        ),
+        (
+            "lto_20ah_generic",
+            include_str!("../../../chemistries/lto_20ah_generic.toml"),
+        ),
+    ] {
+        let chem = parse_chemistry(text).unwrap_or_else(|e| panic!("{id} should load: {e}"));
+        assert!(
+            chem.hysteresis.is_none(),
+            "{id} gained a [hysteresis] section, which moves its trajectories"
+        );
+        assert!(
+            chem.ocv.t_ref_k.is_none(),
+            "{id} gained an ocv.t_ref_k, which moves its trajectories"
+        );
+    }
+}
+
+/// A reference temperature with no coefficient column describes a correction that is
+/// identically zero — a file saying something it does not mean — and is refused.
+///
+/// This is the one **cross-section** check in the OCV block, and it is there because it
+/// catches a file going *silent*. Compare the `[diffusion]` block, which deliberately makes
+/// no cross-checks at all because a badly sized value there binds visibly in the telemetry.
+#[test]
+fn a_reference_temperature_without_a_coefficient_is_rejected() {
+    let toml = chemistry_with_ocv(
+        r#"
+[ocv]
+soc = [0.0, 1.0]
+volts = [3.0, 4.2]
+t_ref_k = 298.15
+"#,
+    );
+    let err = parse_chemistry(&toml).expect_err("t_ref_k alone must be refused");
+    assert!(
+        matches!(err, DataError::Invalid(_)),
+        "expected a validation error, got {err:?}"
+    );
+}
+
+/// And the same pair the other way round is *accepted*, because it is the pre-v18
+/// configuration every shipped file with an entropy column would be in: the coefficient
+/// drives heat and nothing else.
+#[test]
+fn a_coefficient_without_a_reference_temperature_is_accepted() {
+    let toml = chemistry_with_ocv(
+        r#"
+[ocv]
+soc = [0.0, 1.0]
+volts = [3.0, 4.2]
+docv_dt_v_per_k = [-1.0e-4, -2.0e-4]
+"#,
+    );
+    let chem = parse_chemistry(&toml).expect("a heat-only entropy column stays legal");
+    assert!(chem.ocv.docv_dt_v_per_k.is_some());
+    assert!(chem.ocv.t_ref_k.is_none());
+}
+
+/// A non-positive reference temperature is not a temperature. Kelvin, like every other
+/// temperature in the schema.
+#[test]
+fn a_non_positive_reference_temperature_is_rejected() {
+    for bad in ["0.0", "-1.0"] {
+        let toml = chemistry_with_ocv(&format!(
+            r#"
+[ocv]
+soc = [0.0, 1.0]
+volts = [3.0, 4.2]
+docv_dt_v_per_k = [-1.0e-4, -2.0e-4]
+t_ref_k = {bad}
+"#
+        ));
+        let err = parse_chemistry(&toml).expect_err("a non-positive t_ref_k must be refused");
+        assert!(
+            matches!(err, DataError::Invalid(_)),
+            "expected a validation error for t_ref_k = {bad}, got {err:?}"
+        );
+    }
+}
+
+/// The `[hysteresis]` section's own two numbers, checked positive-and-finite the way
+/// `[diffusion]`'s four are — and, like those, checked against nothing else. A loop wide
+/// enough to push a rested cell outside its own voltage limits is legal here and binds
+/// visibly in the telemetry instead; the sizing rule lives in the field's doc where a
+/// reader can apply judgement to it.
+#[test]
+fn a_non_positive_hysteresis_parameter_is_rejected() {
+    for (label, section) in [
+        ("zero half-width", "scale_v = 0.0\ngamma = 25.0"),
+        ("negative rate", "scale_v = 0.02\ngamma = -1.0"),
+        ("infinite half-width", "scale_v = inf\ngamma = 25.0"),
+        ("nan rate", "scale_v = 0.02\ngamma = nan"),
+    ] {
+        let toml = chemistry_with_ocv(&format!(
+            "\n[ocv]\nsoc = [0.0, 1.0]\nvolts = [3.0, 4.2]\n\n[hysteresis]\n{section}\n"
+        ));
+        let err = parse_chemistry(&toml)
+            .expect_err("a non-positive or non-finite hysteresis parameter must be refused");
+        assert!(
+            matches!(err, DataError::Invalid(_)),
+            "expected a validation error for {label}, got {err:?}"
+        );
+    }
+}
+
 /// A minimal but *valid* chemistry, as a format string with one `{}` hole where a
 /// section can be swapped out. Every rejection test below substitutes exactly one
 /// section, so a failure can only come from that section — and so a missing

@@ -29,6 +29,7 @@ fn env() -> Env {
 fn steep_chem() -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -59,6 +60,7 @@ fn steep_chem() -> ChemistryParams {
             soc: vec![0.0, 1.0],
             volts: vec![3.0, 4.2],
             docv_dt_v_per_k: None,
+            t_ref_k: None,
         },
         r0: R0Table {
             soc: vec![0.0, 1.0],
@@ -84,6 +86,7 @@ fn flat_chem() -> ChemistryParams {
         soc: vec![0.0, 1.0],
         volts: vec![3.30, 3.30],
         docv_dt_v_per_k: None,
+        t_ref_k: None,
     };
     c
 }
@@ -155,6 +158,7 @@ fn ocv_inversion_reports_slope_as_confidence() {
         soc: vec![0.0, 0.1, 0.9, 1.0],
         volts: vec![2.5, 3.25, 3.30, 3.60],
         docv_dt_v_per_k: None,
+        t_ref_k: None,
     };
     let (_, plateau_slope) = ocv_invert(&lfp_like, 3.27);
     let (_, knee_slope) = ocv_invert(&lfp_like, 3.4);

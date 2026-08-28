@@ -1,0 +1,205 @@
+# Generic NiMH (nickel-metal hydride) 3.0 Ah sub-C cell parameters.
+#
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [hysteresis] and
+# [thermal]. Every physical constant carries a provenance note per the project rule: no
+# unlabeled numbers.
+#
+# This is the second of Phase 8's two chemistries and the unclaimed half of CLAUDE.md's
+# "lead-acid (Peukert) and NiMH (-dV, hysteresis) later". Unlike the LTO file, it is NOT a
+# zero-code chemistry and was never expected to be: it is the file the two mechanisms in
+# SNAPSHOT_VERSION 18 exist for.
+#
+#   * [hysteresis] -- the cell's resting voltage depends on which way it was last driven,
+#     and it keeps that memory through an arbitrarily long rest. This is the FIRST shipped
+#     file to use the section. See docs/plans/phase-8-slice-c-hysteresis.md.
+#   * ocv.t_ref_k -- the OCV table is now temperature-corrected through the entropy
+#     coefficient below, which through v17 reached only the heat term. Also the first
+#     shipped file to use it, and the two together are half of the -dV signal each.
+#
+# THREE THINGS THIS FILE DELIBERATELY DOES NOT HAVE, each of which would otherwise be
+# invented numbers:
+#
+#   * No [aging]. `ChemistryParams::aging` documents None as "this parameter set cannot say
+#     how this cell ages", which is the truthful statement: no NiMH cycle-life fit is in
+#     hand, and a pack configured with AgingConfig against this file is a build error rather
+#     than a silently ageless pack. That is the behaviour wanted.
+#   * No [safety]. NiMH has no lithium-style self-sustaining decomposition exotherm to
+#     parameterise -- an abused NiMH cell vents on gas pressure, and the heat that gets it
+#     there is the OVERCHARGE heat this file's whole lesson is about, which is emergent
+#     from i_rejected_a and needs no [safety] at all. Dropping the section also disables the
+#     plating flag, which is the correct answer for a cell with no lithium in it.
+#     Worth recording against slice A: LTO had to ship a labelled t_plating_min_k SENTINEL
+#     because it still needed the runaway half of [safety]. A NON-LITHIUM chemistry can say
+#     "does not plate" cleanly, by omission, because it does not want the other half either.
+#     So the schema gap slice A found is narrower than it looked: it binds on lithium
+#     chemistries that do not plate, not on every chemistry that does not plate.
+#   * No [diffusion]. The RC pairs below are this cell's rate behaviour. NiMH does lose
+#     capacity at high rate, but nobody here has fitted a Peukert exponent for it, and the
+#     lead-acid section exists because that fit WAS done.
+#
+# See docs/plans/phase-8-slice-c-spike.md for the measurement that scoped the two
+# mechanisms, and in particular for why the charge-acceptance taper a real NiMH peak needs
+# is NOT here: the voltage peak this cell produces turns a one-timestep corner, so the
+# lesson is written about the millivolts, not about the shape of the plot.
+
+[meta]
+id         = "nimh_subc_3ah_generic"
+name       = "Generic NiMH 3.0 Ah sub-C"
+provenance = "Cell format, capacity, voltage window, rate ratings and internal resistance are the consensus figures for a high-rate sub-C NiMH cell (22.1 x 42.9 mm, 3000 mAh class) as quoted across manufacturer application handbooks and distributor spec sheets; they are CLASS figures for the format, not a fit to a named part, which is why the id says 'generic'. The OCV curve is the familiar NiMH shape -- a flat plateau with a steep knee at each end -- placed on that window by hand. The two v18 mechanisms are sized by argument rather than measured: hysteresis.scale_v from the reported charge/discharge OCV separation, ocv.docv_dt_v_per_k from a thermal-balance argument stated at the field. TODO: fit OCV, R0, the RC pairs and both v18 sections against a measured sub-C NiMH dataset."
+
+[cell]
+capacity_ah     = 3.0      # provenance: nominal for the 3000 mAh sub-C class
+v_max           = 1.60     # provenance: protection limit. Sized against the top of this file rather than copied: OCV(1.0) is 1.40 and a fully charge-polarized cell rests 25 mV above that (see [hysteresis]), so 1.60 leaves a 175 mV over-voltage band above a rested full cell. A NiMH under 1C charge legitimately reaches ~1.50 V at the terminals, so a tighter limit would trip on normal charging -- which is the failure mode this number exists to avoid.
+v_min           = 1.00     # provenance: the standard NiMH discharge cutoff, 1.0 V/cell, quoted in every handbook for the format
+max_charge_c    = 1.0      # provenance: the fast-charge rate these cells are rated for; the standard charge is 0.1C for 14-16 h, which is a charger policy rather than a cell limit
+max_discharge_c = 10.0     # provenance: sub-C is the high-rate NiMH format -- this is the power-tool cell -- and 10C continuous is the class figure
+t_charge_min_k  = 273.15   # provenance: 0 degC, the standard NiMH charge-inhibit temperature. Unlike the lithium files this is NOT about plating (there is no lithium here); charging a cold NiMH cell drives the oxygen-recombination side reaction instead of the storage reaction, so the charge does not go in and the pressure does.
+t_max_k         = 333.15   # provenance: 60 degC, the top of the usual NiMH operating range. Note an overcharged cell EXCEEDS this in the scenario this file exists for; that is the protection limit doing its job, not a mis-set number.
+
+# Monotone OCV(soc); linear interpolation, clamped at the ends.
+#
+# provenance: the standard NiMH shape -- steep below 10 %, a long flat plateau, and a rise
+# into the last few percent -- placed by hand on the 1.00-1.40 V window this file declares.
+# Hand-placed from the shape, NOT a fit; TODO fit against measured rest voltages.
+#
+# THIS IS THE MEAN CURVE, and that is new. Every other shipped file's [ocv] is a single
+# curve because those chemistries are modelled without hysteresis, so the table has to be
+# whichever curve mattered. Here the table is the MIDLINE and [hysteresis] carries the
+# +-25 mV to either branch: a charge-polarized cell rests on volts + 0.025 and a
+# discharge-polarized one on volts - 0.025. A reader comparing these numbers against a
+# published NiMH discharge curve should expect them to sit ABOVE it by about that much.
+[ocv]
+soc   = [0.00, 0.02, 0.05, 0.10, 0.20, 0.40, 0.60, 0.80, 0.90, 0.97, 1.00]
+volts = [1.00, 1.11, 1.17, 1.21, 1.24, 1.26, 1.27, 1.29, 1.31, 1.35, 1.40]
+# The entropy coefficient dU/dT [V/K], and -- because ocv.t_ref_k below is set -- the
+# temperature coefficient of the open-circuit voltage as well. It is the same
+# thermodynamic quantity; through v17 this engine read it only as heat.
+#
+# provenance: DERIVED placeholder, order-of-magnitude only, TODO fit. Deliberately not a
+# half-remembered handbook figure: it is sized by a thermal-balance argument against an
+# OBSERVABLE, which is that a NiMH cell on a 1C charge stays roughly flat in temperature
+# through the plateau and then heats sharply at the end. Charging is endothermic here
+# (q_rev = -I*T*dU/dT with I negative and dU/dT negative), so "flat" means the endothermic
+# term roughly cancels the irreversible one:
+#
+#     |I| * T * |dU/dT|  ~=  I * (I*R0 + sum V_rc)
+#     3 A * 298 K * |dU/dT|  ~=  3 A * (0.0276 + 0.0660) V  =  0.281 W
+#     |dU/dT|  ~=  3.1e-4 V/K
+#
+# Rounded to 3.5e-4 so the balance lands slightly endothermic, which is the side real cells
+# sit on. TWO CAVEATS, stated because this is a derivation and not a measurement. First, it
+# depends on THIS FILE'S own R0 and RC values, so it is a consistency choice within the
+# file rather than an independent constant -- refit the overpotentials and this must move
+# with them. Second, it is a single number across the whole SOC range, where a real
+# coefficient varies (and the validator deliberately allows either sign, because real ones
+# change sign).
+docv_dt_v_per_k = [-3.5e-4, -3.5e-4, -3.5e-4, -3.5e-4, -3.5e-4, -3.5e-4, -3.5e-4, -3.5e-4, -3.5e-4, -3.5e-4, -3.5e-4]
+# The temperature the volts column above is stated at, and the switch that turns the OCV
+# temperature correction on. The engine applies OCV(soc) + dU/dT(soc) * (T - this).
+# provenance: 25 degC, the temperature the class figures this file is built from are quoted
+# at. Setting it is a deliberate act, not a default: a file that supplies the coefficient
+# for HEAT alone and leaves this unset keeps exactly the pre-v18 behaviour.
+t_ref_k = 298.15
+
+# Ohmic resistance R0[soc][temp_k], ohms. Bilinear interpolation, clamped.
+#
+# provenance: anchored on 8.0 mOhm at 25 degC / 50 % SOC, the class figure for a high-rate
+# sub-C NiMH cell. The TEMPERATURE axis is not a placeholder shape: it is Arrhenius,
+#     R0(T) = 8.0 mOhm * exp(Ea/R * (1/T - 1/298.15)),   Ea = 19 kJ/mol,
+# and that activation energy is not free either -- it is what "NiMH internal resistance
+# roughly doubles from 25 degC to 0 degC" implies (the ratio comes out 2.017). Order of
+# magnitude on one observation, TODO fit.
+#
+# The SOC axis is a placeholder shape, TODO fit: 1.25x at empty and 1.15x at full against
+# the mid-range value, which is the usual bathtub. Note it does NOT affect the end-of-charge
+# behaviour this file exists for -- SOC is pinned at 1.0 through an overcharge, so only the
+# temperature axis moves there.
+#
+# THE TOP OF THE TEMPERATURE AXIS IS LOAD-BEARING AND IS SET DELIBERATELY HIGH (353.15 K,
+# 80 degC). Lookup CLAMPS outside the grid, so a grid ending at 60 degC would make R0 stop
+# falling there -- and the falling R0 is half of this cell's -dV signal. An overcharged cell
+# in this file's own scenario passes 60 degC easily, so a shorter axis would silently
+# truncate the mechanism partway through the measurement.
+[r0]
+soc    = [0.0, 0.5, 1.0]
+temp_k = [273.15, 298.15, 318.15, 338.15, 353.15]
+ohms   = [[0.020168, 0.010000, 0.006177, 0.004039, 0.003031],
+          [0.016134, 0.008000, 0.004941, 0.003231, 0.002425],
+          [0.018554, 0.009200, 0.005682, 0.003716, 0.002789]]
+
+# Two RC pairs: a fast charge-transfer term and a slow one.
+#
+# provenance: placeholders, TODO fit -- but sized against an observable rather than picked.
+# The sum R0 + R1 + R2 at 25 degC / mid SOC is 0.030 ohm, so a 1C (3 A) charge sits about
+# 90 mV above the open-circuit voltage once both pairs have settled. With the +25 mV of
+# charge-side hysteresis that puts a 1C charge near 1.42 V at 80 % and near 1.47 V at the
+# top, which is where a real NiMH fast charge sits before it peaks. The SPLIT between the
+# two pairs (and therefore the two time constants, 30 s and 300 s) is not constrained by
+# that argument at all and is the weakest thing in this file.
+[[rc]]
+r_ohms  = 0.012
+c_farad = 2500.0     # tau = 30 s
+[[rc]]
+r_ohms  = 0.010
+c_farad = 30000.0    # tau = 300 s
+
+# OCV HYSTERESIS -- the first shipped file to declare it, and half of what CLAUDE.md's
+# "NiMH (-dV, hysteresis)" was asking for.
+#
+# One extra state per cell, h in [-1, 1], driven toward -sgn(I) as charge moves through the
+# cell and NOT decaying at rest:
+#
+#     h   <- h*exp(-gamma*dz) + h_ss*(1 - exp(-gamma*dz)),   dz = |I|*dt/(3600*Q)
+#     eta = -scale_v * h
+#
+# So a cell rests at OCV + scale_v after a charge and at OCV - scale_v after a discharge,
+# for as long as it is left alone. See crate::HysteresisParams.
+[hysteresis]
+# provenance: half of the reported charge/discharge open-circuit separation for NiMH, which
+# is quoted at 40-60 mV across the plateau; 50 mV is taken as the class figure, so the
+# half-width is 25 mV. Order-of-magnitude on a range, TODO fit. Sizing check against this
+# file: OCV(1.0) is 1.40 and v_max is 1.60, so a rested full cell sits 175 mV inside its
+# own over-voltage limit rather than tripping it.
+scale_v = 0.025
+# provenance: PLACEHOLDER, and the one number in this section that is not sourced at all --
+# see crate::HysteresisParams::gamma, which says why: this is how FAST the loop is crossed,
+# which needs a partial-cycle measurement that datasheets do not carry. 25.0 puts a reversed
+# cell about 92 % of the way across the loop after 10 % of its capacity has moved, which
+# makes the transition legible in a lesson without being instant. TODO fit.
+gamma   = 25.0
+
+# What happens below empty. Required; a chemistry must say.
+[reversal]
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized the same way LFP's
+# and lead-acid's are: the collapse spans this cell's empty-endpoint OCV (1.00 V) over 2 %
+# of capacity.
+v_per_soc = 50.0
+# provenance: placeholder -- a declared limit rather than a measured plateau, matching the
+# choice every other shipped file makes. A real reversed NiMH cell goes NEGATIVE, to
+# roughly -0.2 to -1.5 V, as the exhausted positive electrode starts evolving hydrogen;
+# 0 V is the conservative choice and bounds an otherwise unbounded ramp.
+floor_v   = 0.0
+# What over-discharge costs: capacity fraction lost per Ah delivered past empty.
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized the way LFP's is, and
+# set to cost THREE TIMES what LFP's does per full reversal:
+#   LFP:       2 % of 2.303 Ah = 0.0461 Ah past empty x 2.2e-1 = 1.0 % capacity lost
+#   this cell: 2 % of 3.0   Ah = 0.0600 Ah past empty x 5.0e-1 = 3.0 % capacity lost
+# The 3x is the intent and it is the most familiar failure of the chemistry: a NiMH pack in
+# series dies by cell reversal, because the weakest cell empties first and the rest of the
+# pack then drives current backwards through it. This is the file where that scenario is
+# worth building, so the damage has to be worth noticing on the first event.
+fade_per_ah = 5.0e-1
+
+[thermal]
+# provenance: derived from the format -- 65 g class mass for a sub-C NiMH cell at
+# 850 J/(kg*K), a placeholder specific heat for a nickel-and-hydride mixed cell (lower than
+# the ~1000 J/(kg*K) usually taken for lithium, because the active materials are denser).
+#   0.065 kg * 850 J/(kg*K) = 55.25 J/K
+# TODO refine cp.
+heat_capacity_j_per_k = 55.0
+# h*A for a FULLY EXPOSED cell (as on a 1S1P pack); the engine scales it down per cell by
+# the surface fraction not blocked by neighbours.
+# provenance: derived from the sub-C case, 22.1 mm diameter x 42.9 mm --
+#   pi*0.0221*0.0429 + 2*pi*0.01105^2 = 0.003745 m^2
+# at a natural-convection h of ~8 W/(m^2*K), a placeholder h on a computed area.
+h_area_w_per_k        = 0.030

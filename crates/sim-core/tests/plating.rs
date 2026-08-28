@@ -87,6 +87,7 @@ fn safety_params(
 fn chem(aging: Option<AgingParams>, safety: Option<SafetyParams>) -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -115,6 +116,7 @@ fn chem(aging: Option<AgingParams>, safety: Option<SafetyParams>) -> ChemistryPa
         },
         ocv: OcvTable {
             docv_dt_v_per_k: None,
+            t_ref_k: None,
             soc: vec![0.0, 0.5, 1.0],
             volts: vec![3.00, 3.30, 3.60],
         },

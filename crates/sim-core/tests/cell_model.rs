@@ -17,6 +17,7 @@ use sim_core::{CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalC
 fn chem(n_rc: usize) -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -49,6 +50,7 @@ fn chem(n_rc: usize) -> ChemistryParams {
         },
         ocv: OcvTable {
             docv_dt_v_per_k: None,
+            t_ref_k: None,
             soc: vec![0.0, 1.0],
             volts: vec![3.0, 3.5],
         },

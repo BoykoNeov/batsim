@@ -134,6 +134,38 @@ pub struct EcmState {
     /// field stands between a blob that says otherwise and a cell that carries it forever.
     #[serde(default)]
     pub depletion: f64,
+    /// Which direction the cell was last driven, as a pure number in `[-1, 1]` - or a
+    /// permanent `0.0` on any chemistry with no [`crate::HysteresisParams`] section,
+    /// which is every chemistry shipped before v18 and every lithium set today.
+    ///
+    /// `-1` is fully discharge-polarized and `+1` fully charge-polarized; the cell's
+    /// open-circuit source is displaced by `scale_v * this`, through the overpotential
+    /// rather than through the OCV (the reason is on [`crate::HysteresisParams`]).
+    /// [`hysteresis_update`] is the arithmetic.
+    ///
+    /// # The one state in this struct that does not decay at rest
+    /// Every other history here relaxes in *time*: [`Self::v_rc`] on `tau = R*C`,
+    /// [`Self::depletion`] on the chemistry's `tau_d`. This one relaxes in **charge
+    /// moved**, so a cell left open-circuit holds its polarization for as long as it is
+    /// left alone. That is not a simplification, it is the behaviour - a lead-acid cell
+    /// rests high for days after a charge and low for days after a draw, and a NiMH cell
+    /// does the same across a loop wide enough to swamp a state-of-charge estimate.
+    ///
+    /// # State, not a cache, and a reason [`crate::SNAPSHOT_VERSION`] is 18
+    /// `#[serde(default)]` fills `0.0`, which is the reading for a cell that has never
+    /// carried current and the wrong one for **every** cell that has - including, unlike
+    /// [`Self::depletion`], a pack that has been resting for a week, because that is
+    /// exactly when this field is at its most load-bearing. Restoring a charged-and-rested
+    /// pack at `0.0` would hand back a cell sourcing `scale_v` lower than the one that was
+    /// saved, and the trajectory would diverge on the first step.
+    ///
+    /// **On a chemistry with no `[hysteresis]` section it is never written**, because
+    /// [`advance_cell`] takes the same `None` path [`ecm_overpotential_v`] does. The
+    /// permanent zero is structural in the way `v_rc`'s unused slot is, with the same
+    /// caveat: deserialization is a writer nobody checks, and only the version field
+    /// stands between a blob that says otherwise and a cell that carries it forever.
+    #[serde(default)]
+    pub hysteresis: f64,
     /// Cell temperature \[K\]. Advanced by [`crate::thermal`] unless the pack is
     /// configured [`crate::ThermalConfig::Isothermal`], in which case it holds its
     /// initial value.
@@ -209,6 +241,10 @@ impl CellModel {
             // seeded on. On a chemistry with no `[diffusion]` section this is the value
             // it keeps forever.
             depletion: 0.0,
+            // A fresh cell has never been driven either way, so it sits at the midpoint
+            // of the loop rather than on either branch of it. On a chemistry with no
+            // `[hysteresis]` section this is the value it keeps forever.
+            hysteresis: 0.0,
             temp_k,
         };
         // `ChemistryParams::validate` guarantees 1 or 2 RC pairs, so the `else`
@@ -279,6 +315,39 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc,
             CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| spm::soc(s, spm)),
             CellModel::Dfn(s) => Self::spm_params(chem).map_or(0.0, |spm| dfn::soc(s, spm)),
+        }
+    }
+
+    /// The open-circuit voltage \[V\] a charge this cell **refused** was being pushed
+    /// against, which is what the pack books that charge as heat at.
+    ///
+    /// Called only from the upper-clamp arm of [`crate::Pack::step`], where the cell has
+    /// just arrived at exactly `soc = 1.0` with a zero deficit, so this is the cell's own
+    /// source voltage at that instant and not a hypothetical.
+    ///
+    /// # Why this is a method rather than a hoisted table lookup
+    /// Through v17 the pack read `ocv_lookup(chem.ocv, 1.0)` once per step for every cell,
+    /// because the endpoint was a property of the chemistry alone. At v18 it is a property
+    /// of the *cell*: [`crate::HysteresisParams`] displaces the source by up to `scale_v`
+    /// and [`crate::OcvTable::t_ref_k`] by the coefficient times the cell's own
+    /// temperature excursion, and a cell being force-fed at the top of its window is
+    /// displaced the most. A hoisted lookup would under-book that heat on exactly the
+    /// chemistry these terms were built for.
+    ///
+    /// On a chemistry with neither section this returns the table lookup bit-for-bit, via
+    /// [`open_circuit_v`]'s zero-deficit early return and both new terms' `None` arms — so
+    /// no existing trajectory moves.
+    ///
+    /// The porous arms return the bare table lookup and are **unreachable**:
+    /// [`Advanced::rejected_as`] is always `0.0` for `Spm` and `Dfn`, because a
+    /// porous-electrode cell never discards the lithium it was pushed. They are written
+    /// rather than left to a fallback so that "the endpoint is the table" is a decision on
+    /// the record rather than a default nobody chose.
+    #[must_use]
+    pub(crate) fn rejection_ocv_v(&self, chem: &ChemistryParams) -> f64 {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => open_circuit_v(chem, s),
+            CellModel::Spm(_) | CellModel::Dfn(_) => ocv_lookup(&chem.ocv, 1.0),
         }
     }
 
@@ -873,8 +942,54 @@ pub fn diffusion_overpotential_v(params: &crate::DiffusionParams, depletion: f64
     }
 }
 
+/// Exact exponential update of the hysteresis state for piecewise-constant current over
+/// `dt` seconds, in **charge moved** rather than in time.
+///
+/// ```text
+/// dz = |i|*dt / (3600*capacity_ah)          fraction of capacity moved this step
+/// h' = h*e^(-gamma*dz) + h_ss*(1 - e^(-gamma*dz)),      h_ss = -sgn(i)
+/// ```
+///
+/// `i` is discharge-positive \[A\] and `capacity_ah` is the cell's capacity **today**
+/// (nominal x static factor x `soh_capacity`), so an aged cell crosses the loop on
+/// proportionally less charge - the same coupling [`diffusion_update`] takes through the
+/// same argument.
+///
+/// # Every degenerate case returns `h` unchanged, and that is the physical answer
+/// A zero current, a zero-length step, a zero capacity, or a NaN anywhere makes `dz`
+/// non-positive or NaN, and the guard returns the state untouched. For the first two that
+/// is not a fallback but the model: **no charge moved, so no memory changed**, which is
+/// what makes a rested cell hold its polarization indefinitely.
+///
+/// **The NaN arm is written out rather than folded into a negated comparison**, which is
+/// the house idiom here and the same one [`diffusion_overpotential_v`] explains at length:
+/// the compact spelling is `!(dz > 0.0)`, clippy's `neg_cmp_op_on_partial_ord` refuses it
+/// in the open, and `dz <= 0.0` alone answers *false* for a NaN and would let one through
+/// into the state — from where a single `NaN` `h` displaces the cell's Thevenin source and
+/// the parallel aggregation spreads it to every sibling, with no panic and no flag.
+/// `gamma` is validated positive-and-finite, so its half of the guard is defence against a
+/// chemistry that never went through the validator rather than against a reachable case.
+///
+/// The result is a convex combination of `h` and `+-1`, so a state that starts inside
+/// `[-1, 1]` can never leave it. No clamp is needed and none is applied; a snapshot
+/// carrying an out-of-range value would decay monotonically toward the interval rather
+/// than being silently corrected.
+#[must_use]
+pub fn hysteresis_update(h: f64, i: f64, capacity_ah: f64, gamma: f64, dt: f64) -> f64 {
+    let dz = (i * dt).abs() / (3600.0 * capacity_ah);
+    if dz.is_nan() || dz <= 0.0 || gamma.is_nan() || gamma <= 0.0 {
+        return h;
+    }
+    let decay = (-gamma * dz).exp();
+    // `i` is non-zero here (`dz > 0` proves it), so this is a real sign and not a
+    // stand-in for one. Discharge drives the cell to the lower branch of the loop.
+    let target = if i > 0.0 { -1.0 } else { 1.0 };
+    h * decay + target * (1.0 - decay)
+}
+
 /// A cell's total **non-ohmic** overpotential \[V, discharge-positive\]: `Σ V_rc`, plus
-/// the diffusion term when its chemistry declares one.
+/// the diffusion term when its chemistry declares one, plus the hysteresis displacement
+/// when it declares one of those.
 ///
 /// The one expression behind all three places that need it — [`cell_source`] (the solve),
 /// [`CellModel::heat_w`] (the energy balance) and [`CellModel::overpotential_v`] (what a
@@ -887,12 +1002,26 @@ pub fn diffusion_overpotential_v(params: &crate::DiffusionParams, depletion: f64
 /// touches the new term at all makes "no chemistry without a `[diffusion]` section moves
 /// by a ULP" structural — the same reason [`open_circuit_v`] returns early on a zero
 /// deficit instead of taking a `max` against a floor it knows to be below.
+///
+/// # Why hysteresis is here and the temperature correction is not
+/// The two terms Phase 8 slice C added land in different functions on purpose, and the
+/// full argument is on [`crate::HysteresisParams`]. In one line: a temperature correction
+/// moves the equilibrium potential and already has its energy channel in
+/// [`cell_heat_w`]'s reversible term, so it belongs in [`open_circuit_v`]; hysteresis is
+/// *dissipative* and has no other channel, so putting it here is what makes the loop's
+/// enclosed area arrive as heat without a second site having to remember to add it.
 #[must_use]
 pub(crate) fn ecm_overpotential_v(state: &EcmState, chem: &ChemistryParams) -> f64 {
     let v_rc_sum = state.v_rc.iter().sum::<f64>();
-    match &chem.diffusion {
+    let with_diffusion = match &chem.diffusion {
         None => v_rc_sum,
         Some(params) => v_rc_sum + diffusion_overpotential_v(params, state.depletion, state.soc),
+    };
+    // Sign: `h` is +1 after a charge, and the source is `OCV - this`, so a charged cell
+    // must displace the overpotential *down* to rest above its table value.
+    match &chem.hysteresis {
+        None => with_diffusion,
+        Some(params) => with_diffusion - params.scale_v * state.hysteresis,
     }
 }
 
@@ -1047,11 +1176,35 @@ pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f
 }
 
 /// Open-circuit voltage \[V\] of a cell that may be below empty: the chemistry's OCV
-/// table above `soc = 0`, and the `[reversal]` ramp under it.
+/// table above `soc = 0`, temperature-corrected if the table says what temperature it was
+/// measured at, and the `[reversal]` ramp under it.
 ///
 /// ```text
-/// OCV_eff = max(OCV(soc) − v_per_soc · soc_deficit,  floor_v)
+/// OCV_T   = OCV(soc) + dU/dT(soc) * (temp_k - t_ref_k)        [only if t_ref_k is set]
+/// OCV_eff = max(OCV_T − v_per_soc · soc_deficit,  floor_v)
 /// ```
+///
+/// # The temperature correction, and the two ways it could have been gated
+/// `∂U/∂T` has been an optional column since Phase 2, read by exactly one consumer -
+/// the reversible heat term in [`cell_heat_w`]. It is the same thermodynamic quantity as
+/// the temperature coefficient of the potential, so reading it here is the other half of
+/// a sentence `CLAUDE.md` has always written whole ("optional `dOCV/dT` table for
+/// temperature correction **and** entropic heating") and the code only ever did half of.
+/// `docs/plans/phase-8-slice-c-spike.md` measured why it matters: without this, the
+/// engine's only temperature-to-voltage channel is `R0(soc, temp_k)`.
+///
+/// The gate is [`crate::OcvTable::t_ref_k`] and **not** the presence of the column,
+/// because a correction needs an origin as well as a coefficient and the heat term needs
+/// no origin at all. A file that had supplied the column for heat would otherwise receive
+/// a voltage shift measured from a temperature nobody stated. `None` - every chemistry
+/// shipped before Phase 8 - takes the first arm of the match below and is bit-identical
+/// to the expression that stood here at v17.
+///
+/// Note the correction applies **above and below** the ramp: it is evaluated first and the
+/// reversal arithmetic reads its result, so an over-discharged cell in the cold falls from
+/// a colder starting potential rather than from the table's. That follows from the ramp
+/// being defined as a drop *from* open-circuit voltage, and it is the only interaction
+/// between these two sections.
 ///
 /// # Why this is a state and not a branch
 /// Three earlier candidates for the bottom of the window each collapsed the cell's
@@ -1072,7 +1225,17 @@ pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f
 /// that silently sources forever.
 #[must_use]
 pub(crate) fn open_circuit_v(chem: &ChemistryParams, state: &EcmState) -> f64 {
-    let ocv = ocv_lookup(&chem.ocv, state.soc);
+    let ocv = match chem.ocv.t_ref_k {
+        // The path, not a neutral zero: `+ 0.0 * (T - T)` would in fact be bit-identical
+        // for finite values, but only by an argument about signed zeroes and about a
+        // subtraction that is exactly zero, and neither is a thing a future edit can be
+        // trusted not to break. Compare `ecm_overpotential_v`'s `None` arm.
+        None => ocv_lookup(&chem.ocv, state.soc),
+        Some(t_ref) => {
+            ocv_lookup(&chem.ocv, state.soc)
+                + docv_dt_lookup(&chem.ocv, state.soc) * (state.temp_k - t_ref)
+        }
+    };
     if state.soc_deficit == 0.0 {
         // The overwhelmingly common case, and written as an early return so that a cell
         // inside its window takes bit-for-bit the expression it took before this
@@ -1171,6 +1334,25 @@ pub(crate) fn advance_cell(
             i,
             eff_capacity_ah * soh_capacity,
             params.tau_s,
+            dt,
+        );
+    }
+    // The hysteresis state, on a chemistry that declares one - and, like the depletion
+    // above, behind an `if let` rather than through a neutral parameter so that a
+    // chemistry without the section executes not one line of it.
+    //
+    // Ordered *before* the coulomb step, so `state.soc` is still the start-of-step value
+    // for anything reading the two together, and driven by the same `eff_capacity_ah *
+    // soh_capacity` the coulomb count divides by. That product is deliberate: it is the
+    // cell's capacity today, so an aged cell crosses the loop on proportionally less
+    // charge, which is the same coupling (and the same omission of `soh_resistance`) the
+    // diffusion update takes.
+    if let Some(params) = &chem.hysteresis {
+        state.hysteresis = hysteresis_update(
+            state.hysteresis,
+            i,
+            eff_capacity_ah * soh_capacity,
+            params.gamma,
             dt,
         );
     }

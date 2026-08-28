@@ -87,6 +87,7 @@ fn aging_params() -> AgingParams {
 fn chem(fade_per_ah: f64) -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
+        hysteresis: None,
         reversal: ReversalParams {
             // OCV(0) is 3.0 V and the floor is 0, so the collapse spans 3 % of capacity —
             // the same "sized against this cell's own OCV(0)" rule the shipped files use.
@@ -114,6 +115,7 @@ fn chem(fade_per_ah: f64) -> ChemistryParams {
         },
         ocv: OcvTable {
             docv_dt_v_per_k: None,
+            t_ref_k: None,
             soc: vec![0.0, 0.5, 1.0],
             volts: vec![3.00, 3.30, 3.60],
         },

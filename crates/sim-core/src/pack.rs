@@ -26,7 +26,7 @@ use crate::aging::{Aging, AgingConfig, CellAging, FadeParams};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::dfn;
-use crate::ecm::{ocv_lookup, solve_current, CellModel};
+use crate::ecm::{solve_current, CellModel};
 use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
@@ -310,7 +310,44 @@ use crate::{Demand, Env, Telemetry};
 /// [`CellView::overpotential_v`] keeps its name, its units and its meaning. It gains a
 /// second contributor, on one chemistry, which is what that field was named to allow.
 /// See `docs/plans/diffusion-overpotential.md`.
-pub const SNAPSHOT_VERSION: u32 = 17;
+///
+/// v18 (OCV hysteresis, and the temperature correction): [`crate::EcmState`] gained
+/// `hysteresis`, and [`crate::ChemistryParams`] gained an optional `[hysteresis]` section
+/// and an optional `ocv.t_ref_k`. As at v17 the chemistry is serialized *inside* the
+/// snapshot, so every half of this bump is in the bytes.
+///
+/// **Semantic, and it is a sharper version of v17's argument.** `hysteresis` is a memory
+/// of which way the cell was last driven, and `#[serde(default)]` supplies `0.0` — the
+/// unpolarized midpoint. v17 could at least say that its default was correct for a rested
+/// pack. **This one cannot**, and the reason is the field's defining property: the decay
+/// is in charge moved rather than in time, so a cell holds its polarization through an
+/// arbitrarily long rest. A charged-and-rested pack restored at `0.0` comes back sourcing
+/// `hysteresis.scale_v` below the one that was saved, and diverges on the first step. The
+/// case where the default is *most* wrong is exactly the case v14 and v17 could point at
+/// as safe.
+///
+/// **Structurally it is v17's situation again**, and loudly so: `bincode` writes struct
+/// fields positionally with no framing, so a v17 blob is one `f64` short at every cell and
+/// fails at deserialization before the version check is consulted. Nothing here can be
+/// misread the way a v15 blob could be at v16 — only refused. `snapshot_version.rs` pins
+/// it against a re-serialized blob for that reason.
+///
+/// **What does not move, and it is structural on both halves.** No chemistry shipped
+/// before this version carries a `[hysteresis]` section *or* an `ocv.t_ref_k` — checked,
+/// and for the temperature correction the check is the stronger one, since all five
+/// shipped files mention `docv_dt_v_per_k` only in a comment recording its absence. Both
+/// absences are *paths*: [`crate::ecm::ecm_overpotential_v`] and
+/// [`crate::ecm::advance_cell`] match on the `Option` and never execute the hysteresis
+/// term, and [`crate::ecm::open_circuit_v`] matches on `t_ref_k` and returns the bare
+/// table lookup. So every ECM, SPM, DFN and lead-acid trajectory in the repo is
+/// bit-identical across this bump, goldens included, which is Phase 8's exit criterion 3
+/// closing structurally rather than by measurement.
+///
+/// `sim_server::API_VERSION` and `sim-wasm`'s constant both stay put: no call signature
+/// changes and no telemetry field is added — [`CellView::overpotential_v`] gains a third
+/// contributor on one chemistry, which is what that field was named to allow, exactly as
+/// at v17. See `docs/plans/phase-8-slice-c-hysteresis.md`.
+pub const SNAPSHOT_VERSION: u32 = 18;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -2058,10 +2095,6 @@ impl Pack {
         let mut i_balancing_a = 0.0;
         let mut i_internal_short_a = 0.0;
         let mut i_rejected_a = 0.0;
-        // The OCV a refused charge is being pushed against. Hoisted: it is the same
-        // table lookup for every cell, and on a pack that never clamps it is the whole
-        // cost of this feature.
-        let ocv_full = ocv_lookup(&self.chem.ocv, 1.0);
         for (g, group) in self.groups.iter_mut().enumerate() {
             let (e_gv, r_gv) = group_src[g];
             let v_node = e_gv - i_g * r_gv; // start-of-step shared node voltage
@@ -2206,7 +2239,23 @@ impl Pack {
                         // `OCV(1.0)` — the endpoint the charge was being pushed
                         // against, not the SOC the step started from. On LFP the last
                         // 2 % of that table climbs 180 mV, so the difference is real.
-                        q -= ocv_full * advanced.rejected_as / dt;
+                        //
+                        // Read from the **cell**, not hoisted out of the chemistry, since
+                        // v18: the endpoint a refused charge is pushed against is now a
+                        // per-cell quantity on a chemistry that declares `[hysteresis]`
+                        // or an `ocv.t_ref_k`, because both displace the source and a
+                        // full cell being pushed harder is displaced the most. Hoisting a
+                        // bare table lookup here would leave that energy out of the
+                        // thermal ledger on exactly the chemistry the term was built for.
+                        //
+                        // It is bit-identical for every chemistry that has neither: the
+                        // clamp puts `soc` at exactly `1.0` with a zero deficit, which is
+                        // `open_circuit_v`'s early return, so both new terms take their
+                        // `None` path and the expression is the table lookup it was. The
+                        // cost moves rather than growing — a pack that never clamps no
+                        // longer pays a lookup per step, and one that does pays a lookup
+                        // per *rejecting cell* instead of amortising one across the pack.
+                        q -= cell.model.rejection_ocv_v(&self.chem) * advanced.rejected_as / dt;
                     }
                 }
                 // Tallied here, below `advance`, for the reason above. The mutation is
@@ -2835,27 +2884,37 @@ mod cell_footprint {
         // The parts of `Cell`, largest first. The remaining 24 B are three bare `f64`s on
         // `Cell` itself: `capacity_factor`, `r0_factor`, `shunt_g`.
         //
-        //   88 + 56 + 16 + 24 = 184, with no padding left over to hide anything in.
+        //   88 + 64 + 16 + 24 = 192, with no padding left over to hide anything in.
         assert_eq!(size_of::<CellAging>(), 88, "CellAging");
         assert_eq!(
             size_of::<CellModel>(),
-            56,
-            "CellModel = 8 tag + 48 EcmState"
+            64,
+            "CellModel = 8 tag + 56 EcmState"
         );
         assert_eq!(size_of::<CellRunaway>(), 16, "CellRunaway");
-        assert_eq!(size_of::<Cell>(), 184, "Cell");
+        assert_eq!(size_of::<Cell>(), 192, "Cell");
 
         // The states behind the slot. `SpmState` and `DfnState` are boxed, which is what
         // keeps the two lines above independent of these two.
         //
-        // `EcmState` is 48: 40 after `v_rc` came off the heap at SNAPSHOT_VERSION 16, plus
-        // the `depletion` f64 at v17. That is the price the diffusion overpotential pays,
-        // and it is priced rather than discovered — this test exists to make an addition
-        // like it show up in a diff. One `f64` per cell is 8 KB on a 1000-cell pack, and
-        // `CellModel` stays inside `no_variant_widens_the_model_slot_beyond_the_equivalent_circuit`'s
-        // budget because that budget is stated as a *relation* to `EcmState` rather than as
-        // a number, which is the property it was written to have.
-        assert_eq!(size_of::<EcmState>(), 48, "EcmState");
+        // `EcmState` is 56: 40 after `v_rc` came off the heap at SNAPSHOT_VERSION 16, plus
+        // the `depletion` f64 at v17 and the `hysteresis` f64 at v18. Those are the prices
+        // the diffusion overpotential and the OCV hysteresis pay, and each was priced
+        // rather than discovered — this test exists to make an addition like them show up
+        // in a diff. One `f64` per cell is 8 KB on a 1000-cell pack, so the two together
+        // have cost a pack that size 16 KB, and `CellModel` stays inside
+        // `no_variant_widens_the_model_slot_beyond_the_equivalent_circuit`'s budget because
+        // that budget is stated as a *relation* to `EcmState` rather than as a number,
+        // which is the property it was written to have.
+        //
+        // The v18 addition is paid by every ECM cell including the ones whose chemistry has
+        // no `[hysteresis]` section, which is the standing cost of `EcmState` being one
+        // struct rather than a variant per feature. It buys the `Option` being a *path*
+        // instead of a multiplier, which is what makes "no existing trajectory moves" a
+        // structural claim; the alternative trades 8 B per cell for a per-cell branch on
+        // the solve's hot path and a second serde shape. See
+        // `docs/plans/phase-8-slice-c-hysteresis.md`.
+        assert_eq!(size_of::<EcmState>(), 56, "EcmState");
         assert_eq!(size_of::<SpmState>(), 64, "SpmState");
         assert_eq!(size_of::<DfnState>(), 136, "DfnState");
     }
