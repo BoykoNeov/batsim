@@ -1,6 +1,10 @@
 # A cell that does not plate can say so
 
-**Status: authored as pre-work on 2026-08-28.** The repo is at `SNAPSHOT_VERSION` 18 and
+**Status: LANDED 2026-08-28. `SNAPSHOT_VERSION` 18 → 19**, `WASM_API_VERSION` unchanged at 6
+and `sim_server::API_VERSION` at 2. The measurements are in the `# Measured` half at the
+bottom; everything above it is the pre-work text as written, kept rather than corrected.
+
+**Authored as pre-work on 2026-08-28.** The repo was at `SNAPSHOT_VERSION` 18 and
 `WASM_API_VERSION` 6. Everything below the predictions was written before anything was run;
 where a later section contradicts an earlier one, the later one is the measurement and wins.
 
