@@ -3317,7 +3317,7 @@ const LESSONS = [
     reload: true,
     watch: ["plot-v", "readouts"],
     prose: [
-      "A sixth chemistry, and the last this path adds: nickel-metal hydride. One sub-C cell — the format that used to power cordless tools and radio-control cars — starting at 10 % charge in a 25 °C room, thermally live, with nothing protecting it.",
+      "A sixth chemistry, and the last of the flat-curve cells: nickel-metal hydride. One sub-C cell — the format that used to power cordless tools and radio-control cars — starting at 10 % charge in a 25 °C room, thermally live, with nothing protecting it.",
       "The demand box says -3, which is the 1 C fast charge this cell is rated for. There is no charge policy and no BMS here, so the current is constant and nothing on this page will end it.",
       "The run stops itself at the instant the cell fills. Watch `terminal`, `clamp` and `heat`.",
     ],
@@ -3358,8 +3358,10 @@ const LESSONS = [
   {
     id: "which-way-it-was-driven",
     title: "Two cells at the same charge, and 50 mV between them",
-    // The other half of what CLAUDE.md asked this chemistry for, and the one lesson in
-    // this path where the interesting quantity is a memory rather than a state.
+    // The other half of what CLAUDE.md asked this chemistry for, and the first lesson in
+    // this path where the interesting quantity is a memory rather than a state. It stopped
+    // being the only one when the sodium-ion pair landed, where the same memory is what
+    // decides where a corrected gauge comes to rest.
     scenario: "nimh_memory_charged.toml",
     // The client's Pulse mode, which is a pure function of simulation time: `Current` on
     // the on-leg and `Rest` otherwise. 720 s at 1 C moves 20 points of charge, so the
@@ -3384,7 +3386,75 @@ const LESSONS = [
       "Every other lesson here has been about what a cell does. This one is about what it remembers.",
     ],
     expect:
-      "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and it has been resting long enough that `terminal` has stopped moving: **`1.290 V`**. Now the control arm, which is one field away. Load `nimh_memory_discharged` from the picker — the same file with `initial_soc` changed and nothing else — put the pulse current to 3, which is the same rate the other way, and run it to the same mark. That cell started higher and was *discharged* down to where this one was charged up to. It is at the same charge and the same temperature, with the same everything, and `terminal` there reads **`1.240 V`** against this file's **`1.290 V`** — 50 mV apart, read straight off the two panels. And it does not fade — there is no decay term on this state at all, so neither reading will have moved however long you leave them alone. A nickel cell's open-circuit voltage depends on which way it was last driven, and this chemistry's `[ocv]` table is the *midline* between the two branches rather than either one of them, which is a thing no other parameter file in this repo has to say about itself. You cannot see any of it while current is flowing. At the end of the two legs the two cells sat at 1.377 V and 1.153 V, 224 mV apart, and almost all of that is ordinary resistance pointing in opposite directions; the memory is only legible once everything else has stopped, which is exactly when a gauge tries to read it. Which is the last thing here and the one worth taking away. Look at `soc (bms)`. On this file it reads **`79.8 %`** and on the other it reads **`20.2 %`**, against a truth the row above it prints identically on both. Neither BMS is broken and neither has a bad sensor — this scenario gives them perfect ones on purpose. Both did the textbook thing: rest the pack, read the open-circuit voltage, look up where that voltage sits on the chemistry's curve. The curve has one branch and the cell has two, so each of them landed on the wrong one and this file's gauge is out by **29.8 points**, with the other one out by the same amount the other way. The engine knows exactly where both cells are. The BMS is allowed sensors and nothing else, and no sensor can see which way a cell was last driven.",
+      "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and it has been resting long enough that `terminal` has stopped moving: **`1.290 V`**. Now the control arm, which is one field away. Load `nimh_memory_discharged` from the picker — the same file with `initial_soc` changed and nothing else — put the pulse current to 3, which is the same rate the other way, and run it to the same mark. That cell started higher and was *discharged* down to where this one was charged up to. It is at the same charge and the same temperature, with the same everything, and `terminal` there reads **`1.240 V`** against this file's **`1.290 V`** — 50 mV apart, read straight off the two panels. And it does not fade — there is no decay term on this state at all, so neither reading will have moved however long you leave them alone. A nickel cell's open-circuit voltage depends on which way it was last driven, and this chemistry's `[ocv]` table is the *midline* between the two branches rather than either one of them, which is a thing a parameter file only has to say about itself once its cell remembers anything. You cannot see any of it while current is flowing. At the end of the two legs the two cells sat at 1.377 V and 1.153 V, 224 mV apart, and almost all of that is ordinary resistance pointing in opposite directions; the memory is only legible once everything else has stopped, which is exactly when a gauge tries to read it. Which is the last thing here and the one worth taking away. Look at `soc (bms)`. On this file it reads **`79.8 %`** and on the other it reads **`20.2 %`**, against a truth the row above it prints identically on both. Neither BMS is broken and neither has a bad sensor — this scenario gives them perfect ones on purpose. Both did the textbook thing: rest the pack, read the open-circuit voltage, look up where that voltage sits on the chemistry's curve. The curve has one branch and the cell has two, so each of them landed on the wrong one and this file's gauge is out by **29.8 points**, with the other one out by the same amount the other way. The engine knows exactly where both cells are. The BMS is allowed sensors and nothing else, and no sensor can see which way a cell was last driven.",
+  },
+  {
+    id: "a-curve-worth-reading",
+    title: "A gauge that can read the curve",
+    // The seventh chemistry, and the first parameter file in this repo fitted from a
+    // laboratory's own raw measurements rather than assembled out of a datasheet. The
+    // lesson is not the cell, it is the CURVE: `Bms`'s open-circuit correction and its
+    // `min_ocv_slope_v_per_soc` gate have shipped since phase 2 and step 4 already teaches
+    // the half where the gate refuses. What is new is a cell on the other side of it, and
+    // a control arm that differs from this one in exactly one field.
+    scenario: "na_ion_gauge_corrects.toml",
+    // `Pulse` is discharge-positive like every other demand box, so this is a discharge.
+    // The off-leg outlasts both marks -- a 5400 s one would have fired a SECOND pulse at
+    // 5700 s, inside the next step's run, and the check caught it. Nothing is asked of
+    // this cell again
+    // after 300 s, which is what makes the voltage at the mark an open-circuit voltage.
+    demand: { mode: "Pulse", value: 1.4558, on_s: 300, off_s: 9000 },
+    ambient_c: 25,
+    // The scenario's own BMS, which has a protection block but nothing to trip on: this
+    // run rests at half charge in a room at ambient. It estimates and reports.
+    bms: true,
+    speed_x: 300,
+    dt: 0.5,
+    // 3600 s of rest after the 300 s leg. The gate arms at 600 s and the correction has
+    // converged long before the mark; the rest of the hour is for the slow RC pair, whose
+    // time constant is 365 s and which relaxes in the same direction the memory pushes.
+    // At a ten-minute rest a fifth of the residual on the next step would be diffusion
+    // wearing the memory's name.
+    until_s: 3900,
+    reload: true,
+    watch: ["readouts", "plot-soc"],
+    prose: [
+      "A seventh chemistry, and the first parameter file here fitted from a laboratory's own raw measurements rather than assembled out of a datasheet: sodium-ion. One cell in a 25 °C room, with a BMS that watches and reports and never clamps anything.",
+      "The demand box runs a pulse: `1.4558 A` for `300 s`, and then nothing at all. Everything this step is about happens after the current stops.",
+      "Watch `soc (bms)` against `soc (true)`, and keep in mind that the BMS has never been told either of them.",
+    ],
+    expect:
+      "At the mark the cell has been open-circuit since the pulse ended. `current` reads **`0.000 A`**, `terminal` has settled at **`3.113 V`**, and `soc (true)` reads **`51.7 %`** against a `soc (bms)` of **`51.2 %`**. The estimate booted **`3`** points high — that is a field in the scenario file, not an accident — and it now reads *low* instead. Nothing told it anything: it rested, read its own terminal voltage, and looked that voltage up on the chemistry's curve. Now the control arm, which is one field away. Load `lfp_gauge_declines` from the picker — the same file with the chemistry swapped and nothing else — and run it to the same mark. There `soc (true)` reads **`54.7 %`** and `soc (bms)` reads **`56.8 %`**: still high, still counting, still wrong. That cell stops at a higher charge because it is the larger of the two and the same current out of a larger cell is fewer points of charge, and that changes nothing here — both cells are resting, and each is being read against its own curve. Every number the BMS is configured with is identical in the two files, character for character, down to the seed its sensor noise is drawn from. What differs is what the voltage was worth. Both files set `min_ocv_slope_v_per_soc` to **`0.15`** volts per unit of charge, and it is a gate: invert the chemistry's own table at the resting voltage, and if the slope there is under it the estimator declines to correct at all, on the grounds that it would be amplifying its own sensor noise rather than removing error. This cell rests far above that gate. LFP's plateau sits far below it. `the_gauge_corrects_on_sodium_ion_and_declines_on_lfp` measures both slopes against the gate and asserts each side, so neither half of that sentence is a claim about a picture. Which is the thing worth carrying away, and it is not that one chemistry is better than the other. A gauge is only ever as good as the question its cell can answer. LFP's flatness is most of what makes it cheap and safe and long-lived, and it is the same flatness that makes it unreadable; the flat trace this path opened with is that fact seen from the other side.",
+  },
+  {
+    id: "still-wrong-and-it-has-stopped",
+    title: "One estimate stops, the other keeps walking",
+    // The same file as the step before, and the same trajectory. `reload` is absent and
+    // every control the trajectory can see is identical to that step's, so pressing Next
+    // continues -- UNLESS the reader took the last step's picker instruction, in which case
+    // the page is on the other scenario and rebuilds this one from t = 0. The prose is
+    // written to be true either way rather than to assert one route, because the arm on the
+    // step before makes the other route the likely one. Both land identically: the pulse is
+    // a pure function of simulation time, so 0 -> 7500 and 3900 -> 7500 agree to the bit.
+    // Nothing would have reddened if the prose had claimed one of them; check 6 replays
+    // from t = 0 and cannot see which route a reader took.
+    scenario: "na_ion_gauge_corrects.toml",
+    demand: { mode: "Pulse", value: 1.4558, on_s: 300, off_s: 9000 },
+    ambient_c: 25,
+    bms: true,
+    speed_x: 300,
+    dt: 0.5,
+    // Another 3600 s of rest past the last mark. Nothing is asked of either cell in
+    // between; the only question is which of the two estimates is still moving.
+    until_s: 7500,
+    watch: ["readouts", "plot-soc"],
+    prose: [
+      "The same cell, carried on to another mark. If you came straight here the run simply continued; if you went off to the control arm and came back, the page rebuilt this file and ran it again from the start. It does not matter which — the demand program is a function of the clock alone, so both routes arrive at the same place.",
+      "Watch the two charge rows here, then go back to the control arm and watch its two.",
+      "One of the four has stopped moving, and that is the whole step.",
+    ],
+    expect:
+      "On this file the panel has not changed: `soc (true)` still reads **`51.7 %`**, `soc (bms)` still reads **`51.2 %`**, and `terminal` is still at **`3.113 V`**. Now the control arm again — load `lfp_gauge_declines`, and run it on to this mark. `soc (true)` there still reads **`54.7 %`**, exactly as it did, because nothing has been asked of that cell either. `soc (bms)` reads **`55.9 %`**, and at the last step's mark it read **`56.8 %`**. It is still moving. That difference is the whole thing, and it is worth being precise about what it is. The LFP estimate is not stuck and it is not broken. It never corrected, so it is still doing the only thing left to it — counting a current it reads slightly high — and it will go on walking down through the truth and out the far side. The sodium-ion estimate stopped because it found something to stop against. It stopped in the wrong place, though, and the size of the error is in the chemistry file rather than in the run. `[hysteresis]` says this cell rests below its open-circuit table when it was last discharged and above it when it was last charged, and that the table is the midline between the two branches. The estimator inverts that midline, because the midline is all it has and a real BMS has no more, so it reads a voltage low and infers a charge low with it. `scale_v` in this file is **`0.010`** volts, and the estimate settles under the truth by about that divided by the curve's slope. `the_landed_correction_is_short_by_the_hysteresis_loop` is where that is checked against the file's own number rather than against a figure someone liked the look of. The nickel-metal-hydride pair earlier in this path is the same memory on a cell whose curve is flat, where two gauges at the same charge landed on opposite branches and were wrong by an enormous margin. Here the memory has not gone away; it has been divided by the slope. One last thing, because it is the honest half of the story. Look again at what the LFP estimator refused. Inverting its table at the voltage that cell rests at returns its truth almost exactly — the reading it declined was a good one. The gate is not a claim that this particular reading was bad. It is a claim about what a reading on that curve is worth in general, where a small error in millivolts buys a large error in charge, and refusing was still the right policy. That is what a heuristic is: right about the population, and no promise at all about the case in front of you.",
   },
 ];
 

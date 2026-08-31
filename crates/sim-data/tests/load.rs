@@ -86,13 +86,51 @@ fn nimh_chemistry_loads_and_validates() {
     assert!(chem.diffusion.is_none(), "no fitted NiMH Peukert exponent");
 }
 
-/// **Every other shipped chemistry must have neither new section.** This is Phase 8's exit
-/// criterion 3 written as a test rather than as an argument: both absences are *paths* in
-/// the engine rather than neutral zeros, so an absence here is what makes "no existing
-/// trajectory moved across v18" structural. If a future edit adds either section to one of
-/// these files, that claim stops holding and this is where it says so.
+/// The shipped sodium-ion chemistry must parse and pass validation. Added with **zero lines
+/// of engine code changed**, like the LTO file, and the first chemistry added after Phase 8
+/// closed — against that phase's written recipe. See `docs/plans/sodium-ion-chemistry.md`,
+/// and `tests/na_ion_chemistry.rs` for what the file can do that the others cannot.
+///
+/// It is also the first shipped file whose capacity, OCV table, `[r0]` SOC axis and RC pairs
+/// are **fitted from raw laboratory measurements of a physical cell** rather than placed by
+/// hand or extracted from someone else's model.
 #[test]
-fn no_chemistry_but_nimh_carries_the_v18_sections() {
+fn na_ion_chemistry_loads_and_validates() {
+    let text = include_str!("../../../chemistries/na_ion_18650_generic.toml");
+    let chem = parse_chemistry(text).expect("Na-ion chemistry should load and validate");
+
+    assert_eq!(chem.meta.id, "na_ion_18650_generic");
+    assert_eq!(chem.n_rc(), 2);
+    // Measured discharge throughput of the source's incremental-OCV run, not the rated
+    // 1.5 Ah — the OCV table's SOC axis is normalised to this same number.
+    assert!((chem.cell.capacity_ah - 1.4558).abs() < 1e-12);
+    assert_eq!(chem.ocv.soc.len(), chem.ocv.volts.len());
+
+    // The second file to declare [hysteresis], and the first written by a slice other than
+    // the one that built the mechanism.
+    let hyst = chem.hysteresis.expect("Na-ion declares [hysteresis]");
+    assert!((hyst.scale_v - 0.010).abs() < 1e-12);
+    // ...but it does NOT take the other v18 addition: no dU/dT was measured for this cell.
+    assert!(chem.ocv.t_ref_k.is_none());
+
+    // Unlike LTO, this cell keeps a plating gate: hard carbon has no structural argument
+    // that it cannot plate, so omitting the pair would assert what the sources do not say.
+    let safety = chem.safety.expect("Na-ion declares [safety]");
+    assert!(safety.t_plating_min_k.is_some() && safety.plating_c_threshold.is_some());
+}
+
+/// **No chemistry that predates `SNAPSHOT_VERSION` 18 may have gained either new section.**
+/// This is Phase 8's exit criterion 3 written as a test rather than as an argument: both
+/// absences are *paths* in the engine rather than neutral zeros, so an absence here is what
+/// makes "no existing trajectory moved across v18" structural. If a future edit adds either
+/// section to one of these files, that claim stops holding and this is where it says so.
+///
+/// The list is closed on purpose and is **not** "every file but the NiMH one" any more:
+/// `na_ion_18650_generic` declares `[hysteresis]` legitimately, and a file that no pack
+/// loaded before v18 cannot move a v17 trajectory whatever it declares. What this test
+/// guards is the files that *did* exist.
+#[test]
+fn no_chemistry_predating_v18_carries_the_v18_sections() {
     for (id, text) in [
         (
             "lfp_26650_generic",
@@ -500,6 +538,10 @@ fn shipped_aging_coefficients_give_a_plausible_one_year_fade() {
             "lto",
             include_str!("../../../chemistries/lto_20ah_generic.toml"),
         ),
+        (
+            "na-ion",
+            include_str!("../../../chemistries/na_ion_18650_generic.toml"),
+        ),
     ] {
         let chem = parse_chemistry(text).expect("shipped chemistry loads");
         let aging = chem
@@ -574,6 +616,10 @@ fn shipped_plating_coefficients_give_a_plausible_cold_charge_cost() {
         (
             "lto",
             include_str!("../../../chemistries/lto_20ah_generic.toml"),
+        ),
+        (
+            "na-ion",
+            include_str!("../../../chemistries/na_ion_18650_generic.toml"),
         ),
     ] {
         let chem = parse_chemistry(text).expect("shipped chemistry loads");
@@ -680,6 +726,10 @@ fn shipped_runaway_coefficients_burn_at_a_plausible_scale() {
         (
             "lto",
             include_str!("../../../chemistries/lto_20ah_generic.toml"),
+        ),
+        (
+            "na-ion",
+            include_str!("../../../chemistries/na_ion_18650_generic.toml"),
         ),
     ] {
         let chem = parse_chemistry(text).expect("shipped chemistry loads");

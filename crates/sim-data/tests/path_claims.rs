@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 29 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 31 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -83,8 +83,8 @@
 //! **The answer is now a rule about the prose rather than a second scanner.**
 //! [`no_lesson_spells_a_quantity_in_english`] refuses a quantity spelled in letters
 //! anywhere in a lesson — the digits rule — so "numeral" and "quantity" mean the same thing
-//! in the prose the ledger scans, and the digit scanner, which has covered all twenty-four
-//! steps for many slices, is the whole of the coverage. `docs/plans/phase-8-chemistries.md`
+//! in the prose the ledger scans, and the digit scanner, which has covered every step in
+//! the path for many slices, is the whole of the coverage. `docs/plans/phase-8-chemistries.md`
 //! records the decision and `docs/plans/path-digits-rule.md` the slice: reading English was
 //! seven of twenty-four steps after two slices, and finishing it was seventeen more rounds
 //! of the same work. The argument for banning instead is about which way the mistakes fall.
@@ -114,7 +114,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is twenty-nine steps and 739 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is thirty-one steps and 757 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -220,10 +220,10 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed twenty-nine whole steps — but only twenty-nine. Steps here carrying
+//!   has now closed thirty-one whole steps — but only thirty-one. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
 //!   of the prose free: none. `[ledger].unledgered`
-//!   names what is left — none of the twenty-nine — one line each, so this list cannot go
+//!   names what is left — none of the thirty-one — one line each, so this list cannot go
 //!   quietly out of date; it is empty, and it stays in the file so that the next lesson
 //!   added to the path has somewhere to say it is not checked.
 //!   **What that closes is one axis and not the gap.** Every numeral in every step of the
@@ -1432,7 +1432,7 @@ fn the_article_shape_reads_a_quantity_with_no_numeral_in_it() {
 /// got it as far as seven of twenty-four steps. Finishing it was seventeen more rounds of
 /// the same work, and `docs/plans/phase-8-chemistries.md` records the owner's decision to
 /// **ban the practice instead of reading it**: the prose writes its numbers in digits, the
-/// digit ledger already covers all twenty-four steps, and this is the check that keeps it
+/// digit ledger already covers every step in the path, and this is the check that keeps it
 /// that way.
 ///
 /// **The argument is about which way the mistakes fall, not about which instrument is
@@ -1471,7 +1471,7 @@ fn no_lesson_spells_a_quantity_in_english() {
             allowed >= seen,
             "lesson `{step}` spells a quantity in English: `{phrase}`.\n\
              Write it in digits. The path's prose states its numbers in digits so that the \
-             ledger, which scans every one of the twenty-four steps, can see them - a \
+             ledger, which scans every step in the path, can see them - a \
              quantity spelled in letters is invisible to it, and a green ledger on a step \
              that spells one says less than it looks like it says.\n\
              If this really is not a quantity (`one of the cells`, `a second opinion`), \
@@ -2756,7 +2756,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 279 of 324 claims.
+    /// number's last printed place. The default shape: 291 of 336 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -2767,12 +2767,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 38 of 324.
+    /// the number was always right and only the declaration was wrong. 38 of 336.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 324, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 336, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -2812,7 +2812,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 296 of 324, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 308 of 336, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -7160,8 +7160,8 @@ fn derived_value(row: &Derivation, literal: &str) -> Option<f64> {
 ///   the file is written that way today, but the next author to split a sentence will
 ///   meet it, and the fix is to give both claims the same literal.
 /// * **This says which numbers are claimed, not which sentences are.** A step with no
-///   claims has no literals to scan and is untouched by this check; fourteen of the
-///   twenty-four still have none. Step-level completeness needs a different instrument —
+///   claims has no literals to scan and is untouched by this check; two of the
+///   thirty-one still have none. Step-level completeness needs a different instrument —
 ///   a ledger over each step's whole prose — and that one does need a taxonomy for the
 ///   numbers that are settings, chemistry constants and ordinals rather than
 ///   measurements. See the module docs.
@@ -7388,8 +7388,8 @@ struct Ledger {
     /// Steps whose prose is **not** word-scanned, listed on purpose.
     ///
     /// `spelled`'s counterpart, on exactly the terms [`Ledger::unledgered`] is `steps`'s,
-    /// and it exists for the reason that pairing does: at one step in twenty-four the
-    /// omission spoke for itself, and at six it stops speaking. Without this list the file
+    /// and it exists for the reason that pairing does: at one step in the twenty-four the
+    /// path then had the omission spoke for itself, and at six it stops speaking. Without this list the file
     /// can say which steps *are* word-scanned and cannot say which are not — so a lesson
     /// added tomorrow would be word-blind by default and nothing would ever say so.
     /// [`every_lesson_is_word_scanned_or_named_as_not`] requires each lesson to be in
@@ -12056,6 +12056,46 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         }],
         pow10: 0,
     },
+    // --- Step 30, the sodium-ion gauge -----------------------------------------
+    //
+    // Five settings and nothing else. Every measurement this step prints sits inside a
+    // claimed sentence, on one or other of its two arms, so there is no arithmetic here to
+    // account for -- the argument is two panels side by side rather than a calculation.
+    LedgerRule {
+        // The pulse box's current and its on-leg, in the sentence that introduces both. The
+        // off-leg is not printed: the prose says "and then nothing at all", which is what a
+        // 5400 s off-leg on a 7500 s run amounts to and is the honest way to say it.
+        phrase: "runs a pulse: `{n} A` for `{n} s`",
+        ties: &[
+            Tie::Setting(Control::DemandValue),
+            Tie::Setting(Control::PulseOn),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The boot error, which is a field of the scenario and is the whole reason there is
+        // anything to correct. Both files set it, and the prose says so in the same breath.
+        phrase: "The estimate booted **`{n}`** points high",
+        ties: &[Tie::Scenario("pack.bms.initial_soc_error")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The gate. Read off THIS step's scenario; the control arm's file sets it to the
+        // same value, which is asserted where the two files' fifteen shared assignments are
+        // compared rather than restated here.
+        phrase: "`min_ocv_slope_v_per_soc` to **`{n}`** volts",
+        ties: &[Tie::Scenario("pack.bms.min_ocv_slope_v_per_soc")],
+        pow10: 0,
+    },
+    // --- Step 31, the estimate that stopped ------------------------------------
+    LedgerRule {
+        // The half-width of the hysteresis loop, straight off the chemistry file. It is the
+        // only numeral on this step that is not a panel row, and it is what turns "the
+        // estimate stopped in the wrong place" into a quantity with a source.
+        phrase: "`scale_v` in this file is **`{n}`** volts",
+        ties: &[Tie::Chemistry("hysteresis.scale_v")],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -13096,7 +13136,8 @@ fn claimed_accounting(
 /// file decides and which a tie reading a claim's own `read_at_s` would have declared from
 /// both sides. See `docs/plans/path-ledger-weaker-short.md`.
 ///
-/// **The twenty-fourth, `the-gradient-itself`, is the last step in the path**, and it is
+/// **The twenty-fourth, `the-gradient-itself`, was the last step in the path left to
+/// ledger**, and it is
 /// the one whose numbers are most nearly all its own: twenty-nine of its forty-four sit
 /// inside a claimed sentence, and the step carries twenty-nine claims of which twenty-five
 /// were written for this scan — the most heavily claimed step in the path, all on one
@@ -14844,6 +14885,8 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (27, "twenty-seven"),
     (28, "twenty-eight"),
     (29, "twenty-nine"),
+    (30, "thirty"),
+    (31, "thirty-one"),
     // The ledger's numeral count passed twenty-five with its fifth step and will keep
     // going; the tens are here so the next one does not have to stop and add a word.
     (30, "thirty"),
@@ -15146,6 +15189,15 @@ fn n_word_numerals(_: &Facts) -> usize {
 fn n_ledgered(f: &Facts) -> usize {
     f.ledger.steps.len()
 }
+/// How many steps the word scan is turned on for -- the length of `[ledger].spelled`.
+///
+/// Its twin [`n_ledgered`] had covered the digit ledger's list since the self-count sweep;
+/// this one did not exist, and the sentence stating it went stale twice while the tally
+/// beside it stayed green. A count of a list is derivable wherever the list is parsed, so
+/// there was never a reason for that one to be prose.
+fn n_word_scanned(f: &Facts) -> usize {
+    f.ledger.spelled.len()
+}
 fn n_ledgered_numerals(f: &Facts) -> usize {
     f.ledger.steps.iter().map(|s| f.numerals_in(s)).sum()
 }
@@ -15313,6 +15365,28 @@ const TALLIES: &[Tally] = &[
         prose: Prose::ClaimsFile,
         phrase: "is the translation, {w} entries",
         of: &[n_word_numerals],
+    },
+    // --- what it says about its own two ledger lists ---------------------------
+    //
+    // All three of these were stale when the sodium-ion slice reached them, all three in
+    // WORDS, and all three within a few lines of a count that was already derived. Slices B
+    // and D of phase 8 added five lessons and ledgered every one of them; nothing pointed at
+    // the sentences saying how many there were. Same defect the self-count sweep was written
+    // for, same fix: the phrase is declared and the number is derived.
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "which is what the {w} entries above amount to",
+        of: &[n_ledgered],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "has covered all {w} steps since before this list existed",
+        of: &[n_ledgered],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "The list holds {w} steps now",
+        of: &[n_word_scanned],
     },
     // --- what it says about check 6 --------------------------------------------
     Tally {
@@ -15574,6 +15648,29 @@ const NOT_DERIVED: &[NotDerived] = &[
                   sentence — a twenty-fifth lesson reddens the tallies that count \
                   lessons today and must not be `fixed` here, where it would silently \
                   restate a past measurement as a present one.",
+    },
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "was measured across all twenty-four steps rather than sampled",
+        because: "past tense: how wide the widening that produced that flag was measured, \
+                  on a path that then had twenty-four steps. FROZEN, like the \
+                  `fourteen of the twenty-four` above -- a thirtieth lesson must not \
+                  `fix` it, which would restate a past measurement as a present one.",
+    },
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "twenty-nine quantities on the seven steps it then covered",
+        because: "past tense: what the word scan read when it was built, over the seven \
+                  steps it then covered. The present-tense count of that list IS derived, \
+                  three sentences later. This one read as if it were about today, and had \
+                  been stale since the list reached eight.",
+    },
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "the digits rule rewrote all twenty-nine of them into digits",
+        because: "the same past measurement as the entry above, in the sentence saying \
+                  what became of those quantities. It is the count that makes the zeroes \
+                  beside each step a result rather than a gap, so it may not be dropped.",
     },
     NotDerived {
         prose: Prose::ClaimsFile,

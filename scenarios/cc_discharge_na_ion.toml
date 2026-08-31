@@ -1,0 +1,79 @@
+# The sixth chemistry, and the one whose voltage tells you where it is.
+#
+# Same shape as the other CC discharge scenarios — 1S1P, full, 25 degC, isothermal, nothing
+# protecting it — so the six are comparable by construction. What differs is what the
+# voltage trace DOES. Every other cell here spends most of its discharge on a plateau of
+# some width; this one has none. It leaves 4.08 V full and arrives at 1.70 V empty in a
+# steady, nearly straight line, and where it is on that line is where its charge is.
+#
+# ## Which parts of the chemistry file this reads, and their provenance
+#
+# `na_ion_18650_generic.toml` is the first shipped file FITTED from raw laboratory
+# measurements of a physical cell, and the parts this scenario rests on are the fitted ones:
+#
+#   * [ocv] is a fit to a published incremental-OCV run: twenty rested open-circuit
+#     readings, each after a twenty-minute rest following a C/20 step, on a commercial cell.
+#     Not a shape, not a stretch of somebody else's curve. The whole lesson is this table.
+#   * [cell] capacity_ah is the measured throughput of that same run.
+#   * [r0] against charge state is fitted from a published HPPC run — ten pulse levels, each
+#     the mean of a 2 A discharge pulse and a 2 A charge pulse. Its TEMPERATURE axis is not
+#     measured, and nothing here reads it: this scenario is isothermal at 25 degC.
+#   * [[rc]] are fitted from the relaxations in that same run. The slow pair's time constant
+#     is 365 s, which matters to anyone resting this cell and not at all to this file.
+#
+# ## What it shows, measured at dt = 0.5 (the page's default), 25 degC
+#
+#   * At 1 C (1.456 A) the CHARGE floor arrives first: the charge state reaches zero with
+#     `terminal` still reading 1.7013 V, which is 0.2013 V clear of this cell's declared
+#     1.50 V cutoff. Nothing stopped it, because nothing here is watching.
+#   * At 3 C (4.367 A), the datasheet's maximum, the two floors trade places: the terminal
+#     is down to 1.1502 V by the time the charge state reaches zero, having crossed 1.50 V
+#     some way before it. A cell that is not empty reads empty, and the difference is the
+#     ohmic drop and nothing else — the same cell, the same charge, a different rate.
+#
+# `which_floor_a_discharge_hits_first_depends_on_the_rate` in
+# `crates/sim-data/tests/na_ion_chemistry.rs` is where both are measured, and it asserts
+# the crossing rather than the voltages, so it fails if the ordering ever swaps back.
+#
+# ## What it does not do
+#
+#   * NO REST LEG. Rest is where this cell gets interesting a second time — its resting
+#     voltage remembers which way it was driven — and that belongs to
+#     `na_ion_gauge_corrects.toml`, where a BMS is present to be fooled by it. Keeping the
+#     two apart is what makes each attributable.
+#   * Isothermal, so R0 does not fall as the cell warms and the trace answers to the charge
+#     state and nothing else.
+#   * NO AGING and NO BMS. The BMS in particular would derate before the 3 C arm reaches the
+#     cutoff, which is the one demand on this file where the two floors trade places.
+#   * One cell. A real 12 V sodium-ion pack is 4S of this, which multiplies the terminal
+#     voltage and changes nothing this file is about.
+
+chemistry = "na_ion_18650_generic"
+
+[meta]
+name = "CC discharge, single sodium-ion cell"
+description = """
+A 1S1P 1.4558 A.h sodium-ion cell at 100 % charge and 25 degC, isothermal, no BMS, no \
+aging, no faults. Watch the voltage trace rather than the charge row: this cell has no \
+plateau anywhere, so the two say the same thing. At 1 C it runs out of CHARGE while still \
+1.70 V at the terminals, two tenths of a volt above its own 1.50 V cutoff; at the \
+datasheet's maximum 3 C the ohmic drop eats that headroom and the VOLTAGE floor arrives \
+first instead. Which of a cell's two floors it hits is a property of the rate."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+# Unused here (no scatter, no aging, no plating, no sensor noise), but the seed is part of
+# the snapshot and every scenario names it rather than inheriting a default.
+seed = 0
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical
+#   [pack.thermal]  -> Isothermal: heat is reported, temperature never moves
+#   [pack.bms]      -> no BMS at all; demands pass through unclamped, and nothing stops the
+#                      discharge at either floor. Both are then observed rather than
+#                      enforced, which is what makes the crossing measurable
+#   [pack.aging]    -> the pack never wears out
+#   [[faults]]      -> nothing scheduled

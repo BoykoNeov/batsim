@@ -1,0 +1,147 @@
+# The fuel gauge that can correct itself, and the one thing it still cannot resolve.
+#
+# Paired with `lfp_gauge_declines.toml`, which is this file with one word changed — the
+# chemistry — and nothing else. Every BMS number below is identical in the two, so anything
+# that differs between the runs is a property of the cell and not of the configuration.
+# That is the whole design: attribution by subtraction.
+#
+# ## The mechanism, which is already shipped and is not new here
+#
+# `Bms` estimates charge by coulomb counting on a current sensor it cannot trust, so its
+# error integrates rather than averaging out. The one corrective it has is to rest the pack
+# and read its open-circuit voltage — and that only works if the voltage says anything about
+# the charge. `BmsConfig::min_ocv_slope_v_per_soc` is the gate: below that slope the
+# estimator DECLINES to correct rather than amplify its own noise.
+#
+# The gate is set to 0.15 V per unit of charge in both files, the same value
+# `soft_short_under_a_lying_sensor.toml` has carried since the BMS shipped.
+#
+# Measured where the run below actually rests, by inverting each chemistry's own table at
+# the voltage its cell settles at — which is what `Bms` does, not a slope read off a span:
+#
+#   * LFP rests at 3.2659 V, where its curve reads 0.0570 V per unit. That is 0.38 of the
+#     gate. The estimator DECLINES, and goes on counting coulombs it cannot trust.
+#   * This cell rests at 3.1129 V, where its curve reads 1.9100 V per unit — 12.7 times the
+#     gate. It CORRECTS.
+#
+# The first draft of this comment said "about 0.06" and "thirty times over the gate". The
+# first was read off the illustrative table in CLAUDE.md rather than off
+# `chemistries/lfp_26650_generic.toml`, which is the third time that block has handed this
+# slice a wrong LFP number; the second divided by LFP's slope where the sentence names the
+# gate. Both are measured now, and `the_gauge_corrects_on_sodium_ion_and_declines_on_lfp`
+# asserts each slope against the gate so neither can rot again.
+#
+# ## And then the second half, which is the interesting one
+#
+# The correction lands, and it lands SLIGHTLY WRONG, by an amount this cell's own parameter
+# file predicts. `[hysteresis]` says a rested cell sits below the midline of its
+# open-circuit curve when it was last discharged. The estimator inverts the `[ocv]` TABLE,
+# which is that midline — it has no hysteresis model, and a real BMS does not either — so it
+# reads a voltage about 10 mV low and infers a charge state low by that divided by the
+# curve's slope. Measured: the estimate settles 0.494 points below the truth, and 0.494
+# points at 1.9100 V per unit is 9.4 mV — against a declared loop half-width of 10.0 mV,
+# which this run crosses about seven eighths of at `gamma = 25` over 8.3 points of charge.
+#
+# A steep curve is what makes the gauge work AND what converts the loop into charge. Both
+# halves of the lesson come out of the same two measurements on the same cell.
+#
+# ## The run this file is an initial condition for
+#
+# A scenario is an initial condition, not a demand program. What this one is shaped for:
+# discharge at 1 C for a few minutes so the estimate drifts, then REST — long enough to pass
+# `rest_time_for_ocv_s` and let the correction fire. Without the rest leg nothing here is
+# visible, because the corrective is the only part that differs between the two chemistries.
+#
+# ## Measured, at dt = 0.5 s (the browser page's default), 25 degC
+#
+# Booted 3 points high, discharged at this cell's 1 C — 1.4558 A — for 300 s, then rested
+# for 3600 s. Estimate minus truth, in points of charge. The control file is tabulated at
+# ITS own 1 C here, which is not the current the guided path drives it at; see that file's
+# header for what changes and what does not:
+#
+#                 at t = 0    discharge ends    rest ends    truth at the end
+#   sodium-ion      +3.000            +2.900       -0.494              51.67 %
+#   LFP             +3.000            +2.942       +2.057              51.67 %
+#
+# Read the last column of the two carefully, because the obvious reading of it is wrong.
+# The LFP estimate MOVED 0.885 points across the rest, and towards the truth. That is not a
+# correction: it is the same 0.02 A sensor offset still integrating with the pack open, and
+# it is worth 0.868 points over an hour on a 2.303451 A.h cell all by itself. The remainder
+# is the noise draw and one step of frame lag. It would have gone on drifting past the truth
+# and out the other side.
+#
+# What separates the two is not how far each estimate moved but where it ENDED. Inverting
+# each cell's own table at its resting voltage gives 51.21 % for this cell and 51.67 % for
+# LFP. This cell's estimate lands 0.036 points from that reading — it converged onto the
+# curve. LFP's lands 2.057 points away, because it never looked.
+#
+# The rest is an HOUR rather than the ten minutes the gate needs, and that is not padding.
+# This cell's slow RC pair has a time constant of 365 s and holds 31.5 mV at 1 C, and it
+# relaxes in the same direction the hysteresis loop pushes. At 900 s of rest 2.6 mV of it
+# would still be there — a fifth of the residual below, wearing the loop's name.
+
+chemistry = "na_ion_18650_generic"
+
+[meta]
+name = "A gauge that corrects itself, sodium-ion"
+description = """
+A 1S1P sodium-ion cell at 60 % charge and 25 degC, isothermal, with a protective BMS \
+whose current sensor reads 20 mA high and whose charge estimate booted 3 points wrong. \
+Discharge at 1 C and the estimate drifts, exactly as it does on LFP. Then STOP and let it \
+rest: past 600 s of rest the BMS reads the cell's open-circuit voltage and corrects, \
+because this chemistry's curve is steep enough to be worth reading. Run \
+`lfp_gauge_declines.toml` — the same file with the chemistry swapped — and the correction \
+never comes. Watch `soc bms` against `soc true`."""
+
+[pack]
+series = 1
+parallel = 1
+# Chosen to sit inside LFP's flat plateau, which is where the control arm must be for its
+# refusal to be about the curve rather than about where on the curve it happened to be.
+# A 1 C discharge from here stays inside that plateau for the whole run.
+initial_soc = 0.60
+initial_temp_k = 298.15
+# The current sensor's noise is drawn from the pack RNG, so the seed is load-bearing here
+# rather than merely named: both files use the same one so the two runs see the same noise.
+seed = 20260831
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical; one cell, so there is nothing to scatter
+#   [pack.thermal]  -> Isothermal. Deliberate: R0 falls as a cell warms, which would move
+#                      the resting voltage the correction is read from and make the two
+#                      chemistries differ for a second reason
+#   [pack.aging]    -> the pack never wears out; over ten minutes it would not anyway, and
+#                      a health row that cannot move invites a stronger conclusion than the
+#                      run supports
+#   [[faults]]      -> nothing scheduled. The sensor error below is CONFIGURATION, not a
+#                      fault: it is what an honest sensor costs, present from step 0, and
+#                      it is the thing the correction has to undo
+
+[pack.bms]
+# Every number in this section is identical in `lfp_gauge_declines.toml`.
+#
+# Sensor error the BMS cannot know about. 20 mA against this cell's 1.4558 A discharge is
+# 1.37 %, and because coulomb counting integrates it, it is worth 0.100 points of charge
+# over the five-minute leg — small beside the boot error below, and the mechanism that runs
+# away over a long drive. The control file's cell is larger, so the same offset costs it
+# 0.058 points over the same five minutes; the FIELD is identical and what it buys is not.
+current_offset_a = 0.02
+current_noise_sigma_a = 0.01
+# One probe for one cell. The estimator does not read temperature; this is here because
+# protection does.
+temp_probes = [[0, 0]]
+# A BMS that has just been powered on does not know what it is holding. Three points is the
+# error the correction exists to remove, and it is what makes the difference between the two
+# chemistries legible in the first place: without it both estimates would start correct and
+# there would be nothing to correct.
+initial_soc_error = 0.03
+rest_current_threshold_a = 0.05
+rest_time_for_ocv_s = 600.0
+ocv_correction_gain = 0.1
+# The gate. Below this slope an OCV reading is noise amplification and the estimator
+# declines. LFP's plateau sits under it; this cell sits far over it.
+min_ocv_slope_v_per_soc = 0.15
+
+[pack.bms.protection]
+v_hard_margin_v = 0.15
+t_hard_margin_k = 10.0

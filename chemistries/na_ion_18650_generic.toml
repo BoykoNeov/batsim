@@ -1,0 +1,300 @@
+# Generic sodium-ion 18650 cell parameters, layered-oxide cathode on hard carbon.
+#
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [hysteresis],
+# [thermal], [aging] and [safety]. Every physical constant carries a provenance note per the
+# project rule: no unlabeled numbers.
+#
+# THIS IS THE FIRST SHIPPED FILE FITTED FROM RAW LABORATORY MEASUREMENTS OF A PHYSICAL CELL.
+# The LG M50 files were extracted from a PyBaMM parameter set -- a model, fitted by someone
+# else -- and every other file was hand-placed from datasheet limits and published figures.
+# Here the capacity, the whole OCV table, R0 against SOC and both RC pairs come out of two
+# published test runs on a commercial cell, refitted by tools/reference/fit_na_ion_hakadi.py.
+# The source data is CC0; see [meta].provenance and docs/plans/sodium-ion-chemistry.md.
+#
+# It is also the first chemistry added AFTER Phase 8 closed, against that phase's written
+# recipe, and the third independent test of CLAUDE.md principle 10 ("chemistry is data, not
+# code"). Zero lines of Rust were changed to ship it.
+#
+# WHAT IS DISTINCT ABOUT THIS CELL, and why it is worth a lesson:
+#
+#   * ITS OPEN-CIRCUIT CURVE IS STEEP AND NEARLY STRAIGHT. From 1.99 V empty to 4.08 V full,
+#     it climbs 15.16 mV per point of charge across the 20-80 % span, against 2.60 mV per
+#     point for the LFP file over the same span -- 5.8 times steeper. Measured over LFP's
+#     own flat plateau (45-75 %), where its fuel-gauge problem actually lives, the figures
+#     are 18.28 against 1.02: 18 times. Both are reported because picking the span that
+#     maximises a ratio is how a true number becomes a misleading one, and the wider, less
+#     flattering figure is the one quoted. LFP's flatness is why a voltage reading barely
+#     constrains its charge state and why the BMS estimator drifts; this cell is the mirror
+#     image, and its gauge works.
+#   * AND [hysteresis] IS THE LIMIT ON THAT. The cell's resting voltage depends on which way
+#     it was last driven. Measured on the shipped parameters, two runs meeting at 45 % charge
+#     from opposite directions rest 18.36 mV apart -- 1.2 points of charge that no voltage
+#     reading can resolve, however good the sensor. The advantage and its floor come from the
+#     same two measurements.
+#   * ITS VOLTAGE WINDOW OVERLAPS NOTHING SHIPPED. 1.5-4.1 V spans 2.6 V, where the widest
+#     lithium file spans 1.65 V. Only the 2 V lead-acid file sits lower, and that one needed
+#     code.
+#   * IT IS THE SECOND FILE TO USE [hysteresis], and the first written by a slice other than
+#     the one that built the mechanism -- which is what turns that state from a NiMH special
+#     case into a facility. See docs/plans/phase-8-slice-c-hysteresis.md.
+#
+# WHAT IS *NOT* THE LESSON HERE, recorded so it is not re-derived: sodium-ion's tolerance of
+# a full discharge to 0 V. It is real, it is the aluminium-current-collector argument, and
+# chemistries/lto_20ah_generic.toml ALREADY SHIPS IT at fade_per_ah = 0.0 with that argument
+# written out. A second file telling the same story teaches nothing new. See [reversal] for
+# the third answer this file gives instead, and why it is not zero.
+
+[meta]
+id         = "na_ion_18650_generic"
+name       = "Generic sodium-ion 18650 (layered oxide)"
+provenance = "Capacity, the [ocv] table, the [r0] SOC axis at room temperature and both RC pairs are FITTED by tools/reference/fit_na_ion_hakadi.py from Max Kraft-Schaefer, 'Measurements with Hakadi 18650 Sodium Ion Cells', https://github.com/MaxMax-embedded/hakadi_soidum_ion_18650, released under CC0 1.0 -- specifically the incremental-OCV run ocv_test_inc_2-2.csv and the HPPC run hppc_test_hakadi1500mah_2-2.csv, both on cell 2 at room temperature. Cell limits, rate ratings, mass and temperature ranges are datasheet-class figures for the Hakadi 18650 sodium-ion cell as reproduced in that repository's README. The hysteresis half-width is CITED from the same source's own analysis of its own data and cross-checked against an independent refit here. The temperature axis of [r0], and everything in [thermal], [aging] and [safety], is NOT measured -- the source ran at room temperature only -- and each carries its own sizing argument below. The id says 'generic' because the fit is to one sample of one cell from one reseller, not to a manufacturer parameter set. TODO: fit the temperature axis, the aging set and the safety set against a cell characterised over temperature."
+
+[cell]
+# provenance: MEASURED. Discharge-leg throughput of the incremental-OCV run, C/3 from a
+# rested full cell to the 1.5 V cutoff. The rated figure is 1.5 Ah; this run returns 3 %
+# less, and the same run reports a coulombic efficiency of 1.0305 -- more charge out than in,
+# which is impossible and identifies the gap as the rig's current-sensor offset rather than
+# a property of the cell. The measured value is used rather than the rated one because the
+# [ocv] table's SOC axis is normalised to this same throughput, and SOC self-consistency is
+# what every threshold in the engine is indexed on.
+capacity_ah     = 1.4558
+# provenance: the datasheet's 4.1 V charge-termination voltage plus the shipped 50 mV
+# protection margin (the same relation the LFP and LTO files use) -- AND CHECKED AGAINST THE
+# PROTECTION LAYER, which is the constraint that actually decides this number.
+#
+# ProtectionConfig::v_release_band_v defaults to 80 mV, and docs/plans/protection-chatter.md
+# measured what that band has to clear: NOT the load line, but `v_max - OCV(1.0)`, because
+# the over-voltage rung releases on a RESTED reading and a saturated cell rests at its own
+# full-charge open-circuit voltage. While the band is WIDER than that gap the rung holds;
+# once the gap exceeds the band, the reading drops back through the release threshold every
+# time the load comes off and the pack chatters at the step rate.
+#
+# Here a rested full cell sits at OCV(1.0) + hysteresis.scale_v = 4.0824 + 0.010 = 4.0924 V,
+# so the gap is 57.6 mV -- inside the 80 mV band, the same regime the shipped LFP file sits
+# in at 50 mV. A larger v_max would NOT be safer; 4.25 V would put the gap at 158 mV and
+# hand this cell the chatter the band exists to prevent.
+#
+# THE COST, stated because it is real and is shared with the LFP file: a 1C
+# constant-current charge run all the way to full reaches roughly 4.24 V at the terminals
+# through this cell's ~74 mOhm and its two RC pairs, so it trips this limit near the top.
+# That is the protection layer reporting that the charger should have switched to constant
+# voltage at 4.1 V, which is what a real charger for this cell does.
+v_max           = 4.15
+v_min           = 1.50     # provenance: datasheet discharge cutoff, 1.5 +/- 0.05 V
+max_charge_c    = 1.0      # provenance: datasheet continuous charge rate, 1C at 0-45 degC
+max_discharge_c = 3.0      # provenance: datasheet continuous discharge rate, 3C at 0-45 degC
+# provenance: -10 degC, the bottom of the datasheet's CHARGE temperature range (the discharge
+# range goes to -30 degC). Unlike the LTO file this cell has no structural argument that it
+# cannot plate, so this floor and the plating gate in [safety] coincide, as they do in the
+# LFP and NMC files.
+t_charge_min_k  = 263.15
+t_max_k         = 333.15   # provenance: 60 degC, the top of the datasheet discharge range
+
+# MEASURED, and the centre of the hysteresis loop rather than either measured curve:
+# sim_core puts a discharging cell at OCV - scale_v and a charging one at OCV + scale_v, so
+# what belongs here is the midline. Each leg of the incremental-OCV run is normalised to its
+# own throughput before averaging -- the alignment the source's own figure uses, and the one
+# that puts the run's 3 % coulombic inconsistency into the SOC axis instead of into a
+# spurious voltage gap. Outside the overlap the single available leg is used: the discharge
+# leg supplies the full end and the charge leg the empty end.
+#
+# Each point is a rested open-circuit reading taken after a 20-minute rest following a C/20
+# step. Strictly increasing in soc, checked by the fitting script.
+#
+# The SHAPE is the reason this chemistry is worth teaching: no plateau, no flat middle, just
+# a steady climb. This table's middle 60 % of charge moves 910 mV; the LFP file's moves
+# 156 mV, and only 31 mV of that lies across its flat plateau.
+[ocv]
+soc   = [0.00, 0.02, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45,
+         0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00]
+volts = [1.9886, 2.0921, 2.2284, 2.4343, 2.6047, 2.7245, 2.7898, 2.8259, 2.8608, 2.9196, 2.9993,
+         3.0898, 3.1853, 3.2823, 3.3765, 3.4647, 3.5478, 3.6343, 3.7336, 3.8486, 3.9578, 4.0824]
+
+# No docv_dt_v_per_k column, so entropic heating is disabled for this chemistry and the OCV
+# table is not temperature-corrected. The source did not measure dU/dT, and the one
+# peer-reviewed parametrisation of a commercial sodium-ion 18650 found for this file states
+# it NEGLECTED the entropic term as well. TODO: add measured dU/dT.
+
+# The SOC axis is MEASURED at 298.15 K; the two other temperature columns are NOT.
+#
+# Measured column (298.15 K), from ten HPPC levels, each the mean of a 10 s 2 A discharge
+# pulse and a 10 s 2 A charge pulse, read at the first sample under load. These are DC
+# values of 56-117 mOhm, several times the datasheet's "< 20 mOhm" -- the source explains
+# the discrepancy and this file follows it: the datasheet figure is an AC impedance at
+# kilohertz, and impedance here rises sharply as frequency falls. A load sees the DC value.
+#
+# The soc = 0.00 row is an EXTRAPOLATION, not a measurement: the run's lowest pulse is at
+# 10 %. Linear extrapolation from the last two measured points gives 0.1445; 0.1500 is used
+# because those two points already show the rise accelerating toward empty.
+#
+# The 243.15 K and 318.15 K columns are the measured column scaled by an Arrhenius factor at
+# a stated activation energy of 12 kJ/mol -- an electrolyte-conduction scale, not the
+# 80-107 kJ/mol electrode-kinetic figures reported for a commercial sodium-ion 18650, which
+# belong to the RC pairs rather than to the ohmic term. The factors are exp(Ea/R * (1/T -
+# 1/298.15)) = 2.989 at 243.15 K and 0.7376 at 318.15 K. Deliberately a GENTLER cold penalty
+# than the shipped lithium files carry (NMC 2.5x at 263 K, LTO 4.0x at 243 K), because
+# sodium-ion cells are consistently reported to hold up better in the cold -- which is also
+# what lets the datasheet quote a -30 degC discharge floor. PLACEHOLDER COLUMNS; TODO fit.
+[r0]
+soc    = [0.00, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
+temp_k = [243.15, 298.15, 318.15]
+ohms   = [[0.4484, 0.1500, 0.1106],
+          [0.3482, 0.1165, 0.0859],
+          [0.2645, 0.0885, 0.0653],
+          [0.2403, 0.0804, 0.0593],
+          [0.2275, 0.0761, 0.0561],
+          [0.2200, 0.0736, 0.0543],
+          [0.2149, 0.0719, 0.0530],
+          [0.2119, 0.0709, 0.0523],
+          [0.2098, 0.0702, 0.0518],
+          [0.2024, 0.0677, 0.0499],
+          [0.1668, 0.0558, 0.0412]]
+
+# Fast charge-transfer RC pair. tau = 0.01693 * 580.9 = 9.83 s.
+# provenance: MEASURED. The time constant is a log-linear fit to the settled tail of the ten
+# 40-second relaxations that follow each 2 A HPPC pulse -- a window long enough to see this
+# pair and far too short to see the slow one, which is what makes the two separable at all.
+# The resistance is what the 10 s pulse develops beyond the ohmic drop, over the 0.3-0.7 SOC
+# window, undone by how far a pair of this time constant gets in 10 s.
+[[rc]]
+r_ohms  = 0.01693
+c_farad = 580.9
+
+# Slow diffusion RC pair. tau = 0.02165 * 16838.6 = 364.6 s -- SIX MINUTES, by far the
+# longest of any shipped chemistry, and a fact any measurement of this cell has to respect:
+# a rest of less than half an hour of simulated time is still reporting this pair, not the
+# open-circuit voltage.
+# provenance: MEASURED, from the 1200-second relaxations after each 540-second 1 A step,
+# fitted past 60 s so only this pair is left. The resistance is the overpotential still
+# standing at the end of such a step once the ohmic drop and the fast pair are accounted for.
+[[rc]]
+r_ohms  = 0.02165
+c_farad = 16838.6
+
+# What the cell does below empty, and what it costs.
+#
+# THE THIRD DIFFERENT ANSWER TO THIS QUESTION IN FOUR CHEMISTRIES, and the point of the
+# section: LFP and NMC bill over-discharge at ~1e-1 per amp-hour against dissolution of the
+# anode's copper current collector; LTO bills it at exactly ZERO because its anode sits
+# above aluminium's lithiation potential and there is no copper to dissolve; this cell sits
+# between them, on purpose.
+#
+# The mechanism is LTO's: sodium does not alloy with aluminium, so a sodium-ion cell uses
+# aluminium foil on both electrodes and the collector-dissolution path is absent. That is
+# why these cells are shipped and stored at 0 V. But the argument here is NOT structural the
+# way LTO's is -- the peer-reviewed survey of zero-volt storage in sodium-ion cells (Desai
+# et al., J. Power Sources 551 (2022) 232177) finds the tolerance depends on the CELL
+# CHEMISTRY AND ELECTROLYTE, not on the metal, and reports it for some combinations and not
+# others. A zero here would claim more than the sources support.
+[reversal]
+# provenance: placeholder, sized by the shipped rule every other file uses -- the cell
+# collapses from its empty-endpoint OCV (1.9886 V) to the floor over 2 % of capacity, giving
+# 99.4, rounded to 100.0. TODO fit.
+v_per_soc = 100.0
+# provenance: placeholder -- a declared limit rather than a measured plateau, as in every
+# other shipped file. Bounds an otherwise unbounded ramp.
+floor_v   = 0.0
+# provenance: placeholder, sized as ONE HUNDREDTH of the LFP file's 2.2e-1 and stated as a
+# ratio because the ratio is the claim the sources support and the absolute number is not.
+# One full reversal here -- 2 % of capacity past empty, 0.0291 Ah -- costs 0.0064 % of
+# capacity, where the same excursion costs the LFP cell 1.0 %. Small enough that a single
+# deep over-discharge is not an event, large enough that the mechanism is live and
+# measurable, which a zero would not be. TODO fit.
+fade_per_ah = 2.2e-3
+
+# The cell's resting voltage depends on which way it was last driven.
+#
+# CITED, not fitted, and the difference matters. The raw data supports a loop width anywhere
+# between 19 and 70 mV depending on how the charge and discharge legs are lined up, because
+# the run's coulombic efficiency comes out at 1.0305 -- impossible, and therefore an
+# instrument offset that no alignment can undo. An eight-fold spread is not a measurement.
+# So the number below is the SOURCE'S OWN figure for its own rig (~20 mV separation over the
+# linear part of the curve), and the independent refit here is the check on it rather than
+# the origin of it: refitting under the per-leg-normalised alignment gives a mean separation
+# of 19.2 mV, which is the agreement that also picks that alignment out of the three.
+#
+# KNOWN AND NOT EXPRESSIBLE: the measured loop is SOC-DEPENDENT by a factor of three or
+# four -- about 20 mV above 35 % SOC and up to 80 mV below it, where the OCV curve flattens.
+# scale_v is a single scalar, so this file necessarily UNDERSTATES the loop in the bottom
+# third of the range. Saying it properly needs a table or a second coefficient, i.e. a
+# schema change and a snapshot version bump, and nothing else shipped wants one. Recorded as
+# a principle-10 finding in docs/plans/sodium-ion-chemistry.md rather than fixed here.
+[hysteresis]
+scale_v = 0.010
+# provenance: PLACEHOLDER, and the one number in this section that is not sourced at all,
+# for the reason crate::HysteresisParams::gamma gives: this is how FAST the loop is crossed,
+# which needs a partial-cycle measurement neither the datasheet nor the source run carries.
+# 25.0 is the same value the NiMH file uses, and puts a reversed cell about 92 % of the way
+# across the loop after 10 % of its capacity has moved. TODO fit.
+gamma   = 25.0
+
+[thermal]
+# provenance: placeholder, scaled from the NMC 18650 file's 55.0 J/K by measured mass -- the
+# source weighed its cells at 36.5-37.0 g against that file's assumed ~45 g, and the two are
+# the same can with different contents, so m*cp scales with mass. TODO fit.
+heat_capacity_j_per_k = 46.0
+# h*A for a FULLY EXPOSED cell (as on a 1S1P pack); the engine scales it down per cell by
+# the surface fraction not blocked by neighbours.
+# provenance: natural-convection placeholder for a bare 18650, identical to the NMC 18650
+# file because the geometry is identical. TODO fit.
+h_area_w_per_k        = 0.20
+
+# Semi-empirical aging, ALL PLACEHOLDERS -- the source ran no aging tests. What each is
+# sized against is stated; the pair cal_pre_exp/cal_ea_j_per_mol only means anything
+# together, since the pre-exponential is the Arrhenius factor's scale at the chosen
+# activation energy.
+[aging]
+# provenance: placeholder pair, TODO fit. Sized so that
+#   k = 3.9e3 * exp(-50000/(8.314*298.15)) = 6.77e-6
+# and at full charge (soc stress 1.3) over a year (sqrt(3.156e7 s) = 5618) the calendar loss
+# is 4.94 %. That sits between the LTO set's ~4.0 % and the graphite lithium sets' 13-16 %,
+# computed the same way from their own files -- the ordering sodium-ion is usually claimed
+# to have, and a claim rather than a measurement, which is what 'placeholder' means here.
+cal_pre_exp                = 3.9e3
+cal_ea_j_per_mol           = 5.0e4    # provenance: placeholder Arrhenius activation energy, order-of-magnitude typical for a storage-cell calendar fit; TODO fit
+# provenance: placeholder. Hard carbon does form an SEI, unlike LTO, so this file keeps a
+# real high-SOC penalty -- but a smaller one than the graphite files, matching the usual
+# claim that sodium-ion tolerates being stored full better. TODO fit.
+cal_soc_stress             = [1.0, 1.05, 1.3]
+# provenance: placeholder, DERIVED from a class figure rather than a datasheet for this part:
+# 18650 sodium-ion cells are commonly rated at 3000+ cycles to 80 % retention.
+# aging::cycle_increment counts throughput as |I|*dt in BOTH directions, so one full-depth
+# cycle of this cell moves 2 * 1.4558 = 2.9116 Ah, and
+#   0.20 / (3000 * 2.9116 Ah) = 2.29e-5 per Ah.
+# THE ASSUMPTION, stated because it sets the direction of the error: the rated cycle is taken
+# as full-depth. A rating quoted at a shallower depth would make this number larger, so this
+# is the optimistic end of the claim. TODO fit.
+cyc_fade_per_ah            = 2.3e-5
+# provenance: placeholder, 1.1 -- the same as the LFP file. No shallow-cycle data for this
+# chemistry was sourced, so this file copies rather than invents, and says so.
+cyc_dod_stress_exp         = 1.1
+r_growth_per_capacity_loss = 1.5      # provenance: placeholder -- resistance grows faster than capacity fades, same ratio as every other shipped file pending a fit
+
+# Emergent-failure thresholds. BOTH HALVES ARE LIVE, and the plating half is where this file
+# differs from LTO on purpose.
+#
+# RUNAWAY: placeholders, and the pair only means anything together. Adiabatic ceiling =
+# 7.0 kJ / 46.0 J/K = 152 K, so a fully-reacted cell peaks near 595 K (322 degC) from the
+# 443 K onset. For scale, the cell stores 1.4558 Ah * 3.1 V = 16.2 kJ of electrical energy,
+# so the budget is 43 % of that -- lower than the lithium sets, which is the ordering
+# sodium-ion is claimed to have and is not measured here. The onset-to-vent TIME is NOT
+# computed in this file: the Arrhenius rise is convex, so averaging the endpoint powers runs
+# fast, and a real figure has to come from the engine rather than from arithmetic here.
+#
+# PLATING: THE GATE IS PRESENT, and that is the deliberate difference from the LTO file.
+# LTO omits the pair because its anode sits ~1.55 V above where metal deposits, so the
+# driving force is structurally absent. Hard carbon has no such argument -- sodium plating on
+# hard carbon at low temperature and high rate is reported -- so omitting the gate here would
+# assert something the sources do not support. Since SNAPSHOT_VERSION 19 the gate is an
+# optional pair and omission MEANS "this cell cannot plate"; see docs/plans/plating-absence.md.
+[safety]
+t_onset_k           = 443.15   # provenance: ~170 degC exothermic onset placeholder, above LFP's 150 degC and below the layered-oxide lithium sets; TODO fit
+t_vent_k            = 473.15   # provenance: ~200 degC vent placeholder, 30 K above onset; TODO fit
+runaway_energy_j    = 7.0e3    # provenance: placeholder per-cell exothermic budget, set for the 152 K adiabatic rise argued above; TODO fit
+runaway_power_w_at_onset = 3.0     # provenance: placeholder amplitude, chosen with the Ea below to give an onset-to-vent span of minutes rather than seconds on this cell's 46 J/K; TODO fit
+runaway_ea_j_per_mol     = 1.0e5   # provenance: placeholder activation energy for the decomposition exotherm, order-of-magnitude typical for cell ARC fits; TODO fit
+t_plating_min_k     = 263.15   # provenance: placeholder anchored on the datasheet's -10 degC charge floor, which is the temperature the manufacturer stops allowing charge at; TODO fit
+plating_c_threshold = 0.5      # provenance: placeholder C-rate above which cold-charge plating risk flags, same shape as the LFP file; TODO fit
+plating_fade_per_ah        = 1.2e-3  # provenance: placeholder -- set ~50x cyc_fade_per_ah so plated charge is decisively worse than ordinary throughput, the same relation the LFP file uses; TODO fit
+plating_short_hazard_per_ah = 1.0e-3 # provenance: placeholder Poisson hazard per Ah plated; TODO fit
+plating_short_ohms         = 100.0   # provenance: placeholder soft short, ~1350x this cell's mid-SOC R0 -- a 31 mA leak at 3.1 V, which drains this 1.4558 Ah cell in about two days; TODO fit

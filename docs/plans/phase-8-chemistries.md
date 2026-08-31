@@ -4,8 +4,10 @@
 it was written** except where a line says so and names what measured it. The repo was at
 `SNAPSHOT_VERSION` 17 and `WASM_API_VERSION` 6 at the time. Everything here is pre-work text in the shape `phase-6-porous-electrodes.md` and
 `phase-7-dfn.md` use; where a slice note later contradicts it, **the slice note is the
-measurement and wins**. (**Slices 0, A, B, C and D have all landed and THIS PHASE IS COMPLETE.** The repo is at
-`SNAPSHOT_VERSION` 18; `WASM_API_VERSION` is unchanged at 6.)
+measurement and wins**. (**Slices 0, A, B, C and D have all landed and THIS PHASE IS COMPLETE.** The phase itself
+spent one bump and left the repo at `SNAPSHOT_VERSION` 18; it is at **19** now, spent after
+the phase closed by `docs/plans/plating-absence.md` — see slice A's row. `WASM_API_VERSION`
+is unchanged at 6.)
 
 ## Framing: this phase opens a bullet, and tests a principle
 
