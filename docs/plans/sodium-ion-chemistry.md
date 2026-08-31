@@ -287,6 +287,21 @@ Written after the engine ran. Everything above this heading is the pre-registrat
 | **P6** | **GREEN on the effect, and the rest length was the thing to get right.** Measured 18.36 mV, against a prediction of "about 20 mV" and a declared half-width of 20 mV; the shortfall is `gamma`, which crosses the loop asymptotically and gets 8.3 points of throughput about seven eighths of the way over. The warning in the prediction was not paranoid enough. A 900 s rest leaves 2.6 mV of the 365 s pair unrelaxed **in the same direction the loop pushes**, which is a fifth of the residual wearing the loop's name; the tests and both lessons rest for 3600 s. |
 | **P7** | **GREEN.** The gate ships, anchored on the datasheet's −10 °C floor and labelled. |
 
+### One miss in the pre-work, left standing above and corrected here
+
+The three-cell table above says this gauge **"corrects, and lands about 1.2 points out"**.
+That is wrong by a factor of two, and it is the same conflation that had to be fixed in
+`na_ion_gauge.rs`'s own doc comment: **1.21 points is the distance between the two
+BRANCHES** — a cell charged to 45 % against one discharged to it — and a gauge inverting the
+`[ocv]` table pays **one branch against the midline**, which is half of it. Measured: the
+estimate lands **0.494 points** below the truth, worth 9.4 mV on a curve reading 1.9100 V per
+unit of charge, against a declared half-width of 10.0 mV.
+
+The sentence stays above rather than being edited, because everything above the Results
+heading is the pre-registration and a corrected prediction is not a prediction. Two real
+quantities a factor of two apart, and the one a gauge pays is not the one the hysteresis test
+prints — which is exactly the kind of thing a pre-registration is for catching.
+
 ### What the two lessons ended up being about
 
 The plan said the lesson was the curve's slope, and it is, but the *second* step is not the
