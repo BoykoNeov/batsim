@@ -1070,9 +1070,11 @@ pub struct DiffusionParams {
 /// it in mind, because no fitted lead-acid constant exists: inventing one would both put
 /// Phase 8's exit criterion 3 in play and ship the unlabelled number the provenance rule
 /// forbids. Adding it later is a change to one file and no Rust.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HysteresisParams {
-    /// Half-width `M` \[V\] of the hysteresis loop. Must be finite and `> 0`.
+    /// Half-width `M` \[V\] of the hysteresis loop **where [`Self::width_over_soc`] reads
+    /// one**, which is everywhere on a chemistry that does not declare that table. Must be
+    /// finite and `> 0`.
     ///
     /// A fully charge-polarized cell rests at `OCV(soc) + M` and a fully discharge-
     /// polarized one at `OCV(soc) - M`, so the gap a datasheet or a GITT plot shows
@@ -1087,6 +1089,12 @@ pub struct HysteresisParams {
     /// full cell trip its own over-voltage limit, and one approaching the headroom at the
     /// bottom makes a rested empty cell look charged. For the chemistries this section
     /// exists for it is tens of millivolts against headroom of hundreds.
+    ///
+    /// **Since [`Self::width_over_soc`] exists, the quantity to size is the product**, and
+    /// the multiplied end is usually the bottom one — which is the end whose warning above
+    /// is about a cell *reading* wrong rather than *tripping*, and so the quieter of the
+    /// two. `chemistries/na_ion_18650_generic.toml` states its own headroom at both ends
+    /// for that reason; see `docs/plans/hysteresis-width-over-soc.md`.
     pub scale_v: f64,
     /// Rate `g` \[dimensionless\] at which `h` crosses the loop, per **fraction of the
     /// cell's capacity moved**. Must be finite and `> 0`.
@@ -1103,6 +1111,63 @@ pub struct HysteresisParams {
     /// so the transition occupies a legible fraction of a lesson's charge rather than
     /// fitted to anything - and any chemistry file using it has to say so.
     pub gamma: f64,
+    /// Optional multiplier on [`Self::scale_v`] against charge state (`[hysteresis.width_over_soc]`),
+    /// for a cell whose loop is not the same width everywhere.
+    ///
+    /// `None` - the default, and the case for every chemistry shipped before
+    /// `SNAPSHOT_VERSION` 20 - means one constant half-width over the whole range, which is
+    /// what this section meant when it was built.
+    ///
+    /// # The absence is a path, not a multiply by one
+    /// [`crate::ecm::hysteresis_half_width_v`] matches on this `Option` and returns
+    /// `scale_v` untouched for the `None` arm, so a chemistry without the table cannot move
+    /// by a ULP. Multiplying by an interpolated `1.0` would in fact be bit-identical here -
+    /// this engine's linear interpolation is `ys[lo] + frac*(ys[hi] - ys[lo])`, exactly
+    /// `1.0` when every entry is - but only by an argument a future edit could invalidate.
+    /// Compare [`crate::ecm::ecm_overpotential_v`]'s `None` arm, which is written the same
+    /// way for the same reason.
+    ///
+    /// # Why a multiplier and not a second column of volts
+    /// It reads the way a source states the quantity ("about 20 mV of loop above 35 %
+    /// charge, up to 80 mV below it" is a level and a ratio), and it keeps [`Self::scale_v`]
+    /// the number a reader looks up rather than a legacy field a table silently overrides.
+    #[serde(default)]
+    pub width_over_soc: Option<HysteresisWidth>,
+}
+
+/// How [`HysteresisParams::scale_v`] varies with charge state: a multiplier table over
+/// `soc`, linearly interpolated and clamped at the ends like every other table here.
+///
+/// # Why an explicit axis rather than the three-point one
+/// This engine has two idioms for a charge-indexed quantity: [`OcvTable`] and [`R0Table`],
+/// which carry their own breakpoints, and [`AgingParams::cal_soc_stress`], which is a bare
+/// array read at exactly 0.0 / 0.5 / 1.0. The second is the nearer of the two by *kind* - it
+/// is already a dimensionless multiplier over charge - and it is disqualified by one fact:
+/// the cell this was built for has its breakpoint at **35 %**, and a fixed 0/0.5/1.0 axis
+/// cannot put a knee there. Nothing else decided the shape.
+///
+/// # What it does not do
+/// It does not describe how *fast* the loop is crossed - that is [`HysteresisParams::gamma`],
+/// which stays one number - and it is not consulted by the BMS, which inverts the raw
+/// `volts` column and knows nothing about any of this. A cell whose loop widens where its
+/// curve is flat fools an estimator worst exactly there, and that gap is the feature design
+/// principle 8 asks for rather than a bug.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HysteresisWidth {
+    /// SOC breakpoints, strictly ascending. Same length as [`Self::mult`], non-empty.
+    pub soc: Vec<f64>,
+    /// Multiplier on [`HysteresisParams::scale_v`] at each breakpoint \[dimensionless\].
+    /// Each must be finite and `> 0`.
+    ///
+    /// # Positive at the breakpoints is enough, and that is not an approximation
+    /// Linear interpolation between two positive endpoints is positive at every point
+    /// between them, so checking the breakpoints bounds the whole curve - no interior
+    /// sampling, and no separate "the product never goes negative" claim to maintain.
+    ///
+    /// Zero is refused rather than allowed as "no loop here", because a cell with no loop
+    /// says so by not declaring `[hysteresis]` at all, and one meaning should not have two
+    /// spellings.
+    pub mult: Vec<f64>,
 }
 
 /// One RC (Thevenin) pair modelling a diffusion/charge-transfer overpotential.
@@ -1418,6 +1483,32 @@ impl ChemistryParams {
             for (what, value) in positive {
                 if !is_positive(value) || !value.is_finite() {
                     return Err(ChemistryError::NotPositive { what, value });
+                }
+            }
+            // The width table, when there is one. Same axis rules as every other table
+            // here; positivity is checked at the breakpoints only, which bounds the whole
+            // interpolant for the reason `HysteresisWidth::mult` gives. Still no
+            // cross-section check against the cut-offs, on the grounds the block above
+            // states - and the multiplied end binds *more* visibly, not less.
+            if let Some(w) = &h.width_over_soc {
+                if w.soc.is_empty() {
+                    return Err(ChemistryError::Empty("hysteresis.width_over_soc.soc"));
+                }
+                if w.soc.len() != w.mult.len() {
+                    return Err(ChemistryError::LengthMismatch {
+                        table: "hysteresis.width_over_soc",
+                        a: w.soc.len(),
+                        b: w.mult.len(),
+                    });
+                }
+                check_strictly_ascending("hysteresis.width_over_soc.soc", &w.soc)?;
+                for m in &w.mult {
+                    if !is_positive(*m) || !m.is_finite() {
+                        return Err(ChemistryError::NotPositive {
+                            what: "hysteresis.width_over_soc.mult",
+                            value: *m,
+                        });
+                    }
                 }
             }
         }

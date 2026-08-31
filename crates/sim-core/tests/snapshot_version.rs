@@ -21,16 +21,16 @@
 //!
 //! # The pair moves with the bump, rather than being renumbered
 //! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13, v13 -> v14,
-//! v14 -> v15, v15 -> v16, v16 -> v17 and v17 -> v18, each time carrying an assertion that
-//! a later bump needs its own pair. This is the v18 -> v19 pair, and it was re-argued
-//! rather than renamed.
+//! v14 -> v15, v15 -> v16, v16 -> v17, v17 -> v18 and v18 -> v19, each time carrying an
+//! assertion that a later bump needs its own pair. This is the v19 -> v20 pair, and it was
+//! re-argued rather than renamed.
 //!
-//! **The v17 -> v18 pair could not be kept alongside this one**, on the same terms every
+//! **The v18 -> v19 pair could not be kept alongside this one**, on the same terms every
 //! retirement here has been made: [`retagged`] fabricates a stale blob by writing *this
 //! build's* bytes under a fake tag, and the only tag those bytes can honestly wear is the
-//! previous version's, not one two back. What is different this time is that the
-//! retirement is **not** structural — see the v19 section below, which is the first bump in
-//! this file's history where the fixture's bytes do not change at all.
+//! previous version's, not one two back. As at the last bump the retirement is **not**
+//! structural — see the v20 section below, which is the second bump running where the
+//! fixture's bytes do not change at all.
 //!
 //! # v19: the fixture's bytes do not move, and the version field is the only thing left
 //! v19 changes `SafetyParams`, not the cell state: `t_plating_min_k` and
@@ -51,7 +51,25 @@
 //! A pack whose chemistry *does* carry `[safety]` is the other half, and it is a
 //! field-level measurement rather than a claim:
 //! [`a_v18_shaped_safety_section_does_not_parse_at_v19`]. What it found is that loudness
-//! there is **value-dependent**, which is a property no earlier bump in this file has had.
+//! there is **value-dependent**, which is a property no earlier bump in this file had had.
+//!
+//! # v20: the same shape a second time, and the deciding byte is in the next field
+//! v20 appends `width_over_soc` to `HysteresisParams`, so a cell whose resting-voltage
+//! memory is wider at one end of its range than the other can say so. See
+//! `docs/plans/hysteresis-width-over-soc.md`.
+//!
+//! This fixture's chemistry has **`hysteresis: None`**, so once again its bytes do not move
+//! and the pair below is the real case rather than a fabrication — the second bump running
+//! where that is true, which is a fact about the fixture and not a trend.
+//!
+//! The other half is [`a_v19_shaped_hysteresis_section_does_not_parse_at_v20`], and it is
+//! value-dependent like v19's, for a **different** reason worth keeping the two apart for.
+//! At v19 the deciding byte was the low mantissa byte of a number *inside* the section that
+//! changed. At v20 the new field is appended at the section's end, so the byte the reader
+//! takes as its presence tag belongs to the **next field of the enclosing struct** —
+//! `ChemistryParams::aging`, itself an `Option`. Whether a stale blob is loud is therefore
+//! decided by whether the chemistry ages, which is not a property of the section that
+//! changed at all.
 //!
 //! # v16 is the first bump since v11 whose stale blob stays aligned, and the failure is
 //! # silent rather than loud
@@ -255,36 +273,37 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in.** Read the module's v19 section: the fixture
-/// chemistry has no `[safety]`, so a v18 build's snapshot of this pack has exactly these
-/// bytes, and "what a real stale blob does here" is answered by this test rather than
-/// deferred to a field-level sibling. The sibling
-/// [`a_v18_shaped_safety_section_does_not_parse_at_v19`] answers the *other* case — a
-/// chemistry that does carry `[safety]` — and the two answers differ, which is why both
-/// exist.
+/// **At this bump the retag is not a stand-in, for the second time running.** Read the
+/// module's v20 section: the fixture chemistry has no `[hysteresis]` at all, so the field
+/// v20 adds sits inside an `Option` that is absent, a v19 build's snapshot of this pack has
+/// exactly these bytes, and "what a real stale blob does here" is answered by this test.
+/// The sibling [`a_v19_shaped_hysteresis_section_does_not_parse_at_v20`] answers the *other*
+/// case — a chemistry that does carry the section — and the two answers differ, which is
+/// why both exist.
 #[test]
-fn the_version_field_is_what_rejects_a_v18_snapshot() {
+fn the_version_field_is_what_rejects_a_v19_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 19,
-        "this test is written against the v18 -> v19 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 20,
+        "this test is written against the v19 -> v20 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
          the new layout is a fact about that layout change, and the answer has flipped \
          across this file's history — v15 'it does not parse at all', v16 'it parses, \
          wrongly and silently', v17 and v18 back to 'it does not parse at all', and v19 \
-         'for this fixture it parses fine and the version field is all there is'. A \
-         renumbered assertion cannot inherit any of them, and a run of two identical \
-         answers is not a rule."
+         and v20 'for this fixture it parses fine and the version field is all there \
+         is'. A renumbered assertion cannot inherit any of them, and a run of two \
+         identical answers is not a rule — it is two layout changes that happened not to \
+         touch this fixture, which is a fact about the fixture."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 18);
+    let stale = retagged(&bytes, 19);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 18,
+            found: 19,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v18-tagged snapshot must be refused"
+        "a v19-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -442,7 +461,7 @@ fn a_v17_shaped_cell_state_does_not_parse_at_v18() {
 /// A v18-shaped `[safety]` section at v19: **loud for the values every shipped file
 /// carries, and quiet for values none of them do.**
 ///
-/// The sibling of [`the_version_field_is_what_rejects_a_v18_snapshot`], which answers this
+/// The sibling of [`the_version_field_is_what_rejects_a_v19_snapshot`], which answers this
 /// question for a chemistry with **no** `[safety]` section — there the bytes do not change
 /// at all and the version check is the only refusal available. This is the other case, and
 /// the answer is different, so both are measured rather than one being inferred from the
@@ -539,4 +558,98 @@ fn a_v18_shaped_safety_section_does_not_parse_at_v19() {
     assert_eq!(safety.t_plating_min_k, Some(273.15));
     assert_eq!(safety.plating_c_threshold, Some(0.4));
     assert_eq!(safety.plating_fade_per_ah, 2.0e-4);
+}
+
+/// A v19-shaped `[hysteresis]` section at v20: **loud for a chemistry that declares
+/// `[aging]`, quiet for one that does not** — and the byte that decides is not inside the
+/// hysteresis section at all.
+///
+/// The sibling of [`the_version_field_is_what_rejects_a_v19_snapshot`], which answers the
+/// case where the chemistry has no `[hysteresis]` and the bytes therefore do not change.
+/// This is the other case, and as at v19 the answer differs, so both are measured.
+///
+/// v20 appends `width_over_soc: Option<HysteresisWidth>` to a struct that was two bare
+/// `f64`. `bincode` writes struct fields positionally with no framing, so the tag the v20
+/// reader looks for immediately after `gamma` is whatever the v19 writer put there — and
+/// that is [`sim_core::ChemistryParams::aging`]'s own presence tag, because `aging` is the
+/// very next field of the enclosing struct. So:
+///
+/// * **`[aging]` present** writes `1`. The reader takes it as "there is a width table" and
+///   tries to read a `Vec<f64>` length out of the first eight bytes of the aging section,
+///   which is a `f64` and therefore an absurd count. Loud.
+/// * **`[aging]` absent** writes `0`. The reader takes it as "no width table" and moves on,
+///   having consumed a byte that belonged to the field after it — so every remaining field
+///   of the chemistry has slid by one. Quiet, in the v16 sense.
+///
+/// Of the two shipped files that declare `[hysteresis]`, `na_ion_18650_generic` is the first
+/// case and `nimh_subc_3ah_generic` the second, which is why neither direction is a
+/// hypothetical.
+///
+/// **This is the field, not a snapshot**, on the same terms as its siblings above: there is
+/// no non-guessing way to locate the chemistry's offset inside a blob, so no wider claim is
+/// made here or in the version note.
+#[test]
+fn a_v19_shaped_hysteresis_section_does_not_parse_at_v20() {
+    // The tail of a v19 chemistry from `hysteresis` onward, in declaration order:
+    // `scale_v`, `gamma`, then `aging`, then `safety`. Everything after `gamma` belongs to
+    // the enclosing struct and is exactly what makes this test interesting.
+    let v19 = |aging: Option<sim_core::AgingParams>| {
+        bincode::serialize(&(
+            0.010_f64,
+            25.0_f64,
+            aging,
+            None::<sim_core::chem::SafetyParams>,
+        ))
+        .expect("a v19-shaped chemistry tail serializes")
+    };
+    // What the reader expects at v20: the same tail with one more `Option` at the front of
+    // it. Note there is no `safety` here — the reader has one field fewer to find because
+    // the extra tag ate one.
+    type V20Tail = (sim_core::HysteresisParams, Option<sim_core::AgingParams>);
+
+    // --- the loud case: a chemistry that ages.
+    let aging = sim_core::AgingParams {
+        cal_pre_exp: 1.0e4,
+        cal_ea_j_per_mol: 5.0e4,
+        cal_soc_stress: vec![1.0, 1.0, 1.4],
+        cyc_fade_per_ah: 2.0e-5,
+        cyc_dod_stress_exp: 1.1,
+        r_growth_per_capacity_loss: 1.5,
+    };
+    let parsed: Result<V20Tail, _> = bincode::deserialize(&v19(Some(aging)));
+    assert!(
+        parsed.is_err(),
+        "a v19 hysteresis section followed by an [aging] section must fail at v20: the \
+         aging tag is read as 'there is a width table' and the table's length prefix comes \
+         out of a f64"
+    );
+
+    // --- the quiet case: a chemistry with no [aging], which is the NiMH file. The parse
+    // succeeds, reports no width table, and has silently eaten the tag belonging to the
+    // field after it.
+    let quiet: V20Tail = bincode::deserialize(&v19(None)).expect(
+        "with no [aging] the stale tail parses — if this ever errors, the value-dependence \
+         documented above and in the v20 SNAPSHOT_VERSION note has gone away and both \
+         should be corrected rather than quietly left",
+    );
+    assert!(
+        quiet.0.width_over_soc.is_none(),
+        "the aging tag has been read as an absent width table"
+    );
+    assert_eq!(quiet.0.scale_v, 0.010, "the two old fields are unmoved");
+    assert_eq!(quiet.0.gamma, 25.0);
+    assert!(
+        quiet.1.is_none(),
+        "and `aging` has been filled from `safety`'s tag, which is the slide that makes \
+         this the v16 hazard rather than a harmless default"
+    );
+
+    // The positive control, so the failure above is a layout change rather than a broken
+    // fixture: the same two numbers plus an explicit absent table are a v20 section.
+    let v20 = bincode::serialize(&(0.010_f64, 25.0_f64, None::<sim_core::HysteresisWidth>))
+        .expect("a v20-shaped hysteresis section serializes");
+    let params: sim_core::HysteresisParams =
+        bincode::deserialize(&v20).expect("that is exactly a v20 HysteresisParams");
+    assert_eq!(params.scale_v, 0.010);
+    assert!(params.width_over_soc.is_none());
 }

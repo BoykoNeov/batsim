@@ -393,7 +393,49 @@ use crate::{Demand, Env, Telemetry};
 /// `sim_server::API_VERSION` and `sim-wasm`'s constant both stay put: no call signature
 /// changes, no telemetry field moves, and the only difference a client can see is a
 /// chemistry file that omits two keys.
-pub const SNAPSHOT_VERSION: u32 = 19;
+///
+/// v20 (the hysteresis loop stops being one width): [`crate::HysteresisParams`] gains
+/// `width_over_soc`, an optional [`crate::HysteresisWidth`] multiplier table over charge
+/// state, and the chemistry is serialized inside the snapshot, so the change is in the
+/// bytes.
+///
+/// **What it buys.** A cell whose resting-voltage memory is wider at one end of its range
+/// than the other can say so. `chemistries/na_ion_18650_generic.toml` is that cell: its
+/// source measures roughly 20 mV of loop above 35 % charge and up to 80 mV below it, and
+/// one scalar could express neither shape nor both numbers, so the file shipped the
+/// upper-range figure and a note admitting it understated the rest. See
+/// `docs/plans/hysteresis-width-over-soc.md`.
+///
+/// **Semantic for exactly one shipped chemistry, and structural for every other.** The
+/// sodium-ion cell's trajectories move wherever a run goes below 35 % charge — that is the
+/// point of the bump, and it is argued rather than incidental: a shipped parameter file was
+/// contradicting the source it was fitted from. Every other file takes a `match` arm that
+/// never multiplies ([`crate::ecm::hysteresis_half_width_v`]'s `None`), so it cannot move by
+/// a ULP whether or not it declares `[hysteresis]` — the NiMH cell declares one and is
+/// unmoved. Neither of the two guided-path scenarios on the sodium-ion cell moves either:
+/// both run between 60 % and 51.67 % charge, where the multiplier is exactly one.
+///
+/// **The stale-blob loudness is value-dependent again, and for a new reason.** The tag for
+/// the new `Option` is written immediately before [`crate::ChemistryParams::aging`], itself
+/// an `Option`, so a v19 blob read at v20 offers `aging`'s presence byte where the width
+/// table's is expected:
+///
+/// * A chemistry **with** `[aging]` supplies a `1`, the reader tries to parse two
+///   `Vec<f64>` out of aging's leading floats, and the length prefix it finds is absurd —
+///   loud.
+/// * A chemistry **without** one supplies a `0`, the width reads as absent, and the shift
+///   cascades into the fields after it instead. Of the shipped files with `[hysteresis]`,
+///   `na_ion_18650_generic` is the first case and `nimh_subc_3ah_generic` the second.
+///
+/// Measured, not reasoned about, in
+/// `snapshot_version.rs::a_v19_shaped_hysteresis_section_does_not_parse_at_v20`. As at v19,
+/// nothing shipped is at risk either way, because the version check refuses every stale
+/// blob before a field is read.
+///
+/// `sim_server::API_VERSION` and `sim-wasm`'s constant both stay put once more: no call
+/// signature changes, no telemetry field moves, and the only difference a client can see is
+/// a chemistry file that carries one more optional sub-table.
+pub const SNAPSHOT_VERSION: u32 = 20;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///

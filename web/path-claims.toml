@@ -10014,8 +10014,12 @@ steps = [
   "still-wrong-and-it-has-stopped", # 7 numbers, and six of them are claims: three rows of
                      # this cell's panel unmoved since the last mark, and three of the
                      # control's, one of which is READ AT THE PREVIOUS STEP'S MARK off this
-                     # step's own arm rather than reached for next door. The seventh is the
-                     # half-width of the hysteresis loop, straight off the chemistry file
+                     # step's own arm rather than reached for next door. The seventh is
+                     # `scale_v`, straight off the chemistry file. Called "the half-width of
+                     # the loop" here until v20, which stopped being the same sentence when
+                     # `[hysteresis.width_over_soc]` landed: `scale_v` is now the half-width
+                     # WHERE THAT MULTIPLIER READS ONE, and this run sits where it does. The
+                     # prose was already safe - it names the field - and this comment was not
 ]
 # Not scanned, and why. THIS LIST IS EMPTY for the first time, which is what the
 # thirty-one entries above amount to: every step of the guided path now has its whole

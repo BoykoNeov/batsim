@@ -774,3 +774,179 @@ fn shipped_runaway_coefficients_burn_at_a_plausible_scale() {
         );
     }
 }
+
+/// A `[hysteresis]` section with a width table, in the shape a chemistry file writes it,
+/// loads and reads back the way the section documents.
+///
+/// The `[ocv]` slot of the fixture is where the extra section goes, because TOML tables may
+/// be written in any order and the sub-table only has to follow its parent.
+#[test]
+fn a_hysteresis_width_table_loads() {
+    let text = chemistry_with_ocv(
+        r#"
+[ocv]
+soc   = [0.0, 1.0]
+volts = [3.0, 4.2]
+
+[hysteresis]
+scale_v = 0.010
+gamma   = 25.0
+
+[hysteresis.width_over_soc]
+soc  = [0.00, 0.35, 1.00]
+mult = [4.00, 1.00, 1.00]
+"#,
+    );
+    let chem = parse_chemistry(&text).expect("a width table should load and validate");
+    let w = chem
+        .hysteresis
+        .as_ref()
+        .expect("the fixture declares [hysteresis]")
+        .width_over_soc
+        .as_ref()
+        .expect("and a width table under it");
+    assert_eq!(w.soc, vec![0.00, 0.35, 1.00]);
+    assert_eq!(w.mult, vec![4.00, 1.00, 1.00]);
+}
+
+/// The width table's axis rules are the axis rules every other table here keeps, and its
+/// multipliers must be positive at the breakpoints.
+///
+/// **Positive at the breakpoints is the whole check, and that is not an approximation.**
+/// Linear interpolation between two positive endpoints is positive everywhere between them,
+/// so there is no interior sampling to do and no separate "the product never goes negative"
+/// claim to keep true. Zero is refused rather than read as "no loop here": a cell with no
+/// loop says so by not declaring `[hysteresis]`, and one meaning should not have two
+/// spellings.
+///
+/// What is deliberately **not** checked, on the grounds the `[diffusion]` block states: any
+/// relation between the resulting half-width and `cell.v_min` / `cell.v_max`. A badly sized
+/// table binds visibly, in volts, in the telemetry.
+#[test]
+fn a_malformed_hysteresis_width_table_is_rejected() {
+    let with = |table: &str| {
+        chemistry_with_ocv(&format!(
+            r#"
+[ocv]
+soc   = [0.0, 1.0]
+volts = [3.0, 4.2]
+
+[hysteresis]
+scale_v = 0.010
+gamma   = 25.0
+
+[hysteresis.width_over_soc]
+{table}
+"#
+        ))
+    };
+    for (what, table) in [
+        (
+            "mismatched lengths",
+            "soc = [0.0, 0.5, 1.0]\nmult = [2.0, 1.0]",
+        ),
+        ("an empty axis", "soc = []\nmult = []"),
+        (
+            "a descending axis",
+            "soc = [0.0, 0.5, 0.25]\nmult = [2.0, 1.0, 1.0]",
+        ),
+        (
+            "a repeated breakpoint",
+            "soc = [0.0, 0.5, 0.5]\nmult = [2.0, 1.0, 1.0]",
+        ),
+        ("a zero multiplier", "soc = [0.0, 1.0]\nmult = [0.0, 1.0]"),
+        (
+            "a negative multiplier",
+            "soc = [0.0, 1.0]\nmult = [-2.0, 1.0]",
+        ),
+        (
+            "a non-finite multiplier",
+            "soc = [0.0, 1.0]\nmult = [nan, 1.0]",
+        ),
+    ] {
+        let err = parse_chemistry(&with(table))
+            .expect_err(&format!("{what} in a width table must be refused"));
+        assert!(
+            matches!(err, DataError::Invalid(_)),
+            "{what}: expected a validation error, got {err:?}"
+        );
+    }
+}
+
+/// **Exactly one shipped chemistry carries a width table, and it is the one v20 was made
+/// for.**
+///
+/// The v18 sibling above, one bump on, and the half about *absence* exists for the same
+/// reason: the absence is a *path* in the engine
+/// ([`sim_core::ecm::hysteresis_half_width_v`]'s `None` arm) rather than a multiply by one,
+/// so an absence here is what makes "no existing trajectory moved across v20" structural
+/// instead of measured.
+///
+/// Written as an equality over **every** shipped file rather than as a list of the files
+/// that predate the bump, because the interesting file is a moving target: the one that
+/// matters today is `nimh_subc_3ah_generic`, the only other file declaring `[hysteresis]`,
+/// whose `scale_v` is a cited class figure with no charge-dependence behind it — a table
+/// there would be the unlabelled constant the provenance rule forbids and every trajectory
+/// in `nimh_chemistry.rs` would move. But a file added tomorrow is guarded by the same
+/// sentence without anyone remembering to add it, and the equality also pins the *positive*
+/// half: if the sodium-ion table were dropped, this fails too rather than passing more
+/// easily.
+#[test]
+fn exactly_one_chemistry_carries_a_hysteresis_width_table() {
+    let mut with_table = Vec::new();
+    let mut with_section = Vec::new();
+    for (id, text) in SHIPPED_CHEMISTRIES {
+        let chem = parse_chemistry(text).unwrap_or_else(|e| panic!("{id} should load: {e}"));
+        if let Some(hyst) = chem.hysteresis.as_ref() {
+            with_section.push(*id);
+            if hyst.width_over_soc.is_some() {
+                with_table.push(*id);
+            }
+        }
+    }
+    assert_eq!(
+        with_table,
+        vec!["na_ion_18650_generic"],
+        "exactly the cell the bump was argued for may declare          [hysteresis.width_over_soc]; every other file must take the `None` arm"
+    );
+    // Without this the assertion above would also pass if a file stopped declaring
+    // `[hysteresis]` at all, which is a different change wearing the same green.
+    assert_eq!(
+        with_section,
+        vec!["na_ion_18650_generic", "nimh_subc_3ah_generic"],
+        "the set of files declaring [hysteresis] has changed, so the guard above is no          longer about the files it was written for"
+    );
+}
+
+/// Every chemistry file this repo ships, in id order, for the sweeps that must not silently
+/// stop covering a file someone adds.
+const SHIPPED_CHEMISTRIES: &[(&str, &str)] = &[
+    (
+        "lfp_26650_generic",
+        include_str!("../../../chemistries/lfp_26650_generic.toml"),
+    ),
+    (
+        "lto_20ah_generic",
+        include_str!("../../../chemistries/lto_20ah_generic.toml"),
+    ),
+    (
+        "na_ion_18650_generic",
+        include_str!("../../../chemistries/na_ion_18650_generic.toml"),
+    ),
+    (
+        "nimh_subc_3ah_generic",
+        include_str!("../../../chemistries/nimh_subc_3ah_generic.toml"),
+    ),
+    (
+        "nmc_18650_generic",
+        include_str!("../../../chemistries/nmc_18650_generic.toml"),
+    ),
+    (
+        "nmc_21700_lgm50",
+        include_str!("../../../chemistries/nmc_21700_lgm50.toml"),
+    ),
+    (
+        "pba_agm_2v_generic",
+        include_str!("../../../chemistries/pba_agm_2v_generic.toml"),
+    ),
+];

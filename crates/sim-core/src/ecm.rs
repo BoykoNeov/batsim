@@ -26,7 +26,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::chem::{ChemistryParams, DfnParams, OcvTable, R0Table, SpmParams};
+use crate::chem::{ChemistryParams, DfnParams, HysteresisParams, OcvTable, R0Table, SpmParams};
 use crate::dfn::{self, DfnState};
 use crate::flags::EventFlags;
 use crate::spm::{self, SpmState};
@@ -328,9 +328,10 @@ impl CellModel {
     /// # Why this is a method rather than a hoisted table lookup
     /// Through v17 the pack read `ocv_lookup(chem.ocv, 1.0)` once per step for every cell,
     /// because the endpoint was a property of the chemistry alone. At v18 it is a property
-    /// of the *cell*: [`crate::HysteresisParams`] displaces the source by up to `scale_v`
-    /// and [`crate::OcvTable::t_ref_k`] by the coefficient times the cell's own
-    /// temperature excursion, and a cell being force-fed at the top of its window is
+    /// of the *cell*: [`crate::HysteresisParams`] displaces the source by up to
+    /// [`hysteresis_half_width_v`] at that cell's charge state — which since v20 need not be
+    /// the same number everywhere — and [`crate::OcvTable::t_ref_k`] by the coefficient
+    /// times the cell's own temperature excursion, and a cell force-fed at the top of its window is
     /// displaced the most. A hoisted lookup would under-book that heat on exactly the
     /// chemistry these terms were built for.
     ///
@@ -1019,9 +1020,35 @@ pub(crate) fn ecm_overpotential_v(state: &EcmState, chem: &ChemistryParams) -> f
     };
     // Sign: `h` is +1 after a charge, and the source is `OCV - this`, so a charged cell
     // must displace the overpotential *down* to rest above its table value.
+    //
+    // The half-width is read at `state.soc` — the *same* start-of-step charge state the
+    // memory `h` beside it was left at, which is what `advance_cell` orders its two updates
+    // to guarantee. Reading the width one step later would pair a width with a memory from
+    // a different instant, and on a wide table that difference is millivolts.
     match &chem.hysteresis {
         None => with_diffusion,
-        Some(params) => with_diffusion - params.scale_v * state.hysteresis,
+        Some(params) => {
+            with_diffusion - hysteresis_half_width_v(params, state.soc) * state.hysteresis
+        }
+    }
+}
+
+/// The hysteresis loop's half-width `M` \[V\] at a given charge state: the section's
+/// [`crate::HysteresisParams::scale_v`], times its optional
+/// [`crate::HysteresisWidth`] table where it declares one.
+///
+/// # The `None` arm returns `scale_v`, it does not multiply by one
+/// Written as a match for the reason [`ecm_overpotential_v`]'s own `None` arm is: the
+/// multiply would be bit-identical (an all-ones table interpolates to exactly `1.0`, and
+/// `x * 1.0` is exact), but only by an argument about this function's arithmetic that a
+/// future edit could invalidate without failing anything. A path that never touches the
+/// table at all makes "no chemistry without `[hysteresis.width_over_soc]` moves by a ULP"
+/// structural instead.
+#[must_use]
+pub fn hysteresis_half_width_v(params: &HysteresisParams, soc: f64) -> f64 {
+    match &params.width_over_soc {
+        None => params.scale_v,
+        Some(w) => params.scale_v * interp1(&w.soc, &w.mult, soc),
     }
 }
 

@@ -213,12 +213,15 @@ fade_per_ah = 2.2e-3
 # the origin of it: refitting under the per-leg-normalised alignment gives a mean separation
 # of 19.2 mV, which is the agreement that also picks that alignment out of the three.
 #
-# KNOWN AND NOT EXPRESSIBLE: the measured loop is SOC-DEPENDENT by a factor of three or
-# four -- about 20 mV above 35 % SOC and up to 80 mV below it, where the OCV curve flattens.
-# scale_v is a single scalar, so this file necessarily UNDERSTATES the loop in the bottom
-# third of the range. Saying it properly needs a table or a second coefficient, i.e. a
-# schema change and a snapshot version bump, and nothing else shipped wants one. Recorded as
-# a principle-10 finding in docs/plans/sodium-ion-chemistry.md rather than fixed here.
+# THE LOOP IS NOT ONE WIDTH, and since SNAPSHOT_VERSION 20 this file can say so. See
+# [hysteresis.width_over_soc] below for the shape and for which parts of it are cited.
+# scale_v is now the half-width WHERE THAT MULTIPLIER READS ONE, which on this cell is
+# everywhere at or above 35 % charge -- so the number below is unchanged in value and in
+# meaning, and every measurement quoted above still describes it.
+#
+# Until v20 this section could hold only one scalar, so this file shipped the upper-range
+# figure and a note saying it understated the bottom third. That note is what
+# docs/plans/hysteresis-width-over-soc.md was built to remove.
 [hysteresis]
 scale_v = 0.010
 # provenance: PLACEHOLDER, and the one number in this section that is not sourced at all,
@@ -227,6 +230,42 @@ scale_v = 0.010
 # 25.0 is the same value the NiMH file uses, and puts a reversed cell about 92 % of the way
 # across the loop after 10 % of its capacity has moved. TODO fit.
 gamma   = 25.0
+
+# How the half-width varies with charge state: a multiplier on scale_v, interpolated
+# linearly and clamped outside the breakpoints.
+#
+# provenance: TWO LEVELS AND A BREAKPOINT ARE CITED, THE SHAPE BETWEEN THEM IS NOT.
+#
+# Cited, from the same source's analysis of its own data quoted for scale_v above: the loop
+# is about 20 mV wide above 35 % charge and reaches up to about 80 mV below it. 80/20 = 4 is
+# therefore the multiplier at the wide end, and 0.35 is the breakpoint; both come from the
+# source rather than from this file.
+#
+# INTERPOLATED, and labelled as such: "up to 80 mV" is a PEAK, not a plateau. The source
+# does not say where in the bottom band the loop is widest. This file takes the monotone
+# reading -- a linear rise from 1 at the breakpoint to the cited maximum at the empty
+# endpoint -- because it is the one shape that reads "up to" without adding a claim nobody
+# made. A step to 4 across the whole band would assert a plateau; a hump inside it would
+# assert a location. TODO: fit the shape, which needs the ~30 MB source runs back;
+# tools/reference/fit_na_ion_hakadi.py reports the loop's mean/min/max and not where in the
+# range the maximum sits.
+#
+# ONE THING THAT IS OFTEN SAID ABOUT THIS AND IS WRONG FOR THIS CELL: the widening is not
+# happening "where the curve flattens". Measured between adjacent [ocv] breakpoints above,
+# this curve is FLATTEST at 7.0 mV per point across 25-35 % charge and STEEPEST at 51.8 mV
+# per point across 0-2 % -- so the bottom of the range is the steepest part of the whole
+# curve and the flat shelf sits just ABOVE the breakpoint. If a refit ever finds the loop
+# widest on that shelf instead, this shape moves and only the two cited levels survive.
+#
+# SIZING, which the validator deliberately does not do (see crate::HysteresisParams::scale_v):
+# the quantity to size is now the PRODUCT. At the empty endpoint the half-width is
+# 0.010 * 4 = 40 mV, so a rested discharge-polarized empty cell sits at OCV(0) - 0.040 =
+# 1.9486 V, which is 449 mV clear of this cell's 1.50 V cutoff. At full the multiplier is 1
+# and nothing about the top of the range changes: OCV(1) + 0.010 = 4.0924 V, 58 mV inside
+# v_max, which is the gap the release-band argument at v_max is about.
+[hysteresis.width_over_soc]
+soc  = [0.00, 0.35, 1.00]
+mult = [4.00, 1.00, 1.00]
 
 [thermal]
 # provenance: placeholder, scaled from the NMC 18650 file's 55.0 J/K by measured mass -- the

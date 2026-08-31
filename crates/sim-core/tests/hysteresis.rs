@@ -20,11 +20,12 @@
 //! clamp, which `phase-8-slice-c-spike.md` measured produces a peak-and-fall all by itself.
 
 use sim_core::chem::{
-    CellLimits, ChemMeta, ChemistryParams, HysteresisParams, OcvTable, R0Table, RcPair,
-    ReversalParams, ThermalParams,
+    CellLimits, ChemMeta, ChemistryParams, HysteresisParams, HysteresisWidth, OcvTable, R0Table,
+    RcPair, ReversalParams, ThermalParams,
 };
 use sim_core::{
-    ecm::hysteresis_update, CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig,
+    ecm::{hysteresis_half_width_v, hysteresis_update},
+    CellModelConfig, Demand, Env, Pack, PackConfig, Scatter, ThermalConfig,
 };
 
 /// Cell capacity \[Ah\], so 1 C is 2.0 A.
@@ -38,6 +39,11 @@ const GAMMA: f64 = 40.0;
 /// The test entropy coefficient \[V/K\]. Round, and an order above a real one, so the
 /// correction is separable from an `R0` change by inspection.
 const DOCV_DT: f64 = -1.0e-3;
+/// Where the width table's knee sits. Round and well clear of both ends, so an arm can meet
+/// itself on either side of it without approaching a clamp.
+const KNEE: f64 = 0.50;
+/// How much wider the loop is at the empty endpoint than at the knee.
+const WIDE_MULT: f64 = 3.0;
 
 fn env() -> Env {
     Env {
@@ -108,6 +114,23 @@ fn with_hysteresis() -> ChemistryParams {
         hysteresis: Some(HysteresisParams {
             scale_v: M_V,
             gamma: GAMMA,
+            width_over_soc: None,
+        }),
+        ..base_chem()
+    }
+}
+
+/// The same cell with a width table: the loop is `WIDE_MULT` times wider at empty than at
+/// `KNEE` charge and above, which is the shape `SNAPSHOT_VERSION` 20 exists for.
+fn with_width_table(mult: &[f64]) -> ChemistryParams {
+    ChemistryParams {
+        hysteresis: Some(HysteresisParams {
+            scale_v: M_V,
+            gamma: GAMMA,
+            width_over_soc: Some(HysteresisWidth {
+                soc: vec![0.0, KNEE, 1.0],
+                mult: mult.to_vec(),
+            }),
         }),
         ..base_chem()
     }
@@ -502,5 +525,140 @@ fn a_snapshot_taken_after_a_rest_restores_onto_the_same_trajectory() {
         let b = restored.step(1.0, demand, &env());
         assert_eq!(a.v_terminal, b.v_terminal, "step {k}");
         assert_eq!(a.q_gen_w, b.q_gen_w, "step {k}");
+    }
+}
+
+/// **The v20 headline: the same cell's loop is wider at one end of its range than the
+/// other, and the width is read at the charge state the memory is read at.**
+///
+/// Two meeting points, one either side of the table's knee, each reached by two arms that
+/// moved *identical* charge in opposite directions. That symmetry is what makes the
+/// comparison a measurement of the table and nothing else: the state `h` each arm settles
+/// at depends only on how much charge passed through it and on `gamma`, so it is the same
+/// magnitude at both meeting points and cancels out of the ratio. What is left is the
+/// multiplier.
+///
+/// The arms below the knee travel through a *varying* half-width on their way, and that is
+/// deliberately not visible in the answer: the resting voltage is `OCV(soc) ∓ M(soc)·h`, and
+/// neither `soc` (a coulomb count) nor `h` (a function of charge moved) depends on `M` at
+/// all. A reading that did depend on the path would mean the width had leaked into the
+/// state, which is the failure this test would catch.
+#[test]
+fn the_loop_is_wider_where_the_table_says_it_is() {
+    /// Charge moved by each arm, as a fraction of capacity. The same for all four so the
+    /// saturation factor is shared.
+    const DZ: f64 = 0.15;
+    let secs = (DZ * 3600.0) as usize; // at 1 C
+
+    let chem = with_width_table(&[WIDE_MULT, 1.0, 1.0]);
+    // Both arms meet at `soc`, one arriving from above and one from below.
+    let loop_width = |chem: &ChemistryParams, soc: f64| {
+        let mut down = Pack::new(&config(soc + DZ, ROOM_K), chem.clone()).expect("pack builds");
+        let mut up = Pack::new(&config(soc - DZ, ROOM_K), chem.clone()).expect("pack builds");
+        drive(&mut down, Demand::Current(CAP_AH), secs);
+        drive(&mut up, Demand::Current(-CAP_AH), secs);
+        // An hour is 360 time constants of this fixture's only RC pair, so what is left is
+        // the memory and not the relaxation.
+        let v_down = drive(&mut down, Demand::Rest, 3600);
+        let v_up = drive(&mut up, Demand::Rest, 3600);
+        let (s_down, s_up) = (
+            down.step(0.0, Demand::Rest, &env()).soc_true,
+            up.step(0.0, Demand::Rest, &env()).soc_true,
+        );
+        // The two arms must actually have met, or a voltage gap is an SOC gap in disguise.
+        assert!(
+            (s_down - s_up).abs() < 1e-12 && (s_down - soc).abs() < 1e-12,
+            "arms did not meet at {soc}: {s_down} vs {s_up}"
+        );
+        v_up - v_down
+    };
+
+    // How far across the loop `DZ` of charge carries a cell that started at `h = 0`.
+    let crossed = 1.0 - (-GAMMA * DZ).exp();
+    let above = loop_width(&chem, KNEE + 0.25);
+    let below = loop_width(&chem, KNEE - 0.25);
+
+    // Above the knee the multiplier is one, so this must be the width the bare section
+    // gives — which is the claim that `scale_v` did not change meaning.
+    let bare = loop_width(&with_hysteresis(), KNEE + 0.25);
+    assert!(
+        (above - bare).abs() < 1e-12,
+        "above the knee the table must be inert: {above} vs {bare} without it"
+    );
+    assert!(
+        (above - 2.0 * M_V * crossed).abs() < 1e-9,
+        "above the knee: {above}, expected {}",
+        2.0 * M_V * crossed
+    );
+    // Halfway between the endpoint and the knee, so the interpolated multiplier is halfway
+    // between `WIDE_MULT` and one. Spelled as the interpolation rather than as a literal,
+    // so that moving the fixture's constants cannot leave a stale expectation behind.
+    let mult_below = 1.0 + (WIDE_MULT - 1.0) * 0.5;
+    assert!(
+        (below - 2.0 * M_V * mult_below * crossed).abs() < 1e-9,
+        "below the knee: {below}, expected {}",
+        2.0 * M_V * mult_below * crossed
+    );
+    assert!(
+        (below / above - mult_below).abs() < 1e-9,
+        "the ratio of the two loops must be the multiplier itself: {}",
+        below / above
+    );
+}
+
+/// **A table of all ones is the same bits as no table at all**, which is what makes the new
+/// term a generalisation of the old one rather than a second code path beside it.
+///
+/// This is the perturbation that has to go *green*. `hysteresis_half_width_v` returns
+/// `scale_v` untouched on the `None` arm rather than multiplying by an interpolated one, so
+/// the equality here is not what keeps a chemistry without the table still — that is
+/// structural. What it does check is the other direction: that a file which writes the
+/// table out explicitly, flat, gets exactly what it would have got by omitting it, so
+/// declaring the section costs nothing until it says something.
+///
+/// A trajectory rather than a single reading, and one that crosses the knee, because a
+/// difference that only shows up under load would be invisible to a rested comparison.
+#[test]
+fn an_all_ones_table_is_the_same_bits_as_no_table() {
+    let bare = with_hysteresis();
+    let flat = with_width_table(&[1.0, 1.0, 1.0]);
+    let mut a = Pack::new(&config(0.9, ROOM_K), bare).expect("pack builds");
+    let mut b = Pack::new(&config(0.9, ROOM_K), flat).expect("pack builds");
+    // Discharge across the knee, reverse, and charge back over it, so the state is moving
+    // and the width is being looked up on both sides of the breakpoint.
+    for (secs, amps) in [(2400usize, CAP_AH), (600, 0.0), (1200, -CAP_AH)] {
+        for _ in 0..secs {
+            let ta = a.step(1.0, Demand::Current(amps), &env());
+            let tb = b.step(1.0, Demand::Current(amps), &env());
+            assert_eq!(
+                ta.v_terminal.to_bits(),
+                tb.v_terminal.to_bits(),
+                "a flat table moved the terminal voltage: {} vs {}",
+                ta.v_terminal,
+                tb.v_terminal
+            );
+            assert_eq!(ta.soc_true.to_bits(), tb.soc_true.to_bits());
+        }
+    }
+}
+
+/// The lookup clamps outside its breakpoints, like every other table here — so a cell
+/// driven past empty into its reversal ramp, where `soc` is pinned at zero but the deficit
+/// keeps growing, keeps the endpoint's width rather than extrapolating off the end of the
+/// table into a negative one.
+#[test]
+fn the_half_width_clamps_outside_its_breakpoints() {
+    let chem = with_width_table(&[WIDE_MULT, 1.0, 1.0]);
+    let h = chem.hysteresis.as_ref().expect("the fixture declares one");
+    assert!((hysteresis_half_width_v(h, 0.0) - M_V * WIDE_MULT).abs() < 1e-15);
+    assert!((hysteresis_half_width_v(h, -1.0) - M_V * WIDE_MULT).abs() < 1e-15);
+    assert!((hysteresis_half_width_v(h, 1.0) - M_V).abs() < 1e-15);
+    assert!((hysteresis_half_width_v(h, 2.0) - M_V).abs() < 1e-15);
+    // And with no table the same call is `scale_v` at every charge state, including ones
+    // outside [0, 1].
+    let bare = with_hysteresis();
+    let h = bare.hysteresis.as_ref().expect("the fixture declares one");
+    for soc in [-1.0, 0.0, 0.37, 1.0, 2.0] {
+        assert_eq!(hysteresis_half_width_v(h, soc).to_bits(), M_V.to_bits());
     }
 }

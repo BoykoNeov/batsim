@@ -304,7 +304,10 @@ fn the_fall_is_shared_between_the_two_temperature_channels() {
 #[test]
 fn resting_voltage_remembers_the_drive_direction() {
     let chem = nimh();
-    let hyst = chem.hysteresis.expect("NiMH declares [hysteresis]");
+    let hyst = chem
+        .hysteresis
+        .as_ref()
+        .expect("NiMH declares [hysteresis]");
     let cap = chem.cell.capacity_ah;
     /// Seconds of 1 C current that move 30 % of the cell's capacity.
     const MOVE_S: usize = (0.30 * 3600.0) as usize;

@@ -138,6 +138,18 @@ The negative minimum in the first row is real and is the alignment error showing
 
 ## The finding: a constant half-width cannot say what this cell does
 
+> **SUPERSEDED 2026-08-31 — this was fixed, at `SNAPSHOT_VERSION` 20.** `HysteresisParams`
+> now carries an optional `width_over_soc` multiplier table and the shipped file uses it, so
+> the sentence below beginning *"no value of it can express that shape"* is no longer true of
+> this engine. The measured uncertainty table above it still is. See
+> `docs/plans/hysteresis-width-over-soc.md`, which also corrects one clause here: the
+> widening is **not** happening "where the OCV curve flattens" — on this cell's own table the
+> bottom of the range is the *steepest* part of the curve (51.8 mV per point across 0–2 %)
+> and the flat shelf (7.0 mV per point) sits just *above* the breakpoint, not below it.
+> The reasoning about *why* it was declined is left standing rather than edited, because the
+> argument that overturned it is about the premise: this was never a feature waiting for a
+> second customer, it was a shipped file contradicting the source it was fitted from.
+
 **This is a principle-10 finding and it is recorded here rather than fixed.** The measured
 loop is **SOC-dependent by a factor of three or four** — around 20 mV over the upper
 two-thirds of the range and up to 80 mV in the bottom third, where the OCV curve flattens.
@@ -386,12 +398,19 @@ write. The cheap discipline is a grep for superlatives — `the last`, `the only
 
 ### What is NOT closed
 
-`HysteresisParams::scale_v` is one scalar, and the measured loop on this cell is three to
+~~`HysteresisParams::scale_v` is one scalar, and the measured loop on this cell is three to
 four times wider below 35 % charge than above it. The shipped file therefore **understates
 the loop in the bottom third of the range**, and says so in its provenance. Expressing it
 needs a table or a second coefficient, which is a schema change and a snapshot bump; nothing
 else in the tree wants one, and one chemistry is not a design case. Recorded, not fixed —
-the same shape as slice A's `[safety]` gap.
+the same shape as slice A's `[safety]` gap.~~
+
+**CLOSED 2026-08-31 at `SNAPSHOT_VERSION` 20**, by `docs/plans/hysteresis-width-over-soc.md`.
+The section gained an optional `width_over_soc` multiplier table and this file now declares
+one, so the loop is four times wider at the empty endpoint than above 35 % charge, as its
+source says. The decision above was reversed on its premise rather than on new information:
+"one chemistry is not a design case" is the right test for a *feature*, and the wrong one for
+a shipped parameter file that is understating the measurement it was fitted from.
 
 
 *(Written after the fact. Nothing above this line was edited once the engine ran.)*

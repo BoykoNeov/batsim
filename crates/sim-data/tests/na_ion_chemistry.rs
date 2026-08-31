@@ -208,7 +208,10 @@ fn a_rested_cell_remembers_which_way_it_was_driven() {
 
     // What the file declares, and how far a 10 % excursion gets across it: the state
     // approaches its endpoint exponentially in charge moved, at rate `gamma`.
-    let hyst = na.hysteresis.expect("Na-ion declares [hysteresis]");
+    let hyst = na
+        .hysteresis
+        .as_ref()
+        .expect("Na-ion declares [hysteresis]");
     let crossed = 1.0 - (-hyst.gamma * 0.10).exp();
     let predicted_mv = 2.0 * hyst.scale_v * crossed * 1000.0;
 
@@ -347,5 +350,123 @@ fn the_over_voltage_limit_sits_inside_the_release_band() {
          over-voltage rung would release on every load removal and the pack would chatter",
         gap * 1000.0,
         band * 1000.0
+    );
+}
+
+/// **The loop is not one width, and the file now says where it is wider.**
+///
+/// `[hysteresis.width_over_soc]` is what `SNAPSHOT_VERSION` 20 added, and this file is the
+/// reason it exists: the source measures roughly 20 mV of loop above 35 % charge and up to
+/// 80 mV below it, and until v20 one scalar had to stand for both. It stood for the first,
+/// so the shipped file understated its own source over the bottom third of the range. See
+/// `docs/plans/hysteresis-width-over-soc.md`.
+///
+/// The measurement is the one above, run twice: two arms meeting at the same charge from
+/// opposite directions, each having moved the **same** charge, so the fraction of the loop
+/// each has crossed is identical at both meeting points and divides out. What is left in the
+/// ratio is the multiplier the file declares, and nothing else.
+///
+/// Two things this deliberately does not measure. The arms below the breakpoint travel
+/// through a *varying* half-width on the way, and that must not show up in the answer — the
+/// resting voltage is `OCV(soc) ∓ M(soc)·h`, and neither term depends on the path. And the
+/// absolute widths are asserted against the file's own fields rather than against 20 and
+/// 80 mV, because those two are the *source's* figures and this test is about whether the
+/// engine does what the file says, not about whether the file is right about the cell.
+///
+/// Four hours of rest, forty time constants of this cell's 365 s pair, for the reason the
+/// test above states at length.
+#[test]
+fn the_loop_is_wider_below_the_breakpoint_than_above_it() {
+    const MOVE_S: usize = (0.10 * 3600.0) as usize;
+    const REST_S: usize = 4 * 3600;
+
+    let chem = na_ion();
+    let cap = chem.cell.capacity_ah;
+    let loop_v = |meet: f64| {
+        let mut down = Pack::new(
+            &config(meet + 0.10, ThermalConfig::Isothermal),
+            chem.clone(),
+        )
+        .expect("builds");
+        let mut up = Pack::new(
+            &config(meet - 0.10, ThermalConfig::Isothermal),
+            chem.clone(),
+        )
+        .expect("builds");
+        for _ in 0..MOVE_S {
+            down.step(1.0, Demand::Current(cap), &env());
+            up.step(1.0, Demand::Current(-cap), &env());
+        }
+        for _ in 0..REST_S {
+            down.step(1.0, Demand::Rest, &env());
+            up.step(1.0, Demand::Rest, &env());
+        }
+        let after_down = down.step(0.0, Demand::Rest, &env());
+        let after_up = up.step(0.0, Demand::Rest, &env());
+        assert!(
+            (after_down.soc_true - after_up.soc_true).abs() < 1e-12
+                && (after_down.soc_true - meet).abs() < 1e-12,
+            "the two arms did not meet at {meet}: {} vs {}",
+            after_down.soc_true,
+            after_up.soc_true
+        );
+        after_up.v_terminal - after_down.v_terminal
+    };
+
+    // Well clear of the 35 % breakpoint on either side, and far enough from both ends that
+    // neither arm approaches a clamp.
+    const ABOVE: f64 = 0.70;
+    const BELOW: f64 = 0.15;
+    let hyst = chem
+        .hysteresis
+        .as_ref()
+        .expect("Na-ion declares [hysteresis]");
+    let crossed = 1.0 - (-hyst.gamma * 0.10).exp();
+    let predict = |soc: f64| 2.0 * sim_core::ecm::hysteresis_half_width_v(hyst, soc) * crossed;
+
+    let above = loop_v(ABOVE);
+    let below = loop_v(BELOW);
+    let ratio = below / above;
+    println!("resting-voltage loop, measured against what the file declares:");
+    println!(
+        "  at {:.0} % charge  {:6.2} mV   (predicted {:.2})",
+        ABOVE * 100.0,
+        above * 1000.0,
+        predict(ABOVE) * 1000.0
+    );
+    println!(
+        "  at {:.0} % charge  {:6.2} mV   (predicted {:.2})",
+        BELOW * 100.0,
+        below * 1000.0,
+        predict(BELOW) * 1000.0
+    );
+    println!("  ratio {ratio:.6}");
+
+    // Tolerance: what is left in either reading after four hours is the slow RC pair, whose
+    // 31.5 mV at 1 C is down by exp(-14400/365) = 8e-18 V by then, so the bound below is
+    // dominated by nothing physical at all and is set at a hundredth of a millivolt purely
+    // so a real regression cannot hide under it.
+    for (what, measured, soc) in [("above", above, ABOVE), ("below", below, BELOW)] {
+        assert!(
+            (measured - predict(soc)).abs() < 1.0e-5,
+            "{what} the breakpoint the loop measures {:.4} mV where the shipped fields \
+             predict {:.4} mV",
+            measured * 1000.0,
+            predict(soc) * 1000.0
+        );
+    }
+    // And the ratio is the multiplier itself, with the crossing fraction divided out.
+    let mult = sim_core::ecm::hysteresis_half_width_v(hyst, BELOW)
+        / sim_core::ecm::hysteresis_half_width_v(hyst, ABOVE);
+    assert!(
+        (ratio - mult).abs() < 1.0e-6,
+        "the ratio of the two loops is {ratio:.6} where the table says {mult:.6}"
+    );
+    // The claim that made the slice worth paying a snapshot bump for: one scalar could not
+    // have produced both of these, so the file is no longer understating its own source.
+    assert!(
+        ratio > 2.0,
+        "the point of the table is that the two ends differ by more than rounding, and \
+         they differ by {ratio:.3}"
     );
 }
