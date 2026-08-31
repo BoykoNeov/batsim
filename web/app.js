@@ -3238,7 +3238,7 @@ const LESSONS = [
     // almost nothing to it. One scenario file; the demand box is the whole of both arms.
     scenario: "cc_discharge_lto.toml",
     // 10C = 10 x 20 Ah, this chemistry's own `max_discharge_c` and the top of what its
-    // datasheet allows. Nothing else in this path goes above 3 C.
+    // datasheet allows. Nothing else in this path is rated for 10 C in both directions.
     demand: { mode: "Current", value: 200 },
     ambient_c: 25,
     bms: null,
@@ -3256,7 +3256,7 @@ const LESSONS = [
     reload: true,
     watch: ["plot-v", "readouts"],
     prose: [
-      "A fifth chemistry: lithium titanate, or LTO. A 20 Ah prismatic cell whose datasheet rates it at 10 C in both directions, which no other cell in this path comes close to in either. One cell, at 100 % charge, isothermal, 25 °C, with nothing protecting it.",
+      "A fifth chemistry: lithium titanate, or LTO. A 20 Ah prismatic cell whose datasheet rates it at 10 C in both directions, which no other cell in this path is rated for. One cell, at 100 % charge, isothermal, 25 °C, with nothing protecting it.",
       "The demand box says 200 A, which is that rating written as a current. The run is marked to stop by itself at the first step whose terminal falls below the 1.50 V this chemistry calls empty.",
       "Watch `soc (true)` for where it stops. Not when — of course it is quicker — but at what charge.",
     ],

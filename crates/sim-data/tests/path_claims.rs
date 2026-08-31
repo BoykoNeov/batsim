@@ -91,6 +91,20 @@
 //! A false alarm under a ban is one sentence rewritten by its own author that minute; a miss
 //! under a reader is silent, and a wrong number ships behind a green suite.
 //!
+//! **Beside the digits rule sits a rule about a different kind of sentence entirely.**
+//! Everything above is about whether a *number* is right. Nothing in it asks whether a claim
+//! about the **path's own shape** is still true — "the only cell here rated for this", "the
+//! last of the flat-curve cells", "no other parameter file in this repo says that about
+//! itself". Such a sentence is true when written, is falsified later by a slice with no
+//! reason to be reading it, and contains no numeral that moved, so every check above stays
+//! green on it. [`no_lesson_claims_uniqueness_over_the_path_undeclared`] refuses one unless
+//! `[[unique]]` in `web/path-claims.toml` lists it, matched both ways; an entry may carry a
+//! derivation over the chemistries the path teaches
+//! ([`every_derived_uniqueness_claim_holds`]) or may sit in the backlog, which says plainly
+//! that nothing settles it. `docs/plans/path-uniqueness-rule.md` is the slice, and the two
+//! sentences it found on the LTO step are why the ban reads a lesson's **whole block**: one
+//! of them was in a `//` comment above `demand:`, where [`Lesson::text`] does not reach.
+//!
 //! [`spelled_numbers`] survives as the READER it always was, opt-in per step through the
 //! ledger's `spelled` list and merged into the same scan so that one number cannot have two
 //! readings. It finds a numeral and a measure noun ("three minutes", "half an hour", "an
@@ -171,6 +185,17 @@
 //!   partial by design and grows one measured claim at a time. A step with no entry is
 //!   an unchecked step, not a passing one; [`every_covered_step_exists`] guards the
 //!   reverse direction only (no claim may name a step that is gone).
+//! * **A uniqueness claim that names no scope, and whether a backlog one is true.** The rule
+//!   above fires on a sentence that says `this path` or `this repo`. *"A sixth chemistry, and
+//!   the last of the flat-curve cells"* quantifies over the path exactly as hard and says
+//!   neither, so nothing reads it — it is true today and the check would not notice if it
+//!   stopped being. Widening the trigger to bare superlatives over the repo's furniture was
+//!   measured at fifteen hits, most of them pointers at a neighbouring step; a backlog that
+//!   is mostly noise is a backlog nobody reads, so the narrow trigger is the whole of the
+//!   coverage and the authoring rule that goes with it — **if you claim it over the path, say
+//!   "in this path"** — is in the failure message rather than in anyone's memory. The entries
+//!   with no `over` are unchecked by construction: the table names them, and a green run says
+//!   nothing at all about whether they are true.
 //! * **One readout row: `past empty`.** It is formatted from `Pack::cell` output rather
 //!   than from telemetry *and* sampled on a 250 ms **wall**-clock throttle, so what it
 //!   shows at a given simulation time is not a function of that time at all. It is not
@@ -1491,6 +1516,145 @@ fn no_lesson_spells_a_quantity_in_english() {
     }
 }
 
+/// No lesson claims to be the only one of its kind in the path unless the table says so —
+/// the uniqueness rule.
+///
+/// **The defect class.** Every other check in this file asks whether a *number* is right.
+/// None of them asks whether a claim about the **path's own shape** is still true, and that
+/// is a sentence a lesson wants to write every time a chemistry lands: "the only cell here
+/// rated for this", "the last of the flat-curve cells", "no other parameter file in this repo
+/// says that about itself". Such a sentence is true when written and is falsified later, by a
+/// slice that has no reason to be reading it — and it contains no numeral that moved, so the
+/// ledger, the value check and the digits rule are all green on it.
+///
+/// It has now shipped **four** times. `docs/plans/sodium-ion-chemistry.md` found two and
+/// recommended a grep as a discipline; this slice ran that grep, found two more on the LTO
+/// step — one in shipped prose, one in a comment `lesson_text` cannot even see — and made the
+/// discipline a check, because a discipline nobody wrote down as a test lasts exactly as long
+/// as the author who remembers it.
+///
+/// **A ban with a backlog, on the digits rule's terms.** Deciding whether a superlative is a
+/// claim about the path or a turn of phrase is hard in both directions: *"the last step"*
+/// points at a neighbour and *"the last chemistry"* claims something. A false alarm under a
+/// ban costs one sentence its author re-reads. A miss under a reader is silent and ships.
+/// [`uniqueness_claims`] is deliberately allowed to be wider than the class it is about, and
+/// its narrowness in the other direction — a superlative with no scope phrase in it — is
+/// named in the module docs as a gap rather than left to be inferred from a green run.
+///
+/// Matched **both ways**, like `[[english]]`: a sentence in the prose and not in the table
+/// fails, and an entry no sentence matches fails too. So rewording a uniqueness claim forces
+/// its entry to be re-decided, and an entry cannot outlive the sentence it is about.
+#[test]
+fn no_lesson_claims_uniqueness_over_the_path_undeclared() {
+    let listed = unique_claims();
+
+    let mut found: Vec<(String, String)> = Vec::new();
+    for lesson in &lessons() {
+        for sentence in uniqueness_claims(&lesson.block) {
+            found.push((lesson.id.clone(), sentence));
+        }
+    }
+
+    for (step, sentence) in &found {
+        assert!(
+            listed
+                .iter()
+                .any(|e| e.step == *step && e.sentence == *sentence),
+            "lesson `{step}` claims something is the only one of its kind in the path, and \
+             `[[unique]]` in web/path-claims.toml does not list it:\n\n  {sentence}\n\n\
+             A sentence like this is true when it is written and is made false later by a \
+             slice with no reason to read it — four have shipped that way. Either give it a \
+             derivation (`over`), so the files settle it and it goes red when it stops \
+             being true, or add it with no `over`, which puts it in the backlog and says \
+             plainly that nothing checks it.\n\
+             If it is not a claim about the path at all, reword it so it does not say \
+             `this path` or `this repo` — and if it IS one, say `in this path`, because \
+             that phrase is the whole of what this rule can see."
+        );
+    }
+    for entry in &listed {
+        assert!(
+            found
+                .iter()
+                .any(|(s, t)| *s == entry.step && *t == entry.sentence),
+            "`[[unique]]` lists a sentence on lesson `{}` that no scan of that lesson \
+             finds:\n\n  {}\n\n\
+             The table is matched both ways so that an entry cannot outlive its sentence. \
+             If the sentence was reworded, re-read it and update or delete the entry — a \
+             stale entry leaves a claim looking settled by a derivation that is no longer \
+             about it.",
+            entry.step,
+            entry.sentence
+        );
+    }
+}
+
+/// Every `[[unique]]` entry that carries a derivation is derivable — and true.
+///
+/// Split from the ban above rather than folded into it, because the two fail for unrelated
+/// reasons and a red on the wrong check is a hazard this repo has written down more than
+/// once: the ban fails when the *table* is stale, this fails when the *world* has moved.
+///
+/// This is the half that found the shipped defect. With `mode = "each"` on the LTO step's two
+/// sentences and the prose untouched, it named `nimh_subc_3ah_generic`'s `max_discharge_c` —
+/// 10 C, the LTO cell's own rating to the digit, on a cell the path teaches two steps later.
+#[test]
+fn every_derived_uniqueness_claim_holds() {
+    let lessons = lessons();
+    let universe = taught_chemistries(&lessons);
+    for entry in unique_claims() {
+        let Some(over) = &entry.over else {
+            continue;
+        };
+        assert!(
+            !over.fields.is_empty(),
+            "the `[[unique]]` entry on `{}` names no fields, so it compares nothing and \
+             passes on anything.",
+            entry.step
+        );
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == entry.step)
+            .unwrap_or_else(|| panic!("`[[unique]]` names lesson `{}`, which is gone", entry.step));
+        let own = chemistry_id(&lesson.scenario);
+        if let Some(why) = top_of_failure(&own, over, &universe) {
+            panic!(
+                "lesson `{}` says this, and it is not true of the chemistries this path \
+                 teaches:\n\n  {}\n\n{why}\n\n\
+                 The cells compared are the ones the path reaches, in order: {}.",
+                entry.step,
+                entry.sentence,
+                universe
+                    .iter()
+                    .map(|(id, _)| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+}
+
+/// The scanner reads a claim written in a **comment**, which is where one of the four was.
+///
+/// Not a restatement of the rule: it is the one property of [`lesson_pieces`] that no shipped
+/// sentence would prove on its own, and the reason the uniqueness scan reads a lesson's whole
+/// block where every number check reads `lesson.text`. It also pins the other half — that a
+/// superlative and a scope phrase in *different* pieces do not pair — which is a green the
+/// loose first draft did not have.
+#[test]
+fn the_uniqueness_scanner_reads_comments_and_stops_at_a_piece_boundary() {
+    let block = "\n    id: \"demo\",\n    // Nothing else in this path goes above 3 C.\n    \
+                 demand: { mode: \"Current\", value: 200 },\n    prose: [\n      \"The last \
+                 one was slower.\",\n      \"Two cells in this path.\",\n    ],\n";
+    let found = uniqueness_claims(block);
+    assert_eq!(
+        found,
+        vec!["Nothing else in this path goes above 3 C.".to_string()],
+        "the scanner must read a uniqueness claim written in a comment, and must not pair a \
+         superlative in one prose item with a scope phrase in the next"
+    );
+}
+
 /// A step may not have its words scanned without having its digits scanned.
 ///
 /// The two lists are one contract, in the direction `steps` and `unledgered` already are: a
@@ -1642,6 +1806,16 @@ struct Lesson {
     reload: bool,
     /// `prose` and `expect` concatenated: everything a reader is shown for this step.
     text: String,
+    /// The lesson's **whole** block, comments and setup fields included.
+    ///
+    /// [`Lesson::text`] starts at `prose: [` and is the right slice for every check about a
+    /// number, because a numeral in a setup field is a control rather than a sentence. The
+    /// uniqueness rule is not about numbers: it reads *prose about the path*, and this
+    /// repo's recorded failures put that kind of prose in `//` comments and panic strings as
+    /// often as in shipped sentences. One of the two false sentences the rule was built for
+    /// sits above `demand:`, where `text` cannot see it. See
+    /// [`no_lesson_claims_uniqueness_over_the_path_undeclared`].
+    block: String,
 }
 
 /// The page's three client-side demand programs. Two of them are not demands the
@@ -1771,6 +1945,145 @@ fn lesson_text(block: &str, id: &str) -> String {
     block[start..].to_string()
 }
 
+/// The phrases that make a sentence a claim about **the path or the repo** rather than
+/// about the run in front of the reader.
+///
+/// This list is the whole of the rule's reach, and it is narrow on purpose. A superlative
+/// with no scope in it — *"the last of the flat-curve cells"* — quantifies over the path
+/// just as hard and is not read here; widening the trigger to superlatives over the repo's
+/// furniture was measured at fifteen hits, most of them pointers at a neighbouring step, and
+/// a backlog that is mostly noise is a backlog nobody reads. The authoring rule that goes
+/// with the narrow trigger is written into the failure message: **if you claim it over the
+/// path, say "in this path"**. See `docs/plans/path-uniqueness-rule.md`.
+const PATH_SCOPES: &[&str] = &["this path", "the path", "this repo", "the repo"];
+
+/// The words that turn a scoped sentence into a claim that nothing else is like this one.
+const UNIQUENESS_WORDS: &[&str] = &[
+    "no other",
+    "nothing else",
+    "the only",
+    "the one",
+    "the first",
+    "the last",
+    "the sole",
+    "the widest",
+    "the highest",
+    "the most",
+    "unique",
+];
+
+/// A lesson block's prose, as the pieces a person actually reads: its comment runs and its
+/// string literals.
+///
+/// Split this way rather than by slicing the block, for two reasons that pull the same way.
+/// A piece boundary is a **sentence** boundary, so a superlative in one prose paragraph can
+/// never pair with a scope phrase in the next one — measured: the loose version had `[the
+/// last]` from one prose item firing against `in this path` from the item before it, on a
+/// step making no claim at all. And the JavaScript between the strings never enters the
+/// text, so a stored sentence is a sentence rather than a sentence with `ambient_c: 25,` in
+/// front of it.
+///
+/// Consecutive comment lines join into one piece: an author's paragraph is wrapped at the
+/// column, not at the full stop, and reading each line alone would cut most of them in half.
+fn lesson_pieces(block: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut comment: Vec<&str> = Vec::new();
+    for line in block.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("//") {
+            comment.push(rest.trim());
+        } else if !comment.is_empty() {
+            out.push(comment.join(" "));
+            comment.clear();
+        }
+    }
+    if !comment.is_empty() {
+        out.push(comment.join(" "));
+    }
+
+    // The string literals, `\"` and friends passed through as written: a claim is matched
+    // against the file's own characters, the way every literal check in this file is.
+    let bytes: Vec<char> = block.chars().collect();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != '"' {
+            i += 1;
+            continue;
+        }
+        let mut literal = String::new();
+        let mut j = i + 1;
+        while j < bytes.len() && bytes[j] != '"' {
+            if bytes[j] == '\\' && j + 1 < bytes.len() {
+                literal.push(bytes[j]);
+                literal.push(bytes[j + 1]);
+                j += 2;
+                continue;
+            }
+            literal.push(bytes[j]);
+            j += 1;
+        }
+        out.push(literal);
+        i = j + 1;
+    }
+    out
+}
+
+/// One piece of prose, split into sentences on `.`, `!` and `?`.
+///
+/// A full stop between two digits is a decimal point and not a terminator — `3.918 V` is one
+/// token and half of it is not a sentence. Whitespace is flattened first, so a sentence
+/// wrapped across three comment lines is stored as the one line it reads as.
+fn prose_sentences(piece: &str) -> Vec<String> {
+    let flat = piece.split_whitespace().collect::<Vec<_>>().join(" ");
+    let chars: Vec<char> = flat.chars().collect();
+    let mut out = Vec::new();
+    let mut start = 0;
+    for i in 0..chars.len() {
+        if !matches!(chars[i], '.' | '!' | '?') {
+            continue;
+        }
+        let previous = if i > 0 { chars[i - 1] } else { ' ' };
+        let next = chars.get(i + 1).copied().unwrap_or(' ');
+        if chars[i] == '.' && previous.is_ascii_digit() && next.is_ascii_digit() {
+            continue;
+        }
+        if next == ' ' || i + 1 == chars.len() {
+            let sentence: String = chars[start..=i].iter().collect();
+            let sentence = sentence.trim().to_string();
+            if !sentence.is_empty() {
+                out.push(sentence);
+            }
+            start = i + 1;
+        }
+    }
+    let tail: String = chars[start.min(chars.len())..].iter().collect();
+    let tail = tail.trim().to_string();
+    if !tail.is_empty() {
+        out.push(tail);
+    }
+    out
+}
+
+/// Every sentence of a lesson that claims uniqueness over the path or the repo.
+///
+/// Both halves must be in the **same sentence**: a scope phrase from [`PATH_SCOPES`] and a
+/// word from [`UNIQUENESS_WORDS`]. Matched case-insensitively, because a sentence that opens
+/// with *"Nothing else in this path…"* is the same claim as one that does not.
+fn uniqueness_claims(block: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for piece in lesson_pieces(block) {
+        for sentence in prose_sentences(&piece) {
+            let lowered = sentence.to_lowercase();
+            let scoped = PATH_SCOPES.iter().any(|s| lowered.contains(s));
+            let unique = UNIQUENESS_WORDS.iter().any(|u| lowered.contains(u));
+            if scoped && unique {
+                out.push(sentence);
+            }
+        }
+    }
+    out
+}
+
 /// The `bms` field: `true`/`false` to force, `null` to leave whatever the scenario has.
 ///
 /// The three cases are distinguished explicitly, and an unrecognised one panics. A
@@ -1842,6 +2155,7 @@ fn lessons() -> Vec<Lesson> {
             // probe claim rather than admitting one on a pack that may be inherited.
             reload: block.contains("\n    reload: true"),
             text: lesson_text(block, &id),
+            block: block.to_string(),
             id,
         });
     }
@@ -4181,6 +4495,72 @@ struct Claims {
     /// cannot read as permission.
     #[serde(default)]
     english: Vec<EnglishPhrase>,
+    /// The sentences that claim something is the only one of its kind in the path. See
+    /// [`no_lesson_claims_uniqueness_over_the_path_undeclared`].
+    ///
+    /// `default` for `[[english]]`'s reason and it is the same safe direction: an absent
+    /// section means nothing is declared, so every uniqueness sentence in the prose fails by
+    /// name. A missing list cannot read as permission.
+    #[serde(default)]
+    unique: Vec<UniqueClaim>,
+}
+
+/// One sentence claiming that nothing else in the path or the repo is like this one.
+///
+/// Two kinds in one table, told apart by whether `over` is there. An entry that carries a
+/// derivation is a **checked** claim: the fact is computed from the files and the sentence
+/// goes red when it stops being true. An entry that does not is **backlog** — a sentence the
+/// rule can see and nothing can settle, named as unchecked rather than left looking covered.
+/// That is the distinction `[ledger].unledgered` and `word_blind` already draw one axis over,
+/// and the reason there is no third state: a waiver would be an author's word for a fact,
+/// which is what this file refuses everywhere else.
+#[derive(Debug, Clone, serde::Deserialize)]
+struct UniqueClaim {
+    /// The lesson's id, as `const LESSONS` writes it.
+    step: String,
+    /// The sentence exactly as [`uniqueness_claims`] reports it — whitespace flattened,
+    /// terminator included.
+    ///
+    /// The whole sentence rather than the matched phrase, and that is the point of it: a
+    /// uniqueness claim *is* the sentence, so rewording any part of one forces its entry to
+    /// be re-read and re-decided. `[[english]]` stores a phrase because a spelled quantity is
+    /// a phrase; this is a claim about the path, and half of it is the qualification.
+    sentence: String,
+    /// How the files settle it, if anything can.
+    #[serde(default)]
+    over: Option<TopOf>,
+}
+
+/// A uniqueness claim about a **rating**, settled against the chemistries the path teaches.
+///
+/// The universe is derived by walking every lesson's scenario file to its chemistry, never by
+/// globbing `chemistries/`. The claim is about the path: a parameter file that ships and is
+/// taught nowhere would make a true sentence red, and the day one exists this arm should not
+/// have to be found and fixed.
+#[derive(Debug, Clone, serde::Deserialize)]
+struct TopOf {
+    mode: TopMode,
+    /// Dotted key paths into the chemistry file, in the syntax [`Tie::Chemistry`] uses. Each
+    /// must resolve to exactly one number on every taught chemistry.
+    fields: Vec<String>,
+}
+
+/// What "no other cell comes close" is being said about.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum TopMode {
+    /// For **every** named field, this chemistry beats every other taught chemistry.
+    ///
+    /// What *"rates it at 10 C in both directions, which no other cell comes close to in
+    /// either"* says. It is the mode the shipped sentence needed and the mode that made it
+    /// red: the nickel cell ties LTO at 10 C in discharge.
+    Each,
+    /// This chemistry's **weakest** named field beats every other's weakest.
+    ///
+    /// What *"rated for 10 C in both directions, which no other cell in this path is"* says —
+    /// a claim about the pair rather than about either half, which is what survives a cell
+    /// that matches in one direction and nowhere near in the other.
+    Both,
 }
 
 /// One quantity a lesson still spells in English, and why it is still there.
@@ -5471,6 +5851,109 @@ fn english_exceptions() -> Vec<(String, String)> {
         .into_iter()
         .map(|e| (e.step, e.phrase))
         .collect()
+}
+
+/// The declared uniqueness claims. See [`UniqueClaim`].
+fn unique_claims() -> Vec<UniqueClaim> {
+    parse_claims_file().unique
+}
+
+/// The chemistries the path **teaches**, in the order it first reaches them.
+///
+/// One entry per distinct chemistry id, each with the file as that file writes it. Derived
+/// from the lessons rather than from the `chemistries/` directory for the reason [`TopOf`]
+/// gives: a uniqueness claim scoped to "this path" is about the cells a reader meets.
+fn taught_chemistries(lessons: &[Lesson]) -> Vec<(String, toml::Value)> {
+    let mut out: Vec<(String, toml::Value)> = Vec::new();
+    for lesson in lessons {
+        let id = chemistry_id(&lesson.scenario);
+        if out.iter().any(|(seen, _)| *seen == id) {
+            continue;
+        }
+        let doc = chemistry_toml(&lesson.scenario);
+        out.push((id, doc));
+    }
+    out
+}
+
+/// Exactly one number at a chemistry's dotted path, or a panic naming the rule that asked.
+///
+/// A broken path is a broken rule and not a disagreement, on the same terms as every other
+/// tie in this file: a field that resolves to nothing would otherwise make a uniqueness claim
+/// vacuously true, which is the fail-toward-green shape this whole file exists to keep out.
+fn one_number_at(doc: &toml::Value, field: &str, chemistry: &str) -> f64 {
+    let values = numbers_at_path(doc, field);
+    let [only] = values[..] else {
+        panic!(
+            "a uniqueness claim reads `{field}` of `chemistries/{chemistry}.toml` and that \
+             path resolves to {} numbers rather than one. Fix the path: a field that \
+             resolves to nothing makes the claim vacuously true.",
+            values.len()
+        )
+    };
+    only
+}
+
+/// Why a `[[unique]]` derivation does not hold, or `None` if it does.
+///
+/// The comparison is **strict**. "No other cell comes close" is not satisfied by a tie, and a
+/// tie is exactly the shape that shipped: the nickel cell's `max_discharge_c` is the LTO
+/// cell's to the digit.
+fn top_of_failure(own: &str, over: &TopOf, universe: &[(String, toml::Value)]) -> Option<String> {
+    let doc_of = |id: &str| {
+        universe
+            .iter()
+            .find(|(seen, _)| seen == id)
+            .map(|(_, doc)| doc)
+            .unwrap_or_else(|| {
+                panic!(
+                    "`{id}` is not a chemistry this path teaches, so no uniqueness claim on \
+                     it can be settled against the others"
+                )
+            })
+    };
+    let score = |id: &str| -> Vec<f64> {
+        over.fields
+            .iter()
+            .map(|f| one_number_at(doc_of(id), f, id))
+            .collect()
+    };
+
+    let mine = score(own);
+    for (other, _) in universe {
+        if other == own {
+            continue;
+        }
+        let theirs = score(other);
+        match over.mode {
+            TopMode::Each => {
+                for (i, field) in over.fields.iter().enumerate() {
+                    if mine[i] <= theirs[i] {
+                        return Some(format!(
+                            "`{other}` has `{field}` = {}, and this cell's is {} — not \
+                             strictly more. The sentence claims every named field beats \
+                             every other cell the path teaches.",
+                            theirs[i], mine[i]
+                        ));
+                    }
+                }
+            }
+            TopMode::Both => {
+                let weakest = |v: &[f64]| v.iter().copied().fold(f64::INFINITY, f64::min);
+                if weakest(&mine) <= weakest(&theirs) {
+                    return Some(format!(
+                        "`{other}`'s weakest of {:?} is {}, and this cell's is {} — not \
+                         strictly more. The sentence claims the pair, so a cell matching on \
+                         its weaker field is enough to break it.",
+                        over.fields,
+                        weakest(&theirs),
+                        weakest(&mine)
+                    ));
+                }
+            }
+        }
+    }
+    None
 }
 
 fn ledger() -> Ledger {
@@ -12151,17 +12634,25 @@ fn numbers_at_path<'a>(value: &'a toml::Value, path: &str) -> Vec<f64> {
         .collect()
 }
 
+/// The id of the chemistry a scenario names.
+///
+/// Split out of [`chemistry_toml`] because [`taught_chemistries`] needs the name as well as
+/// the file: a uniqueness claim is settled by comparing cells, and a comparison whose
+/// failure cannot name the other cell is a red nobody can act on.
+fn chemistry_id(scenario_file: &str) -> String {
+    scenario_toml(scenario_file)
+        .get("chemistry")
+        .and_then(toml::Value::as_str)
+        .unwrap_or_else(|| panic!("scenarios/{scenario_file} still names a `chemistry`"))
+        .to_string()
+}
+
 /// The chemistry file the step's scenario names, as that file writes it.
 ///
 /// Raw TOML for the reason [`scenario_toml`] is: a rule's path should be the key an author
 /// reads in `chemistries/*.toml`, not a field name `sim-data` chose for the parsed struct.
 fn chemistry_toml(scenario_file: &str) -> toml::Value {
-    let scenario = scenario_toml(scenario_file);
-    let id = scenario
-        .get("chemistry")
-        .and_then(toml::Value::as_str)
-        .unwrap_or_else(|| panic!("scenarios/{scenario_file} still names a `chemistry`"))
-        .to_string();
+    let id = chemistry_id(scenario_file);
     let path = repo_root().join("chemistries").join(format!("{id}.toml"));
     let text = read(&path);
     toml::from_str(&text).unwrap_or_else(|e| panic!("chemistries/{id}.toml parses as TOML: {e}"))
@@ -14963,6 +15454,8 @@ struct Facts {
     lessons: Vec<Lesson>,
     /// The `[[english]]` backlog, as `(step, phrase)`. See [`english_exceptions`].
     english: Vec<(String, String)>,
+    /// The `[[unique]]` table. See [`UniqueClaim`].
+    unique: Vec<UniqueClaim>,
 }
 
 impl Facts {
@@ -14979,6 +15472,7 @@ impl Facts {
                 .into_iter()
                 .map(|e| (e.step, e.phrase))
                 .collect(),
+            unique: parsed.unique,
         }
     }
 
@@ -15235,6 +15729,28 @@ fn n_spelled_accountings(f: &Facts) -> usize {
 fn n_english_phrases(f: &Facts) -> usize {
     f.english.len()
 }
+/// How many uniqueness sentences `[[unique]]` lists, how many steps they sit on, how many
+/// carry a derivation, and how many are backlog.
+///
+/// Counted off the **list** and not off a scan of the prose, for `n_english_phrases`' reason:
+/// [`no_lesson_claims_uniqueness_over_the_path_undeclared`] matches the two against each
+/// other both ways, so they cannot differ, and reading the list keeps these tallies from
+/// needing a lesson scan of their own.
+fn n_unique_sentences(f: &Facts) -> usize {
+    f.unique.len()
+}
+fn n_unique_steps(f: &Facts) -> usize {
+    let mut steps: Vec<&str> = f.unique.iter().map(|u| u.step.as_str()).collect();
+    steps.sort_unstable();
+    steps.dedup();
+    steps.len()
+}
+fn n_unique_derived(f: &Facts) -> usize {
+    f.unique.iter().filter(|u| u.over.is_some()).count()
+}
+fn n_unique_backlog(f: &Facts) -> usize {
+    f.unique.iter().filter(|u| u.over.is_none()).count()
+}
 fn n_english_steps(f: &Facts) -> usize {
     let mut steps: Vec<&str> = f.english.iter().map(|(s, _)| s.as_str()).collect();
     steps.sort_unstable();
@@ -15282,6 +15798,17 @@ fn n_claims_on_what_protection_costs(f: &Facts) -> usize {
 /// whether a number in a paragraph is *about this file*. So the gap is written down —
 /// [`NOT_DERIVED`] — rather than left to be inferred from a green run.
 const TALLIES: &[Tally] = &[
+    // --- what the uniqueness table says about itself ---------------------------
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "The {n} sentences below sit on {n} steps, and {n} of them carry a derivation",
+        of: &[n_unique_sentences, n_unique_steps, n_unique_derived],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "Of the {n} in the backlog, not one was reworded",
+        of: &[n_unique_backlog],
+    },
     // --- what the header says about its own claims -----------------------------
     Tally {
         prose: Prose::ClaimsFile,
@@ -15588,6 +16115,24 @@ const TALLIES: &[Tally] = &[
 /// free-text waiver: reword the sentence and the entry reddens, so retiring one is a
 /// decision somebody writes down.
 const NOT_DERIVED: &[NotDerived] = &[
+    // The count of uniqueness claims that have shipped FALSE, stated once in each file. It
+    // is a count of past defects and it grows only when another one is found, which is a
+    // fact about git history and about what a later reader noticed — not about anything
+    // either file parses. Frozen on purpose: turning it into a present-tense derived number
+    // would make it count the sentences currently listed, which is a different quantity.
+    NotDerived {
+        prose: Prose::ClaimsFile,
+        phrase: "Four have shipped that way",
+        because: "a count of past defects, settled by git history rather than by this file. \
+                  The table below counts the sentences that exist, which is not the same \
+                  number and would not be one if it were.",
+    },
+    NotDerived {
+        prose: Prose::ThisTest,
+        phrase: "It has now shipped **four** times",
+        because: "the same count of past defects as the claims file's copy, settled by git \
+                  history rather than by either file.",
+    },
     NotDerived {
         prose: Prose::ClaimsFile,
         phrase: "reads this file and checks each entry up to SIX independent ways",
@@ -15996,6 +16541,17 @@ fn every_count_above_an_english_block_is_derived() {
 /// Cut at the section that follows it for [`word_list_block`]'s reason: a whole-file search
 /// for `# <step> \u{2014}` would find the ledger's own per-step notes, which are a different
 /// list with different numbers beside the same names.
+///
+/// **The cut is at `[ledger]`, which is a long way down.** Everything written between the
+/// English banner and that table — the arm and claim sections for the last several steps —
+/// is inside this span, so any *other* section that heads its blocks `# <step> \u{2014} <n>:`
+/// is read as an English block. That is not hypothetical: `[[unique]]` was first written
+/// here and failed this check with a message saying `ten-c-costs-a-point` "has no phrases
+/// left in the list", which was true of the English list and nothing to do with the section
+/// the header belonged to. The section was moved above the banner rather than the boundary
+/// being narrowed, because there is no failing case for a narrower one — but the next author
+/// to write a section into that gap will meet the same misleading red, and this paragraph is
+/// so that they can find out why in one search. See `docs/plans/path-uniqueness-rule.md`.
 fn english_block(raw: &str) -> &str {
     let open = "# ENGLISH \u{2014} THE QUANTITIES THE DIGITS RULE HAS NOT REACHED";
     let from = raw

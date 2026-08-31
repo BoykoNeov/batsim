@@ -8050,6 +8050,99 @@ Four claims for two numbers, which is what an assertion about repetition costs w
 vocabulary has no word for "and again".
 """
 
+# ============================================================================
+# THE UNIQUENESS CLAIMS — every sentence saying nothing else in the path is like this one
+# ============================================================================
+#
+# `no_lesson_claims_uniqueness_over_the_path_undeclared` refuses a sentence that pairs a
+# scope phrase (`this path`, `this repo`) with a uniqueness word (`no other`, `the only`,
+# `the first`, `the last`, ...) unless it is listed below. Matched BOTH WAYS, like
+# `[[english]]`: a sentence in the prose and not here fails, and an entry no sentence
+# matches fails too, so rewording a claim forces its entry to be re-decided.
+#
+# WHY THE RULE EXISTS. Every other check in these files asks whether a NUMBER is right.
+# None of them asks whether a claim about the PATH'S OWN SHAPE is still true — and that is
+# a sentence a lesson wants to write every time a chemistry lands. It is true when written,
+# a later slice makes it false, and no numeral moves, so nothing goes red. Four have
+# shipped that way: two found by `sodium-ion-chemistry.md`, and two more on step 25 found
+# by the slice that built this table, one of them in a `//` comment that `lesson_text`
+# cannot see at all. `docs/plans/path-uniqueness-rule.md` is the slice.
+#
+# TWO KINDS IN ONE TABLE, told apart by whether `over` is there:
+#
+#   * WITH `over` — the files settle it. The derivation compares the step's own chemistry
+#     against the chemistries THE PATH TEACHES (walked from each lesson's scenario file,
+#     never globbed off disk), and the comparison is strict: "no other cell comes close" is
+#     not satisfied by a tie. `mode = "each"` means every named field beats every other
+#     cell's; `mode = "both"` means this cell's WEAKEST named field beats every other's
+#     weakest, which is what a claim about a PAIR of ratings says.
+#   * WITHOUT `over` — backlog. The sentence is one this rule can see and nothing here can
+#     settle, named as unchecked rather than left looking covered. There is no third state:
+#     a waiver would be an author's word for a fact, which these files refuse everywhere.
+#
+# The 6 sentences below sit on 5 steps, and 2 of them carry a derivation.
+# Of the 4 in the backlog, not one was reworded to clear the scan — `path-twin-arm.md`
+# records that deleting a true sentence to satisfy a check is the same defect as inventing
+# a false one.
+
+# ten-c-costs-a-point — 2, and both were FALSE when this table was built.
+#
+# The LTO cell is rated 10 C in both directions and was, when step 25 was written, the only
+# cell in the path within a factor of three of that. Then `nimh_subc_3ah_generic` landed at
+# steps 27-29 rated `max_discharge_c = 10.0` — the same figure to the digit. So "no other
+# cell comes close in either" was false in the discharge direction, and "nothing else goes
+# above 3 C" was false outright.
+#
+# Both sentences now claim the PAIR, which is what survived: the nickel cell matches LTO in
+# discharge and is at 1 C in charge, so its weakest rating is a tenth of LTO's. `mode =
+# "each"` is what made the original sentences red; `mode = "both"` is what the reworded
+# ones say, and the difference between the two modes is exactly the defect.
+[[unique]]
+step = "ten-c-costs-a-point"
+sentence = "Nothing else in this path is rated for 10 C in both directions."
+over = { mode = "both", fields = ["cell.max_charge_c", "cell.max_discharge_c"] }
+
+[[unique]]
+step = "ten-c-costs-a-point"
+sentence = "A 20 Ah prismatic cell whose datasheet rates it at 10 C in both directions, which no other cell in this path is rated for."
+over = { mode = "both", fields = ["cell.max_charge_c", "cell.max_discharge_c"] }
+
+# one-step-that-got-through — 1, backlog. A claim about which step first has a headline
+# quantity one engine step long. Settling it would need every step's headline quantity to
+# be a declared thing, which nothing in these files has; the ledger knows a step's numerals
+# and not which of them is the point of it.
+[[unique]]
+step = "one-step-that-got-through"
+sentence = "The first step in this path whose headline quantity *is* one step long, so the step length stops being whatever the reader last typed."
+
+# and-it-is-still-in-there — 1, backlog. Which lesson's `overpotential` tile is a fitted
+# mechanism and nothing else. That is a fact about what a chemistry file PUTS in its
+# overpotential — the diffusion term the lead-acid fit carries — and no field says "this
+# tile is only this". A rule could compare `[diffusion]` sections across the taught
+# chemistries the way `over` compares ratings; nothing else would use it today.
+[[unique]]
+step = "and-it-is-still-in-there"
+sentence = "That is the one place in this path where the `overpotential` tile is the fitted mechanism and nothing else, and it is why a lead-acid battery seems to come back to life if you walk away from it."
+
+# which-way-it-was-driven — 1, backlog. The first lesson whose interesting quantity is a
+# memory rather than a state. Same shape as the one above: "what this lesson is about" is
+# not a field. The sentence after it already says out loud that it stopped being the ONLY
+# one when sodium-ion landed, which is the author doing this rule's job by hand — and the
+# reason this entry is worth having is that the next such sentence will not be.
+[[unique]]
+step = "which-way-it-was-driven"
+sentence = "The other half of what CLAUDE.md asked this chemistry for, and the first lesson in this path where the interesting quantity is a memory rather than a state."
+
+# a-curve-worth-reading — 1, backlog. The first parameter file fitted from raw laboratory
+# measurements. `meta.provenance` is the field that would say so, and it says it in prose:
+# settling this means matching English in a provenance string, which is a reader of exactly
+# the kind `path-digits-rule.md` argued against building.
+[[unique]]
+step = "a-curve-worth-reading"
+sentence = "The seventh chemistry, and the first parameter file in this repo fitted from a laboratory's own raw measurements rather than assembled out of a datasheet."
+
+
+
 # =====================================================================================
 # ENGLISH — THE QUANTITIES THE DIGITS RULE HAS NOT REACHED
 # =====================================================================================
@@ -8299,6 +8392,7 @@ phrase = "four hours"
 [[english]]
 step = "and-it-is-still-in-there"
 phrase = "Half an hour"
+
 
 # --- steps 25 and 26: LTO, the rate that costs nothing and the flag that never comes ----
 #
