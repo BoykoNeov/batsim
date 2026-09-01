@@ -3019,7 +3019,7 @@ literal, so a prose edit that changes it still reddens the literal check.
 [[claim]]
 step = "what-it-cost"
 literal = "*still* printing **0.0 %** at the instant the debt clears"
-quantity = "soc_at"
+quantity = "soc_at:983"
 value = 0.00003974
 tol = 5.0e-4
 tol_from = "spelled"
@@ -3046,7 +3046,7 @@ starts printing something else, that one if the charge level moves at all.
 [[claim]]
 step = "what-it-cost"
 literal = "the cell is 0.004 % full at that moment"
-quantity = "soc_at"
+quantity = "soc_at:983"
 value = 0.00003974
 tol = 5.0e-6
 tol_from = "spelled"
@@ -3065,7 +3065,7 @@ it sits in.
 [[claim]]
 step = "what-it-cost"
 literal = "only reaches 0.1 % two seconds later"
-quantity = "soc_at"
+quantity = "soc_at:985"
 value = 0.00054673
 tol = 5.0e-4
 tol_from = "spelled"
@@ -4599,8 +4599,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # and "all but three points of what it holds" is tied to that step's own charge claim.
 #
 # So "digits-closed is less than closed" is no longer a fact about the whole path — it is a
-# fact about the steps in `word_blind` below, which is seventeen of twenty-four. The sentence
-# stays because the gap it names is real for those seventeen, and because the pairing of
+# fact about the steps in `word_blind` below, which is twelve of thirty-two. The sentence
+# stays because the gap it names is real for those twelve, and because the pairing of
 # `spelled` and `word_blind` is what keeps it honest: a step is now one or the other by
 # declaration, never by silence.
 #
@@ -10247,17 +10247,27 @@ unledgered = [
 # twenty-nine quantities on the seven steps it then covered, and the second batch of six
 # needed one new SHAPE (a numeral ahead of its fraction, "four and a half seconds"), one new
 # unit noun, and thirteen vocabulary rules — almost all of them for an instant stated
-# RELATIVE to another one, which the first batch never met. The list holds fifteen steps now.
-# EVERY COUNT HERE IS ZERO, AND THAT IS THE RESULT RATHER THAN A GAP. These are the steps
-# whose English quantities had been read and tied to something; the digits rule rewrote all
-# twenty-nine of them into digits, so the word scan runs over these steps and finds nothing
-# left to account for. What ties those quantities today is the ordinary digit ledger, which
-# has covered all thirty-two steps since before this list existed.
+# RELATIVE to another one, which the first batch never met. The list holds twenty steps now.
 #
-# The list is kept rather than emptied because the scan it turns on is what would notice a
-# spelled quantity coming BACK to one of these steps with an arm behind it - and because
-# `no_lesson_spells_a_quantity_in_english` now refuses new ones path-wide, an entry here is
-# a statement about history rather than about coverage.
+# THE ENTRIES DO NOT ALL SAY THE SAME THING, and the split is a result rather than a gap:
+# fifteen of them read nothing at all. Those are the steps whose English quantities had been
+# read and tied to something; the digits rule rewrote all twenty-nine of them into digits, so
+# the word scan ran over those steps and found nothing left to account for. What ties those
+# quantities today is the ordinary digit ledger, which has covered all thirty-two steps since
+# before this list existed.
+#
+# THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK. The five steps that read something carry
+# thirteen spelled quantities between them, and they are the first this vocabulary has ever
+# accounted for:
+# until they landed, every rule in the table read a token written in digits, so the spelled
+# branch of `ledger_numbers` was wired up path-wide and reading nothing. A green over an
+# empty list is worth what a green over an empty list is always worth, and that is what the
+# fifteen zeroes above had been reporting since the digits rule.
+#
+# The zero entries are kept rather than dropped because the scan they turn on is what would
+# notice a spelled quantity coming BACK to one of those steps with an arm behind it - and
+# because `no_lesson_spells_a_quantity_in_english` now refuses new ones path-wide, a zero
+# entry here is a statement about history rather than about coverage.
 spelled = [
   "the-gradient-itself",         # 0 (15 before the digits rule, the most of any step)
   "bare-curve",                  # 0 (1)
@@ -10278,6 +10288,15 @@ spelled = [
                                      # in the first draft of its opening sentence, which is
                                      # an ARTICLE and a unit noun and is exactly what the
                                      # reader reads
+  "belief-drifts",               # 1 - the run's own length, the first spelled quantity
+                                 #     any vocabulary rule in this repo accounted for
+  "protection-off",              # 1 - the gap between its two flags
+  "looks-fine-from-outside",     # 2 - the continuation's clock in minutes, and the rate
+                                 #     as a multiple of the hour rate rather than in C
+  "particle-remembers",          # 4 - the pulse program three times over, and how many
+                                 #     teeth the mark holds
+  "what-it-cost",                # 5 - the knee twice, the control arm's residue, the gap
+                                 #     between two instants, and the sampler's own period
 ]
 
 # The other side of that list: steps whose prose is NOT word-scanned, named.
@@ -10306,22 +10325,24 @@ spelled = [
 # So a `0` below means "no quantity of a shape the reader reads", never "no quantity".
 word_blind = [
   "pack-disagrees",              # 3 - the grid's spread, which wants claims that do not exist
-  "belief-drifts",               # 1 (2 before the digits rule)
   "lying-sensor",                # 0 read, and one count of groups
   "protection-on",               # 0 read, and one count of cells
   "and-it-is-still-in-there",    # 6, all of them hours, three relative to the rest's start
-  "particle-remembers",          # 4 (5 before the digits rule)
   "the-electrolyte-starves",     # 0 read, and two hours spelled as articles
   "two-legs",                    # 0 read, and one count of engine steps
   "past-empty",                  # 5 read (6 before the digits rule), and a reading list
                                  #     headed by an article
-  "looks-fine-from-outside",     # 2
   "one-step-that-got-through",   # 5 - three of them only became visible when `percent`
                                  #     joined the unit nouns for a step in `spelled`
   "what-protection-costs",       # 0 read, and two counts of engine steps
   "leg-that-is-not-there",       # 0
-  "what-it-cost",                # 5 (8 before the digits rule)
-  "three-times-the-current",     # 3
+  "three-times-the-current",     # 3 - two are the pulse program and the gap between two
+                                 #     claimed instants, and both would close today. The
+                                 #     third is *"about ten times the circuit's arithmetic
+                                 #     per step"*, a cost ratio between two cell models,
+                                 #     and no file in this tree holds one. Step 16 met the
+                                 #     same shape and took its two per-step ratios OFF the
+                                 #     page rather than tie them to the nearest number
+                                 #     lying around; this sentence is still on it
   "same-discharge-other-chemistry",  # 0 read, and a "third" this file refuses to value
-  "protection-off",              # 1
 ]

@@ -1084,13 +1084,16 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
 /// and *"an hour of simulation"* spell one as an article, and there is nothing here to key
 /// on. [`english_quantities`] does see that shape, because refusing one needs no value.
 ///
-/// **It is vacuous on today's prose, and saying so is the point of this paragraph.** Every
-/// step in `spelled` now spells nothing at all, so this guard walks seven lessons and finds
-/// no numeral to ask about. It is kept rather than deleted because it guards the READER, and
-/// the reader is still wired in: a spelled quantity coming back to one of those steps would
-/// meet [`no_lesson_spells_a_quantity_in_english`] first, and this second. A green here is
-/// worth exactly what a green over an empty list is worth, which is nothing, and that is not
-/// what it used to be worth.
+/// **It stopped being vacuous, and the paragraph that said it was is worth keeping in
+/// view.** What stood here read: "Every step in `spelled` now spells nothing at all, so this
+/// guard walks seven lessons and finds no numeral to ask about ... a green here is worth
+/// exactly what a green over an empty list is worth, which is nothing." That was true and it
+/// was true for a reason — the digits rule rewrote every spelled quantity on every step then
+/// listed — and it stayed true through eight more steps landing, because a green over an
+/// empty list does not get louder by being repeated. The third word batch is what refilled
+/// it: the steps it opened carry spelled quantities again, every one of which this guard now
+/// walks past a numeral to reach. So a green here says something again — and the count of
+/// lessons in that old sentence had gone stale by the time anybody read it.
 #[test]
 fn no_spelled_quantity_is_silently_skipped() {
     let lessons = lessons();
@@ -9061,6 +9064,16 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Scenario("pack.bms.initial_soc_error")],
         pow10: 2,
     },
+    LedgerRule {
+        // The run's own length, in the sentence that says what the sensor offset comes to
+        // over it. The **first spelled quantity this table has ever accounted for**: every
+        // earlier rule reads a token written in digits, and this one reads *ten minutes*
+        // against an `until_s` of 600 s. Nothing in the rule says so — the conversion is
+        // the scanner's, per token, which is what `Written::scale` is for.
+        phrase: "of a point over {n}; the offset",
+        ties: &[Tie::Setting(Control::Until)],
+        pow10: 0,
+    },
     // Step 5 — the two scheduled faults. The prose's whole first paragraph is a reading of
     // the `[[faults]]` tables, which is what makes this step free to ledger.
     LedgerRule {
@@ -9210,6 +9223,28 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // and would have matched every cross-reference in the path.
         phrase: "the capacity scatter of step {n}",
         ties: &[Tie::Ordinal("pack-disagrees")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // *"follows ten seconds later"* — and neither instant is in the phrase. Both are
+        // claimed on this step, so the sentence's number is their difference and the rule
+        // says which order: the clamp follows the window flag, and reversed this would be a
+        // sentence about a flag arriving before the one it follows.
+        phrase: "follows {n} later at",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "protection-off",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "protection-off",
+                arm: None,
+                quantity: "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW",
+                states: QuotedAs::Same,
+            },
+        ])],
         pow10: 0,
     },
     // Step 12 — the pulse train. Its two leg lengths are the demand program the PAGE runs,
@@ -9362,6 +9397,39 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                 Tie::Chemistry("rc.1.c_farad"),
             ]),
         ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The rest leg, in the sentence about what has *not* come back by the end of it.
+        phrase: "returned when the {n} are up",
+        ties: &[Tie::Setting(Control::PulseOff)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Both legs of the train in one sentence, and the sentence is the step's argument:
+        // the rest is ten times the pulse and still does not undo it. Two ties in one rule
+        // rather than a rule each, because the comparison is what the sentence is for.
+        phrase: "{n} of rest does not undo {n} of diffusion",
+        ties: &[
+            Tie::Setting(Control::PulseOff),
+            Tie::Setting(Control::PulseOn),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // How many teeth the run holds — the mark over one tooth, and a tooth is the two
+        // legs together. Not a setting: no field of the lesson block says `5`, and the
+        // sentence's whole point is that the circuit gave the same answer on every one of
+        // them, so a rule that read the count off anything but the program would stop
+        // meaning that the day the mark moved.
+        phrase: "was the same {n} because a linear system",
+        ties: &[Tie::Ratio(&[
+            Tie::Setting(Control::Until),
+            Tie::Sum(&[
+                Tie::Setting(Control::PulseOn),
+                Tie::Setting(Control::PulseOff),
+            ]),
+        ])],
         pow10: 0,
     },
     // Step 14 — three times the current, and the last of the three pulse steps. Nineteen of
@@ -9793,9 +9861,22 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 2,
     },
     LedgerRule {
-        // The nameplate itself, the third number of that same clause.
-        phrase: "of this cell's {n}, in the eighteen minutes",
-        ties: &[Tie::Chemistry("cell.capacity_ah")],
+        // The nameplate itself, the third number of that same clause — and the clock
+        // reading beside it, which is the continuation's cut-off said in minutes. The
+        // second slot used to be part of this rule's *literal* text, which is what a
+        // word-blind step looks like from inside the table: the phrase reached straight
+        // past a quantity it could not see. Both tokens take `pow10: 0`, because the
+        // minutes are the scanner's own per-token scale and not a decade.
+        phrase: "of this cell's {n}, in the {n}",
+        ties: &[
+            Tie::Chemistry("cell.capacity_ah"),
+            Tie::Quoted {
+                step: "looks-fine-from-outside",
+                arm: Some("carries on"),
+                quantity: "t_at_v_below:2.5",
+                states: QuotedAs::Same,
+            },
+        ],
         pow10: 0,
     },
     LedgerRule {
@@ -9843,6 +9924,17 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
             states: QuotedAs::Same,
         }],
         pow10: 2,
+    },
+    LedgerRule {
+        // The C-rate the same clause closes on, said as a multiple of the hour rate rather
+        // than as a C figure. The demand box over the nameplate, which is step 1's rate
+        // rule read at the precision this sentence commits to — none.
+        phrase: "the clock will be showing, at {n} its rated hour rate",
+        ties: &[Tie::Ratio(&[
+            Tie::Setting(Control::DemandValue),
+            Tie::Chemistry("cell.capacity_ah"),
+        ])],
+        pow10: 0,
     },
     // Step 16 — the Doyle-Fuller-Newman half of the pair, and the densest step in the path:
     // 38 numerals, of which 15 are claimed on its own pack. Nine of the rest are readings the
@@ -11778,6 +11870,84 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
 
+    LedgerRule {
+        // How far from empty this step starts, said as a length of time, in both of the two
+        // sentences that say it. The instant itself is claimed — the clamp flag at
+        // 207.5 s — and three and a half minutes is that reading in the unit the prose
+        // chose, which is why the quotation arm's rounding is doing the work: 207.5 s is
+        // 3.4583 minutes and the sentence commits to one decimal place.
+        phrase: "so that empty is {n} away instead of",
+        ties: &[Tie::Quoted {
+            step: "what-it-cost",
+            arm: None,
+            quantity: "flag_first_s:SOC_CLAMPED_LOW",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same instant again, in the sentence that says what the ordinary wear before
+        // the knee amounts to.
+        phrase: "of a point is {n} of perfectly ordinary discharge",
+        ties: &[Tie::Quoted {
+            step: "what-it-cost",
+            arm: None,
+            quantity: "flag_first_s:SOC_CLAMPED_LOW",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The control arm's whole purpose, in one number. The step measures the same run
+        // twice — once as it is, once with the over-discharge coefficient set to zero —
+        // and this is what separates them: the health at the knee, less the health the
+        // undamaged run still has at the mark. Neither operand is in the sentence.
+        phrase: "and about {n} are calendar and cycle fade",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: None,
+                quantity: "soh_cap_at:207.5",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: Some("no reversal damage"),
+                quantity: "soh_cap_at:600",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        // How long the truth row stays on `0.0 %` after the debt clears. Two instants on
+        // the charge leg, both claimed, and the sentence prints neither: it prints the gap.
+        // Order is the claim here as everywhere — reversed, the row would be reaching a
+        // tenth of a point two seconds *before* the debt cleared.
+        phrase: "% {n} later. The row that marks",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "what-it-cost",
+                arm: Some("charge leg"),
+                quantity: "soc_at:985",
+            },
+            Tie::Instant {
+                step: "what-it-cost",
+                arm: Some("charge leg"),
+                quantity: "soc_at:983",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The sampler's own period, which is the whole of the caveat this step closes on:
+        // the `past empty` row is sampled on a wall clock and not on the telemetry frame,
+        // so a quarter-second is how long it can stay wrong once nothing is moving. The
+        // page holds it in milliseconds and the sentence says it in seconds.
+        phrase: "throttled to a {n} of wall clock",
+        ties: &[Tie::Page("CELLS_PERIOD_MS")],
+        pow10: -3,
+    },
     // Step 17 - the last step in the path to be ledgered, and the one whose numbers are
     // most nearly all its own: forty-four numerals, twenty-eight of them measurements on a
     // single trajectory. What is left for a rule is small and unusually varied - two
@@ -15733,6 +15903,33 @@ fn n_ledgered(f: &Facts) -> usize {
 fn n_word_scanned(f: &Facts) -> usize {
     f.ledger.spelled.len()
 }
+/// How many quantities the word scan actually **reads** across the steps it is on for.
+///
+/// Order-free by construction, and that is the whole reason it is derived rather than
+/// written. The sentence it settles used to say "the first fifteen entries", which is a
+/// claim about where in the list an entry sits — and the steps that read something were
+/// appended at the end, so a re-sort would have falsified it with every check in this file
+/// green. A count over the whole list survives a re-sort; a count over its head does not.
+fn n_spelled_quantities(f: &Facts) -> usize {
+    f.ledger.spelled.iter().map(|s| f.spelled_in(s)).sum()
+}
+/// The two halves of [`n_word_scanned`]: the steps whose English the digits rule emptied,
+/// and the steps that still state one. Both are sentences the claims file writes about
+/// itself, and until the third batch neither was derived because the second was zero.
+fn n_spelled_steps_reading_none(f: &Facts) -> usize {
+    f.ledger
+        .spelled
+        .iter()
+        .filter(|s| f.spelled_in(s) == 0)
+        .count()
+}
+fn n_spelled_steps_reading_some(f: &Facts) -> usize {
+    f.ledger
+        .spelled
+        .iter()
+        .filter(|s| f.spelled_in(s) > 0)
+        .count()
+}
 fn n_ledgered_numerals(f: &Facts) -> usize {
     f.ledger.steps.iter().map(|s| f.numerals_in(s)).sum()
 }
@@ -16020,6 +16217,20 @@ const TALLIES: &[Tally] = &[
         prose: Prose::ClaimsFile,
         phrase: "carry no claim at all and need arms this file has not got: {w}",
         of: &[n_unledgered_unclaimed],
+    },
+    Tally {
+        // The word-scanned list split in two, in the header that describes it. Both numbers
+        // arrived hand-typed in the third batch and are registered in the same slice rather
+        // than after the first one went stale - the discipline this table keeps, and the one
+        // its own first draft did not.
+        prose: Prose::ClaimsFile,
+        phrase: "{w} of them read nothing at all",
+        of: &[n_spelled_steps_reading_none],
+    },
+    Tally {
+        prose: Prose::ClaimsFile,
+        phrase: "The {w} steps that read something carry {w} spelled quantities between them",
+        of: &[n_spelled_steps_reading_some, n_spelled_quantities],
     },
     Tally {
         prose: Prose::ClaimsFile,
