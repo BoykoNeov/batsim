@@ -162,7 +162,7 @@ exit code, because `start /wait` is exit-code-blind.
 | --- | --- |
 | **A** the shipped multiplier `4.00` → `3.00` | `every_claim_matches_the_engine`, `every_numeral_in_a_ledgered_step_is_accounted_for`, `the_wider_loop_costs_the_gauge_more_than_the_steeper_curve_saves` |
 | **B** `[hysteresis.width_over_soc]` deleted | those three, plus `exactly_one_chemistry_carries_a_hysteresis_width_table` and `the_loop_is_wider_below_the_breakpoint_than_above_it` |
-| **C** the new lesson's block deleted | 16 tests, including both `[ledger]` partition checks, three self-count checks, and every claim and arm left pointing at a step that no longer exists |
+| **C** the new lesson's block deleted | 16 tests — but see below: this row measures INTEGRATION, not the claims |
 | **D** the scenario rests somewhere else (`initial_soc` `0.25` → `0.30`) | `every_claim_matches_the_engine`, the ledger, and the new test |
 | **E** the prose's own subtraction changed and nothing else | `every_claim_appears_in_its_own_step`, the ledger |
 | **F** CONTROL: an unclaimed sentence reworded, no number touched | **nothing** |
@@ -174,6 +174,17 @@ prose 2.622, 4.586e-3 past a 5.0e-4 tolerance) and on the estimate row; the ledg
 because the prose states a `4.00` the file no longer has; and the test fails on the
 half-width and on the gap. Before this slice **none** of them existed and that edit was
 silent.
+
+**Case C's sixteen is not sixteen independent results, and the log says so.**
+`every_claim_matches_the_engine` fails there with `no lesson
+`the-loop-is-wider-down-here`` — it never reaches a number. Most of the sixteen are
+structural in the same way: both `[ledger]` partitions, three self-count tallies, and
+every claim, arm and derivation left pointing at a step that is gone. That is worth
+having — it is what stops a step being quietly deleted, which
+`path-ledger-last-step-slice` found is exactly where a deletion case can go green on
+the wrong check — but the row says *this step is wired into the files that describe
+it*, and nothing about whether its numbers are right. **A and D are where the values
+are held**, and each of those is three reddenings that had to compute something first.
 
 **G is why E is not enough.** E moves the prose out from under its own claims, so it fails on
 the literal before the arithmetic is ever reached — a red that says nothing about the derived
