@@ -218,6 +218,49 @@ has run it. This is a stated open item, not a hole — one
 `cargo bench -p sim-core --bench pack_step -- "100S10P/(current|full)"` under the recipe
 above answers it, with both cases in one invocation so no pairing is needed.
 
+**Attempted the same day — and it did not clear its own bar. Verdict: UNGATED.** A third
+registered batch (four rounds, same gate, same pin, both cases in one invocation, minimum
+estimator, round 1 discarded) required **three gated rounds** to return a verdict. **Two
+gated.** Rounds 1 and 3 burned all ten gate attempts and were skipped, not run — the
+closing-window effect above, arriving on schedule. So there is no verdict, and the
+arithmetic in the paragraph above remains this file's position.
+
+The readings are recorded anyway, for one reason worth stating precisely: **the batch
+reproduced its own null.** `100S10P/current` read **47.126** and **47.306 µs** here against
+the **47.230 µs** scored by the separate batch above — 0.2 % agreement across two
+independently registered batches, on the exact quantity the earlier one scored. This file's
+own rule is that an instrument check licenses the minute it ran in, so the null belongs
+*inside* the batch; that is satisfied here for the first time. It is why the readings are
+worth writing down. It is not why they would be a verdict — the round count is why they
+are not one.
+
+| case | round 2 | round 4 |
+| ---- | ------- | ------- |
+| `100S10P/current` | 47.126 µs (±0.8 %) | 47.306 µs (±0.6 %) |
+| `100S10P/full` | 55.121 µs (±2.0 %) | 54.599 µs (±0.7 %) |
+| `100S10P/full+aging` † | 59.220 µs | 57.283 µs |
+| `100S10P/full+aging_every_step` † | 83.153 µs | 80.024 µs |
+
+† **Unregistered.** The regex filter caught four cases, not the two the registration named.
+No estimator was declared for these and no prediction was made about them, so they are
+observations, not results — a number nobody registered is exactly the kind a story gets
+fitted to afterwards. `aging_every_step` is additionally **not a shipped configuration**:
+the aging sub-clock runs one step in a hundred at the shipped 10 s period against a 0.1 s
+`dt`, so that row prices the tick, not the engine.
+
+**Current↔full delta, within-round only** — the two readings have to come from one
+invocation or they name instants that never coexisted: **8.00 µs** (round 2) and **7.29 µs**
+(round 4). Mid-range of the historical 4–10 µs, and inside the 3–10 the arithmetic above
+assumed, so **that arithmetic needs no revision.**
+
+**A prediction that came out right off an argument that was wrong — recorded because the
+argument will be offered again.** The registration predicted 51–55 µs *and* a delta at the
+low end of its historical range, 4–6 µs, reasoning that six of the eight allocations
+`fd3f162` removed sat on the features-on paths. The band was right, at its top edge. The
+delta was **not narrowed at all**. Removing those allocations did not measurably close the
+current↔full gap, so the reasoning that produced the correct band should not be trusted the
+next time it is put forward.
+
 ### Still true: never trust a saved baseline
 
 The single most expensive mistake available here is trusting a criterion baseline saved in
