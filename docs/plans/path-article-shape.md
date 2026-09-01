@@ -79,7 +79,12 @@ nothing left for a fence to do.
 figure**. The fraction is the quantity and it is unsaid. So the reader is right to read `1`
 there and the accounting is right to refuse it, and the repair is the sentence. Both were
 reworded — *"a fraction of that"* and *"That fraction is…"* — which say the same thing about
-the same gap and spell nothing. Rewording a sentence that states no figure is not
+the same gap and spell nothing. `belief-drifts`' is the weaker of the two and it is worth
+saying so: *"a fraction of a point"* bounded the offset's contribution **absolutely**, where
+*"a fraction of that"* bounds it against a gap the clause before already attributes mostly to
+boot error, so the sentence edges toward tautology. It is still true and still states no
+figure. The better repair is a digit, and it needs the offset's contribution measured —
+which would want a control arm with the offset zeroed, and would then tie. Rewording a sentence that states no figure is not
 `docs/plans/path-twin-arm.md`'s defect; **that** defect is deleting a sentence that states a
 true one.
 
@@ -111,7 +116,35 @@ where the claim lives rather than re-measuring here. The alternatives are worse 
 tighter: the cell's nameplate over the demand box is the same quantity **computed** instead
 of measured, and it answers in hours where every time arm in this file answers in seconds.
 
-Both are loose, because both sentences are: a token with no decimal place licenses half a
+### The borrowed hour needed a precondition, and the arm could not be one
+
+Tying one step's sentence to another step's measurement is only right while the two steps
+run the same cell at the same current from full — which the rule's comment **states** and
+nothing enforced. That is this file's own recurring shape: a note saying X, falsified by the
+first edit that makes not-X true, with nothing pointing that author at the note.
+
+**The arm cannot substitute for the precondition, which is why the assert is bespoke.** The
+token prints no decimal place, so it licenses anything from 1800 s to 5400 s. Retype
+`what-it-cost`'s demand box to 4 A and every claim on that step reddens, so the author
+re-measures all of them — but the borrowed hour has **no claim**, so it goes on pointing at a
+discharge now twice as slow as its own sentence's, and stays green. Halve step 1's discharge
+and it still prints `1`. Case D of the table measures that the arm names step 1 rather than
+any step; `the_borrowed_hour_is_the_same_cell_at_the_same_current_from_full` is the other
+half, which is whether step 1 is still the right one to ask. Its three arms — same demand,
+same chemistry, and a source that starts at **full**, because that is the whole content of
+the word *"instead"* — each redden on their own assertion:
+
+| case | verdict | reddened |
+| --- | --- | --- |
+| J — `what-it-cost`'s demand box 2 A → 4 A | RED | the demand equality |
+| K — step 1's scenario re-pointed at another chemistry | RED | the chemistry equality |
+| L — step 1 no longer starts at full charge | RED | the `initial_soc` assert |
+
+Not folded into the vocabulary as another `Tie`: what it asserts is an equality between two
+lessons' **settings**, not a number a sentence prints, and there is no numeral in the prose
+for it to account for.
+
+Both arms are loose, because both sentences are: a token with no decimal place licenses half a
 unit either way. That is the rule this file keeps everywhere — a sentence is held to the
 precision it prints — and it is the same tolerance step 24's *"at four"* was deliberately
 given when a tighter and wrong arm was available.
@@ -119,7 +152,8 @@ given when a tighter and wrong arm was available.
 ## The cap nobody would have found by reading
 
 `english_quantities` walks at most four connectives from its head; the reader's walk was
-unbounded. That difference was invisible while the reader keyed on numerals, because a
+unbounded. The cap went on the **whole** of shape 1 rather than on the article branch alone,
+so the numeral path is capped now too; case I says it is inert for both today. That difference was invisible while the reader keyed on numerals, because a
 numeral is rarely followed by a long filler run — and an article is. A reader that walked
 further than the ban would find a quantity the ban never spanned, and
 `the_ban_sees_every_quantity_the_reader_reads` would have reddened on a lesson nobody had

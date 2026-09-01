@@ -13190,6 +13190,73 @@ fn chemistry_id(scenario_file: &str) -> String {
         .to_string()
 }
 
+/// The hour one step borrows from another is only that step's hour under conditions, and
+/// these are them.
+///
+/// `what-it-cost` says *"empty is three and a half minutes away instead of an hour"* and its
+/// rule ties that hour to `bare-curve`'s clamp instant, because this step starts at 5 % and
+/// never visits the length it is talking about. That is the right number only while the two
+/// steps run the SAME CELL at the SAME CURRENT from FULL, which the rule's comment states
+/// and, until this test, nothing enforced — the exact shape this file keeps finding: a note
+/// saying X, falsified by the first edit that makes not-X true, with nothing pointing that
+/// author at the note.
+///
+/// **The arm cannot substitute for this, and that is why the assert is bespoke.** The token
+/// prints no decimal place, so it licenses anything from 1800 s to 5400 s. Retype
+/// `what-it-cost`'s demand box to 4 A and every claim on that step reddens, so the author
+/// re-measures all of them — but the borrowed hour has no claim, so it stays pointed at a
+/// discharge that is now twice as slow as the sentence's own, and stays green. Halve step
+/// 1's discharge and it still prints `1`. What the perturbation table measured is that the
+/// arm names step 1 rather than any step; this is the other half, which is whether step 1
+/// is still the right one to ask.
+///
+/// Not folded into the vocabulary as another `Tie`: what is being asserted is an
+/// **equality between two lessons' settings**, not a number a sentence prints, and there is
+/// no numeral in the prose for it to account for.
+#[test]
+fn the_borrowed_hour_is_the_same_cell_at_the_same_current_from_full() {
+    let lessons = lessons();
+    let of = |id: &str| {
+        lessons
+            .iter()
+            .find(|l| l.id == id)
+            .unwrap_or_else(|| panic!("no lesson `{id}`"))
+            .clone()
+    };
+    let borrower = of("what-it-cost");
+    let source = of("bare-curve");
+
+    assert_eq!(
+        borrower.demand, source.demand,
+        "`what-it-cost` borrows its \"instead of an hour\" from `bare-curve`'s clamp \
+         instant, and the two lesson blocks no longer ask for the same demand. That hour \
+         is how long THIS cell takes to empty from full, so it is step 1's number only \
+         while step 1 is pulling what this step pulls. Re-point the rule, or say the hour \
+         in digits off something that moved with it."
+    );
+    assert_eq!(
+        chemistry_id(&borrower.scenario),
+        chemistry_id(&source.scenario),
+        "`what-it-cost` borrows its \"instead of an hour\" from `bare-curve`, and the two \
+         scenarios no longer name the same chemistry. A different cell empties in a \
+         different time and the sentence would be about neither."
+    );
+
+    // ...and the source has to be a discharge from FULL, because that is the whole content
+    // of the word "instead": the sentence contrasts this step's 5 % start against a cell
+    // that begins at the top. A step 1 starting anywhere else measures a shorter run and
+    // the tolerance is wide enough to swallow it.
+    let full = numbers_at_path(&scenario_toml(&source.scenario), "pack.initial_soc");
+    assert_eq!(
+        full,
+        vec![1.0],
+        "`bare-curve` is what `what-it-cost`'s \"instead of an hour\" is measured against, \
+         and it no longer starts at full charge. Its clamp instant is then how long a \
+         PARTIALLY charged cell takes to empty, which is not the length the borrowing \
+         sentence is contrasting its own 5 % start with."
+    );
+}
+
 /// The chemistry file the step's scenario names, as that file writes it.
 ///
 /// Raw TOML for the reason [`scenario_toml`] is: a rule's path should be the key an author
