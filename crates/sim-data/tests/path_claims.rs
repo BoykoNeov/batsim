@@ -110,12 +110,16 @@
 //! readings. It finds a numeral and a measure noun ("three minutes", "half an hour", "an
 //! eighteen-minute discharge"), a numeral written after its unit ("the first minute and a
 //! half"), a numeral written before it with a fraction between ("four and a half seconds"),
-//! and a list item carrying a unit an earlier item stated ("5.80 at six"). **It finds nothing
-//! at all today**: every quantity it used to read has been rewritten in digits, and the
-//! per-step counts beside `spelled` are all zero, which is the result rather than a gap.
+//! and a list item carrying a unit an earlier item stated ("5.80 at six"). **It found
+//! nothing at all for four days**, and that sentence stood here while it was true: the
+//! digits rule rewrote every quantity it then read, so the per-step counts beside `spelled`
+//! were all zero and a green over the reader was a green over an empty list. The batches
+//! after it opened steps that still spell their quantities, and those counts are derived in
+//! `path-claims.toml` rather than repeated here — see the two tallies in the `spelled`
+//! header, which is where a number describing that list belongs.
 //!
 //! **What is still spelled in English is named phrase by phrase**, in `[[english]]` in
-//! `web/path-claims.toml` — 48 of them across twelve steps, matched both ways so
+//! `web/path-claims.toml` — 47 of them across twelve steps, matched both ways so
 //! that the list can only get shorter. They are the half that was tied to nothing: rewriting
 //! one into digits makes the ledger see it, and the ledger has no waiver, so each is a rule
 //! or a claim rather than an edit. Two shapes stay out of the ban and are declared rather
@@ -128,7 +132,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is thirty-two steps and 770 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is thirty-two steps and 771 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -1406,9 +1410,14 @@ fn english_quantities(text: &str) -> Vec<(usize, String)> {
 /// [`the_ban_refuses_every_unit_the_reader_reads`] asks this of the two unit tables; this
 /// asks it of the two scanners, over the real prose, which is the half a table comparison
 /// cannot reach - a shape one reads and the other does not would pass that test and fail
-/// here. Run over **every** lesson rather than the word-scanned ones, which is what makes it
-/// a live check today: the thirty-five quantities still spelled in English all sit on steps
-/// the reader is not turned on for.
+/// here. Run over **every** lesson rather than the word-scanned ones, and that is what keeps
+/// it live: most of the backlog sits on steps the reader is not turned on for, so a version
+/// walking only the scanned ones would be asking its question of the prose least likely to
+/// answer it. **The sentence that stood here said the backlog sat ENTIRELY on unscanned
+/// steps**, which stopped being true the moment a word batch opened a step that still spells
+/// something - three batches ago - and it was a claim about the file's contents in a doc
+/// comment, which no scanner in this file reads. The counts live in `path-claims.toml`, one
+/// per block, and are derived there.
 ///
 /// One direction, on [`BANNED_UNITS`]'s terms. The ban is allowed to be wider - it reads the
 /// article shape, which the reader never has - and is never allowed to be narrower.
@@ -8103,13 +8112,19 @@ enum Tie {
     /// non-decimal factor always lands off a round number. A prose figure in hours is
     /// rounded by construction.
     ///
-    /// **That choice is unreachable through the vocabulary today, and it has a test of its
-    /// own because of that.** Its one user sits inside a [`Tie::Product`], and [`tie_agrees`]
-    /// is asked about a rule's *outermost* tie — so the product's own rounding is what decides
-    /// `1.99`, and moving this variant out of the rounding group leaves the whole suite green
-    /// (measured, not assumed). A comparison arm nothing reaches is the `CCCV_PERIOD_S` shape
-    /// this file has been caught by once, so [`an_hours_tie_rounds_the_way_a_computed_tie_does`]
-    /// asks the question directly instead of leaving the paragraph above to stand on nothing.
+    /// **That choice was unreachable through the vocabulary when it was written, and it has a
+    /// test of its own because of that.** The variant's only use then sat inside a
+    /// [`Tie::Product`], and [`tie_agrees`] is asked about a rule's *outermost* tie — so the
+    /// product's own rounding decided `1.99` and this variant's arm was never entered. A
+    /// comparison arm nothing reaches is the `CCCV_PERIOD_S` shape this file has been caught
+    /// by once, so [`an_hours_tie_rounds_the_way_a_computed_tie_does`] asks the question
+    /// directly rather than leaving the paragraph above to stand on nothing.
+    ///
+    /// **Two rules reach it directly now** — step 8's mark said in hours, and step 24's — and
+    /// the paragraph above was still saying otherwise two batches later. The rule that first
+    /// reached it wrote so in its own comment, ten thousand lines away, which is the whole
+    /// shape: a note about what nothing does is falsified by the thing that starts doing it,
+    /// and nothing points the author of that thing at the note.
     Hours(&'static Tie),
     /// The **span of a table** the chemistry declares: its largest value minus its
     /// smallest, at this path.
@@ -10444,8 +10459,10 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     // Step 24 — the rest, and the second discharge out of a cell that had already stopped.
-    // Six of its numerals point at other steps and the rest are measurements, so this block
-    // is ordinals and one setting; everything else on the step is claimed.
+    // Six of its numerals point at other steps and the rest are measurements, so the first
+    // half of this block is ordinals and one setting; everything else the step writes in
+    // DIGITS is claimed. The second half is the English half, added when the step joined
+    // the word scan — see the comment above the rules that carry it.
     LedgerRule {
         phrase: "the same {n} C discharge for the same {n} seconds",
         ties: &[
@@ -10508,6 +10525,110 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
     LedgerRule {
         phrase: "unlike steps {n} and {n} there is",
         ties: &[Tie::Ordinal("past-empty"), Tie::Ordinal("what-it-cost")],
+        pow10: 0,
+    },
+    // The quantities this step spells in ENGLISH, which is what putting it in the ledger's
+    // `spelled` list made visible, plus the one that had to be written in digits to be
+    // tied at all. Every one is an hour or a fraction of one, and they divide two ways:
+    // the rest LEG, which the pulse program decides, and two INSTANTS inside that rest,
+    // which the claims read at them decide. Nothing here needed a new tie — the conversion
+    // out of hours is the scanner's own per-token `scale`, so every rule below takes
+    // `pow10: 0` even though not one of them prints a second.
+    LedgerRule {
+        // The rest leg, in the sentence that introduces the program. The page's pulse mode
+        // is a pure function of simulation time, so the length of the rest is the `off_s`
+        // field of this lesson's own demand block and nothing else.
+        phrase: "then stops asking for {n}, then asks again",
+        ties: &[Tie::Setting(Control::PulseOff)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The step's whole span, in the sentence that warns the reader it runs fast. The
+        // mark is in seconds and the sentence is in hours, which is what [`Tie::Hours`] is
+        // for — the second rule in the table to reach that variant directly, after step 8's
+        // "about 56 hours".
+        //
+        // The sentence said *"four and a quarter hours"* until this scan reached it. The
+        // mark is 15374.5 s, which is 4.27 hours, and a quarter of an hour is not a
+        // rounding of that at any precision — a computed tie reads it as 4.3 to one place
+        // and 4.27 to two, and never as 4.25. So the figure is in digits now, which is what
+        // the digits rule asks for anyway.
+        phrase: "This step covers {n} hours, so it runs fast",
+        ties: &[Tie::Hours(&Tie::Setting(Control::Until))],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The first of the two instants inside the rest, and the sentence's own claim is
+        // what decides it: 2537 s is where that voltage is read, and the rest began when
+        // the current went off at `on_s`. The subtraction is the frame the sentence writes
+        // in — a reader counts from where the load came off, not from the start of the run.
+        //
+        // Order is the claim, as it is under every `Tie::Difference`: reversed, this would
+        // be half an hour BEFORE the rest began, which is inside leg one.
+        phrase: "you can: `1.984 V` at {n}, `2.005 V`",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "and-it-is-still-in-there",
+                arm: None,
+                quantity: "v_at:2537",
+            },
+            Tie::Setting(Control::PulseOn),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The second of them, written as a bare numeral carrying the unit its two
+        // neighbours in the same list stated — the scanner's third shape. Same frame as the
+        // rule above, and the same subtraction: 15136.5 s less the 737 s of leg one is
+        // 14399.5, which is 3.99986 hours.
+        //
+        // **The tolerance is the prose's own and is worth stating.** A token with no
+        // decimal place in it licenses half a unit either way, so this arm would accept
+        // anything from three and a half to four and a half hours, where its two siblings
+        // commit to a tenth and are held to three minutes. That is the rule this file keeps
+        // everywhere — a sentence is held to the precision it prints — and it is looser here
+        // because the sentence is looser here.
+        //
+        // Not `Setting(Control::PulseOff)`, which is exactly four hours and would have been
+        // the tighter arm. It would also have been the wrong one: it decides the number off
+        // the PROGRAM, so moving this claim to two hours into the rest would leave the prose
+        // reading "at four" and this rule green.
+        phrase: "V` {n}. Meanwhile `soc (true)` does not move",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "and-it-is-still-in-there",
+                arm: None,
+                quantity: "v_at:15136.5",
+            },
+            Tie::Setting(Control::PulseOn),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The rest leg again, in the sentence that says what the charge readout does across
+        // it. The claim in that same sentence pins the row at the END of the rest; this is
+        // the stretch the row does not move over, which is the leg itself.
+        phrase: "for the entire {n}**, because nothing",
+        ties: &[Tie::Setting(Control::PulseOff)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The same instant as the first of the two above, in the sentence that takes the
+        // overpotential apart — so it is tied to THAT sentence's claim rather than to the
+        // voltage next door. Both are read at 2537 s and a rule pointed at the wrong one
+        // would be right about the number and about nothing else.
+        //
+        // Anchored on the tail of the sentence before it, because this one opens with its
+        // quantity and a phrase with nothing to its left is matched at every position.
+        phrase: "on purpose. {n} into the rest the fast one is finished",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "and-it-is-still-in-there",
+                arm: None,
+                quantity: "rc_overpotential_mv_at",
+            },
+            Tie::Setting(Control::PulseOn),
+        ])],
         pow10: 0,
     },
     // Step 8 — the pack that wears out while nothing happens. The step with the fewest
@@ -14128,13 +14249,22 @@ fn a_spelled_quantitys_unit_survives_the_trip_into_a_reading() {
     assert!(unit_is_time(Reading::from(&found[1]).unit));
 }
 
-/// [`Tie::Hours`] rounds like a computed tie, asked directly because no rule can ask it.
+/// [`Tie::Hours`] rounds like a computed tie, asked directly because no rule COULD ask it.
 ///
-/// The conversion's only user is a factor of a [`Tie::Product`], and [`tie_agrees`] sees a
-/// rule's outermost tie — so the product decides that sentence and this variant's own arm is
-/// never entered. Measured rather than reasoned: lifting `Tie::Hours` out of the rounding
-/// group in `tie_agrees` leaves all 28 tests green, which is exactly the "pinned and
-/// consulted by nothing" shape this file rejects everywhere else.
+/// **When this was written the conversion's only user was a factor of a [`Tie::Product`]**,
+/// and [`tie_agrees`] sees a rule's outermost tie — so the product decided that sentence and
+/// this variant's own arm was never entered. Measured rather than reasoned: lifting
+/// `Tie::Hours` out of the rounding group in `tie_agrees` left all 28 tests green, which is
+/// exactly the "pinned and consulted by nothing" shape this file rejects everywhere else.
+///
+/// **That is history now, and re-measuring is what says so.** Two rules reach the variant
+/// directly — step 8's mark said in hours and step 24's — and the same perturbation reddens
+/// this test AND `every_numeral_in_a_ledgered_step_is_accounted_for` on step 24's `4.3`
+/// (measured 2026-09-01, `docs/plans/path-word-still-in-there.md`). So the paragraph above
+/// records why this test exists rather than what would happen without it. It stays, because
+/// a question put directly does not stop being answered when a second asker turns up — and
+/// because both of its users could leave the table in one slice, which is how the arm got
+/// into that position the first time.
 ///
 /// So the question is put here, with the comparison's two sides handed in directly. The
 /// numbers are step 16's: 464 s of 15.459594 A is 1.9925... A·h, and the sentence prints
@@ -15913,6 +16043,15 @@ fn n_ledgered(f: &Facts) -> usize {
 fn n_word_scanned(f: &Facts) -> usize {
     f.ledger.spelled.len()
 }
+/// How many steps the word scan is NOT turned on for -- the length of `[ledger].word_blind`.
+///
+/// [`n_word_scanned`]'s partner, and it was prose until the sentence stating it went stale
+/// for the second time. "Digits-closed is less than closed" is a claim the claims file makes
+/// about exactly these steps, and it names how many they are, so the number falls every time
+/// a batch lands and nothing was watching it.
+fn n_word_blind(f: &Facts) -> usize {
+    f.ledger.word_blind.len()
+}
 /// How many quantities the word scan actually **reads** across the steps it is on for.
 ///
 /// Order-free by construction, and that is the whole reason it is derived rather than
@@ -16163,6 +16302,16 @@ const TALLIES: &[Tally] = &[
         phrase: "The list holds {w} steps now",
         of: &[n_word_scanned],
     },
+    Tally {
+        // The other half of the same partition, in the sentence that says what a green
+        // ledger does NOT cover. It had gone stale twice by the time it was registered -
+        // both times in WORDS, which no digit scanner in this file can see, and both times
+        // because a batch moved a step from one list to the other without reading the
+        // paragraph that counts them.
+        prose: Prose::ClaimsFile,
+        phrase: "a fact about the steps in `word_blind` below, which is {w} of {w}",
+        of: &[n_word_blind, n_lessons],
+    },
     // --- what it says about check 6 --------------------------------------------
     Tally {
         prose: Prose::ClaimsFile,
@@ -16217,6 +16366,17 @@ const TALLIES: &[Tally] = &[
         // whatever happened. Extending the word table to three digits is a table that grows
         // every slice; writing this one in digits is the escape the refusal itself offers.
         phrase: "{w} steps, {n} numerals, and no longer all of them scenario constants",
+        of: &[n_ledgered, n_ledgered_numerals],
+    },
+    Tally {
+        // The same two numbers in the module header, which had been saying 770 while the
+        // claims file's copy of them was derived and moved. One count, stated in two files,
+        // and only one of them was watched — so the reword that added a numeral to step 24
+        // moved one and left the other. Registered here rather than fixed in place, which is
+        // what the sweep this table came out of found is the difference between a number
+        // that stays right and one that is right today.
+        prose: Prose::ThisTest,
+        phrase: "today it is {w} steps and {n} numbers",
         of: &[n_ledgered, n_ledgered_numerals],
     },
     // Phrased as a count of what is LEFT rather than "the remaining N steps", which was

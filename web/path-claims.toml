@@ -3371,7 +3371,7 @@ tile ISN'T Peukert. Step 24 reads the same decomposition where the RC half has g
 [[claim]]
 step = "and-it-is-still-in-there"
 literal = "at `1.750 V` with `38.6 %` showing"
-quantity = "v_at"
+quantity = "v_at:737"
 value = 1.749968
 tol = 5.0e-4
 tol_from = "spelled"
@@ -3410,7 +3410,7 @@ where the charge readout arrives, and it does not move again for four hours.
 [[claim]]
 step = "and-it-is-still-in-there"
 literal = "the terminal is at `1.848 V`"
-quantity = "v_at"
+quantity = "v_at:737.5"
 value = 1.848076
 tol = 5.0e-4
 tol_from = "spelled"
@@ -3439,7 +3439,7 @@ longer tells anyone to go and look for it here.
 [[claim]]
 step = "and-it-is-still-in-there"
 literal = "`1.984 V` at half an hour"
-quantity = "v_at"
+quantity = "v_at:2537"
 value = 1.98446
 tol = 5.0e-4
 tol_from = "spelled"
@@ -3460,7 +3460,7 @@ purpose.
 [[claim]]
 step = "and-it-is-still-in-there"
 literal = "`2.030 V` at four"
-quantity = "v_at"
+quantity = "v_at:15136.5"
 value = 2.030428
 tol = 5.0e-4
 tol_from = "spelled"
@@ -3560,7 +3560,7 @@ claim is here so that the string the row prints is pinned, not because the value
 [[claim]]
 step = "and-it-is-still-in-there"
 literal = "`2.005 V` at an hour"
-quantity = "v_at"
+quantity = "v_at:4337"
 value = 2.005145
 tol = 5.0e-4
 tol_from = "spelled"
@@ -4552,7 +4552,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # claimed — all of them.
 #
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: thirty-two
-# steps, 770 numerals, and no longer all of them scenario constants. This count is NOT
+# steps, 771 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -4599,8 +4599,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # and "all but three points of what it holds" is tied to that step's own charge claim.
 #
 # So "digits-closed is less than closed" is no longer a fact about the whole path — it is a
-# fact about the steps in `word_blind` below, which is twelve of thirty-two. The sentence
-# stays because the gap it names is real for those twelve, and because the pairing of
+# fact about the steps in `word_blind` below, which is eleven of thirty-two. The sentence
+# stays because the gap it names is real for every one of them, and because the pairing of
 # `spelled` and `word_blind` is what keeps it honest: a step is now one or the other by
 # declaration, never by silence.
 #
@@ -8358,16 +8358,16 @@ phrase = "a second"
 step = "what-it-cost"
 phrase = "quarter-second"
 
-# and-it-is-still-in-there — 8: the rest leg and the reading list taken across it. Every one is an hour or a
+# and-it-is-still-in-there — 7: the rest leg and the reading list taken across it. Every one is an hour or a
 # fraction of one, and every instant in the list is an instant a claim on this step
 # is already read at - which is what makes this the cheapest step on the list.
+# FIVE OF THE SEVEN ARE TIED NOW rather than only listed: the step joined the word scan,
+# so they are accounted in `LEDGER_VOCABULARY` and stay here because they are still
+# spelled in letters. The two that are not are the two the READER cannot see - an hour
+# and a tenth of a volt, both spelled as articles, which only the ban reads.
 [[english]]
 step = "and-it-is-still-in-there"
 phrase = "four hours"
-
-[[english]]
-step = "and-it-is-still-in-there"
-phrase = "four and a quarter hours"
 
 [[english]]
 step = "and-it-is-still-in-there"
@@ -9895,10 +9895,12 @@ steps = [
                      # topology, the slider, two clocks, two amp-hour figures and the
                      # difference between them, three ordinals — and four numbers on the
                      # heat comparison, which is where this step's defect was
-  "and-it-is-still-in-there", # 26: six ordinals pointing at three other steps, the pulse
+  "and-it-is-still-in-there", # 27: six ordinals pointing at three other steps, the pulse
                      # program's on-leg, the cutoff the panel never prints, and eleven
                      # measurements. The most heavily claimed step in the path when it was
-                     # scanned
+                     # scanned. The twenty-seventh arrived with the WORD scan: the step's own
+                     # span in hours, which had been "four and a quarter hours" and is a
+                     # figure no arm can hold at a quarter of an hour
   "particle-remembers", # 20 (19 before the digits rule): the charge it starts at, its shell count, two digit runs
                      # inside the chemistry's own provenance string, its two RC time
                      # constants — which that file states as a resistance and a
@@ -10247,7 +10249,7 @@ unledgered = [
 # twenty-nine quantities on the seven steps it then covered, and the second batch of six
 # needed one new SHAPE (a numeral ahead of its fraction, "four and a half seconds"), one new
 # unit noun, and thirteen vocabulary rules — almost all of them for an instant stated
-# RELATIVE to another one, which the first batch never met. The list holds twenty steps now.
+# RELATIVE to another one, which the first batch never met. The list holds twenty-one steps now.
 #
 # THE ENTRIES DO NOT ALL SAY THE SAME THING, and the split is a result rather than a gap:
 # fifteen of them read nothing at all. Those are the steps whose English quantities had been
@@ -10256,13 +10258,13 @@ unledgered = [
 # quantities today is the ordinary digit ledger, which has covered all thirty-two steps since
 # before this list existed.
 #
-# THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK. The five steps that read something carry
-# thirteen spelled quantities between them, and they are the first this vocabulary has ever
-# accounted for:
-# until they landed, every rule in the table read a token written in digits, so the spelled
-# branch of `ledger_numbers` was wired up path-wide and reading nothing. A green over an
-# empty list is worth what a green over an empty list is always worth, and that is what the
-# fifteen zeroes above had been reporting since the digits rule.
+# THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the batch after it was one step on
+# its own. The six steps that read something carry eighteen spelled quantities between them,
+# and they are the first this vocabulary has ever accounted for:
+# until the third batch landed, every rule in the table read a token written in digits, so
+# the spelled branch of `ledger_numbers` was wired up path-wide and reading nothing. A green
+# over an empty list is worth what a green over an empty list is always worth, and that is
+# what the fifteen zeroes above had been reporting since the digits rule.
 #
 # The zero entries are kept rather than dropped because the scan they turn on is what would
 # notice a spelled quantity coming BACK to one of those steps with an arm behind it - and
@@ -10297,6 +10299,10 @@ spelled = [
                                  #     teeth the mark holds
   "what-it-cost",                # 5 - the knee twice, the control arm's residue, the gap
                                  #     between two instants, and the sampler's own period
+  "and-it-is-still-in-there",    # 5 - the rest leg twice, and two instants inside it, one
+                                 #     of which is a bare numeral carrying the unit its
+                                 #     neighbour in the same list stated. The step's own
+                                 #     span was a sixth and is in digits now
 ]
 
 # The other side of that list: steps whose prose is NOT word-scanned, named.
@@ -10327,7 +10333,6 @@ word_blind = [
   "pack-disagrees",              # 3 - the grid's spread, which wants claims that do not exist
   "lying-sensor",                # 0 read, and one count of groups
   "protection-on",               # 0 read, and one count of cells
-  "and-it-is-still-in-there",    # 6, all of them hours, three relative to the rest's start
   "the-electrolyte-starves",     # 0 read, and two hours spelled as articles
   "two-legs",                    # 0 read, and one count of engine steps
   "past-empty",                  # 5 read (6 before the digits rule), and a reading list
