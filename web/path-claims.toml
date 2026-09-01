@@ -148,8 +148,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  297 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  38 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  294 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  41 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -162,7 +162,12 @@
 #             And for the four ADDRESS claims on step 7, which name the cells that cross
 #             empty first and last: an index is an integer the engine either reports or
 #             does not, so half a unit in its last printed place — 0.5, on a `0` — is
-#             slack with no meaning at all.
+#             slack with no meaning at all. And for the three a LEDGER RULE reads, where
+#             the tolerance is derived from the rule's answer rather than from the
+#             sentence the claim itself is on: `Tie::Quoted` borrows the value STORED
+#             here, so a claim whose window is wider than the margin of an arithmetic
+#             built on it leaves that arithmetic asserting nothing about the engine. See
+#             step 21's `v_at:600`, which carries the derivation for all three.
 #   grid      7 claims. The quantity is a time the engine can only report on the step
 #             grid (`flag_first_s:*`, `deficit_zero_s`) and the prose spells no number
 #             in it — it gives a consequence, or a rendering of the clock. `tol` is
@@ -201,7 +206,7 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 38 claims.
+# bounds the engine against `value` and is deliberately tighter on 41 claims.
 #
 #   same        314 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
@@ -2314,8 +2319,8 @@ step = "past-empty"
 literal = "at **−0.0640 V**"
 quantity = "v_at:4400"
 value = -0.0640
-tol = 5.0e-5
-tol_from = "spelled"
+tol = 1.0e-6
+tol_from = "tighter"
 spells = "-0.0640"
 states = "same"
 read_at_s = 4400.0
@@ -2327,6 +2332,13 @@ The floor, at the mark. This is the number step 21 takes apart: it is 2 A across
 there. The row prints an ASCII minus and the prose a typographic one, which is the
 single difference the quoted check would forgive — but this claim is not quoted
 anyway, because the sentence gives four decimals.
+
+**`tighter` rather than `spelled`, and the reason is step 21's rather than this step's** —
+see the tolerance paragraph on that step's `v_at:600`. This value is one of the three
+operands of a rule whose answer is 0.0983 mV, and the spelled rule's 5e-5 V here buys
+0.054 mV of movement, more than the 0.0483 mV that rule has to play with. The floor itself
+is exact to better than a nanovolt — it is 2 A across 0.032 ohms with aging switched off —
+so nothing is given up by saying so.
 
 Instant-tagged because step 21 now quotes it three times — once for the floor it says was
 flat, once for the resistance it multiplies, and once inside the product that gives
@@ -2858,8 +2870,8 @@ step = "what-it-cost"
 literal = "**1.0726 ×**"
 quantity = "soh_res_at:600"
 value = 1.0726455
-tol = 5.0e-5
-tol_from = "spelled"
+tol = 2.0e-5
+tol_from = "tighter"
 spells = "1.0726"
 states = "same"
 read_at_s = 600.0
@@ -2873,6 +2885,10 @@ because that is what the row prints — this claim would notice the row losing i
 as readily as it would notice the number moving.
 
 Instant-tagged for the reason the mark's `soh cap` is: the step now carries three
+`tighter` for step 21's reason, and this is the cheapest of the three to give: it enters
+that rule multiplied by the floor, so 2e-5 here is 1.3e-6 V of movement in an answer with
+0.0483 mV of margin. See the tolerance paragraph on this step's `v_at:600`.
+
 `soh_res_at` claims — this one, the 1.0004 it climbs from, and the flat 1 both traces
 leave on the plot — and the arithmetic sentence two paragraphs later quotes this one.
 """
@@ -2901,8 +2917,8 @@ step = "what-it-cost"
 literal = "reads **−0.069 V** at the mark"
 quantity = "v_at:600"
 value = -0.068551
-tol = 5.0e-4
-tol_from = "spelled"
+tol = 1.0e-6
+tol_from = "tighter"
 spells = "-0.069"
 states = "same"
 read_at_s = 600.0
@@ -2913,6 +2929,19 @@ note = """
 And the same floor 300 s later, 4.6 mV lower. The sentence says the reader can "stop
 and check it", which is exactly the promise this check enforces: the three decimals
 it quotes are the three decimals the row prints.
+
+**The tolerance is `tighter`, and the number comes from a SIBLING RULE rather than from
+this sentence.** The ledger rule for step 21's *"about a tenth of a millivolt"* is this
+step's mark reading subtracted from step 20's floor times this step's resistance health.
+It resolves to 0.0983 mV, and the sentence rounds at one decimal, so the nearest rendering
+boundary is 0.05 and the margin is 0.0483 mV. The three claims that rule quotes must not
+be able to spend that margin between them, or the rule is an assertion about three numbers
+in this file and not about the engine: `Tie::Quoted` reads the value STORED here, so an
+engine drift inside a claim's window moves the real quantity and moves nothing the rule can
+see. Under the spelled rule these windows come to 0.5 mV, 0.054 mV and 0.0032 mV — the
+first alone is ten times the whole margin. Retightened to a tenth of the margin shared
+between the three, which lands at 3.4e-6 V of worst case. Every one of them is still far
+looser than the agreement actually measured: 4.7e-8, under 1e-9, and 4.9e-8 respectively.
 
 Instant-tagged, for step 20's reason on its own floor: this step files three readings
 under `v_at` — 1.9306 V at the knee, −0.065024 at 300 s and this one — and `Tie::Quoted`

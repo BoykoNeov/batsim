@@ -106,6 +106,46 @@ not decorative, and the "two tenths" case is the only evidence the rule forces t
 rather than the shape — its panic text was read rather than its exit code, because a red
 exit code can be the wrong check reddening.
 
+## The gap the first table could not reach: a rule is only as good as its operands' windows
+
+Every perturbation above edits the **file** or the **prose**. None of them moves the
+**engine**, and `Tie::Quoted` reads the value a claim *stores* — so as first written this
+rule asserted an arithmetic relationship among three numbers in `path-claims.toml` rather
+than anything about the trajectory. Do the sizing, which is the step that was missing:
+
+| | value | declared window | what it buys in the answer |
+| - | ----- | --------------- | -------------------------- |
+| the mark reading `v_at:600` | -0.068551 | 5.0e-4 (spelled) | 0.500 mV |
+| step 20's floor `v_at:4400` | -0.0640 | 5.0e-5 (spelled) | 0.054 mV |
+| resistance health `soh_res_at:600` | 1.0726455 | 5.0e-5 (spelled) | 0.003 mV |
+
+The answer is **0.0983 mV** and it rounds at one decimal, so the nearest rendering boundary
+is 0.05 and the margin is **0.0483 mV**. The first window alone is ten times the whole
+margin and the second exceeds it on its own. A trajectory that drifted 0.3 mV at the mark
+would have left `every_claim_matches_the_engine` green, the stored values untouched, and
+this rule green — while the lag it describes had become four times what the sentence says.
+
+All three are `tol_from = "tighter"` now, sized to a tenth of the margin shared between them
+(3.4e-6 V of worst case), with the derivation written into the mark reading's note and the
+other two pointing at it. Nothing was given up: the values agree with the engine to 4.7e-8,
+better than 1e-9, and 4.9e-8 respectively — the floor is exactly `2 A x 0.032 ohm` with
+aging switched off, which is why the product's operand is not itself quantised at the size
+of the answer.
+
+Demonstrated rather than argued, with the stored value standing in for a drifted engine:
+
+| perturbation | `every_claim_matches_the_engine` |
+| ------------ | -------------------------------- |
+| mark reading off by 0.3 mV, **new** window | **red** |
+| the same 0.3 mV, **old** window restored | **green** — the gap, shown |
+
+**The general rule this leaves behind:** before shipping a `Tie::Difference` of quotations,
+compare the answer to each operand's `tol`. Where the answer is large against them (the
+83-seconds-after-the-knee rule) nothing needs doing. This is the first rule in the table
+whose answer is *smaller* than a window it reads, and a rule in that position is not an
+engine-side assertion until its operands are retightened. `spelled` claims 297 -> 294,
+`tighter` 38 -> 41.
+
 ## The counts that moved
 
 `spelled`'s entry for `what-it-cost` 6 -> 7; the whole-list tally thirty-one -> thirty-two

@@ -1148,6 +1148,18 @@ fn no_lesson_stands_a_scale_word_alone_before_a_unit_this_reader_reads() {
         let text = ascii_minus(&lesson.text);
         let words = words_of(&text);
         let found = spelled_numbers(&text);
+        // The search below addresses a reading by the word it starts on, and a reading that
+        // started anywhere else would be dropped by `is_some_and` without a word about it -
+        // which is `no_spelled_quantity_is_silently_skipped`'s failure mode inside the test
+        // written to refuse it. Every shape this scanner has begins on a word; this is what
+        // says so out loud rather than depending on it.
+        for reading in &found {
+            assert!(
+                words.iter().any(|(at, _, _)| *at == reading.at),
+                "step `{}`: `spelled_numbers` reported {reading:?}, which does not begin at                  a word boundary. The scan below finds a reading by its starting word, so                  this one would be passed over in silence and the shape this test looks for                  could sit behind it unseen.",
+                lesson.id,
+            );
+        }
         for (i, (_, end, word)) in words.iter().enumerate() {
             if lookup(SCALE_WORDS, word).is_none() {
                 continue;
@@ -3281,7 +3293,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 297 of 342 claims.
+    /// number's last printed place. The default shape: 294 of 342 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3292,7 +3304,7 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 38 of 342.
+    /// the number was always right and only the declaration was wrong. 41 of 342.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
@@ -12508,6 +12520,17 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // instant-tagged because it is quoted three times already, and this step's own
         // reading grew its tag in the slice that wrote this rule - it files three voltages
         // under `v_at` and was unquotable until one of them said which.
+        //
+        // **All three quotations were RETIGHTENED for this rule, and without that it would
+        // be an assertion about the claims file rather than about the engine.**
+        // [`Tie::Quoted`] reads the value a claim STORES, so a trajectory that drifted
+        // inside a claim's `tol` would move the real lag and move nothing this rule can
+        // see. The answer has 0.0483 mV of margin before it rounds to something else, and
+        // under the spelled rule the mark reading's window alone was ten times that. Each
+        // is `tol_from = "tighter"` now, with the arithmetic in its own note. **The general
+        // shape, for the next rule of this kind: a `Tie::Difference` of quotations is only
+        // as good as its operands' tolerances, and this is the first one in the table whose
+        // answer is SMALLER than a window it reads.**
         phrase: "which is about {n} here, well below what this row can show you",
         ties: &[Tie::Magnitude(&Tie::Difference(&[
             Tie::Product(&[
