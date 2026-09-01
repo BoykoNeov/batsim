@@ -108,9 +108,11 @@
 //! [`spelled_numbers`] survives as the READER it always was, opt-in per step through the
 //! ledger's `spelled` list and merged into the same scan so that one number cannot have two
 //! readings. It finds a numeral and a measure noun ("three minutes", "half an hour", "an
-//! eighteen-minute discharge"), a numeral written after its unit ("the first minute and a
-//! half"), a numeral written before it with a fraction between ("four and a half seconds"),
-//! and a list item carrying a unit an earlier item stated ("5.80 at six"). **It found
+//! eighteen-minute discharge"), the same shape headed by an ARTICLE, which is how English
+//! spells the number one without a numeral in it ("an hour", "a tenth of a point"), a
+//! numeral written after its unit ("the first minute and a half"), a numeral written before
+//! it with a fraction between ("four and a half seconds"), and a list item carrying a unit
+//! an earlier item stated ("5.80 at six"). **It found
 //! nothing at all for four days**, and that sentence stood here while it was true: the
 //! digits rule rewrote every quantity it then read, so the per-step counts beside `spelled`
 //! were all zero and a green over the reader was a green over an empty list. The batches
@@ -119,7 +121,7 @@
 //! header, which is where a number describing that list belongs.
 //!
 //! **What is still spelled in English is named phrase by phrase**, in `[[english]]` in
-//! `web/path-claims.toml` — 47 of them across twelve steps, matched both ways so
+//! `web/path-claims.toml` — 45 of them across twelve steps, matched both ways so
 //! that the list can only get shorter. They are the half that was tied to nothing: rewriting
 //! one into digits makes the ledger see it, and the ledger has no waiver, so each is a rule
 //! or a claim rather than an edit. Two shapes stay out of the ban and are declared rather
@@ -1023,6 +1025,31 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
         ("0.5".to_string(), 1.0, "percent")
     );
 
+    // Shape 1 again, headed by an ARTICLE: English spells the number one as a word that is
+    // not a numeral, and until this shape landed the ban read those and the reader did not.
+    assert_eq!(
+        one("`2.005 V` at an hour, `2.030 V`"),
+        ("1".to_string(), 3600.0, "hour")
+    );
+    assert_eq!(
+        one("adds only a fraction of a point over ten"),
+        ("1".to_string(), 1.0, "point")
+    );
+    // ...and a partitive is the same shape with a scale word in it, which is why it needs no
+    // fence of its own. The ban's first draft built one here and it cost a false negative
+    // the same afternoon.
+    assert_eq!(
+        one("most of a tenth of a percent higher"),
+        ("0.1".to_string(), 1.0, "percent")
+    );
+    // The inner article of that phrase is not a second reading of the same words.
+    let partitive = spelled_numbers("most of a tenth of a percent higher");
+    assert_eq!(
+        partitive.len(),
+        1,
+        "the tail is not a second quantity: {partitive:?}"
+    );
+
     // Shape 3: a list item inheriting the unit an earlier item stated.
     let list = spelled_numbers("5.71 at three minutes, 5.80 at six, and 5.81 later");
     assert_eq!(
@@ -1056,7 +1083,10 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
         "Four footnotes, and the first",
         "a pack with more than one cell",
         "does not move by one digit",
+        // The ordinal, and it is the article shape's one declared limit: these two words
+        // are also how a sentence says one second. Only the noun behind decides.
         "the start of a second 3 C discharge",
+        "a second look at the same trace",
         "for the whole second half of the discharge",
         "Both times you were asked to infer",
     ] {
@@ -1084,9 +1114,15 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
 /// it watches is the gap between what the prose spells and what the scanner has learned, and
 /// that gap is refilled by every lesson added to the list.
 ///
-/// What it does **not** see is a quantity with no numeral word in it at all. *"a minute in"*
-/// and *"an hour of simulation"* spell one as an article, and there is nothing here to key
-/// on. [`english_quantities`] does see that shape, because refusing one needs no value.
+/// **The article shape used to be the hole here and now it is a direction of this guard.**
+/// What stood in this paragraph read: "What it does not see is a quantity with no numeral
+/// word in it at all. *"a minute in"* and *"an hour of simulation"* spell one as an article,
+/// and there is nothing here to key on." That was true while the reader had no such shape,
+/// and `docs/plans/path-article-shape.md` gave it one — so the second loop below walks
+/// articles on the same terms the first walks numerals. What it still does not see is the
+/// pair the reader deliberately refuses, *"a second"*, whose two words are also how English
+/// says the next one along; [`BANNED_UNITS`] is what watches that, and being told to write
+/// digits is what a lesson spelling one gets.
 ///
 /// **It stopped being vacuous, and the paragraph that said it was is worth keeping in
 /// view.** What stood here read: "Every step in `spelled` now spells nothing at all, so this
@@ -1151,6 +1187,73 @@ fn no_spelled_quantity_is_silently_skipped() {
                  measurement, in which case the fillers or the unit nouns should say so, \
                  rather than leaving the scanner to decide by accident.",
                 &text[*at..unit_end],
+            );
+        }
+
+        // The ARTICLE direction. The loop above walks numeral words, and an article is how
+        // English spells the number one without one, so a phrase like *"an hour of
+        // simulation"* was invisible to it by construction — which is what the docs of this
+        // guard said, for as long as the reader could not read that shape either.
+        //
+        // Now that it can, this is the same watch the numeral loop keeps: an article, a
+        // measure noun close behind it, and no shape that consumed the pair. What reaches
+        // it is a phrase whose connectives the reader's `FILLERS` does not have, or a
+        // filler run longer than the walk — the gap between what the prose spells and what
+        // the scanner has learned, which is the whole subject of this test.
+        //
+        // Covered is asked of the UNIT rather than of the head, because the two shapes that
+        // put a numeral behind its noun (*"a minute and a half"*) legitimately start their
+        // span at the noun, and asking about the head would call those uncovered and panic
+        // on a quantity that is read.
+        //
+        // `second` is out, and it is the article shape's one declared limit rather than an
+        // oversight: *"a second"* and *"a second discharge"* are the same two words, the
+        // reader refuses the pair for that reason, and a guard that panicked here would
+        // make that refusal unreachable. What watches it instead is `BANNED_UNITS`, which
+        // refuses the noun outright — the ban wider than the reader, which is the direction
+        // this file allows.
+        for (i, (at, _, word)) in words.iter().enumerate() {
+            if word != "a" && word != "an" {
+                continue;
+            }
+            let connective = |w: &str| {
+                FILLERS.contains(&w) || w == "and" || FRACTIONS.iter().any(|(f, _)| *f == w)
+            };
+            let mut unit_hit = None;
+            for (u_at, u_end, w) in words[i + 1..].iter().take(4) {
+                if lookup(UNIT_NOUNS, w).is_some() {
+                    unit_hit = Some((*u_at, *u_end, w.clone()));
+                    break;
+                }
+                if !connective(w) && lookup(SCALE_WORDS, w).is_none() {
+                    break;
+                }
+            }
+            let Some((unit_at, unit_end, unit)) = unit_hit else {
+                continue;
+            };
+            if unit == "second" {
+                continue;
+            }
+            if found
+                .iter()
+                .any(|w| unit_at >= w.at && unit_at < w.at + w.len)
+            {
+                continue;
+            }
+            panic!(
+                "step `{step}` writes `{}`, which is an ARTICLE and then the measure noun \
+                 `{unit}`, and no shape this scanner reads consumed it:\n  \u{2026}{}\u{2026}\n\
+                 An article is how English spells the number one, so that phrase states a \
+                 quantity, and passing over it reports a green that says only that nothing \
+                 here was understood. Either it is a shape `spelled_numbers` should read \u{2014} \
+                 add it, with a case in \
+                 `the_word_scanner_reads_quantities_and_not_pronouns` \u{2014} or the words are \
+                 doing something with the article that is not a measurement, in which case \
+                 the fillers or the unit nouns should say so rather than leaving the \
+                 scanner to decide by accident.",
+                text[*at..unit_end].trim(),
+                text[*at..unit_end].trim(),
             );
         }
 
@@ -1292,10 +1395,12 @@ fn the_ban_refuses_every_unit_the_reader_reads() {
 /// matters.** That function has to produce a *value*, so it refuses what it cannot parse and
 /// [`no_spelled_quantity_is_silently_skipped`] exists to catch the refusals. This one
 /// produces no value at all - it answers "does this sentence spell a quantity", and a phrase
-/// it cannot parse is exactly as banned as one it can. So it reads a shape the reader never
-/// had: the quantity spelled as an **article**, *"an hour of simulation"*, *"a minute in"*,
-/// which has no numeral word in it to key on and which the reader's own docs have declared
-/// unread since it was built.
+/// it cannot parse is exactly as banned as one it can. So it read the quantity spelled as an
+/// **article** — *"an hour of simulation"*, *"a minute in"* — for as long as the reader could
+/// not, which was from the day this function was written until
+/// `docs/plans/path-article-shape.md`. The reader has the shape now, taken from here; what
+/// is left of the gap is one noun, `second`, which this refuses from an article head and the
+/// reader declines to value.
 ///
 /// **There is no fence anywhere in it, and that was a decision.** The first draft refused
 /// the article shape after `of`, so that *"a fraction of a point"* would not read as the
@@ -1419,8 +1524,12 @@ fn english_quantities(text: &str) -> Vec<(usize, String)> {
 /// comment, which no scanner in this file reads. The counts live in `path-claims.toml`, one
 /// per block, and are derived there.
 ///
-/// One direction, on [`BANNED_UNITS`]'s terms. The ban is allowed to be wider - it reads the
-/// article shape, which the reader never has - and is never allowed to be narrower.
+/// One direction, on [`BANNED_UNITS`]'s terms. The ban is allowed to be wider - it refuses
+/// the units no tie has been asked about, and it reads *"a second"* where the reader
+/// declines to - and is never allowed to be narrower. The article shape used to be the
+/// widest part of that gap and is not any more: both scanners read it, which is why both
+/// walk at most four connectives from the head. That was the one way this test could have
+/// reddened on a lesson nobody had edited.
 #[test]
 fn the_ban_sees_every_quantity_the_reader_reads() {
     for lesson in &lessons() {
@@ -1442,13 +1551,15 @@ fn the_ban_sees_every_quantity_the_reader_reads() {
     }
 }
 
-/// The article shape fires, which is the whole of what the reader could never do.
+/// The article shape fires on the ban's side, which is where it was built first.
 ///
 /// *"an hour of simulation"*, *"a minute in"* - a quantity with no numeral word in it at
-/// all, which is why [`no_spelled_quantity_is_silently_skipped`] cannot see one either: that
-/// guard walks numerals. It is the shape the reader's own plan doc declined to build, on the
-/// grounds that reading it would need three fences none of which could be watched. Refusing
-/// it needs none.
+/// all. The reader declined this shape when it was built, on the grounds that reading it
+/// would need three fences none of which could be watched; the count turned out to be one,
+/// and `docs/plans/path-article-shape.md` is where it was paid. So the sentence that stood
+/// here — "the whole of what the reader could never do" — is retired, and what this test
+/// holds is the half that has never moved: refusing a shape needs no value, so this side
+/// reads `second` and every unit no tie answers about, where the reader reads neither.
 #[test]
 fn the_article_shape_reads_a_quantity_with_no_numeral_in_it() {
     let found: Vec<String> = english_quantities("this file runs for an hour of simulation")
@@ -3891,7 +4002,10 @@ fn spelled_token(value: f64) -> String {
 ///
 /// 1. **numeral, unit** — *"three minutes"*, *"fifty simulated seconds"*, *"half an hour"*,
 ///    and the hyphenated attributive *"an eighteen-minute discharge"*. A scale word may sit
-///    between them (*"three thousandths of a point"*).
+///    between them (*"three thousandths of a point"*). The numeral may be an **article**,
+///    which is how English spells one without a numeral word — *"an hour"* — and a partitive
+///    is that with a scale word in it, *"a tenth of a point"*. The article half arrived last
+///    and carries the shape's one refusal, which is the ordinal *"a second"*.
 /// 2. **unit, "and a half"** — *"the first minute and a half"*, which is 90 s and has the
 ///    numeral *after* its unit. Its own shape because English puts it there.
 /// 3. **list ellipsis** — *"5.71 at three minutes, 5.80 at six, and …"*. The unit is stated
@@ -4035,20 +4149,47 @@ fn spelled_numbers(text: &str) -> Vec<Written> {
                 }
             }
         }
-        // Shape 1: a numeral, an optional scale word, fillers, then the unit.
-        let Some(mut value) = numeral_word(word) else {
+        // Shape 1: a numeral — or an ARTICLE, which is how English spells the number one
+        // without a numeral word — an optional scale word, fillers, then the unit.
+        //
+        // The article half is [`english_quantities`]'s shape, taken across to this side. It
+        // was declined when the reader was built, on the grounds that reading it would need
+        // fences the ban does not; the fence it actually needs turned out to be ONE, it is
+        // named below, and the sentences that forced the question are the article
+        // quantities `[[english]]` had listed on word-scanned steps all along — read by the
+        // ban, rewritten by nobody, and tied to nothing.
+        //
+        // A partitive needs no fence and that is worth saying, because the first draft of
+        // the ban built one and paid for it the same afternoon. *"a tenth of a volt"* is
+        // read here as the article ONE, scaled by `tenth`, carrying the noun behind the
+        // fillers — which is a tenth of that noun, which is what the words say. The inner
+        // *"a volt"* is not a second quantity because the overlap skip at the top of this
+        // loop already covers it.
+        let article = word == "a" || word == "an";
+        let Some(mut value) = numeral_word(word).or_else(|| article.then_some(1.0)) else {
             continue;
         };
         let mut j = i + 1;
+        let mut walked = 0usize;
         if let Some(s) = words.get(j).and_then(|(_, _, w)| lookup(SCALE_WORDS, w)) {
             value *= s;
             j += 1;
+            walked += 1;
         }
-        while words
-            .get(j)
-            .is_some_and(|(_, _, w)| FILLERS.contains(&w.as_str()))
+        // Capped, where this walk was unbounded, and the cap is [`english_quantities`]'s
+        // own: it walks at most four connectives from its head. A reader that walked
+        // further than the ban would find a quantity the ban never spanned, and
+        // [`the_ban_sees_every_quantity_the_reader_reads`] would redden on a lesson nobody
+        // had touched. Articles are what make that reachable — *"a"* sits in front of a
+        // filler run far more often than *"three"* does — so the two walks are the same
+        // length now rather than the same length by luck.
+        while walked < 4
+            && words
+                .get(j)
+                .is_some_and(|(_, _, w)| FILLERS.contains(&w.as_str()))
         {
             j += 1;
+            walked += 1;
         }
         let Some((_, stop, noun)) = words.get(j) else {
             continue;
@@ -4056,6 +4197,21 @@ fn spelled_numbers(text: &str) -> Vec<Written> {
         let Some((unit, scale)) = unit_noun(noun) else {
             continue;
         };
+        // The one fence, and it is the ORDINAL: *"a second"* is a length of time and
+        // *"a second 3 C discharge"* is the next one along, and the two are the same two
+        // words. Only the noun behind decides, which is a lookahead this scanner would have
+        // to guess at — and guessing wrong reads the number one out of a sentence that
+        // states no quantity at all.
+        //
+        // Declared rather than guessed, and it costs the reader nothing it is owed: the ban
+        // refuses `second` behind an article as it refuses every other unit, so a lesson
+        // spelling one is still told to write it in digits. This is the licensed direction
+        // — the ban wider than the reader — and it is the only place the article shape uses
+        // it. The negative case in `the_word_scanner_reads_quantities_and_not_pronouns` is
+        // the sentence it is written against.
+        if article && noun == "second" {
+            continue;
+        }
         out.push(Written {
             at: *at,
             len: stop - at,
@@ -9085,7 +9241,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // earlier rule reads a token written in digits, and this one reads *ten minutes*
         // against an `until_s` of 600 s. Nothing in the rule says so — the conversion is
         // the scanner's, per token, which is what `Written::scale` is for.
-        phrase: "of a point over {n}; the offset",
+        phrase: "of that over {n}; the offset",
         ties: &[Tie::Setting(Control::Until)],
         pow10: 0,
     },
@@ -10577,6 +10733,25 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
+        // The middle reading of the same list, and the same subtraction as the two around
+        // it: 4337 s less the 737 s the current was on for is exactly one hour.
+        //
+        // Written as an ARTICLE, which is why it sat in `[[english]]` untied while its two
+        // neighbours were accounted for — the ban read it, the reader could not, and the
+        // three sentences of one list were held by two rules. Nothing about the arm is new;
+        // only the shape of the words was.
+        phrase: "`2.005 V` at {n}, `2.030 V`",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "and-it-is-still-in-there",
+                arm: None,
+                quantity: "v_at:4337",
+            },
+            Tie::Setting(Control::PulseOn),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
         // The second of them, written as a bare numeral carrying the unit its two
         // neighbours in the same list stated — the scanner's third shape. Same frame as the
         // rule above, and the same subtraction: 15136.5 s less the 737 s of leg one is
@@ -12017,9 +12192,36 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
+        // ...and what it would have been from full, which is the OTHER half of the same
+        // sentence and the first article quantity in this file to get an arm. *"an hour"*
+        // is the reader's article shape: one, with the noun behind it.
+        //
+        // Tied to step 1, and that is the point of it rather than a convenience. This step
+        // and the first one run the same `lfp_26650_generic` cell at the same 2 A, and the
+        // only difference between them is where the charge starts — so how long empty is
+        // away from FULL is a number step 1 already measures, and one this step's own
+        // trajectory never visits. Re-measuring it here would be a second answer to a
+        // question already asked; quoting it inherits check 7 instead.
+        //
+        // Loose, because the sentence is: a token with no decimal place licenses half a
+        // unit either way, and 4154 s is 1.15 hours. That is the rule this file keeps
+        // everywhere — a sentence is held to the precision it prints — and the alternative
+        // arms are worse rather than tighter. The cell's nameplate over the demand box is
+        // the same quantity computed instead of measured, and it answers in hours where
+        // every time arm here answers in seconds.
+        phrase: "away instead of {n}.",
+        ties: &[Tie::Quoted {
+            step: "bare-curve",
+            arm: None,
+            quantity: "flag_first_s:SOC_CLAMPED_LOW",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
         // The same instant again, in the sentence that says what the ordinary wear before
         // the knee amounts to.
-        phrase: "of a point is {n} of perfectly ordinary discharge",
+        phrase: "That fraction is {n} of perfectly ordinary discharge",
         ties: &[Tie::Quoted {
             step: "what-it-cost",
             arm: None,

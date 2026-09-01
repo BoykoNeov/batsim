@@ -8185,13 +8185,16 @@ phrase = "a quarter of a point"
 step = "pack-disagrees"
 phrase = "half-point"
 
-# belief-drifts — 2: the sensor drift over the run. `a point` is the unit half of "a fraction of a
-# point", which is a hedge rather than a figure; the ten minutes is the mark, and
-# would be `600 s` the day the sentence around it is re-read.
-[[english]]
-step = "belief-drifts"
-phrase = "a point"
-
+# belief-drifts — 1: the sensor drift over the run. The ten minutes is the mark, and would
+# be `600 s` the day the sentence around it is re-read.
+#
+# The partitive that stood beside it is gone, and the article shape is what took it. "a
+# fraction of a point" states no figure — the fraction is the quantity and it is unsaid — so
+# once the reader could see an article it read the number ONE out of a sentence that means
+# nothing of the kind. Reworded to "a fraction of that", which says the same thing about the
+# same gap and spells nothing. A sentence stating no figure is not one this file has to keep
+# the words of; deleting a sentence that states a TRUE one is the defect
+# `docs/plans/path-twin-arm.md` records, and this is not that.
 [[english]]
 step = "belief-drifts"
 phrase = "ten minutes"
@@ -8319,9 +8322,13 @@ phrase = "a minute"
 step = "past-empty"
 phrase = "half-second"
 
-# what-it-cost — 9: the two legs of this step said in words, the fade split at the knee, the sampler's
-# wall-clock throttle, and two partitives. The throttle is a page constant and is
-# the cheapest of them.
+# what-it-cost — 8: the two legs of this step said in words, the fade split at the knee, the
+# sampler's wall-clock throttle, how far empty is from a full cell, and the two the article
+# shape does not reach — a partitive naming millivolts, whose noun this reader does not
+# admit, and "a second", which is the shape's one declared limit, because those same two
+# words are also how English says the next one along. The throttle is a page constant and is
+# the cheapest of them. The step's own partitive in points went the way belief-drifts' did,
+# and for the same reason.
 [[english]]
 step = "what-it-cost"
 phrase = "three and a half minutes"
@@ -8329,10 +8336,6 @@ phrase = "three and a half minutes"
 [[english]]
 step = "what-it-cost"
 phrase = "an hour"
-
-[[english]]
-step = "what-it-cost"
-phrase = "a point"
 
 [[english]]
 step = "what-it-cost"
@@ -8363,8 +8366,10 @@ phrase = "quarter-second"
 # is already read at - which is what makes this the cheapest step on the list.
 # TIED NOW rather than only listed: the step joined the word scan, so every phrase here
 # that the READER can see is accounted for in `LEDGER_VOCABULARY`, and they stay on this
-# list because they are still spelled in letters. What is left untied is what only the ban
-# reads - the phrases spelled as an ARTICLE, "an hour" and "a tenth of a volt".
+# list because they are still spelled in letters. What is left untied is the phrase whose
+# NOUN this reader does not admit - "a tenth of a volt". The article beside it, "an hour",
+# was untied for the shape's sake rather than the noun's, and the shape is built now: it is
+# the middle reading of the same list its two neighbours were already tied by.
 [[english]]
 step = "and-it-is-still-in-there"
 phrase = "four hours"
@@ -10259,7 +10264,7 @@ unledgered = [
 # before this list existed.
 #
 # THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the batch after it was one step on
-# its own. The six steps that read something carry eighteen spelled quantities between them,
+# its own. The six steps that read something carry twenty spelled quantities between them,
 # and they are the first this vocabulary has ever accounted for:
 # until the third batch landed, every rule in the table read a token written in digits, so
 # the spelled branch of `ledger_numbers` was wired up path-wide and reading nothing. A green
@@ -10288,8 +10293,10 @@ spelled = [
   "the-loop-is-wider-down-here",     # 0, and it was written under the ban rather than
                                      # cleaned up afterwards: the phrase "for an hour" was
                                      # in the first draft of its opening sentence, which is
-                                     # an ARTICLE and a unit noun and is exactly what the
-                                     # reader reads
+                                     # an ARTICLE and a unit noun. That was a sentence
+                                     # about the BAN when it was written, because the
+                                     # reader had no such shape; it has one now, so the
+                                     # phrase would have been read on both sides
   "belief-drifts",               # 1 - the run's own length, the first spelled quantity
                                  #     any vocabulary rule in this repo accounted for
   "protection-off",              # 1 - the gap between its two flags
@@ -10297,13 +10304,15 @@ spelled = [
                                  #     as a multiple of the hour rate rather than in C
   "particle-remembers",          # 4 - the pulse program three times over, and how many
                                  #     teeth the mark holds
-  "what-it-cost",                # 5 - the knee twice, the control arm's residue, the gap
-                                 #     between two instants, and the sampler's own period
-  "and-it-is-still-in-there",    # 5 - the rest leg in two sentences, and three readings
-                                 #     taken at two instants inside that rest, one of them
-                                 #     a bare numeral carrying the unit its neighbour in
-                                 #     the same list stated. The step's own span was
-                                 #     spelled here too until this slice put it in digits
+  "what-it-cost",                # 6 - the knee twice, the control arm's residue, the gap
+                                 #     between two instants, the sampler's own period, and
+                                 #     how far empty would be from a full cell
+  "and-it-is-still-in-there",    # 6 - the rest leg in two sentences, and the readings
+                                 #     taken at the instants inside that rest: one a bare
+                                 #     numeral carrying the unit its neighbour in the same
+                                 #     list stated, one an article, the rest spelled out.
+                                 #     The step's own span was spelled here too until the
+                                 #     slice that scanned it put that figure in digits
 ]
 
 # The other side of that list: steps whose prose is NOT word-scanned, named.
@@ -10325,19 +10334,28 @@ spelled = [
 #     length over `dt`, so it needs an arm before it needs a noun.
 #
 # The third shape that used to be listed here - a quantity spelled as an ARTICLE, "an hour of
-# simulation", "a minute in" - is READ BY THE BAN now. It was declined for the reader because
-# valuing one needs a "not after `of`" fence to keep "a fraction of a point" from scanning as
-# one point; refusing one needs no fence at all, so the partitives simply join the backlog.
+# simulation", "a minute in" - is READ ON BOTH SIDES now, and what stood here is worth
+# keeping in view because it was an estimate that came out wrong: "It was declined for the
+# reader because valuing one needs a 'not after `of`' fence to keep 'a fraction of a point'
+# from scanning as one point". No such fence was needed. A partitive is the same shape with a
+# SCALE WORD in it, so "a tenth of a point" values itself correctly and the inner article is
+# covered by the overlap skip the reader already had; what "a fraction of a point" states is
+# no figure at all, and the two sentences saying it were reworded rather than fenced around.
+# The fence the shape does need is a different one and there is one of it: the ordinal, "a
+# second". See `docs/plans/path-article-shape.md`.
 #
 # So a `0` below means "no quantity of a shape the reader reads", never "no quantity".
 word_blind = [
   "pack-disagrees",              # 3 - the grid's spread, which wants claims that do not exist
   "lying-sensor",                # 0 read, and one count of groups
   "protection-on",               # 0 read, and one count of cells
-  "the-electrolyte-starves",     # 0 read, and two hours spelled as articles
+  "the-electrolyte-starves",     # 2 read, both of them hours spelled as articles, which
+                                 #     the reader saw the day it learned that shape. The
+                                 #     step stays word-blind on the volt beside them
   "two-legs",                    # 0 read, and one count of engine steps
-  "past-empty",                  # 5 read (6 before the digits rule), and a reading list
-                                 #     headed by an article
+  "past-empty",                  # 6 read, the last of them the article the reading list
+                                 #     is headed by. The volt in the same list is what
+                                 #     still keeps the step off the scan
   "one-step-that-got-through",   # 5 - three of them only became visible when `percent`
                                  #     joined the unit nouns for a step in `spelled`
   "what-protection-costs",       # 0 read, and two counts of engine steps
