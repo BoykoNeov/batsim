@@ -2136,7 +2136,7 @@ The voltage at the knee — the last reading before the collapse this step is ab
 [[claim]]
 step = "past-empty"
 literal = "1.2055 V thirty seconds later, 0.4819 V at sixty"
-quantity = "v_at"
+quantity = "v_at:4176.5"
 value = 1.2055
 tol = 5.0e-5
 tol_from = "spelled"
@@ -2153,12 +2153,17 @@ before it was committed, which is the whole argument for formatting the measured
 value rather than the recorded one. The straight line between this and the reading
 below is the reversal ramp, which is a declared shape in the chemistry file rather
 than a fitted one — see docs/plans/low-clamp-reversal.md.
+
+TAGGED WITH ITS INSTANT, and the tag is what the sentence's *"thirty seconds later"* is
+tied to. This step's own run reads `v_at` twice, thirty seconds apart, so the bare name
+addresses neither of them; a rule asking when this one was read would have refused with
+"could not resolve" rather than answering about the wrong reading.
 """
 
 [[claim]]
 step = "past-empty"
 literal = "1.2055 V thirty seconds later, 0.4819 V at sixty"
-quantity = "v_at"
+quantity = "v_at:4206.5"
 value = 0.4819
 tol = 5.0e-5
 tol_from = "spelled"
@@ -2170,6 +2175,9 @@ shows = "0.482 V"
 note = """
 Sixty seconds in, and still falling in a straight line. Same sentence as the claim
 above, so either end moving reddens the pair.
+
+Tagged for its neighbour's reason: *"at sixty"* is this reading's instant less the knee,
+and the two `v_at` claims on this run had to be told apart before either could be asked.
 """
 
 [[claim]]
@@ -2405,7 +2413,7 @@ is 2 A x 0.022 ohm minus a pair that has only just started to turn round.
 [[claim]]
 step = "past-empty"
 literal = "0.062 V a minute in"
-quantity = "v_at"
+quantity = "v_at:4460"
 value = 0.062009
 tol = 5.0e-4
 tol_from = "spelled"
@@ -2420,6 +2428,10 @@ note = """
 Sixty seconds into the charge. The cell is still on its floor, so this is the ohmic rise
 and nothing else — the same 0.032 ohms step 21 takes apart, with the RC pair now most of
 the way through its turn.
+
+Tagged so *"a minute in"* has something to be a minute after. The charge leg reads `v_at`
+six times and only this one is addressed, which is enough: an instant tie names the claim
+it means, and the five that no rule asks about can go on sharing a name.
 """
 
 [[claim]]
@@ -4599,7 +4611,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # and "all but three points of what it holds" is tied to that step's own charge claim.
 #
 # So "digits-closed is less than closed" is no longer a fact about the whole path — it is a
-# fact about the steps in `word_blind` below, which is eleven of thirty-two. The sentence
+# fact about the steps in `word_blind` below, which is nine of thirty-two. The sentence
 # stays because the gap it names is real for every one of them, and because the pairing of
 # `spelled` and `word_blind` is what keeps it honest: a step is now one or the other by
 # declaration, never by silence.
@@ -4625,22 +4637,32 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are twenty-six of them. An arm says what decides a number: a
-# NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
+# THE ARMS THEMSELVES, and there are twenty-eight of them. An arm says what decides a number:
+# a NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
-# PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, the SPAN of a
+# PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, one of theirs
+# that comes out in hours read back IN SECONDS, the SPAN of a
 # chemistry table end to end, a NODE of one, digits
 # inside a NAME, digits inside the NAME OF A FILE an arm picks, the LABEL of a control read
 # out of `web/index.html`, HOW MANY ENTRIES an array of the scenario has, the OPEN-CIRCUIT
 # VOLTAGE at a charge one of them names, the MAGNITUDE of any of them, the POSITION of
 # another lesson in the path, the panel's CLOCK at the step's
-# mark, a CONSTANT OF THE PAGE parsed out of `web/app.js`, a figure the sentence works out
+# mark, a CONSTANT OF THE PAGE parsed out of `web/app.js`, a number inside the PROVENANCE
+# NOTE a chemistry file writes above one of its values, a figure the sentence works out
 # from its OWN SIBLINGS, the same question asked of
 # ANOTHER LESSON, the same question asked of ONE OF THIS STEP'S ARMS — a control it
 # overrides, or a field of the file it picks — a measurement some step's CLAIM decides, WHEN
 # that claim was read rather than what it came to, a period the page holds said as the RATE
 # PER SECOND a sentence writes it at, and
-# a CLAIM whose literal contains the number. Naming the field is the whole point: a generous arm — "the number appears
+# a CLAIM whose literal contains the number.
+#
+# THE PROVENANCE NOTE IS THE ODD ONE AND IS WORTH NAMING AS SUCH. Every other arm above
+# reads a fact about THIS simulation — a file it runs from, a control a reader sets, a
+# number some trajectory produced. That one reads a fact about a real cell, because step 20
+# states one: its floor is a declared limit, and the sentence says what a real reversed cell
+# does instead. Nothing in the engine can answer that and no field holds it. What holds it is
+# the provenance note `CLAUDE.md` requires beside every constant, which is where this repo
+# already keeps its unencoded physical facts — the gap was that nothing could read one. Naming the field is the whole point: a generous arm — "the number appears
 # somewhere in the scenario" — accounts for a third of the path's numbers and means
 # nothing, because a scenario file has enough integers in it that a `2` finds `series = 2`
 # by accident. So something has to say which field a sentence is talking about, and that
@@ -8248,9 +8270,15 @@ phrase = "eighteen minutes"
 step = "looks-fine-from-outside"
 phrase = "three times"
 
-# the-electrolyte-starves — 3: the definition of the rate ("the current that would empty this cell in an hour")
-# and the run length said the same way, plus a voltage difference between the two
-# models this step compares.
+# the-electrolyte-starves — 3, TIED. The definition of the rate ("the current that would empty this cell in
+# an hour"), the run length said the same way, and the gap between the two models this step
+# compares, which is a volt. All three are in `LEDGER_VOCABULARY` now and stay listed here
+# because they are still spelled in letters. The two hours are not the same arm and the
+# difference is the point of the step: the first is `cell.capacity_ah` over the current the
+# reader is told to type, which is one hour by construction, and the second is the arm's
+# MEASURED crossing at 3484 s, which is 0.97 of one. This model empties before the hour and
+# the step's whole argument is by how much, so tying the definition to the measurement would
+# have been green today and green the day they parted.
 [[english]]
 step = "the-electrolyte-starves"
 phrase = "a full volt"
@@ -8291,9 +8319,14 @@ phrase = "half a percent"
 step = "nothing-to-clamp"
 phrase = "an amp"
 
-# past-empty — 7: the collapse's own reading list - three durations and an instant carried from the
-# item before it - plus the step length, a partitive naming volts, and how far a
-# real reversed cell goes, which only the chemistry file's provenance comment says.
+# past-empty — 7, TIED. The collapse's own reading list - three instants counted from the knee and one
+# from the item before it - plus the charge leg's own minute, the step length, and how far a
+# real reversed cell goes, which only the chemistry file's provenance note says. Six are
+# rules; the minute is not, and that is worth recording rather than leaving to be
+# rediscovered. "0.062 V a minute in" sits inside a claim read at 4460 s on a leg that
+# starts at the 4400 s mark, so check 6's continuation frame already accounted it as the
+# instant that claim was read at - and a rule doing the same subtraction a second time was
+# refused as a double accounting. A phrase becoming readable does not always mean a rule.
 [[english]]
 step = "past-empty"
 phrase = "thirty seconds"
@@ -8361,15 +8394,16 @@ phrase = "a second"
 step = "what-it-cost"
 phrase = "quarter-second"
 
-# and-it-is-still-in-there — 7: the rest leg and the reading list taken across it. Every one is an hour or a
-# fraction of one, and every instant in the list is an instant a claim on this step
-# is already read at - which is what makes this the cheapest step on the list.
-# TIED NOW rather than only listed: the step joined the word scan, so every phrase here
-# that the READER can see is accounted for in `LEDGER_VOCABULARY`, and they stay on this
-# list because they are still spelled in letters. What is left untied is the phrase whose
-# NOUN this reader does not admit - "a tenth of a volt". The article beside it, "an hour",
-# was untied for the shape's sake rather than the noun's, and the shape is built now: it is
-# the middle reading of the same list its two neighbours were already tied by.
+# and-it-is-still-in-there — 7: the rest leg and the reading list taken across it, and the yardstick the
+# rebound is measured against. Every instant in the list is an instant a claim on this step
+# is already read at - which is what made this the cheapest step on the list.
+# TIED NOW rather than only listed, and as of this batch ALL of them are: the step joined
+# the word scan, so every phrase here is accounted for in `LEDGER_VOCABULARY`, and they stay
+# on this list because they are still spelled in letters. The last to arrive was the one
+# whose NOUN the reader did not admit - "a tenth of a volt" - and admitting the noun was a
+# one-word change that forced this phrase on a step nobody was otherwise touching. It is the
+# difference of two of this step's own claims, 1.848076 less 1.749968, and it was the whole
+# mandatory cost of that word.
 [[english]]
 step = "and-it-is-still-in-there"
 phrase = "four hours"
@@ -10254,7 +10288,9 @@ unledgered = [
 # twenty-nine quantities on the seven steps it then covered, and the second batch of six
 # needed one new SHAPE (a numeral ahead of its fraction, "four and a half seconds"), one new
 # unit noun, and thirteen vocabulary rules — almost all of them for an instant stated
-# RELATIVE to another one, which the first batch never met. The list holds twenty-one steps now.
+# RELATIVE to another one, which the first batch never met. The third batch needed no shape
+# at all and the fourth needed one UNIT NOUN — the volt — which is what let the last two
+# steps holding one join the scan. The list holds twenty-three steps now.
 #
 # THE ENTRIES DO NOT ALL SAY THE SAME THING, and the split is a result rather than a gap:
 # fifteen of them read nothing at all. Those are the steps whose English quantities had been
@@ -10263,9 +10299,9 @@ unledgered = [
 # quantities today is the ordinary digit ledger, which has covered all thirty-two steps since
 # before this list existed.
 #
-# THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the batch after it was one step on
-# its own. The six steps that read something carry twenty spelled quantities between them,
-# and they are the first this vocabulary has ever accounted for:
+# THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the two batches after it were one
+# step and then two. The eight steps that read something carry thirty-one spelled quantities
+# between them, and they are the first this vocabulary has ever accounted for:
 # until the third batch landed, every rule in the table read a token written in digits, so
 # the spelled branch of `ledger_numbers` was wired up path-wide and reading nothing. A green
 # over an empty list is worth what a green over an empty list is always worth, and that is
@@ -10307,12 +10343,31 @@ spelled = [
   "what-it-cost",                # 6 - the knee twice, the control arm's residue, the gap
                                  #     between two instants, the sampler's own period, and
                                  #     how far empty would be from a full cell
-  "and-it-is-still-in-there",    # 6 - the rest leg in two sentences, and the readings
-                                 #     taken at the instants inside that rest: one a bare
-                                 #     numeral carrying the unit its neighbour in the same
-                                 #     list stated, one an article, the rest spelled out.
-                                 #     The step's own span was spelled here too until the
-                                 #     slice that scanned it put that figure in digits
+  "the-electrolyte-starves",     # 3 - the hour rate said twice, once as the definition of
+                                 #     the current the reader types and once as roughly how
+                                 #     long the run takes, and the gap between two models
+                                 #     read at one instant, which is a volt
+  "past-empty",                  # 7 - the collapse's reading list, three instants counted
+                                 #     from the knee and one from the item before it; the
+                                 #     charge leg's own minute; the step length; and the
+                                 #     one figure in this path that is about a real cell
+                                 #     rather than this one, which only a provenance note
+                                 #     holds. What is NOT read here is "0.064 V at two",
+                                 #     one item further along the same list as "a minute" -
+                                 #     the bare-numeral shape wants its numeral closed by a
+                                 #     comma, a full stop or an "and", and this one is
+                                 #     followed by an em dash. So the shape declines it, the
+                                 #     ban does not list it, and the count above is 7 rather
+                                 #     than 8
+  "and-it-is-still-in-there",    # 7 - the rest leg in two sentences, the readings taken at
+                                 #     the instants inside that rest (one a bare numeral
+                                 #     carrying the unit its neighbour in the same list
+                                 #     stated, one an article, the rest spelled out), and
+                                 #     the yardstick the rebound is measured against, which
+                                 #     is a volt and arrived with the noun rather than with
+                                 #     the sentence. The step's own span was spelled here
+                                 #     too until the slice that scanned it put that figure
+                                 #     in digits
 ]
 
 # The other side of that list: steps whose prose is NOT word-scanned, named.
@@ -10349,13 +10404,7 @@ word_blind = [
   "pack-disagrees",              # 3 - the grid's spread, which wants claims that do not exist
   "lying-sensor",                # 0 read, and one count of groups
   "protection-on",               # 0 read, and one count of cells
-  "the-electrolyte-starves",     # 2 read, both of them hours spelled as articles, which
-                                 #     the reader saw the day it learned that shape. The
-                                 #     step stays word-blind on the volt beside them
   "two-legs",                    # 0 read, and one count of engine steps
-  "past-empty",                  # 6 read, the last of them the article the reading list
-                                 #     is headed by. The volt in the same list is what
-                                 #     still keeps the step off the scan
   "one-step-that-got-through",   # 5 - three of them only became visible when `percent`
                                  #     joined the unit nouns for a step in `spelled`
   "what-protection-costs",       # 0 read, and two counts of engine steps

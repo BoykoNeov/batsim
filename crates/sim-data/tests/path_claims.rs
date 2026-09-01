@@ -138,15 +138,19 @@
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
-//! Twenty-six arms exist — a scenario field, a chemistry field, a control on the lesson block,
+//! Twenty-eight arms exist — a scenario field, a chemistry field, a control on the lesson
+//! block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
-//! one of their durations read in hours, the span of a
+//! one of their durations read in hours, one that comes out in hours read back in seconds
+//! ([`Tie::Seconds`]), the span of a
 //! chemistry table, a node of one, digits inside a name, digits inside the name of a file an
 //! arm picks ([`Tie::Picker`]), the label of a control read out of `web/index.html`, how many
 //! entries an array of the scenario has, the open-circuit voltage at a charge one of them
 //! names, the magnitude of any of them, the position of another lesson,
 //! the panel's clock at the step's mark, a constant of the page's own policy parsed out of
-//! `web/app.js` ([`Tie::Page`]), a figure the sentence works out from its own
+//! `web/app.js` ([`Tie::Page`]), a number inside the provenance note a chemistry file writes
+//! above one of its values ([`Tie::Provenance`], the one arm here that reads a fact about a
+//! real cell rather than about this one), a figure the sentence works out from its own
 //! siblings, any of those read on **another lesson** ([`Tie::Elsewhere`]), a control read off
 //! **one of this step's arms** rather than off the step — or, where that arm loads another
 //! file from the picker, a field of **that** file ([`Tie::OnArm`]), a number
@@ -3869,6 +3873,19 @@ const UNIT_NOUNS: &[(&str, f64)] = &[
     // digits; this scale is about the *word's* unit and there is one percent to a percent.
     ("percent", 1.0),
     ("percentage", 1.0),
+    // A volt. The first unit here that is not a time, a count or a fraction, and the
+    // reason it was left out was never that no arm can answer a voltage: `Tie::Ocv`
+    // answers an open-circuit one, `Tie::Chemistry("cell.v_min")` a declared one, and a
+    // difference of two claims a measured one. It was out because **admitting a noun
+    // forces every article phrase in that noun at once**, and the three this one forces
+    // sat on steps `docs/plans/path-article-shape.md` was not otherwise touching. Two of
+    // them are what open the last two lessons that hold a volt.
+    //
+    // Singular only, and that is not an oversight: every volt phrase in this path is
+    // *"a volt"*, *"a full volt"*, *"a tenth of a volt"*. `BANNED_UNITS` refuses the
+    // plural as it always has, so a sentence writing *"two volts"* is refused before it
+    // can be unread — the ban wider than the reader, which is the licensed direction.
+    ("volt", 1.0),
 ];
 
 /// Words allowed to sit between the numeral and its unit without breaking the phrase.
@@ -8526,6 +8543,76 @@ enum Tie {
     /// Compared the way the thing it wraps compares, on [`Tie::Elsewhere`]'s terms: taking
     /// an absolute value does not turn a file read into a computed quantity.
     Magnitude(&'static Tie),
+    /// A number inside the **provenance note** a chemistry file writes above one of its
+    /// values — the comment lines immediately above the named key, read as source text.
+    ///
+    /// **The one arm here that reads a fact about the world rather than a fact about this
+    /// simulation, and it exists because one sentence in the path states one.** Step 20 says
+    /// the floor its chemistry declares is a limit and not a measurement, and then says what
+    /// the real thing does: *"a real reversed cell goes on to a volt or two negative while
+    /// its copper current collector dissolves"*. No trajectory can answer that, no field
+    /// holds it, and the sentence is true. What decides it is what decides every other
+    /// unmeasured number in this repo — the provenance note `CLAUDE.md` requires beside the
+    /// value — and `lfp_26650_generic.toml` carries it two lines above `floor_v`: *"A real
+    /// reversed cell continues to roughly -1 to -2 V on copper dissolution before failing"*.
+    ///
+    /// So the prose is a restatement of a comment in a file the same sentence names, and
+    /// this arm is what makes the two answer to each other. Re-fit the floor and rewrite the
+    /// note, and the lesson reddens until it is rewritten too — which is the whole property
+    /// an arm is for.
+    ///
+    /// **Why a comment and not a field, which is the objection to answer.** Every other
+    /// chemistry arm reads a parsed value; this one reads text TOML throws away. The
+    /// alternative was to invent a field for a number the engine never uses — a schema
+    /// change, a snapshot question and a validation rule for one sentence — and worse, it
+    /// would make a number the simulation does not use look like one it does. A provenance
+    /// note is where this repo already puts an unencoded physical fact; the gap was that
+    /// nothing could read one, and `docs/plans/hysteresis-width-over-soc.md` recorded the
+    /// same gap from the other side with its cited magnitudes "held by provenance prose
+    /// alone".
+    ///
+    /// **Positional, and that is the fence.** `nth` counts numbers in the note from zero, so
+    /// an author names *which* number of a note that states an interval. It is not "the note
+    /// contains this number somewhere", which would be the search-the-file match this whole
+    /// taxonomy refuses: a provenance paragraph has enough digits in it that a `1` would
+    /// find one by accident.
+    ///
+    /// Compared exactly, like every other file read. The prose either prints the note's
+    /// number or is wrong about it.
+    Provenance {
+        /// The key the note sits above, as `"reversal.floor_v"` — a dotted path through the
+        /// chemistry file's own sections, spelled the way the file spells it.
+        field: &'static str,
+        /// Which number of the note, counting from zero.
+        nth: usize,
+    },
+    /// The tie below it, **read in seconds where its own arithmetic comes out in hours** —
+    /// the mirror of [`Tie::Hours`], and what decides which of the two a rule needs is the
+    /// TOKEN rather than the file.
+    ///
+    /// A quantity written in DIGITS carries no unit into the scan: *"about 56 hours"* is the
+    /// token `56` with a [`Written::scale`] of one, so a tie reading a file in seconds has
+    /// to be divided down, and that is [`Tie::Hours`]. A quantity spelled as a WORD carries
+    /// its unit in the word: *"an hour"* is the token `1` with a scale of 3600, and the scan
+    /// does that conversion itself — so a tie feeding it must answer in **seconds**, and
+    /// wrapping one in [`Tie::Hours`] would divide by 3600 twice.
+    ///
+    /// Which leaves the case this is for: a spelled hour whose arithmetic is naturally in
+    /// hours. Step 16 tells the reader to *"set the current to 5.153198 A — the current that
+    /// would empty this cell in an hour"*, and an amp-hour capacity over an ampere is a time
+    /// in hours by construction. The honest arm is that division; the scan needs it in
+    /// seconds; nothing between them could say so.
+    ///
+    /// **The alternative was available and is worse, which is why it is written down.**
+    /// `Ratio(capacity_ah, Hours(demand))` reaches the same 3600 out of variants that
+    /// already exist, by reading an ampere "in hours" — a unit statement that means nothing,
+    /// that describes itself as such in the error text, and that arrives at the right number
+    /// for no reason the sentence gives. A wrong arm holding the right number is the hazard
+    /// this taxonomy is arranged against, and a variant is cheaper than a green that has to
+    /// be explained.
+    ///
+    /// Compared like a computed tie, on [`Tie::Hours`]'s terms.
+    Seconds(&'static Tie),
     /// The same question asked of **a different lesson** — the inner tie, resolved against
     /// the named step's block, scenario and chemistry.
     ///
@@ -10293,6 +10380,81 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
+        // THE WHOLE DISAGREEMENT IN ONE WORD, and the two numbers under it are a claim from
+        // each pack: the twin's 3.436554 V at 464 s less this model's 2.421753 V at the same
+        // instant. 1.0148, which is `1` at the precision a bare "volt" commits to.
+        //
+        // The sentence prints both operands two clauses apart and this rule prints neither,
+        // which is what a difference is for: the figure the reader carries away is the GAP,
+        // and until the volt was a unit this scan could read, the gap was the one quantity in
+        // the step's argument that answered to nothing.
+        //
+        // "at that same instant" is enforced by the two addresses being the same instant:
+        // both claims are `v_at:464`. A twin read at 460 would be 3.4386 and the difference
+        // 1.0169, which still prints as 1 — so this arm cannot tell those two readings apart,
+        // and what stops the sentence drifting is the twin's own claim sitting at the instant
+        // the sentence names.
+        phrase: "V \u{2014} **{n} higher**",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "looks-fine-from-outside",
+                arm: None,
+                quantity: "v_at:464",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "the-electrolyte-starves",
+                arm: None,
+                quantity: "v_at:464",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // THE DEFINITION OF THE RATE THE READER IS ASKED TO TYPE, and the only rule in this
+        // table that reaches [`Tie::Seconds`]. An amp-hour capacity over an ampere is a time
+        // in hours by construction: 5.153198 Ah at 5.153198 A is one hour exactly, which is
+        // what makes this current the cell's hour rate and what the clause says.
+        //
+        // The current is read off the ARM rather than off the step's own box, because the box
+        // says 15.459594 A here and the sentence is an instruction to change it. `one c` is
+        // the arm that changes it, so the sentence's number and the arm's override are the
+        // same fact.
+        //
+        // NOT the arm's measured crossing, which is 3484 s and would round to the same 1.
+        // That is a different sentence: this model empties BEFORE the hour and the step's
+        // whole argument is by how much. An arm answering 3484 here would be green today and
+        // would go on being green the day the definition and the measurement parted.
+        phrase: "empty this cell in {n} \u{2014} press",
+        ties: &[Tie::Seconds(&Tie::Ratio(&[
+            Tie::Chemistry("cell.capacity_ah"),
+            Tie::OnArm {
+                arm: "one c",
+                tie: &Tie::Setting(Control::DemandValue),
+            },
+        ]))],
+        pow10: 0,
+    },
+    LedgerRule {
+        // ...and the measurement the definition promises, in the parenthesis that tells the
+        // reader how long to keep pressing Run. 3484 s is 0.9678 of an hour, which is `1` at
+        // the precision "about an hour" commits to — and "about" is the sentence being honest
+        // that it is not one.
+        //
+        // Read on `one c` and not on `the twin at one c`, though both round to the same 1:
+        // the parenthesis sits inside the instruction for this file's run, and the twin's
+        // 3496 s is what the NEXT sentence is about.
+        phrase: "a full discharge is about {n} of simulation",
+        ties: &[Tie::Quoted {
+            step: "the-electrolyte-starves",
+            arm: Some("one c"),
+            quantity: "t_at_v_below:2.5",
+            states: QuotedAs::Same,
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
         // How much longer the twin has: its cut-off less this step's, one claim from each
         // pack. Neither number is on the page.
         phrase: "has {n} seconds still to run",
@@ -10748,6 +10910,39 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                 quantity: "v_at:4337",
             },
             Tie::Setting(Control::PulseOn),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // THE REBOUND'S OWN YARDSTICK, and the first volt this scan ever read. The sentence
+        // measures the step off the load against a round tenth, and both ends of that
+        // subtraction are claims two paragraphs apart on this step's own run: 1.848076 V one
+        // engine step after the current goes away, less the 1.749968 V the leg ended at.
+        // That is 0.098108, which is `0.1` at the one place the word commits to.
+        //
+        // Tied to the two claims and not to the chemistry's `cell.v_min`, which is also 1.75
+        // and would be the wrong arm holding very nearly the right number: what the sentence
+        // contrasts is two READINGS, and the cut-off is a threshold the leg happens to end
+        // near. Point it at the file and the rule goes on passing when the leg stops
+        // somewhere else.
+        //
+        // "most of" is a hedge and the arm sits under it rather than around it: 0.0981 is
+        // most of a tenth, 0.1 is not "most of" itself, so the sentence is true and the
+        // comparison is the tenth. See `docs/plans/path-word-batch-four.md`.
+        phrase: "is already most of {n} higher",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "and-it-is-still-in-there",
+                arm: None,
+                quantity: "v_at:737.5",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "and-it-is-still-in-there",
+                arm: None,
+                quantity: "v_at:737",
+                states: QuotedAs::Same,
+            },
         ])],
         pow10: 0,
     },
@@ -11630,6 +11825,125 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // rules, on step 6's terms.
         phrase: "`soc` stays pinned at {n}",
         ties: &[Tie::Chemistry("ocv.soc.0")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // THE COLLAPSE'S READING LIST, and every instant in it is counted from the knee
+        // rather than from the clock — which is what a reader watching the trace does. Four
+        // rules, one shape: an instant of this step's own, less the instant the flag arrived.
+        //
+        // The first: 4176.5 s less 4146.5 is thirty seconds. `Tie::Instant` and not
+        // `Tie::Quoted`, because what this sentence states is WHEN that voltage was read and
+        // not what it came to — the voltage itself is the claim beside it.
+        phrase: "V {n} later,",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "past-empty",
+                arm: None,
+                quantity: "v_at:4176.5",
+            },
+            Tie::Instant {
+                step: "past-empty",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The second item of the same list, written as a bare numeral carrying the unit its
+        // neighbour stated — the scanner's third shape, and the second sentence in this path
+        // to use it after step 24's "at four". 4206.5 s less the knee is sixty.
+        phrase: "{n}, and **through zero at",
+        ties: &[Tie::Difference(&[
+            Tie::Instant {
+                step: "past-empty",
+                arm: None,
+                quantity: "v_at:4206.5",
+            },
+            Tie::Instant {
+                step: "past-empty",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The third, and the one the list is building to: the terminal reaches zero at
+        // 4226.5 s, which is eighty seconds past the knee. Its instant is a claim VALUE here
+        // and not a `read_at_s` — `t_at_v_below:0` measures when the crossing happens — so
+        // this is a quotation where its two neighbours are instants.
+        phrase: "{n} past the knee, with",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "t_at_v_below:0",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "flag_first_s:SOC_CLAMPED_LOW",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // And the fourth, which is the only one of the four counted from the item before it
+        // rather than from the knee: the fall stops at 4229.5 s, three seconds after the
+        // trace went through zero. That frame is the sentence's own — "three seconds later"
+        // means later than the crossing it has just described — and reading it from the knee
+        // would be 83 s, which the step states two paragraphs earlier as a different fact.
+        phrase: "is paying. {n} later the fall",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "v_floor_s",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "past-empty",
+                arm: None,
+                quantity: "t_at_v_below:0",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // THE ONE SENTENCE IN THIS PATH THAT STATES A FACT ABOUT A REAL CELL, and the only
+        // user of [`Tie::Provenance`]. The step has just said its floor is `floor_v = 0.0`, a
+        // declared limit and not a measurement; this clause says what the real thing does
+        // instead, and the only place this repo records that is the provenance note two lines
+        // above that value in `lfp_26650_generic.toml` — "continues to roughly -1 to -2 V on
+        // copper dissolution before failing".
+        //
+        // `nth: 0` is the first of the note's three numbers, which is the -1 the prose spells
+        // as "a volt"; -2 is the "or two" the scanner does not read, and 0 is the floor itself
+        // two clauses back. Naming which one is the fence: a note with three numbers in it
+        // would otherwise answer any of them.
+        //
+        // Wrapped in a magnitude because the sign is in the WORDS here rather than in the
+        // characters — "a volt or two negative" — and the phrase carries that word, which is
+        // the guarantee step 11's "-{n} °C" gets from carrying the minus.
+        phrase: "a real reversed cell goes on to {n} or two negative",
+        ties: &[Tie::Magnitude(&Tie::Provenance {
+            field: "reversal.floor_v",
+            nth: 0,
+        })],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The step length, in the sentence that says how exactly the two amp-hour figures
+        // agree. Half a second is the grid the debt clears on, and the lesson block pins `dt`
+        // at exactly that — so the sentence's precision claim and the control the reader must
+        // not touch are one number.
+        phrase: "charge to within the {n} step the debt clears on",
+        ties: &[Tie::Setting(Control::Dt)],
         pow10: 0,
     },
     LedgerRule {
@@ -13268,6 +13582,79 @@ fn chemistry_toml(scenario_file: &str) -> toml::Value {
     toml::from_str(&text).unwrap_or_else(|e| panic!("chemistries/{id}.toml parses as TOML: {e}"))
 }
 
+/// The numbers inside the **provenance note** above `field` in the chemistry file the
+/// step's scenario names, in the order the note writes them.
+///
+/// The note is the run of comment lines immediately above the key, and nothing else: a
+/// blank line or another value ends it, so a rule reading `reversal.floor_v` cannot pick up
+/// the note that belongs to `v_per_soc` three lines earlier. Sign included, because the one
+/// sentence this exists for is about a negative voltage and the ban's scanner finds digits
+/// without one.
+///
+/// Empty where the key has no note, which fails the rule as broken rather than matching
+/// something else — the same way a `Tie::Chemistry` pointed at a missing field does.
+fn provenance_numbers(scenario_file: &str, field: &str) -> Vec<f64> {
+    let id = chemistry_id(scenario_file);
+    let text = read(&repo_root().join("chemistries").join(format!("{id}.toml")));
+    let (section, key) = field.rsplit_once('.').unwrap_or_else(|| {
+        panic!(
+            "a rule reads the provenance note of `{field}`, which names no section. The \
+             path is the one the chemistry file writes — `reversal.floor_v`, not `floor_v`."
+        )
+    });
+
+    let lines: Vec<&str> = text.lines().collect();
+    let mut here = "";
+    let mut at = None;
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if let Some(name) = trimmed.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+            here = name;
+        } else if here == section {
+            if let Some((k, _)) = trimmed.split_once('=') {
+                if k.trim() == key {
+                    at = Some(i);
+                    break;
+                }
+            }
+        }
+    }
+    let Some(at) = at else {
+        return Vec::new();
+    };
+
+    let mut first = at;
+    while first > 0 && lines[first - 1].trim_start().starts_with('#') {
+        first -= 1;
+    }
+    let note: String = lines[first..at].join(" ");
+
+    let chars: Vec<char> = note.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if !chars[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+            i += 1;
+        }
+        let mut token: String = chars[start..i].iter().collect();
+        while token.ends_with('.') {
+            token.pop();
+        }
+        if start > 0 && chars[start - 1] == '-' {
+            token.insert(0, '-');
+        }
+        if let Ok(v) = token.parse::<f64>() {
+            out.push(v);
+        }
+    }
+    out
+}
+
 /// The value a lesson's control box carries, or `None` if that lesson has no such box.
 ///
 /// `Rest` has no demand value at all, so a rule reading one on a resting step resolves to
@@ -13555,6 +13942,18 @@ fn tie_values(
             };
             vec![seconds / 3600.0]
         }
+        Tie::Seconds(hours) => {
+            let hours = tie_values(hours, lesson, lessons, scenario, chemistry, ctx);
+            let [hours] = &hours[..] else {
+                return Vec::new();
+            };
+            vec![hours * 3600.0]
+        }
+        Tie::Provenance { field, nth } => provenance_numbers(&lesson.scenario, field)
+            .get(*nth)
+            .copied()
+            .into_iter()
+            .collect(),
         Tie::PerSecond(period_ms) => {
             let ms = tie_values(period_ms, lesson, lessons, scenario, chemistry, ctx);
             let [ms] = &ms[..] else {
@@ -13940,6 +14339,10 @@ fn tie_describe(tie: &Tie) -> String {
             arm.map_or("its own run".to_string(), |a| format!("the arm `{a}`"))
         ),
         Tie::PerSecond(ms) => format!("{}, per second", tie_describe(ms)),
+        Tie::Seconds(hours) => format!("{}, in seconds", tie_describe(hours)),
+        Tie::Provenance { field, nth } => {
+            format!("number {nth} of the provenance note above the chemistry's `{field}`")
+        }
         Tie::Span(path) => format!("the span of the chemistry's `{path}`"),
         Tie::Clock => "the `sim time` row's rendering of the step's mark".to_string(),
         Tie::Page(name) => format!("the page's `{name}` constant"),
@@ -14023,6 +14426,8 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Quoted { .. } => "quoted claim",
         Tie::Instant { .. } => "a claim's instant",
         Tie::PerSecond(_) => "rate per second",
+        Tie::Seconds(_) => "hours in seconds",
+        Tie::Provenance { .. } => "provenance note",
         Tie::Label { .. } => "control label",
         Tie::Count(_) => "array length",
         Tie::Ocv(_) => "open-circuit voltage at a charge",
@@ -14055,6 +14460,7 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32, unit: f64) -> 
         | Tie::Difference(_)
         | Tie::Sum(_)
         | Tie::Hours(_)
+        | Tie::Seconds(_)
         | Tie::PerSecond(_)
         | Tie::Span(_)
         | Tie::Derived { .. }
@@ -14726,12 +15132,20 @@ fn an_elsewhere_reads_the_named_lessons_own_files() {
 /// **It used to point at step 15, and that is why the instant tag exists.** Step 15 filed
 /// eight voltages under `v_at`, which made it unquotable — step 16 is written almost
 /// entirely against it and could borrow nothing. Those eight now name their instants
-/// (`v_at:400`), so the case moved to step 20, which files ten under one name and has no
-/// sentence quoting it yet.
+/// (`v_at:400`), so the case moved to step 20.
+///
+/// **And it has now moved once more, inside that step, because the paragraph above came
+/// true.** It read "step 20, which files ten under one name and has no sentence quoting it
+/// yet", and `docs/plans/path-word-batch-four.md` is the slice that gave two of those ten
+/// sentences: reading *"thirty seconds later"* and *"at sixty"* off their instants meant
+/// telling those two claims apart, which is a tag each. Step 20's own run then filed no
+/// ambiguous `v_at` at all and this test's guard fired — a registered prediction confirmed
+/// by the thing it predicted. The case is now the step's CHARGE LEG, which files five
+/// voltages under one name and is quoted by nothing.
 ///
 /// No claim is synthesised for this. The pair is real, which is what makes it evidence: if
-/// some future slice tags step 20's readings too, this test stops having a case and says so
-/// through the assertion below rather than passing on nothing.
+/// some future slice tags the charge leg's readings too, this test stops having a case and
+/// says so through the assertion below rather than passing on nothing.
 #[test]
 #[should_panic(expected = "answer differently")]
 fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
@@ -14743,7 +15157,9 @@ fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
         .expect("step 13 is still in the path");
     let values: Vec<f64> = all
         .iter()
-        .filter(|c| c.step == "past-empty" && c.quantity == "v_at" && c.arm.is_none())
+        .filter(|c| {
+            c.step == "past-empty" && c.quantity == "v_at" && c.arm.as_deref() == Some("charge leg")
+        })
         .map(|c| c.value)
         .collect();
     assert!(
@@ -14754,9 +15170,9 @@ fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
         // the `expected =` match, so the test passed while proving nothing. A guard on a
         // `should_panic` test has to fail in a way the attribute cannot mistake for the
         // panic it is waiting for.
-        "this test needs a quantity that two claims on one step give unequal values for, \
-         and step 20's `v_at` is no longer one: {values:?}. Point it at another, or the \
-         refusal below would be evidence about nothing."
+        "this test needs a quantity that two claims on one step and arm give unequal values \
+         for, and step 20's charge leg `v_at` is no longer one: {values:?}. Point it at \
+         another, or the refusal below would be evidence about nothing."
     );
     let text = ascii_minus(&from.text);
     let numbers = written_numbers(&text);
@@ -14773,7 +15189,7 @@ fn a_quotation_of_a_quantity_two_claims_disagree_on_is_refused() {
     };
     let tie = Tie::Quoted {
         step: "past-empty",
-        arm: None,
+        arm: Some("charge leg"),
         quantity: "v_at",
         states: QuotedAs::Same,
     };
