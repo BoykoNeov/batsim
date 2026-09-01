@@ -1054,6 +1054,25 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
         "the tail is not a second quantity: {partitive:?}"
     );
 
+    // The same shape on the noun whose SCALE is not one. Everything above scales by a time
+    // or by unity, so a conversion that dropped the noun's own scale would have gone green
+    // on every case here; this one comes out in volts and says so.
+    assert_eq!(
+        one("which is about a tenth of a millivolt here"),
+        ("0.1".to_string(), 0.001, "millivolt")
+    );
+
+    // ...and the partitive with its scale word standing ALONE, ahead of the article, which
+    // is the shape neither of these walks has. `amp` is not a unit noun precisely because
+    // this reads as nothing only while the noun is out; see `UNIT_NOUNS`, and
+    // `no_lesson_stands_a_scale_word_alone_before_a_unit_this_reader_reads` for the
+    // precondition that keeps the prose clear of it.
+    let alone = spelled_numbers("down to hundredths of an amp. The");
+    assert!(
+        alone.is_empty(),
+        "`hundredths of an amp` read as {alone:?}, so the noun has been admitted without          the shape and the sentence is now valued a hundred times high"
+    );
+
     // Shape 3: a list item inheriting the unit an earlier item stated.
     let list = spelled_numbers("5.71 at three minutes, 5.80 at six, and 5.81 later");
     assert_eq!(
@@ -1099,6 +1118,71 @@ fn the_word_scanner_reads_quantities_and_not_pronouns() {
             "`{text}` is not a spelled quantity, but the scanner read {:?}",
             spelled_numbers(text)
         );
+    }
+}
+
+/// The one shape this reader does not have, kept out of the **prose** rather than out of
+/// the reader.
+///
+/// Both walks in [`spelled_numbers`] go FORWARD from their head - a numeral or an article -
+/// and step over fillers and scale words on the way to a noun. Neither looks behind the
+/// head, so a partitive that stands its scale word ALONE, ahead of the article, is read as
+/// the article alone: *"hundredths of a point"* scans as the number one, on a noun
+/// [`UNIT_NOUNS`] has admitted since it was written. That is a quantity a hundred times too
+/// large, and too large is the direction that finds an arm by accident.
+///
+/// Nothing in the path writes that shape today, and this is the difference between knowing
+/// so and hoping so. Every other partitive in the prose carries a head the reader reads -
+/// *"a tenth of a volt"*, *"two hundredths of a point"* - and the single bare one,
+/// `nothing-to-clamp`'s *"down to hundredths of an amp"*, is in a noun this reader declines.
+/// Admit `amp` and this test is what goes red, which is why the argument for leaving it out
+/// lives beside the noun list and the enforcement lives here.
+///
+/// **It asks the reader rather than re-implementing it.** A hand-written walk over the same
+/// words would inherit whichever blind spot the walk it was copied from has; this one finds
+/// the bare scale word and then asks whether [`spelled_numbers`] reported a reading in the
+/// four words behind it. There is exactly one way for that to happen and it is the misread.
+#[test]
+fn no_lesson_stands_a_scale_word_alone_before_a_unit_this_reader_reads() {
+    for lesson in lessons() {
+        let text = ascii_minus(&lesson.text);
+        let words = words_of(&text);
+        let found = spelled_numbers(&text);
+        for (i, (_, end, word)) in words.iter().enumerate() {
+            if lookup(SCALE_WORDS, word).is_none() {
+                continue;
+            }
+            // A head in front of it is the partitive both walks already read, and the value
+            // is theirs rather than this test's business.
+            if i > 0 {
+                let prior = &words[i - 1].2;
+                if numeral_word(prior).is_some() || prior == "a" || prior == "an" {
+                    continue;
+                }
+            }
+            let Some(reading) = found.iter().find(|r| {
+                words
+                    .iter()
+                    .position(|(at, _, _)| *at == r.at)
+                    .is_some_and(|w| w > i && w <= i + 4)
+            }) else {
+                continue;
+            };
+            panic!(
+                "step `{}` stands `{word}` alone in front of `{}`, which this scanner reads \
+                 as {} of that unit:\n  \u{2026}{}\u{2026}\n\
+                 The scale word is not consumed - both shapes walk forward from their own \
+                 head and neither looks behind it - so the sentence is valued without it, \
+                 which is larger than what it states by whatever the scale is. Either give \
+                 the partitive a head the reader reads (*\"a hundredth of\"*, *\"two \
+                 hundredths of\"*), or write the quantity in digits, or take the unit noun \
+                 back out of `UNIT_NOUNS` - but do not leave the phrase to be read short.",
+                lesson.id,
+                reading.unit,
+                reading.token,
+                &text[*end..reading.at + reading.len],
+            );
+        }
     }
 }
 
@@ -3886,6 +3970,35 @@ const UNIT_NOUNS: &[(&str, f64)] = &[
     // plural as it always has, so a sentence writing *"two volts"* is refused before it
     // can be unread — the ban wider than the reader, which is the licensed direction.
     ("volt", 1.0),
+    // A thousandth of one, and the scale is the point of it: a token read here lands in
+    // VOLTS, so a rule comparing one to a tie in volts needs no `pow10` of its own -
+    // [`tie_agrees`] divides by this scale and the conversion is carried there. It is the
+    // first noun on this list whose scale is neither a time nor one, which is what that
+    // division has always been for and what nothing had exercised.
+    //
+    // Singular only, on `volt`'s terms, and it forces exactly one phrase path-wide: step
+    // 21's *"about a tenth of a millivolt"*, a partitive the article shape already reads.
+    //
+    // **`amp` was measured beside it, and it is out for a reason that is about this
+    // scanner rather than about the word.** `nothing-to-clamp` writes *"until the current
+    // is down to hundredths of an amp"*, which stands its scale word AHEAD of the article.
+    // Both shapes here walk FORWARD - a numeral or an article, then fillers and scale words
+    // on the way to a noun - and nothing looks behind the head, so `an amp` scans as the
+    // number one. Measured rather than reasoned: admitting the noun alone and probing the
+    // phrase returns `("1", 1.0, "amp")` for a sentence stating a hundredth of that. That
+    // is [`SCALE_WORDS`]' own hazard reached from the other side, and a hundred times too
+    // large is the direction that goes green against whatever happens to equal one.
+    //
+    // The hole is in the reader and not in the noun - *"hundredths of a point"* reads as
+    // one today, on a noun this list has admitted since it was written - and it is safe
+    // only because no lesson writes that shape. That precondition is now a check rather
+    // than a hope: [`no_lesson_stands_a_scale_word_alone_before_a_unit_this_reader_reads`]
+    // scans the prose for it, and admitting `amp` turns it red with this paragraph's reason
+    // attached. Building the shape instead was the other road and it leads nowhere useful:
+    // what that sentence states is a magnitude and not a figure - where to stop watching,
+    // not what the current is - so a reader that valued it at 0.01 A would then need an arm
+    // for a number no file in this tree decides.
+    ("millivolt", 0.001),
 ];
 
 /// Words allowed to sit between the numeral and its unit without breaking the phrase.
@@ -12370,6 +12483,54 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                 operands: &[Operand::Sibling("0.0640"), Operand::Sibling("1.0726")],
             },
         ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // ...and how far short of that product the row actually falls, which is the whole
+        // of what the next sentence claims. The pair chasing a resistance that grew under
+        // it is always a little behind, so the reading is not quite the settled arithmetic
+        // above: the product comes to -0.06864931 and the mark reads -0.068551, and the
+        // 0.0983 mV between them is what the sentence rounds to a tenth.
+        //
+        // The first quantity this path spells in a unit smaller than the one the engine
+        // holds. Nothing here converts it - `pow10` is 0 - because `millivolt` carries its
+        // own scale into `tie_agrees`, which is the reason that noun's scale is 0.001 and
+        // not 1.
+        //
+        // **The wrong operand is available and it fails RED, which is worth writing down
+        // where the temptation is.** Reaching for the sentence's own printed -0.0686
+        // instead of the unrounded product gives 4.9e-5 V, a twentieth of a millivolt, and
+        // `to_fixed(0.049, 1)` is "0.0". The number this sentence states exists only
+        // between two values one of which the prose never prints in full - which is what
+        // makes it a difference of ties rather than a `Tie::Derived` over siblings.
+        //
+        // Both ends are quotations and neither is this rule's to choose: step 20's floor is
+        // instant-tagged because it is quoted three times already, and this step's own
+        // reading grew its tag in the slice that wrote this rule - it files three voltages
+        // under `v_at` and was unquotable until one of them said which.
+        phrase: "which is about {n} here, well below what this row can show you",
+        ties: &[Tie::Magnitude(&Tie::Difference(&[
+            Tie::Product(&[
+                Tie::Quoted {
+                    step: "past-empty",
+                    arm: None,
+                    quantity: "v_at:4400",
+                    states: QuotedAs::Same,
+                },
+                Tie::Quoted {
+                    step: "what-it-cost",
+                    arm: None,
+                    quantity: "soh_res_at:600",
+                    states: QuotedAs::Same,
+                },
+            ]),
+            Tie::Quoted {
+                step: "what-it-cost",
+                arm: None,
+                quantity: "v_at:600",
+                states: QuotedAs::Same,
+            },
+        ]))],
         pow10: 0,
     },
     LedgerRule {

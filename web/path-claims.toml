@@ -2899,7 +2899,7 @@ minus (U+2212) and every formatter on the page emits the ASCII one.
 [[claim]]
 step = "what-it-cost"
 literal = "reads **−0.069 V** at the mark"
-quantity = "v_at"
+quantity = "v_at:600"
 value = -0.068551
 tol = 5.0e-4
 tol_from = "spelled"
@@ -2913,6 +2913,13 @@ note = """
 And the same floor 300 s later, 4.6 mV lower. The sentence says the reader can "stop
 and check it", which is exactly the promise this check enforces: the three decimals
 it quotes are the three decimals the row prints.
+
+Instant-tagged, for step 20's reason on its own floor: this step files three readings
+under `v_at` — 1.9306 V at the knee, −0.065024 at 300 s and this one — and `Tie::Quoted`
+refuses an address three claims answer differently rather than letting file order settle
+it. The rule that needed one is the sentence two clauses later, which states how far short
+of the settled arithmetic this reading falls. The other two stay untagged: a tag is an
+address a quoting sentence needs, not a decoration every reading gets.
 """
 
 # The control. Not a leg and not a trajectory a reader can produce: the same scenario, the
@@ -8315,6 +8322,15 @@ phrase = "half a percent"
 
 # nothing-to-clamp — 1: one phrase, and it is a magnitude rather than a figure: "until the current is down
 # to hundredths of an amp" says where to stop watching, not what the current is.
+#
+# MEASURED, and the finding is about the scanner rather than about this sentence. `amp` is
+# the last unit noun that any listed phrase here waits on, and admitting it would be a
+# defect: this phrase stands its scale word AHEAD of the article, a shape neither of the
+# reader's walks has, so `an amp` scans as the number one — a hundred times what the
+# sentence states. `UNIT_NOUNS` carries the argument and
+# `no_lesson_stands_a_scale_word_alone_before_a_unit_this_reader_reads` carries the
+# enforcement. The phrase stays here, unread and refused by the ban, which is the licensed
+# direction.
 [[english]]
 step = "nothing-to-clamp"
 phrase = "an amp"
@@ -8355,13 +8371,17 @@ phrase = "a minute"
 step = "past-empty"
 phrase = "half-second"
 
-# what-it-cost — 8: the two legs of this step said in words, the fade split at the knee, the
-# sampler's wall-clock throttle, how far empty is from a full cell, and the two the article
-# shape does not reach — a partitive naming millivolts, whose noun this reader does not
-# admit, and "a second", which is the shape's one declared limit, because those same two
-# words are also how English says the next one along. The throttle is a page constant and is
-# the cheapest of them. The step's own partitive in points went the way belief-drifts' did,
-# and for the same reason.
+# what-it-cost — 8, and seven of them are tied: the two legs of this step said in words, the
+# fade split at the knee, the sampler's wall-clock throttle, how far empty is from a full
+# cell, and the partitive naming millivolts, whose noun this reader admitted in the batch
+# that tied it — the slow pair's lag behind the resistance it is chasing, which is the
+# settled arithmetic this step prints less the reading the row shows. The throttle is a page
+# constant and was the cheapest of them. The step's own partitive in points went the way
+# belief-drifts' did, and for the same reason.
+#
+# The one left is "a second", and it is the article shape's single declared limit rather
+# than a missing arm: those same two words are also how English says the next one along, so
+# the reader declines the noun from an article head and only an ordinal is ever meant.
 [[english]]
 step = "what-it-cost"
 phrase = "three and a half minutes"
@@ -10300,7 +10320,7 @@ unledgered = [
 # before this list existed.
 #
 # THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the two batches after it were one
-# step and then two. The eight steps that read something carry thirty-one spelled quantities
+# step and then two. The eight steps that read something carry thirty-two spelled quantities
 # between them, and they are the first this vocabulary has ever accounted for:
 # until the third batch landed, every rule in the table read a token written in digits, so
 # the spelled branch of `ledger_numbers` was wired up path-wide and reading nothing. A green
@@ -10340,9 +10360,11 @@ spelled = [
                                  #     as a multiple of the hour rate rather than in C
   "particle-remembers",          # 4 - the pulse program three times over, and how many
                                  #     teeth the mark holds
-  "what-it-cost",                # 6 - the knee twice, the control arm's residue, the gap
-                                 #     between two instants, the sampler's own period, and
-                                 #     how far empty would be from a full cell
+  "what-it-cost",                # 7 - the knee twice, the control arm's residue, the gap
+                                 #     between two instants, the sampler's own period, how
+                                 #     far empty would be from a full cell, and the slow
+                                 #     pair's lag, which arrived with the noun `millivolt`
+                                 #     rather than with any change to this step's prose
   "the-electrolyte-starves",     # 3 - the hour rate said twice, once as the definition of
                                  #     the current the reader types and once as roughly how
                                  #     long the run takes, and the gap between two models
