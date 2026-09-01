@@ -272,3 +272,20 @@ written down at all.
   anything.
 * `and-it-is-still-in-there` is the natural next slice and is a slice rather than a batch
   member: six quantities, all hours, three of them stated relative to the rest's start.
+
+## Two things recorded rather than built
+
+**The refused step's entry states a prediction, and says so.** Its comment notes that two of
+its three phrases look closable — the pulse train's on-leg and a gap between two claimed
+instants. Neither rule was written here, so that is a prediction and not a measurement, and
+the entry is worded to say which. `phase-8-slice-c-spike.md` is why: a plan's confidently
+named third ingredient turned out not to exist, and the registration is what showed it.
+
+**The tooth count has a second reading this rule does not distinguish.** *"was the same five
+times"* is tied to the mark over one tooth — 3300 over 660 — but it can equally be read as a
+count of the rebounds observed, and the step next door files exactly five of them. The two
+agree at five only because this mark lands on a whole tooth. A train whose mark fell mid-tooth
+would leave the arm green and the sentence about something else, and the perturbation that
+moves `until_s` cannot separate them because both readings move with it. The program is the
+reading taken, because it is the one a reader can check on the page; the alternative is now in
+the rule's own comment rather than left to be rediscovered.

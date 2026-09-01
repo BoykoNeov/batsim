@@ -9422,6 +9422,16 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // sentence's whole point is that the circuit gave the same answer on every one of
         // them, so a rule that read the count off anything but the program would stop
         // meaning that the day the mark moved.
+        //
+        // **A second reading of the same sentence exists and this rule does not distinguish
+        // it.** *"was the same five times"* counts rebounds OBSERVED, and the step next door
+        // files exactly five of them as `pulse_rebound_mv:1` through `:5`. The two readings
+        // agree at five only because this mark lands on a whole tooth: 3300 over 660. A
+        // train whose mark fell mid-tooth would leave this arm green and the sentence about
+        // something else, and the perturbation that moved `until_s` cannot tell them apart
+        // because both move together. The program is the reading taken here — it is what
+        // the reader can check on the page — and the alternative is written down rather
+        // than left to be rediscovered.
         phrase: "was the same {n} because a linear system",
         ties: &[Tie::Ratio(&[
             Tie::Setting(Control::Until),

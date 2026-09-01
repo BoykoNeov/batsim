@@ -10337,7 +10337,10 @@ word_blind = [
   "what-protection-costs",       # 0 read, and two counts of engine steps
   "leg-that-is-not-there",       # 0
   "three-times-the-current",     # 3 - two are the pulse program and the gap between two
-                                 #     claimed instants, and both would close today. The
+                                 #     claimed instants, and both LOOK closable. Neither rule
+                                 #     was built, so that is a prediction and not a
+                                 #     measurement; the batch that opens this step is what
+                                 #     settles it. The
                                  #     third is *"about ten times the circuit's arithmetic
                                  #     per step"*, a cost ratio between two cell models,
                                  #     and no file in this tree holds one. Step 16 met the
