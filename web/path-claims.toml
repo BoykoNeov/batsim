@@ -8361,10 +8361,10 @@ phrase = "quarter-second"
 # and-it-is-still-in-there — 7: the rest leg and the reading list taken across it. Every one is an hour or a
 # fraction of one, and every instant in the list is an instant a claim on this step
 # is already read at - which is what makes this the cheapest step on the list.
-# FIVE OF THE SEVEN ARE TIED NOW rather than only listed: the step joined the word scan,
-# so they are accounted in `LEDGER_VOCABULARY` and stay here because they are still
-# spelled in letters. The two that are not are the two the READER cannot see - an hour
-# and a tenth of a volt, both spelled as articles, which only the ban reads.
+# TIED NOW rather than only listed: the step joined the word scan, so every phrase here
+# that the READER can see is accounted for in `LEDGER_VOCABULARY`, and they stay on this
+# list because they are still spelled in letters. What is left untied is what only the ban
+# reads - the phrases spelled as an ARTICLE, "an hour" and "a tenth of a volt".
 [[english]]
 step = "and-it-is-still-in-there"
 phrase = "four hours"
@@ -9898,7 +9898,7 @@ steps = [
   "and-it-is-still-in-there", # 27: six ordinals pointing at three other steps, the pulse
                      # program's on-leg, the cutoff the panel never prints, and eleven
                      # measurements. The most heavily claimed step in the path when it was
-                     # scanned. The twenty-seventh arrived with the WORD scan: the step's own
+                     # scanned. The last of them arrived with the WORD scan: the step's own
                      # span in hours, which had been "four and a quarter hours" and is a
                      # figure no arm can hold at a quarter of an hour
   "particle-remembers", # 20 (19 before the digits rule): the charge it starts at, its shell count, two digit runs
@@ -10299,10 +10299,11 @@ spelled = [
                                  #     teeth the mark holds
   "what-it-cost",                # 5 - the knee twice, the control arm's residue, the gap
                                  #     between two instants, and the sampler's own period
-  "and-it-is-still-in-there",    # 5 - the rest leg twice, and two instants inside it, one
-                                 #     of which is a bare numeral carrying the unit its
-                                 #     neighbour in the same list stated. The step's own
-                                 #     span was a sixth and is in digits now
+  "and-it-is-still-in-there",    # 5 - the rest leg in two sentences, and three readings
+                                 #     taken at two instants inside that rest, one of them
+                                 #     a bare numeral carrying the unit its neighbour in
+                                 #     the same list stated. The step's own span was
+                                 #     spelled here too until this slice put it in digits
 ]
 
 # The other side of that list: steps whose prose is NOT word-scanned, named.

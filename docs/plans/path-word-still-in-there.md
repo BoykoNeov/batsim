@@ -191,3 +191,23 @@ looser one on purpose: the claim's own instant, less the leg the current was on 
 at the precision the prose prints (none), which is ±half an hour where the two siblings that
 print a tenth are held to three minutes. A green perturbation is a result, and this one names
 the alternative a later author would reach for.
+
+## The enumeration this slice got wrong, and where it was caught
+
+The count beside the `spelled` entry is derived and was right. **The sentence beside it was
+not**: it read *"the rest leg twice, and two instants inside it"*, which sums to four against
+a derived five. There are three READINGS at two distinct instants — *half an hour* and *Half
+an hour* are the same moment in two sentences — and the enumeration lost one in the re-derive
+after the reword. The first draft, written before the reword, summed correctly.
+
+That is this file's own recurring shape landing inside the slice that documents it: `# 5` is
+watched by `every_count_beside_a_word_list_entry_is_derived` and the words beside it are read
+by nothing. `first_count` takes **one** number per note, so everything after it is prose. The
+same pass removed two counts this slice had planted in words — *"FIVE OF THE SEVEN ARE TIED
+NOW"* in the `[[english]]` header and *"The twenty-seventh"* in the ledger note — by
+rewording them to carry no numeral, which is the cheap repair the module header took.
+
+And the claim in `Tie::Hours`'s repaired doc was **checked before it shipped**: of the seven
+places that construct the variant, five sit inside a `Tie::Product` and exactly two are a
+rule's outermost tie. Writing a fresh false count into the doc comment whose false count this
+slice was fixing is the one mistake that would have been unanswerable.

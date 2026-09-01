@@ -8120,7 +8120,7 @@ enum Tie {
     /// by once, so [`an_hours_tie_rounds_the_way_a_computed_tie_does`] asks the question
     /// directly rather than leaving the paragraph above to stand on nothing.
     ///
-    /// **Two rules reach it directly now** — step 8's mark said in hours, and step 24's — and
+    /// **Rules reach it directly now** — step 8's mark said in hours, and step 24's — and
     /// the paragraph above was still saying otherwise two batches later. The rule that first
     /// reached it wrote so in its own comment, ten thousand lines away, which is the whole
     /// shape: a note about what nothing does is falsified by the thing that starts doing it,
