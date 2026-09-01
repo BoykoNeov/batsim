@@ -150,6 +150,23 @@
 //! and an 8 B/cell change on the same box was not measurable at all. Before quoting any
 //! number from this file, check that the box can still reproduce its own base arm. See
 //! `docs/plans/cell-size.md`.
+//!
+//! ## The per-step allocations — a result this bench did not produce and could not have
+//! 2026-09-01: a fully-featured step allocated **seven heap blocks / 27,216 bytes** at
+//! `100S10P` and now allocates **nothing**, on every configuration. That change is
+//! deliberately **not** timed, here or anywhere: `docs/plans/pack-step-perf.md` bounds
+//! the lever at single-digit percent, and this box has spent six sessions failing to
+//! resolve single-digit percent — so the clock could only have returned the
+//! "inconclusive" that two registered stopping rules have already returned twice.
+//!
+//! It was measured with a counting allocator instead
+//! (`crates/sim-core/tests/step_allocations.rs`), which is deterministic, is a test
+//! rather than a number in a document, and answers "did the work go away" exactly. The
+//! trajectory-neutrality that a timing run would *not* have checked was checked
+//! separately: the out-of-tree instrument is byte-identical over 1846 lines. **Do not
+//! read a speed claim into it.** Fewer allocator calls in front of identical arithmetic
+//! cannot be slower, and how much faster is unknown and unmeasured on this hardware.
+//! See `docs/plans/pack-step-allocations.md`.
 
 use std::hint::black_box;
 

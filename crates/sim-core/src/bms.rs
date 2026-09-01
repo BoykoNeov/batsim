@@ -776,10 +776,18 @@ impl Bms {
     /// `v_group` and `temp_probe_k` are already-gathered true values; the current
     /// reading is corrupted here, drawing from the pack RNG exactly once per step and
     /// only when `current_noise_sigma_a > 0`.
+    ///
+    /// Takes **slices, and copies out of them**, rather than taking two `Vec`s by
+    /// value as it once did. The frame's own buffers are the right length already
+    /// after the first step, so overwriting them in place is what lets the caller keep
+    /// its gathering buffers too — the pair of allocations this used to cost per
+    /// sampled step, replaced by two `memcpy`s of the same bytes. "Replace the stored
+    /// frame" above is still exactly what happens; only the storage is reused. See
+    /// `docs/plans/pack-step-perf.md`.
     pub(crate) fn sample(
         &mut self,
-        v_group: Vec<f64>,
-        temp_probe_k: Vec<f64>,
+        v_group: &[f64],
+        temp_probe_k: &[f64],
         i_true: f64,
         sim_time_s: f64,
         rng: &mut ChaCha8Rng,
@@ -790,12 +798,15 @@ impl Bms {
         } else {
             0.0
         };
-        self.frame = SensorFrame {
-            v_group,
-            temp_probe_k,
-            i_pack_a: i_true + self.config.current_offset_a + noise,
-            sampled_at_s: sim_time_s,
-        };
+        // Clear-then-extend, not `resize` + index: the incoming length is authoritative
+        // (a shorter frame than last step's must *be* shorter, not padded with what was
+        // there), and this is the whole of the write, so nothing can read a stale entry.
+        self.frame.v_group.clear();
+        self.frame.v_group.extend_from_slice(v_group);
+        self.frame.temp_probe_k.clear();
+        self.frame.temp_probe_k.extend_from_slice(temp_probe_k);
+        self.frame.i_pack_a = i_true + self.config.current_offset_a + noise;
+        self.frame.sampled_at_s = sim_time_s;
     }
 
     /// Corrupt the freshly sampled frame with any active injected sensor faults.

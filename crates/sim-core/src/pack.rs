@@ -1117,6 +1117,76 @@ impl std::fmt::Debug for SourceCache {
     }
 }
 
+/// Every buffer a step needs and no step needs to keep: owned by the pack purely so
+/// the allocator is not asked for one on every step.
+///
+/// This is the "remaining per-step allocations" lever named in
+/// `docs/plans/pack-step-perf.md`, taken. A fully-featured step allocated seven times
+/// before it existed — three of them ~8 KB at 1000 cells — and allocates nothing now.
+///
+/// # The rule that makes this scratch and not state
+///
+/// **Every field here is written before it is read, within a single step.** That is
+/// what the name claims and it is not decoration: a buffer that carried a value
+/// across the step boundary would be state, it would be missing from the snapshot
+/// (this field is `#[serde(skip)]`), and a restored pack would then diverge from a
+/// live one on its very next step. That is the same hazard [`SourceCache`] manages,
+/// with the opposite resolution — the memo is *deliberately* carried across the
+/// boundary and is correct because a cold recompute reproduces it exactly, whereas
+/// nothing here may be carried at all.
+///
+/// So each buffer is cleared at the top of its own use, unconditionally, including on
+/// the arms that then leave it empty. Clearing where the old code wrote `Vec::new()`
+/// is what keeps a length-carries-meaning field honest: `bleed_g` empty means "no
+/// bleed anywhere" and `v_group` empty means "nothing sensed this pack", so a stale
+/// buffer surviving into a step whose config no longer fills it would be read as data.
+///
+/// Two allocations inside a step are deliberately *not* here, and both are on the
+/// path where a pack is on fire: the per-cell exothermic state gathered only once a
+/// cell reaches onset, and the two reaction buffers in
+/// [`crate::thermal::advance_temperatures`]. A pack in thermal runaway has no
+/// performance budget, and keeping them out keeps the healthy path's story simple.
+///
+/// The three deliberate impls are [`SourceCache`]'s, for its reasons: `PartialEq` is
+/// always `true` because two packs with equal state are equal whatever their scratch
+/// happens to hold, `Debug` prints lengths because the contents are noise, and
+/// `Default` is what `#[serde(skip)]` builds on deserialization — empty, which every
+/// use site clears anyway.
+#[derive(Clone, Default)]
+struct StepScratch {
+    /// Per-group Thévenin `(E_g, R_g)`, refilled by every pass of the solve.
+    group_src: Vec<(f64, f64)>,
+    /// Per-group balancing bleed conductance \[S\]; empty when nothing bleeds.
+    bleed_g: Vec<f64>,
+    /// Per-cell heat generation \[W\], series-major; empty on an isothermal pack.
+    heat_w: Vec<f64>,
+    /// Per-cell temperature \[K\] handed to the integrator and read back out.
+    temps: Vec<f64>,
+    /// The integrator's own copy of the temperatures it is differencing.
+    thermal_scratch: Vec<f64>,
+    /// True group voltages \[V\] on their way into the sensor model.
+    v_group: Vec<f64>,
+    /// True temperatures \[K\] at the configured probes, likewise.
+    temp_probe_k: Vec<f64>,
+}
+
+impl PartialEq for StepScratch {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for StepScratch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "StepScratch({} groups, {} cells)",
+            self.group_src.len(),
+            self.temps.len()
+        )
+    }
+}
+
 /// A battery pack: the full, ground-truth simulation state.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Pack {
@@ -1150,6 +1220,11 @@ pub struct Pack {
     /// Memoised per-cell Thévenin sources; see [`SourceCache`]. Derived, not state.
     #[serde(skip)]
     src_cache: SourceCache,
+    /// Reusable per-step buffers; see [`StepScratch`]. Not state — every field is
+    /// written before it is read within a step, so an empty one costs a step nothing
+    /// but the allocations it was built to avoid.
+    #[serde(skip)]
+    scratch: StepScratch,
 }
 
 impl Pack {
@@ -1327,6 +1402,9 @@ impl Pack {
             sim_time_s: 0.0,
             // Cold: the first step computes every cell's Thévenin source and fills it.
             src_cache: SourceCache::default(),
+            // Empty: the first step allocates each buffer once and every step after
+            // it reuses them.
+            scratch: StepScratch::default(),
         })
     }
 
@@ -1751,9 +1829,31 @@ impl Pack {
         // --- passive balancing: a closed bleed switch is just a conductance across
         // the group node. Reading it mutates nothing, so this runs on probe steps too,
         // keeping the reported voltage consistent with the step that would follow.
-        let mut bleed_g: Vec<f64> = Vec::new();
+        //
+        // --- the step's buffers, borrowed out of the pack for the rest of the step so
+        // that after the first step none of them costs an allocation. Borrowed field by
+        // field rather than `mem::take`n the way `cell_src` is below, because unlike the
+        // memo they carry nothing across the boundary and so never need putting back:
+        // each is cleared by the code that fills it, on every arm (see [`StepScratch`]).
+        // Destructuring is what keeps this compatible with the `&mut self.groups` loops
+        // below — seven disjoint field borrows, not one borrow of the pack.
+        let StepScratch {
+            group_src,
+            bleed_g,
+            heat_w,
+            temps,
+            thermal_scratch,
+            v_group,
+            temp_probe_k,
+        } = &mut self.scratch;
+
+        // Cleared on *both* arms: an empty `bleed_g` is how the rest of the step
+        // reads "nothing bleeds", so a pack whose BMS was removed must not inherit
+        // the last one's conductances. (`bleed_conductances` clears too; this is the
+        // arm it does not run on.)
+        bleed_g.clear();
         if let Some(bms) = &self.bms {
-            bms.bleed_conductances(&mut bleed_g);
+            bms.bleed_conductances(bleed_g);
         }
         let bleed_at = |g: usize| bleed_g.get(g).copied().unwrap_or(0.0);
 
@@ -1803,7 +1903,11 @@ impl Pack {
         // Read once: it is a pure function of fault state, which no pass mutates.
         let g_ext = self.faults.external_short_conductance_s();
 
-        let mut group_src: Vec<(f64, f64)> = Vec::with_capacity(self.groups.len());
+        // Refilled from scratch by every pass below (`group_src.clear()` heads the
+        // aggregation), so what it arrives holding is never read. Cleared here anyway,
+        // because "the first read is a clear" is a property of code further down that
+        // a future edit could quietly take away.
+        group_src.clear();
         // Scratch for the nonlinear iteration: the tangents pass *n* aggregates from, the
         // ones its probes just took (which become pass *n+1*'s after the swap below), and
         // the currents pass *n* assigned. All stay empty — and therefore unallocated — on
@@ -2173,11 +2277,10 @@ impl Pack {
         // [`crate::plating`]). Hoisted out of the loop so a chemistry without the
         // section costs one `Option` check per step rather than one per cell.
         let safety = self.chem.safety.as_ref();
-        let mut heat_w: Vec<f64> = if thermal_live {
-            Vec::with_capacity(n_cells)
-        } else {
-            Vec::new()
-        };
+        // Filled below only when `thermal_live`, so on an isothermal pack it stays
+        // empty — which is what the integrator's absence expects. Clearing is
+        // therefore unconditional and the push is not.
+        heat_w.clear();
         let mut q_gen_w = 0.0;
         let mut q_balancing_w = 0.0;
         let mut i_balancing_a = 0.0;
@@ -2396,7 +2499,7 @@ impl Pack {
         if let ThermalConfig::Network { k_neighbor_w_per_k } = self.thermal {
             let t_env = env.t_coolant.unwrap_or(env.t_ambient);
             let onset_k = safety.map_or(f64::INFINITY, |s| s.t_onset_k);
-            let mut temps: Vec<f64> = Vec::with_capacity(n_cells);
+            temps.clear();
             // One comparison per cell is the whole cost of runaway on a pack that is
             // not on fire: below onset nothing can react, so the per-cell exothermic
             // state is not even gathered and the integrator takes its original path.
@@ -2419,11 +2522,12 @@ impl Pack {
             } else {
                 Vec::new()
             };
-            let mut scratch = Vec::with_capacity(n_cells);
+            // `euler_substep` clears and refills this before touching it, on every
+            // sub-step, so it carries nothing at all — not even within one step.
             let report = advance_temperatures(
-                &mut temps,
-                &mut scratch,
-                &heat_w,
+                temps,
+                thermal_scratch,
+                heat_w,
                 &mut runaway,
                 &ThermalStep {
                     series,
@@ -2568,11 +2672,10 @@ impl Pack {
         let mut r_pack_cells = 0.0; // Σ_g 1/Σ_k G_k
         let mut r_pack_nominal = 0.0; // Σ_g 1/Σ_k soh_k·G_k
                                       // Group voltages are gathered only when something will sense them.
-        let mut v_group: Vec<f64> = if self.bms.is_some() {
-            Vec::with_capacity(series)
-        } else {
-            Vec::new()
-        };
+                                      // Gathered below only when something will sense it, so like `heat_w` the
+                                      // clear is unconditional and the push is not: empty means "nothing sensed
+                                      // this pack", which is a reading a stale buffer would falsify.
+        v_group.clear();
         // Venting is judged here, from end-of-step temperatures, so it also covers an
         // `Isothermal` pack (which never enters the integrator that latches it
         // in-flight) and a cell built above the threshold. The per-cell bit is the
@@ -2655,19 +2758,15 @@ impl Pack {
             if let Some(bms) = &self.bms {
                 // Read the probes through a shared borrow: `groups` and `bms` are
                 // distinct fields, so this needs no copy of the probe list.
-                let temp_probe_k: Vec<f64> = bms
-                    .config()
-                    .temp_probes
-                    .iter()
-                    .map(|&(s, p)| {
-                        // Validated in range at construction; the fallback keeps
-                        // `step` panic-free should that ever stop holding.
-                        self.groups
-                            .get(s as usize)
-                            .and_then(|g| g.cells.get(p as usize))
-                            .map_or(f64::NAN, |c| c.model.temp_k())
-                    })
-                    .collect();
+                temp_probe_k.clear();
+                temp_probe_k.extend(bms.config().temp_probes.iter().map(|&(s, p)| {
+                    // Validated in range at construction; the fallback keeps
+                    // `step` panic-free should that ever stop holding.
+                    self.groups
+                        .get(s as usize)
+                        .and_then(|g| g.cells.get(p as usize))
+                        .map_or(f64::NAN, |c| c.model.temp_k())
+                }));
                 let sim_time_s = self.sim_time_s;
                 let bms = self.bms.as_mut().expect("matched as Some just above");
                 bms.sample(v_group, temp_probe_k, i_g, sim_time_s, &mut self.rng);

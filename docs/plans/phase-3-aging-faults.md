@@ -1089,11 +1089,21 @@ it every step, which is legitimate and worth knowing.
 The tick's +50 % has a cheap and separate candidate explanation, and it is **not** the
 `Cell`-size hypothesis below: `cycle_increment` evaluates `dod.powf(cyc_dod_stress_exp −
 1.0)` once per cell per tick, and a `powf` at ~20–50 ns across 1000 cells is 20–50 µs —
-essentially the whole 68 → 103 µs jump on its own. The exponent is a chemistry constant
-(0.1 for the shipped files), so it is hoistable or replaceable rather than inherent. Nobody
-has profiled it and the amortised cost changes no conclusion here, but a future reader
-should not conflate the two: the `Cell`-size story is about the *per-step* 7–10 %, and this
-is about the tick.
+essentially the whole 68 → 103 µs jump on its own. ~~The exponent is a chemistry constant
+(0.1 for the shipped files), so it is hoistable or replaceable rather than inherent.~~
+Nobody has profiled it and the amortised cost changes no conclusion here, but a future
+reader should not conflate the two: the `Cell`-size story is about the *per-step* 7–10 %,
+and this is about the tick.
+
+> **CORRECTED 2026-09-01 — the second sentence was wrong, and it is the sentence a
+> reader would have acted on.** What is a chemistry constant is the *exponent*, and
+> hoisting it saves `cyc_dod_stress_exp - 1.0`: **one f64 subtraction per cell per
+> tick**. The `powf`'s *base* is `dod`, which is per-cell and per-step by definition, so
+> the call itself cannot be hoisted out of anything. The identification of `powf` as the
+> likely cost stands; the claim that it is therefore cheap to remove does not.
+> Attributing "hoistable" to a call because one of its two operands is constant is the
+> error, and it survived here for five weeks because nobody tried to spend it. Lead
+> closed — see `docs/plans/pack-step-allocations.md`.
 
 **This declines the optimisation slice A sketched.** Caching `r0_factor · soh_resistance` as
 a derived field on `Cell` would remove a multiply from the non-ticking path — the path that

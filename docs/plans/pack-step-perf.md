@@ -444,18 +444,23 @@ Current position: **≈ 36–42 µs baseline / ≈ 39–49 µs fully featured at
 (fast-state equivalent), under the 50 µs budget across the range.** All four items
 are done and separately attributed. Nothing here is blocking.
 
-Two levers are identified and *not* taken, so the next reader does not re-derive
-them:
+Two levers were identified and not taken. **Both are now closed** — the first was
+taken, the second declined — by `docs/plans/pack-step-allocations.md` on 2026-09-01:
 
-- **The remaining per-step allocations.** `group_src` always, plus `heat_w`, `temps`
-  and `scratch` (three ~8 KB `Vec`s at 1000 cells) whenever the thermal network is
-  live, plus `bleed_g` and `v_group` with a BMS. Same *kind* of fix as items 1 and 4,
-  equally bit-identical, visible by reading `step` — and aimed squarely at the
-  fully-featured case, which is the one with thin margin. Not taken because the
-  budget is met and each is worth single-digit percent at best.
-- **Multiply-by-reciprocal in the lookups**, which is where the remaining time
-  demonstrably goes (see the division count above) — but it is not bit-identical, so
-  it is a determinism trade, not a free win.
+- ~~**The remaining per-step allocations.**~~ **TAKEN.** `group_src` always, plus
+  `heat_w`, `temps` and `scratch` (three ~8 KB `Vec`s at 1000 cells) whenever the
+  thermal network is live, plus `bleed_g` and `v_group` with a BMS — and an eighth this
+  list missed, the `temp_probe_k` the caller had to build fresh because `Bms::sample`
+  took its two `Vec`s by value. All eight are gone. Counted, not timed: a fully-featured
+  step allocated **7 blocks / 27,216 bytes** at 100S10P and now allocates **nothing**,
+  pinned by `crates/sim-core/tests/step_allocations.rs` and proven trajectory-neutral by
+  a byte-identical 1846-line run of the out-of-tree instrument. **No timing claim was
+  made**, deliberately — see that document for why the clock could not have answered it.
+- ~~**Multiply-by-reciprocal in the lookups.**~~ **DECLINED, on the record.** It is
+  where the remaining time demonstrably goes (see the division count above) and it is
+  not bit-identical, so it trades this repo's exact-replay spine for single-digit
+  percent on a box that cannot measure single-digit percent. If it is ever taken it is a
+  declared numerical change with the goldens regenerated, not an optimisation.
 
 Beyond those, get a profiler before guessing a fifth item.
 
