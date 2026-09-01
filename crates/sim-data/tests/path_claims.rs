@@ -16635,6 +16635,15 @@ fn n_ledger_arms(_f: &Facts) -> usize {
     /// tie. It is written the correct way round rather than the reachable way round, on the
     /// same terms as the environment split in [`run`] — the day a wrapper holds the only
     /// use of what it wraps, a walker that stopped here would undercount silently.
+    ///
+    /// **[`Tie::Seconds`] and [`Tie::PerSecond`] are here for that reason and neither was,
+    /// which is the paragraph above coming true rather than being heeded.** `Seconds`
+    /// arrived with one rule whose whole body — a `Ratio` of a `Chemistry` and an `OnArm`
+    /// of a `Setting` — is other rules' outermost ties, so the count reached the right
+    /// number without the walker ever descending into it, and the arm it wraps could have
+    /// been anything. `PerSecond` had sat in the same position since it was built. Both are
+    /// still unobservable: adding them moves no count today, and that is said out loud here
+    /// rather than left for a green to imply.
     fn walk(tie: &'static Tie, used: &mut Vec<&'static str>) {
         let name = tie_arm_name(tie);
         if !used.contains(&name) {
@@ -16647,6 +16656,8 @@ fn n_ledger_arms(_f: &Facts) -> usize {
                 }
             }
             Tie::Hours(tie)
+            | Tie::Seconds(tie)
+            | Tie::PerSecond(tie)
             | Tie::Ocv(tie)
             | Tie::Magnitude(tie)
             | Tie::Elsewhere { tie, .. }

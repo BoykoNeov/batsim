@@ -226,6 +226,34 @@ is watched by the file's own self-count as well as by its rule: deleting the pro
 (L) and taking `Tie::Seconds` out of its only rule (E) both move a number stated in words in
 two files.
 
+## Two silent-failure modes in the new machinery, asked about after it shipped
+
+Neither is a defect in what landed — the suite was honestly green and the ten rules are
+right — but both are places where the new arms could have failed quietly, and a table of
+perturbations on the RULES cannot reach either.
+
+**The empty resolution is already refused, and that was measured rather than assumed.**
+`Tie::Provenance` resolves to nothing when the field path is wrong, the key has no note above
+it, or `nth` is past the end — and `tie_agrees` compares with `values.iter().all(...)`, which
+is `true` for an empty list. That would make a typo'd path pass silently, on an arm whose
+whole job is reading a hand-typed path. It does not: `ledger_numbers` asserts
+`!found.is_empty()` before it ever compares, with a message naming the rule and what it
+reads. Case: `nth: 0` → `nth: 9`, which reddens the accounting.
+
+**The arm-count walker did not descend into `Tie::Seconds`, and the count was right anyway.**
+`n_ledger_arms` names the kind at the top of `walk` and then recurses only into the wrappers
+its match lists. `Seconds` was not one of them, and everything inside this slice's only use
+of it — a `Ratio` of a `Chemistry` and an `OnArm` of a `Setting` — is some other rule's
+outermost tie, so 28 came out correct while the walker never looked inside. That is the
+hazard the function's own doc names, in as many words, about `Tie::Hours`. `Tie::PerSecond`
+had been in the same position since it was built.
+
+Both are in the recursion now. Adding them moves no count today, which is the same
+"unobservable but written the correct way round" note the walker already carries for
+`Tie::Magnitude` — and the reason to write it that way is exactly this slice: the day a
+wrapper holds the only use of what it wraps, a walker that stopped would undercount in
+silence.
+
 ## The counts that moved
 
 `spelled` 21 → 23 steps, and the two arrivals bring 3 and 7 spelled quantities; the tally
