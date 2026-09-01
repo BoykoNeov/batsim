@@ -107,26 +107,43 @@ instrument at `M:\claud_projects\temp\phase6-baseline`, run against a worktree o
 not evidence, so three perturbations were run, each deleting exactly one `clear()`, with
 the verdict **predicted in writing first**:
 
+The rule is carried by **six** `clear()` calls, so there are six perturbations and not
+one fewer. The first table had three, which was half a validation of the slice's central
+safety claim; the missing half was found in review and is the bottom three rows.
+
 | perturbation | predicted | observed | lines differing (of 1846) |
 | ------------ | --------- | -------- | ------------------------- |
-| delete `v_group.clear()` | RED | **RED** | 21 |
 | delete `heat_w.clear()` | RED | **RED** | 985 |
+| delete `temps.clear()` | RED | **RED** | 186 |
+| delete `v_group.clear()` | RED | **RED** | 21 |
+| delete `temp_probe_k.clear()` | *unknown* | **RED** | **3** |
 | delete `bleed_g.clear()` | GREEN | **GREEN** | 0 |
+| delete `group_src.clear()` | GREEN | **GREEN** | 0 |
 
-The third is a finding, not a formality: `bleed_g`'s clear is **unreachable as a
-correctness requirement today**. `bleed_conductances` clears the buffer itself on the
-arm that fills it, and the arm that does not fill it (`bms: None`) never filled it in
-the first place, so no configuration in the instrument can tell the difference. It stays
-in, as the one place the write-before-read rule is defence against a future config
-change rather than a live requirement — and it is now on the record as such, so nobody
-has to re-derive that it is dead.
+**`temps` is the one that had to be run.** Without its clear, step two pushes onto step
+one's entries, so the integrator reads a stale prefix and writes it back into the cells.
+The length check that would catch that —
+`debug_assert_eq!(temps.len(), series * parallel)` in `advance_temperatures` — is a
+`debug_assert`, and this instrument runs `--release`, so **nothing in the build that
+matters would have said a word.** It reddens by 186 lines, and it was one line away from
+never having been asked.
 
-The first is worth a second look too. Deleting the clear on the *BMS* buffer moves only
-21 lines, because most cases in the dump have no BMS at all. A perturbation that reddens
-by 21 lines out of 1846 is a thin margin, and it is thin for a reason that has bitten
-this repo four times before (`ANCHORS.md`): the instrument's discriminating power is
-uneven across the features it covers. It was enough here. It would not obviously be
-enough for a change confined to the sensor path.
+**The two greens are findings, not formalities.** `bleed_g`'s clear is unreachable as a
+correctness requirement today: `bleed_conductances` clears the buffer itself on the arm
+that fills it, and the arm that does not fill it (`bms: None`) never filled it in the
+first place. `group_src`'s is redundant with the clear that heads the solve's
+aggregation loop. Both stay in — they are where the write-before-read rule is defence
+against a future config change rather than a live requirement — and both are now on the
+record as dead, so nobody has to re-derive it.
+
+**The sensor path barely discriminates, and that is the most useful number in the
+table.** `temp_probe_k` reddens by **3 lines out of 1846** and `v_group` by 21, against
+`heat_w`'s 985 — because most cases in the dump have no BMS at all, and because a probe
+list that grows with near-identical stale temperatures moves very little. This
+instrument's power is deeply uneven across the features it covers, which is the failure
+mode `ANCHORS.md` records four separate times. It was sufficient here. **For a change
+confined to the sensor path it would be close to useless, and the honest move then is to
+add a case rather than to trust a green.**
 
 ## Two leads closed, both without writing code
 
