@@ -18,9 +18,10 @@
 //! distinction is load-bearing rather than pedantic.
 //!
 //! # Reading the numbers: the ratio within one invocation is the measurement
-//! This laptop swings ~1.4× between CPU states across sessions and sometimes within one,
-//! which is larger than most effects measured here, so absolute microseconds from one
-//! session are not comparable with another's. Every arm of every comparison runs in the
+//! This box swings up to ~1.6× with machine load across sessions and sometimes within one
+//! (load, not CPU state — see `docs/plans/pack-step-perf.md`), which is larger than most
+//! effects measured here, so absolute microseconds from one session are not comparable
+//! with another's. Every arm of every comparison runs in the
 //! same process, minutes apart at most.
 //!
 //! # The `ecm/` arm is a contamination detector, not a data point

@@ -19,7 +19,7 @@
 //! It is a wall-clock measurement, so asserting on it would make a test that fails on a
 //! loaded machine and passes on a quiet one. It is also not a criterion benchmark: the
 //! quantity of interest is a *ratio between two transports of the same work*, which
-//! survives this laptop's ~1.4× CPU bimodality (see `docs/plans/pack-step-perf.md`),
+//! survives this box's ~1.6× load-driven swing (see `docs/plans/pack-step-perf.md`),
 //! whereas the absolute microseconds do not. As an example it still compiles under
 //! `cargo clippy --workspace --all-targets -- -D warnings`, so it cannot rot.
 //!

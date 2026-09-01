@@ -63,13 +63,13 @@ guards it.
 
 ## The problem (as it stood; now solved)
 
-`CLAUDE.md` sets a budget of **< 50 µs per `Pack::step` at 100S10P** (1000 cells) on a
-laptop, and says "it should be far below." The original benchmark measured **83.4 µs** —
+`CLAUDE.md` sets a budget of **< 50 µs per `Pack::step` at 100S10P** (1000 cells) on the
+dev box, and says "it should be far below." The original benchmark measured **83.4 µs** —
 1.7× over, not a marginal miss. Four items later it is under budget; the sections below
 are in the order they were written, so read "Items 3 and 4" for the current position and
 treat everything above it as the trail that got there.
 
-Measured on the dev laptop (Windows, `release` + `lto = true, codegen-units = 1`),
+Measured on the dev box (Windows, `release` + `lto = true, codegen-units = 1`),
 `cargo bench -p sim-core --bench pack_step`:
 
 | case                  | before  | after   |
@@ -108,19 +108,122 @@ the "before" column mixes two sessions on purpose (see below).
   division count is arithmetic from reading the code, not a measurement. Treat it as the
   next hypothesis to test, not as an established fact.
 
-## Measuring a change on this laptop — read this first
+## Measuring a change on this machine — read this first
+
+**The machine is a desktop, not a laptop.** AMD Ryzen 7 7800X3D, 8 cores / 16 threads,
+nominal 4.201 GHz, 96 MB L3, Windows 11 Pro 26200, Balanced power plan. Everything above
+this line that calls it "the dev laptop" was stale wording, not a different box being
+described; whether it is physically the same machine as the earliest sessions in this file
+is not established.
+
+### The spread is machine load, not CPU states — measured 2026-09-01
+
+This file has said since Phase 1 that the box is **bimodal between two CPU states ~1.4×
+apart**. The spread is real and it reproduces; **the mechanism was wrong**. A registered
+six-round batch on one unchanged binary (`846a0fc`, `100S10P/current`, normal priority, no
+pinning) had its five scored rounds read 48.5 / 51.7 / 49.7 / 50.3 / 78.9 µs — **max/min = 1.63**, squarely inside the
+1.4–1.8× band this file records — while OS-reported busiest-core `% Processor Performance`
+sat at **111.4–114.4 throughout**, including on the 78.9 µs round. A 2.6 % clock spread
+cannot produce a 1.63× time spread, so a clock-state mechanism is **not supported**.
+(`% Processor Performance` sampled at 700 ms cannot see sub-millisecond dips or SMT
+contention on a sibling thread. This rules out the *stated* mechanism; it does not prove
+contention is the only one left.)
+
+What the spread does track is machine load. `_Total % Processor Time` averaged 15.4 / 32.5 /
+19.3 / 28.6 / **97.8 %** across those same rounds, and the 78.9 µs round is the 97.8 % one.
+Windows Defender (`MsMpEng`) gained ~310 s of CPU during the batch, and a torrent client was
+resident throughout.
+
+**A second, self-inflicted confound in the same batch:** the script called
+`Get-Counter '\Processor Information(*)\…'` twice per 700 ms *while the bench ran*.
+Identical work took 14–108 s of wall time. Round 4 ran 108 s at 19.3 % load and still
+reported an ordinary 49.708 µs with the fewest outliers of any round — a 7.7× wall swing
+with no swing in the reported quantity — but the sampler cannot be ruled out of the one
+round that had a wide CI. **Do not sample anything while the bench runs.** Gate before,
+never during.
+
+### The recipe that worked — and the first directly measured absolute
+
+Second registered batch, same binary and case, five rounds:
+
+- **Quiet-gate before each round, never during.** Five samples of
+  `\Processor Information(_Total)\% Processor Time` at 1 s; all five must read **< 15 %**.
+  Retry after 20 s, up to 10 attempts. A round that never gates is **skipped, not run**.
+  15 % is chosen to sit above this box's measured idle of 12.9–19.8 % and below every
+  contended round above — a gate set under the idle floor can never pass, and would make
+  "unmeasurable" a fact about the threshold rather than about the machine.
+- **Pin to one core:** `ProcessorAffinity = 0x4` — logical processor 2, the first thread of
+  core 1. Core 0 carries the interrupt load; the sibling thread (LP 3) is left free.
+- **High priority**, not realtime. The standing "run cargo below normal" courtesy is the
+  wrong rule here for the reason it names itself: the number *is* the deliverable.
+- **Round 1 discarded as warm-up, registered in advance**, for the reason at the bottom of
+  this file: this box drifts monotonically *faster* across a batch, so the earliest round is
+  the least trustworthy — the opposite of the usual warm-up intuition.
+
+| round | gate attempts | low / **point** / high | CI half-width |
+| ----- | ------------- | ---------------------- | ------------- |
+| 1 (discarded) | 2 | 47.492 / **47.762** / 48.088 µs | ±0.62 % |
+| 2 | 3 | 47.359 / **48.753** / 50.529 µs | **±3.6 %** |
+| 3 | 4 | 47.124 / **47.230** / 47.341 µs | ±0.24 % |
+| 4 | 9 | 49.583 / **49.981** / 50.438 µs | ±0.86 % |
+| 5 | 10 → **never gated, skipped** | — | — |
+
+Registered estimator: **the minimum** of the point estimates, not the mean or the median.
+Every mechanism left — contention, interrupt service, cache eviction by other processes —
+can only *add* time, so with one-sided noise the minimum is the least-contaminated reading,
+and "can this code hit 50 µs" is a question about the floor.
+
+**Floor: 47.2 µs at `100S10P/current`, CI ±0.24 %.** That is the first *directly measured*
+absolute in this file since Phase 1 — see "What this corrects" below.
+
+Three honest notes on that table, none of which change the verdict:
+
+- **Round 2's CI is ±3.6 %**, which the first batch's own rule would have called wide. The
+  registered estimator scores only the minimum round's CI, so it does not block — recorded
+  here so it is clear the tidier rule was not chosen after seeing the numbers.
+- **Pinning is not what tightened it.** Unpinned rounds 2–5 gave max/min 1.066; pinned rounds
+  2–4 give 1.058. The pin bought ~2 % on the floor and nothing on the spread. What the
+  *gate* bought was keeping a 78.9 µs round out of the sample at all.
+- **The quiet window closes.** Gate attempts went 2 → 3 → 4 → 9 → never, monotonically over
+  about twenty minutes. A longer batch would have gated *less*, not more. Budget a
+  measurement for the first fifteen minutes of a quiet machine, and expect fewer usable
+  rounds than you planned.
+
+### What this corrects
+
+The position this file carried into 2026-09-01 was **"≈ 36–42 µs baseline"**. That number was
+never measured: it was a ratio scaled through a fast-state anchor which was itself scaled
+from an earlier one — three chained scalings deep — and it lands about **15 % optimistic**
+against the first direct reading. The *ratios* in this file are sound and remain the unit of
+account; the absolutes derived from them by scaling were not, and should not be quoted again
+without a direct reading behind them.
+
+**Six sessions concluded this box could not be measured on.** That conclusion was about the
+protocol, not the hardware. A quiet gate plus a core pin gated in two attempts and produced
+a ±0.24 % interval. The "fast state" this file records the box as having failed to reach for
+five consecutive sessions looks like it was simply an empty machine.
+
+### The fully-featured figure is now an open question
+
+The measurement above is `100S10P/current` — `bms: None`, `Isothermal`. `CLAUDE.md` states
+the budget against `Pack::step` at 100S10P without that qualification, and this file's
+headline also claimed **≈ 39–49 µs fully featured**. That figure was 36–42 plus a
+current↔full delta of ~3–7 µs. The base term has now moved up by ~5 µs and **the delta has
+not been re-measured**, so the honest arithmetic is 47.2 + (3–10) = **roughly 50–57 µs, at or
+over the line**.
+
+It may well be better than that: six of the eight per-step allocations removed by `fd3f162`
+were on the features-on paths, and that slice deliberately made no timing claim. But nobody
+has run it. This is a stated open item, not a hole — one
+`cargo bench -p sim-core --bench pack_step -- "100S10P/(current|full)"` under the recipe
+above answers it, with both cases in one invocation so no pairing is needed.
+
+### Still true: never trust a saved baseline
 
 The single most expensive mistake available here is trusting a criterion baseline saved in
-an earlier session. This machine is **bimodal**: the same binary on the same code lands in
-one of two CPU states about **1.4× apart**, and it can flip *between* two arms of a single
-script. Observed for `100S10P/current`: the pre-change tree measured 85.6 / 86.3 / 90.4 µs
-in one state and 120.2 / 121.2 µs in the other; the post-change tree measured 61.3 / 61.8 /
-62.4 / 62.5 µs and 82.8 / 83.2 µs. Mode-matched the ratio is stable (62/86 = −28 %,
-83/120.5 = −31 %); cross-mode pairings range from −25 % to −48 % and mean nothing.
-
-This is not theoretical. A cross-session `--baseline` comparison of exactly the change
-below reported **−8.6 %**; the paired measurement puts it at **−28.5 %**. The first number
-nearly got the allocation hypothesis written off as refuted.
+an earlier session, and nothing above changes that. A cross-session `--baseline` comparison
+of exactly the change below reported **−8.6 %**; the paired measurement puts it at
+**−28.5 %**. The first number nearly got the allocation hypothesis written off as refuted.
 
 So: run both revisions back to back (`git stash push -- crates/sim-core/src/ecm.rs`,
 bench, `git stash pop`, bench), repeat until two rounds agree, and **discard any round
@@ -133,8 +236,8 @@ tree read 45.8 → 82.3 → 62.7 → 49.6 µs on `100S10P/current` — a 1.8× s
 anything else in this file — starting immediately after `wasm-pack build` plus two
 `cargo build --release` runs wrote several thousand files, with `MsMpEng` (Windows
 Defender) at the top of the CPU table for the duration. It settled on its own within a
-few minutes. This is the first time the bimodality has had an identifiable trigger
-rather than being weather, and it is the cheapest one to avoid: build first, then wait,
+few minutes. This was the first time the spread had an identifiable trigger rather than
+being weather — and the 2026-09-01 measurement above says load is the whole story, and it is the cheapest one to avoid: build first, then wait,
 then bench. The wide-CI rule catches it either way, at the cost of three discarded
 rounds.
 
@@ -440,9 +543,13 @@ The 50 µs budget is deliberately **not** asserted in a test — a wall-clock as
 machine- and CI-dependent, and `CLAUDE.md` frames it as a budget to keep, not an exit
 criterion. Track it by running the bench, not by a gate.
 
-Current position: **≈ 36–42 µs baseline / ≈ 39–49 µs fully featured at 100S10P
-(fast-state equivalent), under the 50 µs budget across the range.** All four items
-are done and separately attributed. Nothing here is blocking.
+Current position (2026-09-01, **directly measured** rather than scaled): **47.2 µs at
+`100S10P/current`, under the 50 µs budget by ~6 %.** The **fully-featured figure is an
+open question** — 47.2 plus an un-re-measured 3–10 µs delta puts it at roughly 50–57 µs, at
+or over the line. See "Measuring a change on this machine" above for the number, the
+recipe that produced it, and the arithmetic. The older "≈ 36–42 / 39–49 µs" position was
+scaled through three anchors, not measured, and ran ~15 % optimistic. All four items are
+done and separately attributed. Nothing here is blocking.
 
 Two levers were identified and not taken. **Both are now closed** — the first was
 taken, the second declined — by `docs/plans/pack-step-allocations.md` on 2026-09-01:
@@ -478,7 +585,7 @@ Two things to know before the next re-measure:
   each arm is ~10 s. `git worktree add <tmp> <rev>` gives each revision its own target
   dir, so alternating runs cost only the bench itself. This is what finally produced a
   usable pair for the thermal measurement after two full-suite rounds were unusable.
-- **The machine's state persisted across an entire session.** The bimodality is not
+- **The machine's state persisted across an entire session.** The spread is not
   per-run jitter that averages out over a few minutes; plan on reporting a *ratio* plus
   a mode-matched anchor rather than an absolute number. It does sometimes settle mid
   session: the items 3–4 measurement went from unusable (±5 % CIs, arms disagreeing on

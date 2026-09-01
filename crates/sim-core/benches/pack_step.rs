@@ -1,8 +1,10 @@
 //! Criterion benchmarks for [`Pack::step`] — the engine's hot loop.
 //!
-//! `CLAUDE.md` sets a budget of **< 50 µs per step at 100S10P** (1000 cells) on a
-//! laptop. That is a budget to keep an eye on, not a test gate: a wall-clock
+//! `CLAUDE.md` sets a budget of **< 50 µs per step at 100S10P** (1000 cells) on the
+//! dev box. That is a budget to keep an eye on, not a test gate: a wall-clock
 //! assertion would be machine- and CI-dependent, so nothing here fails a build.
+//! Directly measured at **47.2 µs** on `100S10P/current`, 2026-09-01 — met with a
+//! ~6 % margin; `100S10P/full` has not been measured since and may be over.
 //!
 //! Run it with `cargo bench -p sim-core --bench pack_step`. The `--bench` selector
 //! is not optional if you pass criterion flags: plain `cargo bench -p sim-core`
@@ -11,10 +13,16 @@
 //!
 //! # Comparing two revisions — do not trust a saved baseline
 //! Criterion's `--save-baseline` / `--baseline` across separate sessions is
-//! **unreliable on this laptop**: it shows a bimodal ~1.4× swing in CPU state
+//! **unreliable on this box**: the same unchanged binary swings up to ~1.6×
 //! between runs (and sometimes within one run), which is larger than any
 //! optimisation measured so far. A cross-session comparison once reported −8.6 %
 //! for a change that a paired measurement put at −28.5 %.
+//!
+//! The swing tracks **machine load**, not CPU frequency state: measured
+//! 2026-09-01, OS-reported clock held at 111–114 % of nominal across a 1.63×
+//! time spread. It is suppressible — quiet-gate the machine below 15 % CPU
+//! before each round, pin the process to one core, and raise its priority; that
+//! recipe reproduced to ±0.24 %. See `docs/plans/pack-step-perf.md`.
 //!
 //! Measure a change by running both revisions back to back and repeating until
 //! two rounds agree with tight confidence intervals — a wide CI means the machine

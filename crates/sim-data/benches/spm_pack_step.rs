@@ -23,9 +23,10 @@
 //! two differently-shaped parameter sets.
 //!
 //! Reading the numbers: **the ratio within one invocation is the measurement.**
-//! This laptop swings ~1.4× between CPU states across sessions (and sometimes within
-//! one), which is larger than anything measured here, so absolute microseconds
-//! quoted from one session are not comparable with another's. Both arms of every
+//! This box swings up to ~1.6× with machine load across sessions (and sometimes within
+//! one) — load, not CPU state; see `docs/plans/pack-step-perf.md` — which is larger than
+//! anything measured here, so absolute microseconds quoted from one session are not
+//! comparable with another's. Both arms of every
 //! pair run in the same process, minutes apart at most.
 //!
 //! # The shell-count arms

@@ -355,7 +355,10 @@ numbers are not.
    "overcharge with BMS off reaches runaway", "weak cell caps pack capacity",
    "LFP SOC estimate drifts mid-range") asserting on flags and key outcomes.
 5. Benchmarks (criterion) for `Pack::step` at 100S10P once Phase 1 lands; keep a
-   budget (< 50 µs per step at that size on a laptop; it should be far below).
+   budget (< 50 µs per step at that size on the dev box). Directly measured at
+   **47.2 µs features-off** on 2026-09-01 — met, but the margin is ~6 %, not "far
+   below", and the fully-featured figure is unmeasured. See
+   `docs/plans/pack-step-perf.md`, "Measuring a change on this machine".
 
 ---
 

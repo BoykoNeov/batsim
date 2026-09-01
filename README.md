@@ -488,7 +488,7 @@ Two separate costs, and only one of them amortises:
 So `report_every_n_steps` is the knob that matters, and it should be sized to the
 resolution a client will actually plot rather than to the step count. Decimation drops
 reports, never steps: the trajectory is bit-identical either way. Ratios are the
-portable part of that table; the absolute microseconds are one laptop's.
+portable part of that table; the absolute microseconds are one desktop's.
 
 ## Determinism, and how it is proven
 
