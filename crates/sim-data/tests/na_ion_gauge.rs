@@ -14,6 +14,7 @@
 //! headers. Run them with
 //! `cargo test -p sim-data --test na_ion_gauge -- --nocapture`.
 
+use sim_core::ecm::hysteresis_half_width_v;
 use sim_core::{ChemistryParams, Demand, Env, Pack};
 
 const DT: f64 = 0.5;
@@ -70,7 +71,19 @@ fn run(scenario_toml: &str) -> Arm {
         sim_data::ChemistrySource::Id(id) => id.to_owned(),
         sim_data::ChemistrySource::Inline(_) => panic!("these scenarios name a chemistry by id"),
     };
-    let chem = chemistry(&id);
+    run_on(scenario_toml, chemistry(&id))
+}
+
+/// The same run against a chemistry the caller supplies, which is how the counterfactual
+/// arm of the third test gets taken.
+///
+/// The scenario's own `chemistry` id is ignored here rather than checked: the whole point of
+/// the caller is to hand this function a parameter set that is **not** what the file names —
+/// the shipped one with `[hysteresis.width_over_soc]` removed. See
+/// [`the_wider_loop_costs_the_gauge_more_than_the_steeper_curve_saves`], which is the only
+/// caller that passes anything but the file's own.
+fn run_on(scenario_toml: &str, chem: ChemistryParams) -> Arm {
+    let scenario = sim_data::parse_scenario(scenario_toml).expect("scenario parses");
     let one_c = chem.cell.capacity_ah;
     let mut pack = scenario.build_pack(chem.clone()).expect("pack builds");
     let env = Env {
@@ -302,5 +315,178 @@ fn the_landed_correction_is_short_by_the_hysteresis_loop() {
         "the residual is {:+.3} points against a loop worth {predicted_points:+.3} — the \
          hysteresis does not explain it",
         na.gap_at_end
+    );
+}
+
+/// **The loop is not one width, and lower down the curve it costs the gauge more than the
+/// steeper curve there gives back.**
+///
+/// `scenarios/na_ion_gauge_low.toml` is `na_ion_gauge_corrects.toml` with one field changed
+/// — `pack.initial_soc` — so the same discharge and the same rest leave the cell near empty
+/// instead of mid-range. Guided-path step 32 is this measurement with a reader in front of
+/// it; `docs/plans/path-wider-loop-step.md` is the slice.
+///
+/// # Why this test exists, and what it holds that nothing else does
+///
+/// The slice that shipped `[hysteresis.width_over_soc]` recorded that **the cited
+/// magnitudes were held by nothing but a provenance note**: cutting the shipped `4.00`
+/// multiplier to `3.00` passed the whole suite and fired nothing. The guided path's claims
+/// now redden on that — the estimate row moves 0.191 points — and this test holds the two
+/// halves of the mechanism *separately*, which a claim on an outcome cannot:
+///
+///   * the two **loop half-widths**, which are what the table decides, and
+///   * the two **curve slopes**, which are what the `[ocv]` table decides.
+///
+/// Separately rather than as a ratio, because a ratio is satisfied by both halves moving
+/// together, which is exactly what a re-fit of this chemistry would do.
+///
+/// # And the counterfactual, which only a test can take
+///
+/// The last assertions build the shipped chemistry **and** a copy with the table removed, in
+/// one process, and run the same trajectory through both. Removing it does not shrink the
+/// effect — it reverses it: the gap near empty becomes smaller than the mid-range one,
+/// because the steeper curve is then the only thing that differs between the two runs. That
+/// is the property a perturbation of the *file* structurally cannot measure, and it is why
+/// the lesson's comparison is a statement about this table rather than about fuel gauges
+/// near empty in general.
+#[test]
+fn the_wider_loop_costs_the_gauge_more_than_the_steeper_curve_saves() {
+    let low_toml = include_str!("../../../scenarios/na_ion_gauge_low.toml");
+    let mid_toml = include_str!("../../../scenarios/na_ion_gauge_corrects.toml");
+    let chem = chemistry("na_ion_18650_generic");
+    let hyst = chem
+        .hysteresis
+        .clone()
+        .expect("Na-ion declares [hysteresis]");
+
+    let low = run(low_toml);
+    let mid = run(mid_toml);
+
+    // The half-width each run rests in — `scale_v` times the table, read at the charge state
+    // the run actually ended at rather than at the one the file starts from.
+    let half_width = |arm: &Arm| hysteresis_half_width_v(&hyst, arm.soc_true_end) * 1000.0;
+    let (w_low, w_mid) = (half_width(&low), half_width(&mid));
+
+    println!("                     near empty      mid-range");
+    println!(
+        "  soc (true)         {:>9.4} %    {:>9.4} %",
+        low.soc_true_end * 100.0,
+        mid.soc_true_end * 100.0
+    );
+    println!(
+        "  terminal           {:>9.6} V    {:>9.6} V",
+        low.v_rest_end, mid.v_rest_end
+    );
+    println!("  loop half-width    {w_low:>9.4} mV   {w_mid:>9.4} mV");
+    println!(
+        "  curve slope        {:>9.4}      {:>9.4}",
+        low.slope_at_rest, mid.slope_at_rest
+    );
+    println!(
+        "  estimate - truth   {:>+9.6} pts  {:>+9.6} pts",
+        low.gap_at_end, mid.gap_at_end
+    );
+
+    // Where each run rests. Not decoration: every quantity below is read AT these charge
+    // states, and a scenario edit that moved either would move all of them at once.
+    assert!(
+        (low.soc_true_end - 1.0 / 6.0).abs() < 1e-9,
+        "the near-empty run rests at {:.6}, not the 16.6667 % this test's numbers are read \
+         at — 300 s at 1 C out of a 1.4558 A.h cell is 8.3333 points from a start of 0.25",
+        low.soc_true_end
+    );
+    assert!(
+        (mid.soc_true_end - 0.5166666666666667).abs() < 1e-9,
+        "the mid-range run rests at {:.6}, not 51.6667 %",
+        mid.soc_true_end
+    );
+
+    // THE TWO HALF-WIDTHS, which is what the table decides. The multiplier at 16.6667 % is
+    // 4.00 - 3.00 * (0.166667 / 0.35) = 2.5714 by linear interpolation between the file's
+    // nodes, and it is exactly 1 anywhere at or above the 0.35 breakpoint.
+    assert!(
+        (w_low - 25.7143).abs() < 1e-3,
+        "the loop is {w_low:.4} mV wide where the near-empty run rests, against the 25.7143 \
+         this lesson is written on. `[hysteresis.width_over_soc]` or `scale_v` has moved."
+    );
+    assert!(
+        (w_mid - 10.0).abs() < 1e-9,
+        "the loop is {w_mid:.4} mV wide where the mid-range run rests, and it should be \
+         `scale_v` exactly: the multiplier is 1 everywhere at or above the breakpoint, so \
+         this run's width is the file's scalar untouched."
+    );
+
+    // THE TWO SLOPES, which is what the `[ocv]` table decides, and the half of the
+    // mechanism that works the OTHER way. The two readings sit inside the 0.15-0.20 and
+    // 0.50-0.55 segments respectively, so each is one segment's slope and not an average
+    // across a node.
+    assert!(
+        (low.slope_at_rest - 2.3960).abs() < 1e-3,
+        "the curve reads {:.4} V per unit where the near-empty run rests, against 2.3960",
+        low.slope_at_rest
+    );
+    assert!(
+        (mid.slope_at_rest - 1.9100).abs() < 1e-3,
+        "the curve reads {:.4} V per unit where the mid-range run rests, against 1.9100",
+        mid.slope_at_rest
+    );
+    assert!(
+        low.slope_at_rest > mid.slope_at_rest,
+        "the guided path says the curve is STEEPER where the near-empty run rests, which is \
+         what takes part of the wider loop back. It reads {:.4} there against {:.4}, so that \
+         sentence is false.",
+        low.slope_at_rest,
+        mid.slope_at_rest
+    );
+
+    // WHAT THE READER SEES. Both estimates land under the truth, and the near-empty one by
+    // about twice as much — 1.0 point against 0.5 on a panel that prints tenths.
+    assert!(
+        (low.gap_at_end + 0.975314).abs() < 5e-4,
+        "the near-empty estimate lands {:+.6} points from the truth, against the -0.975314 \
+         step 32 is written on",
+        low.gap_at_end
+    );
+    assert!(
+        (mid.gap_at_end + 0.494110).abs() < 5e-4,
+        "the mid-range estimate lands {:+.6} points from the truth, against the -0.494110 \
+         steps 30 and 31 are written on",
+        mid.gap_at_end
+    );
+
+    // THE COUNTERFACTUAL. The same near-empty trajectory against a chemistry that is the
+    // shipped one in every respect but the width table.
+    let mut flat = chem.clone();
+    flat.hysteresis
+        .as_mut()
+        .expect("Na-ion declares [hysteresis]")
+        .width_over_soc = None;
+    let low_flat = run_on(low_toml, flat);
+    println!(
+        "  without the table  {:>+9.6} pts  (near empty)",
+        low_flat.gap_at_end
+    );
+
+    assert!(
+        (low_flat.gap_at_end + 0.401123).abs() < 5e-4,
+        "with `[hysteresis.width_over_soc]` removed the near-empty estimate lands {:+.6} \
+         points from the truth, against the -0.401123 this test measured",
+        low_flat.gap_at_end
+    );
+    assert!(
+        low_flat.gap_at_end.abs() < mid.gap_at_end.abs(),
+        "with the width table removed the near-empty gap is {:.6} points and the mid-range \
+         gap is {:.6}. The lesson says the table is what makes the near-empty run the worse \
+         of the two — without it the steeper curve should make it the BETTER one — and this \
+         run does not show that.",
+        low_flat.gap_at_end.abs(),
+        mid.gap_at_end.abs()
+    );
+    assert!(
+        low.gap_at_end.abs() > low_flat.gap_at_end.abs() * 2.0,
+        "the shipped table more than doubles the near-empty gap ({:.6} against {:.6}) or it \
+         does not, and here it does not",
+        low.gap_at_end.abs(),
+        low_flat.gap_at_end.abs()
     );
 }

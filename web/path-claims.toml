@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Thirty-one steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Thirty-two steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -129,7 +129,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 115 claims below that set
+#              Be clear about what this buys TODAY: in all 121 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -148,7 +148,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  291 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled  297 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  38 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -203,7 +203,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 38 claims.
 #
-#   same        308 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same        314 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude    10. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -249,8 +249,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 319 of the 374 numbers the
-#            222 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 325 of the 381 numbers the
+#            224 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -281,7 +281,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 222 claimed sentences need none. A future literal printing a chemistry constant will
+# the 224 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -296,7 +296,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — thirty-one steps of the thirty-one so far, which is all of them.
+# of this file — thirty-two steps of the thirty-two so far, which is all of them.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -4551,8 +4551,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: thirty-one
-# steps, 757 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: thirty-two
+# steps, 770 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -9698,6 +9698,186 @@ prints both of its ends. Not a reach into the neighbouring step: 3900.0 s lies i
 arm's own run to 7500.0 s, and the reading is this trajectory's.
 """
 
+[[arm]]
+step = "the-loop-is-wider-down-here"
+name = "mid"
+instruction = "Load `na_ion_gauge_corrects` from the picker — the same file with one field changed, `initial_soc` — and run it to the same mark"
+start = "restart"
+scenario = "na_ion_gauge_corrects.toml"
+actions = [{ do = "run", to_s = 3900.0 }]
+note = """
+The control, and it is the file this path already taught as steps 30 and 31 rather than a
+new one. The two scenarios carry the same fifteen assignments under `[pack]` and
+`[pack.bms]` — the seed, the sensor offset, its noise, the boot error, the rest threshold,
+the rest time, the correction gain and the gate — and differ in `pack.initial_soc` alone, so
+what separates the two runs is where on its own curve the cell comes to rest.
+
+A restart rather than a continuation, because a reader coming back through the picker gets
+one. The mark is step 30's mark and the readings below are step 30's readings unchanged,
+which is what makes this arm a comparison rather than a second measurement: the same
+trajectory read at the same instant, by a reader who has already seen it once.
+
+No current is retyped, so the arm inherits this step's own pulse — and it is the same pulse
+the two earlier steps ran, because the demand program is a function of the clock alone.
+"""
+
+[[claim]]
+step = "the-loop-is-wider-down-here"
+literal = "`current` reads **`0.000 A`**, `terminal` has settled at **`2.622 V`**, and `soc (true)` reads **`16.7 %`** against a `soc (bms)` of **`15.7 %`** — **`1.0`** point apart"
+quantity = "i_at"
+value = 0.0
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "0.000"
+states = "same"
+read_at_s = 3900.0
+display = "current"
+shows = "0.000 A"
+quoted = true
+note = """
+Open circuit, which is what makes the voltage beside it an open-circuit voltage. The pulse
+program's off-leg outlasts the run, so nothing is asked of this cell again after 300 s.
+"""
+
+[[claim]]
+step = "the-loop-is-wider-down-here"
+literal = "`current` reads **`0.000 A`**, `terminal` has settled at **`2.622 V`**, and `soc (true)` reads **`16.7 %`** against a `soc (bms)` of **`15.7 %`** — **`1.0`** point apart"
+quantity = "v_at_mark"
+value = 2.622119939
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "2.622"
+states = "same"
+read_at_s = 3900.0
+display = "terminal"
+shows = "2.622 V"
+quoted = true
+note = """
+The rested terminal voltage, and the only thing the BMS actually measures here. It sits
+22.5 mV below the `[ocv]` table's own value at this charge — 2.644633 V — which is the
+hysteresis loop's half-width at this depth times how far across the loop 8.3333 points of
+discharge carries the state. The half-width there is 25.7143 mV against the 10.0000 the
+same section gives at the charge the control arm rests at, and
+`the_wider_loop_costs_the_gauge_more_than_the_steeper_curve_saves` is where both are
+asserted.
+
+This is also the second of the three readings that redden if the shipped multiplier moves:
+at 3.00 rather than 4.00 the cell rests at 2.626706 V and this claim fails on both the value
+and the string.
+"""
+
+[[claim]]
+step = "the-loop-is-wider-down-here"
+literal = "`current` reads **`0.000 A`**, `terminal` has settled at **`2.622 V`**, and `soc (true)` reads **`16.7 %`** against a `soc (bms)` of **`15.7 %`** — **`1.0`** point apart"
+quantity = "soc_at"
+value = 0.166666667
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "16.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3900.0
+display = "soc (true)"
+shows = "16.7 %"
+quoted = true
+note = """
+Exact rather than approximate, on the control arm's terms: 300 s at 1.4558 A is 0.121317
+A.h out of a 1.4558 A.h cell, which is 8.3333 points on the nose from a start of 0.25. The
+engine's own truth, which the BMS is never shown.
+
+Where it lands matters beyond the arithmetic. Both this charge state and the 15.7270 % the
+table inverts to sit inside the `[ocv]` file's 0.15-0.20 segment, so the slope the estimator
+divides by is one segment's and not an average taken across a node.
+"""
+
+[[claim]]
+step = "the-loop-is-wider-down-here"
+literal = "`current` reads **`0.000 A`**, `terminal` has settled at **`2.622 V`**, and `soc (true)` reads **`16.7 %`** against a `soc (bms)` of **`15.7 %`** — **`1.0`** point apart"
+quantity = "soc_bms_at"
+value = 0.156913525
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "15.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3900.0
+display = "soc (bms)"
+shows = "15.7 %"
+quoted = true
+note = """
+The estimate after the correction has converged, and the row this step turns on. It landed
+0.036 points from what inverting the table at the resting voltage gives — the same distance
+the control arm's estimate lands from its own inversion — so the difference between the two
+steps is in the voltage each cell rests at and not in how well either correction converged.
+
+THIS IS THE CLAIM THAT HOLDS THE SHIPPED MULTIPLIER. Cut
+`[hysteresis.width_over_soc].mult` from 4.00 to 3.00 and this row reads 15.9 % rather than
+15.7 %: 0.191 points, against the 0.05 this claim's own spelled rule allows. Before this
+step existed nothing in the repo moved when that number did — see
+`docs/plans/path-wider-loop-step.md` and the slice note it cites.
+"""
+
+[[claim]]
+step = "the-loop-is-wider-down-here"
+literal = "There `soc (true)` reads **`51.7 %`** and `soc (bms)` reads **`51.2 %`**"
+quantity = "soc_at"
+arm = "mid"
+value = 0.516666667
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "51.7"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3900.0
+display = "soc (true)"
+shows = "51.7 %"
+quoted = true
+note = """
+The control arm's truth, and step 30's own reading unchanged. The same current out of the
+same cell for the same time moves the same 8.3333 points; only the start differs.
+"""
+
+[[claim]]
+step = "the-loop-is-wider-down-here"
+literal = "There `soc (true)` reads **`51.7 %`** and `soc (bms)` reads **`51.2 %`**"
+quantity = "soc_bms_at"
+arm = "mid"
+value = 0.511725570
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "51.2"
+spells_pow10 = 2
+states = "same"
+read_at_s = 3900.0
+display = "soc (bms)"
+shows = "51.2 %"
+quoted = true
+note = """
+The estimate on the control arm, which is where the multiplier reads 1 and the loop is
+`scale_v` wide. Unmoved by the perturbation the row above is sensitive to, and that is the
+attribution: the two runs differ in this number because they rest at different depths, not
+because anything about the correction changed.
+
+The prose deliberately does not print the difference of these two rows. The subtraction is
+0.5, which is also this step's `dt`, and `accounting_for` refuses a token with two readings
+rather than picking one — see `docs/plans/path-wider-loop-step.md`, which records the
+sentence that could not be written and what it would take.
+"""
+
+[[derived]]
+step = "the-loop-is-wider-down-here"
+literal = "`current` reads **`0.000 A`**, `terminal` has settled at **`2.622 V`**, and `soc (true)` reads **`16.7 %`** against a `soc (bms)` of **`15.7 %`** — **`1.0`** point apart"
+spells = "1.0"
+op = "difference"
+from = ["16.7", "15.7"]
+pow10 = 0
+note = """
+The subtraction a reader actually performs: the panel prints the two charge rows to a tenth
+of a point and never their difference. Step 28's `9 mV` is the same shape — the arithmetic
+is over the ROUNDED strings rather than over the engine, which here is 0.975314 points, and
+the sentence is about what the two rows on the screen come to.
+"""
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -10020,9 +10200,20 @@ steps = [
                      # `[hysteresis.width_over_soc]` landed: `scale_v` is now the half-width
                      # WHERE THAT MULTIPLIER READS ONE, and this run sits where it does. The
                      # prose was already safe - it names the field - and this comment was not
+  "the-loop-is-wider-down-here", # 13 numbers: seven are the panel, six are constants. Four
+                     # rows of this cell's panel at the mark, two of the control arm's, and
+                     # the difference between the first two - which is DERIVED from the two
+                     # rows it sits beside rather than claimed, because the panel prints no
+                     # gap row. The six are the charge the scenario starts at, an ordinal
+                     # pointing back one step, and four numbers of the chemistry's own
+                     # `[hysteresis]` section: the multiplier at both ends of its table and
+                     # the breakpoint between them, tied to the nodes of the table itself.
+                     # The gap on the CONTROL arm is deliberately not printed - it is 0.5,
+                     # which is also this step's step length, and a token with two readings
+                     # is refused rather than resolved
 ]
 # Not scanned, and why. THIS LIST IS EMPTY for the first time, which is what the
-# thirty-one entries above amount to: every step of the guided path now has its whole
+# thirty-two entries above amount to: every step of the guided path now has its whole
 # prose scanned, not only the sentences a claim quotes. Of the steps below, those that
 # carry claims: none of them. Unchecked entirely: none. Both sentences are derived and
 # both now say the same thing.
@@ -10056,12 +10247,12 @@ unledgered = [
 # twenty-nine quantities on the seven steps it then covered, and the second batch of six
 # needed one new SHAPE (a numeral ahead of its fraction, "four and a half seconds"), one new
 # unit noun, and thirteen vocabulary rules — almost all of them for an instant stated
-# RELATIVE to another one, which the first batch never met. The list holds fourteen steps now.
+# RELATIVE to another one, which the first batch never met. The list holds fifteen steps now.
 # EVERY COUNT HERE IS ZERO, AND THAT IS THE RESULT RATHER THAN A GAP. These are the steps
 # whose English quantities had been read and tied to something; the digits rule rewrote all
 # twenty-nine of them into digits, so the word scan runs over these steps and finds nothing
 # left to account for. What ties those quantities today is the ordinary digit ledger, which
-# has covered all thirty-one steps since before this list existed.
+# has covered all thirty-two steps since before this list existed.
 #
 # The list is kept rather than emptied because the scan it turns on is what would notice a
 # spelled quantity coming BACK to one of these steps with an arm behind it - and because
@@ -10082,6 +10273,11 @@ spelled = [
   "which-way-it-was-driven",     # 0
   "a-curve-worth-reading",       # 0
   "still-wrong-and-it-has-stopped",  # 0
+  "the-loop-is-wider-down-here",     # 0, and it was written under the ban rather than
+                                     # cleaned up afterwards: the phrase "for an hour" was
+                                     # in the first draft of its opening sentence, which is
+                                     # an ARTICLE and a unit noun and is exactly what the
+                                     # reader reads
 ]
 
 # The other side of that list: steps whose prose is NOT word-scanned, named.

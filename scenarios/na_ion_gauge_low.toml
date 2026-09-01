@@ -1,0 +1,125 @@
+# The same gauge, lower down the curve, where the hysteresis loop is wider.
+#
+# `na_ion_gauge_corrects.toml` with ONE field changed — `pack.initial_soc`, 0.60 here
+# becomes 0.25 — and nothing else. Every BMS number, the seed, the sensor offset, its noise,
+# the boot error, the rest threshold, the rest time, the correction gain and the gate are
+# identical in the two files, so anything that differs between the runs is a property of
+# WHERE ON ITS CURVE the cell rests and not of the configuration.
+#
+# ## What this file is for
+#
+# `chemistries/na_ion_18650_generic.toml` declares `[hysteresis.width_over_soc]`: the loop's
+# half-width is `scale_v` times a multiplier that is 1 at and above 0.35 charge and rises to
+# 4.00 at the empty end. It is the only shipped file that says its loop is not one width
+# everywhere, and until this scenario existed nothing a reader could load showed what that
+# costs. See docs/plans/hysteresis-width-over-soc.md for the table and
+# docs/plans/path-wider-loop-step.md for the lesson.
+#
+# ## The mechanism, which is shipped and is not new here
+#
+# A rested cell sits off the midline its `[ocv]` table draws — below it when it was last
+# discharged. `Bms` inverts that midline, because the midline is all it has and a real BMS
+# has no more, so it reads a voltage low and infers a charge low with it. The error in
+# points of charge is
+#
+#     h * scale_v * M(soc) / slope(soc)
+#
+# and BOTH of the last two move between this file and its twin, in opposite directions.
+#
+# ## Measured, at dt = 0.5 s (the browser page's default), 25 degC
+#
+# Booted 3 points high, discharged at this cell's 1 C — 1.4558 A — for 300 s, then rested
+# for 3600 s. The twin column is `na_ion_gauge_corrects.toml`, measured the same way:
+#
+#                                     this file        the twin
+#   soc (true) at the mark            16.6667 %        51.6667 %
+#   terminal at the mark              2.622120 V       3.112878 V
+#   the [ocv] midline there           2.644633 V       3.121633 V
+#   loop half-width there             25.7143 mV       10.0000 mV
+#   curve slope at the reading        2.3960 V/unit    1.9100 V/unit
+#   inverting the table gives         15.7270 %        51.2082 %
+#   soc (bms) at the mark             15.6914 %        51.1726 %
+#   estimate minus truth              -0.975314 pts    -0.494110 pts
+#
+# The loop is 2.5714 times wider here and the curve is 1.2545 times steeper, so the gap is
+# 2.05 times larger; the panel prints a tenth of a point and shows 1.0 against 0.5.
+#
+# THE TABLE IS WHAT MAKES THAT TRUE, and it is worth stating because the obvious reading of
+# the two columns — "a gauge is worse near empty" — is not what this measures. Take
+# `[hysteresis.width_over_soc]` out of the chemistry and run this file again and the gap
+# becomes -0.401123 points: SMALLER than the twin's, because the steeper curve is then the
+# only thing that changed. `the_wider_loop_costs_the_gauge_more_than_the_steeper_curve_saves`
+# builds both chemistries in one process and asserts it.
+#
+# ## Where this run sits, and what it stays clear of
+#
+#   * BOTH ENDS OF THE READING ARE INSIDE ONE `[ocv]` SEGMENT. 16.6667 % and the 15.7270 %
+#     the inversion returns are both in 0.15-0.20, so the slope above is one segment's and
+#     not an average across a node.
+#   * NOTHING TRIPS. No flag is raised on this trajectory, and the lowest the terminal
+#     reaches under load is 2.4374 V against this cell's v_min of 1.50.
+#   * THE REST IS AN HOUR rather than the ten minutes the gate needs, for the reason the
+#     twin's header gives at length: this cell's slow RC pair has a time constant of 365 s
+#     and relaxes in the same direction the loop pushes, so a shorter rest would put
+#     diffusion into a number that is about memory.
+
+chemistry = "na_ion_18650_generic"
+
+[meta]
+name = "A gauge lower down the curve, sodium-ion"
+description = """
+`na_ion_gauge_corrects.toml` with one field changed: this cell starts at 25 % charge \
+instead of 60 %, so the same 1 C discharge and the same hour of rest leave it near empty \
+rather than mid-range. The correction fires just as it does there — the curve is steep \
+enough — and it lands twice as far short, because this chemistry's hysteresis loop is \
+wider down here than it is at half charge. Watch `soc bms` against `soc true`, then load \
+the other file and watch the same two rows."""
+
+[pack]
+series = 1
+parallel = 1
+# The ONE field that differs from `na_ion_gauge_corrects.toml`. 300 s at 1 C moves 8.3333
+# points, so this run rests at 16.6667 % — far enough below the table's 0.35 breakpoint for
+# the multiplier to be 2.5714 there, and far enough above empty that the `[reversal]` ramp
+# and the under-voltage limit are both a long way off.
+initial_soc = 0.25
+initial_temp_k = 298.15
+# The current sensor's noise is drawn from the pack RNG, so the seed is load-bearing rather
+# than merely named: this file and the twin use the same one so the two runs see the same
+# noise.
+seed = 20260831
+
+# Omitted below, and each omission means "off", not "on with defaults". Identical to the
+# twin's list and for the twin's reasons:
+#   [pack.scatter]  -> every cell identical; one cell, so there is nothing to scatter
+#   [pack.thermal]  -> Isothermal. R0 falls as a cell warms, which would move the resting
+#                      voltage the correction is read from
+#   [pack.aging]    -> the pack never wears out; over an hour it would not anyway
+#   [[faults]]      -> nothing scheduled. The sensor error below is CONFIGURATION, not a
+#                      fault: it is what an honest sensor costs, present from step 0
+
+[pack.bms]
+# Every number in this section is identical in `na_ion_gauge_corrects.toml` and in
+# `lfp_gauge_declines.toml`.
+#
+# 20 mA against this cell's 1.4558 A discharge is 1.37 %, and because coulomb counting
+# integrates it, it is worth 0.100 points of charge over the five-minute leg.
+current_offset_a = 0.02
+current_noise_sigma_a = 0.01
+# One probe for one cell. The estimator does not read temperature; this is here because
+# protection does.
+temp_probes = [[0, 0]]
+# A BMS that has just been powered on does not know what it is holding. Three points is the
+# error the correction exists to remove.
+initial_soc_error = 0.03
+rest_current_threshold_a = 0.05
+rest_time_for_ocv_s = 600.0
+ocv_correction_gain = 0.1
+# The gate. Below this slope an OCV reading is noise amplification and the estimator
+# declines. This run rests where the curve reads 2.3960 V per unit — 16 times over it, and
+# steeper than the twin's 1.9100, which is the half of this lesson that works the other way.
+min_ocv_slope_v_per_soc = 0.15
+
+[pack.bms.protection]
+v_hard_margin_v = 0.15
+t_hard_margin_k = 10.0

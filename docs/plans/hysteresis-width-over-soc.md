@@ -322,6 +322,18 @@ measurement.
 
 ## What is not done, and is the next slice
 
+**LANDED 2026-09-01 as `docs/plans/path-wider-loop-step.md`** — step 32, one new
+scenario, no engine code. The paragraph below is what this document predicted, kept as
+written; two of its three sentences held and the third did not. The lesson does need a
+step of its own rather than a repair to step 31 (P8 held). It reads the width through
+the **fuel gauge** rather than through a resting voltage, because the direct
+measurement of a width at two charge states needs four scenario files. And it takes no
+`Derived` accounting arm for the width: an interpolated multiplier is printed by
+nothing, so it has no operands, and the arm the step actually uses is a `Difference`
+over the two panel rows. What holds the width instead is a claim on the estimate row —
+cut the shipped `4.00` to `3.00` and it moves 0.191 points — which is the hole this
+document's own slice note recorded and could not close from here.
+
 The guided-path lesson. The effective half-width is now a product of two fields, so a lesson
 about it needs a `Derived` accounting arm rather than a quoted constant; that was scoped out
 before the run and stays out. The one thing this run adds to that scope: step 31's existing

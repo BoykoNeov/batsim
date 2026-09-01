@@ -263,6 +263,15 @@ gamma   = 25.0
 # 1.9486 V, which is 449 mV clear of this cell's 1.50 V cutoff. At full the multiplier is 1
 # and nothing about the top of the range changes: OCV(1) + 0.010 = 4.0924 V, 58 mV inside
 # v_max, which is the gap the release-band argument at v_max is about.
+# TAUGHT, and this is the only shipped table a guided-path lesson is ABOUT: step 32 rests
+# one cell near empty and its twin mid-range, and reads what the difference in width
+# costs the fuel gauge. Until that step landed, cutting the 4.00 below to 3.00 passed
+# every test in the repo -- the numbers here were held by this note and nothing else.
+# Three checks move now: the estimate row and the terminal row of that step, and
+# the_wider_loop_costs_the_gauge_more_than_the_steeper_curve_saves in
+# crates/sim-data/tests/na_ion_gauge.rs, which also holds the counterfactual -- with
+# this table gone the gauge lands CLOSER near empty than it does mid-range.
+# See docs/plans/path-wider-loop-step.md.
 [hysteresis.width_over_soc]
 soc  = [0.00, 0.35, 1.00]
 mult = [4.00, 1.00, 1.00]

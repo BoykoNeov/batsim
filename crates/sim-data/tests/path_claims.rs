@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 31 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 32 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -128,7 +128,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is thirty-one steps and 757 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is thirty-two steps and 770 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -245,10 +245,10 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed thirty-one whole steps — but only thirty-one. Steps here carrying
+//!   has now closed thirty-two whole steps — but only thirty-two. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
 //!   of the prose free: none. `[ledger].unledgered`
-//!   names what is left — none of the thirty-one — one line each, so this list cannot go
+//!   names what is left — none of the thirty-two — one line each, so this list cannot go
 //!   quietly out of date; it is empty, and it stays in the file so that the next lesson
 //!   added to the path has somewhere to say it is not checked.
 //!   **What that closes is one axis and not the gap.** Every numeral in every step of the
@@ -3070,7 +3070,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 291 of 336 claims.
+    /// number's last printed place. The default shape: 297 of 342 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3081,12 +3081,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 38 of 336.
+    /// the number was always right and only the declaration was wrong. 38 of 342.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 336, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 342, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -3126,7 +3126,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 308 of 336, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 314 of 342, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -12579,6 +12579,46 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Chemistry("hysteresis.scale_v")],
         pow10: 0,
     },
+    // --- Step 32, the loop that is wider lower down ----------------------------
+    LedgerRule {
+        // Where this run starts, which is the ONE field separating this scenario from the
+        // one the two steps before it ran. Read off this step's own file; the arm's 0.60 is
+        // not printed, because the sentence says what changed and not what it changed from.
+        phrase: "this run starts at `{n} %` charge",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // A back-reference to the step whose gap this one is comparing against.
+        phrase: "gives the gap step {n} was about",
+        ties: &[Tie::Ordinal("still-wrong-and-it-has-stopped")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // **The width table, and the only place in the path where the ledger reads one.**
+        // Three of the four are nodes of `[hysteresis.width_over_soc].mult` and the fourth
+        // is a node of its `soc` axis, so a re-fit that moved either array fails here.
+        //
+        // Existential, as `Tie::Member` always is: it says 4.00 is *a* multiplier the file
+        // declares, not that it is the one at the empty end. The stronger statement is held
+        // by the claims on the panel rows instead — at 3.00 the estimate row reads 15.9 %
+        // and the terminal row 2.627 V — which is the division of labour
+        // `docs/plans/path-wider-loop-step.md` argues for: the arm says the sentence is
+        // about the file, the claims say what the file's number is worth.
+        phrase: concat!(
+            "the multiplier beside it reads **`{n}`**, and ",
+            "`[hysteresis.width_over_soc]` gives that multiplier as a small table over ",
+            "charge: **`{n}`** anywhere at or above **`{n}`** charge, rising to ",
+            "**`{n}`** at the empty end",
+        ),
+        ties: &[
+            Tie::Member("hysteresis.width_over_soc.mult.*"),
+            Tie::Member("hysteresis.width_over_soc.mult.*"),
+            Tie::Member("hysteresis.width_over_soc.soc.*"),
+            Tie::Member("hysteresis.width_over_soc.mult.*"),
+        ],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -15378,6 +15418,7 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (29, "twenty-nine"),
     (30, "thirty"),
     (31, "thirty-one"),
+    (32, "thirty-two"),
     // The ledger's numeral count passed twenty-five with its fifth step and will keep
     // going; the tens are here so the next one does not have to stop and add a word.
     (30, "thirty"),
