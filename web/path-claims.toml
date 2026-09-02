@@ -8938,23 +8938,25 @@ comparing the two cells says it. `complement` is the frame that performs the sub
 
 [[claim]]
 step = "the-charge-is-over"
-literal = "`soc (true)` reads **`100.0 %`**"
+literal = "`soc (true)` reads **`99.8 %`**"
 quantity = "soc_at"
-value = 1.0
+value = 0.998183450
 tol = 5.0e-4
 tol_from = "spelled"
-spells = "100.0"
+spells = "99.8"
 spells_pow10 = 2
 states = "same"
-read_at_s = 3240.5
+read_at_s = 3300.0
 display = "soc (true)"
-shows = "100.0 %"
+shows = "99.8 %"
 quoted = true
 note = """
-The mark is one step PAST the clamp at 3240.0, which is where this row first prints it.
-At the clamp itself only a sliver of the current is refused - `clamp` reads
-`refused 0.000 A` there and `heat` is still 0.04 W - so a mark there would have shown the
-reader the transition rather than the state on either side of it.
+The mark is the PEAK of the terminal voltage, and since SNAPSHOT_VERSION 21 that is not
+the instant the cell fills: `[charge_acceptance]` has the cell approach full as an
+asymptote over its last 1.5 %, so at the peak it is a fifth of a point short and still
+storing a trickle. Before the taper this row read `100.0 %` here, one step past a clamp
+(docs/plans/phase-8-slice-d-nimh-client.md); docs/plans/charge-acceptance.md is why it
+no longer does.
 """
 
 [[claim]]
@@ -8966,7 +8968,7 @@ tol = 5.0e-4
 tol_from = "spelled"
 spells = "-3.000"
 states = "same"
-read_at_s = 3240.5
+read_at_s = 3300.0
 display = "current"
 shows = "-3.000 A"
 quoted = true
@@ -8978,24 +8980,23 @@ says -3.000, which are the same number written by two different formatters.
 
 [[claim]]
 step = "the-charge-is-over"
-literal = "`terminal` is at the highest it will ever reach — **`1.518 V`**"
+literal = "`terminal` is at the highest it will ever reach — **`1.510 V`**"
 quantity = "v_at_mark"
-value = 1.517797898
+value = 1.510459838
 tol = 5.0e-4
 tol_from = "spelled"
-spells = "1.518"
+spells = "1.510"
 states = "same"
-read_at_s = 3240.5
+read_at_s = 3300.0
 display = "terminal"
-shows = "1.518 V"
+shows = "1.510 V"
 quoted = true
 note = """
-THE PEAK, to the digit the row prints. The raw maximum over the whole trajectory is
-1.517831515 at 3240.0 s - one step earlier and 0.034 mV higher - and it prints `1.518 V`
-too, so the sentence is true of the row at a stopped instant, which is the only place a
-reader can take a voltage off this page. Stating the mark's own reading rather than the
-maximum is deliberate: a number measured at an instant nobody can stop at is the
-"true and unreachable" shape this file has been caught by before.
+THE PEAK, and at this mark it is the peak sample itself rather than the reading one step
+past it: 1.510459838 V at 3300.0 s, with 3299.5 s and 3300.5 s both lower by about a
+tenth of a microvolt. The taper is what makes that possible - a peak at a clamp is a
+corner whose maximum sits one step before the state a reader wants to see, while this
+one is a dome and the mark can sit on top of it.
 
 "The highest it will ever reach" is a claim about the rest of the run and is asserted
 separately, in `nimh_chemistry.rs`: nothing after the peak goes back up, over 20 000 s.
@@ -9003,67 +9004,72 @@ separately, in `nimh_chemistry.rs`: nothing after the peak goes back up, over 20
 
 [[claim]]
 step = "the-charge-is-over"
-literal = "`clamp` has started printing **`refused 3.000 A`**"
+literal = "`clamp` is printing **`refused 2.635 A`**"
 quantity = "i_rejected_at"
-value = -3.0
+value = -2.635002809
 tol = 5.0e-4
 tol_from = "spelled"
-spells = "3.000"
+spells = "2.635"
 states = "magnitude"
-read_at_s = 3240.5
+read_at_s = 3300.0
 display = "clamp"
-shows = "refused 3.000 A"
+shows = "refused 2.635 A"
 quoted = true
 note = """
-The whole of the charger's current, turned away. This row is quiet on almost every step in
-this path and it is the one that says what has actually changed - the two rows above it
-are unmoved, and a charger has neither this one nor `soc (true)`.
+Most of the charger's current, turned away - and not all of it, which is what changed at
+SNAPSHOT_VERSION 21. The row first prints at 3186.5 s, the step after the cell passes the
+0.985 onset its chemistry declares, at `refused 0.014 A`, and climbs from there; at the
+peak the cell is still storing an eighth of what it is sent. This row is quiet on almost
+every step in this path and it is the one that says what has actually changed - the two
+rows above it are unmoved, and a charger has neither this one nor `soc (true)`.
 """
 
 [[claim]]
 step = "the-charge-is-over"
-literal = "`heat` reads **`4.24 W`**"
+literal = "`heat` reads **`3.70 W`**"
 quantity = "q_gen_at"
-value = 4.239518433
+value = 3.703185399
 tol = 5.0e-3
 tol_from = "spelled"
-spells = "4.24"
+spells = "3.70"
 states = "same"
-read_at_s = 3240.5
+read_at_s = 3300.0
 display = "heat"
-shows = "4.24 W"
+shows = "3.70 W"
 quoted = true
 note = """
-Refused charge billed as heat, which is the path `energy-hole.md` built. It is a hundred
-times what the same row printed one step earlier (0.040434 W), and that jump is not
-claimed: the earlier instant is inside the run rather than at a mark.
+Refused charge billed as heat, which is the path `energy-hole.md` built, at the cell's own
+open-circuit voltage times the refused current. It arrived over the two minutes before
+the mark rather than in one step: the row read 0.040 W at the onset and ramped with the
+refusal, which is the dome the taper exists to make.
 
-Not quite the charger's full 4.5535 W, and the difference is the entropy term still
-cooling: at -3 A, 299 K and this chemistry's dU/dT the reversible term is -0.314 W, so the
-cell absorbs that much of what arrives instead of heating with it.
+Not the charger's full 4.5535 W, for two reasons: an eighth of the current is still being
+stored rather than dissipated, and the entropy term is still cooling - at -3 A, 304 K and
+this chemistry's dU/dT the reversible term is about -0.32 W.
 """
 
 [[claim]]
 step = "the-charge-is-over"
-literal = "`cell t` has reached **`25.9 °C`**"
+literal = "`cell t` has reached **`30.8 °C`**"
 quantity = "t_max_c_at"
-value = 25.913172
+value = 30.811156
 tol = 5.0e-2
 tol_from = "spelled"
-spells = "25.9"
+spells = "30.8"
 states = "same"
-read_at_s = 3240.5
+read_at_s = 3300.0
 display = "cell t"
-shows = "25.9 / 25.9 °C"
+shows = "30.8 / 30.8 °C"
 quoted = false
 note = """
-0.9 K of warming over the whole of a 54-minute charge, which is what makes the next step's
-10 K in 136 s worth noticing. The first `t_max_c_at` claim in the file: the row prints
-degrees Celsius and every earlier temperature claim states kelvin, which is fine for a
-sentence about the engine and wrong for one that tells a reader to look at this row.
+5.8 K of warming by the peak, nearly all of it in the last two minutes: the cell was at
+25.9 degC when it passed the onset at 3186.5 s, and the heat the taper ramps in is what
+carries it here. That is also why the peak is where it is - the cell warms BEFORE it
+stops climbing, and the two channels through which warming reaches the terminal are what
+turn the climb over.
 
 `quoted` is false because the row prints both ends of the pack's temperature spread and
-this pack has one cell, so the string is `25.9 / 25.9 °C` and the sentence sensibly gives
+this pack has one cell, so the string is `30.8 / 30.8 °C` and the sentence sensibly gives
 the number once. The display half is still asserted, so the formatter is still checked.
 """
 
@@ -9073,32 +9079,33 @@ name = "isothermal"
 instruction = "Load `nimh_overcharge_isothermal` from the picker"
 start = "restart"
 scenario = "nimh_overcharge_isothermal.toml"
-actions = [{ do = "run", to_s = 3420.0 }]
+actions = [{ do = "run", to_s = 3448.5 }]
 note = """
 The control the whole step rests on. `phase-8-slice-c-spike.md` measured that a
-peak-then-fall is STRUCTURALLY GUARANTEED by the charge clamp on any cell whose resistance
-falls as it warms, so the shape of the trace is evidence about nothing and only the size of
-the drop counts - and a size needs a reference. With the temperature pinned neither channel
-can act and the fall is exactly zero.
+peak-then-fall is STRUCTURALLY GUARANTEED on any cell whose resistance falls as it warms
+once the charge has stopped going in, so the shape of the trace is evidence about nothing
+and only the size of the drop counts - and a size needs a reference. With the temperature
+pinned neither channel can act, and this cell never turns over at all.
 
-Runs to 3420.0 rather than to the 3376.5 its claims read, on the rule the ARMS section
-states. It is also the one arm in this file where overrunning costs the reader nothing:
-past the clamp this cell's terminal does not move at all, to four decimal places beyond
-what the panel prints, so an arm stopped anywhere in the overcharge reads the same string.
+Runs to the step's own mark and no further, and that now matters: before the taper the
+pinned cell's terminal did not move past the clamp, so an arm stopped anywhere in the
+overcharge read the same string. It creeps now - the storage trickle is still lifting the
+open-circuit voltage - and by 3500 s the row prints `1.519 V` rather than the `1.518 V`
+claimed here, so the arm has to stop where its claims read.
 """
 
 [[claim]]
 step = "and-then-it-falls"
-literal = "`terminal` reads **`1.509 V`** here against the **`1.518 V`** of the last step's mark, so the two printed rows are 9 mV apart"
+literal = "`terminal` reads **`1.505 V`** here against the **`1.510 V`** of the last step's mark, so the two printed rows are 5 mV apart"
 quantity = "v_at_mark"
-value = 1.509025847
+value = 1.504526961
 tol = 5.0e-4
 tol_from = "spelled"
-spells = "1.509"
+spells = "1.505"
 states = "same"
-read_at_s = 3376.5
+read_at_s = 3448.5
 display = "terminal"
-shows = "1.509 V"
+shows = "1.505 V"
 quoted = true
 note = """
 The -dV, at the instant a charger fires. The mark is the first step whose cell is 10 K
@@ -9106,160 +9113,175 @@ above the peak's temperature, and that instant is the assertion rather than an i
 one: `phase-8-slice-c-spike.md` records scoring a pre-registered prediction green over a
 twenty-minute run where the honest figure at the moment a charger decides was under half of
 it. Moving this mark out to somewhere the digits are larger would be that defect again.
+
+Smaller than the 8.772 mV this step measured before the taper (docs/plans/
+phase-8-slice-d-nimh-client.md), and docs/plans/charge-acceptance.md says why: a cell
+that approaches full as an asymptote is still lifting its own open-circuit voltage while
+temperature pulls the terminal down, and the two fight. 5.93 mV is inside the window a
+charger fires on, and the onset in the chemistry file is bounded by exactly that.
 """
 
 [[claim]]
 step = "and-then-it-falls"
-literal = "`terminal` reads **`1.509 V`** here against the **`1.518 V`** of the last step's mark, so the two printed rows are 9 mV apart"
-quantity = "v_at:3240.5"
-value = 1.517797898
+literal = "`terminal` reads **`1.505 V`** here against the **`1.510 V`** of the last step's mark, so the two printed rows are 5 mV apart"
+quantity = "v_at:3300.0"
+value = 1.510459838
 tol = 5.0e-4
 tol_from = "spelled"
-spells = "1.518"
+spells = "1.510"
 states = "same"
-read_at_s = 3240.5
+read_at_s = 3300.0
 display = "terminal"
-shows = "1.518 V"
+shows = "1.510 V"
 quoted = true
 note = """
 The same reading the step before this one marks, claimed again here because check 6 has no
 arm for "the step next door said so" and the sentence prints both ends of its own
 subtraction. It is genuinely reachable on THIS step's trajectory as well - the run passes
-through 3240.5 on its way to the mark, and a reader who presses Back is standing on it.
+through 3300.0 on its way to the mark, and a reader who presses Back is standing on it.
 """
 
 [[derived]]
 step = "and-then-it-falls"
-literal = "`terminal` reads **`1.509 V`** here against the **`1.518 V`** of the last step's mark, so the two printed rows are 9 mV apart"
-spells = "9"
+literal = "`terminal` reads **`1.505 V`** here against the **`1.510 V`** of the last step's mark, so the two printed rows are 5 mV apart"
+spells = "5"
 op = "difference"
-from = ["1.518", "1.509"]
+from = ["1.510", "1.505"]
 pow10 = 3
 note = """
 The subtraction a reader does off the screen, which is why the operands are the PRINTED
-strings and not the engine's numbers: 1.517797898 - 1.509025847 is 8.772 mV, and both rows
-round to the millivolt in the same direction. The sentence beside this one says so rather
-than leaving the reader to find it, and 9 is still inside the window a charger fires on.
+strings and not the engine's numbers: 1.510459838 - 1.504526961 is 5.933 mV, and the two
+rows round in opposite directions. The sentence beside this one says so rather than
+leaving the reader to find it, and 5 is the bottom of the window a charger fires on.
 """
 
 [[claim]]
 step = "and-then-it-falls"
-literal = "`clamp` still reads **`refused 3.000 A`** and `soc (true)` is still **`100.0 %`**"
+literal = "`clamp` reads **`refused 2.977 A`**, up from the last mark as the last of the taper closes, and `soc (true)` prints **`100.0 %`**"
 quantity = "i_rejected_at"
-value = -3.0
+value = -2.976666510
 tol = 5.0e-4
 tol_from = "spelled"
-spells = "3.000"
+spells = "2.977"
 states = "magnitude"
-read_at_s = 3376.5
+read_at_s = 3448.5
 display = "clamp"
-shows = "refused 3.000 A"
+shows = "refused 2.977 A"
 quoted = true
 note = """
-Unchanged from the last step's mark, which is half of the attribution: the electrical side
-of this cell is doing exactly what it was doing 136 s ago.
+Up from 2.635 A at the last mark: the taper is a function of the charge already stored,
+so as the cell creeps toward full the refused share creeps toward the whole current. Not
+the cause of the fall - a cell refusing MORE of its current stores less, and storing less
+can only slow the climb of the open-circuit voltage, never reverse it.
 """
 
 [[claim]]
 step = "and-then-it-falls"
-literal = "`clamp` still reads **`refused 3.000 A`** and `soc (true)` is still **`100.0 %`**"
+literal = "`clamp` reads **`refused 2.977 A`**, up from the last mark as the last of the taper closes, and `soc (true)` prints **`100.0 %`**"
 quantity = "soc_at"
-value = 1.0
+value = 0.999883872
 tol = 5.0e-4
 tol_from = "spelled"
 spells = "100.0"
 spells_pow10 = 2
 states = "same"
-read_at_s = 3376.5
+read_at_s = 3448.5
 display = "soc (true)"
 shows = "100.0 %"
 quoted = true
 note = """
-The other half. The charge state is pinned at the top by the clamp, so nothing the voltage
-does from here is the cell emptying or filling.
+The other half. The row rounds to full and the cell is a hundredth of a point short of it,
+which is what "still a fraction short" in the sentence means: the taper never reaches
+1.0, it approaches it, and the panel's one decimal place cannot see the difference here.
 """
 
 [[claim]]
 step = "and-then-it-falls"
-literal = "`cell t`, now reading **`35.9 °C`**"
+literal = "`cell t`, now reading **`40.8 °C`**"
 quantity = "t_max_c_at"
-value = 35.907787
+value = 40.812469
 tol = 5.0e-2
 tol_from = "spelled"
-spells = "35.9"
+spells = "40.8"
 states = "same"
-read_at_s = 3376.5
+read_at_s = 3448.5
 display = "cell t"
-shows = "35.9 / 35.9 °C"
+shows = "40.8 / 40.8 °C"
 quoted = false
 note = """
-10.03 K above the last step's mark, and the only row on the panel that moved. That is the
-attribution the whole step turns on, and the isothermal arm below is what closes it.
+10.00 K above the last step's mark, to the step, and the only row on the panel whose move
+pulls a voltage down. That is the attribution the whole step turns on, and the isothermal
+arm below is what closes it.
 """
 
 [[claim]]
 step = "and-then-it-falls"
-literal = "`terminal` reads **`1.519 V`**"
+literal = "`terminal` reads **`1.518 V`**"
 quantity = "v_at_mark"
 arm = "isothermal"
-value = 1.518599612
+value = 1.518405312
 tol = 5.0e-4
 tol_from = "spelled"
-spells = "1.519"
+spells = "1.518"
 states = "same"
-read_at_s = 3376.5
+read_at_s = 3448.5
 display = "terminal"
-shows = "1.519 V"
+shows = "1.518 V"
 quoted = true
 note = """
-The control, at the same instant. It is HIGHER than the live cell's own peak - 1.5186
-against 1.5178 - and that is not an inconsistency: the live cell has already warmed 0.87 K
-by the time it fills, so it arrives at the clamp with a little of the fall already spent.
+The control, at the same instant. It is HIGHER than the live cell's own peak - 1.5184
+against 1.5105 - and that is not an inconsistency: the live cell has warmed 5.8 K by the
+time it peaks and the pinned cell has warmed nothing.
 
-Between this reading and the end of the run the value moves by 0.0006 mV, which is the
-last of the slow RC pair settling and is four decimal places below anything the panel can
-show. So the row prints one string for the whole overcharge, and the sentence saying it
-has not moved is a statement about the engine as well as about the formatter.
+And it has not peaked. `with_temperature_pinned_the_fall_is_exactly_zero` pins the
+pinned cell's whole trace as monotone non-decreasing: it creeps toward 1.5186 V for as
+long as the run lasts, which is the storage trickle lifting the open-circuit voltage
+with nothing to pull the terminal back down. That is why the arm above stops exactly at
+the mark - fifty seconds later this row prints `1.519 V`.
 """
 
 [[claim]]
 step = "and-then-it-falls"
-literal = "`clamp` reads **`refused 3.000 A`** there too and `heat` reads **`4.24 W`**"
+literal = "`clamp` reads **`refused 2.977 A`** there too and `heat` reads **`4.21 W`**"
 quantity = "i_rejected_at"
 arm = "isothermal"
-value = -3.0
+value = -2.976666510
 tol = 5.0e-4
 tol_from = "spelled"
-spells = "3.000"
+spells = "2.977"
 states = "magnitude"
-read_at_s = 3376.5
+read_at_s = 3448.5
 display = "clamp"
-shows = "refused 3.000 A"
+shows = "refused 2.977 A"
 quoted = true
 note = """
-The same charge refused on the control arm, which is what stops the reader concluding that
-the pinned cell is somehow taking the current. It is not; it simply has no channel through
-which the heat can reach the terminal.
+The same charge refused on the control arm, to the digit and in fact to the bit: the
+taper reads the stored charge and nothing else, and the two cells have stored the same
+charge because the coulomb count does not see temperature. That is what stops the reader
+concluding that the pinned cell is somehow taking the current. It is not; it simply has
+no channel through which the heat can reach the terminal.
 """
 
 [[claim]]
 step = "and-then-it-falls"
-literal = "`clamp` reads **`refused 3.000 A`** there too and `heat` reads **`4.24 W`**"
+literal = "`clamp` reads **`refused 2.977 A`** there too and `heat` reads **`4.21 W`**"
 quantity = "q_gen_at"
 arm = "isothermal"
-value = 4.242741333
+value = 4.209496040
 tol = 5.0e-3
 tol_from = "spelled"
-spells = "4.24"
+spells = "4.21"
 states = "same"
-read_at_s = 3376.5
+read_at_s = 3448.5
 display = "heat"
-shows = "4.24 W"
+shows = "4.21 W"
 quoted = true
 note = """
-And the same heat being made. It prints the same two decimals as the live cell's 4.239518
-at this instant, which is a coincidence of the formatter rather than an equality - the live
-cell is 10 K warmer and its resistance is lower, so it makes slightly less.
+And the same charge being turned into heat. Slightly MORE than the live cell's 4.15 W at
+this instant, because the live cell is 15.8 K warmer and its resistance is lower, and
+because its refused charge is billed at an open-circuit voltage that temperature has
+pulled down. The sentence says "the same power is going in", which is the charger's
+4.55 W on both arms; what each cell makes of it differs by these hundredths.
 """
 
 [[arm]]

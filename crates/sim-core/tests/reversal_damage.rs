@@ -88,6 +88,7 @@ fn chem(fade_per_ah: f64) -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
         hysteresis: None,
+        charge_acceptance: None,
         reversal: ReversalParams {
             // OCV(0) is 3.0 V and the floor is 0, so the collapse spans 3 % of capacity —
             // the same "sized against this cell's own OCV(0)" rule the shipped files use.

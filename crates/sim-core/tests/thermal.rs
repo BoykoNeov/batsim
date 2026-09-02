@@ -38,6 +38,7 @@ fn chem(h_area_w_per_k: f64, docv_dt_v_per_k: Option<Vec<f64>>) -> ChemistryPara
     ChemistryParams {
         diffusion: None,
         hysteresis: None,
+        charge_acceptance: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,

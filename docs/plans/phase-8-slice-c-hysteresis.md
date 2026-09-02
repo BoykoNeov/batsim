@@ -232,6 +232,9 @@ which is the whole point of the `Option` being chemistry data.
 
 ### The charge-acceptance taper stays cut
 
+*Superseded 2026-09-02: built as `docs/plans/charge-acceptance.md`, after the phase closed.
+The paragraph below is what this slice decided and is kept as written.*
+
 The spike measured that this cell's voltage peak turns a **one-timestep corner** — the slope
 reverses 29-fold in one 0.1 s step — because a hard SOC clamp takes charge acceptance from
 100 % to 0 % instantly. A real NiMH peak is rounded over tens of seconds. No parameter fixes

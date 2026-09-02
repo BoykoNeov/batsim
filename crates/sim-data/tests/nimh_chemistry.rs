@@ -9,10 +9,13 @@
 //!
 //! Every measurement here carries a control arm, because the alternative is worthless:
 //! `docs/plans/phase-8-slice-c-spike.md` measured that a peak-then-fall is *structurally
-//! guaranteed* by the SOC clamp on any chemistry with a negative `[r0]` temperature slope,
-//! so "it peaks and it falls" is a fact about the clamp and evidence about nothing. The
-//! arms below are an isothermal run (which removes the whole mechanism) and the shipped
-//! NMC cell (which has neither new section).
+//! guaranteed* once a cell stops taking charge, on any chemistry with a negative `[r0]`
+//! temperature slope, so "it peaks and it falls" is a fact about the charge stopping and
+//! evidence about nothing. The arms below are an isothermal run (which removes the whole
+//! mechanism), the shipped NMC cell (which has neither new section), and — since
+//! `SNAPSHOT_VERSION` 21 — the same NiMH file with its `[charge_acceptance]` section
+//! removed, which is the hard clamp this file used to run on and the corner the taper
+//! exists to round. See `docs/plans/charge-acceptance.md`.
 //!
 //! Run the tables with `cargo test -p sim-data --test nimh_chemistry -- --nocapture`.
 
@@ -83,6 +86,7 @@ struct Sample {
     v: f64,
     temp_k: f64,
     clamped: bool,
+    i_rejected_a: f64,
 }
 
 /// Charge a 1S1P cell at 1 C from `soc0` for `run_s` seconds and return the trace.
@@ -102,6 +106,7 @@ fn charge(chem: &ChemistryParams, soc0: f64, thermal: ThermalConfig, run_s: f64)
             v: tm.v_terminal,
             temp_k: tm.t_max,
             clamped: tm.flags.contains(EventFlags::SOC_CLAMPED_HIGH),
+            i_rejected_a: tm.i_rejected_a,
         });
     }
     out
@@ -149,15 +154,15 @@ fn a_full_cell_falls_through_the_charger_termination_window() {
         RUN_S,
     );
     let (pk_i, pk) = peak(&trace);
-    let clamp = trace
+    let refusal = trace
         .iter()
         .position(|s| s.clamped)
-        .expect("the cell fills");
+        .expect("the cell passes its onset");
 
     println!("\n=== NiMH 1 C charge into overcharge (thermal live) ===");
     println!(
-        "  clamp at t = {:.1} s; peak {:.6} V at t = {:.1} s ({:.2} K)",
-        trace[clamp].t, pk.v, pk.t, pk.temp_k
+        "  refusal begins at t = {:.1} s; peak {:.6} V at t = {:.1} s ({:.2} K, {:.3} A refused)",
+        trace[refusal].t, pk.v, pk.t, pk.temp_k, trace[pk_i].i_rejected_a
     );
     println!("  rise    when      fall");
     for rise in [5.0, 10.0, 20.0, 30.0] {
@@ -203,6 +208,12 @@ fn a_full_cell_falls_through_the_charger_termination_window() {
 /// isothermal the temperature never moves, so neither `R0(T)` nor the OCV temperature
 /// correction can act — and the fall goes to *exactly* zero. Whatever the number above is,
 /// it is temperature, and nothing else.
+///
+/// Since the taper, "exactly zero" has a sharper form than "it stops": the pinned cell
+/// **never turns over at all**. It approaches full as an asymptote and a trickle of stored
+/// charge keeps lifting its open-circuit voltage for as long as the run lasts, so the whole
+/// trace is monotone non-decreasing and the peak is the last sample. Guided path step 28
+/// says so in words, and this is what holds it to them.
 #[test]
 fn with_temperature_pinned_the_fall_is_exactly_zero() {
     let chem = nimh();
@@ -233,6 +244,22 @@ fn with_temperature_pinned_the_fall_is_exactly_zero() {
         worst_up, 0.0,
         "an isothermal trace must be flat after the peak"
     );
+    // The stronger statement the taper makes true: the pinned cell never comes down at
+    // all. Every step is at or above the one before it, to the bit.
+    let worst_down = trace
+        .windows(2)
+        .map(|w| w[0].v - w[1].v)
+        .fold(0.0_f64, f64::max);
+    assert_eq!(
+        worst_down, 0.0,
+        "the pinned cell fell {worst_down} V somewhere: with nothing warming, nothing can \
+         pull the terminal down, so the trace must be monotone non-decreasing"
+    );
+    assert_eq!(
+        pk_i,
+        trace.len() - 1,
+        "the pinned cell's peak must be its last sample — it never turns over"
+    );
 }
 
 /// Both halves of the signal are live, and neither carries it alone.
@@ -242,6 +269,12 @@ fn with_temperature_pinned_the_fall_is_exactly_zero() {
 /// two contributions by reading the same trace twice: once as the engine reports it, and
 /// once with the OCV temperature term subtracted back out by hand from the chemistry's own
 /// coefficient and the measured temperature rise.
+///
+/// Since the taper the "by difference" half is the ohmic channel **net of the storage
+/// creep**: the cell is still storing a trickle past the peak, which lifts the open-circuit
+/// voltage against the fall, and that lift lands in the remainder rather than in the OCV
+/// term. It is why the fall is smaller than it was at a clamp. The split itself survives:
+/// the OCV term is about 3.5 mV of the 5.9, the 60 % the scenario file's comment quotes.
 #[test]
 fn the_fall_is_shared_between_the_two_temperature_channels() {
     let chem = nimh();
@@ -464,7 +497,7 @@ fn the_control_chemistry_has_neither_mechanism() {
 #[test]
 fn a_charging_cell_cools_before_it_warms() {
     let chem = nimh();
-    let trace = charge(
+    let full_trace = charge(
         &chem,
         START_SOC,
         ThermalConfig::Network {
@@ -472,6 +505,14 @@ fn a_charging_cell_cools_before_it_warms() {
         },
         3240.0,
     );
+    // Up to the onset, not to the old clamp instant: since the taper the cell starts
+    // refusing — and heating — at 0.985 rather than at 1.0, so "the charge" this test is
+    // about ends where the refusal begins. Everything after that is the next test's.
+    let onset = full_trace
+        .iter()
+        .position(|s| s.clamped)
+        .expect("the cell passes its onset inside the run");
+    let trace = &full_trace[..onset];
     let coolest = trace
         .iter()
         .min_by(|a, b| a.temp_k.total_cmp(&b.temp_k))
@@ -499,7 +540,7 @@ fn a_charging_cell_cools_before_it_warms() {
         "the cell never warmed again after its minimum"
     );
     // And the whole excursion is small, which is the other half of what step 27 says: this
-    // is a cell that has barely noticed a 54-minute charge.
+    // is a cell that has barely noticed a 53-minute charge, right up to the onset.
     assert!(
         (last.temp_k - ROOM_K).abs() < 2.0 && (ROOM_K - coolest.temp_k) < 2.0,
         "the charge is supposed to be nearly thermally neutral: {:.4} K coolest, {:.4} K \
@@ -565,5 +606,133 @@ fn past_the_peak_nothing_turns_round() {
          anything the cell would survive' is not true of it",
         last.temp_k,
         chem.cell.t_max_k
+    );
+}
+
+/// **The peak is a dome, and the clamp it replaced is the corner.** The spike measured the
+/// slope of the terminal reversing 29-fold in one 0.1 s step at the top of a NiMH charge and
+/// named the fix as a third mechanism; two slices cut it and wrote the lesson about a number
+/// rather than a shape. `[charge_acceptance]` is that mechanism, and this is the shape,
+/// measured against the one control arm that isolates it: the same file with the section
+/// removed — one field mutated in Rust, so the two chemistries are provably identical
+/// otherwise — which is exactly the cell this file used to ship.
+///
+/// The instrument is the largest one-step change in `dV/dt` within two minutes of the peak,
+/// which is a curvature and not a slope, so a smooth dome scores near zero and a corner
+/// scores its whole slope reversal. It is read at the page's own `dt = 0.5`, because the
+/// corner's size is one step's worth of slope by construction and a finer step makes it
+/// look sharper rather than rounder.
+#[test]
+fn the_peak_is_a_dome_and_the_clamp_it_replaced_is_a_corner() {
+    const DT: f64 = 0.5;
+    let tapered = nimh();
+    let mut clamped = tapered.clone();
+    clamped.charge_acceptance = None;
+    assert!(
+        tapered.charge_acceptance.is_some(),
+        "the shipped NiMH file declares [charge_acceptance]; without it this test measures \
+         two copies of the corner"
+    );
+
+    let run = |chem: &ChemistryParams| -> Vec<Sample> {
+        let mut pack = Pack::new(
+            &config(
+                START_SOC,
+                ThermalConfig::Network {
+                    k_neighbor_w_per_k: 0.0,
+                },
+            ),
+            chem.clone(),
+        )
+        .expect("pack builds");
+        let env = env();
+        let steps = (RUN_S / DT).round() as usize;
+        let mut t = 0.0;
+        (0..steps)
+            .map(|_| {
+                let tm = pack.step(DT, Demand::Current(-chem.cell.capacity_ah), &env);
+                t += DT;
+                Sample {
+                    t,
+                    v: tm.v_terminal,
+                    temp_k: tm.t_max,
+                    clamped: tm.flags.contains(EventFlags::SOC_CLAMPED_HIGH),
+                    i_rejected_a: tm.i_rejected_a,
+                }
+            })
+            .collect()
+    };
+    let kink = |trace: &[Sample]| -> f64 {
+        let (_, pk) = peak(trace);
+        let window: Vec<&Sample> = trace
+            .iter()
+            .filter(|s| (s.t - pk.t).abs() < 120.0)
+            .collect();
+        window
+            .windows(3)
+            .map(|w| ((w[2].v - w[1].v) - (w[1].v - w[0].v)) / DT)
+            .fold(0.0_f64, |m, k| m.max(k.abs()))
+    };
+
+    let dome = run(&tapered);
+    let corner = run(&clamped);
+    let (dome_i, dome_pk) = peak(&dome);
+    let (corner_i, corner_pk) = peak(&corner);
+    let (k_dome, k_corner) = (kink(&dome), kink(&corner));
+    println!("\n=== the shape of the peak, at dt = {DT} ===");
+    println!(
+        "  taper: peak {:.6} V at {:.1} s, {:.3} A refused there; worst kink {:.5} mV/s per step",
+        dome_pk.v,
+        dome_pk.t,
+        -dome[dome_i].i_rejected_a,
+        k_dome * 1e3
+    );
+    println!(
+        "  clamp: peak {:.6} V at {:.1} s, {:.3} A refused one step later; worst kink {:.5} mV/s per step",
+        corner_pk.v,
+        corner_pk.t,
+        -corner[corner_i + 1].i_rejected_a,
+        k_corner * 1e3
+    );
+
+    // The corner is the whole slope reversal in one step; the dome is two orders of
+    // magnitude rounder. Fifty is the bar, against a measured ratio near a hundred.
+    assert!(
+        k_dome * 50.0 < k_corner,
+        "the taper's peak is not rounder than the clamp's by 50x: {:.5} against {:.5} mV/s \
+         per step",
+        k_dome * 1e3,
+        k_corner * 1e3
+    );
+    // And the refusal is partial at the taper's peak and total one step past the clamp's,
+    // which is the mechanism behind the shape: a corner is what a refusal that goes from
+    // nothing to everything in one step looks like.
+    let refused_at_peak = -dome[dome_i].i_rejected_a;
+    assert!(
+        refused_at_peak > 0.5 * tapered.cell.capacity_ah
+            && refused_at_peak < 0.95 * tapered.cell.capacity_ah,
+        "at the taper's peak the cell refuses {refused_at_peak:.3} A of {}: it should be \
+         most of the current and not all of it",
+        tapered.cell.capacity_ah
+    );
+    assert!(
+        (-corner[corner_i + 1].i_rejected_a - clamped.cell.capacity_ah).abs() < 1e-6,
+        "one step past the clamp the control refuses everything"
+    );
+    // The dome costs signal, and the file's onset is bounded by exactly that: the fall at
+    // +10 K must still land inside the charger's window on the tapered file.
+    let (fall_dome, _) = fall_at_rise_mv(&dome, 10.0).expect("the tapered cell reaches +10 K");
+    let (fall_corner, _) = fall_at_rise_mv(&corner, 10.0).expect("the clamped cell reaches +10 K");
+    println!("  fall at +10 K: taper {fall_dome:.3} mV, clamp {fall_corner:.3} mV");
+    assert!(
+        fall_dome < fall_corner,
+        "the taper was measured to shrink the fall (a cell still storing a trickle is still \
+         lifting its own open-circuit voltage); {fall_dome:.3} against {fall_corner:.3} mV"
+    );
+    assert!(
+        fall_dome >= DV_BAND_MV.0,
+        "the tapered fall {fall_dome:.3} mV is below the {:.0} mV a charger fires on — the \
+         onset in the chemistry file has moved below the bound its provenance states",
+        DV_BAND_MV.0
     );
 }

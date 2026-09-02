@@ -240,7 +240,8 @@ pre-registered numbers, six confirmed and one falsified:
 * **The corner is wrong and no parameter fixes it** — the slope reverses 29× in one 0.1 s
   step, because charge acceptance goes 100 % → 0 % in one step. **So yes, the phase needs a
   charge-acceptance taper if the lesson is about the shape** — and does not, if it is about
-  the number.
+  the number. *(The phase closed without it; it was built afterwards as
+  `docs/plans/charge-acceptance.md`, one slice against the stopping rule below.)*
 * **`docv_dt` today reaches −ΔV only through a temperature-history artifact** (it cools the
   cell 4 K *below ambient* before the clamp), which is why the spike recommends wiring it
   into voltage as `CLAUDE.md` already specifies. **No shipped chemistry carries a live

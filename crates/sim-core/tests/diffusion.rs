@@ -68,6 +68,7 @@ fn diffusive_chem() -> ChemistryParams {
             max_overpotential_v: OCV_EMPTY_V - FLOOR_V,
         }),
         hysteresis: None,
+        charge_acceptance: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: FLOOR_V,

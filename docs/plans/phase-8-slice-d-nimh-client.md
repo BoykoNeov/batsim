@@ -337,8 +337,10 @@ deliberately left.
 
 ## Deliberately not done
 
-* **No charge-acceptance taper**, still. The spike cut it and slice C took the cut; the
-  lesson is written about the millivolts and says so.
+* ~~**No charge-acceptance taper**, still. The spike cut it and slice C took the cut; the
+  lesson is written about the millivolts and says so.~~ **Built 2026-09-02** —
+  `docs/plans/charge-acceptance.md`. Steps 27 and 28 were re-measured and rewritten there;
+  the numbers in this document describe the clamped cell and are kept as the record of it.
 * **No fourth step on what an unstopped overcharge does.** It was drafted and dropped: the
   run reaches about 155 °C and 1.454 V, and every reading on the way is mid-run and
   therefore unclaimable. The fact is in the scenario file's comment and in

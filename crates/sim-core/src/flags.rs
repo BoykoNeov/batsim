@@ -16,7 +16,12 @@ bitflags! {
     /// current one begin actually raising the later flags.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
     pub struct EventFlags: u32 {
-        /// SOC hit the upper clamp (1.0): an over-charge attempt was truncated.
+        /// Charge was refused at the top of the window: an over-charge attempt was
+        /// truncated at the clamp (1.0), or - on a chemistry declaring
+        /// `[charge_acceptance]` - the cell is above its taper onset and storing less
+        /// than it is offered. On such a chemistry the flag therefore rises some way
+        /// *before* full and stays up, which is the refusal happening gradually rather
+        /// than in one step; see [`crate::ChargeAcceptanceParams`].
         ///
         /// **This flag means two different things depending on the cell model, and
         /// the difference is not guessable from the name.** For an equivalent

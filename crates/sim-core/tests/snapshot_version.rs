@@ -21,16 +21,31 @@
 //!
 //! # The pair moves with the bump, rather than being renumbered
 //! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13, v13 -> v14,
-//! v14 -> v15, v15 -> v16, v16 -> v17, v17 -> v18 and v18 -> v19, each time carrying an
-//! assertion that a later bump needs its own pair. This is the v19 -> v20 pair, and it was
-//! re-argued rather than renamed.
+//! v14 -> v15, v15 -> v16, v16 -> v17, v17 -> v18, v18 -> v19 and v19 -> v20, each time
+//! carrying an assertion that a later bump needs its own pair. This is the v20 -> v21 pair,
+//! and it was re-argued rather than renamed.
 //!
-//! **The v18 -> v19 pair could not be kept alongside this one**, on the same terms every
+//! **The v19 -> v20 pair could not be kept alongside this one**, on the same terms every
 //! retirement here has been made: [`retagged`] fabricates a stale blob by writing *this
 //! build's* bytes under a fake tag, and the only tag those bytes can honestly wear is the
-//! previous version's, not one two back. As at the last bump the retirement is **not**
-//! structural — see the v20 section below, which is the second bump running where the
+//! previous version's, not one two back. As at the last two bumps the retirement is **not**
+//! structural — see the v21 section below, which is the third bump running where the
 //! fixture's bytes do not change at all.
+//!
+//! # v21: one bare `f64` behind an `Option`, and the stale blob is quiet either way
+//! v21 adds `ChemistryParams::charge_acceptance`, an optional section holding a single
+//! `f64`, between `hysteresis` and `aging`. See `docs/plans/charge-acceptance.md`.
+//!
+//! This fixture's chemistry does not declare it, so its bytes do not move and the pair
+//! below is the real case — the third bump running, and still a fact about the fixture.
+//!
+//! The other half is [`a_v20_shaped_chemistry_tail_misparses_at_v21`], and it is the first
+//! sibling in this file whose outcome does **not** depend on a value. The reader takes
+//! `aging`'s presence byte as the section's, as at v20; but where v20's payload was a table
+//! whose length prefix came out of a `f64` and failed, v21's payload *is* a `f64`, and any
+//! eight bytes are one. A chemistry with `[aging]` therefore parses its `cal_pre_exp` into
+//! the taper onset and carries on displaced; one without slides as at v20. Quiet in both
+//! directions, which is the v16 hazard reached by the v20 mechanism.
 //!
 //! # v19: the fixture's bytes do not move, and the version field is the only thing left
 //! v19 changes `SafetyParams`, not the cell state: `t_plating_min_k` and
@@ -173,6 +188,7 @@ fn chem() -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
         hysteresis: None,
+        charge_acceptance: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,
@@ -265,45 +281,45 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v18-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v19 restore.
+/// A v20-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v21 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in, for the second time running.** Read the
-/// module's v20 section: the fixture chemistry has no `[hysteresis]` at all, so the field
-/// v20 adds sits inside an `Option` that is absent, a v19 build's snapshot of this pack has
-/// exactly these bytes, and "what a real stale blob does here" is answered by this test.
-/// The sibling [`a_v19_shaped_hysteresis_section_does_not_parse_at_v20`] answers the *other*
-/// case — a chemistry that does carry the section — and the two answers differ, which is
-/// why both exist.
+/// **At this bump the retag is not a stand-in, for the third time running.** Read the
+/// module's v21 section: the fixture chemistry has no `[charge_acceptance]`, so the field
+/// v21 adds is one absent `Option` tag that a v20 build never wrote, and a v20 build's
+/// snapshot of this pack has exactly these bytes. The sibling
+/// [`a_v20_shaped_chemistry_tail_misparses_at_v21`] answers the *other* case — a
+/// chemistry whose bytes do change — and its answer is the quiet one, which is why both
+/// exist.
 #[test]
-fn the_version_field_is_what_rejects_a_v19_snapshot() {
+fn the_version_field_is_what_rejects_a_v20_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 20,
-        "this test is written against the v19 -> v20 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 21,
+        "this test is written against the v20 -> v21 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
          the new layout is a fact about that layout change, and the answer has flipped \
          across this file's history — v15 'it does not parse at all', v16 'it parses, \
          wrongly and silently', v17 and v18 back to 'it does not parse at all', and v19 \
-         and v20 'for this fixture it parses fine and the version field is all there \
-         is'. A renumbered assertion cannot inherit any of them, and a run of two \
-         identical answers is not a rule — it is two layout changes that happened not to \
-         touch this fixture, which is a fact about the fixture."
+         to v21 'for this fixture it parses fine and the version field is all there \
+         is'. A renumbered assertion cannot inherit any of them, and a run of three \
+         identical answers is not a rule — it is three layout changes that happened not \
+         to touch this fixture, which is a fact about the fixture."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 19);
+    let stale = retagged(&bytes, 20);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 19,
+            found: 20,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v19-tagged snapshot must be refused"
+        "a v20-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -652,4 +668,106 @@ fn a_v19_shaped_hysteresis_section_does_not_parse_at_v20() {
         bincode::deserialize(&v20).expect("that is exactly a v20 HysteresisParams");
     assert_eq!(params.scale_v, 0.010);
     assert!(params.width_over_soc.is_none());
+}
+
+/// A v20-shaped chemistry tail at v21: **quiet, and value-independent** — the first bump
+/// in this file whose stale-blob hazard does not depend on a byte's value at all.
+///
+/// The sibling of [`the_version_field_is_what_rejects_a_v20_snapshot`], which answers the
+/// case where the chemistry has no `[charge_acceptance]` and the bytes therefore do not
+/// change. This is the other case: a v20 writer never wrote the new `Option`, so the tag
+/// the v21 reader looks for immediately after `hysteresis` is
+/// [`sim_core::ChemistryParams::aging`]'s own presence byte, exactly the position the v20
+/// test above analyses. What differs is the payload. v20's new field was a table, so a
+/// `1` sent the reader looking for a `Vec` length inside a `f64` and failed loudly; v21's
+/// is a single bare `f64`, and **any eight bytes are a valid `f64`**. So:
+///
+/// * **`[aging]` present** writes `1`. The reader takes `cal_pre_exp` as the onset and
+///   reads on, one field displaced. The section parses, into a number.
+/// * **`[aging]` absent** writes `0`. The reader takes it as "no section", and every field
+///   after it slides by one — the v20 quiet case again.
+///
+/// Neither direction errors inside the section itself. This is v16's hazard in its purest
+/// form and is why the version check, not the parse, is what stands between a v20 blob and
+/// a cell that claims a taper onset of ten thousand.
+///
+/// **This is the field, not a snapshot**, on the same terms as its siblings above: there is
+/// no non-guessing way to locate the chemistry's offset inside a blob, so no wider claim is
+/// made here or in the version note.
+#[test]
+fn a_v20_shaped_chemistry_tail_misparses_at_v21() {
+    // The tail of a v20 chemistry from `hysteresis` onward, in declaration order:
+    // `hysteresis`, `aging`, `safety`. No `charge_acceptance` — a v20 writer had none.
+    let v20 = |aging: Option<sim_core::AgingParams>| {
+        bincode::serialize(&(
+            None::<sim_core::HysteresisParams>,
+            aging,
+            None::<sim_core::chem::SafetyParams>,
+        ))
+        .expect("a v20-shaped chemistry tail serializes")
+    };
+    // What the reader expects at v21: one more `Option` between the two. There is no
+    // `safety` here — the reader has one field fewer to find because the extra tag ate one.
+    type V21Tail = (
+        Option<sim_core::HysteresisParams>,
+        Option<sim_core::ChargeAcceptanceParams>,
+        Option<sim_core::AgingParams>,
+    );
+
+    let aging = sim_core::AgingParams {
+        cal_pre_exp: 1.0e4,
+        cal_ea_j_per_mol: 5.0e4,
+        cal_soc_stress: vec![1.0, 1.0, 1.4],
+        cyc_fade_per_ah: 2.0e-5,
+        cyc_dod_stress_exp: 1.1,
+        r_growth_per_capacity_loss: 1.5,
+    };
+    // --- a chemistry that ages: the tag is `1` and the payload is whatever came next.
+    let parsed: Result<V21Tail, _> = bincode::deserialize(&v20(Some(aging)));
+    match parsed {
+        Ok((hyst, Some(ca), _)) => {
+            assert!(hyst.is_none());
+            assert_eq!(
+                ca.soc_onset, 1.0e4,
+                "the stale aging section's first f64 has been read as the taper onset — \
+                 the parse is quiet and the number is nonsense, which is the hazard"
+            );
+        }
+        Ok((_, None, _)) => panic!(
+            "an [aging] section's presence tag was read as an absent taper; the v21 note \
+             says the opposite and one of them must be corrected"
+        ),
+        Err(e) => panic!(
+            "the v21 note claims the section itself parses quietly out of an aging \
+             section and it did not: {e}. Correct the note rather than this test"
+        ),
+    }
+
+    // --- a chemistry with no [aging], which is the NiMH file: the section reads as absent
+    // and the slide begins one field later.
+    let quiet: V21Tail = bincode::deserialize(&v20(None)).expect(
+        "with no [aging] the stale tail parses — if this ever errors, the value-independence \
+         documented above and in the v21 SNAPSHOT_VERSION note has gone away and both \
+         should be corrected rather than quietly left",
+    );
+    assert!(
+        quiet.1.is_none(),
+        "the aging tag has been read as an absent taper"
+    );
+    assert!(
+        quiet.2.is_none(),
+        "and `aging` has been filled from `safety`'s tag, which is the slide that makes \
+         this the v16 hazard rather than a harmless default"
+    );
+
+    // The positive control, so the readings above are a layout change rather than a broken
+    // fixture: an explicit section round-trips to itself.
+    let v21 = bincode::serialize(&Some(sim_core::ChargeAcceptanceParams { soc_onset: 0.9 }))
+        .expect("a v21-shaped section serializes");
+    let params: Option<sim_core::ChargeAcceptanceParams> =
+        bincode::deserialize(&v21).expect("that is exactly a v21 section");
+    assert_eq!(
+        params,
+        Some(sim_core::ChargeAcceptanceParams { soc_onset: 0.9 })
+    );
 }

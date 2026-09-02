@@ -41,6 +41,7 @@ fn synthetic_chem(ocv: OcvTable) -> ChemistryParams {
     ChemistryParams {
         diffusion: None,
         hysteresis: None,
+        charge_acceptance: None,
         reversal: sim_core::ReversalParams {
             v_per_soc: 100.0,
             floor_v: 0.0,

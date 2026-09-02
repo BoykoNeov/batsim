@@ -3296,33 +3296,34 @@ const LESSONS = [
     id: "the-charge-is-over",
     title: "The moment it is full, and nothing outside says so",
     // The first of three lessons on `nimh_subc_3ah_generic`, and the first half of a
-    // continuous run: this step marks the instant the cell fills and the next one carries
-    // the same trajectory 136.5 s further. `applyStep` does not reload a step whose mark
-    // is ahead of the clock on the same scenario, which is what makes the pair one run --
-    // the idiom lessons 2 to 4 already use, and the only way to get two STOPPED readings
+    // continuous run: this step marks the instant the terminal peaks and the next one
+    // carries the same trajectory 148.5 s further. `applyStep` does not reload a step whose
+    // mark is ahead of the clock on the same scenario, which is what makes the pair one run
+    // -- the idiom lessons 2 to 4 already use, and the only way to get two STOPPED readings
     // out of one voltage curve. The page pauses at a mark and nowhere else.
     scenario: "nimh_overcharge.toml",
     // 1C = 1 x 3 A.h, charging, so negative. This chemistry's own `max_charge_c`.
     demand: { mode: "Current", value: -3 },
     ambient_c: 25,
     bms: null,
-    // 54 minutes of simulation to the mark, so about a quarter of a minute of watching.
+    // 55 minutes of simulation to the mark, so about a quarter of a minute of watching.
     speed_x: 200,
     dt: 0.5,
-    // One step PAST the clamp at 3240.0, deliberately. At the clamp itself only a sliver
-    // of the current is refused -- `clamp` reads `refused 0.000 A` and `heat` is still
-    // 0.04 W -- and a mark there would show the reader the transition rather than the
-    // state. One step later the refusal is total and the terminal still prints its peak.
-    until_s: 3240.5,
+    // The PEAK of the terminal voltage, to the step: 1.510459838 V at 3300.0 s, with the
+    // samples either side of it lower by a tenth of a microvolt. Since SNAPSHOT_VERSION 21
+    // this chemistry stops storing charge gradually over its last 1.5 % rather than at a
+    // clamp, so there is no longer an instant at which "the cell fills"; the peak is the
+    // instant a charger can see, and it is where this step stops.
+    until_s: 3300.0,
     reload: true,
     watch: ["plot-v", "readouts"],
     prose: [
       "A sixth chemistry, and the last of the flat-curve cells: nickel-metal hydride. One sub-C cell — the format that used to power cordless tools and radio-control cars — starting at 10 % charge in a 25 °C room, thermally live, with nothing protecting it.",
       "The demand box says -3, which is the 1 C fast charge this cell is rated for. There is no charge policy and no BMS here, so the current is constant and nothing on this page will end it.",
-      "The run stops itself at the instant the cell fills. Watch `terminal`, `clamp` and `heat`.",
+      "The run stops itself at the instant the terminal voltage peaks. Watch `terminal`, `clamp` and `heat`.",
     ],
     expect:
-      "`soc (true)` reads **`100.0 %`** and the clock reads `54m`. Now look at what a charger would have to go on, because it does not have that first row: `current` still reads **`-3.000 A`**, and `terminal` is at the highest it will ever reach — **`1.518 V`** — having climbed all the way to this step. Neither of those says anything is over. One row further down, everything has changed. `clamp` has started printing **`refused 3.000 A`**, which is the coulomb counter declining every amp the charger is still sending, and `heat` reads **`4.24 W`** — the whole of the charger's output arriving in a cell with nowhere to put it. `cell t` has reached **`25.9 °C`** getting here, which is barely anything at all, and for the first part of the climb it was *cooler* than the room rather than warmer: the `heat` row goes negative, because charging this chemistry absorbs heat through its entropy term faster than its resistance makes it. Nickel cells really do this, and `a_charging_cell_cools_before_it_warms` is what holds this page to it. All of that ends here, and the next step is what the cell does about it.",
+      "`soc (true)` reads **`99.8 %`** and the clock reads `55m`. Now look at what a charger would have to go on, because it does not have that first row: `current` still reads **`-3.000 A`**, and `terminal` is at the highest it will ever reach — **`1.510 V`** — having climbed all the way to this step. Neither of those says anything is over. One row further down, everything has changed. `clamp` is printing **`refused 2.635 A`**: the cell has been turning away a growing share of the current since it passed the onset this chemistry declares, and by now most of what the charger sends is going to oxygen instead of into storage, so `heat` reads **`3.70 W`** where it had barely registered for the whole of the climb. `cell t` has reached **`30.8 °C`** getting here, and for the first part of the climb it was *cooler* than the room rather than warmer: the `heat` row goes negative, because charging this chemistry absorbs heat through its entropy term faster than its resistance makes it. Nickel cells really do this, and `a_charging_cell_cools_before_it_warms` is what holds this page to it. All of that ends here, and the next step is what the cell does about it.",
   },
   {
     id: "and-then-it-falls",
@@ -3336,8 +3337,8 @@ const LESSONS = [
     demand: { mode: "Current", value: -3 },
     ambient_c: 25,
     bms: null,
-    // Down from the last step's, because this one covers 136.5 s and the row it is about
-    // moves about a millivolt every 15 s.
+    // Down from the last step's, because this one covers 148.5 s and the row it is about
+    // moves about a millivolt every 25 s.
     speed_x: 20,
     dt: 0.5,
     // The +10 K point: the first step whose cell is 10 K above the peak's temperature.
@@ -3345,7 +3346,7 @@ const LESSONS = [
     // moved out to somewhere the digits are prettier -- `phase-8-slice-c-spike.md` records
     // scoring a pre-registered prediction green over a twenty-minute run where the honest
     // figure at the instant a charger fires was under half of it.
-    until_s: 3376.5,
+    until_s: 3448.5,
     watch: ["plot-v", "readouts"],
     prose: [
       "Nothing has been touched. This is the same run continuing from the last step's mark, on the same cell, with the same current still going in and nothing having been told anything.",
@@ -3353,7 +3354,7 @@ const LESSONS = [
       "It has stopped climbing, and what it does instead is the reason this chemistry is in this path at all.",
     ],
     expect:
-      "`terminal` reads **`1.509 V`** here against the **`1.518 V`** of the last step's mark, so the two printed rows are 9 mV apart. That is the whole signal: a nickel cell held on a constant current past full comes back *down* off its own peak, and that fall is how essentially every fast charger for this chemistry decides to stop — not by measuring charge, which it has no way to do, but by watching for a terminal voltage it has been tracking to turn over. Both of those readings are rounded to the millivolt, so the engine's own difference is a little under what the two rows subtract to. Nothing else moved with it. The clock has come round to `56m`, `clamp` still reads **`refused 3.000 A`** and `soc (true)` is still **`100.0 %`**. The one row that did move is `cell t`, now reading **`35.9 °C`**. That is the mechanism and there is no other candidate: a warmer cell has a lower resistance, so the climb above its open-circuit voltage shrinks, and the open-circuit voltage itself falls with temperature through the entropy coefficient this chemistry states. Both channels are live and neither carries it alone; `the_fall_is_shared_between_the_two_temperature_channels` is where that split is measured. Now take the temperature away. Load `nimh_overcharge_isothermal` from the picker — the same file with the thermal network removed and nothing else — and run it to the same place. `terminal` reads **`1.519 V`**, and it has been reading that since the cell filled: the fall is *exactly* zero, to every digit this panel prints and four more beyond them. Nothing else about that cell is different — `clamp` reads **`refused 3.000 A`** there too and `heat` reads **`4.24 W`**, so the same power is going in and the same charge is being turned away. It simply has nowhere to go. That control matters more than it looks, because a peak followed by a fall is *guaranteed* here by the charge clamp on any cell whose resistance drops as it warms: the shape of the trace is evidence for nothing at all, and only the size of the drop counts. One last thing before you leave this file. Nothing will ever stop it. There is no BMS, and this chemistry ships no thermal-runaway parameters at all because nickel cells have none to ship, so the voltage goes on falling and the cell goes on heating until convection catches up with the charger — a long way past anything the cell would survive.",
+      "`terminal` reads **`1.505 V`** here against the **`1.510 V`** of the last step's mark, so the two printed rows are 5 mV apart. That is the whole signal: a nickel cell held on a constant current past full comes back *down* off its own peak, and that fall is how essentially every fast charger for this chemistry decides to stop — not by measuring charge, which it has no way to do, but by watching for a terminal voltage it has been tracking to turn over. Both of those readings are rounded to the millivolt, so the engine's own difference is a little over what the two rows subtract to. The clock has come round to `57m`. Two other rows have moved, and neither is the cause: `clamp` reads **`refused 2.977 A`**, up from the last mark as the last of the taper closes, and `soc (true)` prints **`100.0 %`** for a cell that is still a fraction short of it — neither of those pulls a voltage down. The row that does is `cell t`, now reading **`40.8 °C`**. That is the mechanism and there is no other candidate: a warmer cell has a lower resistance, so the climb above its open-circuit voltage shrinks, and the open-circuit voltage itself falls with temperature through the entropy coefficient this chemistry states. Both channels are live and neither carries it alone; `the_fall_is_shared_between_the_two_temperature_channels` is where that split is measured. Now take the temperature away. Load `nimh_overcharge_isothermal` from the picker — the same file with the thermal network removed and nothing else — and run it to the same place. `terminal` reads **`1.518 V`**, and it never turned over: with nothing warming, that row has done nothing but creep upward since the cell passed its onset, and it is still creeping toward the resting top of this chemistry's curve. Nothing else about that cell is different — `clamp` reads **`refused 2.977 A`** there too and `heat` reads **`4.21 W`**, so the same charge is being turned away and the same power is going in. It simply has nowhere to go. That control matters more than it looks, because once a cell has stopped taking charge, a peak followed by a fall is *guaranteed* on any cell whose resistance drops as it warms: the shape of the trace is evidence for nothing at all, and only the size of the drop counts. One last thing before you leave this file. Nothing will ever stop it. There is no BMS, and this chemistry ships no thermal-runaway parameters at all because nickel cells have none to ship, so the voltage goes on falling and the cell goes on heating until convection catches up with the charger — a long way past anything the cell would survive.",
   },
   {
     id: "which-way-it-was-driven",

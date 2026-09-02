@@ -39,9 +39,9 @@ pub mod thermal;
 pub use aging::{Aging, AgingConfig};
 pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
 pub use chem::{
-    AgingParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams, DfnSeparator,
-    DiffusionParams, ElectrodeParams, HysteresisParams, HysteresisWidth, OcpTable, PowerTerm,
-    ReversalParams, SafetyParams, SpmParams, ThermalParams,
+    AgingParams, ChargeAcceptanceParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams,
+    DfnSeparator, DiffusionParams, ElectrodeParams, HysteresisParams, HysteresisWidth, OcpTable,
+    PowerTerm, ReversalParams, SafetyParams, SpmParams, ThermalParams,
 };
 pub use dfn::DfnState;
 pub use ecm::{CellModel, EcmState};
@@ -306,8 +306,11 @@ pub struct Telemetry {
     /// changing any cell's stored charge, summed over cells.
     ///
     /// Exactly zero on almost every step. It is non-zero only while an
-    /// **equivalent-circuit** cell is against a SOC clamp, and it is the term that
-    /// makes charge conservation writable there:
+    /// **equivalent-circuit** cell is against a SOC clamp - or, on a chemistry that
+    /// declares `[charge_acceptance]`, while it is charging above its taper onset and
+    /// turning a growing share of the current into heat instead of stored charge
+    /// ([`ChargeAcceptanceParams`]) - and it is the term that makes charge conservation
+    /// writable there:
     ///
     /// ```text
     /// ∫(S·i_actual + i_internal_short_a − i_rejected_a) dt = 3600 · Δ(stored charge)
@@ -319,8 +322,9 @@ pub struct Telemetry {
     ///
     /// **Negative at the top of the window**: charge was pushed into a full cell and
     /// refused. That charge is not lost — its energy is dissipated by side reactions
-    /// and is already inside [`Self::q_gen_w`] at `OCV(1.0)·i_rejected_a`, which is
-    /// what makes an unprotected overcharge heat up.
+    /// and is already inside [`Self::q_gen_w`] at the cell's open-circuit voltage times
+    /// `i_rejected_a` (`OCV(1.0)` at the clamp; the cell's own `OCV(soc)` on a taper),
+    /// which is what makes an unprotected overcharge heat up.
     ///
     /// **Never positive.** The bottom of the window used to report here too — the cell
     /// delivered charge it did not have, and this field was how much the model lied by.

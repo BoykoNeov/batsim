@@ -92,6 +92,31 @@ pub struct ChemistryParams {
     /// as a ULP. See [`HysteresisParams`] and `docs/plans/phase-8-slice-c-hysteresis.md`.
     #[serde(default)]
     pub hysteresis: Option<HysteresisParams>,
+    /// Charge acceptance near the top of the window (`[charge_acceptance]`), or `None`
+    /// for a chemistry that stores every coulomb it is offered until the counter is full.
+    ///
+    /// `None` is the common case and the case for every chemistry shipped before v21.
+    /// It is not "this cell has perfect charge acceptance" - no real cell does - it is
+    /// "this parameter set does not describe the side reaction, so the coulomb count
+    /// runs to `1.0` and clamps there". For lithium at the rates these files cover that
+    /// is a good approximation; for the nickel chemistries it is the mechanism the top of
+    /// every charge curve is shaped by, and the reason a real `-ΔV` peak is a dome rather
+    /// than the one-timestep corner `docs/plans/phase-8-slice-c-spike.md` measured.
+    ///
+    /// Like [`Self::diffusion`] and [`Self::hysteresis`], the absence is **not
+    /// diagnosable and not an error**: nothing in [`crate::PackConfig`] can ask for the
+    /// term, so a file without the section simply never generates one. **And the absence
+    /// is a path, not a multiplier**, for the same reason: [`crate::ecm::advance_cell`]
+    /// matches on this `Option` and calls the ordinary [`crate::ecm::coulomb_step`] when
+    /// it is `None`, so no chemistry without the section can move by so much as a ULP.
+    ///
+    /// **Equivalent-circuit only.** The porous-electrode arms never reject charge - a
+    /// particle keeps the lithium it is pushed - and this section is read by nothing on
+    /// their path; a file carrying both `[spm]` and this block is not rejected, on the
+    /// same terms as `[diffusion]` and `[hysteresis]` beside it. See
+    /// [`ChargeAcceptanceParams`] and `docs/plans/charge-acceptance.md`.
+    #[serde(default)]
+    pub charge_acceptance: Option<ChargeAcceptanceParams>,
     /// Semi-empirical aging coefficients (`[aging]`), or `None` for a chemistry
     /// that carries no aging data.
     ///
@@ -1170,6 +1195,83 @@ pub struct HysteresisWidth {
     pub mult: Vec<f64>,
 }
 
+/// **Charge acceptance** (`[charge_acceptance]`) - the share of a charging current a cell
+/// actually stores, which falls to nothing as the cell fills.
+///
+/// # The physics, and the cell it is for
+/// On a nickel positive electrode the charging reaction competes with oxygen evolution,
+/// and the closer the electrode is to full the larger the share oxygen takes. In a sealed
+/// NiMH or NiCd cell that oxygen recombines at the negative electrode, so the current it
+/// carried comes out as **heat** and not as stored charge - which is the heat that warms a
+/// full cell on a charger and, through `R0(T)` and `dU/dT`, produces the falling terminal
+/// voltage a `-ΔV` charger terminates on. Every NiMH charging application note draws the
+/// charge-acceptance curve as roughly flat at 100 % to somewhere past 80 % and then
+/// falling steeply to zero at full; the corner in between is what this section rounds.
+///
+/// # The model, and why it is exact rather than integrated
+/// Above [`Self::soc_onset`] the accepted fraction is the **linear taper**
+///
+/// ```text
+/// η(soc) = (1 − soc) / (1 − soc_onset),      η = 1 below the onset
+/// ```
+///
+/// so `d(soc)/dt = j·η(soc)` for a charger offering `j` capacity-fractions per second,
+/// which is a first-order linear ODE in `(1 − soc)` with the closed form
+///
+/// ```text
+/// 1 − soc(t + dt) = (1 − soc(t)) · exp(−j·dt / (1 − soc_onset))
+/// ```
+///
+/// [`crate::ecm::coulomb_step_tapered`] integrates that **exactly** over a step, splitting
+/// the step at the onset when a cell crosses it mid-step, on the same reasoning the RC
+/// pairs use their exponential update: unconditionally stable at any `dt`, step-size
+/// invariant, and the cell **never reaches `1.0`** - it approaches it as an asymptote,
+/// with the refused share approaching the whole current. The hard clamp
+/// [`crate::ecm::coulomb_step`] applies is therefore never entered on a charge by a
+/// chemistry declaring this section, and the one-timestep corner it makes is gone.
+///
+/// The refused charge takes exactly the path the clamp's refused charge already takes:
+/// [`crate::ecm::CoulombStep::rejected_as`] carries it, [`crate::Telemetry::i_rejected_a`]
+/// reports it, the pack bills it as heat at the cell's open-circuit voltage, and
+/// [`crate::EventFlags::SOC_CLAMPED_HIGH`] is raised on every step that refuses any. So
+/// the ledger that closed the energy hole (`docs/plans/energy-hole.md`) closes here too,
+/// unchanged - what changed is *when* the refusal happens: over the last part of the
+/// charge rather than in one step at the end.
+///
+/// # What it deliberately does not model
+/// * **No rate or temperature dependence.** Oxygen evolution is a kinetic competition, so
+///   a real cell's acceptance falls earlier at higher current and at higher temperature.
+///   One number cannot say so, and no shipped file has a source for the two coefficients
+///   it would take. The onset is stated at the file's rated fast-charge rate.
+/// * **Only on charge.** Discharge and rest take the ordinary count; the taper has no
+///   meaning there.
+/// * **Not a state.** `η` is a function of the charge already stored, so nothing is
+///   added to [`crate::EcmState`] and a snapshot restored mid-taper continues exactly.
+///   The [`crate::SNAPSHOT_VERSION`] bump this section cost is for the chemistry's
+///   layout alone, because the chemistry is serialized inside the snapshot.
+///
+/// # What the BMS sees
+/// Nothing new, and that is a lesson rather than a gap: the estimator coulomb-counts the
+/// *terminal* current, so on a tapering cell it credits charge the cell has already turned
+/// into heat and runs ahead of the truth for exactly the refused amount. Design principle 8
+/// says the BMS reads sensors and nothing else, and no sensor can see oxygen.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChargeAcceptanceParams {
+    /// State of charge \[fraction\] above which the cell begins refusing charge. Must be
+    /// finite and in `[0, 1)`: at `1.0` the taper would have zero width, which is the
+    /// hard clamp already expressed by omitting the section, and one meaning should not
+    /// have two spellings.
+    ///
+    /// Below it every coulomb is stored; at it the refused share is zero; from there the
+    /// accepted share falls linearly to zero at full. A charger holding its rated current
+    /// therefore brings the cell within `e⁻¹` of full after `(1 − soc_onset)` of its
+    /// capacity has passed *the onset*, within `e⁻³` after three times that, and so on -
+    /// so at 1 C an onset of `0.90` leaves the last percent to take about fourteen
+    /// minutes rather than thirty-six seconds, which is why NiMH chargers finish with a
+    /// low-rate top-off rather than trusting the fast leg.
+    pub soc_onset: f64,
+}
+
 /// One RC (Thevenin) pair modelling a diffusion/charge-transfer overpotential.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RcPair {
@@ -1510,6 +1612,22 @@ impl ChemistryParams {
                         });
                     }
                 }
+            }
+        }
+
+        // --- Charge acceptance (optional) ---
+        //
+        // One number, checked for the two things that would make the closed form
+        // meaningless rather than merely badly sized: an onset at or above `1.0` divides
+        // the taper's rate by zero (and is the clamp already spelled by omission), and a
+        // negative or non-finite one is not a state of charge. Not checked against any
+        // other section, for the reason the two blocks above give - an onset placed too
+        // low binds *visibly*, as a charge that refuses to finish, rather than going quiet.
+        if let Some(ca) = &self.charge_acceptance {
+            if !ca.soc_onset.is_finite() || !(0.0..1.0).contains(&ca.soc_onset) {
+                return Err(ChemistryError::BadRange {
+                    what: "charge_acceptance.soc_onset must be finite and in [0, 1)",
+                });
             }
         }
 

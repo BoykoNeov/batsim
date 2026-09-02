@@ -1,7 +1,7 @@
 # Generic NiMH (nickel-metal hydride) 3.0 Ah sub-C cell parameters.
 #
-# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [hysteresis] and
-# [thermal]. Every physical constant carries a provenance note per the project rule: no
+# The loader consumes [meta], [cell], [ocv], [r0], [[rc]], [reversal], [hysteresis],
+# [charge_acceptance] and [thermal]. Every physical constant carries a provenance note per the project rule: no
 # unlabeled numbers.
 #
 # This is the second of Phase 8's two chemistries and the unclaimed half of CLAUDE.md's
@@ -40,9 +40,10 @@
 #     lead-acid section exists because that fit WAS done.
 #
 # See docs/plans/phase-8-slice-c-spike.md for the measurement that scoped the two
-# mechanisms, and in particular for why the charge-acceptance taper a real NiMH peak needs
-# is NOT here: the voltage peak this cell produces turns a one-timestep corner, so the
-# lesson is written about the millivolts, not about the shape of the plot.
+# mechanisms, and for the third it measured the need for and cut: the charge-acceptance
+# taper a real NiMH peak needs. That is now the [charge_acceptance] section below
+# (SNAPSHOT_VERSION 21, docs/plans/charge-acceptance.md), so the peak is a dome rather than
+# the one-timestep corner the spike recorded.
 
 [meta]
 id         = "nimh_subc_3ah_generic"
@@ -169,6 +170,41 @@ scale_v = 0.025
 # cell about 92 % of the way across the loop after 10 % of its capacity has moved, which
 # makes the transition legible in a lesson without being instant. TODO fit.
 gamma   = 25.0
+
+# CHARGE ACCEPTANCE -- the third mechanism, and the one docs/plans/phase-8-slice-c-spike.md
+# measured the need for and two slices then cut. Above the onset the cell stores a falling
+# share of the current it is offered, eta = (1 - soc)/(1 - soc_onset), and turns the rest
+# into heat -- oxygen evolving at the nickel electrode and recombining at the hydride one.
+# The coulomb count is integrated in closed form, so the cell approaches full as an
+# asymptote and never hits the hard clamp: the -dV peak is a dome rather than a corner, and
+# the heat that produces the fall arrives over the last part of the charge instead of in one
+# timestep at the end. See crate::ChargeAcceptanceParams and docs/plans/charge-acceptance.md.
+[charge_acceptance]
+# provenance: PLACEHOLDER, order-of-magnitude only, TODO fit -- but bounded from both sides
+# by measurement on this file rather than picked (docs/plans/charge-acceptance.md):
+#
+#   * From ABOVE by the corner the section exists to remove. With no taper the slope of the
+#     terminal voltage reverses in one timestep at the top of a 1 C charge; the largest
+#     one-step change in dV/dt within two minutes of the peak is 0.53 mV/s per step. At
+#     0.985 it is 0.005 -- a hundredfold rounder -- and the refused share ramps over a
+#     (1 - 0.985) * 3600 s = 54 s time constant at 1 C, which is the "tens of seconds" a
+#     real NiMH peak is rounded over.
+#   * From BELOW by the -dV signal this file exists to produce. The [ocv] table above rises
+#     50 mV over its last 3 %, and a cell that approaches full as an asymptote spreads that
+#     rise into a slow creep that FIGHTS the temperature fall: at the +10 K instant a
+#     charger fires on, the fall is 8.8 mV with no taper, 6.8 at 0.99, 5.9 here, 5.3 at
+#     0.98, 4.7 at 0.975 (outside the 5-10 mV window) and about 1 mV at 0.90. The knee and
+#     the taper are therefore NOT independent parameters of this file: the hand-placed knee
+#     stood in for the oxygen-evolution overpotential a real cell shows, and a taper wider
+#     than the knee's last segment erases the signal.
+#
+# Handbook charge-acceptance curves at the rated fast-charge rate are drawn flat to well
+# past 90 % and falling steeply to zero at full; what "steeply" means in percent of
+# capacity is not a number any of them quote, and it is the number this field is. One
+# number also cannot carry the rate or temperature dependence the real curve has (it falls
+# earlier at higher current and when hot); the onset is stated at this file's own
+# max_charge_c of 1 C and t_ref_k of 25 degC and claims nothing beyond that.
+soc_onset = 0.985
 
 # What happens below empty. Required; a chemistry must say.
 [reversal]

@@ -435,7 +435,50 @@ use crate::{Demand, Env, Telemetry};
 /// `sim_server::API_VERSION` and `sim-wasm`'s constant both stay put once more: no call
 /// signature changes, no telemetry field moves, and the only difference a client can see is
 /// a chemistry file that carries one more optional sub-table.
-pub const SNAPSHOT_VERSION: u32 = 20;
+///
+/// v21 (charge acceptance): [`crate::ChemistryParams`] gains an optional
+/// `[charge_acceptance]` section ([`crate::ChargeAcceptanceParams`], one `f64`), and the
+/// chemistry is serialized inside the snapshot, so the change is in the bytes.
+///
+/// **What it buys.** A chemistry can say that its cell stops storing charge *gradually*
+/// as it fills - oxygen evolution taking a growing share of the current on a nickel
+/// electrode - instead of storing every coulomb until the counter clamps. Above the
+/// onset the coulomb count is integrated in closed form and the cell approaches full as
+/// an asymptote, so the one-timestep corner `docs/plans/phase-8-slice-c-spike.md`
+/// measured at the top of a NiMH charge becomes a dome, and the heat that produces the
+/// `-ΔV` fall arrives over the last part of the charge rather than all at once. See
+/// `docs/plans/charge-acceptance.md`.
+///
+/// **Not semantic for any chemistry that does not declare it, structurally.** No per-cell
+/// state is added: the accepted share is a function of the charge already stored, so a
+/// snapshot restored mid-taper continues exactly. [`crate::ecm::advance_cell`] matches on
+/// the `Option` and calls the unchanged [`crate::ecm::coulomb_step`] in the `None` arm, so
+/// every trajectory of every file without the section is bit-identical across this bump.
+/// The NiMH file declares it, and its overcharge trajectories move - which is the point.
+///
+/// **The stale-blob hazard is the quiet one, and value-independent this time.** The new
+/// `Option`'s tag is written immediately before [`crate::ChemistryParams::aging`], so a v20
+/// blob read at v21 offers `aging`'s presence byte where the section's is expected - the
+/// same position v20's own note analyses. But the payload is a single bare `f64`, and any
+/// eight bytes are a valid `f64`:
+///
+/// * A chemistry **with** `[aging]` supplies a `1`, the reader takes the first eight bytes
+///   of the aging section - `cal_pre_exp` - as the onset, and then reads `aging`'s tag
+///   from the first byte of `cal_ea_j_per_mol`. Quiet as far as the section itself goes;
+///   whether the slide is caught after that depends on that byte.
+/// * A chemistry **without** one supplies a `0`, the section reads as absent, and every
+///   field after it slides by one, exactly as at v20.
+///
+/// Measured in `snapshot_version.rs::a_v20_shaped_chemistry_tail_misparses_at_v21`, which
+/// pins the first case parsing *successfully* into an onset of `1.0e4`. That is v16's
+/// hazard in its purest form and the reason the version check is load-bearing here: nothing
+/// shipped is at risk, because the check refuses every stale blob before a field is read.
+///
+/// `sim_server::API_VERSION` and `sim-wasm`'s constant both stay put: no call signature
+/// changes and no telemetry field moves - [`crate::Telemetry::i_rejected_a`] and
+/// [`EventFlags::SOC_CLAMPED_HIGH`] gain a second cause on one chemistry, which is what
+/// both were named to allow.
+pub const SNAPSHOT_VERSION: u32 = 21;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -2430,6 +2473,10 @@ impl Pack {
                         // `OCV(1.0)` — the endpoint the charge was being pushed
                         // against, not the SOC the step started from. On LFP the last
                         // 2 % of that table climbs 180 mV, so the difference is real.
+                        // On a chemistry with `[charge_acceptance]` the cell is still
+                        // below full while it refuses, and the same call reads its own
+                        // end-of-step `OCV(soc)` — the electrode the oxygen is evolving
+                        // at, which is where that energy is dissipated.
                         //
                         // Read from the **cell**, not hoisted out of the chemistry, since
                         // v18: the endpoint a refused charge is pushed against is now a

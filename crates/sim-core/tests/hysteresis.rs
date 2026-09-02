@@ -102,6 +102,7 @@ fn base_chem() -> ChemistryParams {
         },
         diffusion: None,
         hysteresis: None,
+        charge_acceptance: None,
         aging: None,
         safety: None,
         spm: None,

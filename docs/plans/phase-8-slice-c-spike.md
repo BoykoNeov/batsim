@@ -206,7 +206,9 @@ unbounded generator. So the cut order is named here rather than left to be infer
    in `CLAUDE.md`, it cannot move a trajectory or a snapshot, and it doubles the −ΔV signal
    at the instant that matters. Cutting it means the nickel lesson is carried by an ohmic
    side-effect rather than by the mechanism it is named for.
-3. **Charge-acceptance taper — cuttable, and this is the recommendation.** It is the only
+3. **Charge-acceptance taper — cuttable, and this is the recommendation.** *(Built
+   2026-09-02, after the phase closed, as the slice this section anticipates:
+   `docs/plans/charge-acceptance.md`, `SNAPSHOT_VERSION` 21.)* It is the only
    one of the three that could grow the phase, it is a genuinely new mechanism rather than
    an un-stubbing, and slice B already recorded the reason it can go: *"a shape on a plot is
    weaker than a number on a row."* **Cut it, and write slice D's lesson about the number**

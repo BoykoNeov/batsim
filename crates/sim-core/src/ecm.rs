@@ -1069,8 +1069,9 @@ pub struct CoulombStep {
     /// Charge \[As, discharge-positive\] that crossed the terminals over this step
     /// without changing the stored charge.
     ///
-    /// Exactly `0.0` on any step that did not clamp, and **negative** at the upper clamp
-    /// (charge pushed in and refused), so that
+    /// Exactly `0.0` on any step that did not refuse charge, and **negative** when one
+    /// did - at the upper clamp, or on a chemistry with `[charge_acceptance]` at any
+    /// point of its taper (see [`coulomb_step_tapered`]) - so that
     /// `stored change = −(i − i_rejected)·dt / capacity_as` holds through that clamp as
     /// well as away from one.
     ///
@@ -1138,6 +1139,87 @@ pub fn coulomb_step(
         soc_deficit: 0.0,
         rejected_as: 0.0,
         flags: EventFlags::empty(),
+    }
+}
+
+/// Coulomb-counting SOC advance over `dt` seconds for a **charging** current on a
+/// chemistry that declares [`crate::ChargeAcceptanceParams`].
+///
+/// Below `soc_onset` this is [`coulomb_step`] exactly. Above it the accepted share of the
+/// current is `η = (1 − soc) / (1 − soc_onset)`, and the step is integrated in closed
+/// form - `1 − soc` decays exponentially at the rate `j / (1 − soc_onset)`, where `j` is
+/// the fraction of capacity per second the charger offers - so the update is exact for a
+/// piecewise-constant current, unconditionally stable at any `dt`, and step-size
+/// invariant to rounding. A cell that starts the step below the onset and crosses it is
+/// split at the crossing: the ordinary count up to the onset, the exponential for the
+/// remainder. See [`crate::ChargeAcceptanceParams`] for the physics and the argument.
+///
+/// What the charger offered and the cell did not store comes out as
+/// [`CoulombStep::rejected_as`] (negative, charge flowing in), on exactly the terms the
+/// hard clamp reports it, and [`crate::EventFlags::SOC_CLAMPED_HIGH`] is raised on any
+/// step that refused a non-zero amount. `soc` never reaches `1.0` here except by the
+/// exponential underflowing, so the hard clamp inside [`coulomb_step`] is not reachable
+/// from this function on the charging side.
+///
+/// # Preconditions
+/// `i < 0.0` (charging), `0 <= soc_onset < 1` (which [`crate::ChemistryParams::validate`]
+/// guarantees for a loaded chemistry), and `deficit > 0` only while `soc == 0` (the
+/// [`EcmState::soc_deficit`] invariant). The first is a `debug_assert`; a discharge
+/// current would make `j` negative and the exponential grow.
+#[must_use]
+pub fn coulomb_step_tapered(
+    soc: f64,
+    deficit: f64,
+    i: f64,
+    dt: f64,
+    capacity_ah: f64,
+    soh_capacity: f64,
+    soc_onset: f64,
+) -> CoulombStep {
+    debug_assert!(i < 0.0, "the taper is a charging mechanism; got i = {i}");
+    let capacity_as = 3600.0 * capacity_ah * soh_capacity; // amp-seconds
+    let x0 = soc - deficit;
+    // Capacity-fractions per second the charger offers. Positive: `i` is negative.
+    let j = -i / capacity_as;
+    // How much of the step is spent below the onset, where every coulomb is stored.
+    let t_linear = if x0 < soc_onset {
+        ((soc_onset - x0) / j).min(dt)
+    } else {
+        0.0
+    };
+    let tau = dt - t_linear;
+    if tau <= 0.0 {
+        // The whole step is below the onset - including a deficit being repaid - and the
+        // ordinary count is the exact answer. Same call, same bits.
+        return coulomb_step(soc, deficit, i, dt, capacity_ah, soh_capacity);
+    }
+    // Where the exponential phase starts: at the onset exactly if the cell crossed it this
+    // step (written as the constant rather than `x0 + j·t_linear`, so rounding cannot put
+    // it a ULP either side), else where the cell already was.
+    let x_start = if t_linear > 0.0 { soc_onset } else { x0 };
+    let u0 = 1.0 - x_start;
+    let k = j / (1.0 - soc_onset);
+    let u1 = u0 * (-k * tau).exp();
+    let x1 = 1.0 - u1;
+    // Booked in amp-seconds directly rather than as a capacity fraction scaled back up,
+    // so that a cell storing nothing reports exactly the current it was offered - `−i·dt`
+    // to the bit - instead of that number after a round trip through `j`. `η <= 1` makes
+    // the difference non-negative in exact arithmetic; the `max` covers a rounding
+    // reversal on a step that only just crossed the onset, so a refusal of `-0.0` cannot
+    // be reported as a refusal.
+    let offered_as = -i * dt;
+    let stored_as = (x1 - x0) * capacity_as;
+    let rejected_as = -(offered_as - stored_as).max(0.0);
+    CoulombStep {
+        soc: x1,
+        // `x_start >= soc_onset >= 0` and the cell only rose from there.
+        soc_deficit: 0.0,
+        rejected_as,
+        flags: if rejected_as < 0.0 {
+            EventFlags::SOC_CLAMPED_HIGH
+        } else {
+            EventFlags::empty()
+        },
     }
 }
 
@@ -1383,14 +1465,31 @@ pub(crate) fn advance_cell(
             dt,
         );
     }
-    let step = coulomb_step(
-        state.soc,
-        state.soc_deficit,
-        i,
-        dt,
-        eff_capacity_ah,
-        soh_capacity,
-    );
+    // The coulomb count, on the taper when the chemistry declares one **and the cell is
+    // charging**. Discharge and rest take the ordinary count whatever the file says: the
+    // taper is oxygen evolution competing with the charging reaction, and there is no
+    // such competition on the way down. A `match` with the ordinary call in its other arm,
+    // rather than a taper through a neutral onset, for the reason every other optional
+    // section here gives - a chemistry without the section must not execute a line of it.
+    let step = match &chem.charge_acceptance {
+        Some(ca) if i < 0.0 => coulomb_step_tapered(
+            state.soc,
+            state.soc_deficit,
+            i,
+            dt,
+            eff_capacity_ah,
+            soh_capacity,
+            ca.soc_onset,
+        ),
+        _ => coulomb_step(
+            state.soc,
+            state.soc_deficit,
+            i,
+            dt,
+            eff_capacity_ah,
+            soh_capacity,
+        ),
+    };
     state.soc = step.soc;
     state.soc_deficit = step.soc_deficit;
     Advanced {
