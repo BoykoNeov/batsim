@@ -313,7 +313,8 @@ it, because both change what every later golden is allowed to promise.
   in the workspace. It works, its rules are documented at length inside it, and splitting
   it is worth doing only when a rule changes; it is named here so nobody is surprised.
 * **The guided path has 32 steps and no argument about how many it should have**
-  (`phase-8-chemistries.md`). Phases 9–11 each propose two. Decide the shape of the path
+  (`phase-8-chemistries.md`). Phases 9 and 10 each propose two more; Phase 11 proposes
+  none and re-measures the existing ones instead. Decide the shape of the path
   before they land: the honest options are a longer single path or a set of short tracks
   per theme (chemistries, models, protection, aging), and the claims harness does not care
   which.
