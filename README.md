@@ -43,8 +43,24 @@ judgement call, so the right-hand column is the thing to run if you doubt a row.
 | 6 | the `Spm` porous-electrode cell model — radial solid diffusion, Butler–Volmer kinetics, a nonlinear pack solve, and an extracted LG M50 parameter set | `sim-data/tests/spm_golden.rs`, `spm_exact_bits.rs`, `sim-core/tests/spm_cell.rs` |
 | 7 | the `Dfn` cell model — electrolyte transport solved rather than assumed, an analytic banded Jacobian, and a pack tangent taken as a sensitivity solve | `sim-data/tests/dfn_golden.rs`, `dfn_cell.rs`, `dfn_chemistry.rs` |
 
-Work continues past the phase plan. The most recent is a cell-model fix Phase 3 found
-and deliberately deferred: charge pushed into a cell already at 100 % SOC used to vanish —
+Work continues past the phase plan, and [`docs/ROADMAP.md`](docs/ROADMAP.md) is where it
+is planned: every scientific hurdle the design notes record as open, what each costs, and
+the phases proposed after 8. [`docs/plans/README.md`](docs/plans/README.md) indexes the
+notes themselves.
+
+The most recent slice is the third mechanism Phase 8's spike measured the need for and
+twice cut: a **charge-acceptance taper**. A nickel cell stops storing charge gradually as
+it fills — oxygen evolution takes a growing share of the current — and the engine used to
+model that as a hard clamp at full, which made the top of every NiMH charge a one-timestep
+corner. `[charge_acceptance]` in the chemistry file now has the cell approach full as an
+asymptote, integrated in closed form, with the refused charge taking the clamp's existing
+path into heat. The peak is a dome, a hundredfold rounder by the measure in
+`nimh_chemistry.rs` — and the −ΔV a charger fires on is *smaller* for it, because a cell
+still storing a trickle is still lifting its own open-circuit voltage against the fall.
+That coupling between the file's OCV knee and its taper bounds the shipped onset from
+below, and is the finding. See [`docs/plans/charge-acceptance.md`](docs/plans/charge-acceptance.md).
+
+Before that, a cell-model fix Phase 3 found and deliberately deferred: charge pushed into a cell already at 100 % SOC used to vanish —
 not stored, and generating no heat beyond `I²R0`. It is now refused and dissipated at the
 top of the OCV curve, reported through `Telemetry::i_rejected_a`, and it turns out to
 dominate rather than correct: on a 1C overcharge it is **41× everything the engine
@@ -94,9 +110,9 @@ See [`docs/plans/path-claims.md`](docs/plans/path-claims.md),
 [`docs/plans/path-display.md`](docs/plans/path-display.md) and
 [`docs/plans/path-prose-value-tie.md`](docs/plans/path-prose-value-tie.md).
 
-Four chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650,
-LG M50 21700, and a 2 V AGM lead-acid cell. Every constant in them carries a provenance
-note, **including the ones
+Seven chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650,
+LG M50 21700, LTO 20 Ah, sodium-ion 18650, NiMH sub-C, and a 2 V AGM lead-acid cell. Every
+constant in them carries a provenance note, **including the ones
 whose note says they are order-of-magnitude placeholders awaiting a fit**; that is the
 project rule (placeholders are acceptable, unlabeled numbers are not) rather than a claim
 that every number is fitted.

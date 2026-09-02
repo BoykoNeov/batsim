@@ -51,18 +51,26 @@ The engine is the product. Every UI, server, and game is just a client of `sim-c
 ```
 batsim/
 ├── Cargo.toml                  # workspace
-├── CLAUDE.md                   # this file
+├── CLAUDE.md                   # this file: the design contract
 ├── crates/
 │   ├── sim-core/               # pure engine: types, models, solver, snapshots
-│   ├── sim-data/               # TOML loading/validation -> sim_core::ChemistryParams
+│   ├── sim-data/               # TOML loading/validation -> sim_core::ChemistryParams, scenarios
 │   ├── sim-server/             # axum: REST (setup/snapshots) + WebSocket (stream/commands)
 │   ├── sim-wasm/               # wasm-bindgen build of the engine for the browser pedagogy client
-│   ├── sim-godot/              # gdext GDExtension: BatteryPack node, signals (Phase 5)
-│   └── sim-py/                 # PyO3 bindings, dev/validation only, never shipped (optional)
-├── chemistries/                # *.toml parameter sets (LFP, NMC first)
+│   └── sim-godot/              # gdext GDExtension: BatteryPack node, signals (Phase 5)
+├── chemistries/                # *.toml parameter sets — seven ship; see "Chemistry parameter files"
+├── scenarios/                  # *.toml scenarios: a pack, a chemistry, its faults; what a client loads
+├── web/                        # the browser demo: one HTML file, one JS file, the guided-path claims
+├── godot/                      # the Godot demo project and the Phase 5 exit gate
+├── examples/                   # experiment.mjs — drive the server from outside
+├── docs/
+│   ├── ROADMAP.md              # every scientific hurdle the plan docs record as open, and Phases 9+
+│   └── plans/                  # one design-and-measurement note per slice; README.md there is the index
 ├── tools/reference/            # Python + PyBaMM scripts that GENERATE golden CSVs (not shipped)
 └── tests/golden/               # committed reference CSVs + tolerance tests
 ```
+
+`sim-py` (PyO3 bindings, dev/validation only) is still optional and still unbuilt.
 
 Dependency rule: adapter crates depend on `sim-core` (and `sim-data`); `sim-core`
 depends on nothing in this workspace and on no runtime (no tokio, no godot, no pyo3).
@@ -113,7 +121,10 @@ pub struct Pack { /* groups: Vec<ParallelGroup>, bms: Option<Bms>, thermal: Ther
                      faults: FaultState, rng: ChaCha8Rng, sim_time_s: f64, version: u32 */ }
 
 impl Pack {
-    pub fn new(config: &PackConfig, chems: &ChemistryRegistry) -> Result<Self, BuildError>;
+    /// Takes the chemistry by value; there is no registry type. The adapters resolve a
+    /// chemistry id to a `ChemistryParams` however they can (`sim-server` maps it to a
+    /// file in its chemistry directory; a scenario may inline the TOML instead).
+    pub fn new(config: &PackConfig, chem: ChemistryParams) -> Result<Self, BuildError>;
     /// Advance simulation by dt seconds. Never panics; hard faults are reported in Telemetry.
     pub fn step(&mut self, dt: f64, demand: Demand, env: &Env) -> Telemetry;
     pub fn snapshot(&self) -> Snapshot;             // serde value, versioned
@@ -165,6 +176,14 @@ and double as the scenario file format.
   the external circuit pays instead of the model inventing energy. `soc` itself still
   never leaves [0, 1], which is what keeps every table and threshold indexed on it
   unchanged. See `docs/plans/low-clamp-reversal.md`.
+- **Charge acceptance** (optional, `[charge_acceptance]`): above `soc_onset` the cell stores
+  a linearly falling share `η = (1 − soc)/(1 − soc_onset)` of a charging current and turns
+  the rest into heat — oxygen evolution on a nickel electrode. Integrated in closed form
+  (`1 − soc` decays exponentially), so the cell approaches full as an asymptote, never
+  enters the upper clamp on a charge, and the refused charge takes the clamp's existing
+  path (`i_rejected_a`, heat at the cell's OCV, `SOC_CLAMPED_HIGH`). ECM-only, no new
+  state. What it costs the −ΔV signal, and why the onset is bounded by it, is in
+  `docs/plans/charge-acceptance.md`.
 - Health applies as multipliers: effective capacity = nominal × `soh_capacity`;
   effective R0 and RC resistances = nominal × `soh_resistance`. **Health only** — the
   *static* multipliers (`Scatter::r0_sigma`, `WeakCell { r0_factor }`) are named for R0
@@ -254,7 +273,10 @@ and double as the scenario file format.
 
 One file per chemistry. `sim-data` parses and validates (monotone OCV table,
 positive resistances, limits ordered, etc.) into `sim_core::ChemistryParams`.
-Ship LFP and NMC first; lead-acid (Peukert) and NiMH (−ΔV, hysteresis) later.
+Seven ship: LFP 26650, NMC 18650, LG M50 21700 (the only one with `[spm]` and `[dfn]`),
+LTO 20 Ah, sodium-ion 18650, NiMH sub-C (`[hysteresis]`, `[charge_acceptance]`, an OCV
+temperature correction) and a 2 V AGM lead-acid cell (`[diffusion]`). Every constant carries
+a provenance note, and many of those notes say "placeholder"; `docs/ROADMAP.md` lists which.
 
 ```toml
 [meta]
@@ -293,6 +315,15 @@ floor_v   = 0.0              # and stops here. Must be below OCV(soc = 0)
 fade_per_ah = 2.2e-1         # and what it COSTS: capacity fraction lost per Ah
                              # delivered past empty (anode current-collector
                              # dissolution). Required; 0 = over-discharge is free.
+
+[charge_acceptance]          # optional: the cell stops storing charge gradually as it fills
+soc_onset = 0.985            # above this the accepted share falls linearly to 0 at full.
+                             # Nickel chemistries; omit for a hard clamp at 1.0.
+
+# Also optional, each documented on its params struct in sim-core::chem:
+#   [hysteresis]  resting-voltage memory (scale_v, gamma, [hysteresis.width_over_soc])
+#   [diffusion]   a Peukert-shaped rate penalty (lead-acid)
+#   [spm], [dfn]  porous-electrode parameters, extracted from a PyBaMM set
 
 [thermal]
 heat_capacity_j_per_k = 95.0
@@ -398,6 +429,9 @@ the previous one's tests pass.
 - **Phase 7 — the electrolyte.** The `Dfn` half of the bullet above, split out
   once Phase 6 shipped `Spm` and declined `diffsol` on measurement. Criteria and
   slice notes in `docs/plans/phase-7-dfn.md`.
+- **Phases 9 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
+  lists every hurdle the plan documents record as open, with what each costs. Read it
+  before starting anything that is not a slice against an existing phase's recipe.
 - **Phase 8 — new chemistries.** One cheap-tier lithium parameter set added with
   **zero Rust changed** (the first real test of "chemistry is data, not code"),
   then the OCV hysteresis state NiMH needs — scoped together with lead-acid
