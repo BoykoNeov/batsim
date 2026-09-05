@@ -16511,6 +16511,11 @@ enum Prose {
     ClaimsFile,
     /// This test's own module and item documentation.
     ThisTest,
+    /// `web/index.html` — the one count the page states in markup rather than deriving
+    /// from `LESSONS.length`: the guided path's start button, as it reads before `app.js`
+    /// runs and overwrites it. Its own comment recorded that it said 24 while the path had
+    /// 26 and that nothing governed it; this is what governs it.
+    IndexHtml,
 }
 
 impl Prose {
@@ -16522,6 +16527,7 @@ impl Prose {
                 .join("sim-data")
                 .join("tests")
                 .join("path_claims.rs"),
+            Prose::IndexHtml => repo_root().join("web").join("index.html"),
         }
     }
 
@@ -16529,6 +16535,7 @@ impl Prose {
         match self {
             Prose::ClaimsFile => "web/path-claims.toml",
             Prose::ThisTest => "crates/sim-data/tests/path_claims.rs",
+            Prose::IndexHtml => "web/index.html",
         }
     }
 }
@@ -16550,6 +16557,9 @@ fn flattened(prose: Prose) -> String {
                 .or_else(|| trimmed.strip_prefix("///"))
                 .or_else(|| trimmed.strip_prefix("//"))
                 .unwrap_or(trimmed),
+            // Markup has no line-comment marker to strip; the tally reads the button's
+            // text between its tags, and the tags are just more words around it.
+            Prose::IndexHtml => trimmed,
         };
         out.push(' ');
         out.push_str(stripped);
@@ -17303,6 +17313,18 @@ const TALLIES: &[Tally] = &[
         phrase: "`const LESSONS` is {n} teaching steps",
         of: &[n_lessons],
     },
+    // --- and the one count the page itself states in markup -----------------------
+    //
+    // The start button's label before `app.js` replaces it with one built from
+    // `LESSONS.length`. A reader on a slow connection sees this string; a reader whose
+    // bundle failed to load sees nothing else. Its comment in `index.html` admitted it had
+    // shipped wrong and would again — the same shape as every other tally here, just in
+    // a file this test had not been reading.
+    Tally {
+        prose: Prose::IndexHtml,
+        phrase: "Start — {n} steps",
+        of: &[n_lessons],
+    },
     Tally {
         prose: Prose::ThisTest,
         phrase: "The default shape: {n} of {n} claims",
@@ -17638,7 +17660,7 @@ fn every_count_these_files_state_about_themselves_is_derived() {
         }
     }
 
-    for prose in [Prose::ClaimsFile, Prose::ThisTest] {
+    for prose in [Prose::ClaimsFile, Prose::ThisTest, Prose::IndexHtml] {
         let text = flattened(prose);
 
         for tally in TALLIES.iter().filter(|t| t.prose == prose) {

@@ -103,6 +103,8 @@
 
   canvas { display: block; width: 100%; background: var(--panel);
            border: 1px solid var(--line); border-radius: 4px; }
+  /* Pointing at a panel reads one instant off every panel — see the cursor in app.js. */
+  #plots canvas { cursor: crosshair; }
 
   /*
     The plots, two across at full height. Reading a pack means reading its panels
@@ -336,9 +338,10 @@
   <h2>Guided path</h2>
   <!-- Only what shows before app.js runs; the live label is derived from LESSONS.length. -->
   <!-- Overwritten by `PATH_START_LABEL` the moment app.js runs, so this text is only
-       ever seen before the module loads. It is NOT derived from anything and no check
-       governs it: it said 24 while the path had 26, and it will rot again the next time
-       a lesson is added. -->
+       ever seen before the module loads. It is not derived from anything, so it is
+       checked instead: the claims test's self-count tally reads this file and fails when
+       the number here is not `LESSONS.length`. It said 24 while the path had 26 before
+       that tally existed. -->
   <button id="path-start">Start — 32 steps</button>
   <div class="note">From one cell to a pack with nothing watching it. Each step sets the
     controls below and says what to look at; they all stay live, and stepping back or

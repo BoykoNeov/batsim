@@ -654,6 +654,117 @@ const PLOT_INK = "#939bab";
  */
 const MAX_TICKS = 64;
 
+/**
+ * What the plots are showing that is not in `history`: whether they need repainting at
+ * all, and where the reader's cursor is.
+ *
+ * `dirty` is the whole of the page's redraw policy. `frame` runs on every animation frame
+ * and used to redraw six canvases on each one — a paused page with a full history spent
+ * its idle time re-scanning two hundred thousand samples sixty times a second to paint
+ * the picture it already had. Now everything that changes what `draw` shows sets this
+ * flag, `draw` clears it, and a frame with nothing new does nothing. `drawnAtMs` backs
+ * that with a once-a-second repaint whatever the flag says, so a path this file forgot to
+ * mark costs a stale second rather than a stale screen.
+ *
+ * `drawMs` is what the last `draw` cost, and it paces the next one: a redraw is not taken
+ * until at least twice that long has passed since the last, so painting never holds more
+ * than a third of the main thread. At 1x a draw is a few milliseconds and this never
+ * bites. At 10 000x every frame brings hundreds of new samples and a full history costs
+ * over ten milliseconds a paint — sixty of those a second is a page that is all paint,
+ * with the physics and the reader's clicks queued behind it. Twenty paints a second of a
+ * run that is moving that fast look no different.
+ *
+ * `cursor` is a simulation time or null: the reader is pointing at one instant on one
+ * panel, and every panel marks that same instant, because reading a pack means reading
+ * its panels against each other.
+ */
+const view = { dirty: true, drawnAtMs: 0, drawMs: 0, cursor: null };
+
+function invalidate() {
+  view.dirty = true;
+}
+
+/** Where each canvas last put its plot area, so a mouse position can be read as a time. */
+const layouts = new WeakMap();
+
+/** Index of the sample nearest `t`, by binary search — `times` is monotone. */
+function nearestIndex(times, t) {
+  let lo = 0;
+  let hi = times.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] < t) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo > 0 && t - times[lo - 1] < times[lo] - t) return lo - 1;
+  return lo;
+}
+
+/**
+ * The cursor's clock, finer than the axis. `fmtTime` rounds to the tick — "104m" — which
+ * is right for an axis label and useless for a reading the pointer is taking at one
+ * sample; this one always shows two units. It is deliberately a separate function: the
+ * `sim time` readout's formatter is `fmtTime`, and the claims test pins that spelling.
+ */
+function fmtTimeAt(s) {
+  const two = (n) => String(Math.floor(n)).padStart(2, "0");
+  if (s < 120) return `${s.toFixed(1)} s`;
+  if (s < 7200) return `${Math.floor(s / 60)}m ${two(s % 60)}s`;
+  if (s < 172800) return `${Math.floor(s / 3600)}h ${two((s % 3600) / 60)}m`;
+  return `${Math.floor(s / 86400)}d ${two((s % 86400) / 3600)}h`;
+}
+
+/**
+ * Fold one trace onto `nb` pixel columns, keeping each column's lowest and highest
+ * sample and the order they came in.
+ *
+ * This replaces a stride: the previous draw took every k-th sample once a run had more
+ * samples than pixels, which is the cheap way to thin a line and the wrong one for this
+ * page. A pulse train at 10 000x has its 60 s pulses two samples wide against a 200 000
+ * sample history, and a stride of 100 shows one pulse in fifty — the plot reads as a
+ * pack resting with the odd glitch. Keeping the extremes per column keeps every spike a
+ * column wide, which is all a column can show anyway.
+ *
+ * One pass over the samples, and the y-range falls out of the same pass, so this costs
+ * what the range scan alone used to. `brk[b]` marks a column holding a `null` — the
+ * "no estimate" hole — so the line still breaks there instead of bridging it.
+ */
+function bucketize(times, values, x0, x1, nb) {
+  const lo = new Float64Array(nb).fill(NaN);
+  const hi = new Float64Array(nb).fill(NaN);
+  const loI = new Int32Array(nb);
+  const hiI = new Int32Array(nb);
+  const brk = new Uint8Array(nb);
+  let min = Infinity;
+  let max = -Infinity;
+  const scale = (nb - 1) / (x1 - x0);
+  for (let i = 0; i < times.length; i++) {
+    let b = Math.floor((times[i] - x0) * scale);
+    if (b < 0) b = 0;
+    else if (b >= nb) b = nb - 1;
+    const v = values[i];
+    if (v === null || !Number.isFinite(v)) {
+      brk[b] = 1;
+      continue;
+    }
+    if (v < min) min = v;
+    if (v > max) max = v;
+    if (Number.isNaN(lo[b])) {
+      lo[b] = v;
+      hi[b] = v;
+      loI[b] = i;
+      hiI[b] = i;
+    } else if (v < lo[b]) {
+      lo[b] = v;
+      loI[b] = i;
+    } else if (v > hi[b]) {
+      hi[b] = v;
+      hiI[b] = i;
+    }
+  }
+  return { lo, hi, loI, hiI, brk, min, max };
+}
+
 /** Nice-ish tick step for a range: 1, 2 or 5 times a power of ten. */
 function tickStep(span, target) {
   if (!(span > 0)) return 1;
@@ -711,6 +822,7 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   ctx.textBaseline = "middle";
 
   if (times.length === 0) {
+    layouts.delete(canvas);
     ctx.fillStyle = PLOT_INK;
     ctx.textAlign = "center";
     ctx.fillText(`${title} — no samples yet`, w / 2, h / 2);
@@ -731,6 +843,13 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   const spanned = xLast - x0 > Math.max(Math.abs(xLast) * 1e-12, 1e-9);
   const x1 = spanned ? xLast : x0 + 1;
 
+  // The plot's width is not known until the y labels are measured, and the labels are
+  // not known until the range is — so the columns are counted against the widest the
+  // plot can be, and the same folding serves both the range and the draw. A column that
+  // is a fraction narrower than a pixel costs nothing.
+  const nb = Math.max(2, Math.round(w - (small ? 34 : 54) - padR) + 1);
+  const folded = traces.map((t) => bucketize(times, t.values, x0, x1, nb));
+
   let y0;
   let y1;
   if (yFixed) {
@@ -738,12 +857,9 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
   } else {
     y0 = Infinity;
     y1 = -Infinity;
-    for (const t of traces) {
-      for (const v of t.values) {
-        if (v === null || !Number.isFinite(v)) continue;
-        if (v < y0) y0 = v;
-        if (v > y1) y1 = v;
-      }
+    for (const f of folded) {
+      if (f.min < y0) y0 = f.min;
+      if (f.max > y1) y1 = f.max;
     }
     if (!Number.isFinite(y0)) [y0, y1] = [0, 1];
     // A span of a few ULPs is not a range, it is the same number twice. A resting 4S
@@ -814,9 +930,11 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
     small ? 34 : 54,
   );
   const plotW = Math.max(1, w - padL - padR);
+  layouts.set(canvas, { padL, plotW, x0, x1 });
 
   const sx = (t) => padL + ((t - x0) / (x1 - x0)) * plotW;
   const sy = (v) => padT + plotH - ((v - y0) / (y1 - y0 || 1)) * plotH;
+  const bx = (b) => padL + (b / (nb - 1)) * plotW;
 
   // Grid and y labels.
   ctx.strokeStyle = PLOT_GRID;
@@ -863,29 +981,45 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
     ctx.fillText(fmtTime(x0), padL, h - padB / 2);
   }
 
-  // One point per pixel column is plenty; a long run has far more samples than that.
-  const stride = Math.max(1, Math.floor(times.length / (plotW * 2)));
-
-  for (const trace of traces) {
-    ctx.strokeStyle = trace.color;
+  // The traces, one column at a time. Each column contributes its lowest and highest
+  // sample in the order they happened, so a column that a pulse crosses is drawn as
+  // the vertical stroke it is. A `null` in a column ends the segment after it — see
+  // `bucketize`.
+  for (let k = 0; k < traces.length; k++) {
+    const f = folded[k];
+    ctx.strokeStyle = traces[k].color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     let drawing = false;
-    for (let i = 0; i < times.length; i += stride) {
-      const v = trace.values[i];
-      if (v === null || !Number.isFinite(v)) {
-        drawing = false;
-        continue;
+    for (let b = 0; b < nb; b++) {
+      const lo = f.lo[b];
+      if (!Number.isNaN(lo)) {
+        const x = bx(b);
+        const hi = f.hi[b];
+        const [first, second] = f.loI[b] <= f.hiI[b] ? [lo, hi] : [hi, lo];
+        if (drawing) ctx.lineTo(x, sy(first));
+        else {
+          ctx.moveTo(x, sy(first));
+          drawing = true;
+        }
+        if (hi !== lo) ctx.lineTo(x, sy(second));
       }
-      const x = sx(times[i]);
-      const y = sy(v);
-      if (drawing) ctx.lineTo(x, y);
-      else {
-        ctx.moveTo(x, y);
-        drawing = true;
-      }
+      if (f.brk[b]) drawing = false;
     }
     ctx.stroke();
+  }
+
+  // A dot on each trace's newest sample: where "now" is. On a paused panel the traces
+  // simply stop, and two that stop at different heights are otherwise hard to tell from
+  // two that were cut off; a running one gains a point that moves.
+  for (const trace of traces) {
+    let j = times.length - 1;
+    while (j >= 0 && (trace.values[j] === null || !Number.isFinite(trace.values[j]))) j--;
+    if (j < 0) continue;
+    ctx.fillStyle = trace.color;
+    ctx.beginPath();
+    ctx.arc(sx(times[j]), sy(trace.values[j]), 2.2, 0, 2 * Math.PI);
+    ctx.fill();
   }
 
   // Title on the left, legend right-aligned against the plot's right edge. Laying the
@@ -916,6 +1050,66 @@ function drawPanel(canvas, title, unit, times, traces, yFixed) {
     ctx.fillRect(lx, headY - 1.5, swatch, 3);
     ctx.fillText(trace.label, lx + swatch + gap, headY);
     lx += swatch + gap + ctx.measureText(trace.label).width + between;
+  }
+
+  // The cursor, last, so it sits over everything: a hairline at the sample nearest the
+  // pointer's instant, a ring on each trace where it crosses, and the readings in a box
+  // beside it. The box goes to the right of the line until it would leave the plot, then
+  // flips to the left — never off the canvas, for the same reason the legend never is.
+  //
+  // Two more decimals than the axis shows. The axis prints what its ticks can tell apart;
+  // the reader asked for one sample, and a panel spanning 50 mV has ticks at 10 mV and
+  // samples worth reporting to a tenth of one.
+  if (view.cursor !== null) {
+    const i = nearestIndex(times, view.cursor);
+    const cx = Math.round(sx(times[i])) + 0.5;
+    ctx.strokeStyle = PLOT_INK;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, padT);
+    ctx.lineTo(cx, padT + plotH);
+    ctx.stroke();
+
+    const dp = Math.min(6, decimals + 2);
+    const rows = [{ color: null, text: fmtTimeAt(times[i]) }];
+    for (const trace of traces) {
+      const v = trace.values[i];
+      const ok = v !== null && Number.isFinite(v);
+      if (ok) {
+        ctx.fillStyle = trace.color;
+        ctx.strokeStyle = PLOT_BG;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(cx, sy(v), 3.5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+      }
+      rows.push({ color: trace.color, text: `${trace.label}  ${ok ? `${v.toFixed(dp)} ${unit}` : "—"}` });
+    }
+    const lineH = font + 5;
+    const boxPad = 6;
+    const textW = rows.reduce((wide, r) => Math.max(wide, ctx.measureText(r.text).width), 0);
+    const boxW = textW + swatch + gap + 2 * boxPad;
+    const boxH = rows.length * lineH + 2 * boxPad - 3;
+    let left = cx + 9;
+    if (left + boxW > w - padR) left = cx - 9 - boxW;
+    left = Math.max(padL, left);
+    const top = padT + 4;
+    ctx.fillStyle = "rgba(28, 31, 38, 0.93)";
+    ctx.fillRect(left, top, boxW, boxH);
+    ctx.strokeStyle = PLOT_GRID;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left + 0.5, top + 0.5, boxW - 1, boxH - 1);
+    ctx.textAlign = "left";
+    rows.forEach((r, k) => {
+      const y = top + boxPad + k * lineH + lineH / 2 - 1;
+      if (r.color) {
+        ctx.fillStyle = r.color;
+        ctx.fillRect(left + boxPad, y - 1.5, swatch, 3);
+      }
+      ctx.fillStyle = r.color ? "#e6e9ef" : PLOT_INK;
+      ctx.fillText(r.text, left + boxPad + swatch + gap, y);
+    });
   }
 }
 
@@ -952,6 +1146,7 @@ const history = {
 
 function resetHistory() {
   for (const key of Object.keys(history)) history[key].length = 0;
+  invalidate();
 }
 
 function record(frame) {
@@ -977,6 +1172,7 @@ function record(frame) {
     const drop = Math.floor(MAX_SAMPLES / 10);
     for (const key of Object.keys(history)) history[key].splice(0, drop);
   }
+  invalidate();
 }
 
 // ---------------------------------------------------------------------------
@@ -1156,7 +1352,15 @@ function renderReadouts(telemetry, facts, cells) {
   }
 }
 
+// The flag string the chips were last built from. `renderFlags` used to rebuild every
+// chip on every animation frame; flags change on the order of once a run, so the DOM
+// churn bought nothing.
+let flagsShown;
+
 function renderFlags(telemetry) {
+  const key = telemetry ? telemetry.flags : null;
+  if (key === flagsShown) return;
+  flagsShown = key;
   const host = $("flags");
   host.replaceChildren();
   const names = telemetry ? parseFlags(telemetry.flags) : [];
@@ -1739,6 +1943,7 @@ async function refreshCells(force = false) {
   } finally {
     state.cellsBusy = false;
     grid.dirty = true;
+    invalidate();
   }
   renderBms();
 }
@@ -2127,6 +2332,9 @@ function pulseNote() {
 }
 
 function draw() {
+  const began = performance.now();
+  view.dirty = false;
+  view.drawnAtMs = began;
   ccCvNote();
   pulseNote();
   drawPanel($("plot-v"), "pack terminal", "V", history.t, [
@@ -2175,6 +2383,7 @@ function draw() {
   renderReadouts(state.latest, state.facts ?? { sim_time_s: 0 }, state.cells);
   renderFlags(state.latest);
   paintGrid();
+  view.drawMs = performance.now() - began;
 }
 
 async function frame(nowMs) {
@@ -2219,9 +2428,41 @@ async function frame(nowMs) {
   if (path.until !== null && (state.facts?.sim_time_s ?? 0) >= path.until - 1e-9) {
     pathArrived();
   }
-  draw();
+  // Only when something it shows has moved, and no sooner than the last paint has paid
+  // for itself twice over — see `view`. The one-second fallback is what makes a missed
+  // `invalidate` a blemish instead of a bug.
+  const since = nowMs - view.drawnAtMs;
+  if ((view.dirty && since >= 2 * view.drawMs) || since > 1000) draw();
 }
 requestAnimationFrame(frame);
+
+// Everything the reader can change on the sidebar feeds a note or a readout `draw`
+// renders, and a resize moves every canvas. Marking rather than redrawing here keeps the
+// paint on the animation frame, where it was.
+$("sidebar").addEventListener("input", invalidate);
+$("sidebar").addEventListener("change", invalidate);
+window.addEventListener("resize", invalidate);
+
+// The cursor: point at one instant on any panel and every panel marks it. The time is
+// read back through the layout the panel recorded when it last drew, so the mapping is
+// the plot's own and not a second one kept in step with it.
+$("plots").addEventListener("mousemove", (ev) => {
+  const canvas = ev.target instanceof HTMLCanvasElement ? ev.target : null;
+  const L = canvas ? layouts.get(canvas) : undefined;
+  if (!L) return;
+  const x = ev.clientX - canvas.getBoundingClientRect().left;
+  const t = L.x0 + ((x - L.padL) / L.plotW) * (L.x1 - L.x0);
+  const clamped = Math.min(L.x1, Math.max(L.x0, t));
+  if (clamped !== view.cursor) {
+    view.cursor = clamped;
+    invalidate();
+  }
+});
+$("plots").addEventListener("mouseleave", () => {
+  if (view.cursor === null) return;
+  view.cursor = null;
+  invalidate();
+});
 
 // ---------------------------------------------------------------------------
 // Controls
@@ -3739,3 +3980,15 @@ try {
   state.scenarioListError = String(e.message ?? e);
 }
 await loadScenario();
+
+// ---------------------------------------------------------------------------
+// A handle for instruments
+// ---------------------------------------------------------------------------
+
+/**
+ * Nothing on the page reads this. It exists so a driver holding the tab over the
+ * DevTools protocol can ask the questions the DOM cannot answer — how many samples the
+ * plots hold, what one full redraw costs — without the module's `const`s being reachable
+ * any other way. `docs/plans/client-redraw.md` records the measurements taken through it.
+ */
+window.batsim = { state, history, view, draw, invalidate };

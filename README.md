@@ -377,6 +377,16 @@ Three panels show what an aggregate cannot:
   of the band and is called out, while the band itself does not move. That scenario
   has shipped since Phase 3 and this is the first time its lie has been drawable.
 
+The six plots share one cursor: point at an instant on any of them and every panel marks
+the sample nearest it, with each trace's reading beside the line — the current plot
+explains the voltage plot and the temperature plot explains both, so a reading is taken
+across all six at once. The plots fold every sample onto the pixel column it falls in and
+draw each column's lowest and highest, so a pulse two samples wide in a history of two
+hundred thousand is still a stroke on the screen rather than a one-in-fifty chance of one.
+And they repaint only when something they show has changed, which is what lets a paused
+page with a full history sit at a few percent of one core. How that was measured is
+`tools/client-perf/` and `docs/plans/client-redraw.md`.
+
 All three panels work identically whether the engine runs in the tab or behind the
 server (see [Two clients, not two layers](#two-clients-not-two-layers)) — though the
 grid and the BMS view read their state over REST in the server mode, because per-cell

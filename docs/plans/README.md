@@ -83,6 +83,7 @@ What a reader can reach, and how the page shows it.
 
 | file | what it records |
 | --- | --- |
+| [`client-redraw.md`](client-redraw.md) | The client's redraw: paint on change, fold to the pixel, one cursor across six panels — and what is left |
 | [`dfn-scenario.md`](dfn-scenario.md) | The DFN scenario: a rate at which the particle model stops knowing the cell is dying |
 | [`lead-acid-client.md`](lead-acid-client.md) | The lead-acid client slice: a cell that is not empty, and will not give you the rest |
 | [`reversal-damage-ui.md`](reversal-damage-ui.md) | The damage, shown to a reader — and four count claims that had already drifted |
