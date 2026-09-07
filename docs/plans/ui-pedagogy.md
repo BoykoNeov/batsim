@@ -44,6 +44,13 @@ is taking the most current right now" is not answerable in this slice, and the p
 not pretend otherwise. Adding it is a `sim-core` change and belongs with the version
 bump below.
 
+> **Half of this is closed — see `per-cell-current.md`.** `CellView::current_a` shipped
+> 2026-09-07 and the grid answers "which cell is taking the most load right now" directly.
+> The prediction in the last sentence was right about where the change would live and
+> wrong about what it would cost: no snapshot bump, because the value is a report about
+> the last step rather than saved state. Per-cell *voltage* is still absent, and still for
+> the reason given — inside a group there is only one node voltage to report.
+
 **The BMS's *sensed* per-group voltage is not exposed by any adapter.**
 `Bms::sensors() -> &SensorFrame` is public in `sim-core` and `SensorFrame.v_group` holds
 exactly the fault-injected, offset, lying values the BMS actually reads — and a grep of

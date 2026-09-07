@@ -176,7 +176,34 @@ use wasm_bindgen::prelude::*;
 /// pack's own boundary changed: no `CellView` field, no `Telemetry` field, no method on
 /// [`Sim`], and `sim_core::SNAPSHOT_VERSION` stays at 21 because the section is read by
 /// no engine code at all.
-pub const WASM_API_VERSION: u32 = 7;
+///
+/// v8 (the parallel split): `sim_core::CellView` gains `current_a`, the current each cell
+/// carried over the last step that advanced time. `CellView` crosses this boundary
+/// verbatim inside [`Cells`], so it lands in the JSON a page parses.
+///
+/// An addition, so `sim_server::API_VERSION` stays at 2 by its own explicit exemption and
+/// the two part company for the **fifth** time. Each constant's doc was read again rather
+/// than the pair moved as a set.
+///
+/// `WASM_API_MIN` in `web/app.js` moves with it, on v4 and v5's test rather than v6's: the
+/// page consumes the field the moment it exists — the carrier diagram moves the selected
+/// cell's carriers by it and the pack grid offers it as a metric — so against a v7 bundle
+/// the field is `undefined`, the grid would normalise a range over nothing, and the
+/// diagram would draw a cell at a rate of `NaN`. That is the "displayed measurement of
+/// nothing" the earlier bumps refused, and it is why this one is load-bearing where v6's
+/// was deliberately not.
+///
+/// `sim_core::SNAPSHOT_VERSION` stays at 21, and the argument is worth stating because
+/// this field is *not* a pure function of stored state the way v5's gradients were: the
+/// split cannot be re-derived after the fact, because re-deriving it needs the pack
+/// current and no pack stores one. It stays out of the snapshot anyway, as a
+/// `#[serde(skip)]` report about the step that just happened — so no saved pack changed
+/// shape, and the price is that the field reads `null` for exactly one step after a
+/// restore *through JSON*, which is the only kind this crate does. (An in-process
+/// `Pack::restore` of a `Snapshot` value is a clone and keeps the reading; the two paths
+/// are pinned apart in `sim-core/tests/cell_current.rs`.) See
+/// `docs/plans/per-cell-current.md`.
+pub const WASM_API_VERSION: u32 = 8;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///

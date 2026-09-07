@@ -382,7 +382,8 @@ numbers are not.
    documented in the test).
 3. **Property tests** (proptest): charge conservation (∫I·dt matches ΔSOC·capacity);
    SOC stays in [0,1]; terminal voltage ≤ OCV during discharge and ≥ OCV during
-   charge; parallel-group currents sum to the group current; pack energy balance
+   charge; parallel-group currents sum to the group current plus any shunt or bleed
+   leakage (`CellView::current_a` is the branch current, not the terminal one); pack energy balance
    (electrical energy out + heat = stored energy change within tolerance);
    snapshot round-trip equality.
 4. **Scenario tests**: named TOML scenarios under `tests/scenarios/` (e.g.

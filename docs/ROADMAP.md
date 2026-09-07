@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
 Phases 0–8 are complete and each is pinned by a committed test (see the README's status
-table). Ninety-nine design notes under `docs/plans/` record what each slice measured,
+table). A hundred and one design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -342,3 +342,4 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | no DFN scenario file | `dfn-aging-gap.md` | `dfn-scenario.md` |
 | the NiMH peak is a one-timestep corner | `phase-8-slice-c-spike.md` | `charge-acceptance.md` (v21) |
 | the step-19 wedge | `surface-vs-bulk.md` | `path-wedge.md` (a renderer crash, not a lesson) |
+| no per-cell current accessor | `phase-6-porous-electrodes.md` | `per-cell-current.md` (`CellView::current_a`, no snapshot bump) |

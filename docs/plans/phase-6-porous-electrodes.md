@@ -1660,9 +1660,14 @@ is measuring the scaffolding.
   (`.gitignore:8`), so no slice has ever committed a wasm bundle and D ships no stale
   one. The local build artifact *is* stale after this slice — rebuild before demoing the
   browser page, exactly as Phase 4 slice D's note says.
-- **No per-cell current accessor.** The Kirchhoff test reads currents out of the charge
+- ~~**No per-cell current accessor.** The Kirchhoff test reads currents out of the charge
   that moved, which routes through `spm::advance`'s own mapping and is the stronger
-  check; an accessor would have been public API added for a test's convenience.
+  check; an accessor would have been public API added for a test's convenience.~~
+  **Closed — see `per-cell-current.md`.** The reasoning above held for three years of
+  slices and then stopped: what asked for the field in the end was not a test's
+  convenience but a *client's*, because the browser page could draw the parallel split and
+  had no way to know it. The Kirchhoff test's independent derivation was not thrown away
+  either — it is what the new field is checked against.
 - **No perf number.** The claim here is structural — two predicted branches (one in the
   solve aggregation, one in the reporting pass) and no new allocation on the linear
   path. Slice E measures, with `pack-step-perf.md`'s

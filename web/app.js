@@ -71,8 +71,16 @@ function clearBanner() {
  * scenario load to get the chemistry's `[diagram]` table and the limits that scale the
  * carrier diagram. Against a v6 bundle the symptom is the v3 one: `TypeError:
  * wasm.chemistry_facts_of is not a function`, thrown from inside `loadScenario`.
+ *
+ * v8 is a field again — `CellView::current_a`, the current each cell actually carried.
+ * The same test as v4 and v5, and this page consumes it at once: the carrier diagram
+ * moves the selected cell's carriers by it, the pack circuit draws the split from it, and
+ * the pack grid offers it as a metric. Against a v7 bundle it is `undefined`, so the grid
+ * would normalise a range over nothing and the diagram would advance a cell at `NaN` —
+ * quieter than a throw and worse, which is the reason this rule is about what the page
+ * consumes rather than about method names.
  */
-const WASM_API_MIN = 7;
+const WASM_API_MIN = 8;
 
 let wasm = null;
 try {
@@ -1393,14 +1401,17 @@ function renderFlags(telemetry) {
 /**
  * What a tile can show.
  *
- * Every entry is a field of `sim_core::CellView`. Two fields it does **not** have,
- * and the reason each is absent rather than forgotten:
+ * Every entry is a field of `sim_core::CellView`. One field it does **not** have, and the
+ * reason it is absent rather than forgotten: **per-cell voltage**, which is never computed
+ * per cell outside the solve — inside a group every cell sits at the same node voltage, so
+ * the per-cell number a tile would show is the group's, and `v_cell_min`/`v_cell_max`
+ * already report that pair.
  *
- *  * **per-cell voltage** — never computed per cell outside the solve;
- *  * **per-cell current** — Phase 6 slice D declined the accessor on purpose.
- *
- * So "which cell is taking the most load right now" is not on this menu. The SOC
- * spread is the same story integrated, which is why `soc` is the default.
+ * **`current_a` is here now** (wasm api 8), so "which cell is taking the most load right
+ * now" *is* on this menu, and it is the only metric that answers it at an instant rather
+ * than after the fact. `soc` stays the default because the SOC spread is the same story
+ * integrated, and a reader who has not pressed Run yet has a spread to look at where they
+ * would have no currents at all.
  *
  * An entry may carry `avail`, a predicate on one cell. It exists for the surface-gap
  * pair, which is `null` on an equivalent circuit because a circuit has no electrodes —
@@ -1412,6 +1423,21 @@ function renderFlags(telemetry) {
  */
 const METRICS = {
   soc: { ramp: "accent", get: (c) => c.soc * 100, dp: 2, unit: "%" },
+  // The parallel split, at an instant. Discharge-positive, so a group whose cells
+  // circulate at rest paints one tile above zero and its neighbour below — the only
+  // metric here that can be negative, and the reason the tile prints its number.
+  //
+  // `avail` keys on the field being absent rather than on the cell model, unlike the two
+  // gradients below: every model reports a current, so `null` here never means "this
+  // chemistry has no such thing". It means the pack has not stepped since it was built or
+  // deserialized, which un-hides itself the moment anyone presses Run.
+  current_a: {
+    ramp: "accent",
+    get: (c) => c.current_a,
+    dp: 3,
+    unit: "A",
+    avail: (c) => c.current_a !== null && c.current_a !== undefined,
+  },
   temp_k: { ramp: "warm", get: (c) => toC(c.temp_k), dp: 2, unit: "°C" },
   overpotential_v: { ramp: "accent", get: (c) => c.overpotential_v * 1000, dp: 1, unit: "mV" },
   soh_capacity: { ramp: "accent", get: (c) => c.soh_capacity * 100, dp: 3, unit: "%" },
@@ -1651,6 +1677,13 @@ function renderCellDetail() {
     `soh cap ${(c.soh_capacity * 100).toFixed(3)} %`,
     `soh res ×${c.soh_resistance.toFixed(4)}`,
   ];
+  // The cell's own current, discharge-positive — its share of the group, at an instant,
+  // which every other row here can only tell you about after the fact. Omitted rather
+  // than printed as a dash when the pack has not stepped since it was built or
+  // deserialized: this is the one row whose absence means "not yet", not "not applicable".
+  if (c.current_a !== null && c.current_a !== undefined) {
+    parts.splice(2, 0, `current ${c.current_a.toFixed(4)} A`);
+  }
   // Only while this cell is actually in reversal, which is the rule the internal-short
   // and exotherm lines below already follow: a field that is zero on every healthy cell
   // is noise on every healthy cell. Printed next to `soc` because it is the other half
@@ -1946,6 +1979,8 @@ async function refreshCells(force = false) {
     state.cells = cells;
     state.sensors = sensors;
     state.cellsError = null;
+    // Per-cell throughput advances on this clock and nowhere else — see `cellFlow`.
+    advanceCellFlow(cells);
   } catch (e) {
     if (state.backend !== from) return;
     state.cells = null;
@@ -1981,10 +2016,12 @@ async function refreshCells(force = false) {
  *    integrated in `record`), so at 10 000× the carriers stream, paused they stop, and at
  *    rest they stop. The panel never calls `invalidate`; it repaints when the plots do.
  *  * **Only what is on the wire.** Every drawn state is a `Telemetry` field, a `CellView`
- *    field, or a chemistry fact. Per-cell current is *not* on the wire (Phase 6 slice D
- *    declined it), so the cell band moves its carriers by the **pack** current and says so
- *    in its note on a pack with parallel cells; the split between parallel cells is a thing
- *    this page cannot draw, and it does not guess.
+ *    field, or a chemistry fact. `CellView::current_a` (wasm api 8) put the parallel split
+ *    there, so the cell band moves its carriers by the **selected cell's own** current and
+ *    the pack band draws a strip per cell showing its share of its group. Where the engine
+ *    has not reported one — a pack that has not stepped since it was built or deserialized
+ *    — both fall back to the pack current and the note says which is being drawn. Nothing
+ *    here guesses a split.
  */
 
 /** Charge that has crossed the terminals \[C\], discharge-positive; what moves the markers. */
@@ -1993,6 +2030,54 @@ const flow = { q_c: 0, tPrev: null };
 function resetFlow() {
   flow.q_c = 0;
   flow.tPrev = null;
+  resetCellFlow();
+}
+
+/**
+ * The same integral, per cell — what each one has actually passed through its own
+ * electrodes, which on a pack with parallel cells is not the pack's throughput divided by
+ * anything.
+ *
+ * Kept separately from `flow` because it is fed on a different clock. `CellView` arrives
+ * on the 250 ms cells sampler, not once per frame, so this is a rectangle rule over
+ * quarter-second *wall* intervals rather than over reported frames — at 10 000× one
+ * interval covers a lot of simulated time. That is the same approximation `advanceFlow`
+ * already documents and accepts for the same reason: the number moves a marker, it is not
+ * a coulomb count, and nothing on the page reads it as one.
+ */
+const cellFlow = { q_c: [], tPrev: null };
+
+function resetCellFlow() {
+  cellFlow.q_c = [];
+  cellFlow.tPrev = null;
+}
+
+/**
+ * One cells-sample's worth of per-cell throughput, integrated at the pack's own clock.
+ *
+ * `flow.tPrev` is the simulation time of the last recorded frame, which is the instant
+ * this sample is about — so the two integrals advance against the same clock and cannot
+ * drift apart. A pack whose topology changed, or whose engine reports no current yet (a
+ * fresh or freshly restored pack, where `current_a` is `null`), restarts the integral
+ * rather than carrying a stale one.
+ */
+function advanceCellFlow(data) {
+  const t = flow.tPrev;
+  const cells = data?.cells;
+  if (t === null || !cells) return;
+  if (cellFlow.q_c.length !== cells.length) {
+    cellFlow.q_c = new Array(cells.length).fill(0);
+    cellFlow.tPrev = t;
+    return;
+  }
+  if (cellFlow.tPrev !== null && t > cellFlow.tPrev) {
+    const dt = t - cellFlow.tPrev;
+    for (let i = 0; i < cells.length; i += 1) {
+      const c = cells[i].current_a;
+      if (c !== null && c !== undefined) cellFlow.q_c[i] += c * dt;
+    }
+  }
+  cellFlow.tPrev = t;
 }
 
 /**
@@ -2215,8 +2300,9 @@ function carrierState() {
   const i = m ? m.i_actual : 0;
   // The pack's capacity, not one cell's: `i_actual` is the pack current, and on a 2P
   // pack a cell carries about half of it. Dividing by one cell's capacity would print a
-  // 2P pack's 4 C charge as 8.68 C, which was the first version's defect. The split
-  // itself is not on the wire, so this is the honest rate: the pack's, of the pack.
+  // 2P pack's 4 C charge as 8.68 C, which was the first version's defect. This is the
+  // rate the *circuit* runs at, which is what the pack band above draws; the cell band
+  // below has its own, from the cell's own current.
   const cap = (chem?.capacity_ah ?? 1) * (data?.parallel ?? 1);
   const cRate = i / cap;
   const sel = grid.hovered ?? grid.pinned ?? 0;
@@ -2227,7 +2313,54 @@ function carrierState() {
   const refused = m ? m.i_rejected_a < -1e-9 : false;
   const charging = i < -1e-9;
   const discharging = i > 1e-9;
+  // What the *selected cell* is doing, which on a pack with parallel cells is a
+  // different question from what the pack is doing — and at rest, on a group whose cells
+  // disagree, it can even have the opposite sign: a fuller cell discharges into an
+  // emptier one while the terminals carry nothing at all.
+  //
+  // `null` means the engine has not reported a current yet (a fresh or freshly restored
+  // pack, or a bundle older than wasm api 8). The whole cell band falls back to the
+  // pack's numbers there, which is exactly what it drew before this field existed.
+  const rawCellI = cell?.current_a;
+  const cellI = rawCellI === null || rawCellI === undefined ? null : rawCellI;
+  // This cell's own effective capacity: nominal × its manufacturing scatter × its fade.
+  // A weak cell is weak in the denominator too, so a 2 A draw through a half-capacity
+  // cell reads as the 2 C it is.
+  const cellCap =
+    (chem?.capacity_ah ?? 1) * (cell?.capacity_factor ?? 1) * (cell?.soh_capacity ?? 1);
+  const cellCRate = cellI === null ? cRate : cellI / cellCap;
+  const cellCharging = cellI === null ? charging : cellI < -1e-9;
+  const cellDischarging = cellI === null ? discharging : cellI > 1e-9;
+  // This cell against its own group, which is the comparison the parallel solve is about.
+  //
+  // Two numbers rather than one, because a share of a *sum of magnitudes* is a sentence
+  // that lies in the most interesting case: a resting group whose cells circulate carries
+  // +x and −x, and "50% of what its group's cells carry" would be printed over terminals
+  // that are passing nothing at all. So the note below asks whether the group has a net
+  // current first, and says something different when it does not.
+  const g0 = data ? Math.floor(sel / data.parallel) * data.parallel : 0;
+  const groupCells = data?.cells ? data.cells.slice(g0, g0 + data.parallel) : [];
+  const groupNet = groupCells.reduce((a, c) => a + (c.current_a ?? 0), 0);
+  const groupAbs = groupCells.reduce((a, c) => a + Math.abs(c.current_a ?? 0), 0);
+  // A signed share of the group's *net* current: over 100% and negative shares are both
+  // real and both worth seeing — they are what a circulating current riding on a load
+  // looks like.
+  const cellShare = cellI === null || Math.abs(groupNet) < 1e-9 ? null : cellI / groupNet;
+  const circulating = cellI !== null && Math.abs(groupNet) < 1e-9 && groupAbs > 1e-9;
   return {
+    cellI,
+    cellCap,
+    cellCRate,
+    cellCharging,
+    cellDischarging,
+    cellShare,
+    circulating,
+    // The cell's own lane phase, from its own throughput. Falls back to the pack's when
+    // the engine has said nothing, so the markers keep moving rather than freezing.
+    cellPhase:
+      cellI === null || cellCap <= 0
+        ? flow.q_c / ((chem?.capacity_ah ?? 1) * (data?.parallel ?? 1) * 3600 * LANE_PER_CAPACITY)
+        : (cellFlow.q_c[sel] ?? 0) / (cellCap * 3600 * LANE_PER_CAPACITY),
     m,
     chem,
     data,
@@ -2270,12 +2403,32 @@ function drawPackBand(ctx, w, y0, h, st) {
   const wireY = y0 + 24;
   const busY = gy + gh / 2;
 
-  label(ctx, "pack — series across, parallel stacked; electrons on the wire", left, y0 + 2, PLOT_INK, "left", 10);
+  label(
+    ctx,
+    parallel > 1
+      ? "pack — series across, parallel stacked; electrons on the wire, each cell's own current under it"
+      : "pack — series across, parallel stacked; electrons on the wire",
+    left,
+    y0 + 2,
+    PLOT_INK,
+    "left",
+    10,
+  );
 
   // Groups.
   for (let g = 0; g < shown; g += 1) {
     const gx = shown > 1 ? left + g * step : (left + right) / 2 - gw / 2;
     const barH = Math.max(4, (gh - 4 * (parallel - 1)) / parallel);
+    // The split, normalised inside this group: the biggest current in the group sets the
+    // full width, so what the strips compare is cells against their *own* neighbours,
+    // which is the comparison the parallel solve is about. Normalising across the whole
+    // pack instead would flatten every group to the pack's worst one.
+    let maxI = 0;
+    for (let pp = 0; pp < parallel; pp += 1) {
+      const c = data?.cells?.[g * parallel + pp];
+      const ci = c?.current_a;
+      if (ci !== null && ci !== undefined) maxI = Math.max(maxI, Math.abs(ci));
+    }
     for (let pp = 0; pp < parallel; pp += 1) {
       const idx = g * parallel + pp;
       const c = data?.cells?.[idx];
@@ -2294,6 +2447,22 @@ function drawPackBand(ctx, w, y0, h, st) {
         ctx.lineWidth = 1.5;
         roundRect(ctx, gx + 0.5, by + 0.5, gw - 1, barH - 1, 2);
         ctx.stroke();
+      }
+      // The split: a strip from the bar's midline, right for a discharge and left for a
+      // charge, as long as this cell's share of the biggest current in its group. Two
+      // cells of one group carrying different lengths *is* the parallel solve, and at
+      // rest on a mismatched group the strips point opposite ways — the fuller cell
+      // discharging into the emptier one while the terminals carry nothing.
+      //
+      // Skipped below 9 px of bar, where a 3 px strip inside a 4 px bar would be a
+      // smear rather than a reading.
+      const ci = c?.current_a;
+      if (maxI > 1e-9 && ci !== null && ci !== undefined && barH >= 9) {
+        const half = (gw - 6) / 2;
+        const len = half * Math.min(1, Math.abs(ci) / maxI);
+        const midX = gx + gw / 2;
+        ctx.fillStyle = ELECTRON_INK;
+        ctx.fillRect(ci >= 0 ? midX : midX - len, by + barH - 4, len, 2.5);
       }
       if (idx === sel) {
         ctx.strokeStyle = "#e6e9ef";
@@ -2379,7 +2548,19 @@ function drawPackBand(ctx, w, y0, h, st) {
 
 /** The selected cell in cross-section, and everything that happens inside it. */
 function drawCellBand(ctx, w, y0, h, st) {
-  const { chem, cell, cRate, charging, discharging, contactorOpen, phase } = st;
+  // The cell's own current, rate and phase — not the pack's. Aliased to the names the
+  // body has always used, because what changed is *whose* current these are, not what
+  // any of the drawing does with them. On a 1S1P pack the two are the same number; on a
+  // resting group whose cells disagree they can point opposite ways.
+  const {
+    chem,
+    cell,
+    cellCRate: cRate,
+    cellCharging: charging,
+    cellDischarging: discharging,
+    contactorOpen,
+    cellPhase: phase,
+  } = st;
   const d = chem?.diagram ?? null;
   const fam = FAMILIES[d?.family] ?? FAMILIES.intercalation;
   const soc = cell ? cell.soc : 0;
@@ -2699,13 +2880,20 @@ function drawCarriers() {
   const captions = drawCellBand(ctx, w, packH + 14, h - packH - 14, st);
 
   const where = `cell (${st.s},${st.p})${grid.pinned === st.sel ? " · pinned" : grid.hovered === st.sel ? " · hovered" : ""}`;
-  const cr = Math.abs(st.cRate);
-  const ofWhat = (st.data.parallel ?? 1) > 1 ? " of the pack" : "";
+  // This cell's own current where the engine reports one, the pack's where it does not.
+  // The header is about the cell the cross-section below is drawing, so on a pack with
+  // parallel cells it used to answer a question nobody asked: the *pack's* rate, labelled
+  // "of the pack" to stop it reading as the cell's.
+  const known = st.cellI !== null;
+  const shownI = known ? st.cellI : st.i;
+  const cr = Math.abs(known ? st.cellCRate : st.cRate);
+  const ofWhat = known ? "" : (st.data.parallel ?? 1) > 1 ? " of the pack" : "";
+  const going = known ? st.cellDischarging : st.discharging;
   const how = st.contactorOpen
     ? "contactor open — nothing moves"
     : cr < 1e-6
       ? "at rest"
-      : `${st.discharging ? "discharging" : "charging"} at ${Math.abs(st.i).toFixed(2)} A, ${cr.toFixed(2)} C${ofWhat}`;
+      : `${going ? "discharging" : "charging"} at ${Math.abs(shownI).toFixed(2)} A, ${cr.toFixed(2)} C${ofWhat}`;
   head.textContent = `${st.chem ? st.chem.name : "chemistry unknown"} · ${where} · ${how}`;
 
   const parts = [];
@@ -2714,8 +2902,23 @@ function drawCarriers() {
   } else if (!st.chem.diagram) {
     parts.push("this chemistry file carries no [diagram] section, so the cell is drawn generic and unlabelled");
   }
-  if ((st.data.parallel ?? 1) > 1 && cr > 1e-6) {
-    parts.push("the carriers move by the pack current: which parallel cell carries what share is not on the wire");
+  if ((st.data.parallel ?? 1) > 1) {
+    if (st.cellI === null) {
+      // Only two ways to be here: a pack that has not stepped since it was built or
+      // deserialized, and a `pkg/` older than wasm api 8. Both draw the pack's current.
+      parts.push("no per-cell current reported yet, so the carriers move by the pack current");
+    } else if (st.circulating) {
+      // The case a share cannot describe: the group's cells are pushing against each
+      // other and the terminals are carrying nothing.
+      parts.push(
+        `this group's cells are circulating current between themselves — this one at ` +
+          `${st.cellI.toFixed(3)} A while the group's net is zero`,
+      );
+    } else if (st.cellShare !== null) {
+      parts.push(
+        `this cell is carrying ${(st.cellShare * 100).toFixed(1)}% of its group's current`,
+      );
+    }
   }
   parts.push(...captions);
   note.textContent = parts.join("  ·  ");

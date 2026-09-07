@@ -553,6 +553,9 @@
         <option value="capacity_factor">capacity factor [×]</option>
         <option value="r0_factor">R0 factor [×]</option>
         <option value="internal_short_conductance_s">internal short [S]</option>
+        <!-- The parallel split. Hidden until the pack has stepped: `current_a` is null on
+             a pack that has been built or deserialized and not yet run. -->
+        <option value="current_a">current [A]</option>
         <!-- Equivalent circuits only, and hidden on the two below's packs rather than the
              other way round: a particle model has no SOC clamp to be driven past. -->
         <option value="soc_deficit">past empty [pts]</option>

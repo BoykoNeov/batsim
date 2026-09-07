@@ -173,6 +173,21 @@ fn rest_circulates_current_between_mismatched_parallel_cells() {
 
     let i_a = (a0 - pack.cell(0, 0).unwrap().soc) * (cap_as * 1.0) / dt;
     let i_b = (b0 - pack.cell(0, 1).unwrap().soc) * (cap_as * 0.5) / dt;
+    // The same two currents as the engine reports them. This is the hardest case for
+    // `CellView::current_a` to get right and the easiest to get plausibly wrong: the
+    // pack current is zero, so anything that divided a group current among its cells,
+    // or reported a magnitude, would say `0.0` here and look reasonable.
+    for (p, reconstructed) in [(0usize, i_a), (1usize, i_b)] {
+        let reported = pack
+            .cell(0, p)
+            .unwrap()
+            .current_a
+            .expect("a step advanced time");
+        assert!(
+            (reported - reconstructed).abs() < 1e-6 * reconstructed.abs().max(1.0),
+            "cell {p}: reported {reported} A, ΔSOC says {reconstructed} A"
+        );
+    }
     // Higher-SOC (higher-OCV) cell A discharges into lower-SOC cell B: I_a > 0,
     // I_b < 0, and they cancel (external current is zero).
     assert!(i_a > 1e-6, "cell A should source current at rest: {i_a}");

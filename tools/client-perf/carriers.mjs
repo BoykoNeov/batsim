@@ -99,6 +99,50 @@ const CASES = [
     until: "b.state.facts.sim_time_s >= 400",
     maxWallMs: 60000,
   },
+  // The two cases the per-cell current slice added. Both are about the *pack* band and
+  // the panel's note rather than about the cross-section, and both need `parallel > 1`:
+  // on a 1S1P pack the cell's current and the pack's are the same number and nothing here
+  // would be visible. See `docs/plans/per-cell-current.md`.
+  {
+    // Under load, with the shipped scatter. Measured: 50.0 / 50.0 at 600 s, because the
+    // split an R0 mismatch makes is a transient — the SOC gap it opens closes it again.
+    // Kept as the control for the weak-cell case below, which is where the split shows.
+    name: "pack-parallel-split",
+    scenario: "cc_cv_charge_pack.toml",
+    set: `$("demand-mode").value = "Current"; $("demand-value").value = "6";`,
+    speed: "2",
+    until: "b.state.facts.sim_time_s >= 600",
+    maxWallMs: 40000,
+  },
+  {
+    // The frame the split is *only* visible in: at rest a mismatched group circulates
+    // current between its own cells while the terminals carry nothing, so the strips must
+    // point opposite ways and the note must not call it a share. Discharged first to open
+    // a state-of-charge gap between the two cells of a group, then rested.
+    name: "pack-rest-circulating",
+    scenario: "cc_cv_charge_pack.toml",
+    set: `$("demand-mode").value = "Current"; $("demand-value").value = "6";`,
+    speed: "2",
+    until: "b.state.facts.sim_time_s >= 900",
+    then: `$("demand-mode").value = "Rest"; $("demand-mode").onchange && $("demand-mode").onchange();`,
+    thenUntil: "b.state.facts.sim_time_s >= 1500",
+    maxWallMs: 60000,
+  },
+  {
+    // The frame P7 in the plan actually promised, and the shipped catalogue cannot supply
+    // on its own: no scenario ships a weak cell, and `cc_cv_charge_pack`'s 3 % R0 scatter
+    // gives a split that has decayed to 50.0 / 50.0 by 600 s (the split an R0 mismatch
+    // makes is a transient — the SOC gap it opens closes it again). A half-capacity cell
+    // injected through the page's own fault panel is different in kind: its share is set
+    // by capacity, not resistance, so it stays. The weak cell is the one drawn.
+    name: "pack-weak-cell",
+    scenario: "cc_cv_charge_pack.toml",
+    set: `$("demand-mode").value = "Current"; $("demand-value").value = "6"; $("fault-kind").value = "WeakCell"; $("fault-kind").onchange(); $("fault-f-s").value = "0"; $("fault-f-p").value = "1"; $("fault-f-capacity_factor").value = "0.5"; $("fault-f-r0_factor").value = "1.5"; $("fault-delay").value = "0"; $("fault-inject").onclick();`,
+    speed: "2",
+    until: "b.state.facts.sim_time_s >= 600",
+    pin: 1,
+    maxWallMs: 40000,
+  },
   {
     name: "pack-runaway",
     // The one shipped pack with a thermal network and no BMS. A hard charge at a hot
@@ -177,6 +221,18 @@ try {
       }
       if (!(await ev("window.batsim.state.running"))) break; // the page stopped itself (an error)
     }
+    // An optional second leg, for a case whose interesting frame is only reachable *after*
+    // the first condition holds — the resting group whose cells circulate has to be
+    // discharged into a mismatch before the rest means anything.
+    if (c.then) {
+      await ev(`(() => { const $ = (i) => document.getElementById(i); ${c.then} return true; })()`);
+      const t1 = Date.now();
+      while (Date.now() - t1 < (c.maxWallMs ?? 30000)) {
+        await sleep(250);
+        if (await ev(`(() => { const b = window.batsim; try { return !!(${c.thenUntil}); } catch (e) { return false; } })()`)) break;
+        if (!(await ev("window.batsim.state.running"))) break;
+      }
+    }
     if (await ev("window.batsim.state.running")) await ev(`document.getElementById("run").click()`);
     const pin = c.pinExpr ? await ev(`(() => { const b = window.batsim; return ${c.pinExpr}; })()`) : c.pin;
     if (pin !== undefined && pin >= 0) {
@@ -209,7 +265,12 @@ try {
     const cell = await ev(
       "(() => { const b = window.batsim; const g = b.state.cells; if (!g) return null; const i = b.grid ? (b.grid.pinned ?? 0) : 0; return JSON.stringify(g.cells[i]); })()",
     );
-    const row = { name: c.name, held, t, flags, head, note, drawMs, diagramMs, banner, file, cell };
+    // Every cell's own current, so the picture's strips can be checked against numbers
+    // rather than eyeballed. Series-major, the order the grid and the pack band use.
+    const currents = await ev(
+      "(() => { const g = window.batsim.state.cells; return g ? JSON.stringify(g.cells.map((c) => c.current_a)) : null; })()",
+    );
+    const row = { name: c.name, held, t, flags, head, note, drawMs, diagramMs, banner, file, cell, currents };
     summary.push(row);
     console.log(JSON.stringify(row, null, 1));
   }

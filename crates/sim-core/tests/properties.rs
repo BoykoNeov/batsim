@@ -307,7 +307,18 @@ proptest! {
         for p in 0..parallel as usize {
             let c = pack.cell(0, p).unwrap();
             let cap_as = 3600.0 * CAP_AH * c.capacity_factor;
-            sum += (0.5 - c.soc) * cap_as / dt; // I_k reconstructed from ΔSOC
+            let reconstructed = (0.5 - c.soc) * cap_as / dt; // I_k from ΔSOC
+            // The engine's own report of the same quantity. The two derivations are
+            // independent — this one comes out of the split the solve assigned, the
+            // other out of the charge that left the cell — so agreeing is a claim, not
+            // a tautology. It is asserted here rather than in its own test because
+            // this is the only place in the suite that already computes the answer.
+            let reported = c.current_a.expect("a step advanced time, so every cell reports");
+            prop_assert!(
+                (reported - reconstructed).abs() < 1e-9 * reconstructed.abs().max(1.0),
+                "cell {p}: reported {reported} A, ΔSOC says {reconstructed} A"
+            );
+            sum += reported;
         }
         prop_assert!((sum - tele.i_actual).abs() < 1e-6, "Σ I_k = {sum}, I_g = {}", tele.i_actual);
     }

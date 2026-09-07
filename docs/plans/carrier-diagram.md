@@ -217,12 +217,15 @@ cannot be, an unknown key) are the tests themselves and are not repeated here.
 
 ## Deliberately not done
 
-* **No per-cell current.** `CellView` has no current (Phase 6 slice D declined it), so on a
+* ~~**No per-cell current.** `CellView` has no current (Phase 6 slice D declined it), so on a
   pack with parallel cells the cross-section moves its carriers by the pack current and the
   note says so. Drawing the parallel split — which cell takes more load — would need the
   field, and the field is a snapshot-neutral addition the engine could make; it is the
   first thing a follow-up should add, because the split *is* the imbalance physics the pack
-  grid exists to show.
+  grid exists to show.~~ **Closed — see `per-cell-current.md`.** The field is
+  `CellView::current_a`, and "snapshot-neutral" turned out to be right for a reason this
+  note did not have: it is not recomputable from stored state at all, so it ships as a
+  `#[serde(skip)]` report rather than as a memo.
 * **No hysteresis or charge-acceptance state.** Neither is on `CellView`. The nickel
   drawing shows the refused current the acceptance term produces, not the term.
 * **No sensor view.** The panel is ground truth throughout; the BMS's belief has its own
@@ -243,7 +246,8 @@ cannot be, an unknown key) are the tests themselves and are not repeated here.
 
 ## Still open
 
-* Per-cell current on `CellView`, then the parallel split in both bands (above).
+* ~~Per-cell current on `CellView`, then the parallel split in both bands (above).~~
+  **Closed — see `per-cell-current.md`.**
 * A `[diagram]` for a chemistry that fits none of the three families — a zinc or a flow
   cell — is a client slice by design: the enum is closed, and adding a variant means adding
   a drawing.

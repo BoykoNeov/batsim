@@ -1073,6 +1073,52 @@ pub struct CellView {
     /// from the negative, so the electrode the state of charge is named after is *not*
     /// the one carrying the gradient that stops the cell.
     pub surface_gap_pos: Option<f64>,
+    /// The current \[A\] this cell carried over the last step that advanced time,
+    /// discharge-positive — or `None` if no such step has run.
+    ///
+    /// **The parallel split, which is where the imbalance physics is.** Inside a group
+    /// every cell sees the same node voltage and takes `I_k = (E_k − V)/R_k`, so a
+    /// low-resistance or high-SOC cell carries more of the load. That is the one piece of
+    /// the solve `CLAUDE.md` singles out with an instruction not to shortcut, and until
+    /// this field existed no client could see it happening — only its integral, hours
+    /// later, as a spread in state of charge.
+    ///
+    /// # Three things it is not
+    ///
+    /// * **Not the terminal current.** This is the cell's *internal branch* current: what
+    ///   moves charge through the electrodes, drains SOC, drives the RC pairs and is
+    ///   charged for throughput. A cell with an internal short passes a further
+    ///   `V_node ·` [`Self::internal_short_conductance_s`] through the shunt, which never
+    ///   leaves the cell, so its terminal current is smaller by exactly that.
+    /// * **Not a quantity that sums to the pack current, in general.** Over a group these
+    ///   sum to [`crate::Telemetry::i_actual`] *plus* every shunt and bleed current in it
+    ///   — the cells supply the external load and the leakage both. On a fault-free pack
+    ///   with no balancing switch closed the two are the same number, which is the case
+    ///   the property test in `sim-core/tests/properties.rs` states.
+    /// * **Not `0.0` when unknown.** A resting cell genuinely carries `0.0 A`, so the
+    ///   absence has to be a different value — the same argument
+    ///   [`Self::surface_gap_neg`] makes. `None` means one thing only: no step at all has
+    ///   run since this pack was **built or deserialized**. A zero-length probe step fills
+    ///   it like any other, so this is the split the last `step` call solved for.
+    ///   (Deliberately unlike `overpotential_v` on a porous cell, which a probe leaves
+    ///   alone; the argument is on the `CellCurrents` buffer behind this field.)
+    /// * **Not the split at the state you are looking at, after a real step.** A
+    ///   time-advancing step solves the split at the state it *starts* from — that is the
+    ///   current each cell was advanced with — and then moves the cells. So after a
+    ///   `dt > 0` step this reads the start-of-step split, and a `dt == 0` probe at the
+    ///   same demand re-solves at the moved state and reads a slightly different one: the
+    ///   same physics one step apart. `sim-core/tests/cell_current.rs` pins both.
+    ///
+    /// # "Restored" is two different things here
+    ///
+    /// [`Pack::restore`] of a [`Snapshot`] *value* is a clone and touches serde not at
+    /// all, so an in-process restore carries this reading across with it. A pack rebuilt
+    /// from bytes — the path `sim-wasm` and `sim-server` take, and the only path on which
+    /// `#[serde(skip)]` means anything — starts cold and reads `None` for exactly one
+    /// step. Neither is wrong: a clone genuinely did take that step. The value is a
+    /// report about a step rather than saved state, so the *trajectory* is identical on
+    /// both paths; what differs is one frame of one field.
+    pub current_a: Option<f64>,
 }
 
 /// Per-cell start-of-step Thévenin `(E, R)`, carried across the step boundary.
@@ -1157,6 +1203,76 @@ impl PartialEq for SourceCache {
 impl std::fmt::Debug for SourceCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "SourceCache({} cells)", self.0.len())
+    }
+}
+
+/// The current \[A\] each cell carried over the last step that advanced time,
+/// series-major / parallel-minor. Read out through [`CellView::current_a`].
+///
+/// # A third kind of buffer, and the reason it needs saying
+///
+/// This pack owns three `#[serde(skip)]` buffers now, and the rule that separates them is
+/// what each is allowed to do across a step boundary:
+///
+/// * [`StepScratch`] is **written before it is read inside one step**. Its doc says
+///   outright that a buffer carrying a value across the boundary "would be state".
+/// * [`SourceCache`] **is** carried across, and is correct because a cold recompute
+///   reproduces it bit-for-bit. That is what lets a restored pack start empty.
+/// * This is carried across and is **not** recomputable: re-deriving the split needs the
+///   pack current, and no pack stores one. It is a **report about the step that just
+///   happened**, not state and not a memo.
+///
+/// What keeps that from being a determinism hole is that nothing reads it back into the
+/// physics. `Pack::step` writes it and [`Pack::cell`] reads it; no solve, no integrator
+/// and no estimator ever sees it. A pack rebuilt from a serialized snapshot therefore
+/// takes exactly the trajectory it would have taken, and the only observable difference is
+/// that [`CellView::current_a`] is `None` until its next step — which is precisely what
+/// `None` is defined to mean.
+///
+/// Empty means "no step at all has run since this pack was built or deserialized" — note
+/// that [`Pack::restore`] of a [`Snapshot`] value is a *clone*, so an in-process restore
+/// carries the buffer across and only a rebuild from bytes starts cold.
+///
+/// # It is deliberately **not** in the `dt > 0` family, and that was a decision
+///
+/// A zero-length probe fills this like any other step. The obvious-looking alternative was
+/// to gate it the way the vent latch, the BMS sensor clock, the aging sub-clock and the
+/// fault queue are gated, and it is wrong here for two reasons that are worth writing down
+/// because the surface similarity is strong:
+///
+/// * **That family's premise is "an observation must not mutate state", and this is not
+///   state.** Nothing in the physics reads it back. Writing it on a probe changes no
+///   trajectory and latches nothing irreversible; it is the same category of act as
+///   filling in the [`crate::Telemetry`] the probe returns.
+/// * **A probe is exactly when a client most needs it.** The browser page samples a fresh
+///   or freshly loaded session with `step(0.0, …)` precisely so the reader sees what the
+///   pack *is* rather than a row of dashes. Gated, this would have been the one field that
+///   call could not answer — and the page's pack-grid metric for it would have hidden
+///   itself on every scenario load.
+///
+/// So the reading means "the split the last `step` call solved for": on a time-advancing
+/// step that is the start-of-step split the cells were advanced with, and on a probe it is
+/// the split at the state the probe found. That differs from
+/// [`crate::SpmState::i_last`], which a probe leaves alone — and correctly, because
+/// `i_last` genuinely *is* snapshot state.
+///
+/// The two deliberate impls are [`SourceCache`]'s, for its reasons: `PartialEq` is always
+/// `true`, because two packs whose state is equal *are* equal whether or not one has
+/// stepped since it was deserialized — anything else would make
+/// `snapshot != roundtrip(snapshot)` — and `Debug` prints the length because a thousand
+/// currents in every `{:?}` of a pack is noise.
+#[derive(Clone, Default)]
+struct CellCurrents(Vec<f64>);
+
+impl PartialEq for CellCurrents {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for CellCurrents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CellCurrents({} cells)", self.0.len())
     }
 }
 
@@ -1268,6 +1384,10 @@ pub struct Pack {
     /// but the allocations it was built to avoid.
     #[serde(skip)]
     scratch: StepScratch,
+    /// What each cell carried over the last time-advancing step; see [`CellCurrents`].
+    /// A report, not state — no physics reads it.
+    #[serde(skip)]
+    cell_currents: CellCurrents,
 }
 
 impl Pack {
@@ -1448,6 +1568,9 @@ impl Pack {
             // Empty: the first step allocates each buffer once and every step after
             // it reuses them.
             scratch: StepScratch::default(),
+            // Empty: no step has run, so there is no current to report. See
+            // [`CellCurrents`] — this is why `CellView::current_a` is an `Option`.
+            cell_currents: CellCurrents::default(),
         })
     }
 
@@ -1530,6 +1653,14 @@ impl Pack {
             vented: cell.runaway.vented,
             surface_gap_neg: gap.map(|(n, _)| n),
             surface_gap_pos: gap.map(|(_, p)| p),
+            // Series-major / parallel-minor, like every other per-cell buffer. Empty
+            // until a step has advanced time, and `get` is what turns that into the
+            // `None` the field documents — not a length check, so the two cannot drift.
+            current_a: self
+                .cell_currents
+                .0
+                .get(s * self.parallel as usize + p)
+                .copied(),
         })
     }
 
@@ -2324,6 +2455,16 @@ impl Pack {
         // empty — which is what the integrator's absence expects. Clearing is
         // therefore unconditional and the push is not.
         heat_w.clear();
+        // The per-cell current report, borrowed out for this loop and handed back at the
+        // end of the step. Written on **every** step including a zero-length one — see
+        // [`CellCurrents`] for why this is not a member of the `dt > 0` family — and
+        // because the topology cannot change, the resize allocates exactly once in a
+        // pack's life.
+        let mut i_report = std::mem::take(&mut self.cell_currents).0;
+        if i_report.len() != n_cells {
+            i_report.clear();
+            i_report.resize(n_cells, 0.0);
+        }
         let mut q_gen_w = 0.0;
         let mut q_balancing_w = 0.0;
         let mut i_balancing_a = 0.0;
@@ -2363,6 +2504,12 @@ impl Pack {
                 // A shorted cell's terminal current is smaller by `v_node · shunt_g`
                 // — the part that never leaves the cell.
                 let i_k = (e_k - v_node) / r_k;
+                // ...and the one number a client could never reconstruct, so it is
+                // recorded here rather than re-derived later. This is the *branch*
+                // current, not the terminal current: on a shorted cell the two differ by
+                // `v_node · shunt_g`, and it is the branch current that moves the
+                // carriers a reader is watching.
+                i_report[g * parallel + k] = i_k;
                 // The converged pass probed this same cell at this same current: same
                 // expression, same `solved_src`, same `v_node`. Two things rest on that
                 // and neither should rest on an argument alone, so it is checked here on
@@ -2833,6 +2980,9 @@ impl Pack {
         let soc_bms = self.bms.as_ref().map(Bms::soc_estimate);
         // Hand the buffer back, now holding the next step's start-of-step sources.
         self.src_cache = SourceCache(cell_src);
+        // Likewise, now holding what each cell just carried — or, on a probe step, what
+        // it carried over the last step that moved.
+        self.cell_currents = CellCurrents(i_report);
 
         Telemetry {
             v_terminal,

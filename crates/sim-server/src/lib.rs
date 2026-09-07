@@ -71,6 +71,15 @@ use tokio::net::TcpListener;
 /// need a third name. Recorded rather than passed over, because "the number a field
 /// carries changed" is a real category this constant had not met before, and the next
 /// reader should find it decided rather than undiscussed.
+///
+/// **v2 unmoved for `CellView::current_a`** (the parallel split, 2026-09-07). An added
+/// field, which the rule's first paragraph exempts outright, so this is the plainest case
+/// the exemption has met: `GET /sessions/{id}/cells` gains a key, every existing client
+/// keeps reading the keys it read before, and `sim_wasm::WASM_API_VERSION` moves to 8
+/// alone for the fifth time. Recorded only so the parting is countable, not because the
+/// case was ever in doubt. `sim_core::SNAPSHOT_VERSION` stays at 21 as well; the argument
+/// for that one is not "it is a view" but that the value is a `#[serde(skip)]` report
+/// about the last step — see `docs/plans/per-cell-current.md`.
 pub const API_VERSION: u32 = 2;
 
 /// Build the application router over a session registry.
