@@ -149,7 +149,7 @@ after the engine ran.)*
 `the_uniqueness_scanner_reads_comments_and_stops_at_a_piece_boundary` (the one property of
 the scanner no shipped sentence proves) are in `crates/sim-data/tests/path_claims.rs`. The
 table is `[[unique]]` in `web/path-claims.toml`: 6 sentences, 5 steps, 2 with a derivation and
-4 in the backlog. Both false sentences on `M:\claud_projects\battery\web\app.js` are fixed.
+4 in the backlog. Both false sentences on `W:\Claude_projects\battery\web\app.js` are fixed.
 `tests/path_claims.rs` is 67 tests green, and so is the workspace.
 
 ### Prediction 2 held, and the red arrived in the right order
