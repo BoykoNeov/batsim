@@ -266,3 +266,24 @@ r_growth_per_capacity_loss = 2.0      # provenance: placeholder -- resistance gr
 # feedback loop through the charger, not an internal exothermic decomposition with a finite
 # energy budget. Filling in t_onset_k / t_vent_k / runaway_energy_j would describe the wrong
 # failure. Modelling the real one needs the charger in the loop and is out of scope.
+
+# ---------------------------------------------------------------------------------------
+# [diagram] — what this cell is made of, for the browser client's carrier diagram.
+#
+# Read by NO engine code. sim_data::parse_chemistry_facts reads this table separately and
+# hands it to the page; ChemistryParams never sees it. Labels are how the page names the
+# parts; the four captions are what the page says when the ENGINE reports each state (the
+# engine decides when, this table says what). `cold_charge` is required exactly when
+# [safety].t_plating_min_k is present and `runaway` exactly when [safety] is, and the loader
+# rejects a mismatch. See docs/plans/carrier-diagram.md.
+# ---------------------------------------------------------------------------------------
+[diagram]
+family             = "lead_acid"
+carrier            = "HSO₄⁻ / H⁺"
+negative           = "sponge lead (Pb)"
+positive           = "lead dioxide (PbO₂)"
+electrolyte        = "sulfuric acid in water, held in glass mat"
+negative_collector = "lead-alloy grid"
+positive_collector = "lead-alloy grid"
+overcharge     = "Both plates are fully converted, so the current splits water instead: hydrogen bubbles off the lead and oxygen off the dioxide; in an AGM cell most of the oxygen recombines at the negative as heat, the rest vents, and the water it came from is gone for good."
+deep_discharge = "Below empty both plates are almost all lead sulfate and the acid is nearly water; the sulfate crystals coarsen and stop redissolving on the next charge — sulfation, the permanent loss billed per amp-hour past empty."

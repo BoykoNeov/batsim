@@ -167,7 +167,16 @@ use wasm_bindgen::prelude::*;
 /// simply gets a bigger number from a chemistry that was not reachable from any client
 /// before this slice either. `WASM_API_MIN` in `web/app.js` does not move for the same
 /// reason. Read from this constant's own scope, not from the engine's bump.
-pub const WASM_API_VERSION: u32 = 6;
+///
+/// v7 (the carrier diagram): one new free function, [`chemistry_facts_of`], which hands a
+/// page the chemistry's `[diagram]` section and the limits that scale it. A method
+/// bump in the v3 sense — the page calls it during every scenario load, so against a v6
+/// bundle the symptom is `TypeError: wasm.chemistry_facts_of is not a function` from
+/// inside `loadScenario`, and `WASM_API_MIN` in `web/app.js` moves with it. Nothing on the
+/// pack's own boundary changed: no `CellView` field, no `Telemetry` field, no method on
+/// [`Sim`], and `sim_core::SNAPSHOT_VERSION` stays at 21 because the section is read by
+/// no engine code at all.
+pub const WASM_API_VERSION: u32 = 7;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///
@@ -221,6 +230,20 @@ pub fn snapshot_version() -> u32 {
 #[wasm_bindgen]
 pub fn chemistry_id_of(scenario_toml: &str) -> Result<Option<String>, JsError> {
     Ok(SimEngine::chemistry_id_of(scenario_toml)?)
+}
+
+/// What a page needs to *draw* a chemistry, as JSON: its `[diagram]` section and the
+/// limits that scale the drawing (`capacity_ah`, the voltage window, the plating and
+/// runaway temperatures when the file has them). Read off the chemistry text the page
+/// fetched for [`Sim::new`], so a page never parses TOML itself.
+///
+/// # Errors
+/// The text failing to parse or validate as a chemistry, or a `[diagram]` section that
+/// contradicts the file's `[safety]` section — `sim_data::parse_chemistry_facts` states
+/// the two rules.
+#[wasm_bindgen]
+pub fn chemistry_facts_of(chemistry_toml: &str) -> Result<String, JsError> {
+    Ok(SimEngine::chemistry_facts_json_of(chemistry_toml)?)
 }
 
 /// A pack, its scenario, and its standing environment.

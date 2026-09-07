@@ -248,6 +248,28 @@
   #pack-ramp { flex: 1; height: 7px; border-radius: 2px; }
   #pack-detail { margin-top: 8px; min-height: 30px; }
 
+  /*
+    The carrier diagram. One canvas, two bands: the pack as a circuit on top, the selected
+    cell in cross-section below. Taller than a plot because it is a picture with labels
+    in it, not a trace; the height is a free parameter the drawing scales to.
+  */
+  #carriers { background: var(--panel); border: 1px solid var(--line);
+              border-radius: 4px; padding: 10px 12px; }
+  #carriers-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px;
+                   flex-wrap: wrap; }
+  #carriers-head .t { font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+                      color: var(--dim); }
+  #carriers-cell { margin-left: auto; color: var(--dim); font-size: 10px; }
+  #carriers canvas { height: 400px; cursor: pointer; }
+  #carriers-key { display: flex; align-items: center; gap: 6px; margin-top: 8px;
+                  color: var(--dim); font-size: 10px; flex-wrap: wrap; }
+  #carriers-key span:not(.sw) { margin-right: 8px; }
+  .sw.carrier { background: var(--accent); }
+  .sw.electron { background: #9ecbff; }
+  .sw.trapped { background: #5a606c; }
+  .sw.metal { background: #c9ced8; border-radius: 1px; }
+  .sw.gas { background: #e8ecf3; }
+
   /* A probed cell, on the ground-truth grid: the BMS can read this one's temperature
      and cannot read any other. Drawn as a ring rather than a fill so it composes with
      whatever the metric ramp painted underneath. */
@@ -547,6 +569,31 @@
       <span id="pack-hi">—</span>
     </div>
     <div class="note" id="pack-detail"></div>
+  </div>
+
+  <!--
+    What moves. The pack as a circuit, and the selected cell — hover or pin a tile above,
+    or click a cell in the band — in cross-section: collectors, electrodes, the
+    electrolyte between them, and the carriers where the engine says they are. What the
+    cell is made of comes from the chemistry file's [diagram] table; the three drawings
+    the page knows are in app.js. The dots in the electrodes are a count (the cell's true
+    state of charge); the dots in transit are a flux, moved by the charge that has crossed
+    the terminals — so they stop when the run pauses and stop when the cell rests.
+  -->
+  <div id="carriers">
+    <div id="carriers-head">
+      <span class="t">inside the cell — carriers, live</span>
+      <span id="carriers-cell"></span>
+    </div>
+    <canvas id="carriers-canvas" height="400"></canvas>
+    <div id="carriers-key">
+      <span class="sw carrier"></span><span>carrier, where it is stored</span>
+      <span class="sw electron"></span><span>electron, on the wire</span>
+      <span class="sw trapped"></span><span>trapped for good (capacity lost)</span>
+      <span class="sw metal"></span><span>metal or sulfate on a surface</span>
+      <span class="sw gas"></span><span>gas</span>
+    </div>
+    <div class="note" id="carriers-note"></div>
   </div>
 
   <!--

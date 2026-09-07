@@ -66,8 +66,13 @@ function clearBanner() {
  * without this line is the v4 one and quieter than a throw: a v5 bundle omits the field,
  * `undefined * 100` is `NaN`, and the row prints `NaN pts`, which is a displayed
  * measurement of nothing.
+ *
+ * v7 is a method again — `chemistry_facts_of`, which `chemistryFactsFor` calls on every
+ * scenario load to get the chemistry's `[diagram]` table and the limits that scale the
+ * carrier diagram. Against a v6 bundle the symptom is the v3 one: `TypeError:
+ * wasm.chemistry_facts_of is not a function`, thrown from inside `loadScenario`.
  */
-const WASM_API_MIN = 6;
+const WASM_API_MIN = 7;
 
 let wasm = null;
 try {
@@ -1146,6 +1151,7 @@ const history = {
 
 function resetHistory() {
   for (const key of Object.keys(history)) history[key].length = 0;
+  resetFlow();
   invalidate();
 }
 
@@ -1166,6 +1172,7 @@ function record(frame) {
   history.t_max.push(toC(m.t_max));
   history.soh_capacity.push(m.soh_capacity * 100);
   history.soh_resistance.push(m.soh_resistance * 100);
+  advanceFlow(frame.sim_time_s, m.i_actual);
 
   if (history.t.length > MAX_SAMPLES) {
     // Drop the oldest tenth in one go rather than shifting every sample.
@@ -1529,13 +1536,17 @@ function buildGrid(series, parallel) {
       el.className = "celltile";
       el.innerHTML = `<div class="idx"></div><div class="val"></div>`;
       el.querySelector(".idx").textContent = `${s},${p}`;
+      // `invalidate` as well as the detail line: the carrier diagram follows the hovered
+      // cell, and it is painted from `draw`, not from here.
       el.onmouseenter = () => {
         grid.hovered = i;
         renderCellDetail();
+        invalidate();
       };
       el.onmouseleave = () => {
         if (grid.hovered === i) grid.hovered = null;
         renderCellDetail();
+        invalidate();
       };
       el.onclick = () => {
         grid.pinned = grid.pinned === i ? null : i;
@@ -1949,6 +1960,799 @@ async function refreshCells(force = false) {
 }
 
 // ---------------------------------------------------------------------------
+// The carrier diagram — what moves inside the cell, drawn from the engine's state
+// ---------------------------------------------------------------------------
+
+/*
+ * Every other panel on this page is a number or a curve. This one is a picture of the
+ * mechanism: a cross-section of the selected cell — two current collectors, two
+ * electrodes, the electrolyte between them, the external wire with its load or charger —
+ * with the charge carriers drawn where the engine says they are, and above it the pack as
+ * a circuit with the electrons going round. `docs/plans/carrier-diagram.md` is the plan.
+ *
+ * Three rules, all of them `CLAUDE.md`'s:
+ *
+ *  * **Chemistry is data.** What a cell is made of and what the page says in each edge
+ *    state comes from the chemistry file's `[diagram]` table, handed across by
+ *    `chemistry_facts_of`. This code knows three *mechanism families* (`FAMILIES` below)
+ *    and no particular chemistry.
+ *  * **Simulation time, not wall time.** Nothing here animates on its own clock. A marker's
+ *    position is a function of the charge that has passed the terminals (`flow.q_c`,
+ *    integrated in `record`), so at 10 000× the carriers stream, paused they stop, and at
+ *    rest they stop. The panel never calls `invalidate`; it repaints when the plots do.
+ *  * **Only what is on the wire.** Every drawn state is a `Telemetry` field, a `CellView`
+ *    field, or a chemistry fact. Per-cell current is *not* on the wire (Phase 6 slice D
+ *    declined it), so the cell band moves its carriers by the **pack** current and says so
+ *    in its note on a pack with parallel cells; the split between parallel cells is a thing
+ *    this page cannot draw, and it does not guess.
+ */
+
+/** Charge that has crossed the terminals \[C\], discharge-positive; what moves the markers. */
+const flow = { q_c: 0, tPrev: null };
+
+function resetFlow() {
+  flow.q_c = 0;
+  flow.tPrev = null;
+}
+
+/**
+ * One recorded frame's worth of throughput. Rectangle rule on the reported frames: with
+ * decimation on, a gap covers several steps at the last frame's current, which is a
+ * visual phase and not a coulomb count, so the approximation is harmless. A clock that
+ * went backwards (a restore, a restart) resets the previous instant rather than
+ * integrating a negative interval.
+ */
+function advanceFlow(t, i) {
+  if (flow.tPrev !== null && t > flow.tPrev) flow.q_c += i * (t - flow.tPrev);
+  flow.tPrev = t;
+}
+
+/**
+ * Fraction of the nominal capacity one lane crossing represents. At 1 C a marker crosses
+ * the separator in `3600 / 180 = 20 s` of simulation time — two seconds of wall time at
+ * the default 10×, which reads as movement without reading as a blur. A *visual* gain,
+ * stated as such: the dots inside the electrodes are the count, the dots in transit are
+ * the flux.
+ */
+const LANE_PER_CAPACITY = 1 / 180;
+
+/** How many carriers the cell is drawn with. */
+const N_CARRIERS = 36;
+
+const CARRIER_INK = "#2ee6a8";
+const ELECTRON_INK = "#9ecbff";
+const TRAPPED_INK = "#5a606c";
+const GAS_INK = "#e8ecf3";
+const METAL_INK = "#c9ced8";
+
+/**
+ * The three drawings, keyed by `[diagram].family`.
+ *
+ *  * `home`: where the carrier sits when the cell is **full** — in the negative electrode
+ *    (intercalation, nickel) or in the electrolyte (lead-acid, where the acid *is* the
+ *    charge and discharging puts it onto both plates as sulfate).
+ *  * `laneSign`: which way the lane markers move on a *discharge*, +1 for negative → positive.
+ *    Nickel is the odd one: the hydrogen goes negative → positive, but what crosses the
+ *    electrolyte is hydroxide going the other way, and the lane draws what is in the
+ *    electrolyte.
+ *  * `laneLabel`: what the lane's dots are called, when it differs from the carrier.
+ */
+const FAMILIES = {
+  intercalation: { home: "negative", laneSign: +1, laneLabel: null },
+  nickel: { home: "negative", laneSign: -1, laneLabel: "OH⁻" },
+  lead_acid: { home: "electrolyte", laneSign: 0, laneLabel: null },
+};
+
+/**
+ * Deterministic scatter inside a box, so a carrier keeps its place from one paint to the
+ * next and the picture does not shimmer. A fixed-stride lattice would do the same job and
+ * read as a crystal, which two of the three electrodes are not.
+ */
+function scatterIn(n, x, y, w, h, salt) {
+  const pts = [];
+  let s = 0x9e3779b9 ^ salt;
+  const rnd = () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+  const cols = Math.max(1, Math.round(Math.sqrt((n * w) / Math.max(h, 1))));
+  const rows = Math.max(1, Math.ceil(n / cols));
+  for (let i = 0; i < n; i += 1) {
+    const c = i % cols;
+    const r = Math.floor(i / cols);
+    pts.push({
+      x: x + ((c + 0.2 + 0.6 * rnd()) / cols) * w,
+      y: y + h - ((r + 0.2 + 0.6 * rnd()) / rows) * h,
+    });
+  }
+  return pts;
+}
+
+/** Cold to hot, from the chemistry's own limits: below charge-inhibit is blue, above the over-temperature limit is orange, at onset red. */
+function bodyTint(tK, chem) {
+  if (!chem || !Number.isFinite(tK)) return "rgba(0,0,0,0)";
+  const lo = chem.t_charge_min_k;
+  const hi = chem.t_max_k;
+  const onset = chem.t_onset_k ?? hi + 60;
+  if (tK < lo) return `rgba(90,150,255,${Math.min(0.45, ((lo - tK) / 25) * 0.45 + 0.12)})`;
+  if (tK <= hi) return "rgba(0,0,0,0)";
+  if (tK < onset) return `rgba(255,138,76,${0.12 + ((tK - hi) / (onset - hi)) * 0.35})`;
+  return `rgba(255,80,60,${Math.min(0.7, 0.45 + ((tK - onset) / 60) * 0.3)})`;
+}
+
+/** `x` wrapped into [0, 1): `%` keeps the sign, and a charging phase is negative. */
+const frac = (x) => ((x % 1) + 1) % 1;
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function dot(ctx, x, y, r, fill) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+/** A polyline as a path with cumulative lengths, so markers can be placed by arclength. */
+function polyPath(points) {
+  const seg = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const [x0, y0] = points[i - 1];
+    const [x1, y1] = points[i];
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    seg.push({ x0, y0, x1, y1, len, at: total });
+    total += len;
+  }
+  return { points, seg, total };
+}
+
+function alongPath(path, d) {
+  let u = ((d % path.total) + path.total) % path.total;
+  for (const s of path.seg) {
+    if (u <= s.len || s === path.seg[path.seg.length - 1]) {
+      const f = s.len > 0 ? u / s.len : 0;
+      return [s.x0 + (s.x1 - s.x0) * f, s.y0 + (s.y1 - s.y0) * f];
+    }
+    u -= s.len;
+  }
+  return [path.points[0][0], path.points[0][1]];
+}
+
+function strokePath(ctx, path, color, width, dashed) {
+  ctx.beginPath();
+  ctx.moveTo(path.points[0][0], path.points[0][1]);
+  for (let i = 1; i < path.points.length; i += 1) ctx.lineTo(path.points[i][0], path.points[i][1]);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dashed ? [4, 4] : []);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+/** A resistor (zigzag) or a charger (box with a plug), centred on (cx, cy) along the x axis. */
+function drawSink(ctx, cx, cy, kind) {
+  ctx.strokeStyle = PLOT_INK;
+  ctx.lineWidth = 1.5;
+  if (kind === "load") {
+    ctx.beginPath();
+    ctx.moveTo(cx - 18, cy);
+    const n = 6;
+    for (let i = 0; i < n; i += 1) {
+      const x = cx - 18 + ((i + 0.5) / n) * 36;
+      ctx.lineTo(x, cy + (i % 2 === 0 ? -6 : 6));
+    }
+    ctx.lineTo(cx + 18, cy);
+    ctx.stroke();
+  } else if (kind === "charger") {
+    ctx.fillStyle = PLOT_BG;
+    roundRect(ctx, cx - 18, cy - 9, 36, 18, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#ffb454";
+    ctx.beginPath();
+    ctx.moveTo(cx + 3, cy - 7);
+    ctx.lineTo(cx - 4, cy + 1);
+    ctx.lineTo(cx, cy + 1);
+    ctx.lineTo(cx - 3, cy + 7);
+    ctx.lineTo(cx + 4, cy - 1);
+    ctx.lineTo(cx, cy - 1);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    // Open circuit: a gap with two terminals.
+    ctx.beginPath();
+    ctx.moveTo(cx - 18, cy);
+    ctx.lineTo(cx - 8, cy);
+    ctx.moveTo(cx + 8, cy);
+    ctx.lineTo(cx + 18, cy);
+    ctx.stroke();
+    dot(ctx, cx - 8, cy, 2, PLOT_INK);
+    dot(ctx, cx + 8, cy, 2, PLOT_INK);
+  }
+}
+
+function label(ctx, text, x, y, color = PLOT_INK, align = "left", size = 10) {
+  ctx.fillStyle = color;
+  ctx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  ctx.textAlign = align;
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+/**
+ * A label on a dark backing, for the readings printed *inside* the cell: over a runaway's
+ * red tint, red ink on red is unreadable, and these are the numbers that matter most then.
+ */
+function tag(ctx, text, x, y, color, align = "center", size = 9) {
+  ctx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  const tw = ctx.measureText(text).width;
+  const x0 = align === "center" ? x - tw / 2 : align === "right" ? x - tw : x;
+  ctx.fillStyle = "rgba(16,19,26,0.78)";
+  ctx.fillRect(x0 - 3, y - size / 2 - 2, tw + 6, size + 4);
+  label(ctx, text, x, y, color, align, size);
+}
+
+/** Hit boxes for the pack band's cells, rebuilt on every paint; a click pins the cell. */
+const carrierHits = [];
+
+/**
+ * What the engine says about the pack and the selected cell, reduced to what the two
+ * bands draw. Everything here names its source field.
+ */
+function carrierState() {
+  const m = state.latest;
+  const chem = state.chem;
+  const data = state.cells;
+  const flags = new Set(m ? parseFlags(m.flags) : []);
+  const i = m ? m.i_actual : 0;
+  // The pack's capacity, not one cell's: `i_actual` is the pack current, and on a 2P
+  // pack a cell carries about half of it. Dividing by one cell's capacity would print a
+  // 2P pack's 4 C charge as 8.68 C, which was the first version's defect. The split
+  // itself is not on the wire, so this is the honest rate: the pack's, of the pack.
+  const cap = (chem?.capacity_ah ?? 1) * (data?.parallel ?? 1);
+  const cRate = i / cap;
+  const sel = grid.hovered ?? grid.pinned ?? 0;
+  const cell = data?.cells?.[sel] ?? null;
+  const s = data ? Math.floor(sel / data.parallel) : 0;
+  const p = data ? sel % data.parallel : 0;
+  const contactorOpen = flags.has("CONTACTOR_OPEN");
+  const refused = m ? m.i_rejected_a < -1e-9 : false;
+  const charging = i < -1e-9;
+  const discharging = i > 1e-9;
+  return {
+    m,
+    chem,
+    data,
+    flags,
+    i,
+    cRate,
+    sel,
+    cell,
+    s,
+    p,
+    contactorOpen,
+    refused,
+    charging,
+    discharging,
+    plating: flags.has("PLATING_RISK"),
+    balancing: flags.has("BALANCING"),
+    runaway: !!(cell && chem?.t_onset_k && cell.temp_k >= chem.t_onset_k),
+    vented: !!cell?.vented,
+    shorted: !!(cell && cell.internal_short_conductance_s > 0),
+    pastEmpty: !!(cell && cell.soc_deficit > 0),
+    // Lane crossings so far: the phase every marker shares.
+    phase: flow.q_c / (cap * 3600 * LANE_PER_CAPACITY),
+  };
+}
+
+/** The pack as a circuit: the series string, the parallel stacks, the contactor, and the electrons. */
+function drawPackBand(ctx, w, y0, h, st) {
+  const { data, cRate, contactorOpen, charging, discharging, sel, phase } = st;
+  carrierHits.length = 0;
+  const series = data?.series ?? 1;
+  const parallel = data?.parallel ?? 1;
+  const shown = Math.min(series, 12);
+  const left = 60;
+  const right = w - 60;
+  const span = right - left;
+  const gw = Math.min(64, (span - 20) / shown - 8);
+  const gh = h - 56;
+  const gy = y0 + 40;
+  const step = shown > 1 ? (span - gw) / (shown - 1) : 0;
+  const wireY = y0 + 24;
+  const busY = gy + gh / 2;
+
+  label(ctx, "pack — series across, parallel stacked; electrons on the wire", left, y0 + 2, PLOT_INK, "left", 10);
+
+  // Groups.
+  for (let g = 0; g < shown; g += 1) {
+    const gx = shown > 1 ? left + g * step : (left + right) / 2 - gw / 2;
+    const barH = Math.max(4, (gh - 4 * (parallel - 1)) / parallel);
+    for (let pp = 0; pp < parallel; pp += 1) {
+      const idx = g * parallel + pp;
+      const c = data?.cells?.[idx];
+      const by = gy + pp * (barH + 4);
+      const soc = c ? c.soc : 0;
+      ctx.fillStyle = "#10131a";
+      roundRect(ctx, gx, by, gw, barH, 2);
+      ctx.fill();
+      ctx.fillStyle = c?.vented ? "#ff6b6b" : rampCss("accent", soc).bg;
+      const fillW = Math.max(0, (gw - 4) * soc);
+      // Filled from the positive end so a discharging cell empties toward its negative,
+      // the way the cross-section below empties its negative electrode.
+      ctx.fillRect(gx + 2 + (gw - 4 - fillW), by + 2, fillW, barH - 4);
+      if (c && c.internal_short_conductance_s > 0) {
+        ctx.strokeStyle = "#ffb454";
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, gx + 0.5, by + 0.5, gw - 1, barH - 1, 2);
+        ctx.stroke();
+      }
+      if (idx === sel) {
+        ctx.strokeStyle = "#e6e9ef";
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, gx - 1.5, by - 1.5, gw + 3, barH + 3, 3);
+        ctx.stroke();
+      }
+      carrierHits.push({ x: gx, y: by, w: gw, h: barH, idx });
+    }
+    // Terminals.
+    label(ctx, "−", gx - 6, busY, PLOT_INK, "right", 10);
+    label(ctx, "+", gx + gw + 6, busY, PLOT_INK, "left", 10);
+    // Bus between groups.
+    if (g < shown - 1) {
+      ctx.strokeStyle = PLOT_INK;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(gx + gw + 12, busY);
+      ctx.lineTo(gx + step - 12, busY);
+      ctx.stroke();
+    }
+  }
+  if (series > shown) {
+    label(ctx, `… ${series - shown} more groups`, right, gy + gh + 10, PLOT_INK, "right", 9);
+  }
+
+  // The outer loop: from the last group's + terminal, up, across through the contactor
+  // and the sink, down to the first group's − terminal.
+  const firstX = shown > 1 ? left : (left + right) / 2 - gw / 2;
+  const lastX = (shown > 1 ? left + (shown - 1) * step : firstX) + gw;
+  const loop = polyPath([
+    [lastX + 14, busY],
+    [right + 40, busY],
+    [right + 40, wireY],
+    [left - 40, wireY],
+    [left - 40, busY],
+    [firstX - 14, busY],
+  ]);
+  strokePath(ctx, loop, PLOT_INK, 1.5, false);
+
+  // Contactor, a quarter of the way along the top run; the sink at the middle.
+  const cx = left - 40 + (right - left + 80) * 0.5;
+  const kx = left - 40 + (right - left + 80) * 0.8;
+  ctx.fillStyle = PLOT_BG;
+  ctx.fillRect(kx - 14, wireY - 10, 28, 20);
+  ctx.strokeStyle = contactorOpen ? "#ff6b6b" : PLOT_INK;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(kx - 14, wireY);
+  ctx.lineTo(kx - 10, wireY);
+  ctx.moveTo(kx + 10, wireY);
+  ctx.lineTo(kx + 14, wireY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(kx - 10, wireY);
+  if (contactorOpen) ctx.lineTo(kx + 7, wireY - 9);
+  else ctx.lineTo(kx + 10, wireY);
+  ctx.stroke();
+  dot(ctx, kx - 10, wireY, 2, PLOT_INK);
+  dot(ctx, kx + 10, wireY, 2, PLOT_INK);
+  label(ctx, contactorOpen ? "contactor OPEN" : "contactor", kx, wireY - 14, contactorOpen ? "#ff6b6b" : PLOT_INK, "center", 9);
+
+  ctx.fillStyle = PLOT_BG;
+  ctx.fillRect(cx - 20, wireY - 12, 40, 24);
+  const kind = contactorOpen ? "open" : discharging ? "load" : charging ? "charger" : "open";
+  drawSink(ctx, cx, wireY, kind);
+  label(ctx, kind === "open" ? (contactorOpen ? "" : "rest") : kind, cx, wireY - 14, PLOT_INK, "center", 9);
+
+  // Electrons on the loop. Conventional current leaves the + terminal on a discharge
+  // and goes round to −; the electrons go the other way, − → +, through the sink.
+  if (!contactorOpen && Math.abs(cRate) > 1e-6) {
+    // `phase` carries the current's sign (it is the throughput integrated), so one
+    // constant orientation serves both directions: the path runs + → −, and on a
+    // discharge the electrons go the other way, − → + through the sink.
+    const n = Math.min(40, Math.max(6, Math.round(Math.abs(cRate) * 10)));
+    for (let k = 0; k < n; k += 1) {
+      const d = -phase * loop.total * 0.35 + (k / n) * loop.total;
+      const [x, y] = alongPath(loop, d);
+      dot(ctx, x, y, 2.2, ELECTRON_INK);
+    }
+  }
+}
+
+/** The selected cell in cross-section, and everything that happens inside it. */
+function drawCellBand(ctx, w, y0, h, st) {
+  const { chem, cell, cRate, charging, discharging, contactorOpen, phase } = st;
+  const d = chem?.diagram ?? null;
+  const fam = FAMILIES[d?.family] ?? FAMILIES.intercalation;
+  const soc = cell ? cell.soc : 0;
+
+  const mx = 54;
+  const top = y0 + 44;
+  const bottom = y0 + h - 40;
+  const eh = bottom - top;
+  const colW = 12;
+  const inner = w - 2 * mx - 2 * colW;
+  const laneW = Math.max(60, inner * 0.2);
+  const elW = (inner - laneW) / 2;
+  const negCol = { x: mx, w: colW };
+  const neg = { x: mx + colW, w: elW };
+  const lane = { x: neg.x + elW, w: laneW };
+  const pos = { x: lane.x + laneW, w: elW };
+  const posCol = { x: pos.x + elW, w: colW };
+  const wireY = y0 + 20;
+
+  // Body.
+  ctx.fillStyle = "#10131a";
+  roundRect(ctx, negCol.x - 2, top - 2, posCol.x + colW - negCol.x + 4, eh + 4, 4);
+  ctx.fill();
+
+  // Collectors.
+  ctx.fillStyle = "#3a3f4b";
+  ctx.fillRect(negCol.x, top, colW, eh);
+  ctx.fillRect(posCol.x, top, colW, eh);
+  // Electrodes and the electrolyte lane.
+  ctx.fillStyle = "#232833";
+  ctx.fillRect(neg.x, top, neg.w, eh);
+  ctx.fillRect(pos.x, top, pos.w, eh);
+  ctx.fillStyle = "#1a2230";
+  ctx.fillRect(lane.x, top, lane.w, eh);
+  // Separator, a dashed line down the middle of the lane.
+  ctx.strokeStyle = "#3b4352";
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(lane.x + lane.w / 2, top);
+  ctx.lineTo(lane.x + lane.w / 2, bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // The temperature tint, over everything the cell is made of and under everything that
+  // moves in it. The first version painted it under the electrodes, where only a 2 px
+  // margin of it could be seen — a cold cell read as a blue outline.
+  ctx.fillStyle = bodyTint(cell?.temp_k, chem);
+  ctx.fillRect(negCol.x - 2, top - 2, posCol.x + colW - negCol.x + 4, eh + 4);
+
+  // Labels.
+  label(ctx, "−", neg.x + 6, top - 10, PLOT_INK, "left", 12);
+  label(ctx, "+", pos.x + pos.w - 6, top - 10, PLOT_INK, "right", 12);
+  label(ctx, d ? d.negative : "negative", neg.x + neg.w / 2, bottom + 12, "#e6e9ef", "center", 10);
+  label(ctx, d ? d.positive : "positive", pos.x + pos.w / 2, bottom + 12, "#e6e9ef", "center", 10);
+  label(ctx, d ? d.electrolyte : "electrolyte", lane.x + lane.w / 2, bottom + 12, PLOT_INK, "center", 9);
+  ctx.save();
+  ctx.translate(negCol.x + colW / 2, top + eh / 2);
+  ctx.rotate(-Math.PI / 2);
+  label(ctx, d ? d.negative_collector : "collector", 0, 0, "#e6e9ef", "center", 9);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(posCol.x + colW / 2, top + eh / 2);
+  ctx.rotate(-Math.PI / 2);
+  label(ctx, d ? d.positive_collector : "collector", 0, 0, "#e6e9ef", "center", 9);
+  ctx.restore();
+
+  // Health: a share of the carriers is trapped for good in the film on the negative,
+  // and the film thickens with the resistance growth. Both from `CellView`.
+  const nTrapped = cell ? Math.round(N_CARRIERS * (1 - cell.soh_capacity)) : 0;
+  const nLive = N_CARRIERS - nTrapped;
+  const film = cell ? Math.min(8, 1 + 6 * (cell.soh_resistance - 1)) : 1;
+  ctx.fillStyle = "#4a5060";
+  ctx.fillRect(lane.x - film, top, film, eh);
+
+  // Carrier populations, by family. Full means: at `home`.
+  const socLive = Math.max(0, Math.min(1, soc));
+  let nNeg = 0;
+  let nPos = 0;
+  let nAcid = 0;
+  if (fam.home === "negative") {
+    nNeg = Math.round(nLive * socLive);
+    nPos = nLive - nNeg;
+  } else {
+    nAcid = Math.round(nLive * socLive);
+    const onPlates = nLive - nAcid;
+    nNeg = Math.floor(onPlates / 2);
+    nPos = onPlates - nNeg;
+  }
+  const inset = 6;
+  const negPts = scatterIn(N_CARRIERS, neg.x + inset, top + inset, neg.w - 2 * inset, eh - 2 * inset, 11);
+  const posPts = scatterIn(N_CARRIERS, pos.x + inset, top + inset, pos.w - 2 * inset, eh - 2 * inset, 23);
+  const acidPts = scatterIn(N_CARRIERS, lane.x + inset, top + inset, lane.w - 2 * inset, eh - 2 * inset, 37);
+  const r = 3;
+  const sulfate = fam.home === "electrolyte";
+  // Populate the negative from the collector side outward on an intercalation cell, so
+  // the electrode reads as filling toward the separator; on a plate, sulfate grows at
+  // the surface first, so from the separator side inward.
+  const negOrder = sulfate ? negPts.slice().sort((a, b) => b.x - a.x) : negPts.slice().sort((a, b) => a.x - b.x);
+  const posOrder = posPts.slice().sort((a, b) => a.x - b.x);
+  for (let k = 0; k < nNeg; k += 1) {
+    const q = negOrder[k];
+    if (sulfate) {
+      ctx.fillStyle = METAL_INK;
+      ctx.fillRect(q.x - r, q.y - r, 2 * r, 2 * r);
+    } else dot(ctx, q.x, q.y, r, CARRIER_INK);
+  }
+  for (let k = 0; k < nPos; k += 1) {
+    const q = posOrder[k];
+    if (sulfate) {
+      ctx.fillStyle = METAL_INK;
+      ctx.fillRect(q.x - r, q.y - r, 2 * r, 2 * r);
+    } else dot(ctx, q.x, q.y, r, CARRIER_INK);
+  }
+  for (let k = 0; k < nAcid; k += 1) dot(ctx, acidPts[k].x, acidPts[k].y, r, CARRIER_INK);
+  // The trapped ones sit against the film.
+  for (let k = 0; k < nTrapped; k += 1) {
+    const q = negOrder[N_CARRIERS - 1 - k];
+    dot(ctx, lane.x - film - 5, q.y, r, TRAPPED_INK);
+  }
+
+  // Porous models: the surface band of each electrode is tinted by how far its surface
+  // is from its bulk — the gradient an equivalent circuit cannot have (`surface_gap_*`,
+  // discharge-positive on both electrodes).
+  if (cell && isPorous(cell)) {
+    const band = Math.min(18, neg.w * 0.22);
+    const tint = (gap) => {
+      const a = Math.min(0.6, Math.abs(gap) * 3);
+      return gap >= 0 ? `rgba(255,138,76,${a})` : `rgba(90,150,255,${a})`;
+    };
+    ctx.fillStyle = tint(cell.surface_gap_neg);
+    ctx.fillRect(lane.x - band, top, band, eh);
+    ctx.fillStyle = tint(cell.surface_gap_pos);
+    ctx.fillRect(pos.x, top, band, eh);
+    label(ctx, "surface", lane.x - band / 2, top + 8, PLOT_INK, "center", 8);
+    label(ctx, "surface", pos.x + band / 2, top + 8, PLOT_INK, "center", 8);
+  }
+
+  // The lane: carriers in transit, moved by the throughput. Direction by family and by
+  // the sign of the current; on a lead-acid cell the acid goes *to both plates* on a
+  // discharge and comes back off both on a charge.
+  const moving = !contactorOpen && Math.abs(cRate) > 1e-6;
+  if (moving) {
+    const n = Math.min(14, Math.max(3, Math.round(Math.abs(cRate) * 5)));
+    const rows = 3;
+    const laneX0 = lane.x + 6;
+    const laneLen = lane.w - 12;
+    // The family's orientation on a discharge; `phase` is signed, so a charge runs the
+    // same expression backwards and nothing here consults the current's sign twice.
+    const dir = fam.laneSign;
+    for (let k = 0; k < n; k += 1) {
+      const row = k % rows;
+      const y = top + eh * ((row + 0.5) / rows) + (k % 2 === 0 ? -6 : 6);
+      if (dir === 0) {
+        // Out from the middle to both plates on a discharge, back off both on a charge.
+        const half = laneLen / 2;
+        const side = k % 2 === 0 ? -1 : 1;
+        const off = frac(phase + k / n) * half;
+        dot(ctx, lane.x + lane.w / 2 + side * off, y, 2.6, CARRIER_INK);
+      } else {
+        dot(ctx, laneX0 + frac(phase * dir + k / n) * laneLen, y, 2.6, CARRIER_INK);
+      }
+    }
+    const laneName = fam.laneLabel ?? d?.carrier ?? "ion";
+    const arrow =
+      dir === 0 ? (discharging ? "← →" : "→ ←") : (dir > 0) === discharging ? "→" : "←";
+    label(ctx, `${laneName} ${arrow}`, lane.x + lane.w / 2, top + 12, CARRIER_INK, "center", 10);
+  } else {
+    label(ctx, d?.carrier ?? "carrier", lane.x + lane.w / 2, top + 12, PLOT_INK, "center", 10);
+  }
+
+  // The external wire, from collector to collector over the top, with the sink.
+  const wire = polyPath([
+    [negCol.x + colW / 2, top - 2],
+    [negCol.x + colW / 2, wireY],
+    [posCol.x + colW / 2, wireY],
+    [posCol.x + colW / 2, top - 2],
+  ]);
+  strokePath(ctx, wire, PLOT_INK, 1.5, false);
+  const cx = w / 2;
+  ctx.fillStyle = PLOT_BG;
+  ctx.fillRect(cx - 20, wireY - 12, 40, 24);
+  const kind = contactorOpen ? "open" : discharging ? "load" : charging ? "charger" : "open";
+  drawSink(ctx, cx, wireY, kind);
+  label(ctx, contactorOpen ? "contactor open" : kind === "open" ? "rest" : kind, cx, wireY - 13, PLOT_INK, "center", 9);
+  if (moving) {
+    const n = Math.min(30, Math.max(4, Math.round(Math.abs(cRate) * 8)));
+    // Electrons leave the negative on a discharge — forward along the wire as defined —
+    // and `phase` is signed, so a charge runs them back.
+    for (let k = 0; k < n; k += 1) {
+      const dd = phase * wire.total * 0.5 + (k / n) * wire.total;
+      const [x, y] = alongPath(wire, dd);
+      dot(ctx, x, y, 2.2, ELECTRON_INK);
+    }
+    label(ctx, "e⁻", posCol.x + colW + 8, wireY, ELECTRON_INK, "left", 10);
+  }
+
+  // Edge states, each drawn where it happens. All of them are engine reports.
+  const captions = [];
+  if (st.shorted) {
+    // A conductive bridge through the separator, with its own internal loop.
+    const yb = top + eh * 0.5;
+    ctx.strokeStyle = "#ffb454";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(lane.x - 2, yb);
+    for (let k = 1; k <= 6; k += 1) ctx.lineTo(lane.x + (lane.w * k) / 6, yb + (k % 2 ? -4 : 4));
+    ctx.stroke();
+    tag(ctx, `short ${(1 / cell.internal_short_conductance_s).toFixed(1)} Ω`, lane.x + lane.w / 2, yb - 12, "#ffb454");
+    captions.push("An internal short: a conductive path through the separator, so the cell discharges into itself and every coulomb of it is heat inside the can.");
+  }
+  if (st.refused) {
+    if (fam.home === "electrolyte") {
+      // Gas off both plates.
+      for (let k = 0; k < 6; k += 1) {
+        const yy = top + eh - frac(-phase * 0.7 + k / 6) * eh;
+        dot(ctx, neg.x + neg.w - 8 - (k % 3) * 5, yy, 2, GAS_INK);
+        dot(ctx, pos.x + 8 + (k % 3) * 5, yy, 2, GAS_INK);
+      }
+      label(ctx, "H₂", neg.x + neg.w - 10, top + 10, GAS_INK, "right", 9);
+      label(ctx, "O₂", pos.x + 10, top + 10, GAS_INK, "left", 9);
+    } else if (d?.family === "nickel") {
+      // Oxygen off the positive, across to the negative, gone as heat.
+      for (let k = 0; k < 6; k += 1) {
+        const u = frac(-phase * 0.7 + k / 6);
+        const yy = top + 10 + (k % 3) * 9;
+        dot(ctx, pos.x + 4 - u * (pos.x + 4 - (neg.x + neg.w - 4)), yy, 2, GAS_INK);
+      }
+      label(ctx, "O₂ →", lane.x + lane.w / 2, top + 20, GAS_INK, "center", 9);
+    } else {
+      // Metal on the negative's surface: the carriers had nowhere to go.
+      for (let k = 0; k < 5; k += 1) {
+        ctx.fillStyle = METAL_INK;
+        ctx.fillRect(lane.x - film - 8, top + 14 + k * ((eh - 28) / 4), 5, 5);
+      }
+    }
+    // `i_rejected_a` is summed over every cell of the pack, the same number the `clamp`
+    // readout prints; on a pack it is not this cell's share, and the label says so.
+    const whose = (st.data?.cells?.length ?? 1) > 1 ? " across the pack" : "";
+    tag(ctx, `refused ${Math.abs(st.m.i_rejected_a).toFixed(2)} A${whose}, as heat`, lane.x + lane.w / 2, top + eh - 10, "#ff6b6b");
+    captions.push(d?.overcharge ?? "Full, and offered more: the refused current is heat.");
+  }
+  if (st.pastEmpty) {
+    if (d?.family === "intercalation" && d?.negative_collector === "copper") {
+      // The collector pits and goes into solution.
+      for (let k = 0; k < 6; k += 1) {
+        const yy = top + 12 + k * ((eh - 24) / 5);
+        ctx.fillStyle = "#10131a";
+        ctx.fillRect(negCol.x + colW - 4, yy, 4, 5);
+        dot(ctx, neg.x + 6 + frac(phase * 0.5 + k / 6) * 14, yy + 2, 2, "#d38b5d");
+      }
+      label(ctx, "Cu²⁺", neg.x + 24, top + 8, "#d38b5d", "left", 9);
+    } else if (fam.home === "electrolyte") {
+      label(ctx, "sulfation", lane.x + lane.w / 2, top + eh - 24, METAL_INK, "center", 9);
+    } else if (d?.family === "nickel") {
+      for (let k = 0; k < 5; k += 1) dot(ctx, pos.x + 8 + (k % 2) * 6, top + eh - 8 - frac(phase * 0.7 + k / 5) * (eh - 16), 2, GAS_INK);
+      label(ctx, "H₂", pos.x + 10, top + 10, GAS_INK, "left", 9);
+    }
+    tag(ctx, `past empty ${(cell.soc_deficit * 100).toFixed(2)} pts`, neg.x + neg.w / 2, top + eh - 10, "#ff6b6b");
+    captions.push(d?.deep_discharge ?? "Below empty: the voltage collapses and the circuit pays.");
+  }
+  if (st.plating && charging && d?.cold_charge) {
+    for (let k = 0; k < 7; k += 1) {
+      ctx.fillStyle = METAL_INK;
+      const yy = top + 10 + k * ((eh - 20) / 6);
+      ctx.beginPath();
+      ctx.moveTo(lane.x - film, yy);
+      ctx.lineTo(lane.x - film - 9, yy - 3);
+      ctx.lineTo(lane.x - film - 6, yy + 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    label(ctx, "plating", lane.x - film - 14, top + eh / 2, METAL_INK, "right", 9);
+    captions.push(d.cold_charge);
+  }
+  if (st.runaway && d?.runaway) {
+    ctx.strokeStyle = "#ff6b6b";
+    ctx.lineWidth = 2;
+    roundRect(ctx, negCol.x - 3, top - 3, posCol.x + colW - negCol.x + 6, eh + 6, 4);
+    ctx.stroke();
+    tag(ctx, `${(cell.runaway_energy_remaining_j / 1000).toFixed(1)} kJ left to burn`, pos.x + pos.w / 2, top + eh - 10, "#ff6b6b");
+    captions.push(d.runaway);
+  }
+  if (st.vented) {
+    for (let k = 0; k < 8; k += 1) {
+      const u = frac(phase * 0.3 + k / 8);
+      dot(ctx, w / 2 + 60 + (k % 4) * 8 - 12, top - 4 - u * 30, 2 + u * 2, `rgba(232,236,243,${1 - u})`);
+    }
+    label(ctx, "VENTED", w / 2 + 62, top - 40, "#ff6b6b", "center", 10);
+  }
+  if (st.balancing) {
+    captions.push("Balancing: the BMS is bleeding the fullest group(s) through a resistor so the string can finish its charge together. Which group is not on the wire.");
+  }
+  return captions;
+}
+
+function drawCarriers() {
+  const canvas = $("carriers-canvas");
+  const { ctx, w, h } = fitCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = PLOT_BG;
+  ctx.fillRect(0, 0, w, h);
+  const st = carrierState();
+  const head = $("carriers-cell");
+  const note = $("carriers-note");
+  if (!st.data || !st.m) {
+    label(ctx, "no cells read yet", w / 2, h / 2, PLOT_INK, "center", 11);
+    head.textContent = "";
+    note.textContent = "";
+    return;
+  }
+  const packH = Math.min(120, h * 0.34);
+  drawPackBand(ctx, w, 6, packH, st);
+  ctx.strokeStyle = PLOT_GRID;
+  ctx.beginPath();
+  ctx.moveTo(10, packH + 10);
+  ctx.lineTo(w - 10, packH + 10);
+  ctx.stroke();
+  const captions = drawCellBand(ctx, w, packH + 14, h - packH - 14, st);
+
+  const where = `cell (${st.s},${st.p})${grid.pinned === st.sel ? " · pinned" : grid.hovered === st.sel ? " · hovered" : ""}`;
+  const cr = Math.abs(st.cRate);
+  const ofWhat = (st.data.parallel ?? 1) > 1 ? " of the pack" : "";
+  const how = st.contactorOpen
+    ? "contactor open — nothing moves"
+    : cr < 1e-6
+      ? "at rest"
+      : `${st.discharging ? "discharging" : "charging"} at ${Math.abs(st.i).toFixed(2)} A, ${cr.toFixed(2)} C${ofWhat}`;
+  head.textContent = `${st.chem ? st.chem.name : "chemistry unknown"} · ${where} · ${how}`;
+
+  const parts = [];
+  if (!st.chem) {
+    parts.push(state.chemError ? `no chemistry facts: ${state.chemError}` : "no chemistry facts for this scenario, so the cell is drawn generic and unlabelled");
+  } else if (!st.chem.diagram) {
+    parts.push("this chemistry file carries no [diagram] section, so the cell is drawn generic and unlabelled");
+  }
+  if ((st.data.parallel ?? 1) > 1 && cr > 1e-6) {
+    parts.push("the carriers move by the pack current: which parallel cell carries what share is not on the wire");
+  }
+  parts.push(...captions);
+  note.textContent = parts.join("  ·  ");
+}
+
+$("carriers-canvas").addEventListener("click", (ev) => {
+  const canvas = $("carriers-canvas");
+  const r = canvas.getBoundingClientRect();
+  const x = ev.clientX - r.left;
+  const y = ev.clientY - r.top;
+  for (const hb of carrierHits) {
+    if (x >= hb.x && x <= hb.x + hb.w && y >= hb.y && y <= hb.y + hb.h) {
+      grid.pinned = grid.pinned === hb.idx ? null : hb.idx;
+      grid.dirty = true;
+      invalidate();
+      return;
+    }
+  }
+});
+
+/**
+ * The chemistry's facts for the scenario on screen: fetched by id the way `WasmBackend`
+ * fetches the chemistry itself, then read through `chemistry_facts_of`, so this page
+ * still parses no TOML. `null` with a reason in `state.chemError` when the scenario
+ * inlines its chemistry or the file's `[diagram]` contradicts its physics — the pack
+ * still loads either way (`Sim::new` never reads the section), only the drawing is
+ * generic.
+ */
+async function chemistryFactsFor(scenarioText) {
+  const id = wasm.chemistry_id_of(scenarioText);
+  if (id === undefined) throw new Error("the scenario inlines its chemistry");
+  const res = await fetch(`/chemistries/${id}.toml`);
+  if (!res.ok) throw new Error(`GET /chemistries/${id}.toml -> ${res.status}`);
+  return JSON.parse(wasm.chemistry_facts_of(await res.text()));
+}
+
+// ---------------------------------------------------------------------------
 // Fault injection
 // ---------------------------------------------------------------------------
 
@@ -2071,6 +2875,10 @@ const state = {
   facts: null,
   cells: null,
   sensors: null,
+  // The chemistry's facts for the carrier diagram — `chemistry_facts_of` on the file the
+  // scenario names — or null with the reason in `chemError`. See `chemistryFactsFor`.
+  chem: null,
+  chemError: null,
   cellsBusy: false,
   cellsAtMs: 0,
   cellsError: null,
@@ -2383,6 +3191,7 @@ function draw() {
   renderReadouts(state.latest, state.facts ?? { sim_time_s: 0 }, state.cells);
   renderFlags(state.latest);
   paintGrid();
+  drawCarriers();
   view.drawMs = performance.now() - began;
 }
 
@@ -2539,6 +3348,8 @@ async function loadScenario() {
   state.cells = null;
   state.sensors = null;
   state.cellsError = null;
+  state.chem = null;
+  state.chemError = null;
   grid.pinned = null;
   grid.hovered = null;
   grid.dirty = true;
@@ -2567,6 +3378,15 @@ async function loadScenario() {
     state.scenarioText = text;
     state.backend = backend;
     state.facts = backend.facts();
+    // After the backend, so a diagram that cannot be described never stops a pack that
+    // can be built; the panel's note carries the reason instead.
+    try {
+      state.chem = await chemistryFactsFor(text);
+    } catch (e) {
+      state.chem = null;
+      state.chemError = String(e.message ?? e);
+    }
+    if (seq !== loadSeq) return;
     applyEnv();
     afterFactsChange(Backend.label);
     await readNow();
@@ -3991,4 +4811,4 @@ await loadScenario();
  * plots hold, what one full redraw costs — without the module's `const`s being reachable
  * any other way. `docs/plans/client-redraw.md` records the measurements taken through it.
  */
-window.batsim = { state, history, view, draw, invalidate };
+window.batsim = { state, history, view, draw, invalidate, flow, drawCarriers, grid };

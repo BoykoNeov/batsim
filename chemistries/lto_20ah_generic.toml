@@ -215,3 +215,25 @@ runaway_ea_j_per_mol     = 1.0e5   # provenance: placeholder activation energy f
 # plating_fade_per_ah, plating_short_hazard_per_ah and plating_short_ohms are therefore
 # omitted and default to zero, which is now required rather than merely tidy: stating
 # costs for a mechanism this cell does not have would be inventing numbers.
+
+# ---------------------------------------------------------------------------------------
+# [diagram] — what this cell is made of, for the browser client's carrier diagram.
+#
+# Read by NO engine code. sim_data::parse_chemistry_facts reads this table separately and
+# hands it to the page; ChemistryParams never sees it. Labels are how the page names the
+# parts; the four captions are what the page says when the ENGINE reports each state (the
+# engine decides when, this table says what). `cold_charge` is required exactly when
+# [safety].t_plating_min_k is present and `runaway` exactly when [safety] is, and the loader
+# rejects a mismatch. See docs/plans/carrier-diagram.md.
+# ---------------------------------------------------------------------------------------
+[diagram]
+family             = "intercalation"
+carrier            = "Li⁺"
+negative           = "Li₄Ti₅O₁₂ (titanate)"
+positive           = "layered / spinel oxide"
+electrolyte        = "LiPF₆ in carbonate solvents"
+negative_collector = "aluminium"
+positive_collector = "aluminium"
+overcharge     = "The titanate is full and the oxide has nothing left to give, so the charger's current becomes heat; the titanate sits 1.55 V above lithium metal, so there is no plating even here — what fails on a real cell is the electrolyte, oxidised on the positive."
+deep_discharge = "Below empty the titanate is out of lithium and the cell voltage collapses; its aluminium collector sits far below the potential at which copper would dissolve, so no collector corrodes, and this file bills over-discharge at exactly zero."
+runaway        = "Above onset the electrolyte reacts on the oxide positive and it gives up its oxygen; the titanate negative carries no film to break down and no lithium metal to burn, which is why this cell's exotherm is the smallest of the lithium chemistries shipped here."

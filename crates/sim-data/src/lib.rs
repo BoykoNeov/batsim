@@ -16,8 +16,10 @@ use std::path::Path;
 use sim_core::{BuildError, ChemistryError, ChemistryParams, FaultError};
 use thiserror::Error;
 
+pub mod diagram;
 pub mod scenario;
 
+pub use diagram::{ChemistryFacts, DiagramFamily, DiagramParams};
 pub use scenario::{load_scenario_file, parse_scenario, ChemistrySource, Scenario, ScenarioMeta};
 
 /// Ways loading a chemistry or a scenario can fail.
@@ -48,6 +50,13 @@ pub enum DataError {
     /// A scenario's pack could not be built for the chemistry it names.
     #[error("building the scenario's pack: {0}")]
     Build(#[from] BuildError),
+    /// A chemistry's `[diagram]` section disagrees with its physics.
+    ///
+    /// Its own variant for the same reason [`Self::Scenario`] is: these are checks no
+    /// engine type can make, because the engine never reads the section. See
+    /// [`diagram`] for the two rules.
+    #[error("invalid [diagram]: {0}")]
+    Diagram(String),
     /// A scenario's queued fault does not fit the pack it targets.
     #[error("scheduling a scenario fault: {0}")]
     Fault(#[from] FaultError),
@@ -63,6 +72,70 @@ pub fn parse_chemistry(text: &str) -> Result<ChemistryParams, DataError> {
     let params: ChemistryParams = toml::from_str(text)?;
     params.validate()?;
     Ok(params)
+}
+
+/// Parse a chemistry and its `[diagram]` section into what a client needs to draw it.
+///
+/// Validates the chemistry exactly as [`parse_chemistry`] does — a file that fails there
+/// fails here the same way — and then checks the two rules [`diagram`] states: the
+/// `cold_charge` caption is present exactly when the file can plate, and the `runaway`
+/// caption exactly when the file has `[safety]`. A file with no `[diagram]` at all is not
+/// an error; `diagram` is `None` and a client draws a generic cell.
+///
+/// # Errors
+/// Any error from [`parse_chemistry`]; [`DataError::Toml`] if the `[diagram]` table has
+/// a wrong or unknown key; [`DataError::Diagram`] if a caption is present without the
+/// mechanism it describes, or absent with it.
+pub fn parse_chemistry_facts(text: &str) -> Result<ChemistryFacts, DataError> {
+    let chem = parse_chemistry(text)?;
+    let file: diagram::DiagramFile = toml::from_str(text)?;
+    let safety = chem.safety.as_ref();
+    let plating = safety.and_then(|s| s.t_plating_min_k);
+    if let Some(d) = file.diagram.as_ref() {
+        let rule = |caption: &str, present: bool, modelled: bool, gate: &str| {
+            match (present, modelled) {
+            (true, false) => Err(DataError::Diagram(format!(
+                "`{caption}` caption on a chemistry with no {gate}: it describes a mechanism this file does not model"
+            ))),
+            (false, true) => Err(DataError::Diagram(format!(
+                "{gate} is present but `[diagram]` has no `{caption}` caption: the state it raises would be drawn with nothing said"
+            ))),
+            _ => Ok(()),
+        }
+        };
+        rule(
+            "cold_charge",
+            d.cold_charge.is_some(),
+            plating.is_some(),
+            "`[safety].t_plating_min_k`",
+        )?;
+        rule(
+            "runaway",
+            d.runaway.is_some(),
+            safety.is_some(),
+            "`[safety]`",
+        )?;
+    }
+    Ok(ChemistryFacts {
+        id: chem.meta.id.clone(),
+        name: chem.meta.name.clone(),
+        capacity_ah: chem.cell.capacity_ah,
+        v_max: chem.cell.v_max,
+        v_min: chem.cell.v_min,
+        t_charge_min_k: chem.cell.t_charge_min_k,
+        t_max_k: chem.cell.t_max_k,
+        t_onset_k: safety.map(|s| s.t_onset_k),
+        t_vent_k: safety.map(|s| s.t_vent_k),
+        t_plating_min_k: plating,
+        plating_c_threshold: safety.and_then(|s| s.plating_c_threshold),
+        charge_acceptance_onset: chem.charge_acceptance.as_ref().map(|c| c.soc_onset),
+        has_hysteresis: chem.hysteresis.is_some(),
+        has_diffusion: chem.diffusion.is_some(),
+        has_spm: chem.spm.is_some(),
+        has_dfn: chem.dfn.is_some(),
+        has_aging: chem.aging.is_some(),
+        diagram: file.diagram,
+    })
 }
 
 /// Read, parse, and validate a chemistry from a TOML file on disk.

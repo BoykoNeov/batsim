@@ -133,3 +133,26 @@ plating_c_threshold = 0.5      # provenance: placeholder C-rate above which cold
 plating_fade_per_ah        = 1.0e-3  # provenance: placeholder — set ~50x cyc_fade_per_ah so plated charge is decisively worse than ordinary throughput, TODO fit
 plating_short_hazard_per_ah = 1.0e-3 # provenance: placeholder Poisson hazard per Ah plated, TODO fit
 plating_short_ohms         = 50.0    # provenance: placeholder soft short, ~2500x this cell's R0 (~66 mA leak at 3.3 V, days to drain); TODO fit
+
+# ---------------------------------------------------------------------------------------
+# [diagram] — what this cell is made of, for the browser client's carrier diagram.
+#
+# Read by NO engine code. sim_data::parse_chemistry_facts reads this table separately and
+# hands it to the page; ChemistryParams never sees it. Labels are how the page names the
+# parts; the four captions are what the page says when the ENGINE reports each state (the
+# engine decides when, this table says what). `cold_charge` is required exactly when
+# [safety].t_plating_min_k is present and `runaway` exactly when [safety] is, and the loader
+# rejects a mismatch. See docs/plans/carrier-diagram.md.
+# ---------------------------------------------------------------------------------------
+[diagram]
+family             = "intercalation"
+carrier            = "Li⁺"
+negative           = "graphite"
+positive           = "LiFePO₄"
+electrolyte        = "LiPF₆ in carbonate solvents"
+negative_collector = "copper"
+positive_collector = "aluminium"
+overcharge     = "The positive has no lithium left to give and the graphite no room to take it, so the charger's current becomes heat rather than stored charge; on a real cell the lithium plates on the graphite as metal and the electrolyte oxidises on the LiFePO₄."
+deep_discharge = "Below empty the graphite is out of lithium and the cell voltage collapses; the copper collector under it is pushed above its own dissolution potential and goes into solution, which is the damage billed per amp-hour past empty."
+cold_charge    = "Below 0 °C lithium arrives at the graphite faster than it can enter, and deposits on the surface as metal instead of intercalating: plating — capacity gone, and a dendrite that can bridge the separator."
+runaway        = "Above onset the film on the graphite breaks down and both electrodes react with the electrolyte; LiFePO₄ holds its oxygen tightly, so the exotherm is smaller and slower than on a nickel-rich positive."

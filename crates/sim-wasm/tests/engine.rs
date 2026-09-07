@@ -867,3 +867,37 @@ fn the_cell_array_is_series_major_and_parallel_minor() {
         );
     }
 }
+
+#[test]
+fn chemistry_facts_cross_the_boundary_as_json_with_the_diagram_inside() {
+    // The page calls `chemistry_facts_of` on the chemistry text it fetched, so this is
+    // the exact shape it parses: a JSON object whose `diagram` is the file's `[diagram]`
+    // table with the family spelled in snake_case, beside the limits that scale it.
+    let json = SimEngine::chemistry_facts_json_of(LFP_TOML).expect("the shipped file");
+    let v: serde_json::Value = serde_json::from_str(&json).expect("well-formed JSON");
+    assert_eq!(v["id"], "lfp_26650_generic");
+    assert_eq!(v["diagram"]["family"], "intercalation");
+    assert_eq!(v["diagram"]["carrier"], "Li⁺");
+    assert!(v["capacity_ah"]
+        .as_f64()
+        .is_some_and(|c| c > 2.0 && c < 3.0));
+    assert_eq!(v["t_plating_min_k"], 273.15);
+    // The two optional captions are present on this file because its `[safety]` says
+    // both mechanisms exist — the loader would have refused the file otherwise.
+    assert!(v["diagram"]["cold_charge"].is_string());
+    assert!(v["diagram"]["runaway"].is_string());
+
+    // Unlike `chemistry_id_of` there is no `None` arm: a file without the table is a
+    // `null` diagram, not an error, and the limits still come across.
+    let at = LFP_TOML
+        .find("[diagram]")
+        .expect("the shipped file carries one");
+    let bare = SimEngine::chemistry_facts_json_of(&LFP_TOML[..at]).expect("still a chemistry");
+    let v: serde_json::Value = serde_json::from_str(&bare).unwrap();
+    assert!(v["diagram"].is_null());
+    assert_eq!(v["id"], "lfp_26650_generic");
+
+    // And a broken file is `EngineError::Data`, the same arm `Sim::new` reports through.
+    let err = SimEngine::chemistry_facts_json_of("[meta]\nid = \"x\"").unwrap_err();
+    assert!(matches!(err, EngineError::Data(_)), "{err}");
+}

@@ -324,6 +324,9 @@ soc_onset = 0.985            # above this the accepted share falls linearly to 0
 #   [hysteresis]  resting-voltage memory (scale_v, gamma, [hysteresis.width_over_soc])
 #   [diffusion]   a Peukert-shaped rate penalty (lead-acid)
 #   [spm], [dfn]  porous-electrode parameters, extracted from a PyBaMM set
+#   [diagram]     what the cell is made of, for the client's carrier diagram. Read by NO
+#                 engine code (sim_data::parse_chemistry_facts); its captions are tied to
+#                 [safety] and the loader rejects a mismatch. See docs/plans/carrier-diagram.md
 
 [thermal]
 heat_capacity_j_per_k = 95.0

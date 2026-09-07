@@ -346,3 +346,26 @@ plating_c_threshold = 0.5      # provenance: placeholder C-rate above which cold
 plating_fade_per_ah        = 1.2e-3  # provenance: placeholder -- set ~50x cyc_fade_per_ah so plated charge is decisively worse than ordinary throughput, the same relation the LFP file uses; TODO fit
 plating_short_hazard_per_ah = 1.0e-3 # provenance: placeholder Poisson hazard per Ah plated; TODO fit
 plating_short_ohms         = 100.0   # provenance: placeholder soft short, ~1350x this cell's mid-SOC R0 -- a 31 mA leak at 3.1 V, which drains this 1.4558 Ah cell in about two days; TODO fit
+
+# ---------------------------------------------------------------------------------------
+# [diagram] — what this cell is made of, for the browser client's carrier diagram.
+#
+# Read by NO engine code. sim_data::parse_chemistry_facts reads this table separately and
+# hands it to the page; ChemistryParams never sees it. Labels are how the page names the
+# parts; the four captions are what the page says when the ENGINE reports each state (the
+# engine decides when, this table says what). `cold_charge` is required exactly when
+# [safety].t_plating_min_k is present and `runaway` exactly when [safety] is, and the loader
+# rejects a mismatch. See docs/plans/carrier-diagram.md.
+# ---------------------------------------------------------------------------------------
+[diagram]
+family             = "intercalation"
+carrier            = "Na⁺"
+negative           = "hard carbon"
+positive           = "layered oxide (NaₓMO₂)"
+electrolyte        = "NaPF₆ in carbonate solvents"
+negative_collector = "aluminium"
+positive_collector = "aluminium"
+overcharge     = "The layered oxide is stripped of sodium past where its structure is stable and the hard carbon has no room for more, so the charger's current becomes heat; on a real cell sodium plates on the carbon and the oxide begins to release oxygen."
+deep_discharge = "Below empty the hard carbon is out of sodium and the cell voltage collapses. Sodium does not alloy with aluminium, so this cell has no copper to dissolve and is shipped at 0 V — but the survey this file cites finds the tolerance depends on the chemistry, so a placeholder fade is billed past empty rather than zero."
+cold_charge    = "Below −10 °C sodium arrives at the hard carbon faster than it can enter, and deposits on the surface as metal instead: plating — capacity gone, and a dendrite that can bridge the separator."
+runaway        = "Above onset the film on the hard carbon breaks down, the desodiated oxide gives up its oxygen, and the electrolyte burns on it: the exotherm feeds itself until the cell's budget is spent, and heats its neighbours on the way."

@@ -83,6 +83,7 @@ What a reader can reach, and how the page shows it.
 
 | file | what it records |
 | --- | --- |
+| [`carrier-diagram.md`](carrier-diagram.md) | The carrier diagram: what moves inside the cell, drawn from the engine's state, with the chemistry's `[diagram]` table behind it |
 | [`client-redraw.md`](client-redraw.md) | The client's redraw: paint on change, fold to the pixel, one cursor across six panels — and what is left |
 | [`dfn-scenario.md`](dfn-scenario.md) | The DFN scenario: a rate at which the particle model stops knowing the cell is dying |
 | [`lead-acid-client.md`](lead-acid-client.md) | The lead-acid client slice: a cell that is not empty, and will not give you the rest |

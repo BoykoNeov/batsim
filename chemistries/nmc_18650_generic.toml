@@ -136,3 +136,26 @@ plating_c_threshold = 0.4      # provenance: placeholder C-rate above which cold
 plating_fade_per_ah        = 1.5e-3  # provenance: placeholder — set ~50x cyc_fade_per_ah and above the LFP figure, TODO fit
 plating_short_hazard_per_ah = 2.0e-3 # provenance: placeholder Poisson hazard per Ah plated, ~2x LFP, TODO fit
 plating_short_ohms         = 30.0    # provenance: placeholder soft short, ~5000x this cell's R0; TODO fit
+
+# ---------------------------------------------------------------------------------------
+# [diagram] — what this cell is made of, for the browser client's carrier diagram.
+#
+# Read by NO engine code. sim_data::parse_chemistry_facts reads this table separately and
+# hands it to the page; ChemistryParams never sees it. Labels are how the page names the
+# parts; the four captions are what the page says when the ENGINE reports each state (the
+# engine decides when, this table says what). `cold_charge` is required exactly when
+# [safety].t_plating_min_k is present and `runaway` exactly when [safety] is, and the loader
+# rejects a mismatch. See docs/plans/carrier-diagram.md.
+# ---------------------------------------------------------------------------------------
+[diagram]
+family             = "intercalation"
+carrier            = "Li⁺"
+negative           = "graphite"
+positive           = "LiNiMnCoO₂"
+electrolyte        = "LiPF₆ in carbonate solvents"
+negative_collector = "copper"
+positive_collector = "aluminium"
+overcharge     = "The layered oxide is stripped of lithium past where its structure is stable and the graphite has no room for more, so the charger's current becomes heat; on a real cell lithium plates on the graphite and the oxide begins to release oxygen."
+deep_discharge = "Below empty the graphite is out of lithium and the cell voltage collapses; the copper collector under it is pushed above its own dissolution potential and goes into solution, which is the damage billed per amp-hour past empty."
+cold_charge    = "Below 0 °C lithium arrives at the graphite faster than it can enter, and deposits on the surface as metal instead of intercalating: plating — capacity gone, and a dendrite that can bridge the separator."
+runaway        = "Above onset the film on the graphite breaks down, the delithiated oxide gives up its oxygen, and the electrolyte burns on it: the exotherm feeds itself until the cell's budget is spent, and heats its neighbours on the way."

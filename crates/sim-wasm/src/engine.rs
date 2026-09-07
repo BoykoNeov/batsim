@@ -52,7 +52,10 @@ use sim_core::{
     CellView, ChemistryParams, Demand, Env, Fault, NonFinite, Pack, Snapshot, Telemetry,
     SNAPSHOT_VERSION,
 };
-use sim_data::{parse_chemistry, parse_scenario, ChemistrySource, DataError, Scenario};
+use sim_data::{
+    parse_chemistry, parse_chemistry_facts, parse_scenario, ChemistryFacts, ChemistrySource,
+    DataError, Scenario,
+};
 
 /// Most steps one [`SimEngine::step_many`] call may advance the pack.
 ///
@@ -344,6 +347,33 @@ impl SimEngine {
         Ok(match scenario.chemistry_source() {
             ChemistrySource::Id(id) => Some(id.to_owned()),
             ChemistrySource::Inline(_) => None,
+        })
+    }
+
+    /// What a page needs to draw a chemistry: its `[diagram]` section and the handful of
+    /// limits that scale the drawing, read off the chemistry text a page has already
+    /// fetched. No pack is needed, so this is an associated function like
+    /// [`Self::chemistry_id_of`].
+    ///
+    /// # Errors
+    /// [`EngineError::Data`] if the text does not parse or validate as a chemistry, or if
+    /// its `[diagram]` section contradicts its `[safety]` section — see
+    /// `sim_data::parse_chemistry_facts`.
+    pub fn chemistry_facts_of(chemistry_toml: &str) -> Result<ChemistryFacts, EngineError> {
+        Ok(parse_chemistry_facts(chemistry_toml)?)
+    }
+
+    /// [`Self::chemistry_facts_of`] as JSON, the way the page reads it.
+    ///
+    /// # Errors
+    /// As [`Self::chemistry_facts_of`], plus [`EngineError::Json`] on a serialization
+    /// failure.
+    pub fn chemistry_facts_json_of(chemistry_toml: &str) -> Result<String, EngineError> {
+        serde_json::to_string(&Self::chemistry_facts_of(chemistry_toml)?).map_err(|source| {
+            EngineError::Json {
+                context: "serializing chemistry facts",
+                source,
+            }
         })
     }
 

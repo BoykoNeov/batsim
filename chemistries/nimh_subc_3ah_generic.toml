@@ -241,3 +241,24 @@ heat_capacity_j_per_k = 55.0
 #   pi*0.0221*0.0429 + 2*pi*0.01105^2 = 0.003745 m^2
 # at a natural-convection h of ~8 W/(m^2*K), a placeholder h on a computed area.
 h_area_w_per_k        = 0.030
+
+# ---------------------------------------------------------------------------------------
+# [diagram] — what this cell is made of, for the browser client's carrier diagram.
+#
+# Read by NO engine code. sim_data::parse_chemistry_facts reads this table separately and
+# hands it to the page; ChemistryParams never sees it. Labels are how the page names the
+# parts; the four captions are what the page says when the ENGINE reports each state (the
+# engine decides when, this table says what). `cold_charge` is required exactly when
+# [safety].t_plating_min_k is present and `runaway` exactly when [safety] is, and the loader
+# rejects a mismatch. See docs/plans/carrier-diagram.md.
+# ---------------------------------------------------------------------------------------
+[diagram]
+family             = "nickel"
+carrier            = "H (carried as OH⁻)"
+negative           = "metal hydride (AB₅ alloy)"
+positive           = "Ni(OH)₂ / NiOOH"
+electrolyte        = "KOH in water"
+negative_collector = "nickel-plated steel"
+positive_collector = "nickel foam"
+overcharge     = "The positive is out of Ni(OH)₂ to oxidise, so the current splits water instead: oxygen comes off the positive, crosses to the negative and recombines there with stored hydrogen — all of it as heat, which is the warming that makes the terminal voltage turn over."
+deep_discharge = "Driven below empty the positive has no NiOOH left to reduce and the current evolves hydrogen there instead; the cell's voltage goes through zero and reverses, and in a series string it is the weakest cell that gets driven there by the others."

@@ -337,3 +337,26 @@ bruggeman_electrolyte = 1.5
 # For reference, the initial electrolyte concentration is 1000 mol/m3 and is NOT
 # repeated here: it is [spm].c_e_mol_per_m3, which an SPM holds CONSTANT and a DFN takes
 # as the initial value of a field it then solves for. Same key, same number, two readings.
+
+# ---------------------------------------------------------------------------------------
+# [diagram] — what this cell is made of, for the browser client's carrier diagram.
+#
+# Read by NO engine code. sim_data::parse_chemistry_facts reads this table separately and
+# hands it to the page; ChemistryParams never sees it. Labels are how the page names the
+# parts; the four captions are what the page says when the ENGINE reports each state (the
+# engine decides when, this table says what). `cold_charge` is required exactly when
+# [safety].t_plating_min_k is present and `runaway` exactly when [safety] is, and the loader
+# rejects a mismatch. See docs/plans/carrier-diagram.md.
+# ---------------------------------------------------------------------------------------
+[diagram]
+family             = "intercalation"
+carrier            = "Li⁺"
+negative           = "graphite with SiOₓ"
+positive           = "NMC811 (LiNi₀.₈Mn₀.₁Co₀.₁O₂)"
+electrolyte        = "LiPF₆ in carbonate solvents"
+negative_collector = "copper"
+positive_collector = "aluminium"
+overcharge     = "The nickel-rich oxide is stripped of lithium past where its layers are stable and the graphite has no room for more, so the charger's current becomes heat; on a real cell lithium plates on the graphite and the oxide begins to release oxygen."
+deep_discharge = "Below empty the graphite is out of lithium and the cell voltage collapses; the copper collector under it is pushed above its own dissolution potential and goes into solution, which is the damage billed per amp-hour past empty."
+cold_charge    = "Below 0 °C lithium arrives at the graphite faster than it can enter, and deposits on the surface as metal instead of intercalating: plating — capacity gone, and a dendrite that can bridge the separator."
+runaway        = "Above onset the film on the graphite breaks down, the delithiated NMC811 gives up its oxygen readily, and the electrolyte burns on it: the exotherm feeds itself until the cell's budget is spent, and heats its neighbours on the way."
