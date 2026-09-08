@@ -381,10 +381,20 @@ would have missed every one of them.
   is now the dominant error — not the integrator.** A day-long step burns a whole day at
   the heat of its first instant. Fixing it means solving the electrical problem more than
   once per step, which is a different and much larger change; `Pack::step`'s doc comment
-  now names it as the cost of a coarse `dt`.
-* **Runaway ignition still lags a whole step**, so a live `[safety]` section and a
-  day-long `dt` do not belong in the same run. Also documented on `Pack::step` rather than
-  left implied.
+  now names it as the cost of a coarse `dt`. **Priced, 2026-09-08**, as a side effect of
+  the slice above: on a fresh 3S1P pack under load a single day-long step settles at
+  311.45 K where a fine `dt` puts it at 318.10 — 6.6 K of a 20 K rise, a third of it,
+  because the step burns `I²·R0` all day and never sees the RC pair's `I²·R_rc`. That is
+  five orders larger than any integration error measured in this note.
+* ~~**Runaway ignition still lags a whole step**, so a live `[safety]` section and a
+  day-long `dt` do not belong in the same run.~~ **Closed 2026-09-08 by
+  `docs/plans/runaway-inside-a-coarse-step.md`**, which found three defects behind that
+  one sentence and measured that they are not equally severe: the ignition lag is real
+  and total (a day-long step ends 3.65 K past onset having released exactly nothing);
+  the reacting loop's inability to reach past 6.8 h costs work unconditionally but
+  returns a wrong *number* only when the sub-step budget binds mid-burn; and the third —
+  an accuracy bound taken on generation rather than on the net rate — was pure cost. The
+  same gate this slice established switches all three.
 * **Nothing reaches the new path yet.** The gate is 1.7 hours and the shipped hot-calendar
   scenario fast-forwards at 1 h per step; the browser multiplies the *step count*, never
   `dt`. So this closes a hole rather than enabling a shipped feature. The first client that

@@ -793,6 +793,12 @@ family as the BMS's one-step sensor lag and the fault queue's `dt` granularity. 
 on the module with its revisit trigger: a scenario needing `dt` coarse enough that a cell
 crosses onset and reaches vent inside one step.
 
+**The trigger fired, 2026-09-08.** `docs/plans/runaway-inside-a-coarse-step.md` resolves
+ignition between sub-steps above the `dt` where the linear network already switches
+integrator — 6080 s for the shipped parameters. The trade-off argued here still holds
+*below* that gate, where the lag is unchanged and a test pins it: the scan every pack in
+the world would pay for is armed only on a step no real-time client takes.
+
 ### Venting is a state predicate, not a latched flag
 
 `flags.rs` says flags are recomputed fresh each step and are not sticky, so `VENTED` is

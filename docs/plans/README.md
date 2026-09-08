@@ -51,6 +51,7 @@ Changes to what `sim-core` computes. Every one names the snapshot version it cos
 | [`low-clamp-solve-side.md`](low-clamp-solve-side.md) | The low clamp: a solve-side fix that was priced, measured, and does not work |
 | [`plating-absence.md`](plating-absence.md) | A cell that does not plate can say so |
 | [`per-cell-current.md`](per-cell-current.md) | The current each cell actually took — the parallel split, put on the wire for no snapshot bump |
+| [`runaway-inside-a-coarse-step.md`](runaway-inside-a-coarse-step.md) | Ignition inside the step — thermal runaway at fast-forward `dt` |
 | [`rc-resistance-growth.md`](rc-resistance-growth.md) | Aging grows the RC resistances too — the spec was right and the code was not |
 | [`reversal-damage.md`](reversal-damage.md) | Over-discharge that leaves a mark |
 | [`surface-vs-bulk.md`](surface-vs-bulk.md) | Surface vs bulk: the gradient an equivalent circuit cannot have |

@@ -220,7 +220,13 @@ and double as the scenario file format.
   reaches — switch to **backward Euler** (one banded Cholesky per call, reused across
   sub-steps) rather than raising the cap: it is unconditionally stable, so there is no
   upper limit on `dt`. See `docs/plans/thermal-implicit-integrator.md`. The runaway
-  reaction term keeps its own adaptive explicit path, and it *does* have a cap.
+  reaction term stays **explicit** — it is non-linear in `T`, so an implicit step against
+  it would need a Newton solve — but above the same gate the linear half of a reacting
+  sub-step goes to backward Euler too, stretches with no live reaction go to the linear
+  integrator, and the ignition test is re-evaluated between sub-steps instead of once per
+  step. So a live `[safety]` section and a fast-forward `dt` belong in the same run. The
+  reaction *does* still have a cap, and it now bounds burning alone. See
+  `docs/plans/runaway-inside-a-coarse-step.md`.
 
 ### Aging (semi-empirical; runs on a coarse sub-clock, e.g. every 10 s of sim time)
 

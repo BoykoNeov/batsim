@@ -121,12 +121,22 @@ const MAX_SUBSTEP_RISE_K: f64 = 1.0;
 ///
 /// 2048 is ~2.5× the worse of the two, which leaves room for two cells igniting in
 /// sequence within one step and for the stability bound binding harder than the rise
-/// bound near the peak. Beyond it the integration is no longer trustworthy, and unlike
-/// [`MAX_SUBSTEPS`] — which now switches integrator rather than degrading — this one
-/// really is a cliff, guarded by a `debug_assert` and a single Euler jump. Backward
-/// Euler cannot rescue it: the reaction term is non-linear in `T`, so an implicit step
-/// against it would need a Newton solve. See "deliberately not done" in
-/// `docs/plans/thermal-implicit-integrator.md`.
+/// bound near the peak.
+///
+/// **Sub-steps with no live reaction do not count against it.** They go to
+/// [`linear_stretch`] instead, so this budget bounds *burning* alone — which is a cost
+/// the chemistry sets, not one `dt` sets. Read as total temperature rise it allows
+/// 2048 K across the pack in one step: about eight full LFP cell burns, or two and a
+/// half NMC ones. A single coarse step carrying a cascade wider than that exhausts it.
+///
+/// Beyond it the integration is no longer trustworthy, and unlike [`MAX_SUBSTEPS`] —
+/// which switches integrator rather than degrading — this one really is a cliff,
+/// guarded by a `debug_assert` and a single jump. Backward Euler cannot rescue the
+/// *reaction*: it is non-linear in `T`, so an implicit step against it would need a
+/// Newton solve with the Arrhenius Jacobian, which is still not built (see
+/// "deliberately not done" in `docs/plans/thermal-implicit-integrator.md`). What it can
+/// rescue is the linear half, and above the gate the jump takes it, so the failure is a
+/// frozen reaction rate rather than a diverging temperature.
 const MAX_RUNAWAY_SUBSTEPS: u32 = 2048;
 
 /// How cells exchange heat with each other and the environment.
@@ -264,6 +274,48 @@ fn linear_plan(params: &ThermalParams, k: f64, dt: f64) -> LinearPlan {
     }
 }
 
+/// Whether one step of `dt` seconds is long enough that the reaction must be resolved
+/// *inside* it rather than from start-of-step temperatures alone.
+///
+/// It is exactly the threshold at which [`linear_plan`] switches to backward Euler, and
+/// deliberately so: a step long enough to need a different integrator is a step long
+/// enough for a cell to cross [`SafetyParams::t_onset_k`], burn, and cool again before
+/// it ends. Below it every path in this module behaves exactly as it did before
+/// ignition was resolved within a step — same branches, same partition, same bits — and
+/// runaway keeps the one-step ignition lag `crate::runaway` documents.
+///
+/// Above it three bounds that exist for the *linear* network are dropped, because
+/// backward Euler has already replaced the scheme they protect: the ignition gate is
+/// re-evaluated between sub-steps, stretches with no live reaction are integrated by
+/// [`linear_plan`] instead of at the explicit ceiling, and the reacting sub-step keeps
+/// only the reaction's own bounds. See `docs/plans/runaway-inside-a-coarse-step.md`.
+///
+/// [`Pack::step`](crate::Pack::step) also asks this: it is what decides whether to
+/// gather the per-cell runaway state that the ignition watch reads, so a pack below the
+/// gate gathers nothing and allocates nothing.
+pub(crate) fn resolves_ignition_within_step(params: &ThermalParams, k: f64, dt: f64) -> bool {
+    matches!(linear_plan(params, k, dt), LinearPlan::Implicit { .. })
+}
+
+/// The ignition watch: the state a linear sub-step loop needs to notice that a cell has
+/// reached onset with budget left, and stop.
+///
+/// The predicate is [`reaction_power`] itself rather than a bare temperature comparison,
+/// so a cell that is above onset but has already burned out does not stop a stretch
+/// every sub-step for the rest of the step. `reaction_power` returns `0.0` below onset
+/// before evaluating any exponential, so an armed watch costs a couple of comparisons
+/// per cell per sub-step and a disarmed one costs nothing at all.
+type OnsetWatch<'a> = (&'a SafetyParams, &'a [CellRunaway]);
+
+/// Whether any cell is releasing exothermic heat at the temperatures in `temps`.
+fn ignited(watch: OnsetWatch<'_>, temps: &[f64]) -> bool {
+    let (safety, runaway) = watch;
+    temps
+        .iter()
+        .zip(runaway.iter())
+        .any(|(&t, r)| reaction_power(safety, t, r.energy_remaining_j) > 0.0)
+}
+
 /// Everything [`advance_temperatures`] needs besides the state it mutates: the pack
 /// geometry, the cell's thermal properties, the coupling, and this step's
 /// environment.
@@ -290,8 +342,13 @@ pub(crate) struct ThermalStep<'a> {
 pub(crate) struct RunawayReport {
     /// Exothermic energy \[J\] released across the whole pack during this call.
     pub released_j: f64,
-    /// Whether the reaction term was live on at least one cell at the start of this
-    /// step — i.e. whether the adaptive path ran at all.
+    /// Whether the reaction term was live on at least one cell at any point during this
+    /// step.
+    ///
+    /// Below [`resolves_ignition_within_step`]'s gate that is the same thing as "at the
+    /// start of the step", because ignition is only ever tested there. Above it a cell
+    /// that crosses onset *during* the step sets this on the step it crossed, which is
+    /// the whole point of the gate.
     ///
     /// This is what raises [`crate::EventFlags::THERMAL_RUNAWAY`], and it is `true`
     /// even on a zero-length probe step, where the reaction is real but no time passes
@@ -344,6 +401,78 @@ fn euler_substep(temps: &mut [f64], scratch: &mut Vec<f64>, q: &[f64], step: &Th
             temps[i] = t_i + h * (q[i] + flow) / c_th;
         }
     }
+}
+
+/// `n_sub` explicit-Euler sub-steps of `h` seconds, stopping early if an armed watch
+/// sees a cell reach onset. Returns the number of sub-steps actually taken.
+///
+/// With `watch` at `None` this is the bare loop it replaced, call for call: the watch is
+/// the only addition and a disarmed one is not evaluated.
+fn explicit_substeps(
+    temps: &mut [f64],
+    scratch: &mut Vec<f64>,
+    q: &[f64],
+    step: &ThermalStep,
+    n_sub: u32,
+    h: f64,
+    watch: Option<OnsetWatch<'_>>,
+) -> u32 {
+    for taken in 0..n_sub {
+        euler_substep(temps, scratch, q, step, h);
+        if let Some(w) = watch {
+            if ignited(w, temps) {
+                return taken + 1;
+            }
+        }
+    }
+    n_sub
+}
+
+/// Largest `|dT/dt|` \[K/s\] any cell is under right now, given per-cell heating `q`.
+///
+/// This is the *net* rate — generation plus conduction plus convection — and it is what
+/// the accuracy bound on a reacting sub-step wants, rather than the generation term
+/// alone. The difference is the whole reach of a coarse step: a pack sitting at its
+/// quasi-steady temperature generates watts and moves nowhere, so a bound built from
+/// generation alone shrinks the sub-step to nothing for a temperature that is not
+/// changing.
+///
+/// Conservative for a backward-Euler sub-step, which is where it is used: with the
+/// reaction frozen the sub-step is a relaxation, so the move it actually makes is no
+/// larger than `h` times the rate at its start.
+fn net_rate_max(temps: &[f64], q: &[f64], step: &ThermalStep) -> f64 {
+    let &ThermalStep {
+        series,
+        parallel,
+        params,
+        k_neighbor_w_per_k: k,
+        t_env,
+        ..
+    } = step;
+    let c_th = params.heat_capacity_j_per_k;
+    let mut worst = 0.0_f64;
+    for s in 0..series {
+        for p in 0..parallel {
+            let i = s * parallel + p;
+            let t_i = temps[i];
+            let mut flow = 0.0;
+            if s > 0 {
+                flow += k * (temps[i - parallel] - t_i);
+            }
+            if s + 1 < series {
+                flow += k * (temps[i + parallel] - t_i);
+            }
+            if p > 0 {
+                flow += k * (temps[i - 1] - t_i);
+            }
+            if p + 1 < parallel {
+                flow += k * (temps[i + 1] - t_i);
+            }
+            flow += exposure(s, p, series, parallel) * params.h_area_w_per_k * (t_env - t_i);
+            worst = worst.max(((q[i] + flow) / c_th).abs());
+        }
+    }
+    worst
 }
 
 /// One backward-Euler sub-step is a linear solve, and this is the matrix.
@@ -527,7 +656,8 @@ fn implicit_substeps(
     step: &ThermalStep,
     n_sub: u32,
     h: f64,
-) {
+    watch: Option<OnsetWatch<'_>>,
+) -> u32 {
     let &ThermalStep {
         series,
         parallel,
@@ -547,11 +677,57 @@ fn implicit_substeps(
                 g * (q[i] + exposure(s, p, series, parallel) * params.h_area_w_per_k * t_env);
         }
     }
-    for _ in 0..n_sub {
+    for taken in 0..n_sub {
         scratch.clear();
         scratch.extend(temps.iter().zip(&forcing).map(|(t, f)| t + f));
         a.solve_in_place(scratch);
         temps.copy_from_slice(scratch);
+        if let Some(w) = watch {
+            if ignited(w, temps) {
+                return taken + 1;
+            }
+        }
+    }
+    n_sub
+}
+
+/// Integrate up to `remaining` seconds of the network with **no reaction anywhere**,
+/// stopping at the first sub-step boundary where an armed watch sees a cell reach
+/// onset. Returns the time actually integrated \[s\].
+///
+/// The partition is [`linear_plan`]'s, applied to `remaining` rather than to the whole
+/// step, so a stretch inherits the integrator and the sub-step count the same length of
+/// time would get if it were a step of its own — explicit under the stability ceiling,
+/// backward Euler above it.
+///
+/// Returning `remaining` unchanged when the whole stretch is consumed (rather than
+/// `n·h`) is what keeps the caller's countdown landing on an exact zero instead of a
+/// residue, the same care the reacting loop takes with its own sub-step.
+fn linear_stretch(
+    temps: &mut [f64],
+    scratch: &mut Vec<f64>,
+    q: &[f64],
+    step: &ThermalStep,
+    remaining: f64,
+    watch: Option<OnsetWatch<'_>>,
+) -> f64 {
+    let &ThermalStep {
+        params,
+        k_neighbor_w_per_k: k,
+        ..
+    } = step;
+    let (n, h, taken) = match linear_plan(params, k, remaining) {
+        LinearPlan::Explicit { n, h } => (n, h, {
+            explicit_substeps(temps, scratch, q, step, n, h, watch)
+        }),
+        LinearPlan::Implicit { n, h } => (n, h, {
+            implicit_substeps(temps, scratch, q, step, n, h, watch)
+        }),
+    };
+    if taken >= n {
+        remaining
+    } else {
+        f64::from(taken) * h
     }
 }
 
@@ -575,6 +751,16 @@ fn implicit_substeps(
 /// from the current state before every sub-step, bounded by both the linear stability
 /// ceiling *and* [`MAX_SUBSTEP_RISE_K`]. The rise bound is the operative one — see its
 /// docs for why the stability bound alone is not enough against an exponential.
+///
+/// # Three paths, above the gate
+///
+/// Above [`resolves_ignition_within_step`]'s gate — a `dt` long enough that the linear
+/// network already needs backward Euler — those two paths interleave instead of one
+/// being chosen for the whole step. Sub-steps with no live reaction go to
+/// [`linear_stretch`] under an ignition watch, sub-steps with one go to the adaptive
+/// loop with the linear part solved implicitly, and control passes between them as
+/// cells catch and burn out. That is what lets a fast-forward `dt` carry an ignition,
+/// a burn and the hours either side of it inside one step.
 pub(crate) fn advance_temperatures(
     temps: &mut [f64],
     scratch: &mut Vec<f64>,
@@ -595,32 +781,36 @@ pub(crate) fn advance_temperatures(
     debug_assert_eq!(heat_w.len(), temps.len());
     debug_assert!(runaway.is_empty() || runaway.len() == temps.len());
 
-    // The gate, evaluated once from start-of-step temperatures. A cell that crosses
-    // onset *during* this step therefore ignites at the start of the next one; see the
-    // "ignition lags by one step" section of [`crate::runaway`] for why that is bought
-    // deliberately rather than overlooked.
-    let reacting = match safety {
-        Some(s) if runaway.len() == temps.len() => temps
-            .iter()
-            .zip(runaway.iter())
-            .any(|(&t, r)| reaction_power(s, t, r.energy_remaining_j) > 0.0),
+    // Can this pack react at all? A chemistry with no `[safety]` section cannot, and
+    // neither can one whose caller did not gather the per-cell exothermic state — which
+    // `Pack::step` skips precisely when nothing can come of it.
+    let can_react = safety.is_some() && runaway.len() == temps.len();
+    // Is this step long enough that the reaction has to be resolved inside it? Below the
+    // gate everything from here down behaves exactly as it did before ignition was
+    // resolved within a step.
+    let watching = can_react && resolves_ignition_within_step(params, k, dt);
+    // The start-of-step gate. Below the gate above, a cell that crosses onset *during*
+    // this step ignites at the start of the next one; see the "ignition lags by one
+    // step" section of [`crate::runaway`] for why that is bought deliberately rather
+    // than overlooked, and `docs/plans/runaway-inside-a-coarse-step.md` for why a
+    // fast-forward `dt` cannot afford it.
+    let reacting_at_start = match safety {
+        Some(s) if can_react => ignited((s, runaway), temps),
         _ => false,
     };
-    if !reacting {
+    if !reacting_at_start && !watching {
         match linear_plan(params, k, dt) {
             LinearPlan::Explicit { n, h } => {
-                for _ in 0..n {
-                    euler_substep(temps, scratch, heat_w, step, h);
-                }
+                explicit_substeps(temps, scratch, heat_w, step, n, h, None);
             }
             LinearPlan::Implicit { n, h } => {
-                implicit_substeps(temps, scratch, heat_w, step, n, h);
+                implicit_substeps(temps, scratch, heat_w, step, n, h, None);
             }
         }
         return RunawayReport::default();
     }
 
-    let s = safety.expect("`reacting` is only true when safety is Some");
+    let s = safety.expect("`reacting_at_start` and `watching` both imply safety is Some");
     let c_th = params.heat_capacity_j_per_k;
     let a_lin = linear_a_max(params, k);
     let n = temps.len();
@@ -631,26 +821,77 @@ pub(crate) fn advance_temperatures(
     let mut released_j = 0.0;
     let mut remaining = dt;
     let mut taken = 0u32;
+    let mut ever_reacting = reacting_at_start;
 
     while remaining > 0.0 {
         let mut slope_max = 0.0_f64;
         let mut q_node_max = 0.0_f64;
+        let mut any_live = false;
         for i in 0..n {
             let q = reaction_power(s, temps[i], runaway[i].energy_remaining_j);
             q_rxn[i] = q;
+            any_live |= q > 0.0;
             slope_max = slope_max.max(reaction_power_slope(s, temps[i], q));
             q_node_max = q_node_max.max((heat_w[i] + q).abs());
         }
+        // --- an inert stretch: nothing is releasing heat, so the remaining physics is
+        // the linear network and belongs on the linear integrator. Before ignition,
+        // between one cell catching and the next, and after a burn completes, this is
+        // what keeps a coarse step affordable: without it every one of those seconds
+        // costs a sub-step bounded by the *explicit* stability ceiling, and a day-long
+        // step needs thousands more of those than the budget below allows.
+        //
+        // Deliberately not counted against `MAX_RUNAWAY_SUBSTEPS`: that budget bounds
+        // the work a burn can demand, and a burn's cost is set by the chemistry rather
+        // than by `dt`. Counting stretches against it would put `dt` back into a bound
+        // written to be free of it.
+        if watching && !any_live {
+            let elapsed = linear_stretch(
+                temps,
+                scratch,
+                heat_w,
+                step,
+                remaining,
+                Some((s, &*runaway)),
+            );
+            remaining = (remaining - elapsed).max(0.0);
+            continue;
+        }
+        ever_reacting |= any_live;
         // Stability against the linear conductances *plus* the reaction's own
         // derivative at the hottest reacting cell, and accuracy against the reaction's
         // curvature. Whichever binds harder wins; `remaining` caps both so a sub-step
         // never overshoots the step.
+        //
+        // Above the gate the linear conductances drop out of the stability bound and
+        // the accuracy bound is taken on the *net* rate of change rather than on
+        // generation alone. Both changes have the same justification: the linear part
+        // of the sub-step is integrated by backward Euler there (see the end of this
+        // loop), which has no stability bound, and a cell at its quasi-steady
+        // temperature is not moving however many watts it is generating. The reaction
+        // keeps both of its own bounds — it is still explicit, because it is non-linear
+        // in `T` and an implicit step against it would need a Newton solve with the
+        // Arrhenius Jacobian.
         let mut h = remaining;
-        let a = a_lin + slope_max;
+        let a = if watching {
+            slope_max
+        } else {
+            a_lin + slope_max
+        };
         if a > 0.0 {
             h = h.min(SUBSTEP_SAFETY * c_th / a);
         }
-        if q_node_max > 0.0 {
+        if watching {
+            // `q_rxn` here is the unclipped release, so this rate is an upper bound on
+            // the one the clipped sub-step below will actually see.
+            for i in 0..n {
+                q_total[i] = heat_w[i] + q_rxn[i];
+            }
+            let rate = net_rate_max(temps, &q_total, step);
+            if rate > 0.0 {
+                h = h.min(MAX_SUBSTEP_RISE_K / rate);
+            }
+        } else if q_node_max > 0.0 {
             h = h.min(MAX_SUBSTEP_RISE_K * c_th / q_node_max);
         }
         let usable = h > 0.0;
@@ -658,11 +899,28 @@ pub(crate) fn advance_temperatures(
         if capped || !usable {
             // Either the work cap bound or the bounds themselves degenerated (an
             // infinite release rate from an absurd parameter set, or a NaN). Finish the
-            // step in one Euler jump so `step` still advances by exactly `dt` and never
-            // hangs; the temperatures that come out are not trustworthy, and this is as
-            // loud as it can be made without inventing public surface area.
+            // step in one jump so `step` still advances by exactly `dt` and never hangs.
+            //
+            // **How bad that is depends on which jump it is**, and the `debug_assert`
+            // below fires for one of them and not the other. Below the gate the jump is
+            // explicit Euler over a `remaining` that is by construction far past its own
+            // stability limit, so the temperatures that come out are not trustworthy in
+            // the plainest sense — measured at 1.8 million kelvin on the fixture in
+            // `runaway_coarse_step.rs`. That deserves to be as loud as it can be made
+            // without inventing public surface area.
+            //
+            // Above the gate the jump is backward Euler (see the integration below) with
+            // the reaction frozen at its clipped rate. The linear part cannot amplify,
+            // the release is still bounded by what each cell can afford, and no cell can
+            // finish above what its own budget could have raised it to. What is lost is
+            // *where in the tail* the release happened, which is an accuracy statement
+            // and not a "these are not temperatures" one — so panicking a debug build
+            // over it would be crying wolf, and it would make the branch untestable in
+            // the profile the rest of the suite runs in. What it takes to reach this at
+            // all, and why no `EventFlags` bit reports it, is in
+            // `docs/plans/runaway-inside-a-coarse-step.md`.
             debug_assert!(
-                false,
+                watching,
                 "runaway sub-stepping degenerated at t_max = {:?} K after {taken} sub-steps \
                  (cap {MAX_RUNAWAY_SUBSTEPS}, remaining {remaining} s): temperatures are not \
                  trustworthy",
@@ -682,7 +940,11 @@ pub(crate) fn advance_temperatures(
             }
             q_total[i] = heat_w[i] + q_rxn[i];
         }
-        euler_substep(temps, scratch, &q_total, step, h);
+        if watching {
+            implicit_substeps(temps, scratch, &q_total, step, 1, h, None);
+        } else {
+            euler_substep(temps, scratch, &q_total, step, h);
+        }
         for i in 0..n {
             let e = q_rxn[i] * h;
             released_j += e;
@@ -702,6 +964,6 @@ pub(crate) fn advance_temperatures(
 
     RunawayReport {
         released_j,
-        reacting: true,
+        reacting: ever_reacting,
     }
 }

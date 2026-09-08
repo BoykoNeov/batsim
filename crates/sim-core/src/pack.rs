@@ -2713,7 +2713,20 @@ impl Pack {
                     temps.push(t);
                 }
             }
-            let mut runaway: Vec<CellRunaway> = if any_at_onset {
+            // …and one more comparison decides whether this step is long enough that a
+            // cell could cross onset inside it. Above that gate the state is gathered
+            // even on a pack that is nowhere near hot, because the ignition watch in
+            // `thermal` reads it to know when to stop a stretch. It is a `dt` no
+            // real-time client takes, and one that is already paying for hundreds of
+            // banded solves, so the ordinary path gathers and allocates exactly what it
+            // did before.
+            let watching = safety.is_some()
+                && crate::thermal::resolves_ignition_within_step(
+                    &self.chem.thermal,
+                    k_neighbor_w_per_k,
+                    dt,
+                );
+            let mut runaway: Vec<CellRunaway> = if any_at_onset || watching {
                 let mut v = Vec::with_capacity(n_cells);
                 for group in &self.groups {
                     for cell in &group.cells {

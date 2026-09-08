@@ -46,7 +46,7 @@
 //! jump is small in absolute terms and it makes "what temperature does this start
 //! at?" answerable by a student pointing at one number.
 //!
-//! # Known limitation: ignition lags by one step
+//! # Known limitation: ignition lags by one step — below the gate
 //!
 //! Whether the reaction runs during a step is decided from **start-of-step**
 //! temperatures. A cell that crosses onset *during* a step therefore begins reacting
@@ -55,8 +55,18 @@
 //! the fault queue's `dt` granularity, and it is bought deliberately: the alternative
 //! is scanning every cell's temperature between thermal sub-steps, which every pack
 //! in the world would pay for so that a burning one could ignite a fraction of a step
-//! sooner. Revisit if a scenario ever needs `dt` coarse enough that a cell can cross
-//! onset and reach vent inside one step.
+//! sooner.
+//!
+//! That paragraph used to end "revisit if a scenario ever needs `dt` coarse enough that
+//! a cell can cross onset and reach vent inside one step". **It was revisited**, once
+//! [`crate::thermal`] gained an integrator that made such a `dt` sound for everything
+//! else in a step. Above [`crate::thermal::resolves_ignition_within_step`]'s gate — the
+//! same `dt` at which the linear network switches to backward Euler, 6080 s for the
+//! shipped parameters — the scan runs between linear sub-steps and ignition lands on a
+//! sub-step boundary. Below it nothing changed and the paragraph above still describes
+//! the engine exactly, so the lag is now *bounded by the gate* rather than by the
+//! client's `dt`. A pack that crosses onset during a day-long step used to release
+//! nothing for a whole day; see `docs/plans/runaway-inside-a-coarse-step.md`.
 //!
 //! # Venting, and what v1 does not model
 //!

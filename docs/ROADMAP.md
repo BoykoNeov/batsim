@@ -188,8 +188,15 @@ all** — the cost sentence above was wrong about its own price. Two corrections
 measured: the cap binding is not the `dt` at which explicit Euler diverges (a factor of
 ~2.6 separates them, so there is a band above the gate where the old path was merely
 inaccurate), and nothing in the tree ever reached either — every aging fast-forward in the
-repo is isothermal. What a coarse `dt` still costs is *not* the integrator: heat generation
-is held constant across the step, and runaway ignition lags a whole step.
+repo is isothermal. What a coarse `dt` still costs is *not* the integrator, and of the two
+things it does cost, one is now closed as well. **Runaway ignition lagging a whole step was
+closed on 2026-09-08 by `docs/plans/runaway-inside-a-coarse-step.md`**: above the same gate
+the ignition test is re-evaluated between sub-steps, stretches with no live reaction go to
+the linear integrator, and the reacting sub-step drops a stability bound it no longer needs
+— so a live `[safety]` section and a day-long `dt` now belong in the same run. That slice
+also **measured** the one still open: heat held constant across the step costs 6.6 K of a
+20 K temperature rise on a fresh pack at a day-long `dt`, five orders larger than any
+integration error either slice found. It is listed in H10.
 
 ### H7. The BMS can only coulomb-count, so it cannot teach what a real one does
 
@@ -249,6 +256,7 @@ was declined for that.
 | NiMH `[hysteresis]` is one width; lead-acid has no `[hysteresis]` | `phase-8-slice-c-hysteresis.md` | data (H3) — the table exists since v20 |
 | Mixed ECM/SPM packs are unrepresentable though the solve is mixed-ready | `phase-6-porous-electrodes.md` | config surface + the `soc_true` question |
 | BMS protection overshoot scales with `dt` because the sample rate is `dt` | `phase-2-thermal-bms.md` | accepted; document on the config |
+| Heat generation is held constant across a step, so a day-long step burns the day at the heat of its first instant — **measured at 6.6 K of a 20 K rise** | `runaway-inside-a-coarse-step.md`, `thermal-implicit-integrator.md` | more than one slice: the electrical solve has to run more than once per step, and a step-mean heat needs a step-mean electrical quantity beside it or the energy ledger opens |
 | Snapshot body at 100S10P ≈ 600 KB is poor for a socket frame | `phase-4-server-wasm.md` | `Content-Encoding` on REST if it ever bites |
 
 ---
