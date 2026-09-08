@@ -54,6 +54,7 @@ Changes to what `sim-core` computes. Every one names the snapshot version it cos
 | [`rc-resistance-growth.md`](rc-resistance-growth.md) | Aging grows the RC resistances too — the spec was right and the code was not |
 | [`reversal-damage.md`](reversal-damage.md) | Over-discharge that leaves a mark |
 | [`surface-vs-bulk.md`](surface-vs-bulk.md) | Surface vs bulk: the gradient an equivalent circuit cannot have |
+| [`thermal-implicit-integrator.md`](thermal-implicit-integrator.md) | The thermal integrator above the cap — backward Euler where explicit Euler diverges |
 
 ## Solver, demands and protection
 

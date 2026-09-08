@@ -212,8 +212,11 @@ Consequences to build to, not to work around:
 - **The `dt == 0` guard generalises.** Anything Phase 3 adds that reacts to
   *information* rather than to elapsed time — a fault queue, an aging sub-clock — needs
   the same treatment as the BMS, or the zero-length probe contract breaks silently.
-- **Known limitation, unchanged:** the thermal sub-step cap binds above `dt` ≈ 1.7 h,
-  which the aging fast-forward will exceed. Raise an integrator, not the cap.
+- ~~**Known limitation, unchanged:** the thermal sub-step cap binds above `dt` ≈ 1.7 h,
+  which the aging fast-forward will exceed. Raise an integrator, not the cap.~~
+  **Closed — see `docs/plans/thermal-implicit-integrator.md`.** An integrator was raised,
+  not the cap: above the gate the linear network integrates with backward Euler and there
+  is no longer an upper limit on `dt`.
 
 ## Slice A implementation notes
 
@@ -226,9 +229,14 @@ Consequences to build to, not to work around:
   the sub-step count a function of config alone, so the trajectory does not depend on
   *where* the hottest cell sits). `MAX_SUBSTEPS = 512` bounds one step's work; for
   shipped LFP parameters that cap only binds above `dt` ≈ 1.7 h.
-- **Known limitation for Phase 3:** the coarse-`dt` aging fast-forward will exceed
+- ~~**Known limitation for Phase 3:** the coarse-`dt` aging fast-forward will exceed
   that ceiling. Raising the cap is the wrong answer — the coupled thermal system is
   linear in `T` over a step, so an exact/implicit integrator is available if it comes
-  to that. Revisit when Phase 3 needs it, not before.
+  to that. Revisit when Phase 3 needs it, not before.~~
+  **Closed — see `docs/plans/thermal-implicit-integrator.md`**, which took exactly the
+  option named here. Two corrections to the sentence above, both measured there: the cap
+  binding is *not* the `dt` at which explicit Euler diverges (they are a factor of ~2.6
+  apart), and no shipped scenario or test ever reached either — every aging fast-forward
+  in the tree is isothermal, so the limitation was real and unreached.
 - `Env::t_coolant` replaces ambient as the sink with the same `h·A`. A separate
   coolant conductance would be a refinement; it is not modelled.

@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
 Phases 0–8 are complete and each is pinned by a committed test (see the README's status
-table). A hundred and one design notes under `docs/plans/` record what each slice measured,
+table). A hundred and two design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -165,7 +165,7 @@ refusal of multiply-by-reciprocal: this is the same class of change, taken delib
 **Cost.** Small in code, large in re-pinned exact-bit tests; one slice with a perturbation
 table.
 
-### H6. Thermal integration stops being valid above a 1.7-hour step, which the aging fast-forward exceeds
+### ~~H6. Thermal integration stops being valid above a 1.7-hour step, which the aging fast-forward exceeds~~ — **CLOSED**
 
 **Gap.** The thermal network is explicit Euler with sub-stepping, and the sub-step cap
 binds above `dt ≈ 1.7 h` (`phase-2-thermal-bms.md`). Months-long aging fast-forward is a
@@ -179,6 +179,17 @@ the SPM's radial solver. "Raise an integrator, not the cap", as the note says.
 **Cost.** One slice in `thermal.rs`; no snapshot change; every thermal trajectory moves by
 integration error, so the goldens that assert on temperature need their tolerances
 re-derived rather than loosened.
+
+**Closed 2026-09-08 by `docs/plans/thermal-implicit-integrator.md`**, which took the
+backward-Euler option and refused the "replace the integrator" framing on measurement: the
+implicit path is gated to the `dt` where the explicit one runs out of work budget, so the
+ordinary path keeps its bits and its performance and **no thermal trajectory moved at
+all** — the cost sentence above was wrong about its own price. Two corrections the slice
+measured: the cap binding is not the `dt` at which explicit Euler diverges (a factor of
+~2.6 separates them, so there is a band above the gate where the old path was merely
+inaccurate), and nothing in the tree ever reached either — every aging fast-forward in the
+repo is isothermal. What a coarse `dt` still costs is *not* the integrator: heat generation
+is held constant across the step, and runaway ignition lags a whole step.
 
 ### H7. The BMS can only coulomb-count, so it cannot teach what a real one does
 
@@ -291,10 +302,12 @@ capacity table; (D) the claims re-measurement each of those forces.
 pulse lessons quote numbers from a fitted circuit; every fit's residual is in its
 provenance line. Pinned by a test that greps the shipped files for the label.
 
-### Not phases: H5 (determinism across platforms) and H6 (the thermal integrator)
+### Not phases: H5 (determinism across platforms) and ~~H6 (the thermal integrator)~~
 
 Each is one slice with a perturbation table and belongs before Phase 9 rather than after
-it, because both change what every later golden is allowed to promise.
+it, because both change what every later golden is allowed to promise. **H6 is done**
+(2026-09-08) and in the event it changed no golden at all, because the new integrator is
+gated above every `dt` any golden uses; H5 remains, and its re-pinning cost is real.
 
 ---
 
@@ -343,3 +356,4 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | the NiMH peak is a one-timestep corner | `phase-8-slice-c-spike.md` | `charge-acceptance.md` (v21) |
 | the step-19 wedge | `surface-vs-bulk.md` | `path-wedge.md` (a renderer crash, not a lesson) |
 | no per-cell current accessor | `phase-6-porous-electrodes.md` | `per-cell-current.md` (`CellView::current_a`, no snapshot bump) |
+| thermal integration invalid above a 1.7-hour step (H6) | `phase-2-thermal-bms.md` | `thermal-implicit-integrator.md` (backward Euler above the gate, no snapshot bump) |

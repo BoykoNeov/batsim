@@ -8,9 +8,28 @@
 //!
 //! where `Q_i` is the cell's own heat generation (see [`crate::ecm::cell_heat_w`]),
 //! `k_ij` couples neighbouring cells, and `hA_i` couples the cell to ambient (or
-//! coolant). Integration is explicit Euler with automatic sub-stepping, which is
-//! ample: thermal time constants are minutes while `dt` is typically well under a
-//! second.
+//! coolant).
+//!
+//! # Two integrators, and the `dt` that chooses between them
+//!
+//! Ordinary steps use **explicit Euler with automatic sub-stepping**, which is ample:
+//! thermal time constants are minutes while `dt` is typically well under a second.
+//! Explicit Euler is conditionally stable, so the sub-step is capped by a stability
+//! ceiling ([`SUBSTEP_SAFETY`]) and the number of sub-steps one call may take is capped
+//! in turn ([`MAX_SUBSTEPS`]) so a pathological `dt` cannot make one step unbounded
+//! work. Above roughly 1.7 hours of `dt` for the shipped parameters those two caps
+//! collide: the sub-step needed would be finer than the work budget allows.
+//!
+//! That regime takes **backward Euler** instead ([`LinearPlan::Implicit`]), which is
+//! unconditionally stable at any sub-step length, so a months-long aging fast-forward
+//! integrates temperature as soundly as a 1 ms GUI step. It costs a banded linear solve
+//! per sub-step, which is why it is not used everywhere: the explicit sweep is O(cells)
+//! and the solve is O(cells × parallel), and `Pack::step` has a performance budget that
+//! only the ordinary path spends. See `docs/plans/thermal-implicit-integrator.md` for
+//! the pricing, and for the measurement that the two caps colliding is *not* the same
+//! `dt` at which explicit Euler actually diverges — the ceiling is a safety factor on a
+//! conservative bound, so there is a band above the gate where the explicit path would
+//! still have been merely inaccurate.
 //!
 //! # Why a temperature gradient exists at all
 //!
@@ -54,15 +73,20 @@ const GRID_MAX_NEIGHBORS: f64 = 4.0;
 /// from distorting the trajectory rather than merely to avoid divergence.
 const SUBSTEP_SAFETY: f64 = 0.5;
 
-/// Hard cap on thermal sub-steps per [`crate::Pack::step`], so a pathological `dt`
-/// cannot make one step unbounded work.
+/// Sub-step budget for one call to [`advance_temperatures`] on the linear path, so a
+/// pathological `dt` cannot make one step unbounded work.
 ///
 /// For the shipped LFP parameters (`C_th` = 95 J/K, `hA` = 0.35 W/K) with a 1 W/K
-/// neighbour conductance the sub-step ceiling is ≈ 11.9 s, so the cap only binds
+/// neighbour conductance the sub-step ceiling is ≈ 11.9 s, so the budget only binds
 /// for `dt` above roughly 1.7 hours — far beyond any real-time or scenario use.
-/// Beyond it the integration is no longer guaranteed stable; the coarse-`dt`
-/// fast-forward of a later phase will need a different integrator rather than a
-/// bigger cap.
+///
+/// **It is a work budget, not a correctness cliff.** Where it binds, the explicit
+/// sub-step would exceed its own stability ceiling, so the step switches integrator
+/// rather than accepting a sub-step it cannot vouch for: see [`LinearPlan`]. The
+/// implicit path then takes *this same number* of sub-steps, which is what keeps the
+/// integration granularity continuous across the switch — at the crossover `dt` both
+/// paths integrate in steps of ≈ 11.9 s — and keeps the work one call may do bounded by
+/// one constant rather than two.
 const MAX_SUBSTEPS: u32 = 512;
 
 /// Largest temperature change \[K\] one sub-step may produce in any cell while a
@@ -97,8 +121,12 @@ const MAX_SUBSTEP_RISE_K: f64 = 1.0;
 ///
 /// 2048 is ~2.5× the worse of the two, which leaves room for two cells igniting in
 /// sequence within one step and for the stability bound binding harder than the rise
-/// bound near the peak. Beyond it the integration is no longer trustworthy and the
-/// same `debug_assert` treatment as [`MAX_SUBSTEPS`] applies.
+/// bound near the peak. Beyond it the integration is no longer trustworthy, and unlike
+/// [`MAX_SUBSTEPS`] — which now switches integrator rather than degrading — this one
+/// really is a cliff, guarded by a `debug_assert` and a single Euler jump. Backward
+/// Euler cannot rescue it: the reaction term is non-linear in `T`, so an implicit step
+/// against it would need a Newton solve. See "deliberately not done" in
+/// `docs/plans/thermal-implicit-integrator.md`.
 const MAX_RUNAWAY_SUBSTEPS: u32 = 2048;
 
 /// How cells exchange heat with each other and the environment.
@@ -158,9 +186,27 @@ fn linear_a_max(params: &ThermalParams, k: f64) -> f64 {
     (GRID_MAX_NEIGHBORS * k).max(params.h_area_w_per_k)
 }
 
-/// Number of sub-steps to split `dt` into, and the resulting sub-step length.
+/// How one call to [`advance_temperatures`] will integrate the linear network.
 ///
-/// The bound uses the worst-case total node conductance `a_max = max(4k, hA)`: a
+/// The variant is a deterministic function of the chemistry, the coupling and `dt` —
+/// never of where in the pack the hottest cell happens to be — so two packs with equal
+/// state take the same path.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum LinearPlan {
+    /// Explicit (forward) Euler in `n` uniform sub-steps of `h` seconds, with `h` under
+    /// the stability ceiling. Every ordinary `dt` lands here, and its arithmetic is
+    /// untouched by the existence of the variant below.
+    Explicit { n: u32, h: f64 },
+    /// Backward Euler in `n` uniform sub-steps of `h` seconds. Taken exactly where the
+    /// explicit ceiling would need more than [`MAX_SUBSTEPS`] sub-steps to honour, i.e.
+    /// where the explicit path can no longer vouch for its own sub-step. Backward Euler
+    /// has no stability bound, so here `h` is an accuracy choice alone.
+    Implicit { n: u32, h: f64 },
+}
+
+/// Decide how to integrate `dt`, and with what sub-step.
+///
+/// The ceiling uses the worst-case total node conductance `a_max = max(4k, hA)`: a
 /// node's conductance `n·k + (4−n)/4·hA` is linear in its neighbour count `n`, so
 /// over `n ∈ [0, 4]` it is maximised at an endpoint. Using the bound rather than a
 /// per-cell scan makes the sub-step count a function of config alone — the same for
@@ -171,43 +217,51 @@ fn linear_a_max(params: &ThermalParams, k: f64) -> f64 {
 /// ([`crate::runaway`]) has a temperature derivative that exceeds `a_max` by orders of
 /// magnitude a few hundred kelvin above onset, so a pack with a live reaction takes the
 /// adaptive path in [`advance_temperatures`] instead and the config-alone property is
-/// retired for the duration. Determinism is untouched either way: the sub-step count
-/// remains a deterministic function of state, which is all `CLAUDE.md` requires.
-fn substeps(params: &ThermalParams, k: f64, dt: f64) -> (u32, f64) {
+/// retired for the duration. Determinism is untouched either way: the plan remains a
+/// deterministic function of state, which is all `CLAUDE.md` requires.
+///
+/// # Why an infinite `dt` stays on the explicit path
+///
+/// A non-finite `dt` produces a non-finite ratio, and the implicit path is entered only
+/// on a finite one. An infinite or NaN `dt` therefore keeps exactly the behaviour it has
+/// always had: it falls through to the explicit branch and propagates into the
+/// temperatures, because [`crate::Pack::step`] must never panic and there is no
+/// `EventFlags` bit for "your `dt` is not a number". The implicit path exists to
+/// integrate a *large* `dt` soundly, not to launder a meaningless one.
+fn linear_plan(params: &ThermalParams, k: f64, dt: f64) -> LinearPlan {
     let a_max = linear_a_max(params, k);
     let has_coupling = a_max > 0.0;
     if !has_coupling {
         // Fully adiabatic and uncoupled: dT/dt = Q/C has no stability bound.
-        return (1, dt);
+        return LinearPlan::Explicit { n: 1, h: dt };
     }
     let dt_max = SUBSTEP_SAFETY * params.heat_capacity_j_per_k / a_max;
     // `dt_max` is finite and positive here. A NaN `dt` gives a NaN ratio, which
-    // fails the test below and falls through to a single sub-step so the NaN
-    // propagates into the temperatures — `step` must never panic.
+    // fails every test below and falls through to a single explicit sub-step so the
+    // NaN propagates into the temperatures — `step` must never panic.
     let ratio = dt / dt_max;
     let needs_split = ratio > 1.0;
     if !needs_split {
-        return (1, dt);
+        return LinearPlan::Explicit { n: 1, h: dt };
+    }
+    if ratio >= f64::from(MAX_SUBSTEPS) && ratio.is_finite() {
+        // The explicit sub-step the ceiling asks for would cost more than the work
+        // budget allows, so the sub-step that fits the budget is one the explicit
+        // scheme cannot vouch for. Switch integrator rather than take it: the same
+        // count, unconditionally stable, and the granularity is continuous with the
+        // explicit path at the crossover. See `MAX_SUBSTEPS`.
+        return LinearPlan::Implicit {
+            n: MAX_SUBSTEPS,
+            h: dt / f64::from(MAX_SUBSTEPS),
+        };
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let n = if ratio >= f64::from(MAX_SUBSTEPS) {
-        // The cap binds, so the sub-step is longer than the ceiling and the
-        // integration is no longer guaranteed stable — past the bound explicit
-        // Euler oscillates rather than merely losing accuracy. `step` must not
-        // panic in release, and `EventFlags` has no bit for "your dt is absurd", so
-        // this is as loud as it can be made without inventing surface area. See the
-        // `dt` warning on `Pack::step`.
-        debug_assert!(
-            false,
-            "thermal sub-step cap of {MAX_SUBSTEPS} binds at dt = {dt} s \
-             (ceiling {dt_max} s): temperatures are not trustworthy"
-        );
-        MAX_SUBSTEPS
-    } else {
-        // 1 < ratio < MAX_SUBSTEPS, so the ceiling fits in u32.
-        ratio.ceil() as u32
-    };
-    (n, dt / f64::from(n))
+    // 1 < ratio < MAX_SUBSTEPS, so the ceiling fits in u32.
+    let n = ratio.ceil() as u32;
+    LinearPlan::Explicit {
+        n,
+        h: dt / f64::from(n),
+    }
 }
 
 /// Everything [`advance_temperatures`] needs besides the state it mutates: the pack
@@ -292,6 +346,205 @@ fn euler_substep(temps: &mut [f64], scratch: &mut Vec<f64>, q: &[f64], step: &Th
     }
 }
 
+/// One backward-Euler sub-step is a linear solve, and this is the matrix.
+///
+/// Over a sub-step of `h` seconds the network is linear time-invariant with constant
+/// forcing:
+///
+/// ```text
+/// C·dT/dt = q + b − M·T,     b_i = exposure_i·hA·T_env
+/// ```
+///
+/// where `M` is symmetric with diagonal `n_neighbors_i·k + exposure_i·hA` and `−k` on
+/// every 4-connected edge. Backward Euler is then
+///
+/// ```text
+/// (I + (h/C)·M)·T_new = T_old + (h/C)·(q + b)
+/// ```
+///
+/// `M` is a graph Laplacian plus a non-negative diagonal, so it is only positive
+/// *semi*-definite — singular exactly when `h_area_w_per_k` is zero, where the pack is
+/// adiabatic and conserves its heat forever. `I + (h/C)·M` is symmetric positive
+/// definite for any `h > 0` regardless, which is why this formulation is safe where a
+/// steady-state one (needing `M⁻¹`) would not be.
+///
+/// # Storage
+///
+/// With the natural series-major index `i = s·parallel + p` the off-diagonals sit at
+/// `i ± 1` (parallel neighbours, absent across a row boundary) and `i ± parallel`
+/// (series neighbours), so the half-bandwidth is `parallel` and the matrix goes into
+/// `n × (parallel + 1)` numbers: `band[i·(bw+1) + d]` holds row `i`, column `i − d`.
+/// Entries with `d > i` are outside the matrix and stay zero.
+struct Banded {
+    /// Lower triangle in band storage, overwritten by its Cholesky factor in place.
+    band: Vec<f64>,
+    /// Half-bandwidth: the number of sub-diagonals. The parallel extent, except on a
+    /// pack with a single series element, where there is no series neighbour and the
+    /// band is tridiagonal — see [`Self::assemble`].
+    bw: usize,
+    /// Node count, `series · parallel`.
+    n: usize,
+}
+
+impl Banded {
+    /// Index of row `i`, column `j` (`j <= i` and `i − j <= bw`, both guaranteed by
+    /// every caller's loop bounds).
+    #[inline]
+    fn at(&self, i: usize, j: usize) -> usize {
+        i * (self.bw + 1) + (i - j)
+    }
+
+    /// Assemble `I + (h/C)·M` for the geometry and coupling in `step`.
+    fn assemble(step: &ThermalStep, h: f64) -> Self {
+        let &ThermalStep {
+            series,
+            parallel,
+            params,
+            k_neighbor_w_per_k: k,
+            ..
+        } = step;
+        let n = series * parallel;
+        // A single series element has no series neighbour, so its only off-diagonal is
+        // the parallel one at `d = 1` and the band is tridiagonal however wide the pack
+        // is. Worth the branch: `1SxP` is a real topology and the factorisation is
+        // O(n · bw²).
+        let bw = if series > 1 { parallel } else { 1 };
+        let mut me = Self {
+            band: vec![0.0; n * (bw + 1)],
+            bw,
+            n,
+        };
+        let g = h / params.heat_capacity_j_per_k;
+        for s in 0..series {
+            for p in 0..parallel {
+                let i = s * parallel + p;
+                #[allow(clippy::cast_precision_loss)]
+                let neighbors = n_neighbors(s, p, series, parallel) as f64;
+                let a = neighbors * k + exposure(s, p, series, parallel) * params.h_area_w_per_k;
+                let d = me.at(i, i);
+                me.band[d] = 1.0 + g * a;
+                // Only the sub-diagonal half is stored; the matrix is symmetric, so the
+                // edge to the neighbour *above* is written by that neighbour's own row.
+                if p > 0 {
+                    let o = me.at(i, i - 1);
+                    me.band[o] = -g * k;
+                }
+                if s > 0 {
+                    let o = me.at(i, i - parallel);
+                    me.band[o] = -g * k;
+                }
+            }
+        }
+        me
+    }
+
+    /// Cholesky-factor in place: `A → L` with `A = L·Lᵀ`.
+    ///
+    /// O(n · bw²). Nothing here can panic: every index is inside the band by
+    /// construction, and a non-finite or non-positive pivot yields a NaN that
+    /// propagates into the temperatures rather than an unwrap — `step` must not panic,
+    /// and a pack that reaches this with a NaN `dt` has already lost.
+    fn factor(&mut self) {
+        for i in 0..self.n {
+            let first = i.saturating_sub(self.bw);
+            for j in first..=i {
+                let mut sum = self.band[self.at(i, j)];
+                // `m` needs both `at(i, m)` and `at(j, m)` inside the band; since
+                // `j <= i` the binding bound is `m >= i − bw`, which is `first`.
+                for m in first..j {
+                    sum -= self.band[self.at(i, m)] * self.band[self.at(j, m)];
+                }
+                let idx = self.at(i, j);
+                self.band[idx] = if j == i {
+                    sum.sqrt()
+                } else {
+                    sum / self.band[self.at(j, j)]
+                };
+            }
+        }
+    }
+
+    /// Solve `L·Lᵀ·x = rhs` in place, given a factored band. O(n · bw).
+    ///
+    /// `needless_range_loop` is allowed because `j` indexes two different things at
+    /// once — `rhs` and, through [`Self::at`], the band — so an iterator over one of
+    /// them cannot carry the other.
+    #[allow(clippy::needless_range_loop)]
+    fn solve_in_place(&self, rhs: &mut [f64]) {
+        // Forward substitution: L·y = rhs.
+        for i in 0..self.n {
+            let mut sum = rhs[i];
+            for j in i.saturating_sub(self.bw)..i {
+                sum -= self.band[self.at(i, j)] * rhs[j];
+            }
+            rhs[i] = sum / self.band[self.at(i, i)];
+        }
+        // Back substitution: Lᵀ·x = y. Column `i` of Lᵀ is row `i` of L, so the terms
+        // needed are `L[j][i]` for `j` in `i+1 ..= i+bw`.
+        for i in (0..self.n).rev() {
+            let mut sum = rhs[i];
+            for j in (i + 1)..(i + 1 + self.bw).min(self.n) {
+                sum -= self.band[self.at(j, i)] * rhs[j];
+            }
+            rhs[i] = sum / self.band[self.at(i, i)];
+        }
+    }
+}
+
+/// Advance the whole grid by `n_sub` backward-Euler sub-steps of `h` seconds each.
+///
+/// `q` is the per-cell heating \[W\] held constant across the call, exactly as on the
+/// explicit path.
+///
+/// # One factorisation, `n_sub` solves
+///
+/// `h` is the same for every sub-step and the matrix depends only on `h` and the
+/// configuration, so the O(n · bw²) factorisation is paid once and each sub-step is an
+/// O(n · bw) pair of triangular solves. That is what makes sub-stepping the implicit
+/// path affordable, and sub-stepping is what keeps its accuracy continuous with the
+/// explicit path's at the `dt` where they swap.
+///
+/// # Allocation
+///
+/// The band and the right-hand side are allocated per call, on the same terms the
+/// runaway path states for itself: this path runs only at a `dt` above roughly 1.7
+/// hours, i.e. never during real-time stepping. The explicit path above allocates
+/// nothing, and it is the one with a performance budget.
+fn implicit_substeps(
+    temps: &mut [f64],
+    scratch: &mut Vec<f64>,
+    q: &[f64],
+    step: &ThermalStep,
+    n_sub: u32,
+    h: f64,
+) {
+    let &ThermalStep {
+        series,
+        parallel,
+        params,
+        t_env,
+        ..
+    } = step;
+    let mut a = Banded::assemble(step, h);
+    a.factor();
+    let g = h / params.heat_capacity_j_per_k;
+    // The constant part of the right-hand side: `(h/C)·(q_i + exposure_i·hA·T_env)`.
+    let mut forcing = vec![0.0; a.n];
+    for s in 0..series {
+        for p in 0..parallel {
+            let i = s * parallel + p;
+            forcing[i] =
+                g * (q[i] + exposure(s, p, series, parallel) * params.h_area_w_per_k * t_env);
+        }
+    }
+    for _ in 0..n_sub {
+        scratch.clear();
+        scratch.extend(temps.iter().zip(&forcing).map(|(t, f)| t + f));
+        a.solve_in_place(scratch);
+        temps.copy_from_slice(scratch);
+    }
+}
+
 /// Advance every cell temperature by `step.dt` seconds.
 ///
 /// `temps` is the per-cell temperature \[K\] in series-major order (index
@@ -344,9 +597,15 @@ pub(crate) fn advance_temperatures(
         _ => false,
     };
     if !reacting {
-        let (n_sub, h) = substeps(params, k, dt);
-        for _ in 0..n_sub {
-            euler_substep(temps, scratch, heat_w, step, h);
+        match linear_plan(params, k, dt) {
+            LinearPlan::Explicit { n, h } => {
+                for _ in 0..n {
+                    euler_substep(temps, scratch, heat_w, step, h);
+                }
+            }
+            LinearPlan::Implicit { n, h } => {
+                implicit_substeps(temps, scratch, heat_w, step, n, h);
+            }
         }
         return RunawayReport::default();
     }

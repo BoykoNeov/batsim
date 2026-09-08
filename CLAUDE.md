@@ -215,7 +215,12 @@ and double as the scenario file format.
   topology (configurable); this is what makes center cells run hot and enables
   runaway propagation. Explicit Euler is fine (thermal time constants are long);
   sub-step if `dt` exceeds a stability bound computed from `C_th` and total
-  conductance.
+  conductance. Where the sub-step that bound asks for would exceed the per-step work
+  budget — above `dt ≈ 1.7 h` for the shipped parameters, which the aging fast-forward
+  reaches — switch to **backward Euler** (one banded Cholesky per call, reused across
+  sub-steps) rather than raising the cap: it is unconditionally stable, so there is no
+  upper limit on `dt`. See `docs/plans/thermal-implicit-integrator.md`. The runaway
+  reaction term keeps its own adaptive explicit path, and it *does* have a cap.
 
 ### Aging (semi-empirical; runs on a coarse sub-clock, e.g. every 10 s of sim time)
 

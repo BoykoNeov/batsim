@@ -1913,14 +1913,22 @@ impl Pack {
     /// can consume randomness besides the sensor sample — a cell that has been plating
     /// rolls there for a soft internal short (see [`crate::plating`]).
     ///
-    /// # Upper limit on `dt` with a live thermal network
-    /// Temperatures are integrated with automatic sub-stepping, so any ordinary `dt`
-    /// is safe. There is a bound, though: the sub-step count is capped, and above
-    /// roughly **1.7 hours** of `dt` for the shipped chemistries the cap binds and
-    /// the temperatures stop being trustworthy (they are not flagged — a
-    /// `debug_assert` fires in debug builds). Nothing else in the step has such a
-    /// limit; the electrical solve and the RC update are exact at any `dt`. Coarse
-    /// fast-forward will need a different thermal integrator, not a bigger cap.
+    /// # `dt` with a live thermal network
+    /// Temperatures are integrated with automatic sub-stepping, and **there is no
+    /// upper limit on `dt`**. Ordinary steps use explicit Euler, whose sub-step is
+    /// bounded by a stability ceiling; above roughly **1.7 hours** of `dt` for the
+    /// shipped chemistries the sub-step that ceiling asks for would exceed the work
+    /// budget, and the step switches to backward Euler, which is unconditionally
+    /// stable at any sub-step length. So a months-long aging fast-forward integrates
+    /// temperature as soundly as a millisecond GUI step — as the electrical solve and
+    /// the RC update already did, both being exact at any `dt`.
+    ///
+    /// Two things a coarse `dt` still costs, neither of them the integrator:
+    /// heat generation is solved once and held constant across the whole step, so a
+    /// day-long step burns one day at the heat of its first instant; and a cell that
+    /// crosses the runaway onset *during* a step ignites at the start of the next one
+    /// (see [`crate::runaway`]), which at fast-forward `dt` is a day late. Live
+    /// `[safety]` and a day-long `dt` do not belong in the same run.
     pub fn step(&mut self, dt: f64, demand: Demand, env: &Env) -> Telemetry {
         let cap_ah = self.chem.cell.capacity_ah;
         let (series, parallel) = (self.series as usize, self.parallel as usize);
