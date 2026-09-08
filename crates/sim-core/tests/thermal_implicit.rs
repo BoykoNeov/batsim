@@ -11,7 +11,7 @@
 //! integrator that runs just above the gate, and the day-long step that used to
 //! overflow.
 //!
-//! Both tests use the same flat-OCV, temperature-independent-`R0` synthetic cell as
+//! Every test here uses the same flat-OCV, temperature-independent-`R0` synthetic cell as
 //! `thermal.rs`, for the same reason stated there — heating cannot feed back into the
 //! electrical solve, so the analytic checks stay exact.
 
@@ -204,7 +204,8 @@ fn a_lone_cell_above_the_cap_matches_the_backward_euler_closed_form() {
 /// cell's 2.5, which starting from 90 % never approaches either clamp.
 const DAY_CELL_A: f64 = 0.05;
 
-/// A day-long step on a coupled pack is stable, and lands on the steady state.
+/// Run a day-long step against a fine-`dt` reference, assert both the steady state and
+/// the agreement, and hand back the coarse arm's temperatures for a shape assertion.
 ///
 /// This is the regime the slice exists for. At `dt` = 86 400 s the explicit path clamps
 /// to 512 sub-steps of **168.75 s**, and the fastest mode of a 3×3 grid at `k` = 1 has
@@ -223,17 +224,18 @@ const DAY_CELL_A: f64 = 0.05;
 ///   bound is set by floating-point cancellation instead: the temperature *differences*
 ///   are ~1e-4 K on numbers of magnitude 298, so each term carries ~3e-14 K of rounding,
 ///   and 1e-11 W is that with three orders of margin.
-/// * **The gradient has the right shape.** Centre hotter than edge hotter than corner,
-///   which is the phase-2 exit gate's claim, re-asserted here so a solver that returned
-///   a uniform "everything is ambient" cannot pass on the residual alone.
-#[test]
-fn a_day_long_step_on_a_coupled_pack_is_stable_and_lands_on_the_steady_state() {
+/// * **It is where a fine-`dt` run arrives.** Both arms are a hundred time constants in,
+///   so this is an agreement between two converged answers, not a race between two
+///   transients.
+///
+/// The caller adds the gradient, so a solver that returned a uniform "everything is
+/// ambient" cannot pass on the residual alone.
+fn day_long_steady_state(series: usize, parallel: usize) -> Vec<f64> {
     const K: f64 = 1.0;
     const DT_COARSE: f64 = 86_400.0;
     const WARMUP_S: usize = 400;
-    const SERIES: usize = 3;
-    const PARALLEL: usize = 3;
-    let i_pack = DAY_CELL_A * PARALLEL as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let i_pack = DAY_CELL_A * parallel as f64;
 
     let gate = implicit_gate_s(K);
     assert!(
@@ -241,7 +243,8 @@ fn a_day_long_step_on_a_coupled_pack_is_stable_and_lands_on_the_steady_state() {
         "this test must take the implicit path: dt = {DT_COARSE} s, gate = {gate} s"
     );
 
-    let build = || Pack::new(&config(SERIES as u16, PARALLEL as u16, K), chem()).unwrap();
+    #[allow(clippy::cast_possible_truncation)]
+    let build = || Pack::new(&config(series as u16, parallel as u16, K), chem()).unwrap();
     let mut coarse = build();
     let mut fine = build();
 
@@ -265,15 +268,17 @@ fn a_day_long_step_on_a_coupled_pack_is_stable_and_lands_on_the_steady_state() {
 
     // The cells are identical and unscattered, so the pack total splits evenly. Read
     // from the coarse step, because that is the heat it actually held constant.
-    let q_cell = tele.q_gen_w / (SERIES * PARALLEL) as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let q_cell = tele.q_gen_w / (series * parallel) as f64;
     assert!(
         q_cell > 0.0,
         "the arm needs live heat to have a non-trivial steady state: {q_cell} W"
     );
 
     let temp = |pack: &Pack, s: usize, p: usize| pack.cell(s, p).unwrap().temp_k;
-    for s in 0..SERIES {
-        for p in 0..PARALLEL {
+    let mut out = Vec::with_capacity(series * parallel);
+    for s in 0..series {
+        for p in 0..parallel {
             let t = temp(&coarse, s, p);
             assert!(
                 t.is_finite(),
@@ -284,42 +289,79 @@ fn a_day_long_step_on_a_coupled_pack_is_stable_and_lands_on_the_steady_state() {
             if s > 0 {
                 flow += K * (temp(&coarse, s - 1, p) - t);
             }
-            if s + 1 < SERIES {
+            if s + 1 < series {
                 flow += K * (temp(&coarse, s + 1, p) - t);
             }
             if p > 0 {
                 flow += K * (temp(&coarse, s, p - 1) - t);
             }
-            if p + 1 < PARALLEL {
+            if p + 1 < parallel {
                 flow += K * (temp(&coarse, s, p + 1) - t);
             }
-            flow += exposure(s, p, SERIES, PARALLEL) * HA * (T_ENV - t);
+            flow += exposure(s, p, series, parallel) * HA * (T_ENV - t);
             let residual = q_cell + flow;
             assert!(
                 residual.abs() < 1e-11,
-                "cell {s},{p} is not at steady state: residual {residual} W \
-                 (q {q_cell} W, T {t} K)"
+                "cell {s},{p} of {series}S{parallel}P is not at steady state: \
+                 residual {residual} W (q {q_cell} W, T {t} K)"
             );
 
-            // And it is where a fine-`dt` run arrives. Both are a hundred time
-            // constants in, so this is an agreement between two converged answers.
             let f = temp(&fine, s, p);
             assert!(
                 (t - f).abs() < 1e-9,
-                "cell {s},{p}: coarse {t} K vs fine {f} K"
+                "cell {s},{p} of {series}S{parallel}P: coarse {t} K vs fine {f} K"
             );
+            out.push(t);
         }
     }
+    out
+}
 
-    // The gradient, so a uniform answer cannot pass on the residual alone.
-    let (centre, edge, corner) = (
-        temp(&coarse, 1, 1),
-        temp(&coarse, 0, 1),
-        temp(&coarse, 0, 0),
-    );
+/// A day-long step on a 3S3P block is stable, and lands on the steady state.
+///
+/// Before this slice the same call returned `NaN`.
+#[test]
+fn a_day_long_step_on_a_coupled_pack_is_stable_and_lands_on_the_steady_state() {
+    let t = day_long_steady_state(3, 3);
+    let at = |s: usize, p: usize| t[s * 3 + p];
+    let (centre, edge, corner) = (at(1, 1), at(0, 1), at(0, 0));
     assert!(
         centre > edge && edge > corner && corner > T_ENV + 1e-6,
         "gradient should be centre > edge > corner > ambient: {centre} / {edge} / {corner}"
+    );
+}
+
+/// The same, on a pack with a single series element — the one topology where the band's
+/// width is decided by the other arm of its branch.
+///
+/// `Banded::assemble` sets the half-bandwidth to `parallel`, *except* when `series` is 1,
+/// where there is no series neighbour and the band is tridiagonal however wide the pack
+/// is. 1S1P cannot tell those two arms apart (`parallel` is 1 either way) and 3S3P only
+/// exercises the first, so without this case the branch ships unmeasured: a `1S3P` pack
+/// is the only shape where the arms disagree. It is also a real topology — cells in
+/// parallel with no series string is how a single-voltage pack is built.
+#[test]
+fn a_day_long_step_on_a_single_series_pack_is_stable_and_lands_on_the_steady_state() {
+    let t = day_long_steady_state(1, 3);
+    // A 1×3 chain: the middle cell has two neighbours and keeps half its ambient
+    // coupling, the ends have one each and keep three quarters. So the middle runs
+    // hottest and the two ends are equal by symmetry.
+    let (middle, left, right) = (t[1], t[0], t[2]);
+    assert!(
+        middle > left && left > T_ENV + 1e-6,
+        "the middle of a 1S3P chain should be hottest: {left} / {middle} / {right}"
+    );
+    // The two ends are equal by symmetry — but only to within a rounding, and that is a
+    // property of the implicit path worth pinning rather than hiding. `euler_substep` is
+    // a Jacobi sweep, so symmetric positions come out bit-identical; a banded solve is
+    // forward-then-back substitution, which visits the chain in an order, so cell 0 and
+    // cell 2 reach the same answer through different arithmetic and can differ in the
+    // last bit (measured: exactly one ULP). Determinism is untouched — the order is
+    // fixed, so the same binary gives the same bits — but bit-exact spatial symmetry is
+    // not something a direct solve promises.
+    assert!(
+        (left - right).abs() <= 2.0 * f64::EPSILON * left,
+        "the ends of a chain should agree to a rounding: {left} vs {right}"
     );
 }
 
@@ -377,4 +419,3 @@ fn crossing_the_gate_does_not_change_the_answer() {
         }
     }
 }
-

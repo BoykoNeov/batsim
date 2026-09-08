@@ -510,6 +510,16 @@ impl Banded {
 /// runaway path states for itself: this path runs only at a `dt` above roughly 1.7
 /// hours, i.e. never during real-time stepping. The explicit path above allocates
 /// nothing, and it is the one with a performance budget.
+///
+/// # One property the explicit path has and this one does not
+///
+/// [`euler_substep`] is a Jacobi sweep, so two cells that are equal by symmetry come out
+/// **bit**-identical. Forward-then-back substitution visits the grid in an order, so the
+/// same two cells reach the same answer through different arithmetic and can differ in
+/// the last bit — measured at exactly one ULP on a 1S3P chain, which
+/// `thermal_implicit.rs` pins. Determinism is untouched: the order is fixed, so the same
+/// binary produces the same bits. It is spatial symmetry, not reproducibility, that is
+/// no longer exact.
 fn implicit_substeps(
     temps: &mut [f64],
     scratch: &mut Vec<f64>,

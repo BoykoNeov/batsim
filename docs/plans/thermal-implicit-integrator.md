@@ -139,6 +139,13 @@ With the natural series-major index `i = s·parallel + p` the non-zeros sit at `
 neighbours), so the bandwidth is `parallel` and a banded Cholesky costs O(n · parallel²) to
 factor and O(n · parallel) per solve.
 
+One exception, and it is the piece of the solver that most nearly shipped unmeasured: a
+pack with a single series element has no series neighbour, so its band is tridiagonal
+however wide it is, and `assemble` takes `bw = 1` there. 1S1P cannot tell the two arms of
+that branch apart (`parallel` is 1 either way) and 3S3P only exercises the other one, so
+`a_day_long_step_on_a_single_series_pack_…` exists to cover a **1S3P** pack — the only shape
+where the arms disagree, and a real topology besides.
+
 ### The two contracts this buys
 
 * **Unconditional stability at any `dt`.** No cap, no `debug_assert`, no divergence.
@@ -257,10 +264,28 @@ answer is NaN.
 | 1S1P closed form | drift **2.626e-11 K** | 6.92e-11 K | `2·n·eps·T`: 512 sub-steps, at most two roundings each, at the ULP of an absolute temperature near 304 K |
 | 3S3P day-long, steady state | residual ≤ **3.2e-13 W** | 1e-11 W | the physical residual is nil at a hundred time constants, so the floor is cancellation: ~1e-4 K differences on 298 K numbers carry ~3e-14 K of rounding per term |
 | 3S3P day-long vs fine `dt` | ≤ **2.41e-11 K** | 1e-9 K | two converged answers; the gap is the same rounding accumulation as row 1 |
+| 1S3P day-long (the other arm of the bandwidth branch) | steady state and fine-`dt` agreement hold on the same bounds; middle cell hottest; **the two ends of the chain differ by exactly one ULP** | 2·eps·T | see below — the asymmetry is a property of the solve, and the bound is one rounding |
 | 3S3P gradient | centre **0.000673753 K** > edge 0.000655003 > corner 0.000636784 above ambient | ordering only | re-asserts the phase-2 exit gate's shape, so a solver returning a uniform "everything is ambient" cannot pass on the residual alone |
 
 `q` per cell is 7.5e-5 W = `0.05²·(R0 + R_rc)`, i.e. the RC pair is settled and both arms
 hold the same heat — which is what the 400 s warm-up is for.
+
+### One property the explicit path had and this one does not
+
+Adding the 1S3P arm turned up a behavioural difference that no prediction covered. The two
+ends of a three-cell chain are equal by symmetry — `exposure` is 0.75 on both, and they see
+the same neighbour — and the explicit path returns them **bit**-identical, because
+`euler_substep` is a Jacobi sweep: every cell is computed from the same previous iterate by
+the same arithmetic. The implicit path returns 298.1503192291577 and 298.1503192291576,
+**one ULP apart**, because forward-then-back substitution visits the chain in an order and
+the two cells reach the same answer through different sequences of operations.
+
+That is worth stating rather than smoothing over, because it is easy to mistake for a
+determinism problem and it is not one: the order is fixed, so the same binary produces the
+same bits, which is all `CLAUDE.md`'s determinism rule asks for. What is no longer exact is
+*spatial* symmetry. The test asserts the ends agree to `2·eps·T` rather than exactly, with
+the reason in a comment, and `implicit_substeps` says the same thing in its doc comment so
+the next reader meets it before being surprised by it.
 
 ## Predictions, scored
 
@@ -370,6 +395,12 @@ would have missed every one of them.
   largest eigenvalue. Switching integrators slightly earlier than strictly necessary is the
   cheap and safe direction to err, but the true bound is a Gershgorin disc away if anyone
   ever wants the explicit path to run longer.
+* **The 1S3P arm was added on review, not on plan.** The bandwidth branch
+  (`bw = 1` when `series` is 1) was written, shipped in the first commit, and covered by
+  nothing: 1S1P cannot distinguish the two arms and 3S3P only walks one. It is covered now
+  and it was correct, but the gap is the exact shape this repo keeps rediscovering — a
+  branch whose wrong answer would still have indexed legally. Neither the six-row
+  perturbation table nor 662 green tests found it; a reviewer reading the branch did.
 * **`crossing_the_gate_does_not_change_the_answer` passes on the pre-slice code**, by
   design. It is a guard on the solve, not on the gate, and its doc comment says so — but it
   is the kind of test that reads as coverage it does not provide, so it is named here too.

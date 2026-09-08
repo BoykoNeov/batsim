@@ -748,7 +748,17 @@ at any realistic client `dt`.
 
 So there are now two caps, not one raised cap. `MAX_SUBSTEPS` (512) is untouched and still
 bounds work against a pathological `dt` on the linear path; `MAX_RUNAWAY_SUBSTEPS` (2048)
-bounds the adaptive path at ~2.5x the worse chemistry's full burn. The table is in the
+bounds the adaptive path at ~2.5x the worse chemistry's full burn.
+
+**Update, 2026-09-08 (`docs/plans/thermal-implicit-integrator.md`):** the two caps have
+since stopped being the same *kind* of thing. `MAX_SUBSTEPS` is still 512 and still bounds
+work, but where it binds the linear path now switches to backward Euler instead of taking
+an explicit sub-step it cannot vouch for — so it is a work budget with no correctness cliff
+behind it. `MAX_RUNAWAY_SUBSTEPS` keeps its cliff, and its `debug_assert`, because the
+reaction term is non-linear in `T` and an implicit step against it would need a Newton
+solve. The sentence above about the Arrhenius derivative destroying the linear bound is
+unaffected: that is a claim about a growth rate exceeding `a_max` by orders of magnitude,
+which is a different thing from the 2.64x margin the linear ceiling carries at its gate. The table is in the
 const's doc comment per `CLAUDE.md`'s rule that a raised cap comes with its working.
 `a_whole_burn_fits_inside_one_coarse_step` runs an entire burn at `dt` = 60 s: the cap
 carries a `debug_assert` and tests run in debug, so a cap that bound would fail by
