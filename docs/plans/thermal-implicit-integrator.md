@@ -377,15 +377,22 @@ would have missed every one of them.
 
 ## Still open
 
-* **Heat generation is still held constant across the step, and at fast-forward `dt` that
-  is now the dominant error — not the integrator.** A day-long step burns a whole day at
-  the heat of its first instant. Fixing it means solving the electrical problem more than
-  once per step, which is a different and much larger change; `Pack::step`'s doc comment
-  now names it as the cost of a coarse `dt`. **Priced, 2026-09-08**, as a side effect of
-  the slice above: on a fresh 3S1P pack under load a single day-long step settles at
-  311.45 K where a fine `dt` puts it at 318.10 — 6.6 K of a 20 K rise, a third of it,
-  because the step burns `I²·R0` all day and never sees the RC pair's `I²·R_rc`. That is
-  five orders larger than any integration error measured in this note.
+* ~~**Heat generation is still held constant across the step, and at fast-forward `dt`
+  that is now the dominant error — not the integrator.**~~ **Closed 2026-09-08 by
+  `docs/plans/step-mean-heat.md`**, and the sentence above was wrong about the price as
+  well as being right about the size. It said fixing this "means solving the electrical
+  problem more than once per step, which is a different and much larger change". It does
+  not: the model already holds the current constant over the step — the assumption that
+  makes the RC update an *exact* exponential — and under it the only thing in an equivalent
+  circuit's heat that moves within the step is the RC overpotential, whose step mean is
+  `R·I + tau·(V_0 − V_end)/dt`, taken from the value the state update already produced.
+  What was measured here stands: on a fresh 3S1P pack under load a single day-long step
+  settled at 311.45 K where a fine `dt` put it at 318.10 — 6.6 K of a 20 K rise, five
+  orders larger than any integration error in this note. The same comparison now agrees to
+  **1.5 mK**, and that residue is the day-mean of the heat differing from the settled heat
+  rather than an error. What *is* still open is the reported pair: `Telemetry::q_gen_w` is
+  deliberately still the first instant, because it is the exact partner of the
+  start-of-step terminal voltage in the energy ledger.
 * ~~**Runaway ignition still lags a whole step**, so a live `[safety]` section and a
   day-long `dt` do not belong in the same run.~~ **Closed 2026-09-08 by
   `docs/plans/runaway-inside-a-coarse-step.md`**, which found three defects behind that

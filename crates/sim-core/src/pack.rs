@@ -1923,12 +1923,21 @@ impl Pack {
     /// temperature as soundly as a millisecond GUI step — as the electrical solve and
     /// the RC update already did, both being exact at any `dt`.
     ///
-    /// Two things a coarse `dt` still costs, neither of them the integrator:
-    /// heat generation is solved once and held constant across the whole step, so a
-    /// day-long step burns one day at the heat of its first instant; and a cell that
-    /// crosses the runaway onset *during* a step ignites at the start of the next one
-    /// (see [`crate::runaway`]), which at fast-forward `dt` is a day late. Live
-    /// `[safety]` and a day-long `dt` do not belong in the same run.
+    /// Heat generation is still solved once per step, but what the network integrates is
+    /// the exact step **mean** of it rather than its first instant: the RC overpotentials
+    /// the solve froze are the one part of the heat that moves within the step, and they
+    /// have a closed-form mean. Held at the first instant, as it was before
+    /// `docs/plans/step-mean-heat.md`, a day-long step burned the day at two thirds of the
+    /// right power and landed 6.6 K low on a 20 K rise; it now agrees with a fine `dt` to
+    /// 1.5 mK. **[`Telemetry::q_gen_w`] deliberately still reports the first instant**, so
+    /// at a coarse `dt` the pack absorbs more than that number accounts for — see the
+    /// field, which says why moving it needs a mean terminal voltage beside it.
+    ///
+    /// A cell that crosses the runaway onset *during* a step ignites within it above the
+    /// same `dt` where the integrator changes, so live `[safety]` and a fast-forward `dt`
+    /// **do** belong in the same run. Below that gate ignition still waits for the start of
+    /// the next step (see [`crate::runaway`]); that is bought deliberately, and it is
+    /// bounded by the gate — at most 6080 s for the shipped chemistries.
     pub fn step(&mut self, dt: f64, demand: Demand, env: &Env) -> Telemetry {
         let cap_ah = self.chem.cell.capacity_ah;
         let (series, parallel) = (self.series as usize, self.parallel as usize);
@@ -2657,9 +2666,38 @@ impl Pack {
                 // which would become `+0.0` and move a trajectory for no physics.
                 q_gen_w += q;
                 if thermal_live {
+                    // --- and the one number that is *not* `q`: the heat this step
+                    // really generated, rather than the heat its first instant was
+                    // generating.
+                    //
+                    // `q` above is evaluated entirely from start-of-step state, which
+                    // is what makes it the exact partner of the start-of-step terminal
+                    // voltage in the pack energy ledger. Over the step, though, the RC
+                    // overpotentials move — that is the whole reason they exist — so a
+                    // step long against their time constants generates rather more heat
+                    // than `q` says. The correction is the current times the amount by
+                    // which the step *mean* of the overpotential exceeds its
+                    // start-of-step value, and it is exact for the piecewise-constant
+                    // current this model already assumes: see
+                    // [`crate::ecm::rc_step_mean_excess_v`].
+                    //
+                    // Only the network sees it. `q_gen_w` above keeps its meaning and
+                    // its bits, and so therefore does the four-term balance
+                    // `properties.rs::electrical_and_heat_energy_balance` closes to
+                    // rounding — the electrical side of that ledger is a start-of-step
+                    // voltage, and moving one side without the other is what would open
+                    // it. That is the next slice, and `docs/plans/step-mean-heat.md`
+                    // says what it costs.
+                    //
+                    // The guard is not an optimisation. `rc_mean_excess_v` is exactly
+                    // `0.0` for a zero-length step and for the porous-electrode models,
+                    // and `q + i·0.0` is `q` for every value but `-0.0` — which would
+                    // become `+0.0` and move a trajectory for no physics, the same trap
+                    // the rejection tally above is written around.
+                    let excess = advanced.rc_mean_excess_v;
                     // Series-major, parallel-minor — the index order `thermal`
                     // expects.
-                    heat_w.push(q);
+                    heat_w.push(if excess == 0.0 { q } else { q + i_k * excess });
                 }
                 if aging_accumulates {
                     // --- charge delivered past empty, which is the third quantity this

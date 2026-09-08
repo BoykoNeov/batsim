@@ -561,8 +561,14 @@ It does not pin what the slice spends, and nothing in the repository does.
 
 ## Still open
 
-* **Heat generation is still held constant across the step, and this slice measured what
-  that costs.** 6.6 K of a 20 K temperature rise on a fresh pack at a day-long `dt`,
+* ~~**Heat generation is still held constant across the step, and this slice measured what
+  that costs.**~~ **CLOSED on the thermal side the same day by
+  `docs/plans/step-mean-heat.md`**, which took the RC pair's closed-form mean below and
+  found that on this file's own fixture, with the warm-up removed, the two arms then agree
+  to **1.5 mK** — and that the 1.5 mK is not error but the day-mean of the heat differing
+  from the settled heat, predicted to four digits before it was measured. The half that
+  remains is the reported pair, which is the second sentence below. The paragraph as
+  written was: 6.6 K of a 20 K temperature rise on a fresh pack at a day-long `dt`,
   against integration errors down at 1e-8 K. It is now the only remaining cost of a coarse
   `dt` and it is squarely the largest. Fixing it is more than one slice: the RC pair's
   contribution has an exact closed-form mean over the step (`mean V_rc = R·I + τ·(V₀ −

@@ -211,6 +211,15 @@ and double as the scenario file format.
 - One lumped node per cell: `C_th·dT/dt = Q_gen + Σ_j k_ij·(T_j − T_i)
   + h·A·(T_env − T_i)` where `T_env` is ambient or coolant.
 - `Q_gen = I²·(R0 + Σ R_rc)` plus optional entropic term `I·T·dOCV/dT`.
+- **What the network integrates is the step *mean* of that, not its first instant.**
+  The electrical solve runs once per step, so the RC overpotentials it froze are the
+  one thing in the heat that moves within the step — and they have an exact mean,
+  `R·I + τ·(V₀ − V_end)/dt`, taken from the value the RC update already produced. Held
+  at the first instant instead, a day-long step burned the day at two thirds of the
+  right power and landed 6.6 K low on a 20 K rise. `Telemetry::q_gen_w` deliberately
+  still reports the first instant, because it is the exact partner of the
+  start-of-step terminal voltage in the pack energy ledger and moving one without the
+  other opens it. See `docs/plans/step-mean-heat.md`.
 - Neighbor conductances `k_ij` from a simple grid adjacency derived from
   topology (configurable); this is what makes center cells run hot and enables
   runaway propagation. Explicit Euler is fine (thermal time constants are long);

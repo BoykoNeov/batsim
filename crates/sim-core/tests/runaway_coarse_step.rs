@@ -96,21 +96,28 @@ const LOAD_A: f64 = 12.5;
 /// of throughput. A fixture that emptied would be measuring the SOC clamp.
 const CAP_AH: f64 = 1.0e5;
 
-/// Seconds of 1 s steps every compared run takes **before** the arm under test begins,
-/// and the reason it is not optional.
+/// Seconds of 1 s steps every compared run takes **before** the arm under test begins.
 ///
-/// Heat generation is solved once per step and held constant across it — the open item
-/// `docs/plans/thermal-implicit-integrator.md` names as the remaining cost of a coarse
-/// `dt`, and the one this file is *not* about. A day-long step taken from a fresh pack
-/// therefore burns the whole day at `I²·R0` = 3.125 W and never sees the RC pair's
-/// `I²·R_rc`, settling 6.6 K below where a fine `dt` puts it. Measured, before this
-/// warm-up existed: 311.45 K against the fine arm's 318.10 K.
+/// # It was load-bearing, and it is not any more
 ///
-/// 400 s is twenty RC time constants (`τ` = 20 s), which is what it takes for the
-/// residue to stop mattering: at 100 s the same pair still disagreed by 0.045 K, which
-/// is exactly the `e^−5` of unsettled overpotential the coarse arm would then have
-/// frozen for a day. It is 12.6 K of the 20 K thermal rise, which is why [`ONSET_K`]
-/// sits where it does.
+/// Heat generation used to be solved once per step and **frozen at its first instant** —
+/// the open item `docs/plans/thermal-implicit-integrator.md` named as the remaining cost
+/// of a coarse `dt`, and the one this file was *not* about. A day-long step taken from a
+/// fresh pack therefore burned the whole day at `I²·R0` = 3.125 W and never saw the RC
+/// pair's `I²·R_rc`, settling 6.6 K below where a fine `dt` put it: 311.45 K against the
+/// fine arm's 318.10 K. This warm-up existed to get the compared runs out from under
+/// that, and 400 s is twenty RC time constants (`τ` = 20 s) because at 100 s the same
+/// pair still disagreed by 0.045 K — the `e^−5` of unsettled overpotential the coarse arm
+/// would then have frozen for a day.
+///
+/// `docs/plans/step-mean-heat.md` closed it: the network now integrates the exact step
+/// mean of the overpotential, and the same day-long comparison with **no** warm-up at all
+/// agrees to **1.5 mK** rather than 6.6 K. The warm-up is kept because every derived
+/// tolerance in this file is built on the temperatures it produces, and re-deriving them
+/// would be a second slice's worth of change for no reading gained — but it is a fixture
+/// choice now, not a workaround, and nothing here would break without it.
+///
+/// It is 12.6 K of the 20 K thermal rise, which is why [`ONSET_K`] sits where it does.
 const WARM_UP_S: f64 = 400.0;
 
 fn env() -> Env {

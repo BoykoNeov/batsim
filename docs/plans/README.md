@@ -54,6 +54,7 @@ Changes to what `sim-core` computes. Every one names the snapshot version it cos
 | [`runaway-inside-a-coarse-step.md`](runaway-inside-a-coarse-step.md) | Ignition inside the step — thermal runaway at fast-forward `dt` |
 | [`rc-resistance-growth.md`](rc-resistance-growth.md) | Aging grows the RC resistances too — the spec was right and the code was not |
 | [`reversal-damage.md`](reversal-damage.md) | Over-discharge that leaves a mark |
+| [`step-mean-heat.md`](step-mean-heat.md) | The heat a step really generated — the step-mean overpotential |
 | [`surface-vs-bulk.md`](surface-vs-bulk.md) | Surface vs bulk: the gradient an equivalent circuit cannot have |
 | [`thermal-implicit-integrator.md`](thermal-implicit-integrator.md) | The thermal integrator above the cap — backward Euler where explicit Euler diverges |
 

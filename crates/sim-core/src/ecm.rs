@@ -630,6 +630,9 @@ impl CellModel {
         let no_rejection = |flags| Advanced {
             flags,
             rejected_as: 0.0,
+            // A step mean the porous-electrode arms cannot offer, not one they have
+            // nothing to correct. See the field.
+            rc_mean_excess_v: 0.0,
         };
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => advance_cell(
@@ -850,6 +853,60 @@ pub fn r0_lookup(table: &R0Table, soc: f64, temp_k: f64) -> f64 {
     }
     let r_hi = interp1(&table.temp_k, &table.ohms[hi], temp_k);
     r_lo + frac * (r_hi - r_lo)
+}
+
+/// How much the *mean* of one RC-pair overpotential over the step exceeds its
+/// start-of-step value \[V\], for the same piecewise-constant current
+/// [`rc_update`] assumes.
+///
+/// The mean of the exact exponential trajectory over `[0, dt]` is
+///
+/// ```text
+/// mean V_rc = R·I + tau·(V_0 - V_end)/dt
+/// ```
+///
+/// which is capacitor charge conservation — `tau·(V_0 − V_end)` is `R` times the charge
+/// the capacitor gave back over the step — and therefore holds however `V_end` was
+/// produced. This returns `mean − V_0`, because that difference is what the heat tally
+/// adds and because it is **exactly zero** in every case where nothing should move.
+///
+/// # Why it takes `v_end` rather than computing it
+///
+/// [`advance_cell`] has just called [`rc_update`] and has the answer. Re-deriving it
+/// here would put a second `exp` on a per-cell, per-pair hot path that
+/// `docs/plans/pack-step-perf.md` records as sitting at its budget line, and — the part
+/// that is not about speed — it would let the mean and the state disagree by a ULP,
+/// which is precisely the disagreement that opens an energy ledger.
+///
+/// # The zero cases are exact, not approximate
+///
+/// A non-positive `tau` or `dt` returns exactly `0.0` rather than evaluating the
+/// expression. Both matter:
+///
+/// * At `dt <= 0` the expression tends to `R·I − V_0` analytically but is a division by
+///   zero numerically, and a zero-length probe step must move nothing at all.
+/// * At `tau <= 0` [`rc_update`] leaves `V_end == V_0`, so the expression would return
+///   `R·I − V_0` — a real number, and the wrong one: a pair with no time constant is
+///   already at whatever value it holds for the whole step.
+///
+/// Returning an exact `0.0` is also what lets the caller add this term behind a
+/// `!= 0.0` guard, so that a model or a step that has no correction to make is
+/// bit-identical to the code that never had one.
+#[must_use]
+pub fn rc_step_mean_excess_v(
+    v_rc: f64,
+    v_end: f64,
+    i: f64,
+    r_ohms: f64,
+    c_farad: f64,
+    dt: f64,
+) -> f64 {
+    let tau = r_ohms * c_farad;
+    if tau > 0.0 && dt > 0.0 {
+        r_ohms * i - v_rc + tau * (v_rc - v_end) / dt
+    } else {
+        0.0
+    }
 }
 
 /// Exact exponential update of one RC-pair overpotential for piecewise-constant
@@ -1358,10 +1415,11 @@ pub(crate) fn open_circuit_v(chem: &ChemistryParams, state: &EcmState) -> f64 {
 
 /// What advancing one cell by a step produced, beyond the state change itself.
 ///
-/// Two fields because the pack needs both and neither is derivable from the other: the
-/// flags it merges into its own set, and the charge the cell could not account for,
+/// Three fields because the pack needs all of them and none is derivable from another:
+/// the flags it merges into its own set, the charge the cell could not account for,
 /// which the pack turns into heat and reports as
-/// [`crate::Telemetry::i_rejected_a`].
+/// [`crate::Telemetry::i_rejected_a`], and the step-mean correction to the cell's
+/// overpotential, which the pack turns into the heat the thermal network integrates.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Advanced {
     /// Flags raised by the advance (currently the SOC clamps).
@@ -1375,6 +1433,21 @@ pub(crate) struct Advanced {
     /// the equivalent circuit no longer discards anything at the *bottom* of its window
     /// either, so this is non-zero only on an over-charge.
     pub rejected_as: f64,
+    /// How much the step-**mean** of this cell's RC overpotential exceeds the
+    /// start-of-step value the electrical solve used \[V\], summed over its pairs.
+    /// See [`rc_step_mean_excess_v`].
+    ///
+    /// The pack multiplies it by the cell's current to get the heat the step really
+    /// generated, as against the heat its first instant was generating. The two are the
+    /// same to `O(dt/tau)` and differ by two thirds of the RC contribution at a
+    /// fast-forward `dt`; see `docs/plans/step-mean-heat.md`.
+    ///
+    /// Exactly `0.0` for `Spm` and `Dfn`, and unlike [`Self::rejected_as`] that is a
+    /// **stub rather than physics**: a porous-electrode cell's overpotential has a step
+    /// mean too, it just has no closed form, so nothing is claimed about it here.
+    /// Exactly `0.0` at `dt <= 0` as well, which is what keeps a zero-length probe step
+    /// bit-identical.
+    pub rc_mean_excess_v: f64,
 }
 
 /// Advance one cell's internal state by `dt` seconds under the current `i`
@@ -1405,6 +1478,7 @@ pub(crate) fn advance_cell(
     // permanent zero [`EcmState::v_rc`] documents. It also drops the `chem.rc[k]` bounds
     // check, and the loop count is unchanged from the `Vec` this replaced, so no
     // trajectory moves.
+    let mut rc_mean_excess_v = 0.0;
     for (pair, v_rc) in chem.rc.iter().zip(state.v_rc.iter_mut()) {
         // Aging grows the slow resistances along with the instant one, which is what
         // `CLAUDE.md`'s physics spec has always said and what this line did not do until
@@ -1423,7 +1497,15 @@ pub(crate) fn advance_cell(
         //   1.0` — every pack without aging, and every aged pack before its first
         //   tick — `x * 1.0` is bit-identical, so a branch would guard nothing and cost
         //   what the multiply costs.
-        *v_rc = rc_update(*v_rc, i, pair.r_ohms * soh_resistance, pair.c_farad, dt);
+        let r = pair.r_ohms * soh_resistance;
+        let v_before = *v_rc;
+        *v_rc = rc_update(v_before, i, r, pair.c_farad, dt);
+        // ...and, from the value that update just produced rather than from a second
+        // exponential, how far this pair's step *mean* sits above where the step
+        // started. Summed across pairs because that is how the overpotential enters
+        // the heat: one current times one total. See [`rc_step_mean_excess_v`], and
+        // `docs/plans/step-mean-heat.md` for why the heat tally wants it.
+        rc_mean_excess_v += rc_step_mean_excess_v(v_before, *v_rc, i, r, pair.c_farad, dt);
     }
     // The depletion, on a chemistry that declares one. `if let` rather than an
     // unconditional update through a neutral parameter, for the reason
@@ -1495,5 +1577,6 @@ pub(crate) fn advance_cell(
     Advanced {
         flags: step.flags,
         rejected_as: step.rejected_as,
+        rc_mean_excess_v,
     }
 }

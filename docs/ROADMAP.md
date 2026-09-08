@@ -196,7 +196,13 @@ the linear integrator, and the reacting sub-step drops a stability bound it no l
 — so a live `[safety]` section and a day-long `dt` now belong in the same run. That slice
 also **measured** the one still open: heat held constant across the step costs 6.6 K of a
 20 K temperature rise on a fresh pack at a day-long `dt`, five orders larger than any
-integration error either slice found. It is listed in H10.
+integration error either slice found. **That was closed on the physics side the same day
+by `docs/plans/step-mean-heat.md`** — the network now integrates the exact step mean of the
+RC overpotentials, the day-long comparison agrees to 1.5 mK with no warm-up, and unlike its
+two predecessors this one is *ungated* and therefore reached: it moved ten guided-path
+claims and two lessons' prose, which is the first time any of the three changed a number a
+reader sees. What it deliberately did not move is `Telemetry::q_gen_w`; that half stays in
+H10.
 
 ### H7. The BMS can only coulomb-count, so it cannot teach what a real one does
 
@@ -256,7 +262,7 @@ was declined for that.
 | NiMH `[hysteresis]` is one width; lead-acid has no `[hysteresis]` | `phase-8-slice-c-hysteresis.md` | data (H3) — the table exists since v20 |
 | Mixed ECM/SPM packs are unrepresentable though the solve is mixed-ready | `phase-6-porous-electrodes.md` | config surface + the `soc_true` question |
 | BMS protection overshoot scales with `dt` because the sample rate is `dt` | `phase-2-thermal-bms.md` | accepted; document on the config |
-| Heat generation is held constant across a step, so a day-long step burns the day at the heat of its first instant — **measured at 6.6 K of a 20 K rise** | `runaway-inside-a-coarse-step.md`, `thermal-implicit-integrator.md` | more than one slice: the electrical solve has to run more than once per step, and a step-mean heat needs a step-mean electrical quantity beside it or the energy ledger opens |
+| ~~Heat generation is held constant across a step, so a day-long step burns the day at the heat of its first instant — **measured at 6.6 K of a 20 K rise**~~ — **half closed 2026-09-08.** The thermal network integrates the exact step mean of the RC overpotentials, and the same day-long comparison now agrees to 1.5 mK with no warm-up. What is left is the *reported* pair: `q_gen_w` and the terminal voltage a client integrates are still both left-rectangle values from the same instant | `step-mean-heat.md` | the remaining half is one slice: a mean terminal voltage on `Telemetry` beside the mean heat, which is where the ledger question the row used to describe actually lives |
 | Snapshot body at 100S10P ≈ 600 KB is poor for a socket frame | `phase-4-server-wasm.md` | `Content-Encoding` on REST if it ever bites |
 
 ---

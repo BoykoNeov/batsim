@@ -735,8 +735,12 @@ fn linear_stretch(
 ///
 /// `temps` is the per-cell temperature \[K\] in series-major order (index
 /// `s·parallel + p`), read and written in place. `heat_w` is the matching per-cell
-/// generation \[W\], held constant across the step (the electrical solve runs once
-/// per step). `runaway` is the matching per-cell exothermic state, read and written in
+/// generation \[W\], held constant across the step — but it is the step **mean** of
+/// that generation, not the value at its first instant, which is what
+/// `docs/plans/step-mean-heat.md` changed: the electrical solve still runs once per
+/// step, and the RC overpotentials it froze have an exact mean over the step that the
+/// caller adds before handing the slice down. `runaway` is the matching per-cell
+/// exothermic state, read and written in
 /// place; pass an **empty slice** for a pack that cannot react, which is what the
 /// caller does whenever no cell has reached onset — that keeps a healthy pack from
 /// paying to gather it.
