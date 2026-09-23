@@ -220,7 +220,7 @@ where the rest-OCV gate refused to correct.
 
 **Cost.** One slice; the BMS tests gain a control arm per estimator.
 
-### H8. The pack solve has four named soft spots
+### H8. The pack solve has three open soft spots
 
 * **An `Spm` pack diverges at a long step** — a scattered 1S3P LG M50 read −3.7e28 V and
   negative absolute temperatures by its fifth one-hour step (`end-of-step-split.md`). The
@@ -235,12 +235,14 @@ where the rest-OCV gate refused to correct.
   residual is not a scalar monotone one.
 * **A `Dfn` driven by an absurd `Demand::Current` is unrecoverable** (−1105 V forever);
   the only guard is a magnitude, i.e. an invented constant.
-* **`Demand::Current` leaving the window is unflagged** where `Power` is
-  (`power-operating-point.md`); the window flag is one bit for the whole pack; `Rest` is
-  excluded by demand rather than by cause (`operating-point-window.md`).
+* ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
+  2026-08-13** (`operating-point-window.md`): a current demand raises
+  `OPERATING_POINT_OUT_OF_WINDOW` too, judged per group. `Rest` is still excluded by
+  demand rather than by cause. Struck here on 2026-09-23, when the count above was found
+  to include it.
 
-**Approach.** Take the third first — it is a predicate change with a measured blast
-radius. The first two want a per-model *valid state window* declared by the cell model
+**Approach.** The `Spm` item is the ECM fix's other half and comes first. The two after it
+want a per-model *valid state window* declared by the cell model
 (concentrations, voltages) with a flag on leaving it, which is the honest form of the
 guard `voltage-target-blowup.md` declined: not a magnitude someone picked, but a bound the
 model states about itself.

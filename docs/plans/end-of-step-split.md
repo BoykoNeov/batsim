@@ -257,6 +257,13 @@ bytes restored after.
   the charge-acceptance taper are still read at the start of the step. None can undo the
   stability — each only makes `R_step` less exact — but the lead-acid depletion has its own
   time constant and an explicit read of it inside a parallel group has not been measured.
+* **Step 18's decomposition was not re-measured.** It says warming accounts for nearly all
+  of the second tooth's extra current and the lost charge about a twentieth as much. That
+  split came from an out-of-tree four-corner experiment on the start-of-step solve
+  (`path-buttons.md`), and nothing in the tree checks it. The new solve adds the RC pairs'
+  share, which does not depend on temperature, to every cell's step resistance, so both
+  effects shrink together; the tooth gap moved only 0.69 → 0.68 A. Probably still true,
+  and not measured.
 * **The CC-CV legs moved inside their tolerances**, as did about seventy other claims; their
   recorded values were updated where they really moved, but a claim whose tolerance is
   wide enough to absorb a change of solver is a claim worth re-reading.
