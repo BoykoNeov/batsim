@@ -231,7 +231,11 @@ and double as the scenario file format.
   instant, not the mean: the step's **last** one, the exact partner of the end-of-step
   terminal voltage in the pack energy ledger — the one instant at which a single node
   voltage speaks for every cell of a parallel group. See `docs/plans/step-mean-heat.md`
-  and `docs/plans/end-of-step-split.md`.
+  and `docs/plans/end-of-step-split.md`. The porous models have no exact mean: the `Spm`
+  integrates a trapezoid of the step's two ends, and the `Dfn` the **end** alone, chosen
+  on measurement because its overpotential builds within seconds (the trapezoid read
+  0.86 K for a 1.06 K rise). Both read the heat off the cell's own curve at the end of the
+  step, never `U_eq,start` against the end-of-step node. See `docs/plans/dfn-end-of-step-heat.md`.
 - Neighbor conductances `k_ij` from a simple grid adjacency derived from
   topology (configurable); this is what makes center cells run hot and enables
   runaway propagation. Explicit Euler is fine (thermal time constants are long);

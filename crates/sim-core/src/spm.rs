@@ -881,10 +881,10 @@ pub(crate) fn surface_gap(s: &SpmState, spm: &SpmParams, eff_capacity_ah: f64) -
 ///   the two half-cell entropy coefficients as `∂U_p/∂T − ∂U_n/∂T`. Zero for the
 ///   shipped chemistry, whose set publishes both as literally zero.
 ///
-/// Taking `v_terminal` from the pack rather than re-evaluating `V(i)` here is what
-/// makes the balance exact rather than nearly exact: during slice C2 the pack solves
-/// a *tangent*, so the voltage it settled on is not identically `voltage(w, s, i)`,
-/// and the heat has to answer for the voltage the terminals actually delivered.
+/// An **estimate**, read at the start-of-step equilibrium voltage against the end-of-step
+/// node, and so wrong at a long step by the equilibrium voltage's fall across it.
+/// [`advance`] returns the two corrections the pack adds to it, read off this cell's own
+/// curve rather than the node; see `docs/plans/spm-end-of-step.md`.
 #[must_use]
 pub(crate) fn heat_w(
     s: &SpmState,

@@ -6707,10 +6707,9 @@ which is isothermal. 22.39 W is the current times the gap between equilibrium an
 terminal, and that gap is where the whole disagreement between the two models lives — which
 is why the sentence points at it.
 
-Was 22.41 W until `docs/plans/dfn-end-of-step-heat.md`. The mark is past `SOLVE_UNCONVERGED`
-(466 s), and the heat is now read at the equilibrium voltage and terminal voltage of the
-cell's own last solve rather than against the pack's node; unconverged, the two part by
-0.02 W.
+Was 22.41 W until `docs/plans/dfn-end-of-step-heat.md`, which stopped booking the
+equilibrium voltage's fall across each step as heat. Not the unconverged solve past 466 s:
+reading the heat off the pack's node instead of the cell's own solve gives the same bits here.
 """
 
 [[claim]]

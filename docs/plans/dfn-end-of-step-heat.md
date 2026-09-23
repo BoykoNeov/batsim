@@ -75,12 +75,14 @@ Same harness, fixed engine, one long step against one-minute steps:
 
 Before, the same columns were off by +185 % to +322 % (rise) and +181 % to +338 % (heat).
 
-**The energy ledger did not improve, and this note does not claim it did.** The reported
-pair is now `v_terminal` and `q_gen_w` at the step's last instant, as it is for the other
-two models. At an hour the terminal voltage at the end sits below the step's mean, so
-`Σ v·i·dt` reads about 300 J low at C/5 (14 037 against 14 337 J). The error sat in the
-heat column before and sits in the electrical column now. That is the existing H10 "mean
-pair" item.
+**The energy ledger is not closed by this, and this note does not claim it is.** The
+reported pair is `v_terminal` and `q_gen_w` at the step's last instant, as it is for the
+other two models. At C/5 over an hour, one-second steps give `Σ v·i·dt + Σ q·dt` =
+14 337.3 + 199.6 = 14 536.9 J. One hour-long step gives 14 037.1 J of electrical energy on
+**both** engines — the end-of-step voltage sits below the step's mean, and this change does
+not touch it — plus 712.5 J of heat before (213 J **over**) or 197.5 J now (302 J
+**short**). The shortfall was always there; the false heat more than covered it. That is
+the existing H10 "mean pair" item.
 
 ## The risk the fix carries: unconverged solves
 
@@ -113,11 +115,15 @@ H8, not fixed here.
 ## One lesson number moved
 
 `the-electrolyte-starves` quoted **22.41 W** at its 500 s mark; the engine now says
-**22.39 W**. The mark is past the step's `SOLVE_UNCONVERGED` (466 s), so the heat there is
-read off the cell's own last Newton iterate rather than off the node, and the two part by
-0.02 W. The sentence ("22.39 W here against the twin's 6.33 W") still says what it said.
-`web/app.js` and `web/path-claims.toml` are updated together, with the claim's note saying
-why it moved. No other claim moved.
+**22.39 W**. What moved it is the equilibrium voltage's fall across one of that lesson's
+short steps, which the old estimate booked as heat at 15.46 A — **not** the unconverged
+solve past 466 s, which was the first explanation written here and was wrong. Measured: with
+the correction reading `v_node` instead of the solve's `V_end` (perturbation P4 below) the
+claim reads 22.392177510688764 W, the same bits as the fix. On a single cell under a current
+demand the node lies on the tangent through the probed point, so the two voltages are one
+number. The sentence ("22.39 W here against the twin's 6.33 W") still says what it said.
+`web/app.js` and `web/path-claims.toml` are updated together. No other claim left its
+tolerance, which is all the claims test can say.
 
 ## Tests
 
@@ -129,13 +135,15 @@ worktree), on the rise, by +185 % to +322 %.
 
 Perturbations (`W:\temp\claude\dfn-heat\perturb.py`): one wrong edit at a time,
 `cargo test -p sim-core -p sim-data --no-fail-fast`, judged by exit code with every red
-test named, and the tree's diff hashed before and after (unchanged).
+test named, and the tree's diff hashed before and after (unchanged). P4 was run by hand
+after the commit, on the reviewer's prompt.
 
 | # | the wrong edit | exit | what goes red |
 | --- | --- | --- | --- |
 | P1 | the correction zeroed | 101 | the four tests, and `path_claims::every_claim_matches_the_engine` (the 22.39 W claim) |
 | P2 | the network not corrected (reported still is) | 101 | the four tests, each on the rise |
 | P3 | the report not corrected (network still is) | 101 | the four tests, each on the reported heat (checked by message: +179 % to +337 %), and the path claim |
+| P4 | the correction reads `v_node` instead of the solve's `V_end` | 0 | **nothing.** The `Dfn` twin of `spm-end-of-step.md`'s P6: the rule that the heat is read off the cell's own solve and not off the node rests on that note's argument (on an unconverged step the node is off the curve), not on a test. Every case here converges, and where the lesson claim does not, a 1S1P current demand makes the two voltages equal. |
 
 The whole workspace suite is green (`cargo test --workspace --no-fail-fast`), with the one
 path claim updated. `web/pkg` was rebuilt.
