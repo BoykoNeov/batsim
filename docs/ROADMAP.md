@@ -220,7 +220,7 @@ where the rest-OCV gate refused to correct.
 
 **Cost.** One slice; the BMS tests gain a control arm per estimator.
 
-### H8. The pack solve has four open soft spots
+### H8. The pack solve has three open soft spots
 
 * ~~**An `Spm` pack diverges at a long step**~~ — **closed 2026-09-23**
   (`spm-end-of-step.md`): the `Spm`'s curve is now its end-of-step one, and the solve's
@@ -233,19 +233,22 @@ where the rest-OCV gate refused to correct.
   under a power demand still runs on it (6.8 A and 372 K on the third hour of an
   unreachable 10 W, against 38 A and 900 K before). The honest fix is physics — a reversal
   branch like the equivalent circuit's `[reversal]` — not another guard.
-* **A `Dfn` books the equilibrium voltage's fall across a long step as heat.** Its node
-  was always end-of-step and its heat is `i·(U_eq,start − V_node)`, the mix
-  `spm-end-of-step.md` found and removed from the `Spm`. Measured: a 1S1P LG M50 `Dfn` at
-  C/5 rose 3.7 K in one hour-long step against 1.1 K in sixty one-minute steps. The `Spm`'s
-  fix — heat read off the curve at the step's two ends — carries over, at the price of a
-  second solve's worth of readout.
+* ~~**A `Dfn` books the equilibrium voltage's fall across a long step as heat.**~~ —
+  **closed 2026-09-23** (`dfn-end-of-step-heat.md`): the heat is read at the end of the
+  step off the cell's own solve, for the report and the network both (1.03 K against
+  1.06 K, was 3.71 K). The `Spm`'s trapezoid was measured for it and refused: it
+  undershoots, and costs a second solve.
 * **Voltage holds the model cannot reach inside its range stay unconverged.**
   `voltage-target-blowup.md` counted 11 of 810 in-window solves on a scattered 1S3P SPM
   holding a voltage on its own knee; re-measured 2026-09-23 (`spm-end-of-step.md`, σ = 0.05
   guessed, the original's not recorded) the `Spm` count is 28 of 405 at a 1 s step and 1
   of 405 at an hour, all bounded — they now stop at the edge of the particle's range. The
-  `Dfn` fails **269 of 405 at an hour** from a fresh pack; whether those are bounded was not
-  measured.
+  `Dfn` fails **269 of 405 at an hour** from a fresh pack, and **they are not bounded**
+  (measured 2026-09-23, `dfn-end-of-step-heat.md`): single hour-long steps reach 1e179 K
+  and more on the engine before that change and after it, and a scattered 1S3P held at
+  3.3 V, or asked for an unreachable 40 W, runs to 3e66 A or NaN within four hours. This is
+  the `Dfn` twin of what `spm-end-of-step.md` fixed for the `Spm` with a current window,
+  and the next slice here.
   Bracketing was declined because the residual is not a scalar monotone one.
 * **A `Dfn` driven by an absurd `Demand::Current` is unrecoverable** (−1105 V forever);
   the only guard is a magnitude, i.e. an invented constant.
@@ -295,6 +298,7 @@ cell's OCV and could hand the next step its slope, as it already hands it its so
 | Mixed ECM/SPM packs are unrepresentable though the solve is mixed-ready | `phase-6-porous-electrodes.md` | config surface + the `soc_true` question |
 | BMS protection overshoot scales with `dt` because the sample rate is `dt` | `phase-2-thermal-bms.md` | accepted; document on the config |
 | ~~Heat generation is held constant across a step, so a day-long step burns the day at the heat of its first instant — **measured at 6.6 K of a 20 K rise**~~ — **closed as a ledger 2026-09-23.** The thermal network integrates the exact step mean (`step-mean-heat.md`), and the *reported* pair — `q_gen_w` and `v_terminal` — is now the step's last instant on both sides, which closes the energy ledger step by step with no lag (`end-of-step-split.md`). A step-*mean* pair was the plan and was not built: the measurement for it found the parallel-group divergence instead, and once the split equalises end-of-step voltages the end is the one instant with a single node voltage. What is left is only that `q_gen_w · dt` is not the heat the pack absorbed at a coarse `dt` | `step-mean-heat.md`, `end-of-step-split.md` | a mean pair on `Telemetry` if a client ever needs it; it needs a current-weighted group mean, and at rest with circulating cells that has no voltage to divide by |
+| Reading the `Spm`'s network heat at the end of the step instead of by its trapezoid is closer at an hour on three of four cases (0.81 against 0.70 K for a 0.85 K reference at C/5) and worse on a C/2 charge (5.02 against 4.11 K for 4.60 K) | `dfn-end-of-step-heat.md` | a one-line change and a sweep; mixed, so not taken |
 | Snapshot body at 100S10P ≈ 600 KB is poor for a socket frame | `phase-4-server-wasm.md` | `Content-Encoding` on REST if it ever bites |
 
 ---
@@ -405,3 +409,4 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | thermal integration invalid above a 1.7-hour step (H6) | `phase-2-thermal-bms.md` | `thermal-implicit-integrator.md` (backward Euler above the gate, no snapshot bump) |
 | ECM parallel groups and voltage holds diverge past a few hundred seconds of `dt` (11 000 K at an hour) | `end-of-step-split.md` (found measuring H10) | `end-of-step-split.md` (end-of-step sources, no snapshot bump) |
 | `Spm` parallel groups and voltage holds diverge at long steps (10 000 K by the fourth hour) | `end-of-step-split.md` | `spm-end-of-step.md` (end-of-step curve, curve-read heat, no snapshot bump; past-empty physics open under H8) |
+| a `Dfn` books the equilibrium voltage's fall across a long step as heat (3.7 K against 1.06 K at C/5, 55 K against 18 K at 1C) | `spm-end-of-step.md` | `dfn-end-of-step-heat.md` (end-of-step heat off the cell's own solve, no snapshot bump) |

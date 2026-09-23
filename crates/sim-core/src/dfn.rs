@@ -1806,8 +1806,11 @@ pub(crate) fn surface_gap(
 /// Same two terms and the same general form as [`crate::spm::heat_w`]: irreversible
 /// `I·(U_eq − V)`, which is the whole overpotential heat with no `I²R0 + I·ΣV_rc`
 /// decomposition available, plus the entropic `−I·T·∂U/∂T` assembled from the two
-/// half-cell coefficients. Taking `v_terminal` from the pack rather than re-deriving it
-/// is what keeps the energy balance answering for the voltage the terminals delivered.
+/// half-cell coefficients.
+///
+/// An **estimate**, read at the start-of-step equilibrium voltage against the end-of-step
+/// node, and so wrong at a long step by the equilibrium voltage's fall across it.
+/// [`advance`] returns the correction the pack adds to it; see its heat section.
 #[must_use]
 pub(crate) fn heat_w(s: &DfnState, spm: &SpmParams, i: f64, v_terminal: f64) -> f64 {
     let q_irrev = i * (equilibrium_voltage(s, spm) - v_terminal);
@@ -1820,14 +1823,38 @@ pub(crate) fn heat_w(s: &DfnState, spm: &SpmParams, i: f64, v_terminal: f64) -> 
 ///
 /// Returns the SOC-clamp flags on [`crate::ecm::coulomb_step`]'s contract, plus
 /// [`EventFlags::SOLVE_UNCONVERGED`] if this cell's own Newton hit [`NEWTON_ITER_CAP`]
-/// without meeting [`NEWTON_TOL`]. No concentration is ever clamped: an overcharged
+/// without meeting [`NEWTON_TOL`], and a heat correction \[V\] (below). No concentration is ever clamped: an overcharged
 /// particle keeps the lithium it was pushed, so the flag says the *readout* left its
 /// window rather than that state was discarded.
 ///
 /// A zero-length probe step mutates nothing at all — no solve, no tangent, no `i_last`.
 /// That is the same contract [`crate::spm::advance`] holds, and the suite is full of probe
 /// steps that depend on it.
+///
+/// # The heat correction
+/// The pack's heat estimate is [`heat_w`], `i·(U_eq,start − v_node)`, and `v_node` is the
+/// step's **last** instant. So it booked the fall of the equilibrium voltage across the
+/// step — stored energy leaving through the terminals, not heat — as heat: a 1S1P LG M50 at
+/// C/5 rose 3.7 K in one hour-long step against 1.06 K in 3600 one-second ones, and a
+/// half-hour 1C step 55 K against 18.4 K. The second value returned is what turns that
+/// estimate into `i·(U_eq,end − V_end)`: the overpotential at the end of the step, read off
+/// this cell's own converged-or-last solve rather than off the node, for the reason
+/// [`crate::spm::advance`] gives (the node is on the curve only when the pack converged).
+/// The pack adds `i` times it to the heat it reports **and** to the heat the thermal
+/// network integrates — one value for both, unlike the `Spm`'s two.
+///
+/// The network is handed the end-of-step overpotential, not a step mean, on measurement.
+/// A `Dfn`'s overpotential builds within seconds of a current change, so the step's first
+/// instant is unrepresentative of the rest of it: a trapezoid through a start-of-step solve
+/// at the same current — the `Spm`'s rule, at the price of a second solve — read 0.86 K and
+/// 15.4 K for the two cases above, where the end alone reads 1.03 K and 18.9 K. See
+/// `docs/plans/dfn-end-of-step-heat.md`.
+///
+/// Exactly `0.0` on a zero-length step, which keeps a probe step bit-for-bit what it was.
 #[must_use]
+// `v_node` is the eighth, and it is the pack's estimate the correction answers to; the
+// caller's argument in `CellModel::advance` for keeping the list flat applies here too.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn advance(
     s: &mut DfnState,
     spm: &SpmParams,
@@ -1836,10 +1863,11 @@ pub(crate) fn advance(
     dt: f64,
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
-) -> EventFlags {
+    v_node: f64,
+) -> (EventFlags, f64) {
     let mut flags = EventFlags::empty();
     if dt.is_nan() || dt <= 0.0 {
-        return flags | soc_flags(s, spm);
+        return (flags | soc_flags(s, spm), 0.0);
     }
     let sides = Sides::new(spm, dfn, s.temp_k, eff_r0_factor, eff_capacity_ah);
     let grid = Grid::of(spm, dfn, &sides, s);
@@ -1847,10 +1875,13 @@ pub(crate) fn advance(
         // Only reachable from a hand-edited snapshot; `step` may not panic, so a grid that
         // does not describe the state it came from does nothing rather than indexing off
         // the end of it.
-        return flags | soc_flags(s, spm);
+        return (flags | soc_flags(s, spm), 0.0);
     }
     let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
 
+    // What the pack's heat estimate reads as the equilibrium voltage, and so what the
+    // correction below has to take back out: the start of the step, before `commit`.
+    let u_start = equilibrium_voltage(s, spm);
     let solved = solve(s, &setup, i, dt);
     if !solved.converged {
         flags |= EventFlags::SOLVE_UNCONVERGED;
@@ -1878,7 +1909,8 @@ pub(crate) fn advance(
     s.u = solved.u;
     s.i_last = i;
     s.tangent = Some((solved.v_terminal + i * solved.r_tangent, solved.r_tangent));
-    flags | soc_flags(s, spm)
+    let at_end = equilibrium_voltage(s, spm) - solved.v_terminal;
+    (flags | soc_flags(s, spm), at_end - (u_start - v_node))
 }
 
 /// The SOC-window flags for the state as it stands.

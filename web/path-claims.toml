@@ -6686,16 +6686,16 @@ of it is a chemistry constant nothing can account for yet.
 
 [[claim]]
 step = "the-electrolyte-starves"
-literal = "22.41 W here"
+literal = "22.39 W here"
 quantity = "q_gen_at"
-value = 22.4119
+value = 22.3922
 tol = 5e-3
 tol_from = "spelled"
-spells = "22.41"
+spells = "22.39"
 states = "same"
 read_at_s = 500.0
 display = "heat"
-shows = "22.41 W"
+shows = "22.39 W"
 quoted = true
 note = """
 "at the mark" — 500 s, this step's `until_s`, and the one number in the sentence that is
@@ -6703,9 +6703,14 @@ read there rather than at the collapse. Against the twin's 6.33 W from the ident
 current, which is not claimed here.
 
 Worth knowing what it is and is not: heat is reported and never integrated on this scenario,
-which is isothermal. 22.41 W is the current times the gap between equilibrium and the
+which is isothermal. 22.39 W is the current times the gap between equilibrium and the
 terminal, and that gap is where the whole disagreement between the two models lives — which
 is why the sentence points at it.
+
+Was 22.41 W until `docs/plans/dfn-end-of-step-heat.md`. The mark is past `SOLVE_UNCONVERGED`
+(466 s), and the heat is now read at the equilibrium voltage and terminal voltage of the
+cell's own last solve rather than against the pack's node; unconverged, the two part by
+0.02 W.
 """
 
 [[claim]]

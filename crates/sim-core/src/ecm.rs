@@ -688,8 +688,7 @@ impl CellModel {
         let no_rejection = |flags| Advanced {
             flags,
             rejected_as: 0.0,
-            // A step mean the `Dfn` cannot offer, not one it has nothing to correct. The
-            // `Spm` overrides both below. See the fields.
+            // The porous arms override both below. See the fields.
             rc_mean_excess_v: 0.0,
             rc_delta_v: 0.0,
         };
@@ -727,10 +726,9 @@ impl CellModel {
                         }
                     })
             }
-            CellModel::Dfn(s) => no_rejection(Self::dfn_params(chem).map_or(
-                EventFlags::empty(),
-                |(spm, d)| {
-                    dfn::advance(
+            CellModel::Dfn(s) => {
+                Self::dfn_params(chem).map_or(no_rejection(EventFlags::empty()), |(spm, d)| {
+                    let (flags, delta_v) = dfn::advance(
                         s,
                         spm,
                         d,
@@ -738,9 +736,17 @@ impl CellModel {
                         dt,
                         eff_r0_factor,
                         eff_capacity_ah * soh_capacity,
-                    )
-                },
-            )),
+                        v_node,
+                    );
+                    // One correction in both slots: the network integrates the end-of-step
+                    // overpotential too, which is what measured closest (see `dfn::advance`).
+                    Advanced {
+                        rc_mean_excess_v: delta_v,
+                        rc_delta_v: delta_v,
+                        ..no_rejection(flags)
+                    }
+                })
+            }
         }
     }
 }
@@ -1640,9 +1646,10 @@ pub(crate) struct Advanced {
     /// For an `Spm` it is the trapezoid correction [`crate::spm::advance`] documents:
     /// the particle's overpotential has no closed-form step mean, so the mean of the
     /// step's first and last instants stands in for it, and the equilibrium voltage's
-    /// fall across the step is taken out of the heat. Exactly `0.0` for the `Dfn`, and
-    /// that is a **stub rather than physics** — see `docs/ROADMAP.md`. Exactly `0.0` at
-    /// `dt <= 0` as well, which is what keeps a zero-length probe step bit-identical.
+    /// fall across the step is taken out of the heat. For a `Dfn` it is the same value
+    /// as [`Self::rc_delta_v`]: the end-of-step overpotential stands in for the mean, on
+    /// measurement (see [`crate::dfn::advance`]). Exactly `0.0` at `dt <= 0`, which is
+    /// what keeps a zero-length probe step bit-identical.
     pub rc_mean_excess_v: f64,
     /// How far this cell's RC overpotential moved over the step, end minus start \[V\],
     /// summed over its pairs.
@@ -1654,8 +1661,8 @@ pub(crate) struct Advanced {
     ///
     /// For an `Spm`, what moves the pack's `i·(U_eq,start − v_node)` to the end-of-step heat
     /// read off the cell's own curve, `i·(U_eq,end − V_end(i))` (see
-    /// [`crate::spm::advance`]). Exactly `0.0` for the `Dfn`, and at `dt <= 0`, where
-    /// nothing moves.
+    /// [`crate::spm::advance`]); for a `Dfn`, the same move read off its own solve (see
+    /// [`crate::dfn::advance`]). Exactly `0.0` at `dt <= 0`, where nothing moves.
     pub rc_delta_v: f64,
 }
 

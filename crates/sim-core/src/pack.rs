@@ -2723,9 +2723,11 @@ impl Pack {
                 // The equivalent circuit's heat reads its `R0`, which is the memo's
                 // resistance and **not** `r_k` when the pack solved against end-of-step
                 // sources — `r_k` then carries the RC pairs' and the charge's share of
-                // the step too. The porous-electrode arms read `v_node` and ignore this.
-                // What is *reported* is moved to the end of the step below, once the RC
-                // pairs have; what the thermal network integrates is the step mean.
+                // the step too. The porous-electrode arms read `v_node` and ignore this,
+                // and `advance` hands back what corrects their estimate off their own
+                // curve. What is *reported* is moved to the end of the step below, once
+                // the RC pairs have; what the thermal network integrates is the step mean
+                // (for a `Dfn`, the end of the step again: `dfn::advance` says why).
                 let mut q = cell.model.heat_w(
                     &self.chem,
                     cell.eff_r0_factor(),
@@ -2845,9 +2847,8 @@ impl Pack {
                 // which is where the solve put every parallel cell on one shared node and
                 // therefore the only instant at which `v_terminal · i_actual` plus this
                 // closes the energy ledger. See `docs/plans/end-of-step-split.md`.
-                // `rc_delta_v` is exactly `0.0` for a porous cell and for a zero-length
-                // step, and the guard keeps both bit-identical — the rejection tally's
-                // `-0.0` argument again.
+                // `rc_delta_v` is exactly `0.0` for a zero-length step, and the guard
+                // keeps it bit-identical — the rejection tally's `-0.0` argument again.
                 let delta = advanced.rc_delta_v;
                 q_gen_w += if delta == 0.0 { q } else { q + i_k * delta };
                 if thermal_live {
@@ -2873,8 +2874,7 @@ impl Pack {
                     // for every cell of a group (`docs/plans/end-of-step-split.md`).
                     //
                     // The guard is not an optimisation. `rc_mean_excess_v` is exactly
-                    // `0.0` for a zero-length step and for the porous-electrode models,
-                    // and `q + i·0.0` is `q` for every value but `-0.0` — which would
+                    // `0.0` for a zero-length step, and `q + i·0.0` is `q` for every value but `-0.0` — which would
                     // become `+0.0` and move a trajectory for no physics, the same trap
                     // the rejection tally above is written around.
                     let excess = advanced.rc_mean_excess_v;
