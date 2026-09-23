@@ -587,6 +587,11 @@ pub const SOLVE_ITER_CAP: u32 = 32;
 /// before this existed — which is the whole of what this constant promises. Closing
 /// them wants a bracketed root find on a demand residual, which is a different solve;
 /// see `docs/plans/voltage-target-blowup.md` for why that was priced and declined.
+///
+/// Those counts predate the `Spm`'s end-of-step curve. Re-measured with it
+/// (`docs/plans/spm-end-of-step.md`), the `Spm` half of the sweep is 28 of 405 at a 1 s
+/// step — targets it cannot reach inside the particle's range, stopped at its edge — and 1
+/// of 405 at an hour.
 const DAMPING_ATTEMPTS: u32 = 16;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
@@ -2248,10 +2253,10 @@ impl Pack {
         // to survive the probes: the converged pass reports and advances from the line it
         // aggregated, not from the fresher line its own probes took at the currents that
         // line predicted. Writing the probes back in place would silently swap those two.
-        // Only a power demand's probes are held to each cell's valid range: it is the one
-        // demand whose current the engine, not the caller, chooses. See
+        // A power or voltage demand's probes are held to each cell's valid range: those are
+        // the demands whose current the engine, not the caller, chooses. See
         // [`crate::spm::probe_at`].
-        let hold_to_range = matches!(demand, Demand::Power(_));
+        let hold_to_range = matches!(demand, Demand::Power(_) | Demand::Voltage(_));
         let mut tangent: Vec<(f64, f64)> = Vec::new();
         let mut probed: Vec<(f64, f64)> = Vec::new();
         let mut i_cell: Vec<f64> = Vec::new();

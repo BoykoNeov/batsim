@@ -252,3 +252,68 @@ fn an_hour_long_step_heats_like_sixty_short_ones() {
         "one hour-long step rose {long} K, sixty one-minute steps {short} K"
     );
 }
+
+/// A parallel pack held at a voltage low in its window for one hour stays bounded. The
+/// answer is inside the range the model describes, but the solve's intermediate currents
+/// were not: before a voltage demand's probes were held to that range, a scattered 1S3P
+/// held at 2.585 V ran to 2e7 A and a 4S2P at 10.17 V to 1.4e6 A, both at billions of
+/// kelvin. The single-cell hold test above could not see it.
+#[test]
+fn a_parallel_pack_holds_a_low_voltage_for_an_hour() {
+    for (series, parallel, per_cell_v) in [(1u16, 3u16, 2.585), (1, 3, 2.84), (4, 2, 2.5425)] {
+        let config = PackConfig {
+            aging: None,
+            bms: None,
+            thermal: ThermalConfig::Network {
+                k_neighbor_w_per_k: 1.0,
+            },
+            series,
+            parallel,
+            initial_soc: 0.5,
+            initial_temp_k: 298.15,
+            seed: 7,
+            scatter: Scatter {
+                capacity_sigma: 0.05,
+                r0_sigma: 0.05,
+            },
+            cell_model: CellModelConfig::Spm { shells: SHELLS },
+        };
+        let mut p = Pack::new(
+            &config,
+            sim_data::parse_chemistry(LGM50).expect("the shipped LG M50 parses"),
+        )
+        .expect("builds");
+        let target = per_cell_v * f64::from(series);
+        let tele = p.step(3600.0, Demand::Voltage(target), &env());
+        let label = format!("{series}S{parallel}P at {target} V");
+        for s in 0..usize::from(series) {
+            for k in 0..usize::from(parallel) {
+                let i = p.cell(s, k).expect("in range").current_a.expect("stepped");
+                assert!(i.abs() < 10.0, "{label}: cell {s}S{k}P carries {i} A");
+            }
+        }
+        assert!(tele.t_max < 330.0, "{label}: {} K", tele.t_max);
+        assert!(
+            (2.4 * f64::from(series)..4.3 * f64::from(series)).contains(&tele.v_terminal),
+            "{label}: the pack reads {} V",
+            tele.v_terminal
+        );
+    }
+}
+
+/// A zero-length step is how this repo reads an instantaneous voltage, and it must read
+/// the start-of-step curve exactly as before this slice — no end of the step to diffuse
+/// to, and no range to hold a demand's probes to. Held anyway, a 2.5 V target read at
+/// `dt = 0` from half charge stopped at the edge of the start-of-step range, unconverged;
+/// 738 zero-length demands on fresh packs agreed with
+/// the start-of-step engine bit for bit only once the hold was gated on `dt > 0`.
+#[test]
+fn a_zero_length_step_is_not_held_to_the_range() {
+    for target in [2.5, 2.6, 4.2] {
+        let tele = pack(1, 0.5, 0.0).step(0.0, Demand::Voltage(target), &env());
+        assert!(
+            !tele.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+            "a zero-length read at {target} V did not converge: {tele:?}"
+        );
+    }
+}

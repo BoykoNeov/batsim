@@ -153,8 +153,18 @@ fn no_voltage_target_however_absurd_produces_an_unphysical_current() {
                  window by more than a step's worth of motion",
                 tele.v_terminal
             );
+            // The `Spm` is excused convergence at the bottom of the window, and only there.
+            // At a 1 s step from half charge a 2.5 V target needs more current than the
+            // particle's surface can carry without being driven past empty, where the
+            // model has no physics; the solve stops at the edge of that range, about 219 A
+            // and 2.58 V, bounded (asserted above) and flagged. It used to "converge" at
+            // 321 A out past the edge, and that answer moved to 219 A when the surface
+            // clamp's margin — a NaN guard, not physics — was tightened from 1e-6 to 1e-9
+            // (measured at 20 shells; this test runs 10):
+            // an artefact of the guard. See `docs/plans/spm-end-of-step.md`.
+            let excused = name == "Spm" && target <= V_MIN;
             assert!(
-                !tele.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+                excused || !tele.flags.contains(EventFlags::SOLVE_UNCONVERGED),
                 "{name} Voltage({target}) failed to converge; with the target clamped \
                  into the window this is an ordinary operating point"
             );

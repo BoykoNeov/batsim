@@ -540,7 +540,8 @@ fn equilibrium_voltage(w: &Working<'_>, s: &SpmState) -> f64 {
 /// demand no cell at 35 % can meet for an hour was "met" at 57 A and 0.18 V, a root that
 /// exists only on the flat stretch (the old engine found it one step later, at 1290 K); and
 /// a 1S2P pack rested for 1e6 s after a 5 A discharge seeded its solve on that stretch and
-/// ran to 1e9 A. See [`first_pass_tangent`] for what is done about it, and why only there.
+/// ran to 1e9 A. [`first_pass_tangent`] and [`probe_at`]'s `hold` are what is done about
+/// it, and each says why it goes no further.
 ///
 /// # Closed form
 /// The surface is affine in the flux the step carries: the outer shell is
@@ -981,22 +982,30 @@ pub(crate) fn source_at(
 /// is no end of the step to read, and [`diffuse`] is refused the same way. That is the
 /// path a zero-length probe step takes, and it keeps such a step bit-for-bit what it was.
 ///
-/// # `hold`: the one demand whose operating point the engine chooses
+/// # `hold`: the demands whose operating point the engine chooses
 /// With `hold`, a probe outside [`current_window`] is taken at the nearest current inside
 /// it instead — both the voltage and the tangent. The pack asks for that under
-/// [`crate::Demand::Power`] alone, and the reason is who picks the current. A current
-/// demand's caller picks it, and a cell it really drives past empty is solved out there on
-/// the flat curve, as it must be. A voltage demand cannot land there: the flat stretch
-/// lies far below `v_min`, and the demand is clamped into the window. A power demand's
-/// current is the engine's own choice, and the flat stretch holds a root the physics does
-/// not: a 10 W hour from an LG M50 at 35 %, whose true best is about 3.4 W, was "met" at
-/// 57 A and 0.18 V and ran away to 1000 K. Held to the range, the solve cannot settle
-/// there, and an unreachable power lands at the most the cell can deliver.
+/// [`crate::Demand::Power`] and [`crate::Demand::Voltage`], and the reason is who picks the
+/// current. A current demand's caller picks it, and a cell it really drives past empty is
+/// solved out there on the flat curve, as it must be. Under the other two the engine picks
+/// it, and the flat stretch is where its iteration gets lost:
 ///
-/// A fixed point inside the range is untouched by the hold, so every reachable power
-/// solves exactly as before. The cost is a pack whose power demand *is* met only by
-/// driving one weak cell past empty: its solve cannot converge there, and it says so with
-/// `SOLVE_UNCONVERGED` rather than landing on the flat curve.
+/// * **Power.** The flat stretch holds a root the physics does not: a 10 W hour from an
+///   LG M50 at 35 %, whose true best is under 5 W, was "met" at 57 A and 0.18 V and ran
+///   away to 1000 K. Held, an unreachable power lands at the most the cell can deliver.
+/// * **Voltage.** The answer is never out there, but the iteration's intermediate currents
+///   were. Holding a scattered 1S3P or a 4S2P at a target low in the window for one hour,
+///   the solve wandered onto the flat curve and ran to 1e8–5e9 A; 63 of 405 hour-long holds
+///   across the window finished unconverged, most of them unbounded. Held: 1 of 405, at
+///   4.7 A.
+///
+/// A fixed point inside the range is untouched by the hold, so every reachable demand
+/// solves exactly as before. The cost is a target the cell cannot reach inside its range
+/// within the step — a 2.5 V hold at a one-second step asks for more than 200 A — which
+/// now stops at the edge of the range and raises `SOLVE_UNCONVERGED`, where it used to
+/// converge out on the flat curve. That moved a 1 s sweep of the same holds from 4 to 28
+/// unconverged of 405, every one bounded (≤ 660 A pack current, ≤ 312 K). A pack whose
+/// demand is met only by driving one weak cell past empty fails the same way.
 #[must_use]
 pub(crate) fn probe_at(
     s: &SpmState,
@@ -1031,7 +1040,7 @@ pub(crate) fn probe_at(
     };
     let h = 1.0e-6 * eff_capacity_ah;
     let i = match current_window(&w, s, end) {
-        Some(range) if hold => held(i, range, h),
+        Some(range) if hold && end.is_some() => held(i, range, h),
         _ => i,
     };
     let r = -(curve(i + h) - curve(i - h)) / (2.0 * h);
@@ -1063,9 +1072,10 @@ pub(crate) fn probe_at(
 /// after it (the start-of-step engine did the same one step later). Pulled back to the
 /// range — a few milliamps at that step length — the same step converges.
 ///
-/// Only the **seed** is held to the range. The iteration's own probes are not, because
-/// under a current demand that really does drive a cell past empty the answer lies out
-/// there, on the flat curve, and a solve held away from it would never converge on it.
+/// Under a current demand only the **seed** is held to the range, not the iteration's own
+/// probes, because a current demand that really does drive a cell past empty has its answer
+/// out there, on the flat curve, and a solve held away from it would never converge on it.
+/// Power and voltage demands hold their probes too; see [`probe_at`].
 /// That region is where this model has no physics, which `docs/ROADMAP.md` (H8) records.
 #[must_use]
 pub(crate) fn first_pass_tangent(

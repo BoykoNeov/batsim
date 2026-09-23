@@ -228,7 +228,7 @@ where the rest-OCV gate refused to correct.
 * **An `Spm` has no physics past empty or full within a step.** Once a step would drive a
   particle's surface out of `(0, c_max)`, the clamp holds it at the edge and `V(i)` goes
   flat. `spm::current_window` now states that range in closed form, and two things use
-  it: the first pass's seed, and a power demand's probes. A current demand that really
+  it: the first pass's seed, and the probes of a power or voltage demand. A current demand that really
   drives a cell out there is still solved on the flat curve, and a cell already past empty
   under a power demand still runs on it (6.8 A and 372 K on the third hour of an
   unreachable 10 W, against 38 A and 900 K before). The honest fix is physics — a reversal
@@ -239,9 +239,14 @@ where the rest-OCV gate refused to correct.
   C/5 rose 3.7 K in one hour-long step against 1.1 K in sixty one-minute steps. The `Spm`'s
   fix — heat read off the curve at the step's two ends — carries over, at the price of a
   second solve's worth of readout.
-* **11 of 810 in-window solves stay unconverged** on a scattered 1S3P SPM holding a
-  voltage on its own knee (`voltage-target-blowup.md`); bracketing was declined because the
-  residual is not a scalar monotone one.
+* **Voltage holds the model cannot reach inside its range stay unconverged.**
+  `voltage-target-blowup.md` counted 11 of 810 in-window solves on a scattered 1S3P SPM
+  holding a voltage on its own knee; re-measured 2026-09-23 (`spm-end-of-step.md`, σ = 0.05
+  guessed, the original's not recorded) the `Spm` count is 28 of 405 at a 1 s step and 1
+  of 405 at an hour, all bounded — they now stop at the edge of the particle's range. The
+  `Dfn` fails **269 of 405 at an hour** from a fresh pack; whether those are bounded was not
+  measured.
+  Bracketing was declined because the residual is not a scalar monotone one.
 * **A `Dfn` driven by an absurd `Demand::Current` is unrecoverable** (−1105 V forever);
   the only guard is a magnitude, i.e. an invented constant.
 * ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
