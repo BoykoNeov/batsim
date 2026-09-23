@@ -103,22 +103,39 @@ fn parallel_group_splits_current_by_resistance() {
     pack.set_cell_factors(0, 0, 1.0, 1.0).unwrap();
     pack.set_cell_factors(0, 1, 1.0, 3.0).unwrap();
 
-    // The split is solved once from the (rested, first-step) start state, so it is
-    // exact at any dt; use dt = 1 s to keep the SOC deltas well clear of float
-    // cancellation. With R_a = R0, R_b = 3·R0 the current splits inversely to
-    // resistance: I_a = 3 A, I_b = 1 A (sum = 4 A).
+    // The split is solved once per step, against each cell's resistance **over the
+    // step** — `R0` plus the share of its RC pair that charges within it
+    // (`docs/plans/end-of-step-split.md`); the OCV is flat, so the charge moved adds
+    // nothing. The RC pair is not scaled by the `R0` factor, so the ratio is no longer
+    // exactly 3, and that is the point of computing it: a split by `R0` alone is the
+    // start-of-step one that diverged on long steps. dt = 1 s keeps the SOC deltas well
+    // clear of float cancellation.
     let i_g = 4.0;
     let dt = 1.0;
     let soc0 = 0.5;
     let tele = pack.step(dt, Demand::Current(i_g), &env());
     assert!((tele.i_actual - i_g).abs() < 1e-12);
 
+    let rc_share = 0.01 * (1.0 - (-dt / (0.01 * 2000.0_f64)).exp());
+    let (r_a, r_b) = (R0 + rc_share, 3.0 * R0 + rc_share);
+    let expect_a = i_g * r_b / (r_a + r_b);
+    let expect_b = i_g * r_a / (r_a + r_b);
+
     // ΔSOC_k = I_k·dt / (3600·cap); both caps equal, so I_k = ΔSOC_k·3600·cap/dt.
     let cap_as = 3600.0 * CAP_AH;
     let i_a = (soc0 - pack.cell(0, 0).unwrap().soc) * cap_as / dt;
     let i_b = (soc0 - pack.cell(0, 1).unwrap().soc) * cap_as / dt;
-    assert!((i_a - 3.0).abs() < 1e-9, "i_a = {i_a}");
-    assert!((i_b - 1.0).abs() < 1e-9, "i_b = {i_b}");
+    assert!(
+        (i_a - expect_a).abs() < 1e-9,
+        "i_a = {i_a}, expected {expect_a}"
+    );
+    assert!(
+        (i_b - expect_b).abs() < 1e-9,
+        "i_b = {i_b}, expected {expect_b}"
+    );
+    // Still inversely to resistance, and still close to the `R0` ratio at a step this
+    // short against the pair's 20 s.
+    assert!(i_a > 2.9 && i_b < 1.1, "i_a = {i_a}, i_b = {i_b}");
     assert!(
         (i_a + i_b - i_g).abs() < 1e-9,
         "currents must sum to group current"
@@ -243,12 +260,16 @@ fn voltage_and_power_demands_solve_on_pack_aggregate() {
     // cells give E_pack = 2·v0 and R_pack = series·(R0/parallel) = 2·(R0/2) = R0.
     let v0 = 3.30;
     let e_pack = 2.0 * v0;
-    let r_pack = R0; // 2·(R0/2)
+    // Each cell over the step: R0 plus the share of its RC pair that charges within it
+    // — the demand is met at the end of the step (`docs/plans/end-of-step-split.md`).
+    let dt = 1e-6;
+    let r_cell = R0 + 0.01 * (1.0 - (-dt / (0.01 * 2000.0_f64)).exp());
+    let r_pack = r_cell; // 2·(r_cell/2)
 
-    // Voltage demand: i_g = (E_pack − v_target)/R_pack, exact (solved at start).
+    // Voltage demand: i_g = (E_pack − v_target)/R_pack, exact.
     let mut pv = Pack::new(&config(2, 2, 0.5), flat_chem(v0)).unwrap();
     let v_target = 6.0; // below E_pack = 6.6, so a discharge
-    let tele = pv.step(1e-6, Demand::Voltage(v_target), &env());
+    let tele = pv.step(dt, Demand::Voltage(v_target), &env());
     let expected_i = (e_pack - v_target) / r_pack;
     assert!(
         (tele.i_actual - expected_i).abs() < 1e-9,

@@ -204,7 +204,7 @@ impl Env {
 /// bitmask integer — see that type.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Telemetry {
-    /// Terminal voltage \[V\].
+    /// Terminal voltage \[V\] at the **end** of the step, from end-of-step state.
     pub v_terminal: f64,
     /// Actual pack current \[A\] leaving the cells, discharge-positive.
     ///
@@ -243,7 +243,7 @@ pub struct Telemetry {
     /// excluded — they lower impedance without anything having got healthier. Exactly
     /// `1.0` on a pack without aging configured.
     pub soh_resistance: f64,
-    /// Total heat generation across every cell **at the start of this step** \[W\].
+    /// Total heat generation across every cell **at the end of this step** \[W\].
     ///
     /// Irreversible overpotential heat plus the entropic term, summed over cells
     /// (see [`ecm::cell_heat_w`]). Reported in every thermal mode — an
@@ -255,22 +255,26 @@ pub struct Telemetry {
     /// # It is a rate at an instant, not the step's mean — and the difference is real
     ///
     /// Unlike [`Self::q_runaway_w`] beside it, this is **not** averaged over the step. It
-    /// is the rate the pack was generating heat at when the step began, evaluated from the
-    /// same start-of-step state that produced [`Self::i_actual`] and the terminal voltage.
-    /// What the thermal network integrates is the exact step *mean* of this quantity, which
-    /// is larger while an RC overpotential is still climbing: at a fast-forward `dt` a pack
-    /// can absorb half again as much as `q_gen_w · dt`, so this number does not account for
-    /// the temperature the same telemetry reports. See `docs/plans/step-mean-heat.md`.
+    /// is the rate the pack is generating heat at when the step **ends**: each cell's
+    /// current times its end-of-step overpotential, plus the shunt and rejected-charge
+    /// terms. What the thermal network integrates is the exact step *mean* instead
+    /// (`docs/plans/step-mean-heat.md`), which lies between the step's first and last
+    /// instants while an RC overpotential is still climbing, so at a fast-forward `dt`
+    /// this number times `dt` overstates what the pack absorbed.
     ///
-    /// It is left at the instant on purpose. `q_gen_w` is the exact partner of the
-    /// start-of-step terminal voltage: `q = I·(OCV − V)` is what makes the pack's
-    /// four-term energy balance close to floating-point rounding rather than to a
-    /// tolerance. Reporting the mean here without a mean terminal voltage beside it would
-    /// open that ledger — measured, and it opens **four** of them — so the two move
-    /// together or not at all, and today they have not.
+    /// It is the end-of-step instant on purpose. The electrical solve puts every parallel
+    /// cell on one shared **end-of-step** node (`docs/plans/end-of-step-split.md`), so that
+    /// is the one instant at which [`Self::v_terminal`] speaks for all of them, and this is
+    /// its exact partner: `v_terminal · i_actual + q_gen_w + q_balancing_w` is the
+    /// chemical power the cells gave up, step by step and with no lag. On a straight-line
+    /// OCV and an `R0` that does not move within the step that holds to floating-point
+    /// rounding — pinned by `properties.rs::electrical_and_heat_energy_balance` under a
+    /// demand that changes every step — and otherwise to the curvature the step's
+    /// linearisation leaves out. It was the *start* of the step until that slice, paired
+    /// with the previous step's voltage, which only closed while the demand held still.
     ///
-    /// At `dt <= 0` the distinction does not arise: a zero-length probe step has no mean
-    /// to take, and this is the instantaneous rate either way.
+    /// At `dt <= 0` the distinction does not arise: a zero-length probe step moves no
+    /// overpotential, and this is the instantaneous rate either way.
     pub q_gen_w: f64,
     /// Exothermic self-heating released across every cell this step \[W\], averaged
     /// over the step.

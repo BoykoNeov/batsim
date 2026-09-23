@@ -547,6 +547,32 @@ impl CellModel {
         }
     }
 
+    /// How this cell's source moves when read at the end of a `dt`-second step rather
+    /// than its start. See [`step_source_shift`]; the pack calls this only for a linear
+    /// pack and only when `dt > 0`.
+    ///
+    /// `(0, 0)` for `Spm` and `Dfn`. For the `Dfn` that is because its tangent is already
+    /// an end-of-step one — [`crate::dfn::probe_at`] is a backward-Euler solve. For the
+    /// `Spm` it is a **gap**, not a design: its tangent is a start-of-step readout and it
+    /// diverges at an hour's step just as the equivalent circuit did. See
+    /// `docs/plans/end-of-step-split.md`.
+    #[must_use]
+    pub(crate) fn step_source_shift(
+        &self,
+        chem: &ChemistryParams,
+        decays: &[f64; MAX_RC_PAIRS],
+        soh_resistance: f64,
+        charge_capacity_ah: f64,
+        dt: f64,
+    ) -> (f64, f64) {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
+                step_source_shift(s, chem, decays, soh_resistance, charge_capacity_ah, dt)
+            }
+            CellModel::Spm(_) | CellModel::Dfn(_) => (0.0, 0.0),
+        }
+    }
+
     /// Heat generated inside this cell \[W\] at current `i`
     /// \[A, discharge-positive\] and effective resistance `r` \[ohms\], from its
     /// start-of-step state. See [`cell_heat_w`].
@@ -633,6 +659,7 @@ impl CellModel {
             // A step mean the porous-electrode arms cannot offer, not one they have
             // nothing to correct. See the field.
             rc_mean_excess_v: 0.0,
+            rc_delta_v: 0.0,
         };
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => advance_cell(
@@ -1341,6 +1368,127 @@ pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f
     (e, r)
 }
 
+/// The per-pair decay `exp(−dt/τ)` that [`rc_update`] will apply this step, with
+/// `τ = r·soh_resistance·c` — the same expression, so the same bits.
+///
+/// A pair `rc_update` leaves alone (non-positive `τ`) reads as `1.0`: no decay, so it
+/// contributes nothing to [`step_source_shift`]. Slots past the chemistry's pair count
+/// are `1.0` and never read.
+///
+/// Split out so the pack can compute it **once per step** on a pack whose cells share a
+/// `soh_resistance` — every pack without aging — rather than twice per cell.
+#[must_use]
+pub(crate) fn rc_decays(
+    chem: &ChemistryParams,
+    soh_resistance: f64,
+    dt: f64,
+) -> [f64; MAX_RC_PAIRS] {
+    let mut d = [1.0; MAX_RC_PAIRS];
+    for (slot, pair) in d.iter_mut().zip(chem.rc.iter()) {
+        let tau = pair.r_ohms * soh_resistance * pair.c_farad;
+        if tau > 0.0 && dt > 0.0 {
+            *slot = (-dt / tau).exp();
+        }
+    }
+    d
+}
+
+/// How a cell's Thévenin source moves when it is read at the **end** of a `dt`-second
+/// step rather than at its start: `(ΔE, ΔR)` \[V, ohms\], to add to [`cell_source`].
+///
+/// Under a current `i` held over the step, the end-of-step terminal voltage is
+///
+/// ```text
+/// V_end(i) = (E + ΔE) − i·(R0 + ΔR)
+/// ΔE = Σ_j V_j,0 · (1 − d_j)
+/// ΔR = Σ_j R_j · (1 − d_j)  +  s · dt / (3600 · Q)
+/// ```
+///
+/// The RC terms are exact: they are [`rc_update`]'s own exponential, through `decays`
+/// from [`rc_decays`]. The last term is the charge the step moves, times the slope `s` of
+/// the open-circuit voltage it moves along ([`ocv_step_slope`]). `Q` \[Ah\] is the capacity
+/// the coulomb count divides by.
+///
+/// # Why the pack wants this
+/// A start-of-step source, held for a whole step, is explicit Euler on every coupling the
+/// cells have through their shared node: a parallel group's circulation and a voltage
+/// hold's current both over-correct once `dt` passes about twice `R0` times the cell's
+/// SOC "capacitance", and grow from there — to 11 000 K at an hour's step. Solving against
+/// the end-of-step line instead is backward Euler on the same coupling, and damps it at
+/// any `dt`. See `docs/plans/end-of-step-split.md`.
+///
+/// Everything else the source contains — hysteresis, diffusion, the temperature
+/// correction, the charge-acceptance taper — stays at its start-of-step value. That makes
+/// the line less exact, never less stable: every term here is `≥ 0` in `ΔR`.
+#[must_use]
+pub(crate) fn step_source_shift(
+    state: &EcmState,
+    chem: &ChemistryParams,
+    decays: &[f64; MAX_RC_PAIRS],
+    soh_resistance: f64,
+    charge_capacity_ah: f64,
+    dt: f64,
+) -> (f64, f64) {
+    let mut de = 0.0;
+    let mut dr = 0.0;
+    for ((pair, &v0), &d) in chem.rc.iter().zip(state.v_rc.iter()).zip(decays.iter()) {
+        let gone = 1.0 - d;
+        de += v0 * gone;
+        dr += pair.r_ohms * soh_resistance * gone;
+    }
+    if charge_capacity_ah > 0.0 {
+        dr += ocv_step_slope(chem, state) * dt / (3600.0 * charge_capacity_ah);
+    }
+    (de, dr)
+}
+
+/// How steeply this cell's open-circuit voltage falls per unit of charge drawn \[V per
+/// unit SOC\], for [`step_source_shift`]. Never negative.
+///
+/// * **Past empty** (a deficit is carried) it is the `[reversal]` ramp's `v_per_soc` while
+///   the voltage is above the ramp's floor, and `0` on the floor. The ramp is the case
+///   that matters most: it is a hundredfold steeper than a typical table, so its coupling
+///   time is a hundredfold shorter.
+/// * **At exactly empty with no deficit** it is the table's *first* segment, not the
+///   ramp. The cell has not reversed, and the step that follows is as likely to be a
+///   charge up that segment as a discharge down the ramp; `energy_hole.rs`'s
+///   `arriving_at_empty_does_not_look_like_a_short` is the charge. A discharge from here
+///   is solved one step against the gentler slope, lands with a deficit, and is on the
+///   ramp from the next step on — one step, which cannot sustain an oscillation.
+/// * **Inside the table** it is the slope of the segment the lookup lands in.
+/// * **At full** it is the table's *last* segment, the mirror of the empty case. A
+///   charge from full is refused rather than stored, so the voltage would not climb and a
+///   slope of zero is right for it — but a discharge from full goes straight down that
+///   segment, and a zero slope tells the solve the discharge costs no voltage at all.
+///   Measured, it does: a one-hour voltage hold that had overshot to full was handed a
+///   discharge of 2.7 A — the whole cell in one step — and rang for three steps before it
+///   settled. The steeper answer only damps a charge into a full cell harder, and the
+///   clamp already refuses that charge.
+#[must_use]
+pub(crate) fn ocv_step_slope(chem: &ChemistryParams, state: &EcmState) -> f64 {
+    if state.soc_deficit > 0.0 {
+        if open_circuit_v(chem, state) > chem.reversal.floor_v {
+            chem.reversal.v_per_soc
+        } else {
+            0.0
+        }
+    } else {
+        let (xs, ys) = (&chem.ocv.soc, &chem.ocv.volts);
+        // `interp1_slope` reads a clamped end as flat, which is right for a lookup and
+        // wrong here: from either end the charge state can only move into the table, so
+        // the end segment is the one it moves along.
+        let n = xs.len();
+        let x = if n > 1 && state.soc <= xs[0] {
+            xs[0] + 0.5 * (xs[1] - xs[0])
+        } else if n > 1 && state.soc >= xs[n - 1] {
+            xs[n - 2] + 0.5 * (xs[n - 1] - xs[n - 2])
+        } else {
+            state.soc
+        };
+        interp1_slope(xs, ys, x).max(0.0)
+    }
+}
+
 /// Open-circuit voltage \[V\] of a cell that may be below empty: the chemistry's OCV
 /// table above `soc = 0`, temperature-corrected if the table says what temperature it was
 /// measured at, and the `[reversal]` ramp under it.
@@ -1448,6 +1596,17 @@ pub(crate) struct Advanced {
     /// Exactly `0.0` at `dt <= 0` as well, which is what keeps a zero-length probe step
     /// bit-identical.
     pub rc_mean_excess_v: f64,
+    /// How far this cell's RC overpotential moved over the step, end minus start \[V\],
+    /// summed over its pairs.
+    ///
+    /// The pack multiplies it by the cell's current to move the heat it *reports* from
+    /// the start-of-step overpotential to the end-of-step one, which is the instant the
+    /// pack's electrical solve now equalises its parallel cells at and so the instant the
+    /// energy ledger closes at. See `docs/plans/end-of-step-split.md`.
+    ///
+    /// Exactly `0.0` for `Spm` and `Dfn`, whose reported heat is already taken at the node
+    /// voltage their own solve produced, and at `dt <= 0`, where no pair moves.
+    pub rc_delta_v: f64,
 }
 
 /// Advance one cell's internal state by `dt` seconds under the current `i`
@@ -1479,6 +1638,7 @@ pub(crate) fn advance_cell(
     // check, and the loop count is unchanged from the `Vec` this replaced, so no
     // trajectory moves.
     let mut rc_mean_excess_v = 0.0;
+    let mut rc_delta_v = 0.0;
     for (pair, v_rc) in chem.rc.iter().zip(state.v_rc.iter_mut()) {
         // Aging grows the slow resistances along with the instant one, which is what
         // `CLAUDE.md`'s physics spec has always said and what this line did not do until
@@ -1506,6 +1666,7 @@ pub(crate) fn advance_cell(
         // the heat: one current times one total. See [`rc_step_mean_excess_v`], and
         // `docs/plans/step-mean-heat.md` for why the heat tally wants it.
         rc_mean_excess_v += rc_step_mean_excess_v(v_before, *v_rc, i, r, pair.c_farad, dt);
+        rc_delta_v += *v_rc - v_before;
     }
     // The depletion, on a chemistry that declares one. `if let` rather than an
     // unconditional update through a neutral parameter, for the reason
@@ -1578,5 +1739,6 @@ pub(crate) fn advance_cell(
         flags: step.flags,
         rejected_as: step.rejected_as,
         rc_mean_excess_v,
+        rc_delta_v,
     }
 }

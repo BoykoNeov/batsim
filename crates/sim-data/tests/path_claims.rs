@@ -121,7 +121,7 @@
 //! header, which is where a number describing that list belongs.
 //!
 //! **What is still spelled in English is named phrase by phrase**, in `[[english]]` in
-//! `web/path-claims.toml` — 45 of them across twelve steps, matched both ways so
+//! `web/path-claims.toml` — 44 of them across eleven steps, matched both ways so
 //! that the list can only get shorter. They are the half that was tied to nothing: rewriting
 //! one into digits makes the ledger see it, and the ledger has no waiver, so each is a rule
 //! or a claim rather than an edit. Two shapes stay out of the ban and are declared rather
@@ -3293,7 +3293,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 294 of 342 claims.
+    /// number's last printed place. The default shape: 295 of 342 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3304,7 +3304,7 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 41 of 342.
+    /// the number was always right and only the declaration was wrong. 40 of 342.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
@@ -9608,28 +9608,6 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Ordinal("pack-disagrees")],
         pow10: 0,
     },
-    LedgerRule {
-        // *"follows ten seconds later"* — and neither instant is in the phrase. Both are
-        // claimed on this step, so the sentence's number is their difference and the rule
-        // says which order: the clamp follows the window flag, and reversed this would be a
-        // sentence about a flag arriving before the one it follows.
-        phrase: "follows {n} later at",
-        ties: &[Tie::Difference(&[
-            Tie::Quoted {
-                step: "protection-off",
-                arm: None,
-                quantity: "flag_first_s:SOC_CLAMPED_LOW",
-                states: QuotedAs::Same,
-            },
-            Tie::Quoted {
-                step: "protection-off",
-                arm: None,
-                quantity: "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW",
-                states: QuotedAs::Same,
-            },
-        ])],
-        pow10: 0,
-    },
     // Step 12 — the pulse train. Its two leg lengths are the demand program the PAGE runs,
     // its cell is named rather than measured, its starting charge is the scenario's, and
     // the node it steps over is the chemistry's. Nothing in the first sentence is a number
@@ -13259,7 +13237,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
             Tie::Instant {
                 step: "nothing-to-clamp",
                 arm: Some("bms off"),
-                quantity: "t_max_at:245.5",
+                quantity: "t_max_at:243",
             },
             Tie::Instant {
                 step: "nothing-to-clamp",

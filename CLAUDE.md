@@ -194,7 +194,16 @@ and double as the scenario file format.
 ### Pack electrical solve (closed form — no iterative solver in v1)
 
 - Over one step, each cell is a Thevenin source `E_k = OCV_k − Σ V_rc,k` behind
-  `R_k = R0_k`.
+  `R_k = R0_k` — read at the **end** of the step on an ECM pack with `dt > 0`: the RC
+  pairs' exact exponential and the charge the step moves along the OCV segment are
+  folded in (`E_k += Σ V_rc,0·(1 − e^(−dt/τ))`, `R_k += Σ R_rc·(1 − e^(−dt/τ)) +
+  (dOCV/dsoc)·dt/(3600·Q)`). That makes the split and the demand solve backward Euler on
+  the cells' coupling through their node. The start-of-step line held for a long step was
+  explicit Euler, and a parallel group or a voltage hold diverged from a few hundred
+  seconds of `dt` up — 11 000 K at an hour, reached by no test because every long-step test
+  was a single cell under a current demand. A zero-length step still reads the
+  start-of-step line. The `Spm` tangent is still start-of-step and still diverges at an
+  hour; the `Dfn`'s is backward Euler already. See `docs/plans/end-of-step-split.md`.
 - **Parallel group** carrying group current `I_g` (discharge-positive):
   node voltage `V = (Σ E_k/R_k − I_g) / (Σ 1/R_k)`, then per-cell
   `I_k = (E_k − V)/R_k`. Currents naturally split by state — a low-resistance or
@@ -216,10 +225,11 @@ and double as the scenario file format.
   one thing in the heat that moves within the step — and they have an exact mean,
   `R·I + τ·(V₀ − V_end)/dt`, taken from the value the RC update already produced. Held
   at the first instant instead, a day-long step burned the day at two thirds of the
-  right power and landed 6.6 K low on a 20 K rise. `Telemetry::q_gen_w` deliberately
-  still reports the first instant, because it is the exact partner of the
-  start-of-step terminal voltage in the pack energy ledger and moving one without the
-  other opens it. See `docs/plans/step-mean-heat.md`.
+  right power and landed 6.6 K low on a 20 K rise. `Telemetry::q_gen_w` reports an
+  instant, not the mean: the step's **last** one, the exact partner of the end-of-step
+  terminal voltage in the pack energy ledger — the one instant at which a single node
+  voltage speaks for every cell of a parallel group. See `docs/plans/step-mean-heat.md`
+  and `docs/plans/end-of-step-split.md`.
 - Neighbor conductances `k_ij` from a simple grid adjacency derived from
   topology (configurable); this is what makes center cells run hot and enables
   runaway propagation. Explicit Euler is fine (thermal time constants are long);

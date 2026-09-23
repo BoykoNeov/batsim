@@ -320,7 +320,11 @@ fn rest_holds_ocv_and_soc() {
 
 #[test]
 fn cv_demand_solves_current_from_rest() {
-    // From rest, V_rc = 0, so I = (OCV − V_target) / R0.
+    // From rest, V_rc = 0. A voltage hold is met at the **end** of the step, so the RC
+    // pair's share of the step joins R0: V_end = OCV − I·(R0 + R1·(1 − e^(−dt/τ))), and
+    // the OCV is flat so the charge moved adds nothing. See
+    // `docs/plans/end-of-step-split.md` — the start-of-step answer `(OCV − V)/R0` is what
+    // made a long-step voltage hold diverge.
     let v0 = 3.30;
     let chem = synthetic_chem(OcvTable {
         docv_dt_v_per_k: None,
@@ -331,8 +335,9 @@ fn cv_demand_solves_current_from_rest() {
     let mut pack = Pack::new(&config(0.5), chem).unwrap();
 
     let v_target = 3.20;
-    let tele = pack.step(0.001, Demand::Voltage(v_target), &env());
-    let expected_i = (v0 - v_target) / R0;
+    let dt = 0.001;
+    let tele = pack.step(dt, Demand::Voltage(v_target), &env());
+    let expected_i = (v0 - v_target) / (R0 + R1 * (1.0 - (-dt / TAU).exp()));
     assert!(
         (tele.i_actual - expected_i).abs() < 1e-9,
         "got {}, expected {expected_i}",

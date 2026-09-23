@@ -146,10 +146,12 @@ fn pack_at(soc0: f64) -> Pack {
 ///
 /// One step from `soc = 0.99` at 180 A of charge over 1 s: 180 As offered, 90 As fit,
 /// 90 As refused. The cell's overpotentials are zero at the start of the first step, so
-/// the heat is exactly `I²·R0` plus the rejected-charge term and nothing else.
+/// the heat is `I²·R0`, plus the rejected-charge term, plus what the RC pair charged to
+/// over the second — the reported heat is the end-of-step one
+/// (`docs/plans/end-of-step-split.md`).
 ///
 /// The rival — reading the OCV at the SOC the step began from — differs by
-/// `(3.60 − 3.59)·90 = 0.9 W` out of 972, which every tolerance in the suite would
+/// `(3.60 − 3.59)·90 = 0.9 W` out of 988, which every tolerance in the suite would
 /// absorb and which this asserts against directly.
 #[test]
 fn the_rejected_charge_burns_at_the_windows_endpoint() {
@@ -163,13 +165,15 @@ fn the_rejected_charge_burns_at_the_windows_endpoint() {
         tele.i_rejected_a
     );
 
-    let ohmic_w = 180.0 * 180.0 * R0_OHMS; // 648 W
-    let expected_w = ohmic_w + OCV_FULL_V * 90.0; // 648 + 324
+    // The RC pair (0.010 ohm, 20 s) charges from zero over the 1 s step.
+    let rc_w = 180.0 * 180.0 * 0.010 * (1.0 - (-1.0_f64 / 20.0).exp()); // 15.80 W
+    let ohmic_w = 180.0 * 180.0 * R0_OHMS + rc_w; // 648 + 15.80 W
+    let expected_w = ohmic_w + OCV_FULL_V * 90.0; // 663.80 + 324
     let rival_w = ohmic_w + OCV_AT_099_V * 90.0; // what OCV(soc_start) would give
 
     assert!(
         (tele.q_gen_w - expected_w).abs() < 1e-6,
-        "expected {expected_w} W (I²R0 + OCV(1.0)·90), got {}",
+        "expected {expected_w} W (I²R0 + RC + OCV(1.0)·90), got {}",
         tele.q_gen_w
     );
     // Not merely "close to the right answer": far from the wrong one, by more than the
@@ -233,7 +237,9 @@ fn the_bottom_of_the_window_rejects_nothing_and_adds_no_heat() {
          the pre-reversal engine reported 90 A here"
     );
 
-    let ohmic_w = 180.0 * 180.0 * R0_OHMS;
+    // Ohmic in `R0` and in the RC pair as it charged over the step — the end-of-step
+    // heat (`docs/plans/end-of-step-split.md`). Still no term in the clamp.
+    let ohmic_w = 180.0 * 180.0 * R0_OHMS + 180.0 * 180.0 * 0.010 * (1.0 - (-1.0_f64 / 20.0).exp());
     assert!(
         (tele.q_gen_w - ohmic_w).abs() < 1e-6,
         "the low clamp should generate ohmic heat only ({ohmic_w} W), got {}",
@@ -368,8 +374,17 @@ fn arriving_at_empty_does_not_look_like_a_short() {
     );
 
     let v_rc = 0.010 * 90.0 * (1.0 - (-1.0_f64 / 20.0).exp());
-    let expected = (OCV_EMPTY_V - v_rc - 3.3) / R0_OHMS;
-    let tele = pack.step(0.25, Demand::Voltage(3.3), &env());
+    // The hold is met at the end of the 0.25 s step (`docs/plans/end-of-step-split.md`):
+    // the RC pair relaxes by `1 − d` of itself and adds `0.010·(1 − d)` of resistance,
+    // and the charge moved climbs the table's first segment, 1.0 V per unit SOC. Still
+    // the reversal branch's answer and not the collapse's: it is the cell's own `OCV(0)`
+    // that drives it.
+    let dt = 0.25;
+    let d = (-dt / 20.0_f64).exp();
+    let slope = (3.20 - OCV_EMPTY_V) / 0.2;
+    let r_end = R0_OHMS + 0.010 * (1.0 - d) + slope * dt / (3600.0 * CAP_AH);
+    let expected = (OCV_EMPTY_V - v_rc * d - 3.3) / r_end;
+    let tele = pack.step(dt, Demand::Voltage(3.3), &env());
     assert!(
         (tele.i_actual - expected).abs() < 1e-9,
         "expected {expected} A into a just-emptied cell, got {}",

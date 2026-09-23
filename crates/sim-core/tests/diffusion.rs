@@ -342,18 +342,22 @@ fn charge_drives_the_depletion_negative() {
 /// arrival is arranged in **one** step whose charge is the charge in the cell:
 /// `1.25 A × 3600 s / 9000 As = 0.5`, from `soc = 0.5`.
 ///
-/// It lands two femto-units short of zero rather than on it, and the reason is worth
-/// recording because it is a standing property of this engine: **a 1S1P pack does not hand
-/// its cell the current that was demanded.** The group solve settles a node voltage and
-/// then reconstructs each cell's current as `(E − V)/R`, which for one cell is the
-/// demanded value plus a rounding step. So the test asserts "at empty to within a
-/// femto-unit of capacity, with no deficit" — which is the state it needs — rather than an
-/// exactness the solve cannot deliver. What the step leaves behind is a depletion of
-/// `0.5·(1 − e⁻¹)`, which is all this needs from it.
+/// The current is a hair short of the cell's charge — one part in 1e13 — and the reason
+/// is worth recording because it is a standing property of this engine: **a 1S1P pack
+/// does not hand its cell the current that was demanded.** The group solve settles a node
+/// voltage and then reconstructs each cell's current as `(E − V)/R`, which for one cell is
+/// the demanded value plus a rounding step, in either direction. Exactly `1.25 A` used to
+/// land two femto-units short of empty; once the solve read the end-of-step source
+/// (`docs/plans/end-of-step-split.md`) the same rounding landed it `2.2e-16` *past* empty,
+/// with a deficit, and this test failed for a reason that had nothing to do with it. The
+/// margin puts the landing at `5e-14` whichever way that rounding falls. So the test asserts
+/// "at empty to within a femto-unit of capacity, with no deficit" — which is the state it
+/// needs — rather than an exactness the solve cannot deliver. What the step leaves behind
+/// is a depletion of `0.5·(1 − e⁻¹)`, which is all this needs from it.
 #[test]
 fn saturation_lands_on_the_reversal_floor() {
     let mut pack = pack_at(0.5);
-    let t = pack.step(3600.0, Demand::Current(1.25), &env());
+    let t = pack.step(3600.0, Demand::Current(1.25 * (1.0 - 1.0e-13)), &env());
     assert!(
         t.v_terminal.is_finite(),
         "no step may produce a non-finite voltage"

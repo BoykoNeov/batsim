@@ -529,21 +529,18 @@ fn soft_short_closes_the_energy_balance() {
     let mut chemical = 0.0;
     let mut electrical = 0.0;
     let mut heat = 0.0;
-    // One step to fire the fault before the accounting starts. A probe step will not
-    // fire it, so priming `v_start` first would prime it with the *unshorted* terminal
-    // voltage and leave one step's worth of residual — which is exactly the size of
-    // the error this test is sensitive enough to catch.
+    // One step to fire the fault before the accounting starts, so every accounted step
+    // carries it.
     pack.step(dt, Demand::Current(i), &env());
-    // Start-of-step terminal voltage, from a zero-length probe step (see the
-    // energy-balance property test for why the electrical integral has to lag).
-    let mut v_start = pack.step(0.0, Demand::Current(i), &env()).v_terminal;
+    // Each step's own end-of-step terminal voltage: the node the solve put every cell
+    // on, and the instant the reported heat is taken at. No lag, and so no probe step to
+    // prime one. See `docs/plans/end-of-step-split.md`.
     for _ in 0..400 {
         let tele = pack.step(dt, Demand::Current(i), &env());
         chemical +=
             FLAT_V0 * (f64::from(config.series) * tele.i_actual + tele.i_internal_short_a) * dt;
-        electrical += v_start * tele.i_actual * dt;
+        electrical += tele.v_terminal * tele.i_actual * dt;
         heat += tele.q_gen_w * dt;
-        v_start = tele.v_terminal;
     }
     let imbalance = chemical - electrical - heat;
     let tol = 1e-12 * chemical.abs().max(1.0);
@@ -575,10 +572,11 @@ fn external_short_conducts_at_the_solved_terminal_voltage() {
     pack.step(1.0, Demand::Rest, &env());
 
     for demand in [Demand::Rest, Demand::Current(3.0), Demand::Current(-2.0)] {
-        // A probe step reports the terminal voltage at the current state under this
-        // demand while mutating nothing, so the step that follows starts from it.
-        let v = pack.step(0.0, demand, &env()).v_terminal;
+        // The short sits on the node the solve settles, which is the **end-of-step**
+        // one — the same node this step reports (`docs/plans/end-of-step-split.md`).
+        // On this fixture's straight-line OCV and flat `R0` the two are the same number.
         let tele = pack.step(1.0, demand, &env());
+        let v = tele.v_terminal;
         let i_load = match demand {
             Demand::Current(i) => i,
             _ => 0.0,

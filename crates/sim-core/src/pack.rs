@@ -16,6 +16,18 @@
 //! and their node voltages sum, so the whole pack aggregates to one Thévenin
 //! `(E_pack, R_pack)` against which the demand is solved in closed form (see
 //! [`solve_current`]).
+//!
+//! # The source is the cell's *end-of-step* line
+//! On an equivalent-circuit pack and a `dt > 0` step, `(E_k, R_k)` above is not the
+//! start-of-step source but where that cell's terminal voltage will be at the **end** of
+//! the step under a current held across it: the RC pairs relax or charge by their exact
+//! exponential, and the charge the step moves slides the cell down its OCV segment
+//! (`crate::ecm::step_source_shift`). Solving the demand and the split against that line
+//! is backward Euler on every coupling the cells have through their node. Against the
+//! start-of-step line it was explicit Euler, and a parallel group or a voltage hold
+//! over-corrected from a few hundred seconds of `dt` up — to 11 000 K at an hour. See
+//! `docs/plans/end-of-step-split.md`. A zero-length step still solves the start-of-step
+//! line, which is what a probe is for.
 
 use rand_chacha::ChaCha8Rng;
 use rand_core::SeedableRng;
@@ -26,7 +38,7 @@ use crate::aging::{Aging, AgingConfig, CellAging, FadeParams};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::dfn;
-use crate::ecm::{solve_current, CellModel};
+use crate::ecm::{rc_decays, solve_current, CellModel};
 use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
@@ -1103,11 +1115,12 @@ pub struct CellView {
     ///   (Deliberately unlike `overpotential_v` on a porous cell, which a probe leaves
     ///   alone; the argument is on the `CellCurrents` buffer behind this field.)
     /// * **Not the split at the state you are looking at, after a real step.** A
-    ///   time-advancing step solves the split at the state it *starts* from — that is the
-    ///   current each cell was advanced with — and then moves the cells. So after a
-    ///   `dt > 0` step this reads the start-of-step split, and a `dt == 0` probe at the
-    ///   same demand re-solves at the moved state and reads a slightly different one: the
-    ///   same physics one step apart. `sim-core/tests/cell_current.rs` pins both.
+    ///   time-advancing step solves the split from the state it *starts* from — against
+    ///   each cell's end-of-step line, `docs/plans/end-of-step-split.md` — and that is the
+    ///   current each cell was advanced with; then it moves the cells. So after a `dt > 0`
+    ///   step this reads the split the step advanced with, and a `dt == 0` probe at the
+    ///   same demand re-solves at the moved state against the start-of-step line and reads
+    ///   a different one. `sim-core/tests/cell_current.rs` pins both.
     ///
     /// # "Restored" is two different things here
     ///
@@ -1251,7 +1264,7 @@ impl std::fmt::Debug for SourceCache {
 ///   itself on every scenario load.
 ///
 /// So the reading means "the split the last `step` call solved for": on a time-advancing
-/// step that is the start-of-step split the cells were advanced with, and on a probe it is
+/// step that is the split the cells were advanced with, and on a probe it is
 /// the split at the state the probe found. That differs from
 /// [`crate::SpmState::i_last`], which a probe leaves alone — and correctly, because
 /// `i_last` genuinely *is* snapshot state.
@@ -1327,6 +1340,9 @@ struct StepScratch {
     v_group: Vec<f64>,
     /// True temperatures \[K\] at the configured probes, likewise.
     temp_probe_k: Vec<f64>,
+    /// Per-cell **end-of-step** Thévenin `(E, R)` a linear pack solves against, series-major;
+    /// empty on a zero-length step and on a nonlinear pack. See `step_source_shift`.
+    step_src: Vec<(f64, f64)>,
 }
 
 impl PartialEq for StepScratch {
@@ -1900,7 +1916,8 @@ impl Pack {
     ///
     /// Ordering within a step: any injected fault due this step fires first (see
     /// [`crate::faults`]), the electrical solve then runs off **start-of-step**
-    /// state, each cell's internal state is advanced with the current it was
+    /// state — solved against each cell's *end-of-step* line, see the module docs — each
+    /// cell's internal state is advanced with the current it was
     /// assigned, temperatures are integrated against the heat that current
     /// generated (see [`crate::thermal`]), aging's sub-clock is advanced, and all
     /// telemetry is reported from **end-of-step** state. `env` supplies the thermal
@@ -1920,8 +1937,11 @@ impl Pack {
     /// shipped chemistries the sub-step that ceiling asks for would exceed the work
     /// budget, and the step switches to backward Euler, which is unconditionally
     /// stable at any sub-step length. So a months-long aging fast-forward integrates
-    /// temperature as soundly as a millisecond GUI step — as the electrical solve and
-    /// the RC update already did, both being exact at any `dt`.
+    /// temperature as soundly as a millisecond GUI step, as the RC update already did by
+    /// being exact at any `dt`. The electrical solve joined them last: until
+    /// `docs/plans/end-of-step-split.md` it read each cell's start-of-step line and held the
+    /// answer across the step, which diverged on parallel groups and voltage holds past a
+    /// few hundred seconds.
     ///
     /// Heat generation is still solved once per step, but what the network integrates is
     /// the exact step **mean** of it rather than its first instant: the RC overpotentials
@@ -1929,9 +1949,10 @@ impl Pack {
     /// have a closed-form mean. Held at the first instant, as it was before
     /// `docs/plans/step-mean-heat.md`, a day-long step burned the day at two thirds of the
     /// right power and landed 6.6 K low on a 20 K rise; it now agrees with a fine `dt` to
-    /// 1.5 mK. **[`Telemetry::q_gen_w`] deliberately still reports the first instant**, so
-    /// at a coarse `dt` the pack absorbs more than that number accounts for — see the
-    /// field, which says why moving it needs a mean terminal voltage beside it.
+    /// 1.5 mK. **[`Telemetry::q_gen_w`] reports an instant, not that mean**: the step's
+    /// *last* one, the partner of the end-of-step terminal voltage in the pack energy
+    /// ledger. At a coarse `dt` the pack therefore absorbs a little less than that number
+    /// times `dt` while an overpotential is still climbing — see the field.
     ///
     /// A cell that crosses the runaway onset *during* a step ignites within it above the
     /// same `dt` where the integrator changes, so live `[safety]` and a fast-forward `dt`
@@ -2036,6 +2057,7 @@ impl Pack {
             thermal_scratch,
             v_group,
             temp_probe_k,
+            step_src,
         } = &mut self.scratch;
 
         // Cleared on *both* arms: an empty `bleed_g` is how the rest of the step
@@ -2099,6 +2121,86 @@ impl Pack {
         // because "the first read is a clear" is a property of code further down that
         // a future edit could quietly take away.
         group_src.clear();
+
+        // --- the end-of-step sources a linear pack solves against.
+        //
+        // Every cell's start-of-step source, moved to where that cell's terminal voltage
+        // will be at the *end* of the step under whatever current the solve gives it (see
+        // [`crate::ecm::step_source_shift`]). Solving the demand, the split, the bleed and
+        // the shorts against these instead of the start-of-step line is backward Euler on
+        // every coupling the cells have through their node, and it is what keeps a
+        // parallel group or a voltage hold from over-correcting on a long step — which the
+        // start-of-step line did from a few hundred seconds up, to 11 000 K at an hour.
+        // See `docs/plans/end-of-step-split.md`.
+        //
+        // Filled before the loop rather than lazily inside it, so the memo (which holds
+        // the `dt`-free line, and must) is fully populated first. A zero-length step
+        // takes the start-of-step line through this guard rather than through
+        // `exp(0) = 1` arithmetic, so a probe step solves exactly what it solved before.
+        //
+        // The decay per RC pair depends on the cell only through `soh_resistance`, so it
+        // is recomputed only when that changes from one cell to the next: once per step
+        // on a pack without aging, which is every pack the performance budget is
+        // measured on.
+        let implicit = !nonlinear && dt > 0.0;
+        step_src.clear();
+        if implicit {
+            let mut decay_for = f64::NAN;
+            let mut decays = [1.0; crate::ecm::MAX_RC_PAIRS];
+            for (g_idx, group) in self.groups.iter().enumerate() {
+                for (k, cell) in group.cells.iter().enumerate() {
+                    let (e, r) = if warm {
+                        let cached = cell_src[g_idx * parallel + k];
+                        debug_assert_eq!(
+                            (cached.0.to_bits(), cached.1.to_bits()),
+                            {
+                                let fresh = cell.model.source(
+                                    &self.chem,
+                                    cell.eff_r0_factor(),
+                                    cell.eff_capacity_ah(cap_ah),
+                                );
+                                (fresh.0.to_bits(), fresh.1.to_bits())
+                            },
+                            "stale Thévenin memo at cell {g_idx}S{k}P"
+                        );
+                        cached
+                    } else {
+                        let fresh = cell.model.source(
+                            &self.chem,
+                            cell.eff_r0_factor(),
+                            cell.eff_capacity_ah(cap_ah),
+                        );
+                        cell_src.push(fresh);
+                        fresh
+                    };
+                    let soh_r = cell.aging.soh_resistance;
+                    if soh_r.to_bits() != decay_for.to_bits() {
+                        decays = rc_decays(&self.chem, soh_r, dt);
+                        decay_for = soh_r;
+                    }
+                    // The memo must be what a recompute would give, bit for bit — the
+                    // `SourceCache` staleness assert's precedent. A perturbation that
+                    // stopped the memo refreshing reddened nothing in the suite without
+                    // this: the only packs whose cells differ in `soh_resistance` are aged
+                    // ones, and no test compares an aged pack's split to an exact answer.
+                    debug_assert!(
+                        decays
+                            .iter()
+                            .zip(rc_decays(&self.chem, soh_r, dt).iter())
+                            .all(|(a, b)| a.to_bits() == b.to_bits()),
+                        "stale RC decay memo at cell {g_idx}S{k}P"
+                    );
+                    let (de, dr) = cell.model.step_source_shift(
+                        &self.chem,
+                        &decays,
+                        soh_r,
+                        cap_ah * cell.capacity_factor * cell.aging.soh_capacity,
+                        dt,
+                    );
+                    step_src.push((e + de, r + dr));
+                }
+            }
+        }
         // Scratch for the nonlinear iteration: the tangents pass *n* aggregates from, the
         // ones its probes just took (which become pass *n+1*'s after the swap below), and
         // the currents pass *n* assigned. All stay empty — and therefore unallocated — on
@@ -2156,6 +2258,9 @@ impl Pack {
                         // Pass two onwards: the tangents re-taken at the end of the
                         // previous pass. Never the memo — see [`SourceCache`].
                         tangent[g_idx * parallel + k]
+                    } else if implicit {
+                        // Filled above, memo checked there.
+                        step_src[g_idx * parallel + k]
                     } else if warm {
                         let cached = cell_src[g_idx * parallel + k];
                         // The memo must be bit-for-bit what a recompute would give. In
@@ -2410,6 +2515,8 @@ impl Pack {
         // currents would come from different linearizations.
         let solved_src: &[(f64, f64)] = if solve_iterations > 1 {
             &tangent
+        } else if implicit {
+            step_src
         } else {
             &cell_src
         };
@@ -2489,13 +2596,15 @@ impl Pack {
         let mut i_rejected_a = 0.0;
         for (g, group) in self.groups.iter_mut().enumerate() {
             let (e_gv, r_gv) = group_src[g];
-            let v_node = e_gv - i_g * r_gv; // start-of-step shared node voltage
-                                            // Bleed current and dissipation are evaluated from this same
-                                            // start-of-step node voltage — the one that actually drove the bleed over
-                                            // the step, and the one that produced `i_k` below. Using the end-of-step
-                                            // voltage instead would leave the reported numbers O(dt) adrift from the
-                                            // energy that was really dissipated, and would stop the pack energy
-                                            // balance closing exactly (see the energy-balance property test).
+            // The shared node voltage the solve committed to: on a linear pack with
+            // `dt > 0` the *end-of-step* one, where the split put every cell of the group
+            // (`docs/plans/end-of-step-split.md`); on a probe step or a porous pack, the
+            // node the start-of-step or converged sources give. Bleed current and
+            // dissipation, and a shorted cell's leakage, are evaluated at this same
+            // voltage — the one that produced `i_k` below — so the currents out of the
+            // node sum to the currents into it and the pack energy balance closes exactly
+            // (see the energy-balance property test).
+            let v_node = e_gv - i_g * r_gv;
             let g_bleed = bleed_at(g);
             if g_bleed > 0.0 {
                 i_balancing_a += v_node * g_bleed;
@@ -2548,14 +2657,19 @@ impl Pack {
                     "cell {g}S{k}P advances at {i_k} A but was probed at {} A",
                     i_cell[g * parallel + k]
                 );
-                // Heat from the same start-of-step state that produced `i_k`, so
-                // the energy accounting closes exactly (see `cell_heat_w`).
+                // Heat from the start-of-step state, at the current the solve assigned.
+                // The equivalent circuit's heat reads its `R0`, which is the memo's
+                // resistance and **not** `r_k` when the pack solved against end-of-step
+                // sources — `r_k` then carries the RC pairs' and the charge's share of
+                // the step too. The porous-electrode arms read `v_node` and ignore this.
+                // What is *reported* is moved to the end of the step below, once the RC
+                // pairs have; what the thermal network integrates is the step mean.
                 let mut q = cell.model.heat_w(
                     &self.chem,
                     cell.eff_r0_factor(),
                     cell.eff_capacity_ah(cap_ah),
                     i_k,
-                    r_k,
+                    cell_src[g * parallel + k].1,
                     v_node,
                 );
                 // An internal short dissipates inside this cell, unlike the balancing
@@ -2664,30 +2778,36 @@ impl Pack {
                 // guarded on a non-zero rejection rather than written unconditionally:
                 // `q + 0.0` is bit-identical to `q` for every value except `-0.0`,
                 // which would become `+0.0` and move a trajectory for no physics.
-                q_gen_w += q;
+                // --- the heat this step *reports*: at the end-of-step overpotential,
+                // which is where the solve put every parallel cell on one shared node and
+                // therefore the only instant at which `v_terminal · i_actual` plus this
+                // closes the energy ledger. See `docs/plans/end-of-step-split.md`.
+                // `rc_delta_v` is exactly `0.0` for a porous cell and for a zero-length
+                // step, and the guard keeps both bit-identical — the rejection tally's
+                // `-0.0` argument again.
+                let delta = advanced.rc_delta_v;
+                q_gen_w += if delta == 0.0 { q } else { q + i_k * delta };
                 if thermal_live {
                     // --- and the one number that is *not* `q`: the heat this step
                     // really generated, rather than the heat its first instant was
                     // generating.
                     //
-                    // `q` above is evaluated entirely from start-of-step state, which
-                    // is what makes it the exact partner of the start-of-step terminal
-                    // voltage in the pack energy ledger. Over the step, though, the RC
-                    // overpotentials move — that is the whole reason they exist — so a
-                    // step long against their time constants generates rather more heat
-                    // than `q` says. The correction is the current times the amount by
-                    // which the step *mean* of the overpotential exceeds its
-                    // start-of-step value, and it is exact for the piecewise-constant
-                    // current this model already assumes: see
-                    // [`crate::ecm::rc_step_mean_excess_v`].
+                    // `q` above is evaluated from start-of-step state, and what is
+                    // reported is the step's last instant. Neither is what the step
+                    // generated: the RC overpotentials move across it — that is the
+                    // whole reason they exist — so the heat does too. The correction is
+                    // the current times the amount by which the step *mean* of the
+                    // overpotential exceeds its start-of-step value, and it is exact for
+                    // the piecewise-constant current this model already assumes: see
+                    // [`crate::ecm::rc_step_mean_excess_v`] and
+                    // `docs/plans/step-mean-heat.md`.
                     //
-                    // Only the network sees it. `q_gen_w` above keeps its meaning and
-                    // its bits, and so therefore does the four-term balance
+                    // Only the network sees the mean. `q_gen_w` reports the end-of-step
+                    // instant because that is the partner of the end-of-step terminal
+                    // voltage in the four-term balance
                     // `properties.rs::electrical_and_heat_energy_balance` closes to
-                    // rounding — the electrical side of that ledger is a start-of-step
-                    // voltage, and moving one side without the other is what would open
-                    // it. That is the next slice, and `docs/plans/step-mean-heat.md`
-                    // says what it costs.
+                    // rounding — the one instant at which a single node voltage speaks
+                    // for every cell of a group (`docs/plans/end-of-step-split.md`).
                     //
                     // The guard is not an optimisation. `rc_mean_excess_v` is exactly
                     // `0.0` for a zero-length step and for the porous-electrode models,

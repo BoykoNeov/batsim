@@ -45,6 +45,7 @@ Changes to what `sim-core` computes. Every one names the snapshot version it cos
 | [`charge-acceptance.md`](charge-acceptance.md) | Charge acceptance: the third mechanism, and what a dome costs the signal |
 | [`dfn-aging-gap.md`](dfn-aging-gap.md) | The DFN's aging gap: a rule implemented for three commits and verified by none |
 | [`diffusion-overpotential.md`](diffusion-overpotential.md) | A diffusion overpotential for lead-acid — can the ECM carry Peukert at all? |
+| [`end-of-step-split.md`](end-of-step-split.md) | The split a long step can survive — end-of-step sources for the equivalent circuit |
 | [`energy-hole.md`](energy-hole.md) | The energy hole: charge that vanishes at the clamp, and charge that appears |
 | [`hysteresis-width-over-soc.md`](hysteresis-width-over-soc.md) | A hysteresis loop that is not the same width everywhere |
 | [`low-clamp-reversal.md`](low-clamp-reversal.md) | The low clamp closed: a reversal branch below empty |

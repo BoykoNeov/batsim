@@ -80,6 +80,15 @@ use tokio::net::TcpListener;
 /// case was ever in doubt. `sim_core::SNAPSHOT_VERSION` stays at 21 as well; the argument
 /// for that one is not "it is a view" but that the value is a `#[serde(skip)]` report
 /// about the last step — see `docs/plans/per-cell-current.md`.
+///
+/// **v2 unmoved when `Telemetry::q_gen_w` moved instant** (2026-09-23). The v17 case again:
+/// no name changed and no field was added, but the number a field carries now describes a
+/// different moment — the heat at the *end* of the step, where it used to be the start —
+/// because the electrical solve now puts parallel cells on one end-of-step node and the
+/// energy ledger follows it there. Name, unit and meaning ("the rate heat is being
+/// generated") survive; a client that integrated it keeps integrating a rate, and one that
+/// paired it with the previous frame's voltage now pairs it with its own frame's. See
+/// `docs/plans/end-of-step-split.md`.
 pub const API_VERSION: u32 = 2;
 
 /// Build the application router over a session registry.

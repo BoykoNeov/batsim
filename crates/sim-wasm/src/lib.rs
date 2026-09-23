@@ -203,6 +203,13 @@ use wasm_bindgen::prelude::*;
 /// `Pack::restore` of a `Snapshot` value is a clone and keeps the reading; the two paths
 /// are pinned apart in `sim-core/tests/cell_current.rs`.) See
 /// `docs/plans/per-cell-current.md`.
+///
+/// **v8 unmoved when `Telemetry::q_gen_w` moved instant** (2026-09-23), for the reason
+/// `sim_server::API_VERSION` gives beside the same date: no field was added or renamed,
+/// only the instant one of them describes, and no page method changed. The page's `heat`
+/// row reads the new instant without any code of its own changing. The bundle in
+/// `web/pkg` still has to be rebuilt, as after any engine change, or the page answers
+/// from the old solve. See `docs/plans/end-of-step-split.md`.
 pub const WASM_API_VERSION: u32 = 8;
 
 /// [`WASM_API_VERSION`], reachable from JS.

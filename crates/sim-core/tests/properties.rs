@@ -337,12 +337,18 @@ proptest! {
     /// currents sum to the pack current *plus* that group's bleed current).
     ///
     /// The balance is exact — to floating-point rounding, not to a physical
-    /// tolerance — because both heat and current are evaluated from **start-of-step**
-    /// state. `Telemetry` reports the *end-of-step* voltage, so the electrical
-    /// integral is accumulated one step behind: for a constant current, step `n`'s
-    /// start-of-step node voltage is step `n−1`'s end-of-step value (same formula,
-    /// same state). Pairing them naively instead leaves an O(dt²)-per-step residual
-    /// that swamps a rounding-level tolerance.
+    /// tolerance — because the solve, the reported heat and the reported voltage are all
+    /// taken at the **end** of the step. The split puts every parallel cell on one shared
+    /// end-of-step node, `v_terminal` is that node, and `q_gen_w` is each cell's heat at
+    /// its end-of-step overpotential, so each step pairs with **its own** voltage.
+    ///
+    /// It used to be the other way round: heat and split at the start of the step, and
+    /// the electrical integral accumulated one step behind so that step `n` read step
+    /// `n−1`'s end-of-step voltage. That pairing only ever worked because the current
+    /// was held constant across the whole run — a changed demand reads the previous
+    /// demand's voltage. The demand here changes **every step**, which the lagged pairing
+    /// could never have closed. See `docs/plans/end-of-step-split.md` for why the ledger
+    /// had to move: a start-of-step split held for a long step is unstable.
     ///
     /// Exactness is what gives the test teeth: using `I²·(R0 + ΣR_rc)` (the
     /// steady-state heat form) instead of `I²·R0 + I·ΣV_rc` misstates the heat by
@@ -353,9 +359,8 @@ proptest! {
     fn electrical_and_heat_energy_balance(
         series in 1u16..=3,
         parallel in 1u16..=3,
-        i in -4.0f64..4.0,
+        currents in prop::collection::vec(-4.0f64..4.0, 5..200),
         dt in 0.01f64..0.5,
-        nsteps in 5usize..200,
         seed in any::<u64>(),
         cap_sigma in 0.0f64..0.08,
         r0_sigma in 0.0f64..0.08,
@@ -390,12 +395,7 @@ proptest! {
         let mut electrical = 0.0; // ∫V_terminal·I dt
         let mut heat = 0.0;       // ∫Q dt
         let mut bled = 0.0;       // ∫Q_balancing dt
-        // The first step's start-of-step voltage, from a zero-length probe step:
-        // dt = 0 mutates nothing (the RC update, the coulomb count and the thermal
-        // integration all scale by dt), but telemetry still reports the pack solved
-        // at this state under this current.
-        let mut v_start = pack.step(0.0, Demand::Current(i), &env()).v_terminal;
-        for _ in 0..nsteps {
+        for &i in &currents {
             let tele = pack.step(dt, Demand::Current(i), &env());
             // BALANCING is expected here; a SOC clamp is not. Note what this
             // exclusion is and is not: it keeps the property to the regime it was
@@ -411,10 +411,9 @@ proptest! {
             );
             chemical +=
                 FLAT_V0 * (f64::from(series) * tele.i_actual + tele.i_balancing_a) * dt;
-            electrical += v_start * tele.i_actual * dt;
+            electrical += tele.v_terminal * tele.i_actual * dt;
             heat += tele.q_gen_w * dt;
             bled += tele.q_balancing_w * dt;
-            v_start = tele.v_terminal;
         }
         prop_assert!(bled > 0.0, "the bleed path should have been exercised");
         let imbalance = chemical - electrical - heat - bled;
@@ -692,7 +691,7 @@ proptest! {
     /// the clamp refused is dissipated rather than destroyed.
     ///
     /// Same accounting as `electrical_and_heat_energy_balance` and the same
-    /// one-step-behind pairing, with one change that is the whole point: **the chemical
+    /// same-step pairing, with one change that is the whole point: **the chemical
     /// side is measured from ground-truth state**, `V0·3600·Δ(remaining Ah)`, not
     /// assembled from reported currents.
     ///
@@ -732,7 +731,6 @@ proptest! {
         let mut electrical = 0.0;
         let mut heat = 0.0;
         let mut clamped_steps = 0usize;
-        let mut v_start = pack.step(0.0, Demand::Current(-amps), &env()).v_terminal;
         for _ in 0..nsteps {
             let tele = pack.step(dt, Demand::Current(-amps), &env());
             if tele.flags.contains(EventFlags::SOC_CLAMPED_HIGH) {
@@ -742,9 +740,8 @@ proptest! {
                 !tele.flags.contains(EventFlags::SOC_CLAMPED_LOW),
                 "a charge should not have reached the bottom of the window"
             );
-            electrical += v_start * tele.i_actual * dt;
+            electrical += tele.v_terminal * tele.i_actual * dt;
             heat += tele.q_gen_w * dt;
-            v_start = tele.v_terminal;
         }
         prop_assert!(clamped_steps > 0, "the run never reached the clamp it was aimed at");
         let rem1 = total_remaining_ah(&pack, series, parallel);

@@ -148,8 +148,8 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled  294 claims. `tol` is exactly the rule for `spells`. The ordinary case.
-#   tighter  41 claims. `tol` is strictly under the rule. Needs no upper bound and is
+#   spelled  295 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   tighter  40 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
 #             `heat` claims whose stored `value` carries a place the sentence does not,
@@ -206,7 +206,7 @@
 # and a claim can say which one it is using. Each is checked at the SENTENCE'S precision
 # (half a unit in the last printed place of `spells`), because the question is exactly
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
-# bounds the engine against `value` and is deliberately tighter on 41 claims.
+# bounds the engine against `value` and is deliberately tighter on 40 claims.
 #
 #   same        314 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
@@ -370,26 +370,28 @@ not the engine's — deliberately, and now checked.
 
 [[claim]]
 step = "bare-curve"
-literal = "`OPERATING_POINT_OUT_OF_WINDOW` at 4138 s"
+literal = "`OPERATING_POINT_OUT_OF_WINDOW` at 4137.5 s"
 quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
-value = 4138.0
-tol = 0.25
-tol_from = "tighter"
-spells = "4138"
+value = 4137.5
+tol = 0.05
+tol_from = "spelled"
+spells = "4137.5"
 states = "same"
-read_at_s = 4138.0
+read_at_s = 4137.5
 display = "sim time"
 shows = "69m"
 note = """
 The first flag anyone walking this path ever sees, and it was unannounced until the
 widening that produced it was measured across all twenty-four steps rather than sampled.
-It arrives 8.5 s before the `SOC_CLAMPED_LOW` the claim above pins, which is the whole
+It arrives 9.0 s before the `SOC_CLAMPED_LOW` the claim above pins, which is the whole
 reason the sentence had to change: a reader met an unexplained name before the explained
 one.
 
-Half a step at dt = 0.5, which is tighter than the 0.5 s the bare `4138` would license.
-The engine can only land this flag on a step boundary, so the looser rule would admit an
-answer the grid cannot produce.
+The flag lands on a step boundary, and since `docs/plans/end-of-step-split.md` it is one
+step earlier than it was: the window is judged at the end-of-step node the solve commits
+to, which on a falling discharge is under the floor half a second sooner. The sentence
+now spells `4137.5`, whose own rule is already the 0.05 s this used to have to tighten
+to, so it is `spelled` again.
 
 The sibling claim on this step spells its flag time as a duration (`the last 53 seconds`)
 and this one spells it outright. Both read the same trajectory; only the sentence differs.
@@ -579,24 +581,24 @@ make "reachable" mean only "I ran far enough", which is the refusal
 
 [[claim]]
 step = "same-discharge-other-chemistry"
-literal = "at 4111.5 s"
+literal = "at 4111.0 s"
 quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
-value = 4111.5
+value = 4111.0
 tol = 0.05
 tol_from = "spelled"
-spells = "4111.5"
+spells = "4111.0"
 states = "same"
-read_at_s = 4111.5
+read_at_s = 4111.0
 display = "sim time"
 shows = "69m"
 note = """
 The sentence this claim sits in used to say the empty-battery flag arrived with "the same
 silence around it". That stopped being true when a current demand started reporting its
-own operating point: this flag now precedes the counter by 42.5 s.
+own operating point: this flag now precedes the counter by 43.0 s.
 
 The lead is the lesson, not an accident of the number. Both cells cross their declared
 floor before their coulomb counter reaches zero, but this one is still falling steeply
-when it gets there and the LFP cell is on its plateau — 42.5 s against 8.5 for exactly the
+when it gets there and the LFP cell is on its plateau — 43.0 s against 9.0 for exactly the
 reason the rest of the step is about. The two flag claims sit on the two steps so a
 change to either trajectory breaks the comparison rather than quietly rescaling it.
 
@@ -1616,19 +1618,21 @@ which is where the `4.14` and the `41` in the next clause come from.
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "The pack draws **183.84 A** for a single step with *no flag raised at all*"
+literal = "The pack draws **182.59 A** for a single step with *no flag raised at all*"
 quantity = "i_at"
-value = 183.84181
+value = 182.585164
 tol = 5e-3
 tol_from = "spelled"
-spells = "183.84"
+spells = "182.59"
 states = "same"
 read_at_s = 60.5
 note = """
 The tooth itself, on the step's own run — the number the `dt 5` claim below calls "the
 same". Both had to exist for that sentence to mean anything: until this one was written
 the base trajectory's spike was in the prose twice and in the file never, so "the same
-183.84 A" was a comparison with a number nothing measured.
+183.84 A" was a comparison with a number nothing measured. There is no comparison now:
+since `docs/plans/end-of-step-split.md` the `dt 5` tooth is 173.16 A against this one's
+182.59, and the sentence says the spike is smaller.
 
 One step, and the step is the whole event: the contactor is open by 61 s, so this row is
 the only one on the whole run with a current in it.
@@ -1636,18 +1640,18 @@ the only one on the whole run with a current in it.
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "it is at **89.44 %** for the rest of the run"
+literal = "it is at **89.45 %** for the rest of the run"
 quantity = "soc_at"
-value = 0.894428
+value = 0.894466208
 tol = 5e-5
 tol_from = "spelled"
-spells = "89.44"
+spells = "89.45"
 spells_pow10 = 2
 states = "same"
 read_at_s = 90.0
 note = """
 The level the headline states as a difference. `soc_lost_pts_at` below claims the same
-fact as the 0.56 points the headline prints; this claims it as the number THIS sentence
+fact as the 0.55 points the headline prints; this claims it as the number THIS sentence
 prints, which is where the charge ended up.
 
 Read at the mark rather than at 60.5 s, because the sentence's claim is "for the rest of
@@ -1660,19 +1664,19 @@ prints two, so the row's string is not what is being quoted.
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "half a percent, and 0.97 K, is the whole cost of a dead short"
+literal = "half a percent, and 0.95 K, is the whole cost of a dead short"
 quantity = "t_rise_k_at:60.5"
-value = 0.967863
+value = 0.95422477
 tol = 5e-3
 tol_from = "spelled"
-spells = "0.97"
+spells = "0.95"
 states = "same"
 read_at_s = 60.5
 note = """
 The PEAK rise, at the instant the tooth lands, and the reason `t_rise_k_at` on this step
-now carries instant tags. Its sibling — "the cell ends 21 K hotter instead of 1" — is the
+now carries instant tags. Its sibling — "the cell ends 17 K hotter instead of 1" — is the
 same quantity on the same trajectory at the 90 s mark, where the pack has already shed
-0.04 K to ambient and reads 0.92491. Two true readings, one name, and `Tie::Quoted`
+0.04 K to ambient and reads 0.917487. Two true readings, one name, and `Tie::Quoted`
 cannot borrow either while that is so; step 19's twin sentence borrows the 90 s one.
 
 `states = "same"` and not a difference-of-instants frame: the number IS the rise from the
@@ -1710,12 +1714,12 @@ No `display`. The BMS panel prints this and `render_row` does not mirror that pa
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "The frame taken after the spike reads **1.3337 V**"
+literal = "The frame taken after the spike reads **1.3470 V**"
 quantity = "v_group_min_at"
-value = 1.3336946
+value = 1.34697756
 tol = 5e-5
 tol_from = "spelled"
-spells = "1.3337"
+spells = "1.3470"
 states = "same"
 read_at_s = 60.5
 note = """
@@ -1728,28 +1732,34 @@ That spread is why this is `v_group_min_at` and not a mean: a rule reading the a
 would answer around 1.37 V and the sentence would be wrong about which number protection
 saw. The four readings were 1.4177, 1.3846, 1.3621 and 1.3336 when this note was written;
 only the last of them is re-measured by anything in this file, and
-`docs/plans/step-mean-heat.md` moved it to 1.3337, so read the other three as the shape of
-the spread rather than as current digits.
+`docs/plans/step-mean-heat.md` moved it to 1.3337 and `docs/plans/end-of-step-split.md`
+to 1.3470, so read the other three as the shape of the spread rather than as current
+digits.
 """
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "The spike is the same 183.84 A"
+literal = "The spike is smaller, 173.16 A"
 quantity = "i_at"
 arm = "dt 5"
-value = 183.84181
+value = 173.15849
 tol = 5e-3
 tol_from = "spelled"
-spells = "183.84"
+spells = "173.16"
 states = "same"
 read_at_s = 65.0
 note = """
 The whole point of the `dt 5` arm, and the one number on it that can be claimed today.
-The sentence says the spike does not care how long you look at it, and that is only
-checkable against a run at a different step length: at dt = 0.5 the tooth is the step
-ending at 60.5 s and at dt = 5 it is the step ending at 65 s, and both report 183.84181 A
-to every digit the engine has. A resistive sag is instantaneous; the step length decides
-how long it is integrated for, not how deep it is.
+At dt = 0.5 the tooth is the step ending at 60.5 s and at dt = 5 it is the step ending at
+65 s, and they are NOT the same: 182.59 A against 173.16 A.
+
+This sentence used to say the opposite — "the spike is the same 183.84 A, because a
+resistive sag is instantaneous" — and both runs did report 183.84181 A to every digit.
+That was the defect `docs/plans/end-of-step-split.md` removed rather than a fact about the
+cell: the solve held its first instant's current for the whole step, whatever the step's
+length. It now solves for the current that is right at the step's end, and over 5 s the
+RC pairs have taken back part of the sag. A real short's current falls the same way; the
+tooth at dt = 5 is the smaller, and closer to what a 5 s average would be.
 
 Reachable because the arm RESTARTS: the reader types 5 into the `dt` box and presses
 **Restart**, which rebuilds from the same file without re-applying the step's controls.
@@ -1759,21 +1769,21 @@ why `start = "restart"` rather than a mid-run change.
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "**184.54 A** with no flag raised"
+literal = "**183.26 A** with no flag raised"
 quantity = "i_at"
 arm = "unlatched"
-value = 184.535384
+value = 183.263267
 tol = 5e-3
 tol_from = "spelled"
-spells = "184.54"
+spells = "183.26"
 states = "same"
 read_at_s = 90.5
 note = """
 The second tooth: clear the latched fault, do not clear the short, and step once. The
-contactor closes, the short is still there, and 184.54 A flows for one step before the
+contactor closes, the short is still there, and 183.26 A flows for one step before the
 next frame latches it again.
 
-It is 0.7 A BIGGER than the first tooth's 183.84 with half a percent less charge in the
+It is 0.7 A BIGGER than the first tooth's 182.59 with half a percent less charge in the
 pack, which is the sentence's teaching point and is why both numbers are claimed on
 different arms rather than one being taken as read.
 
@@ -1788,7 +1798,7 @@ step = "one-step-that-got-through"
 literal = "**13.236 V** with nothing flowing and no flag at all"
 quantity = "v_at"
 arm = "cleared, then run"
-value = 13.23609
+value = 13.2362293
 tol = 5e-4
 tol_from = "spelled"
 spells = "13.236"
@@ -1812,7 +1822,7 @@ step = "one-step-that-got-through"
 literal = "drifts up to **13.255 V** over the following minute"
 quantity = "v_at"
 arm = "cleared, then run"
-value = 13.255344
+value = 13.255354
 tol = 5e-4
 tol_from = "spelled"
 spells = "13.255"
@@ -1852,13 +1862,13 @@ duration rather than asking the reader to keep going.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "the same 93.29 A on the first frame after the fault, the same 87.03 A at 90.5 s"
+literal = "the same 92.96 A on the first frame after the fault, the same 86.95 A at 90.5 s"
 quantity = "i_at:60.5"
 arm = "bms off"
-value = 93.28560
+value = 92.9609485
 tol = 5e-3
 tol_from = "spelled"
-spells = "93.29"
+spells = "92.96"
 states = "same"
 read_at_s = 60.5
 note = """
@@ -1867,20 +1877,20 @@ for it: the same instant on the protected run reports the same current to every 
 because until the BMS acts there is nothing between the two packs. Claimed on the
 unprotected arm because that is the one the sentence is describing.
 
-Tight: the rule allows 5e-3 and the engine is 4.4e-3 away. 93.28560 rounds to 93.29 and
-would round to 93.28 if the fifth digit moved by two in the last place. That is the
-sentence's own precision, not a margin this file chose.
+The rule allows 5e-3 and the engine is 9.5e-4 away: 92.96095 against the printed 92.96.
+It was 4.4e-3 away, and tight, when the number was 93.28560; that was before
+`docs/plans/end-of-step-split.md` moved the first frame of every short.
 """
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "the same 93.29 A on the first frame after the fault, the same 87.03 A at 90.5 s"
+literal = "the same 92.96 A on the first frame after the fault, the same 86.95 A at 90.5 s"
 quantity = "i_at:90.5"
 arm = "bms off"
-value = 87.028536
+value = 86.9475484
 tol = 5e-3
 tol_from = "spelled"
-spells = "87.03"
+spells = "86.95"
 states = "same"
 read_at_s = 90.5
 note = """
@@ -1890,7 +1900,7 @@ warms and empties; both packs are still doing the same thing.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.6 K and still rising, with 58 A flowing"
+literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.5 K and still rising, with 58 A flowing"
 quantity = "flag_first_s:SOC_CLAMPED_LOW"
 arm = "bms off"
 value = 235.5
@@ -1911,13 +1921,13 @@ times already in this file that take their sentence's rule instead.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.6 K and still rising, with 58 A flowing"
+literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.5 K and still rising, with 58 A flowing"
 quantity = "t_max_at:235.5"
 arm = "bms off"
-value = 375.62180
+value = 375.483099
 tol = 5e-2
 tol_from = "spelled"
-spells = "375.6"
+spells = "375.5"
 states = "same"
 read_at_s = 235.5
 note = """
@@ -1927,17 +1937,17 @@ is a statement about the next ten seconds, and the peak that follows is claimed 
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.6 K and still rising, with 58 A flowing"
+literal = "`SOC_CLAMPED_LOW` at 235.5 s, at 375.5 K and still rising, with 58 A flowing"
 quantity = "i_at:235.5"
 arm = "bms off"
-value = 58.036552
+value = 57.6111645
 tol = 0.5
 tol_from = "spelled"
 spells = "58"
 states = "same"
 read_at_s = 235.5
 note = """
-THE SAME READING AS THE `58.04 A` BELOW, TO A COARSER PLACE, and it is here because the
+THE SAME READING AS THE `57.61 A` BELOW, TO A COARSER PLACE, and it is here because the
 ledger reached it. The clause used to sit outside the literal above, so this step's whole
 prose carried a `58` nothing decided; extending the literal by four words and claiming it
 is cheaper than a rule, and it is the same measurement either way.
@@ -1949,13 +1959,13 @@ after it are about one instant: if the flag moved, both would move together.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "58.04 A at the flag, 40.31 A at 240 s, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+literal = "57.61 A at the flag, 40.04 A at 240 s, 17.41 A at 250 s, 1.98 A at 300 s, 0.108 A at 400 s"
 quantity = "i_at:235.5"
 arm = "bms off"
-value = 58.036552
+value = 57.6111645
 tol = 5e-3
 tol_from = "spelled"
-spells = "58.04"
+spells = "57.61"
 states = "same"
 read_at_s = 235.5
 note = """
@@ -1970,13 +1980,13 @@ of the same failure. These five claims are what stops a fourth.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "58.04 A at the flag, 40.31 A at 240 s, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+literal = "57.61 A at the flag, 40.04 A at 240 s, 17.41 A at 250 s, 1.98 A at 300 s, 0.108 A at 400 s"
 quantity = "i_at:240"
 arm = "bms off"
-value = 40.312736
+value = 40.0360215
 tol = 5e-3
 tol_from = "spelled"
-spells = "40.31"
+spells = "40.04"
 states = "same"
 read_at_s = 240.0
 note = """
@@ -1990,13 +2000,13 @@ after.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "58.04 A at the flag, 40.31 A at 240 s, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+literal = "57.61 A at the flag, 40.04 A at 240 s, 17.41 A at 250 s, 1.98 A at 300 s, 0.108 A at 400 s"
 quantity = "i_at:250"
 arm = "bms off"
-value = 17.026250
+value = 17.4052481
 tol = 5e-3
 tol_from = "spelled"
-spells = "17.03"
+spells = "17.41"
 states = "same"
 read_at_s = 250.0
 note = """
@@ -2007,29 +2017,29 @@ which the event fence in `every_claim_matches_the_engine` checks rather than ass
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "58.04 A at the flag, 40.31 A at 240 s, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+literal = "57.61 A at the flag, 40.04 A at 240 s, 17.41 A at 250 s, 1.98 A at 300 s, 0.108 A at 400 s"
 quantity = "i_at:300"
 arm = "bms off"
-value = 1.944105
+value = 1.98375255
 tol = 5e-3
 tol_from = "spelled"
-spells = "1.94"
+spells = "1.98"
 states = "same"
 read_at_s = 300.0
 note = """
-Tight, like the 93.29 above: 4.3e-3 of an allowed 5e-3. The sentence prints two decimals
-of a number that is falling fast, and this is what that precision is worth.
+Tight: 3.8e-3 of an allowed 5e-3. The sentence prints two decimals of a number that is
+falling fast, and this is what that precision is worth.
 """
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "58.04 A at the flag, 40.31 A at 240 s, 17.03 A at 250 s, 1.94 A at 300 s, 0.103 A at 400 s"
+literal = "57.61 A at the flag, 40.04 A at 240 s, 17.41 A at 250 s, 1.98 A at 300 s, 0.108 A at 400 s"
 quantity = "i_at:400"
 arm = "bms off"
-value = 0.103380
+value = 0.107630031
 tol = 5e-4
 tol_from = "spelled"
-spells = "0.103"
+spells = "0.108"
 states = "same"
 read_at_s = 400.0
 note = """
@@ -2039,28 +2049,29 @@ and stops mattering" is what a tenth of an amp means.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "it peaks at **376.4 K at 245.5 s**"
-quantity = "t_max_at:245.5"
+literal = "it peaks at **376.2 K at 243.0 s**"
+quantity = "t_max_at:243"
 arm = "bms off"
-value = 376.40120
+value = 376.233902
 tol = 5e-2
 tol_from = "spelled"
-spells = "376.4"
+spells = "376.2"
 states = "same"
-read_at_s = 245.5
+read_at_s = 243.0
 note = """
 THE PEAK VALUE IS CLAIMED; THE PEAK INSTANT IS NOT, and the difference is deliberate.
-The trajectory is flat across the two steps either side of it — 376.37081 K at 245.0 s
-against 376.37083 at 245.5 — so the engine's argmax is 245.5 by two parts in 10^8, and a
-reader watching a panel that prints one decimal cannot tell the two apart. Claiming the
-argmax would be pinning something no reader can check, which is the "right but
-unreachable" defect this file exists to keep out.
+Claiming the argmax would pin a step no reader watching a one-decimal panel can resolve
+when the trajectory is flat across it, which is the "right but unreachable" defect this
+file exists to keep out. So `243.0` is accounted for as this claim's read instant: we
+measured then.
 
-So `245.5` is accounted for as this claim's read instant instead: we measured then, which
-is exactly as much as the panel can support. What is NOT guarded is the peak moving to a
-different step while the reading at 245.5 stays inside 0.05 K — a hole this note names
-rather than leaves to be found. See docs/plans/path-prose-ledger.md, which recorded the
-instant as unresolved.
+WHAT IS NOT GUARDED is the peak moving to a different step while the reading here stays
+inside 0.05 K — and it has now happened once, so the hole this note used to name is not
+hypothetical. The peak was at 245.5 s until `docs/plans/end-of-step-split.md`; afterwards
+the reading at 245.5 s (376.2265 K) still sat inside this claim's tolerance of the new
+peak, and only an out-of-tree scan of the whole run found that the argmax had moved to
+243.0 s (376.2339 K). The sentence names the instant, so it was re-read by hand. See
+docs/plans/path-prose-ledger.md, which recorded the instant as unresolved.
 """
 
 [[claim]]
@@ -2068,7 +2079,7 @@ step = "nothing-to-clamp"
 literal = "is back to 362 K by 400 s"
 quantity = "t_max_at:400"
 arm = "bms off"
-value = 362.28278
+value = 362.182254
 tol = 5e-1
 tol_from = "spelled"
 spells = "362"
@@ -2079,7 +2090,7 @@ The turn-round. Nobody intervened and the pack is cooling because the current th
 heating it has nowhere left to come from. `362` prints no decimals, so the rule gives half
 a kelvin — the coarsest tolerance in this step, and the sentence's own.
 
-The `400` here is this claim's read instant. It is also the read instant of the 0.103 A
+The `400` here is this claim's read instant. It is also the read instant of the 0.108 A
 claim above, on a different sentence and therefore a different group; both are sound for
 the same reason, which the event fence checks.
 """
@@ -3368,7 +3379,7 @@ the ratio because the ratio is not on any panel.
 step = "sixty-times-the-current"
 literal = "`6.09 W` here"
 quantity = "q_gen_at"
-value = 6.08558
+value = 6.08576544
 tol = 5.0e-3
 tol_from = "spelled"
 spells = "6.09"
@@ -4520,7 +4531,7 @@ clicks Reset, so unchecking the box rebuilds the pack from the scenario and the 
 back to t = 0. The fault queue comes back with it, which is what makes this the same
 experiment as the protected arm rather than a different one.
 
-The furthest numbers on this arm — 0.103 A and 362 K — are read at 400 s, and the prose
+The furthest numbers on this arm — 0.108 A and 362 K — are read at 400 s, and the prose
 sends the reader there by describing the current rather than by naming an instant: "let it
 run on until the current is down to hundredths of an amp". It used to say "about 400 s",
 and that digit came out when this step was ledgered — nothing in the tree decides it. A tie
@@ -4776,13 +4787,13 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # The five measurements are a COST rather than a level — points of charge gone and kelvin
 # gained since the panel the reader was looking at when they pressed Run — so they are
 # read with `soc_lost_pts_at` and `t_rise_k_at`, both differences from the zero-length
-# probe. Claiming the levels instead (89.44 %, 316.85 K) would be claiming numbers this
+# probe. Claiming the levels instead (89.45 %, and a temperature) would be claiming numbers this
 # sentence does not print.
 
 [[arm]]
 step = "one-step-that-got-through"
 name = "dt 10"
-instruction = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 21 K hotter instead of 1."
+instruction = "0.55 points at 0.5 s, **5.25 at 5 s**, 10.04 at 10 s, where the cell ends 17 K hotter instead of 1."
 start = "restart"
 dt = 10.0
 actions = [{ do = "run", to_s = 90.0 }]
@@ -4803,16 +4814,16 @@ at 60 s lands on the seventh.
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 21 K hotter instead of 1"
+literal = "0.55 points at 0.5 s, **5.25 at 5 s**, 10.04 at 10 s, where the cell ends 17 K hotter instead of 1"
 quantity = "soc_lost_pts_at"
-value = 0.55719
+value = 0.553379168
 tol = 5e-3
 tol_from = "spelled"
-spells = "0.56"
+spells = "0.55"
 states = "same"
 read_at_s = 90.0
 note = """
-The step's own run, and the number the earlier sentence states as "90.00 % ... 89.44 %".
+The step's own run, and the number the earlier sentence states as "90.00 % ... 89.45 %".
 This claim is the same fact read as the difference the headline prints, which is why it
 is `soc_lost_pts_at` and not a second `soc_at`.
 
@@ -4823,9 +4834,9 @@ to account the sentence's `10` off the wrong field.
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 21 K hotter instead of 1"
+literal = "0.55 points at 0.5 s, **5.25 at 5 s**, 10.04 at 10 s, where the cell ends 17 K hotter instead of 1"
 quantity = "t_rise_k_at:90"
-value = 0.930375
+value = 0.917487132
 tol = 5e-3
 tol_from = "tighter"
 spells = "1"
@@ -4836,74 +4847,80 @@ note = """
 this is the variant's clearest use in the file: the sentence rounds to a whole kelvin, so
 its own rule is half a kelvin, and a claim carrying that tolerance would sit green through
 half a kelvin of drift on a quantity printed to five decimals. The rule still decides
-whether the PROSE is right (0.930375 against 1 is inside 0.5); `tol` decides whether the
+whether the PROSE is right (0.917487 against 1 is inside 0.5); `tol` decides whether the
 ENGINE moved.
 
 Note this is the rise at the mark, not the peak. The step's other temperature sentence —
-"0.97 K, is the whole cost of a dead short" — is the same trajectory read at 60.5 s, where
+"0.95 K, is the whole cost of a dead short" — is the same trajectory read at 60.5 s, where
 the tooth has just landed. Both are true and they are not the same number.
 """
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 21 K hotter instead of 1"
+literal = "0.55 points at 0.5 s, **5.25 at 5 s**, 10.04 at 10 s, where the cell ends 17 K hotter instead of 1"
 quantity = "soc_lost_pts_at"
 arm = "dt 5"
-value = 5.57188
+value = 5.24808802
 tol = 5e-3
 tol_from = "spelled"
-spells = "5.57"
+spells = "5.25"
 states = "same"
 read_at_s = 90.0
 note = """
-Ten times the step length, ten times the damage, to three digits: 0.55719 against 5.57188
-is a factor of 10.0000, because the spike is the same 183.84 A and it is held for ten
-times as long. That proportionality is the sentence's whole argument and it is now two
-claims rather than a sentence.
+Ten times the step length and NOT quite ten times the damage: 0.55338 against 5.24809 is
+9.48x. The sentence says "nearly, not exactly, in proportion", and these two claims are
+what hold it to that.
+
+It was 10.0000x to three digits until `docs/plans/end-of-step-split.md`, because the spike
+was the same 183.84 A at both step lengths and was held for ten times as long. That exact
+proportionality was the start-of-step solve's, not the cell's: the tooth at dt = 5 is now
+the smaller one (173.16 A), for the reason the `dt 5` spike claim gives.
 """
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 21 K hotter instead of 1"
+literal = "0.55 points at 0.5 s, **5.25 at 5 s**, 10.04 at 10 s, where the cell ends 17 K hotter instead of 1"
 quantity = "soc_lost_pts_at"
 arm = "dt 10"
-value = 11.14376
+value = 10.0410221
 tol = 5e-3
 tol_from = "spelled"
-spells = "11.14"
+spells = "10.04"
 states = "same"
 read_at_s = 90.0
 note = """
-And twenty times, on the arm this slice built. 11.14376 is 2.0000x the `dt 5` arm's
-5.57188 — the proportionality holds across both doublings, which is more than the
-sentence claims and is worth having on the record.
+And twenty times the step length, on the arm this slice built. 10.04102 is 1.91x the
+`dt 5` arm's 5.24809 and 18.1x the base run's 0.55338: the shortfall grows as the step
+does, because the longer the step the more of the sag the RC pairs take back within it.
+Until `docs/plans/end-of-step-split.md` this read 11.14376, exactly 2.0000x — the
+start-of-step solve holding its first instant's current for the whole step.
 """
 
 [[claim]]
 step = "one-step-that-got-through"
-literal = "0.56 points at 0.5 s, **5.57 at 5 s**, 11.14 at 10 s, where the cell ends 21 K hotter instead of 1"
+literal = "0.55 points at 0.5 s, **5.25 at 5 s**, 10.04 at 10 s, where the cell ends 17 K hotter instead of 1"
 quantity = "t_rise_k_at"
 arm = "dt 10"
-value = 20.606911
+value = 16.6751454
 tol = 5e-3
 tol_from = "tighter"
-spells = "21"
+spells = "17"
 states = "same"
 read_at_s = 90.0
 note = """
-"21 K hotter" is the TEN-second arm, not the five-second one, and the sentence does not
+"17 K hotter" is the TEN-second arm, not the five-second one, and the sentence does not
 say so in words — the clause attaches to the last number before it. Measured: the `dt 10`
-arm ends 20.61 K up, the `dt 5` arm 9.81 K, the base 0.93 K. Only one of the three rounds
-to 21, so the reading is forced rather than chosen.
+arm ends 16.68 K up and the base 0.92 K; the `dt 5` arm is not claimed. It read "21 K"
+until `docs/plans/end-of-step-split.md` (20.61 K), for the reason the charge claims above
+give.
 
 `tighter` for the same reason its sibling above is, and here the gap is wider: the
-sentence's own rule is half a kelvin and the engine misses the round number by 0.39 K.
+sentence's own rule is half a kelvin and the engine misses the round number by 0.32 K.
 That is a hedge the rule licenses and `tol` does not.
 
-Note the heat is NOT proportional to the step length the way the charge is. Twenty times
-the damage is twenty times 0.92 K only if nothing cools in between, and 18.70 against
-0.92 is 20.2x — close, because 90 s is short against this pack's thermal time constant,
-and not exact, which is the physics rather than a rounding.
+Note the heat is not proportional to the step length either: 16.68 K against the base
+run's 0.92 K is 18.2x at twenty times the step length — short of twenty for the same reason
+the charge is, and a little further short because the pack cools in between.
 """
 
 # --- step 7: the same demand with nothing watching ---------------------------------
@@ -4935,57 +4952,57 @@ and not exact, which is the physics rather than a rounding.
 
 [[claim]]
 step = "protection-off"
-literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **335.0 s**, when the weakest group reaches **1.9731 V** and the pack still shows 3.7 % charge"
+literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **334.5 s**, when the weakest group reaches **1.9908 V** and the pack still shows 3.9 % charge"
 quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
-value = 335.0
+value = 334.5
 tol = 0.05
 tol_from = "spelled"
-spells = "335.0"
+spells = "334.5"
 states = "same"
-read_at_s = 335.0
+read_at_s = 334.5
 note = """
 The flag CLAUDE.md's eighth principle is about, arriving from the solved voltages rather
 than from any sensor. `spelled` rather than `grid` even though this is a grid time: the
-sentence prints 335.0 to a tenth, and half a tenth is five times tighter than half a
+sentence prints 334.5 to a tenth, and half a tenth is five times tighter than half a
 0.5 s step, so the sentence's own rule is the binding one.
 """
 
 [[claim]]
 step = "protection-off"
-literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **335.0 s**, when the weakest group reaches **1.9731 V** and the pack still shows 3.7 % charge"
+literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **334.5 s**, when the weakest group reaches **1.9908 V** and the pack still shows 3.9 % charge"
 quantity = "v_cell_min_at"
-value = 1.973068
+value = 1.99075816
 tol = 5e-5
 tol_from = "spelled"
-spells = "1.9731"
+spells = "1.9908"
 states = "same"
-read_at_s = 335.0
+read_at_s = 334.5
 display = "cell v"
-shows = "1.973 / 2.225 V"
+shows = "1.991 / 2.232 V"
 note = """
 "The weakest group" is `v_cell_min`, and on this pack the two words are one number: every
 cell in a parallel group sits at the group's node voltage, so the minimum over cells and
 the minimum over groups are the same read.
 
 The display half is asserted without `quoted`, because the sentence gives the number to
-four decimals and the row prints three. A reader looking at `cell v` sees `1.973`, and
-the sentence's `1.9731` is the engine's number rather than the panel's — which is allowed,
+four decimals and the row prints three. A reader looking at `cell v` sees `1.991`, and
+the sentence's `1.9908` is the engine's number rather than the panel's — which is allowed,
 and is the reason both halves are here.
 """
 
 [[claim]]
 step = "protection-off"
-literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **335.0 s**, when the weakest group reaches **1.9731 V** and the pack still shows 3.7 % charge"
+literal = "`OPERATING_POINT_OUT_OF_WINDOW` comes first, at **334.5 s**, when the weakest group reaches **1.9908 V** and the pack still shows 3.9 % charge"
 quantity = "soc_at"
-value = 0.037452
+value = 0.0386656763
 tol = 5e-4
 tol_from = "spelled"
-spells = "3.7"
+spells = "3.9"
 spells_pow10 = 2
 states = "same"
-read_at_s = 335.0
+read_at_s = 334.5
 display = "soc (true)"
-shows = "3.7 %"
+shows = "3.9 %"
 quoted = true
 note = """
 "still shows 3.7 % charge" — a sentence that tells the reader what the row reads, so the
@@ -4996,7 +5013,7 @@ narrowest margin of the three numbers on this sentence.
 
 [[claim]]
 step = "protection-off"
-literal = "`SOC_CLAMPED_LOW` follows ten seconds later at **345.0 s**"
+literal = "`SOC_CLAMPED_LOW` follows at **345.0 s**"
 quantity = "flag_first_s:SOC_CLAMPED_LOW"
 value = 345.0
 tol = 0.05
@@ -5005,16 +5022,17 @@ spells = "345.0"
 states = "same"
 read_at_s = 345.0
 note = """
-The coulomb counter reaching its floor, ten seconds after the voltage said so. "ten
-seconds later" is a word rather than a digit, so the scan does not see it; the two flag
-claims either side of it are what make the arithmetic checkable at all.
+The coulomb counter reaching its floor, 10.5 s after the voltage said so. The sentence
+said "ten seconds later", in words, until `docs/plans/end-of-step-split.md` moved the
+window flag half a step earlier. It says no gap now: both instants are printed and
+claimed, and a reader who wants the difference has both ends of it.
 """
 
 [[claim]]
 step = "protection-off"
 literal = "the pack terminal reads **−2.6355 V**"
 quantity = "v_at"
-value = -2.635467
+value = -2.63547025
 tol = 5e-5
 tol_from = "spelled"
 spells = "-2.6355"
@@ -5027,7 +5045,7 @@ A pack at a negative terminal voltage: the load has stopped being a load and is 
 the pack backwards. Four groups each about -0.66 V, summing to -2.64.
 
 Not `quoted` — the sentence prints four decimals and the row three, the same split as the
-1.9731 V claim above. Worth noticing that the row's `-2.635` is a truncation of what the
+1.9908 V claim above. Worth noticing that the row's `-2.635` is a truncation of what the
 sentence says rather than a rounding of it: -2.635467 rounds to -2.635, and the prose's
 -2.6355 is the engine's own number one place further out.
 """
@@ -5036,7 +5054,7 @@ sentence says rather than a rounding of it: -2.635467 rounds to -2.635, and the 
 step = "protection-off"
 literal = "with every cell between −0.671 and −0.651 V"
 quantity = "v_cell_min_at"
-value = -0.671305
+value = -0.671305359
 tol = 5e-4
 tol_from = "spelled"
 spells = "-0.671"
@@ -5054,7 +5072,7 @@ to the digit, so the panel really does read what the reader is told.
 step = "protection-off"
 literal = "with every cell between −0.671 and −0.651 V"
 quantity = "v_cell_max_at"
-value = -0.650910
+value = -0.650910845
 tol = 5e-4
 tol_from = "spelled"
 spells = "-0.651"
@@ -5071,7 +5089,7 @@ capacity scatter of step 3 arriving where it does the most damage.
 step = "protection-off"
 literal = "the eight cells sit between **23.5 and 27.8 points** of charge past empty"
 quantity = "deficit_pts_min_at"
-value = 23.548131
+value = 23.5492822
 tol = 0.05
 tol_from = "spelled"
 spells = "23.5"
@@ -5092,7 +5110,7 @@ own last place.
 step = "protection-off"
 literal = "the eight cells sit between **23.5 and 27.8 points** of charge past empty"
 quantity = "deficit_pts_at"
-value = 27.837769
+value = 27.8360079
 tol = 0.05
 tol_from = "spelled"
 spells = "27.8"
@@ -5291,14 +5309,14 @@ its own quantity.
 step = "nothing-to-clamp"
 literal = "93 amps on the first frame after the fault"
 quantity = "i_at"
-value = 93.285601
+value = 92.9609485
 tol = 0.5
 tol_from = "spelled"
 spells = "93"
 states = "same"
 read_at_s = 60.5
 note = """
-THE SAME FRAME AS THE `93.29 A` ON THE `bms off` ARM, AND THE SAME NUMBER — which is what
+THE SAME FRAME AS THE `92.96 A` ON THE `bms off` ARM, AND THE SAME NUMBER — which is what
 "the trajectory is identical" says further down, asserted here from the other side. The
 protected pack and the unprotected one are one pack until the BMS acts, so this claim and
 that one must never part; if they did, one of the two runs would have started differently
@@ -5314,7 +5332,7 @@ on the plateau" is not an answer a reader can check.
 step = "nothing-to-clamp"
 literal = "the current has settled to 86 and the groups have sagged to 2.13 V"
 quantity = "i_at"
-value = 85.893252
+value = 85.8860659
 tol = 0.5
 tol_from = "spelled"
 spells = "86"
@@ -5336,7 +5354,7 @@ the contactor opens.
 step = "nothing-to-clamp"
 literal = "the current has settled to 86 and the groups have sagged to 2.13 V"
 quantity = "v_cell_min_at"
-value = 2.132323
+value = 2.13251213
 tol = 5e-3
 tol_from = "spelled"
 spells = "2.13"
@@ -5345,13 +5363,14 @@ read_at_s = 133.5
 note = """
 THE NUMBER THE STEP'S SECOND PARAGRAPH IS ABOUT: the sag that is not deep enough for the
 hard rung. `v_min` is 2.00 V in this chemistry and the hard margin is 0.15 V, so the
-under-voltage rung sits at 1.85 V — the twin reaches 1.3337 V in one step and trips; this
+under-voltage rung sits at 1.85 V — the twin reaches 1.3470 V in one step and trips; this
 one never gets within a quarter of a volt of it.
 
 `v_cell_min_at` is a per-GROUP reading, which is what the sentence says: the BMS sees one
 voltage per parallel group and nothing finer. Two decimals spell 5 mV of tolerance and the
-engine is 2.3 mV away — the group voltage is still falling here (2.1364 at 120 s, 2.1090 at
-150), so this too is a reading at an instant rather than a level.
+engine is 2.5 mV away — the group voltage is still falling here (2.1364 at 120 s, 2.1090 at
+150, measured before `docs/plans/end-of-step-split.md` moved them slightly), so this too is
+a reading at an instant rather than a level.
 """
 
 [[claim]]
@@ -5380,7 +5399,7 @@ doing, so the digit moved rather than the tolerance.
 step = "nothing-to-clamp"
 literal = "The first thing the BMS says is `OT` at t = 133.5 s, by which point the pack is already at 51 %"
 quantity = "soc_at"
-value = 0.510137
+value = 0.510520839
 tol = 5e-3
 tol_from = "spelled"
 spells = "51"
@@ -5388,7 +5407,7 @@ spells_pow10 = 2
 states = "same"
 read_at_s = 133.5
 display = "soc (true)"
-shows = "51.0 %"
+shows = "51.1 %"
 note = """
 Half the pack's charge gone into a short nobody asked for, before anything was said. Not
 `quoted`: the sentence writes `51 %` and the row prints `51.0 %`.
@@ -5406,7 +5425,7 @@ states = "same"
 read_at_s = 156.0
 note = """
 THE LITERAL IS A FRAGMENT OF ITS SENTENCE, AND IT HAS TO STAY ONE. The sentence continues
-", 96 s after the short, at **39.62 %**", and that 96 is a subtraction: this claim's own
+", 96 s after the short, at **39.66 %**", and that 96 is a subtraction: this claim's own
 instant less the instant the fault lands. When the step was ledgered it became a rule —
 `Tie::Difference` over this claim and `faults.*.at_s` — which means 96 is now accounted for
 TWICE if either literal grows to cover it, and the ledger panics on exactly that. So the
@@ -5418,17 +5437,17 @@ groups and neither knows about the other.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "at **39.62 %**"
+literal = "at **39.66 %**"
 quantity = "soc_at"
-value = 0.396172
+value = 0.396568879
 tol = 5e-5
 tol_from = "spelled"
-spells = "39.62"
+spells = "39.66"
 spells_pow10 = 2
 states = "same"
 read_at_s = 156.0
 display = "soc (true)"
-shows = "39.6 %"
+shows = "39.7 %"
 note = """
 Where the charge stops falling, because the contactor is finally open. Not `quoted` — the
 sentence gives two decimals and the row prints one.
@@ -5438,7 +5457,7 @@ sentence gives two decimals and the row prints one.
 step = "nothing-to-clamp"
 literal = "this fault costs **50 points**"
 quantity = "soc_lost_pts_at"
-value = 50.3828
+value = 50.3431121
 tol = 0.5
 tol_from = "spelled"
 spells = "50"
@@ -5446,8 +5465,8 @@ states = "same"
 read_at_s = 156.0
 note = """
 The second word numeral in the file, and the second sentence to state a COST rather than a
-level: 90.00 % at the probe against 39.62 % when the contactor opens. A word commits to no
-decimal place, so the rule is half a point — which 50.3811 clears comfortably, and which
+level: 90.00 % at the probe against 39.66 % when the contactor opens. A word commits to no
+decimal place, so the rule is half a point — which 50.3431 clears comfortably, and which
 is as much precision as "fifty points" asks for.
 
 The other half of the contrast USED TO read "against the twin's half a percent", and this
@@ -5455,18 +5474,20 @@ note used to end "the twin's half a percent is step 18's 0.55719, which is claim
 a figure written down in prose beside a claim, and compared with the twin by nobody. Opening
 the word scan on this step is what turned that into a question: 0.55719 rounds to 0.6 at the
 one decimal place the word "half" commits to, so the sentence was wrong as well as unchecked.
-It reads "0.56 points" now, tied by a ledger rule to step 18's own claim, which puts the two
-shorts' costs in the same unit and makes the contrast a subtraction the reader can do.
+It read "0.56 points", tied by a ledger rule to step 18's own claim, until
+`docs/plans/end-of-step-split.md` moved that claim to 0.55338; it reads "0.55 points" now,
+through the same rule, which puts the two shorts' costs in the same unit and makes the
+contrast a subtraction the reader can do.
 """
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "the cell that is genuinely hottest is at 344.56 K when it fires, so protection is late by 1.3 K of somebody else's temperature"
+literal = "the cell that is genuinely hottest is at 344.50 K when it fires, so protection is late by 1.3 K of somebody else's temperature"
 quantity = "t_max_at"
-value = 344.564973
+value = 344.495852
 tol = 5e-3
 tol_from = "spelled"
-spells = "344.56"
+spells = "344.50"
 states = "same"
 read_at_s = 156.0
 note = """
@@ -5502,9 +5523,9 @@ the prose is right and the reconstruction is what is wrong.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "the cell that is genuinely hottest is at 344.56 K when it fires, so protection is late by 1.3 K of somebody else's temperature"
+literal = "the cell that is genuinely hottest is at 344.50 K when it fires, so protection is late by 1.3 K of somebody else's temperature"
 quantity = "t_gap_k_at"
-value = -1.316314
+value = -1.31333224
 tol = 5e-2
 tol_from = "spelled"
 spells = "1.3"
@@ -5513,8 +5534,9 @@ read_at_s = 156.0
 note = """
 THE FIRST CLAIM IN THIS FILE THAT READS A SENSOR RATHER THAN THE TRUTH, and the sentence it
 settles is the one CLAUDE.md's eighth principle is about: the BMS acts on what it measured,
-and what it measured is not what is so. Belief minus truth — 343.24866 K at the hottest
-probe against 344.56497 K at the hottest cell — so the value is negative and the sentence
+and what it measured is not what is so. Belief minus truth — about 343.18 K at the hottest
+probe against 344.49585 K at the hottest cell (343.24866 against 344.56497 before
+`docs/plans/end-of-step-split.md`) — so the value is negative and the sentence
 prints the magnitude with the sign in the word *late*, which is `magnitude`.
 
 WHICH FRAME, AND WHY THE NUMBER CANNOT SAY. Three readings were measured before this was
@@ -5544,20 +5566,20 @@ claim that gains a display.
 
 [[claim]]
 step = "nothing-to-clamp"
-literal = "the pack peaks at 344.6 K here"
+literal = "the pack peaks at 344.5 K here"
 quantity = "t_max_at"
-value = 344.593610
+value = 344.524412
 tol = 5e-3
 tol_from = "tighter"
-spells = "344.6"
+spells = "344.5"
 states = "same"
 read_at_s = 155.5
 note = """
 A READ INSTANT, NOT AN ARGMAX, and the distinction is the one `docs/plans/path-arms.md`
-drew for the twin's 376.4 K peak. This file has no quantity for "the largest value over
+drew for the twin's 376.2 K peak. This file has no quantity for "the largest value over
 the run", and inventing one would pin the step the maximum lands on — which a panel
 printing one decimal cannot resolve when the trajectory is flat across two steps. What is
-claimed is that the hottest cell reads 344.55 K half a second before the contactor opens,
+claimed is that the hottest cell reads 344.52 K half a second before the contactor opens,
 which is what the reader can check.
 
 WHAT IS NOT GUARDED: the peak moving to a different step while the reading here stays put.
@@ -6021,7 +6043,7 @@ reader does and this file does not check.
 step = "what-protection-costs"
 literal = "the charge stops at **94.9 %**"
 quantity = "soc_at:3986"
-value = 0.94876
+value = 0.948764412
 tol = 5e-4
 tol_from = "spelled"
 spells = "94.9"
@@ -6049,7 +6071,7 @@ step = "what-protection-costs"
 literal = "the same pack runs on to **99.5 %**"
 quantity = "soc_at:4820"
 arm = "unprotected"
-value = 0.995223
+value = 0.995216046
 tol = 5e-4
 tol_from = "spelled"
 spells = "99.5"
@@ -6105,7 +6127,7 @@ step = "what-protection-costs"
 literal = "it is still pushing 2.1 A at 4100 s"
 quantity = "i_at"
 arm = "unprotected"
-value = -2.0754
+value = -2.07447814
 tol = 0.05
 tol_from = "spelled"
 spells = "2.1"
@@ -6129,7 +6151,7 @@ rendering nothing checks.
 step = "what-protection-costs"
 literal = "the pack is at 16.775 V"
 quantity = "v_at:3985.5"
-value = 16.77506
+value = 16.7750573
 tol = 5e-4
 tol_from = "spelled"
 spells = "16.775"
@@ -6150,7 +6172,7 @@ before the trip rather than the one after it"), and gives 24.9 mV where the sent
 step = "what-protection-costs"
 literal = "only 25 mV short"
 quantity = "v_below_cccv_target_mv_at:3985.5"
-value = 24.942
+value = 24.9427018
 tol = 0.5
 tol_from = "spelled"
 spells = "25"
@@ -6175,7 +6197,7 @@ No `display`: the page prints the two voltages, never the gap.
 step = "what-protection-costs"
 literal = "spread over 11 mV"
 quantity = "v_cell_spread_mv_at:3985.5"
-value = 11.023
+value = 11.0231999
 tol = 0.5
 tol_from = "spelled"
 spells = "11"
@@ -6207,7 +6229,7 @@ first if the trajectory ever shifts.
 step = "what-protection-costs"
 literal = "The 130 mV gap you see"
 quantity = "v_below_cccv_target_mv_at:3986"
-value = 130.188
+value = 130.18823
 tol = 0.5
 tol_from = "spelled"
 spells = "130"
@@ -7093,7 +7115,7 @@ this claim's own `read_at_s`, so it cannot become a second address for a differe
 step = "two-legs"
 literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
 quantity = "i_at:5700"
-value = -0.653487
+value = -0.653444921
 tol = 5e-3
 tol_from = "spelled"
 spells = "0.65"
@@ -7112,7 +7134,7 @@ sentence is now talking about how much.
 step = "two-legs"
 literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
 quantity = "i_at:6000"
-value = -0.274678
+value = -0.274834701
 tol = 5e-3
 tol_from = "spelled"
 spells = "0.27"
@@ -7169,7 +7191,7 @@ that the checked statement is this claim being here.
 step = "two-legs"
 literal = "0.65 A at 5700 s, 0.27 A at 6000 — and it stops at 6210 s and 99.5 %"
 quantity = "soc_at:6210"
-value = 0.99519515
+value = 0.995186752
 tol = 5e-4
 tol_from = "spelled"
 spells = "99.5"
@@ -8267,12 +8289,6 @@ phrase = "half-point"
 step = "belief-drifts"
 phrase = "ten minutes"
 
-# protection-off — 1: the gap between the under-voltage flag and the charge-clamp flag, both of which
-# this step already claims. A difference of two instants, so it is a rule away.
-[[english]]
-step = "protection-off"
-phrase = "ten seconds"
-
 # particle-remembers — 4: the pulse program's two legs, said in words, and a count of the pulses in the
 # run. The legs are a control each; the count is the run length over the period.
 [[english]]
@@ -8666,7 +8682,7 @@ an ohmic drop that vanishes with the current.
 [[arm]]
 step = "cold-and-nothing-plates"
 name = "run-on"
-instruction = "Run on past the mark and a flag does arrive, at 603.0 s"
+instruction = "Run on past the mark and a flag does arrive, at 602.5 s"
 start = "mark"
 actions = [{ do = "run", to_s = 660.0 }]
 note = """
@@ -8734,8 +8750,8 @@ shows = "2.747 V"
 quoted = true
 note = """
 Three millivolts under this chemistry's 2.75 V ceiling, which is why the flag column is
-still empty at the mark and why it is not empty three seconds later. That margin is what
-makes the mark a choice worth stating: at 603.0 s this same run raises
+still empty at the mark and why it is not empty two and a half seconds later. That margin
+is what makes the mark a choice worth stating: at 602.5 s this same run raises
 OPERATING_POINT_OUT_OF_WINDOW, and the `run-on` arm is where that is claimed.
 """
 
@@ -8743,7 +8759,7 @@ OPERATING_POINT_OUT_OF_WINDOW, and the `run-on` arm is where that is claimed.
 step = "cold-and-nothing-plates"
 literal = "`heat` reads **`22.28 W`**"
 quantity = "q_gen_at"
-value = 22.2845057283
+value = 22.2845058
 tol = 5.0e-3
 tol_from = "spelled"
 spells = "22.28"
@@ -8786,14 +8802,14 @@ against the sentence's 100.00, which agree to the two places the row prints.
 [[claim]]
 step = "cold-and-nothing-plates"
 arm = "run-on"
-literal = "a flag does arrive, at 603.0 s"
+literal = "a flag does arrive, at 602.5 s"
 quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
-value = 603.0
+value = 602.5
 tol = 5.0e-2
 tol_from = "spelled"
-spells = "603.0"
+spells = "602.5"
 states = "same"
-read_at_s = 603.0
+read_at_s = 602.5
 note = """
 The first limit this cell meets, and the point of the sentence is WHICH limit it is. The
 terminal crosses 2.75 V here; PLATING_RISK is not raised at this instant or at any other on
@@ -8829,16 +8845,16 @@ half-step tolerance `grid` gives is the tightest bound a flag time admits anyway
 [[claim]]
 step = "cold-and-nothing-plates"
 arm = "nmc-in-the-cold"
-literal = "by 5.0 s the terminal is over"
+literal = "by 4.5 s the terminal is over"
 quantity = "flag_first_s:OPERATING_POINT_OUT_OF_WINDOW"
-value = 5.0
+value = 4.5
 tol = 5.0e-2
 tol_from = "spelled"
-spells = "5.0"
+spells = "4.5"
 states = "same"
-read_at_s = 5.0
+read_at_s = 4.5
 note = """
-The same flag the LTO run takes 603.0 s to reach, here in five seconds - because a cold
+The same flag the LTO run takes 602.5 s to reach, here in four and a half seconds - because a cold
 graphite cell's resistance puts the terminal over its ceiling almost at once. Two flags on
 one arm and only one of them on the other, which is what the comparison is made of.
 """
@@ -10374,14 +10390,17 @@ unledgered = [
 # steps holding one join the scan. The list holds twenty-three steps now.
 #
 # THE ENTRIES DO NOT ALL SAY THE SAME THING, and the split is a result rather than a gap:
-# fifteen of them read nothing at all. Those are the steps whose English quantities had been
-# read and tied to something; the digits rule rewrote all twenty-nine of them into digits, so
-# the word scan ran over those steps and found nothing left to account for. What ties those
+# sixteen of them read nothing at all. Fifteen are the steps whose English quantities had
+# been read and tied to something; the digits rule rewrote all twenty-nine of them into
+# digits, so the word scan ran over those steps and found nothing left to account for. The
+# sixteenth is `protection-off`, whose one spelled quantity — "ten seconds" between its two
+# flags — stopped being true when `docs/plans/end-of-step-split.md` moved the first flag
+# half a step earlier, and was dropped rather than respelled. What ties those
 # quantities today is the ordinary digit ledger, which has covered all thirty-two steps since
 # before this list existed.
 #
 # THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the two batches after it were one
-# step and then two. The eight steps that read something carry thirty-two spelled quantities
+# step and then two. The seven steps that read something carry thirty-one spelled quantities
 # between them, and they are the first this vocabulary has ever accounted for:
 # until the third batch landed, every rule in the table read a token written in digits, so
 # the spelled branch of `ledger_numbers` was wired up path-wide and reading nothing. A green
@@ -10416,7 +10435,8 @@ spelled = [
                                      # phrase would have been read on both sides
   "belief-drifts",               # 1 - the run's own length, the first spelled quantity
                                  #     any vocabulary rule in this repo accounted for
-  "protection-off",              # 1 - the gap between its two flags
+  "protection-off",              # 0 (1) - the gap between its two flags, dropped when
+                                 #     it stopped being ten seconds
   "looks-fine-from-outside",     # 2 - the continuation's clock in minutes, and the rate
                                  #     as a multiple of the hour rate rather than in C
   "particle-remembers",          # 4 - the pulse program three times over, and how many

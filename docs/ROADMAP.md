@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
 Phases 0–8 are complete and each is pinned by a committed test (see the README's status
-table). A hundred and two design notes under `docs/plans/` record what each slice measured,
+table). A hundred and five design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -220,8 +220,16 @@ where the rest-OCV gate refused to correct.
 
 **Cost.** One slice; the BMS tests gain a control arm per estimator.
 
-### H8. The pack solve has three named soft spots
+### H8. The pack solve has four named soft spots
 
+* **An `Spm` pack diverges at a long step** — a scattered 1S3P LG M50 read −3.7e28 V and
+  negative absolute temperatures by its fifth one-hour step (`end-of-step-split.md`). The
+  equivalent circuit had the same defect and no longer does: its source is now the
+  end-of-step line, which is backward Euler on the cells' coupling. The `Spm`'s tangent is
+  still a start-of-step readout, so its parallel split and a voltage hold are still
+  explicit. The `Dfn` never had it — its `probe_at` is a backward-Euler solve. The fix is
+  the same idea as the ECM's, an `Spm` tangent taken over the step, and it is the next
+  slice.
 * **11 of 810 in-window solves stay unconverged** on a scattered 1S3P SPM holding a
   voltage on its own knee (`voltage-target-blowup.md`); bracketing was declined because the
   residual is not a scalar monotone one.
@@ -251,6 +259,14 @@ instruction); consume the DFN's converged probe (a slice, threaded through
 interleaved null. Do not touch the reciprocal-multiply item: it is not bit-identical and
 was declined for that.
 
+**Since 2026-09-23 the features-off figure is probably over the line.** The end-of-step
+split (`end-of-step-split.md`) added a pass over every cell and an OCV-segment search per
+cell, and measured new/old at **1.08** on `100S10P/current` (1.07–1.25 across the cases).
+That was an *ungated* ratio — two processes outside the session held the machine at ~60 %
+CPU and the quiet gate never passed — so the ≈ 51 µs it implies is a projection, not a
+reading. The search is the obvious saving: the reporting pass already brackets every
+cell's OCV and could hand the next step its slope, as it already hands it its source.
+
 ### H10. Smaller physics items, each one slice or less
 
 | item | note | cost |
@@ -262,7 +278,7 @@ was declined for that.
 | NiMH `[hysteresis]` is one width; lead-acid has no `[hysteresis]` | `phase-8-slice-c-hysteresis.md` | data (H3) — the table exists since v20 |
 | Mixed ECM/SPM packs are unrepresentable though the solve is mixed-ready | `phase-6-porous-electrodes.md` | config surface + the `soc_true` question |
 | BMS protection overshoot scales with `dt` because the sample rate is `dt` | `phase-2-thermal-bms.md` | accepted; document on the config |
-| ~~Heat generation is held constant across a step, so a day-long step burns the day at the heat of its first instant — **measured at 6.6 K of a 20 K rise**~~ — **half closed 2026-09-08.** The thermal network integrates the exact step mean of the RC overpotentials, and the same day-long comparison now agrees to 1.5 mK with no warm-up. What is left is the *reported* pair: `q_gen_w` and the terminal voltage a client integrates are still both left-rectangle values from the same instant | `step-mean-heat.md` | the remaining half is one slice: a mean terminal voltage on `Telemetry` beside the mean heat, which is where the ledger question the row used to describe actually lives |
+| ~~Heat generation is held constant across a step, so a day-long step burns the day at the heat of its first instant — **measured at 6.6 K of a 20 K rise**~~ — **closed as a ledger 2026-09-23.** The thermal network integrates the exact step mean (`step-mean-heat.md`), and the *reported* pair — `q_gen_w` and `v_terminal` — is now the step's last instant on both sides, which closes the energy ledger step by step with no lag (`end-of-step-split.md`). A step-*mean* pair was the plan and was not built: the measurement for it found the parallel-group divergence instead, and once the split equalises end-of-step voltages the end is the one instant with a single node voltage. What is left is only that `q_gen_w · dt` is not the heat the pack absorbed at a coarse `dt` | `step-mean-heat.md`, `end-of-step-split.md` | a mean pair on `Telemetry` if a client ever needs it; it needs a current-weighted group mean, and at rest with circulating cells that has no voltage to divide by |
 | Snapshot body at 100S10P ≈ 600 KB is poor for a socket frame | `phase-4-server-wasm.md` | `Content-Encoding` on REST if it ever bites |
 
 ---
@@ -371,3 +387,4 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | the step-19 wedge | `surface-vs-bulk.md` | `path-wedge.md` (a renderer crash, not a lesson) |
 | no per-cell current accessor | `phase-6-porous-electrodes.md` | `per-cell-current.md` (`CellView::current_a`, no snapshot bump) |
 | thermal integration invalid above a 1.7-hour step (H6) | `phase-2-thermal-bms.md` | `thermal-implicit-integrator.md` (backward Euler above the gate, no snapshot bump) |
+| ECM parallel groups and voltage holds diverge past a few hundred seconds of `dt` (11 000 K at an hour) | `end-of-step-split.md` (found measuring H10) | `end-of-step-split.md` (end-of-step sources, no snapshot bump; the `Spm` half is open under H8) |

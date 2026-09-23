@@ -11,10 +11,10 @@
 //!
 //! The correction is the exact step mean of the RC overpotentials — see
 //! [`sim_core::ecm::rc_step_mean_excess_v`] — and it is handed to the thermal network
-//! **only**. `Telemetry::q_gen_w` still reports the start-of-step instant, which is what
-//! keeps it the exact partner of the start-of-step terminal voltage in the pack energy
-//! ledger; the last test in this file pins that deliberately, so that moving one without
-//! the other cannot happen quietly.
+//! **only**. `Telemetry::q_gen_w` reports an instant, not the mean: since
+//! `docs/plans/end-of-step-split.md` it is the step's *last* instant, the exact partner
+//! of the end-of-step terminal voltage in the pack energy ledger. The last test in this
+//! file pins that, and pins that the mean the network integrated is neither end.
 //!
 //! Every pack here is **1S1P**, which is what makes the assertions analytic rather than
 //! fitted: a lone cell has no neighbour, so its node conductance is exactly `hA` and its
@@ -317,37 +317,43 @@ fn a_zero_length_step_still_moves_no_temperature() {
     assert_eq!(before.to_bits(), after.to_bits(), "{before} K -> {after} K");
 }
 
-/// **The deferral, pinned.** `q_gen_w` is still the start-of-step instant, and after a
-/// coarse step the pack is warmer than that number can account for.
+/// **What `q_gen_w` reports: the end of the step, and neither end is what the pack
+/// absorbed.**
 ///
-/// This is deliberate rather than overlooked: `q_gen_w` and the terminal voltage a client
-/// integrates are both left-rectangle values from the same instant, which is what makes
-/// `properties.rs::electrical_and_heat_energy_balance` close to rounding rather than to a
-/// tolerance. Moving one and not the other opens that ledger. The next slice is where the
-/// pair moves together; until it does, this test is what says so out loud — it fails the
-/// moment someone reports the mean heat without reporting a mean voltage beside it.
+/// This test used to pin the *start* of the step, and it said the pair had to move
+/// together or not at all: `q_gen_w` and the terminal voltage a client integrates are the
+/// two halves of one energy ledger. They moved together in
+/// `docs/plans/end-of-step-split.md`, and to the **end** of the step rather than to its
+/// mean, because the end is where the solve now puts every parallel cell on one node —
+/// the only instant at which one voltage speaks for all of them.
+///
+/// So the reported heat is now the *last* instant's, `I²·(R0 + R·(1 − e^(−dt/τ)))`, and
+/// the heat the network integrated is still the step mean. For an overpotential rising
+/// from rest the mean lies strictly between the two ends, which is what the second
+/// assertion pins: the temperature the pack reached cannot be accounted for by either
+/// reported instant alone.
 #[test]
-fn the_reported_heat_is_still_the_first_instants() {
+fn the_reported_heat_is_the_end_of_the_steps() {
     let mut pack = Pack::new(&config(), chem(&one_pair())).expect("fixture builds");
     let tele = pack.step(WINDOW_S, Demand::Current(LOAD_A), &env());
 
     // A fresh cell rests at zero overpotential, so the first instant generates `I²·R0`
-    // and nothing else.
+    // and the last one `I²·R0` plus the RC pair wherever it charged to.
     let first_instant_w = LOAD_A * LOAD_A * R0;
+    let last_instant_w = LOAD_A * LOAD_A * (R0 + R_RC * (1.0 - (-WINDOW_S / TAU_RC_S).exp()));
     assert!(
-        (tele.q_gen_w - first_instant_w).abs() < 1.0e-12,
-        "q_gen_w {} W, first instant {first_instant_w} W",
+        (tele.q_gen_w - last_instant_w).abs() < 1.0e-12,
+        "q_gen_w {} W, last instant {last_instant_w} W",
         tele.q_gen_w
     );
 
     // What the pack actually absorbed, read off the temperature it reached: a lone cell
     // sits at `q/hA` above ambient once it has settled, and this window is 74 time
-    // constants long.
+    // constants long. The mean heat lies strictly inside the two instants.
     let absorbed_w = (pack.cell(0, 0).expect("in range").temp_k - T_ENV) * HA;
-    let settled_w = LOAD_A * LOAD_A * (R0 + R_RC);
     assert!(
-        absorbed_w > first_instant_w * 1.49 && absorbed_w < settled_w,
+        absorbed_w > first_instant_w * 1.49 && absorbed_w < last_instant_w,
         "absorbed {absorbed_w} W is not between the first instant's {first_instant_w} W \
-         and the settled {settled_w} W"
+         and the last instant's {last_instant_w} W"
     );
 }
