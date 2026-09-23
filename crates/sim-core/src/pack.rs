@@ -2201,6 +2201,43 @@ impl Pack {
                 }
             }
         }
+        // --- where a single-particle pack's first pass linearizes.
+        //
+        // Every later pass aggregates from tangents its probes took on the *end-of-step*
+        // curve (see [`crate::spm::probe_at`]), and the fixed point is that curve's. The
+        // first pass's line is the one exception: the memo holds a `dt`-free tangent to
+        // the start-of-step curve, and a first pass whose residual already sits inside
+        // `SOLVE_TOL_V` is accepted as it stands — so a small circulation was split on the
+        // start-of-step line, which is explicit Euler, and grew. Measured on a scattered
+        // 1S3P LG M50 at rest with one-hour steps: rounding-level branch currents growing
+        // about fivefold a step (1.5e-14 → 1.9e-12 A in six), bounded only where the
+        // residual finally crossed the tolerance. So on a step where time passes the first
+        // pass starts from each cell's end-of-step tangent at the current it last carried,
+        // held here — in the buffer a linear pack's end-of-step sources use, which a
+        // nonlinear pack otherwise leaves empty — and never in the memo.
+        //
+        // Not for the `Dfn`: its probe is a coupled nonlinear solve per cell, and the
+        // tangent it stores is already one its last end-of-step solve took.
+        let seeded = nonlinear
+            && dt > 0.0
+            && self.groups.iter().any(|g| {
+                g.cells
+                    .iter()
+                    .any(|c| matches!(c.model, crate::ecm::CellModel::Spm(_)))
+            });
+        if seeded {
+            for group in &self.groups {
+                for cell in &group.cells {
+                    step_src.push(cell.model.first_pass_tangent(
+                        &self.chem,
+                        cell.eff_r0_factor(),
+                        cell.eff_capacity_ah(cap_ah),
+                        dt,
+                    ));
+                }
+            }
+        }
+
         // Scratch for the nonlinear iteration: the tangents pass *n* aggregates from, the
         // ones its probes just took (which become pass *n+1*'s after the swap below), and
         // the currents pass *n* assigned. All stay empty — and therefore unallocated — on
@@ -2211,6 +2248,10 @@ impl Pack {
         // to survive the probes: the converged pass reports and advances from the line it
         // aggregated, not from the fresher line its own probes took at the currents that
         // line predicted. Writing the probes back in place would silently swap those two.
+        // Only a power demand's probes are held to each cell's valid range: it is the one
+        // demand whose current the engine, not the caller, chooses. See
+        // [`crate::spm::probe_at`].
+        let hold_to_range = matches!(demand, Demand::Power(_));
         let mut tangent: Vec<(f64, f64)> = Vec::new();
         let mut probed: Vec<(f64, f64)> = Vec::new();
         let mut i_cell: Vec<f64> = Vec::new();
@@ -2260,6 +2301,17 @@ impl Pack {
                         tangent[g_idx * parallel + k]
                     } else if implicit {
                         // Filled above, memo checked there.
+                        step_src[g_idx * parallel + k]
+                    } else if seeded {
+                        // Filled above. The memo is still kept current on a seeded pass,
+                        // since everything after the solve indexes it.
+                        if !warm {
+                            cell_src.push(cell.model.source(
+                                &self.chem,
+                                cell.eff_r0_factor(),
+                                cell.eff_capacity_ah(cap_ah),
+                            ));
+                        }
                         step_src[g_idx * parallel + k]
                     } else if warm {
                         let cached = cell_src[g_idx * parallel + k];
@@ -2366,7 +2418,11 @@ impl Pack {
             // At the fixed point each tangent is taken where it is evaluated and the
             // gap closes to nothing.
             let src: &[(f64, f64)] = if solve_iterations == 1 {
-                &cell_src
+                if seeded {
+                    step_src
+                } else {
+                    &cell_src
+                }
             } else {
                 &tangent
             };
@@ -2432,6 +2488,7 @@ impl Pack {
                             cell.eff_capacity_ah(cap_ah),
                             i_k,
                             dt,
+                            hold_to_range,
                         );
                         probed.push(line_k);
                         let gap = (v_k - v_node).abs();
@@ -2515,7 +2572,7 @@ impl Pack {
         // currents would come from different linearizations.
         let solved_src: &[(f64, f64)] = if solve_iterations > 1 {
             &tangent
-        } else if implicit {
+        } else if implicit || seeded {
             step_src
         } else {
             &cell_src
@@ -2720,6 +2777,7 @@ impl Pack {
                     eff_cap,
                     soh_cap,
                     cell.aging.soh_resistance,
+                    v_node,
                 );
                 flags |= advanced.flags;
                 // --- charge the clamp refused, and the heat that refusing it makes.

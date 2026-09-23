@@ -498,11 +498,16 @@ impl CellModel {
     /// all-equivalent-circuit pack — see [`Self::is_linear`], which is the flag the pack
     /// actually branches on.
     ///
-    /// `dt` is here for the DFN alone, and it is the argument that made this a *contract*
-    /// change rather than a merge: an equivalent circuit's and a single particle's
-    /// `V(i)` are start-of-state readouts with no step length in them, while a DFN's is
-    /// the backward-Euler solve over the step. See [`crate::dfn::probe_at`] for what it
-    /// does with `dt <= 0`, which is the path a zero-length probe step takes.
+    /// `dt` is the step the curve is read over. A DFN's `V(i)` is the backward-Euler solve
+    /// over the step, and since `docs/plans/spm-end-of-step.md` a single particle's is its
+    /// end-of-step voltage too, diffused over `dt` under `i`; the equivalent circuit's
+    /// end-of-step line is built by the pack instead (see [`Self::step_source_shift`]).
+    /// See [`crate::dfn::probe_at`] and [`crate::spm::probe_at`] for what each does with
+    /// `dt <= 0`, which is the path a zero-length probe step takes.
+    ///
+    /// `hold` is read by the `Spm` alone: the pack sets it under a power demand, and it
+    /// keeps the probe inside the range of current the particle's model describes. See
+    /// [`crate::spm::probe_at`].
     ///
     /// Not memoisable: `i` is an in-flight iterate, not state. See
     /// [`crate::spm::source_at`].
@@ -514,6 +519,7 @@ impl CellModel {
         eff_capacity_ah: f64,
         i: f64,
         dt: f64,
+        hold: bool,
     ) -> (f64, (f64, f64)) {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
@@ -521,11 +527,37 @@ impl CellModel {
                 (e - i * r, (e, r))
             }
             CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, (0.0, 1.0)), |spm| {
-                spm::probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i)
+                spm::probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i, dt, hold)
             }),
             CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, (0.0, 1.0)), |(spm, d)| {
                 dfn::probe_at(s, spm, d, eff_r0_factor, eff_capacity_ah, i, dt)
             }),
+        }
+    }
+
+    /// The line a nonlinear pack's **first** pass aggregates this cell from on a step of
+    /// `dt > 0` seconds: the tangent to its end-of-step curve at the current it last
+    /// carried, so that every pass of the solve — not only the second onwards — reads the
+    /// curve whose fixed point it is solving for. See the `seeded` note in `Pack::step`.
+    ///
+    /// Only the `Spm` is asked: its probe is a few table lookups. The other arms answer
+    /// their memoised [`Self::source`], which for the `Dfn` is already the tangent its last
+    /// end-of-step solve took, and the equivalent circuit never reaches here.
+    ///
+    /// Not memoisable, because it depends on `dt`. It is never written into `SourceCache`.
+    #[must_use]
+    pub(crate) fn first_pass_tangent(
+        &self,
+        chem: &ChemistryParams,
+        eff_r0_factor: f64,
+        eff_capacity_ah: f64,
+        dt: f64,
+    ) -> (f64, f64) {
+        match self {
+            CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
+                spm::first_pass_tangent(s, spm, eff_r0_factor, eff_capacity_ah, dt)
+            }),
+            _ => self.source(chem, eff_r0_factor, eff_capacity_ah),
         }
     }
 
@@ -551,11 +583,10 @@ impl CellModel {
     /// than its start. See [`step_source_shift`]; the pack calls this only for a linear
     /// pack and only when `dt > 0`.
     ///
-    /// `(0, 0)` for `Spm` and `Dfn`. For the `Dfn` that is because its tangent is already
-    /// an end-of-step one — [`crate::dfn::probe_at`] is a backward-Euler solve. For the
-    /// `Spm` it is a **gap**, not a design: its tangent is a start-of-step readout and it
-    /// diverges at an hour's step just as the equivalent circuit did. See
-    /// `docs/plans/end-of-step-split.md`.
+    /// `(0, 0)` for `Spm` and `Dfn`, because both already read their curve at the end of
+    /// the step: [`crate::dfn::probe_at`] is a backward-Euler solve, and
+    /// [`crate::spm::probe_at`] diffuses the particles over the step before reading the
+    /// surface. See `docs/plans/end-of-step-split.md` and `docs/plans/spm-end-of-step.md`.
     #[must_use]
     pub(crate) fn step_source_shift(
         &self,
@@ -648,6 +679,7 @@ impl CellModel {
         eff_capacity_ah: f64,
         soh_capacity: f64,
         soh_resistance: f64,
+        v_node: f64,
     ) -> Advanced {
         // Only the equivalent circuit can reject charge, so only its arm carries a
         // non-zero amount out. The porous-electrode arms are wrapped here rather than
@@ -656,8 +688,8 @@ impl CellModel {
         let no_rejection = |flags| Advanced {
             flags,
             rejected_as: 0.0,
-            // A step mean the porous-electrode arms cannot offer, not one they have
-            // nothing to correct. See the field.
+            // A step mean the `Dfn` cannot offer, not one it has nothing to correct. The
+            // `Spm` overrides both below. See the fields.
             rc_mean_excess_v: 0.0,
             rc_delta_v: 0.0,
         };
@@ -676,9 +708,24 @@ impl CellModel {
             // cell wants only their product: it has no SOC scale to preserve, just an
             // amount of lithium the geometry has to be reconciled against.
             CellModel::Spm(s) => {
-                no_rejection(chem.spm.as_ref().map_or(EventFlags::empty(), |spm| {
-                    spm::advance(s, spm, i, dt, eff_capacity_ah * soh_capacity)
-                }))
+                chem.spm
+                    .as_ref()
+                    .map_or(no_rejection(EventFlags::empty()), |spm| {
+                        let (flags, delta_v, mean_excess_v) = spm::advance(
+                            s,
+                            spm,
+                            i,
+                            dt,
+                            eff_r0_factor,
+                            eff_capacity_ah * soh_capacity,
+                            v_node,
+                        );
+                        Advanced {
+                            rc_mean_excess_v: mean_excess_v,
+                            rc_delta_v: delta_v,
+                            ..no_rejection(flags)
+                        }
+                    })
             }
             CellModel::Dfn(s) => no_rejection(Self::dfn_params(chem).map_or(
                 EventFlags::empty(),
@@ -1590,11 +1637,12 @@ pub(crate) struct Advanced {
     /// same to `O(dt/tau)` and differ by two thirds of the RC contribution at a
     /// fast-forward `dt`; see `docs/plans/step-mean-heat.md`.
     ///
-    /// Exactly `0.0` for `Spm` and `Dfn`, and unlike [`Self::rejected_as`] that is a
-    /// **stub rather than physics**: a porous-electrode cell's overpotential has a step
-    /// mean too, it just has no closed form, so nothing is claimed about it here.
-    /// Exactly `0.0` at `dt <= 0` as well, which is what keeps a zero-length probe step
-    /// bit-identical.
+    /// For an `Spm` it is the trapezoid correction [`crate::spm::advance`] documents:
+    /// the particle's overpotential has no closed-form step mean, so the mean of the
+    /// step's first and last instants stands in for it, and the equilibrium voltage's
+    /// fall across the step is taken out of the heat. Exactly `0.0` for the `Dfn`, and
+    /// that is a **stub rather than physics** — see `docs/ROADMAP.md`. Exactly `0.0` at
+    /// `dt <= 0` as well, which is what keeps a zero-length probe step bit-identical.
     pub rc_mean_excess_v: f64,
     /// How far this cell's RC overpotential moved over the step, end minus start \[V\],
     /// summed over its pairs.
@@ -1604,8 +1652,10 @@ pub(crate) struct Advanced {
     /// pack's electrical solve now equalises its parallel cells at and so the instant the
     /// energy ledger closes at. See `docs/plans/end-of-step-split.md`.
     ///
-    /// Exactly `0.0` for `Spm` and `Dfn`, whose reported heat is already taken at the node
-    /// voltage their own solve produced, and at `dt <= 0`, where no pair moves.
+    /// For an `Spm`, what moves the pack's `i·(U_eq,start − v_node)` to the end-of-step heat
+    /// read off the cell's own curve, `i·(U_eq,end − V_end(i))` (see
+    /// [`crate::spm::advance`]). Exactly `0.0` for the `Dfn`, and at `dt <= 0`, where
+    /// nothing moves.
     pub rc_delta_v: f64,
 }
 

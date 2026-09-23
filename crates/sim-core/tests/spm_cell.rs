@@ -392,21 +392,20 @@ fn a_closed_cycle_conserves_energy() {
     let mut heat = 0.0;
     let mut moved = 0.0;
 
-    // Start-of-step voltage, from a zero-length probe: the electrical integral has to
-    // pair each step's current with the voltage that drove it, which is the previous
-    // step's end-of-step reading (see the ECM energy-balance property test).
-    let mut v_start = p.step(0.0, Demand::Current(i), &env()).v_terminal;
-    let mut leg = |p: &mut Pack, i: f64, steps: usize, v_start: &mut f64| {
+    // Each step's current is paired with the voltage that step reports, which is its
+    // end-of-step one: the pack solves an `Spm` on its end-of-step curve, and the heat it
+    // reports is read at the same instant (`docs/plans/spm-end-of-step.md`). The ECM
+    // energy-balance property test pairs the same way since `end-of-step-split.md`.
+    let mut leg = |p: &mut Pack, i: f64, steps: usize| {
         for _ in 0..steps {
             let tele = p.step(dt, Demand::Current(i), &env());
-            electrical += *v_start * tele.i_actual * dt;
+            electrical += tele.v_terminal * tele.i_actual * dt;
             heat += tele.q_gen_w * dt;
-            moved += (*v_start * tele.i_actual * dt).abs();
-            *v_start = tele.v_terminal;
+            moved += (tele.v_terminal * tele.i_actual * dt).abs();
         }
     };
-    leg(&mut p, i, 900, &mut v_start);
-    leg(&mut p, -i, 900, &mut v_start);
+    leg(&mut p, i, 900);
+    leg(&mut p, -i, 900);
 
     let residual = electrical + heat;
     assert!(

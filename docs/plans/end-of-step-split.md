@@ -245,8 +245,7 @@ bytes restored after.
 
 ## Still open
 
-* **The `Spm` half** (H8). Same idea — a tangent taken over the step — on a model whose
-  solid diffusion is itself stiff. The −3.7e28 V row is its measurement.
+* ~~**The `Spm` half** (H8).~~ Closed 2026-09-23 by `spm-end-of-step.md`.
 * **The speed budget** (H9), probably now exceeded by a few per cent on the features-off
   case, and unmeasurable cleanly while this machine is shared. The OCV-segment search is
   the obvious saving.

@@ -34,7 +34,10 @@
 //! both Butler–Volmer overpotentials and through the surface concentrations, which
 //! the flux boundary condition shifts — so the source is a **tangent** rather than
 //! an exact equivalent. Phase 6 slice C2 lets the pack solve that tangent once, at
-//! the previous step's current; slice D iterates it.
+//! the previous step's current; slice D iterates it. The curve the iteration solves on
+//! is the **end-of-step** one — the particles diffused over the step under the current
+//! being tried — which is what keeps a parallel group and a voltage hold stable at long
+//! steps. See [`probe_at`] and `docs/plans/spm-end-of-step.md`.
 
 use serde::{Deserialize, Serialize};
 
@@ -383,8 +386,16 @@ pub fn mean_concentration(c: &[f64]) -> f64 {
 /// holds lithium.
 #[must_use]
 pub fn c_surface(c: &[f64], r_p: f64, d_s: f64, j_surf: f64) -> f64 {
-    let dr = r_p / c.len() as f64;
-    c[c.len() - 1] - 0.5 * dr * j_surf / d_s
+    surface_from_outer(c[c.len() - 1], c.len(), r_p, d_s, j_surf)
+}
+
+/// [`c_surface`] from the outer shell's value and the shell count alone — the only two
+/// things it reads off the profile. [`probe_at`] needs it for an *end-of-step* outer
+/// shell that exists as a number, not as a profile.
+#[must_use]
+fn surface_from_outer(c_outer: f64, shells: usize, r_p: f64, d_s: f64, j_surf: f64) -> f64 {
+    let dr = r_p / shells as f64;
+    c_outer - 0.5 * dr * j_surf / d_s
 }
 
 /// Clamp a surface concentration into the open interval the kinetics are defined
@@ -397,9 +408,15 @@ pub fn c_surface(c: &[f64], r_p: f64, d_s: f64, j_surf: f64) -> f64 {
 /// is what keeps `step` free of NaNs without quietly rewriting the physics.
 #[must_use]
 fn clamp_surface(c_s: f64, c_max: f64) -> f64 {
-    const EDGE: f64 = 1.0e-6;
-    c_s.clamp(EDGE * c_max, (1.0 - EDGE) * c_max)
+    c_s.clamp(SURFACE_EDGE * c_max, (1.0 - SURFACE_EDGE) * c_max)
 }
+
+/// How close to empty or full, as a fraction of `c_max`, a surface concentration may sit
+/// before [`clamp_surface`] holds it there. Not physics: `i_0 ∝ √(c_s·(c_max − c_s))` is
+/// real only strictly inside `(0, c_max)`, and this is the margin that keeps it so.
+/// [`current_window`] reads the same number, so the range it declares is exactly the range
+/// over which no clamp is acting.
+const SURFACE_EDGE: f64 = 1.0e-6;
 
 /// Butler–Volmer overpotential \[V\] driving current density `i_s` \[A/m²\] at an
 /// electrode whose surface sits at `c_s`.
@@ -430,9 +447,20 @@ fn overpotential(side: &Side<'_>, temp_k: f64, c_e: f64, c_s: f64, i_s: f64) -> 
 /// its reaction; both carry the electrode's own sign, so the caller passes the
 /// signed pair and this function needs no notion of which electrode it is.
 #[must_use]
-fn half(w: &Working<'_>, c: &[f64], side: &Side<'_>, j_surf: f64, i_s: f64) -> f64 {
+///
+/// `c_outer` and `shells` are the outermost shell's concentration \[mol/m³\] and the
+/// profile's shell count — all [`c_surface`] reads — so the caller decides *which* outer
+/// shell: the stored one, or the end-of-step one [`probe_at`] solves for.
+fn half(
+    w: &Working<'_>,
+    c_outer: f64,
+    shells: usize,
+    side: &Side<'_>,
+    j_surf: f64,
+    i_s: f64,
+) -> f64 {
     let c_s = clamp_surface(
-        c_surface(c, side.p.particle_radius_m, side.d_s, j_surf),
+        surface_from_outer(c_outer, shells, side.p.particle_radius_m, side.d_s, j_surf),
         side.p.c_max_mol_per_m3,
     );
     ocp_lookup(&side.p.ocp, c_s / side.p.c_max_mol_per_m3)
@@ -447,9 +475,40 @@ fn half(w: &Working<'_>, c: &[f64], side: &Side<'_>, j_surf: f64, i_s: f64) -> f
 /// boundary condition shifts — this is what ends the pack's closed-form solve.
 #[must_use]
 fn voltage(w: &Working<'_>, s: &SpmState, i: f64) -> f64 {
-    let n = half(w, &s.c_neg, &w.neg, w.j_neg(i), i / w.neg.g.area_m2);
-    let p = half(w, &s.c_pos, &w.pos, w.j_pos(i), -i / w.pos.g.area_m2);
+    let outer = |c: &[f64]| (c[c.len() - 1], c.len());
+    voltage_from_outer(w, outer(&s.c_neg), outer(&s.c_pos), i)
+}
+
+/// [`voltage`], given each particle's outermost shell `(concentration, shell count)`
+/// rather than its profile — the surface is extrapolated from that shell alone.
+#[must_use]
+fn voltage_from_outer(w: &Working<'_>, neg: (f64, usize), pos: (f64, usize), i: f64) -> f64 {
+    let n = half(w, neg.0, neg.1, &w.neg, w.j_neg(i), i / w.neg.g.area_m2);
+    let p = half(w, pos.0, pos.1, &w.pos, w.j_pos(i), -i / w.pos.g.area_m2);
     p - n - i * w.r_contact
+}
+
+/// Terminal voltage \[V\] at cell current `i` at the **end** of a step that carries `i`
+/// throughout: the particles diffused by backward Euler under that current's flux,
+/// exactly as [`advance`] will diffuse them, and the surface read from there.
+///
+/// `neg` and `pos` are the two particles' [`OuterShell`]s for the step, from
+/// [`forward_sweep`]. The whole dependence on `i` — kinetics, surface extrapolation, and
+/// the lithium the step moves — is in here.
+#[must_use]
+fn end_of_step_voltage(
+    w: &Working<'_>,
+    s: &SpmState,
+    neg: OuterShell,
+    pos: OuterShell,
+    i: f64,
+) -> f64 {
+    voltage_from_outer(
+        w,
+        (neg.at(w.j_neg(i)), s.c_neg.len()),
+        (pos.at(w.j_pos(i)), s.c_pos.len()),
+        i,
+    )
 }
 
 /// Equilibrium (open-circuit) voltage \[V\] at the particles' **mean** — bulk —
@@ -464,6 +523,80 @@ fn equilibrium_voltage(w: &Working<'_>, s: &SpmState) -> f64 {
     let x = mean_concentration(&s.c_neg) / w.neg.p.c_max_mol_per_m3;
     let y = mean_concentration(&s.c_pos) / w.pos.p.c_max_mol_per_m3;
     ocp_lookup(&w.pos.p.ocp, y) - ocp_lookup(&w.neg.p.ocp, x)
+}
+
+/// The range of cell current \[A, discharge-positive\], `(lo, hi)`, over which both
+/// particles' surfaces stay strictly inside the interval [`clamp_surface`] passes through
+/// untouched — at the **end** of the step when `ends` carries that step's
+/// [`OuterShell`]s, at the stored state otherwise.
+///
+/// # What this is the model saying about itself
+/// Outside this range a surface has been driven past empty or past full, and nothing in
+/// this model describes that: the clamp holds the surface at the edge, the tables stop
+/// there, and `V(i)` goes **flat** — it moves only through the kinetics and the contact
+/// resistance, not through the lithium the step moved. A flat curve is not a harmless
+/// artefact to a solver built on tangents. A tangent taken on it has almost no slope, so
+/// the next pass puts almost any current there. Measured on the shipped LG M50: a 10 W
+/// demand no cell at 35 % can meet for an hour was "met" at 57 A and 0.18 V, a root that
+/// exists only on the flat stretch (the old engine found it one step later, at 1290 K); and
+/// a 1S2P pack rested for 1e6 s after a 5 A discharge seeded its solve on that stretch and
+/// ran to 1e9 A. See [`first_pass_tangent`] for what is done about it, and why only there.
+///
+/// # Closed form
+/// The surface is affine in the flux the step carries: the outer shell is
+/// `((t − k·j) − m)/d` (see [`OuterShell`]) and [`c_surface`] extrapolates half a shell
+/// further along `j`, so `c_s = A − B·j` with `B > 0`. The flux is linear in the current
+/// with a sign of its own on each electrode, so each surface gives one interval and the
+/// window is their intersection. The affine rearrangement is not bit-identical to
+/// [`half`]'s evaluation order, which does not matter for a boundary.
+///
+/// `None` when the intersection is empty or not finite — a state already past a limit at
+/// zero current, which a snapshot or an overdriven previous step can leave behind, since
+/// the profile itself is never clamped. The caller then has no window to hold to.
+#[must_use]
+fn current_window(
+    w: &Working<'_>,
+    s: &SpmState,
+    ends: Option<(OuterShell, OuterShell)>,
+) -> Option<(f64, f64)> {
+    // One electrode's interval: `c_s(i) = A − B·g·i`, with `g` the flux per ampere.
+    let side = |c: &[f64], side: &Side<'_>, outer: Option<OuterShell>, g: f64| {
+        let n = c.len();
+        let dr = side.p.particle_radius_m / n as f64;
+        let extrapolate = 0.5 * dr / side.d_s;
+        let (a, b) = match outer {
+            Some(o) => ((o.t - o.m) / o.d, o.k / o.d + extrapolate),
+            None => (c[n - 1], extrapolate),
+        };
+        let c_max = side.p.c_max_mol_per_m3;
+        let bg = b * g;
+        let at_edge = |edge: f64| (a - edge) / bg;
+        let (x, y) = (
+            at_edge((1.0 - SURFACE_EDGE) * c_max),
+            at_edge(SURFACE_EDGE * c_max),
+        );
+        (x.min(y), x.max(y))
+    };
+    let (neg_end, pos_end) = match ends {
+        Some((n, p)) => (Some(n), Some(p)),
+        None => (None, None),
+    };
+    let (n_lo, n_hi) = side(&s.c_neg, &w.neg, neg_end, w.j_neg(1.0));
+    let (p_lo, p_hi) = side(&s.c_pos, &w.pos, pos_end, w.j_pos(1.0));
+    let (lo, hi) = (n_lo.max(p_lo), n_hi.min(p_hi));
+    (lo.is_finite() && hi.is_finite() && lo < hi).then_some((lo, hi))
+}
+
+/// `i` pulled inside `(lo, hi)` by at least the tangent's difference step `h`, so a
+/// quotient taken there straddles no flat stretch; the middle of a range too narrow for
+/// that. Unchanged, bit for bit, when it is already that far inside.
+#[must_use]
+fn held(i: f64, (lo, hi): (f64, f64), h: f64) -> f64 {
+    if hi - lo > 2.0 * h {
+        i.clamp(lo + h, hi - h)
+    } else {
+        0.5 * (lo + hi)
+    }
 }
 
 /// Backward-Euler radial diffusion over one step, by the Thomas algorithm.
@@ -505,6 +638,63 @@ pub fn diffuse(c: &mut [f64], r_p: f64, d_s: f64, j_surf: f64, dt: f64) {
         return;
     }
     let n = c.len();
+    let dr = r_p / n as f64;
+    let mut diag = [0.0_f64; MAX_SHELLS];
+    let outer = forward_sweep(c, &mut diag, r_p, d_s, dt);
+    // Back substitution. Its first row is the outer shell's, which is the one row the
+    // flux enters — see [`OuterShell`] for why it is evaluated there and not inline.
+    c[n - 1] = outer.at(j_surf);
+    for i in (0..n - 1).rev() {
+        let r = (i + 1) as f64 * dr;
+        let up = -dt * (r * r * d_s / dr);
+        c[i] = (c[i] - up * c[i + 1]) / diag[i];
+    }
+}
+
+/// The outermost shell's concentration \[mol/m³\] at the **end** of a backward-Euler
+/// [`diffuse`] step, as a function of the surface flux that step carries.
+///
+/// The flux enters the tridiagonal system on the outer row alone, and the forward sweep
+/// never carries that row's right-hand side anywhere else, so after the sweep the outer
+/// shell is `((t − k·j) − m) / d` with nothing else depending on `j`. That affine form is
+/// what lets [`probe_at`] ask "where would the surface be at the end of this step, at this
+/// current?" for a handful of currents at the cost of one sweep — and, because
+/// [`diffuse`] evaluates its own outer row through [`Self::at`] too, the answer is
+/// **bit-for-bit** the outer shell `advance` then produces at that current.
+#[derive(Clone, Copy, Debug)]
+struct OuterShell {
+    /// `vol · c_old` of the outer shell: its right-hand side before the flux.
+    t: f64,
+    /// `dt · R_p²`: how much a unit of flux removes from that right-hand side.
+    k: f64,
+    /// What eliminating the shell beneath subtracts from it.
+    m: f64,
+    /// The outer row's diagonal after elimination.
+    d: f64,
+}
+
+impl OuterShell {
+    /// The outer shell's end-of-step concentration \[mol/m³\] under surface flux `j`
+    /// \[mol/(m²·s)\].
+    fn at(self, j: f64) -> f64 {
+        ((self.t - self.k * j) - self.m) / self.d
+    }
+}
+
+/// The forward (elimination) sweep of [`diffuse`], over every row but leaving the outer
+/// one's flux-dependent right-hand side unevaluated — see [`OuterShell`].
+///
+/// Overwrites `c[..n−1]` with the swept right-hand sides and `diag[..n]` with the swept
+/// diagonal, which is exactly the working state [`diffuse`]'s back substitution needs.
+/// Requires `dt > 0` and `MIN_SHELLS ≤ c.len() ≤ MAX_SHELLS`; both callers guarantee them.
+fn forward_sweep(
+    c: &mut [f64],
+    diag: &mut [f64; MAX_SHELLS],
+    r_p: f64,
+    d_s: f64,
+    dt: f64,
+) -> OuterShell {
+    let n = c.len();
     debug_assert!((MIN_SHELLS..=MAX_SHELLS).contains(&n));
     let dr = r_p / n as f64;
     // Face conductance below shell `i` — equivalently above shell `i-1`, which is
@@ -513,7 +703,12 @@ pub fn diffuse(c: &mut [f64], r_p: f64, d_s: f64, j_surf: f64, dt: f64) {
         let r = i as f64 * dr;
         r * r * d_s / dr
     };
-    let mut diag = [0.0_f64; MAX_SHELLS];
+    let mut outer = OuterShell {
+        t: 0.0,
+        k: 0.0,
+        m: 0.0,
+        d: 1.0,
+    };
     // Forward sweep, building the row and eliminating it in the same pass.
     for i in 0..n {
         let r_lo = i as f64 * dr;
@@ -522,23 +717,26 @@ pub fn diffuse(c: &mut [f64], r_p: f64, d_s: f64, j_surf: f64, dt: f64) {
         let g_lo = if i == 0 { 0.0 } else { g_face(i) };
         let g_hi = if i == n - 1 { 0.0 } else { g_face(i + 1) };
         diag[i] = vol + dt * (g_lo + g_hi);
-        c[i] *= vol;
-        if i == n - 1 {
-            c[i] -= dt * r_hi * r_hi * j_surf;
-        }
+        // lo[i] = -dt·g_lo = up[i-1].
+        let m = if i > 0 { -dt * g_lo / diag[i - 1] } else { 0.0 };
         if i > 0 {
-            // lo[i] = -dt·g_lo = up[i-1].
-            let m = -dt * g_lo / diag[i - 1];
             diag[i] -= m * (-dt * g_lo);
-            c[i] -= m * c[i - 1];
+        }
+        if i == n - 1 {
+            outer = OuterShell {
+                t: c[i] * vol,
+                k: dt * r_hi * r_hi,
+                m: m * c[i - 1],
+                d: diag[i],
+            };
+        } else {
+            c[i] *= vol;
+            if i > 0 {
+                c[i] -= m * c[i - 1];
+            }
         }
     }
-    // Back substitution.
-    c[n - 1] /= diag[n - 1];
-    for i in (0..n - 1).rev() {
-        let up = -dt * g_face(i + 1);
-        c[i] = (c[i] - up * c[i + 1]) / diag[i];
-    }
+    outer
 }
 
 /// Ground-truth state of charge, in \[0, 1\]: the negative particle's mean
@@ -755,21 +953,50 @@ pub(crate) fn source_at(
     eff_capacity_ah: f64,
     i: f64,
 ) -> (f64, f64) {
-    probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i).1
+    // `dt = 0`: the start-of-step curve, which is what a tangent that has to be a pure
+    // function of state (see [`source`]) can be taken on. The pack's iteration re-takes
+    // every tangent on the end-of-step curve from its first probe on.
+    probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i, 0.0, false).1
 }
 
-/// Where the curve is at `i`, and what straight line touches it there: `(V(i), (E, R))`,
-/// from the cell's start-of-step state.
+/// Where the curve is at `i` over a step of `dt` seconds, and what straight line touches it
+/// there: `(V(i), (E, R))`.
 ///
-/// The pack's iteration wants both at the same operating point — the curve to measure its
-/// aggregate against, and the line to aggregate on the next pass — and asking for them
-/// separately evaluated `voltage` at `i` twice. Both are pure in the same arguments, so
-/// computing it once is bit-for-bit what computing it twice was; the saving is small here
-/// and structural for [`crate::dfn::probe_at`], where each of those calls is a nonlinear
-/// solve rather than a table lookup.
+/// # The curve is the end-of-step one
+/// With `dt > 0`, `V(i)` is the terminal voltage at the **end** of a step carrying `i`
+/// throughout — the particles diffused under that current's flux by the same
+/// backward-Euler sweep [`advance`] runs, bit for bit (see [`OuterShell`]). So the pack's
+/// split and its demand solve are backward Euler on the cells' coupling through their
+/// shared node, as they already were for the `Dfn` and became for the equivalent circuit
+/// in `docs/plans/end-of-step-split.md`. The tangent's `R` therefore carries the lithium
+/// the step moves as well as the kinetics: a long step's `R` is large, and a parallel
+/// group's circulation is damped rather than amplified.
 ///
-/// **Not a pure function of state**, exactly as [`source_at`] is not: `i` is an in-flight
-/// iterate, and nothing computed here may be written into `SourceCache`.
+/// Read at the start of the step instead, the curve was explicit Euler on that coupling.
+/// A scattered 1S3P LG M50 at a one-hour step read 10 000 K by its fourth step and
+/// −1.2e9 V by its fifth; a voltage hold charged at 37.7 A whatever the step length,
+/// which at ten minutes put the cell at 443 K in one step.
+///
+/// `dt <= 0` (and a `NaN` `dt`) reads the stored state instead: no time passes, so there
+/// is no end of the step to read, and [`diffuse`] is refused the same way. That is the
+/// path a zero-length probe step takes, and it keeps such a step bit-for-bit what it was.
+///
+/// # `hold`: the one demand whose operating point the engine chooses
+/// With `hold`, a probe outside [`current_window`] is taken at the nearest current inside
+/// it instead — both the voltage and the tangent. The pack asks for that under
+/// [`crate::Demand::Power`] alone, and the reason is who picks the current. A current
+/// demand's caller picks it, and a cell it really drives past empty is solved out there on
+/// the flat curve, as it must be. A voltage demand cannot land there: the flat stretch
+/// lies far below `v_min`, and the demand is clamped into the window. A power demand's
+/// current is the engine's own choice, and the flat stretch holds a root the physics does
+/// not: a 10 W hour from an LG M50 at 35 %, whose true best is about 3.4 W, was "met" at
+/// 57 A and 0.18 V and ran away to 1000 K. Held to the range, the solve cannot settle
+/// there, and an unreachable power lands at the most the cell can deliver.
+///
+/// A fixed point inside the range is untouched by the hold, so every reachable power
+/// solves exactly as before. The cost is a pack whose power demand *is* met only by
+/// driving one weak cell past empty: its solve cannot converge there, and it says so with
+/// `SOLVE_UNCONVERGED` rather than landing on the flat curve.
 #[must_use]
 pub(crate) fn probe_at(
     s: &SpmState,
@@ -777,10 +1004,37 @@ pub(crate) fn probe_at(
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     i: f64,
+    dt: f64,
+    hold: bool,
 ) -> (f64, (f64, f64)) {
     let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    let end = if dt.is_nan() || dt <= 0.0 {
+        None
+    } else {
+        // One forward sweep per particle; each copy is a stack row, so a probe allocates
+        // nothing. The shell count was checked against `MAX_SHELLS` at construction.
+        let sweep = |c: &[f64], r_p: f64, d_s: f64| {
+            let mut row = [0.0_f64; MAX_SHELLS];
+            let mut diag = [0.0_f64; MAX_SHELLS];
+            let row = &mut row[..c.len()];
+            row.copy_from_slice(c);
+            forward_sweep(row, &mut diag, r_p, d_s, dt)
+        };
+        Some((
+            sweep(&s.c_neg, spm.negative.particle_radius_m, w.neg.d_s),
+            sweep(&s.c_pos, spm.positive.particle_radius_m, w.pos.d_s),
+        ))
+    };
+    let curve = |i: f64| match end {
+        Some((neg, pos)) => end_of_step_voltage(&w, s, neg, pos, i),
+        None => voltage(&w, s, i),
+    };
     let h = 1.0e-6 * eff_capacity_ah;
-    let r = -(voltage(&w, s, i + h) - voltage(&w, s, i - h)) / (2.0 * h);
+    let i = match current_window(&w, s, end) {
+        Some(range) if hold => held(i, range, h),
+        _ => i,
+    };
+    let r = -(curve(i + h) - curve(i - h)) / (2.0 * h);
     // `V` is strictly decreasing in `i`, so `r > 0` on any state the model can
     // reach. The floor is not physics — it is the guarantee the pack solve needs
     // (it divides by `r`) held up on a state that has been driven somewhere
@@ -792,8 +1046,59 @@ pub(crate) fn probe_at(
     } else {
         R_FLOOR_OHMS
     };
-    let v = voltage(&w, s, i);
+    let v = curve(i);
     (v, (v + i * r, r))
+}
+
+/// The tangent a pack's **first** pass aggregates this cell from on a step of `dt`: the
+/// end-of-step curve's (see [`probe_at`]), taken at the current the cell last carried —
+/// **pulled back inside [`current_window`]** if the step would take it out.
+///
+/// The last current is the natural place to start: a steady demand converges in one
+/// pass from it. But it was chosen for the previous step's length, and on a much longer
+/// step it can empty or overfill the particle several times over. There the curve is
+/// flat, a tangent to it has almost no slope, and the pass it seeds puts almost any
+/// current anywhere. Measured on the shipped LG M50: a 1S2P pack rested for 1e6 s after
+/// a 5 A discharge seeded at 5 A and ran to 1e9 A on its first rest step, and to NaN
+/// after it (the start-of-step engine did the same one step later). Pulled back to the
+/// range — a few milliamps at that step length — the same step converges.
+///
+/// Only the **seed** is held to the range. The iteration's own probes are not, because
+/// under a current demand that really does drive a cell past empty the answer lies out
+/// there, on the flat curve, and a solve held away from it would never converge on it.
+/// That region is where this model has no physics, which `docs/ROADMAP.md` (H8) records.
+#[must_use]
+pub(crate) fn first_pass_tangent(
+    s: &SpmState,
+    spm: &SpmParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    dt: f64,
+) -> (f64, f64) {
+    let mut i = s.i_last;
+    if !dt.is_nan() && dt > 0.0 {
+        let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+        let sweep = |c: &[f64], r_p: f64, d_s: f64| {
+            let mut row = [0.0_f64; MAX_SHELLS];
+            let mut diag = [0.0_f64; MAX_SHELLS];
+            let row = &mut row[..c.len()];
+            row.copy_from_slice(c);
+            forward_sweep(row, &mut diag, r_p, d_s, dt)
+        };
+        let ends = (
+            sweep(&s.c_neg, spm.negative.particle_radius_m, w.neg.d_s),
+            sweep(&s.c_pos, spm.positive.particle_radius_m, w.pos.d_s),
+        );
+        // Only a cell that could rest through the step inside its range is pulled back
+        // into it. One already past a limit has no range near zero to be pulled into,
+        // and its answer is out on the flat stretch where the last current already is.
+        if let Some(range) =
+            current_window(&w, s, Some(ends)).filter(|&(lo, hi)| lo < 0.0 && 0.0 < hi)
+        {
+            i = held(i, range, 1.0e-6 * eff_capacity_ah);
+        }
+    }
+    probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i, dt, false).1
 }
 
 /// Advance both particles by `dt` seconds under the current `i` the pack solve
@@ -809,14 +1114,59 @@ pub(crate) fn probe_at(
 /// `i_last` is written only when time actually passed. A zero-length probe step
 /// mutates nothing — the diffusion solve is already a no-op at `dt = 0` by
 /// arithmetic, and this is the one line that would not have been.
+///
+/// # The heat terms it hands back
+/// Alongside the flags, two voltages \[V\] the pack turns into heat by multiplying by
+/// `i` — the porous-electrode counterparts of the equivalent circuit's
+/// `rc_delta_v` and `rc_mean_excess_v` (see [`crate::ecm::Advanced`]). The pack's first
+/// estimate of this cell's heat is [`heat_w`], `i·(U_eq,start − v_node)`, and since
+/// [`probe_at`] reads the end-of-step curve, `v_node` is the step's **last** instant. That
+/// pairs a start-of-step equilibrium with an end-of-step terminal, and so books the fall
+/// of the equilibrium voltage across the step — stored energy leaving through the
+/// terminals — as heat. Measured on a 1S3P LG M50 at C/5: 303.3 K after one one-hour step
+/// against 299.5 K after sixty one-minute ones.
+///
+/// The two corrections replace that estimate with ones read off the **curve alone**, so
+/// that `v_node` cancels out of both:
+///
+/// * **`delta_v`** makes what the pack *reports* `i·(U_eq,end − V_end(i))`: the
+///   end-of-step heat, which pairs with the terminal voltage the pack reports for this
+///   cell — also read off the end-of-step state — in the energy ledger.
+/// * **`mean_excess_v`** makes what the thermal network integrates
+///   `½·i·[(U_eq,start − V_start(i)) + (U_eq,end − V_end(i))]`, the mean of the step's
+///   first and last instants. A **trapezoid, stated rather than hidden**: unlike an RC
+///   pair, the particle's overpotential has no closed-form step mean. Its concentration
+///   part grows roughly as `√t` from a relaxed cell, whose true mean is two thirds of its
+///   end value, not the trapezoid's half.
+///
+/// Why not trust `v_node`: it is on the curve only when the pack's solve converged. When
+/// it did not — `SOLVE_UNCONVERGED`, which `solve_safeguard.rs` records on ordinary
+/// voltage holds — the node and the curve part company, and a correction that assumed
+/// they agree fed the thermal network heat the cell never made (a cell cooled to 189 K
+/// under load, measured). The cell's own curve is the physics; the node is the solver's
+/// estimate of it.
+///
+/// Both are exactly `0.0` at `dt <= 0`, which keeps a zero-length probe step bit-for-bit
+/// what it was.
 #[must_use]
 pub(crate) fn advance(
     s: &mut SpmState,
     spm: &SpmParams,
     i: f64,
     dt: f64,
+    eff_r0_factor: f64,
     eff_capacity_ah: f64,
-) -> EventFlags {
+    v_node: f64,
+) -> (EventFlags, f64, f64) {
+    let moves = !dt.is_nan() && dt > 0.0;
+    // The heat terms read the kinetics, so they need the real resistance factor; the
+    // diffusion below does not, which is the note on its own `Working`.
+    let wk = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    let start = if moves {
+        (equilibrium_voltage(&wk, s), voltage(&wk, s, i))
+    } else {
+        (0.0, 0.0)
+    };
     // The resistance factor is passed as `1.0` and it is not a placeholder: it
     // reaches only `m_ref` and `r_contact`, and diffusion uses neither. Handing the
     // real factor in would change nothing and would suggest, falsely, that
@@ -846,5 +1196,18 @@ pub(crate) fn advance(
     } else if raw < 0.0 {
         flags |= EventFlags::SOC_CLAMPED_LOW;
     }
-    flags
+    if !moves {
+        return (flags, 0.0, 0.0);
+    }
+    let (u_start, v_start) = start;
+    let u_end = equilibrium_voltage(&wk, s);
+    let v_end = voltage(&wk, s, i);
+    // What the pack's estimate already holds, and so what each correction takes back out.
+    let estimate = u_start - v_node;
+    let at_end = u_end - v_end;
+    (
+        flags,
+        at_end - estimate,
+        0.5 * ((u_start - v_start) + at_end) - estimate,
+    )
 }

@@ -220,16 +220,25 @@ where the rest-OCV gate refused to correct.
 
 **Cost.** One slice; the BMS tests gain a control arm per estimator.
 
-### H8. The pack solve has three open soft spots
+### H8. The pack solve has four open soft spots
 
-* **An `Spm` pack diverges at a long step** — a scattered 1S3P LG M50 read −3.7e28 V and
-  negative absolute temperatures by its fifth one-hour step (`end-of-step-split.md`). The
-  equivalent circuit had the same defect and no longer does: its source is now the
-  end-of-step line, which is backward Euler on the cells' coupling. The `Spm`'s tangent is
-  still a start-of-step readout, so its parallel split and a voltage hold are still
-  explicit. The `Dfn` never had it — its `probe_at` is a backward-Euler solve. The fix is
-  the same idea as the ECM's, an `Spm` tangent taken over the step, and it is the next
-  slice.
+* ~~**An `Spm` pack diverges at a long step**~~ — **closed 2026-09-23**
+  (`spm-end-of-step.md`): the `Spm`'s curve is now its end-of-step one, and the solve's
+  first pass starts from it. What that slice left open is the next bullet.
+* **An `Spm` has no physics past empty or full within a step.** Once a step would drive a
+  particle's surface out of `(0, c_max)`, the clamp holds it at the edge and `V(i)` goes
+  flat. `spm::current_window` now states that range in closed form, and two things use
+  it: the first pass's seed, and a power demand's probes. A current demand that really
+  drives a cell out there is still solved on the flat curve, and a cell already past empty
+  under a power demand still runs on it (6.8 A and 372 K on the third hour of an
+  unreachable 10 W, against 38 A and 900 K before). The honest fix is physics — a reversal
+  branch like the equivalent circuit's `[reversal]` — not another guard.
+* **A `Dfn` books the equilibrium voltage's fall across a long step as heat.** Its node
+  was always end-of-step and its heat is `i·(U_eq,start − V_node)`, the mix
+  `spm-end-of-step.md` found and removed from the `Spm`. Measured: a 1S1P LG M50 `Dfn` at
+  C/5 rose 3.7 K in one hour-long step against 1.1 K in sixty one-minute steps. The `Spm`'s
+  fix — heat read off the curve at the step's two ends — carries over, at the price of a
+  second solve's worth of readout.
 * **11 of 810 in-window solves stay unconverged** on a scattered 1S3P SPM holding a
   voltage on its own knee (`voltage-target-blowup.md`); bracketing was declined because the
   residual is not a scalar monotone one.
@@ -241,8 +250,8 @@ where the rest-OCV gate refused to correct.
   demand rather than by cause. Struck here on 2026-09-23, when the count above was found
   to include it.
 
-**Approach.** The `Spm` item is the ECM fix's other half and comes first. The two after it
-want a per-model *valid state window* declared by the cell model
+**Approach.** The `Spm` range is the first *valid state window* declared by a cell model.
+The unconverged holds and the absurd `Dfn` current want the same kind of window
 (concentrations, voltages) with a flag on leaving it, which is the honest form of the
 guard `voltage-target-blowup.md` declined: not a magnitude someone picked, but a bound the
 model states about itself.
@@ -389,4 +398,5 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | the step-19 wedge | `surface-vs-bulk.md` | `path-wedge.md` (a renderer crash, not a lesson) |
 | no per-cell current accessor | `phase-6-porous-electrodes.md` | `per-cell-current.md` (`CellView::current_a`, no snapshot bump) |
 | thermal integration invalid above a 1.7-hour step (H6) | `phase-2-thermal-bms.md` | `thermal-implicit-integrator.md` (backward Euler above the gate, no snapshot bump) |
-| ECM parallel groups and voltage holds diverge past a few hundred seconds of `dt` (11 000 K at an hour) | `end-of-step-split.md` (found measuring H10) | `end-of-step-split.md` (end-of-step sources, no snapshot bump; the `Spm` half is open under H8) |
+| ECM parallel groups and voltage holds diverge past a few hundred seconds of `dt` (11 000 K at an hour) | `end-of-step-split.md` (found measuring H10) | `end-of-step-split.md` (end-of-step sources, no snapshot bump) |
+| `Spm` parallel groups and voltage holds diverge at long steps (10 000 K by the fourth hour) | `end-of-step-split.md` | `spm-end-of-step.md` (end-of-step curve, curve-read heat, no snapshot bump; past-empty physics open under H8) |

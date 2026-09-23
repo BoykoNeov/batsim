@@ -202,8 +202,10 @@ and double as the scenario file format.
   explicit Euler, and a parallel group or a voltage hold diverged from a few hundred
   seconds of `dt` up — 11 000 K at an hour, reached by no test because every long-step test
   was a single cell under a current demand. A zero-length step still reads the
-  start-of-step line. The `Spm` tangent is still start-of-step and still diverges at an
-  hour; the `Dfn`'s is backward Euler already. See `docs/plans/end-of-step-split.md`.
+  start-of-step line. The porous models read the end of the step too: the `Dfn`'s
+  `probe_at` is a backward-Euler solve, and the `Spm`'s diffuses the particles over the
+  step under the current being tried before reading the surface. See
+  `docs/plans/end-of-step-split.md` and `docs/plans/spm-end-of-step.md`.
 - **Parallel group** carrying group current `I_g` (discharge-positive):
   node voltage `V = (Σ E_k/R_k − I_g) / (Σ 1/R_k)`, then per-cell
   `I_k = (E_k − V)/R_k`. Currents naturally split by state — a low-resistance or
