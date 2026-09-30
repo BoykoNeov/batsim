@@ -2255,8 +2255,17 @@ impl Pack {
         // line predicted. Writing the probes back in place would silently swap those two.
         // A power or voltage demand's probes are held to each cell's valid range: those are
         // the demands whose current the engine, not the caller, chooses. See
-        // [`crate::spm::probe_at`].
+        // [`crate::spm::probe_at`] and [`crate::dfn::probe_at`].
         let hold_to_range = matches!(demand, Demand::Power(_) | Demand::Voltage(_));
+        // The same two demands have their *committed* current held to the range the cells
+        // can carry, not only their probes (see `pack_current_window`). A held probe
+        // reads the curve at the range's edge, but the current the split hands a cell is
+        // still `(E_k − V)/R_k` off the pass's lines, and for a `Dfn` a step committed out
+        // there is a Newton that did not converge on a state that does not conserve
+        // lithium: a scattered 1S3P held at 2.5 V for one hour committed −12.8 / +10.1 /
+        // +9.9 A to cells that can carry about ±3 A. Not under an external short, whose
+        // current rides on the load's and would need its own mapping.
+        let hold_window = hold_to_range && nonlinear && dt > 0.0 && g_ext == 0.0;
         let mut tangent: Vec<(f64, f64)> = Vec::new();
         let mut probed: Vec<(f64, f64)> = Vec::new();
         let mut i_cell: Vec<f64> = Vec::new();
@@ -2375,7 +2384,28 @@ impl Pack {
             // protection derate or interrupt it. Clamping the *solved current* rather
             // than the demand itself means every demand variant — including `Power` and
             // `Voltage` — is protected by the same code, and the solve stays closed form.
-            let i_req = solve_current(demand, e_load, r_load);
+            let i_req_raw = solve_current(demand, e_load, r_load);
+            // --- a voltage or power demand's current, held to the range every cell can
+            // carry over the step (see `pack_window` below). Clamped **before** protection,
+            // so protection still has the last word: the range contains zero whenever it
+            // is used, and protection only ever moves a current towards zero, so what it
+            // passes stays inside. `window_clipped` is this pass's verdict on whether the
+            // range, and not the demand, decided the current — a demand the cells cannot
+            // meet inside it.
+            let pack_window = if hold_window {
+                let lines: &[(f64, f64)] = if solve_iterations > 0 {
+                    &tangent
+                } else if seeded {
+                    step_src
+                } else {
+                    &cell_src
+                };
+                pack_current_window(&self.groups, &self.chem, lines, group_src, cap_ah, dt)
+            } else {
+                None
+            };
+            let i_req = pack_window.map_or(i_req_raw, |(lo, hi)| i_req_raw.clamp(lo, hi));
+            let window_clipped = i_req.to_bits() != i_req_raw.to_bits();
             // Protection's verdict belongs to *this* pass and is carried out of the
             // loop by whichever pass breaks — deliberately a fresh binding rather than
             // an accumulator, because a transient `OC` on an intermediate iterate that
@@ -2410,6 +2440,9 @@ impl Pack {
                 i_short_full = (e_load - i_load * r_load) * g_ext;
                 i_g_full += i_short_full;
             }
+            // The range decided this pass's current only if protection did not then move
+            // it further — a derate is protection's verdict and carries its own flags.
+            let window_decided = window_clipped && i_g_full.to_bits() == i_req.to_bits();
             solve_iterations += 1;
             if !nonlinear {
                 break (i_g_full, i_short_full, prot_flags);
@@ -2468,6 +2501,18 @@ impl Pack {
                     lambda *= 0.5;
                     i_g = i_g_prev + lambda * (i_g_full - i_g_prev);
                     i_external_short_a = i_short_prev + lambda * (i_short_full - i_short_prev);
+                    // The last accepted current may lie outside this pass's range (the
+                    // lines moved), so the trial is held to it too. Zero is in the range
+                    // and protection passed both ends, so the held trial stays between
+                    // zero and a passed current, which protection passes. No external
+                    // short reaches here (see `hold_window`), so the short stays `0`.
+                    // What this buys is the statement "a held step is committed inside
+                    // this pass's range" by construction; no case measured needed it (P5
+                    // in the plan note turns nothing red), because a held pass's range
+                    // barely moves between passes.
+                    if let Some((lo, hi)) = pack_window {
+                        i_g = i_g.clamp(lo, hi);
+                    }
                 }
                 i_cell.clear();
                 probed.clear();
@@ -2509,6 +2554,31 @@ impl Pack {
                         i_cell.push(i_k);
                     }
                 }
+                // On a held pass, how far this trial is from the demand's own answer on its
+                // line is part of what it is scored on — and so part of what "converged"
+                // means below. Without it the score has a trivial minimum: the line is the
+                // tangent the last probe took, so a trial a small `λ` from that probe scores
+                // near zero whatever the demand says. Two things followed, both measured on
+                // a `Dfn`. The search *stopped* there and called it converged: a 1S1P held
+                // at 3.393 V for an hour walked the score to 2.5e-10 V at `λ` = 6e-5 and
+                // reported 4.127 V, charging at 1.56 A; at a one-second step six holds from
+                // 98 % "converged" up to 45 mV off target. And once one tiny step was
+                // accepted no real step could beat it: a cell held at 2.5 V crawled at
+                // `λ` = 3e-5 for thirty passes and stopped 0.7 A short. A full step misses by
+                // exactly `0.0`, so any pass that takes one scores as it always did.
+                //
+                // **Held passes only, and that is a scope, not a claim that the rest is
+                // sound.** The same false convergence is reachable on any damped pass — the
+                // `Spm`'s unmet 10 W hour stops on one at 1.6 A — but there no range keeps
+                // the search inside what the cells can carry, and scoring the miss sent that
+                // hour to 3.4 A past empty. ROADMAP H8 carries it. See
+                // `docs/plans/dfn-long-step-holds.md`.
+                if pack_window.is_some() {
+                    let miss = (i_g_full - i_g).abs() * r_pack;
+                    if miss > residual_v || miss.is_nan() {
+                        residual_v = miss;
+                    }
+                }
                 // The first pass is accepted whatever it produces: there is no earlier
                 // residual for it to beat, and refusing it would leave the solve with no
                 // iterate at all. Thereafter an attempt has to be a strict improvement,
@@ -2533,6 +2603,13 @@ impl Pack {
             i_short_prev = i_external_short_a;
 
             if residual_v <= SOLVE_TOL_V {
+                // Converged on the range's edge rather than on the demand: the cells
+                // cannot meet it inside the range over this step, which is what the flag
+                // says. The `Spm`'s held probes reach the same verdict by never
+                // converging; here the edge is a fixed point, so it has to be said.
+                if window_decided {
+                    flags |= EventFlags::SOLVE_UNCONVERGED;
+                }
                 break (i_g, i_external_short_a, prot_flags);
             }
             if solve_iterations >= SOLVE_ITER_CAP {
@@ -3298,6 +3375,70 @@ impl Pack {
 #[must_use]
 fn within_inclusive(v: f64, lo: f64, hi: f64) -> bool {
     v >= lo && v <= hi
+}
+
+/// The range of **pack** current \[A, discharge-positive\] over which every cell, split
+/// on `lines` through the node voltages `group_src` gives, stays inside the range of
+/// current its own model can carry over a step of `dt` seconds
+/// ([`crate::CellModel::current_window`]), widened to contain zero; `None` where that range
+/// is empty or not finite, and where no cell declares a range at all.
+///
+/// # Closed form
+/// A cell's current is affine in the pack current, with a positive slope: the group
+/// node is `V = E_g − I·R_g`, so `i_k = (E_k − E_g)/R_k + I·R_g/R_k`. Each cell's range
+/// therefore maps to one interval of `I`, and the pack's is their intersection — the
+/// same current runs through every series group.
+///
+/// # Why zero has to be inside it
+/// The pack holds a demand's current to this range *before* protection, and damps its
+/// trial currents into it. Protection only ever moves a current towards zero, and the
+/// damping argument that it cannot un-refuse a refused current rests on every trial
+/// lying between currents protection passed. Both survive the hold exactly when zero is
+/// in the range.
+///
+/// So the range is widened to take zero in. That is also what a cell at an edge needs: one
+/// that a step ended exactly at empty sits a rounding hair past it or not, and its own range
+/// then runs from a charge up to about `±1e-16` A; one a current demand drove further past
+/// empty has a range that stops short of zero. Either may rest — resting is what the pack
+/// would do with no demand at all — but not be moved further out. Measured without the
+/// widening, a scattered 1S1P at an unmeetable 10 W sat at empty for an hour and was then
+/// pushed a further 0.5 mA past it, with `SOC_CLAMPED_LOW`. The same widening admits the
+/// one other way zero can fall outside: a group circulating so hard on these lines that at
+/// zero pack current a cell is outside its range. An **empty** intersection — no pack
+/// current keeps every cell inside — is not used; the probes are still held.
+#[must_use]
+fn pack_current_window(
+    groups: &[ParallelGroup],
+    chem: &ChemistryParams,
+    lines: &[(f64, f64)],
+    group_src: &[(f64, f64)],
+    cap_ah: f64,
+    dt: f64,
+) -> Option<(f64, f64)> {
+    let mut lo = f64::NEG_INFINITY;
+    let mut hi = f64::INFINITY;
+    let mut declared = false;
+    let mut idx = 0;
+    for (group, &(e_g, r_g)) in groups.iter().zip(group_src) {
+        for cell in &group.cells {
+            let (e_k, r_k) = lines[idx];
+            idx += 1;
+            let Some((c_lo, c_hi)) = cell.model.current_window(
+                chem,
+                cell.eff_r0_factor(),
+                cell.eff_capacity_ah(cap_ah),
+                dt,
+            ) else {
+                continue;
+            };
+            declared = true;
+            let offset = (e_k - e_g) / r_k;
+            let slope = r_g / r_k;
+            lo = lo.max((c_lo - offset) / slope);
+            hi = hi.min((c_hi - offset) / slope);
+        }
+    }
+    (declared && lo.is_finite() && hi.is_finite() && lo <= hi).then(|| (lo.min(0.0), hi.max(0.0)))
 }
 
 /// Check a [`BmsConfig`]'s numeric ranges and probe positions.

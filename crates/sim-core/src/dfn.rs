@@ -1314,7 +1314,110 @@ fn setup_for<'a>(
 /// Fixed-step backward Euler, damped Newton, analytic banded Jacobian. Never panics and
 /// never returns an error: a step that runs out of iterations says so in
 /// [`Solved::converged`] and the caller raises a flag.
+///
+/// # Two retries, both only on a Newton that failed
+/// The Newton starts from the last step's converged vector, which is a good guess for a
+/// short step and a poor one for a long one: across an hour the electrolyte relaxes and
+/// the particles move by a large fraction of their range, and a damped Newton from the
+/// start of that can stall. Measured on the shipped LG M50 at a one-hour step: from 98 %
+/// a 4 A discharge failed with the cell nowhere near empty, and from a cell just drained
+/// to 2.5 V **every** current failed, rest included, while a one-minute step converged.
+/// So a failed solve is tried again from better starting points, in order:
+///
+/// * **in current** — the same step at `i/4`, `i/2`, `3i/4`, then `i`, each started from
+///   the last one's answer;
+/// * **in step length** — the same current over `dt/8`, `dt/4`, `dt/2`, then `dt` (and
+///   again from `dt/64`), each from the last one's answer. A shorter step is a different
+///   system — its mass rows divide by its own length — but only its *answer* is carried
+///   forward, as a starting guess; the system solved last is always this one.
+///
+/// Every stage but the last is only a starting point, so a solve that converges does so
+/// on exactly the equations it always did. One that converged at the first attempt never
+/// reaches either retry, and is bit for bit what it was; one that fails every retry
+/// returns its first attempt, as before. What a retry costs is solves on the failing path
+/// only — up to fifteen, against the one a converging step pays. After both, the one-hour
+/// voltage holds of `docs/plans/dfn-long-step-holds.md`'s sweep converge on all 405 held
+/// targets (they failed on 269 before); with the step-length retry alone, three did not.
 fn solve(s: &DfnState, setup: &StepSetup<'_>, i: f64, dt: f64) -> Solved {
+    let first = solve_from(s, setup, i, dt, None);
+    if first.converged || !i.is_finite() {
+        return first;
+    }
+    // In current. At `i = 0` there is nothing to ramp.
+    if i != 0.0 {
+        const STAGES: u32 = 4;
+        let mut guess: Option<Vec<f64>> = None;
+        for m in 1..STAGES {
+            let r = solve_from(
+                s,
+                setup,
+                i * f64::from(m) / f64::from(STAGES),
+                dt,
+                guess.as_deref(),
+            );
+            if !r.converged {
+                guess = None;
+                break;
+            }
+            guess = Some(r.u);
+        }
+        if let Some(g) = guess {
+            let r = solve_from(s, setup, i, dt, Some(&g));
+            if r.converged {
+                return r;
+            }
+        }
+    }
+    // In step length: each rung's particle maps are built for its own length, from the
+    // same start-of-step profiles `setup` was.
+    let sides = setup.sides;
+    for halvings in [3_i32, 6] {
+        let mut guess: Option<Vec<f64>> = None;
+        let mut reached = true;
+        for h in (1..=halvings).rev() {
+            let dt_h = dt * 0.5_f64.powi(h);
+            let rung = StepSetup {
+                sides,
+                grid: setup.grid,
+                dfn: setup.dfn,
+                parts_neg: s
+                    .c_neg
+                    .iter()
+                    .map(|c| particle_map(c, sides.neg.p, sides.neg.d_s, sides.kappa, dt_h))
+                    .collect(),
+                parts_pos: s
+                    .c_pos
+                    .iter()
+                    .map(|c| particle_map(c, sides.pos.p, sides.pos.d_s, sides.kappa, dt_h))
+                    .collect(),
+                c_e0: setup.c_e0,
+            };
+            let r = solve_from(s, &rung, i, dt_h, guess.as_deref());
+            if !r.converged {
+                reached = false;
+                break;
+            }
+            guess = Some(r.u);
+        }
+        if reached {
+            let r = solve_from(s, setup, i, dt, guess.as_deref());
+            if r.converged {
+                return r;
+            }
+        }
+    }
+    first
+}
+
+/// One damped Newton solve of the step, started from `guess` where one is given (a
+/// retry's; see [`solve`]) and from the last step's converged vector otherwise.
+fn solve_from(
+    s: &DfnState,
+    setup: &StepSetup<'_>,
+    i: f64,
+    dt: f64,
+    guess: Option<&[f64]>,
+) -> Solved {
     let grid = setup.grid;
     let sides = setup.sides;
     let n = grid.n();
@@ -1342,6 +1445,9 @@ fn solve(s: &DfnState, setup: &StepSetup<'_>, i: f64, dt: f64) -> Solved {
     };
     for (idx, &c) in s.c_e.iter().enumerate() {
         u[NVAR * idx + CE] = c;
+    }
+    if let Some(g) = guess.filter(|g| g.len() == m) {
+        u.copy_from_slice(g);
     }
 
     let scale = row_scale(grid, setup.c_e0, i_app, dt);
@@ -1643,6 +1749,26 @@ pub(crate) fn terminal_v(
 /// the pack's protection flags a per-pass binding rather than an accumulator: an
 /// intermediate operating point the converged answer does not visit did not happen.
 ///
+/// Under `hold` that identity needs the pack's own hold as well. A held probe solves at
+/// the range's edge while `advance` runs at the current the split gave; the two agree
+/// because a voltage or power demand's pack current is held to the range too, so every
+/// cell's split current is already inside its own and the probe's clamp does nothing. Two
+/// exceptions, both where the pack widens its range to take zero in (see
+/// `pack_current_window`): a cell resting past an edge, whose own range stops short of zero,
+/// and a group circulating so hard that no pack current keeps every cell inside. There
+/// `advance` can run where no probe did. **No test turns red if the probe is not held**
+/// (perturbation P3 in the plan note): with the pack's hold in place it is reached only in
+/// those two cases, and no case measured is decided by it.
+///
+/// # `hold`: a voltage or power demand's probes stay inside the cell's range
+/// With `hold`, a probe outside [`current_window`] is taken at the nearest edge of it —
+/// the voltage and the tangent both — as [`crate::spm::probe_at`] does for its own range,
+/// and for the same reason: those are the demands whose current the engine, not the
+/// caller, chooses, and past the range the cell's Newton does not converge and its curve
+/// is noise. Measured, one-hour holds on the shipped LG M50: 269 of 405 finished
+/// unconverged, the worst at 1e179 K, before any of `docs/plans/dfn-long-step-holds.md`.
+/// A current demand's probes are never held: its caller chose the current.
+///
 /// # `dt <= 0` does not reach the solver
 /// A zero-length probe step is how this repo reads an instantaneous voltage, and the
 /// backward-Euler mass rows carry `(c − c_old)/dt`. So a non-positive or `NaN` `dt` — which
@@ -1652,6 +1778,9 @@ pub(crate) fn terminal_v(
 /// concluded. The `NaN` test is spelled out rather than folded into a negated comparison,
 /// which is [`advance`]'s spelling and the one clippy accepts.
 #[must_use]
+// `hold` is the eighth, as it is the `Spm`'s seventh; `advance`'s reasoning for keeping the
+// list flat applies here too.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn probe_at(
     s: &DfnState,
     spm: &SpmParams,
@@ -1660,6 +1789,7 @@ pub(crate) fn probe_at(
     eff_capacity_ah: f64,
     i: f64,
     dt: f64,
+    hold: bool,
 ) -> (f64, (f64, f64)) {
     let stored = |s: &DfnState| {
         let line = source(s, spm, dfn, eff_r0_factor, eff_capacity_ah);
@@ -1676,12 +1806,97 @@ pub(crate) fn probe_at(
         // end; the matching answer here is the line, not a solve over a bad grid.
         return stored(s);
     }
+    let i = match current_window(s, &sides, dt) {
+        Some((lo, hi)) if hold => i.clamp(lo, hi),
+        _ => i,
+    };
     let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
     let solved = solve(s, &setup, i, dt);
     (
         solved.v_terminal,
         (solved.v_terminal + i * solved.r_tangent, solved.r_tangent),
     )
+}
+
+/// [`current_window`] for the pack: the same range, built from the cell's scale factors,
+/// and `None` on a step where no time passes.
+#[must_use]
+pub(crate) fn step_current_window(
+    s: &DfnState,
+    spm: &SpmParams,
+    dfn: &DfnParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    dt: f64,
+) -> Option<(f64, f64)> {
+    if dt.is_nan() || dt <= 0.0 {
+        return None;
+    }
+    let sides = Sides::new(spm, dfn, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    current_window(s, &sides, dt)
+}
+
+/// The range of current \[A, discharge-positive\] over which a step of `dt` seconds leaves
+/// both electrodes' **bulk** lithium between the stoichiometries the chemistry calls empty
+/// and full: `(lo, hi)`, or `None` when that range is empty or not finite. On a cell already
+/// past an edge it does not contain zero; the pack widens its own range to take zero in
+/// (see `pack_current_window`).
+///
+/// # Closed form, from conservation alone
+/// A converged step moves exactly `i·dt/F` moles of lithium (scaled by `κ`) out of the
+/// negative electrode's solid and into the positive's, however the reaction is spread
+/// through each electrode: the solid charge rows sum to `Σ a_s·h·j = ±i_app`, and the
+/// backward-Euler diffusion conserves each particle's content up to the flux it is handed.
+/// So each electrode's end-of-step bulk concentration is affine in `i`,
+/// `c̄_end = c̄_now ∓ 3·dt·κ·i / (F·A·a_s·R_p·L)`, and each gives one interval.
+///
+/// # Why the edges are the chemistry's empty and full
+/// The edges are each electrode's `stoich_min` and `stoich_max` — the stoichiometries
+/// `[spm]` already declares as 0 % and 100 %, extracted with the rest of the set — so the
+/// range adds no constant of its own. Two other edges were measured and refused:
+///
+/// * **Conservation's own, `(0, c_max)`** — the most lithium an electrode can give or
+///   take. Its edge is a point the cell's Newton cannot converge on (a solid emptied to
+///   its last mole puts every surface far past its range), and a demand the cell cannot
+///   meet stops exactly there: a 98 % cell held at 2.5 V for an hour was committed at the
+///   edge's 5.45 A and returned a state that does not conserve lithium.
+/// * **None** — the unheld solve, whose failures this range exists to stop.
+///
+/// Holding a voltage demand to this range never excludes its answer: a hold is clamped
+/// into `[v_min, v_max]`, and under load the terminal reaches those before the bulk
+/// reaches the stoichiometry at which the *resting* voltage does. A power demand the cell
+/// cannot meet stops at empty — at about `v_min`, rather than on the collapse past it.
+///
+/// # A bound on the bulk, not on the surface
+/// A particle's surface leaves its range before its mean does, and a reaction front
+/// saturates one node before the electrode's average moves much. So a current inside
+/// this range can still reach the kinetics clamp, and does, at the high-rate cut-offs the
+/// goldens run through; at a long step, where the particles have time to even out, the
+/// two are close. See `docs/plans/dfn-long-step-holds.md`.
+#[must_use]
+fn current_window(s: &DfnState, sides: &Sides<'_>, dt: f64) -> Option<(f64, f64)> {
+    // `sign` is the direction a discharge moves this electrode's bulk: out of the negative
+    // (`−1`), into the positive (`+1`).
+    let side = |profiles: &[Vec<f64>], sd: &Side<'_>, sign: f64| {
+        let c_max = sd.p.c_max_mol_per_m3;
+        let now = bulk_stoich(profiles, c_max) * c_max;
+        let per_amp = sign * 3.0 * dt * sides.kappa
+            / (FARADAY_C_PER_MOL
+                * sides.area_m2
+                * sd.a_s
+                * sd.p.particle_radius_m
+                * sd.p.thickness_m);
+        let at_edge = |edge: f64| (edge - now) / per_amp;
+        let (x, y) = (
+            at_edge(sd.p.stoich_min * c_max),
+            at_edge(sd.p.stoich_max * c_max),
+        );
+        (x.min(y), x.max(y))
+    };
+    let (n_lo, n_hi) = side(&s.c_neg, &sides.neg, -1.0);
+    let (p_lo, p_hi) = side(&s.c_pos, &sides.pos, 1.0);
+    let (lo, hi) = (n_lo.max(p_lo), n_hi.min(p_hi));
+    (lo.is_finite() && hi.is_finite() && lo < hi).then_some((lo, hi))
 }
 
 /// Total overpotential \[V\], discharge-positive: everything between the equilibrium

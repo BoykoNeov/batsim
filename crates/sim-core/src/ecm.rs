@@ -447,6 +447,38 @@ impl CellModel {
         }
     }
 
+    /// The range of current \[A, discharge-positive\] this cell can carry over a step of
+    /// `dt` seconds without its model leaving the states it describes, or `None` where
+    /// the model declares no such range.
+    ///
+    /// Only the `Dfn` declares one here: the currents that leave both electrodes' bulk
+    /// lithium inside the particles, from conservation alone (see
+    /// [`crate::dfn::current_window`]). The pack holds a voltage or power demand's
+    /// current to the pack-level range this implies, so that the current a cell is
+    /// *committed* at is one its step can converge on. The `Spm` has a range of its own,
+    /// its surface window, which already holds its probes; it answers `None` here
+    /// because that hold was measured without this one and adding it is a change of
+    /// its behaviour, not of this slice's. The equivalent circuit has no edge — its
+    /// `[reversal]` branch is what describes it past empty.
+    ///
+    /// `None` for `dt <= 0` (and a `NaN` `dt`): no time passes, so no current moves any
+    /// lithium.
+    #[must_use]
+    pub(crate) fn current_window(
+        &self,
+        chem: &ChemistryParams,
+        eff_r0_factor: f64,
+        eff_capacity_ah: f64,
+        dt: f64,
+    ) -> Option<(f64, f64)> {
+        match self {
+            CellModel::Dfn(s) => Self::dfn_params(chem).and_then(|(spm, d)| {
+                dfn::step_current_window(s, spm, d, eff_r0_factor, eff_capacity_ah, dt)
+            }),
+            _ => None,
+        }
+    }
+
     /// This cell's Thévenin source `(E, R)` for the pack's linear solve, from its
     /// start-of-step state. See [`cell_source`].
     ///
@@ -505,9 +537,10 @@ impl CellModel {
     /// See [`crate::dfn::probe_at`] and [`crate::spm::probe_at`] for what each does with
     /// `dt <= 0`, which is the path a zero-length probe step takes.
     ///
-    /// `hold` is read by the `Spm` alone: the pack sets it under a power demand, and it
-    /// keeps the probe inside the range of current the particle's model describes. See
-    /// [`crate::spm::probe_at`].
+    /// `hold` keeps the probe inside the range of current the cell's model describes; the
+    /// pack sets it under a power or voltage demand. The `Spm` and the `Dfn` read it, each
+    /// with a range of its own — see [`crate::spm::probe_at`] and [`crate::dfn::probe_at`]
+    /// — and the equivalent circuit, whose line is the same at every current, ignores it.
     ///
     /// Not memoisable: `i` is an in-flight iterate, not state. See
     /// [`crate::spm::source_at`].
@@ -530,7 +563,7 @@ impl CellModel {
                 spm::probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i, dt, hold)
             }),
             CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, (0.0, 1.0)), |(spm, d)| {
-                dfn::probe_at(s, spm, d, eff_r0_factor, eff_capacity_ah, i, dt)
+                dfn::probe_at(s, spm, d, eff_r0_factor, eff_capacity_ah, i, dt, hold)
             }),
         }
     }

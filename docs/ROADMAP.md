@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
 Phases 0–8 are complete and each is pinned by a committed test (see the README's status
-table). A hundred and five design notes under `docs/plans/` record what each slice measured,
+table). A hundred and eight design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -242,16 +242,30 @@ where the rest-OCV gate refused to correct.
   `voltage-target-blowup.md` counted 11 of 810 in-window solves on a scattered 1S3P SPM
   holding a voltage on its own knee; re-measured 2026-09-23 (`spm-end-of-step.md`, σ = 0.05
   guessed, the original's not recorded) the `Spm` count is 28 of 405 at a 1 s step and 1
-  of 405 at an hour, all bounded — they now stop at the edge of the particle's range. The
-  `Dfn` fails **269 of 405 at an hour** from a fresh pack, and **they are not bounded**
-  (measured 2026-09-23, `dfn-end-of-step-heat.md`): single hour-long steps reach 1e179 K
-  and more on the engine before that change and after it, and a scattered 1S3P held at
-  3.3 V, or asked for an unreachable 40 W, runs to 3e66 A or NaN within four hours. This is
-  the `Dfn` twin of what `spm-end-of-step.md` fixed for the `Spm` with a current window,
-  and the next slice here.
-  Bracketing was declined because the residual is not a scalar monotone one.
-* **A `Dfn` driven by an absurd `Demand::Current` is unrecoverable** (−1105 V forever);
-  the only guard is a magnitude, i.e. an invented constant.
+  of 405 at an hour, all bounded — they now stop at the edge of the particle's range.
+  ~~The `Dfn` fails 269 of 405 at an hour, unbounded~~ — **closed 2026-09-30**
+  (`dfn-long-step-holds.md`): 0 of 405 at an hour and at 1 s, hottest 341.8 K, and 0
+  cell-steps that fail to conserve lithium across twelve four-hour held runs (124 before).
+  Two retries in the cell's own Newton, a range for the cell from conservation with the
+  chemistry's empty and full as edges, and a voltage or power demand's pack current held
+  to it. Bracketing was declined because the residual is not a scalar monotone one.
+* **The pack's damped search can stop where the demand was not met, and call it
+  converged** (`dfn-long-step-holds.md`). It scores a trial against the tangent the last
+  probe took, so a trial a small step from that probe scores near zero whatever the
+  demand said: a `Dfn` held at 3.393 V for an hour "converged" at 4.127 V, charging. Fixed
+  **only on passes a cell range is in force on** — a `Dfn` under a voltage or power demand
+  — by scoring the demand's miss too. Everywhere else it stands: the `Spm`'s unmet 10 W hour
+  stops on such a pass at 1.6 A, and scoring the miss there sent it past empty, because the
+  `Spm` declares its surface window to its probes but not to the pack. The next step is
+  that declaration (`CellModel::current_window` for the `Spm`), then the score everywhere;
+  the redesign is scoring a trial against the demand rather than the last tangent.
+* **A `Dfn` driven past its range by a `Demand::Current` does not conserve lithium** — and
+  that is not only an absurd current. From half charge a one-hour `Current(3.5)`, 0.7C,
+  empties the cell past what the electrode holds; the Newton does not converge and the
+  state it leaves does not add up. At the extreme the cell is unrecoverable (−1105 V
+  forever). A current demand's caller chose the current, so the held-demand range does not
+  apply; the honest fix is past-empty physics for the porous models (the `Spm` bullet
+  above), not a magnitude guard.
 * ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
   2026-08-13** (`operating-point-window.md`): a current demand raises
   `OPERATING_POINT_OUT_OF_WINDOW` too, judged per group. `Rest` is still excluded by
@@ -410,3 +424,4 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | ECM parallel groups and voltage holds diverge past a few hundred seconds of `dt` (11 000 K at an hour) | `end-of-step-split.md` (found measuring H10) | `end-of-step-split.md` (end-of-step sources, no snapshot bump) |
 | `Spm` parallel groups and voltage holds diverge at long steps (10 000 K by the fourth hour) | `end-of-step-split.md` | `spm-end-of-step.md` (end-of-step curve, curve-read heat, no snapshot bump; past-empty physics open under H8) |
 | a `Dfn` books the equilibrium voltage's fall across a long step as heat (3.7 K against 1.06 K at C/5, 55 K against 18 K at 1C) | `spm-end-of-step.md` | `dfn-end-of-step-heat.md` (end-of-step heat off the cell's own solve, no snapshot bump) |
+| `Dfn` hour-long voltage and power holds unconverged and unbounded (269 of 405; 1e179 K; 3e146 A by the second hour) | `dfn-end-of-step-heat.md` | `dfn-long-step-holds.md` (Newton retries, a cell range, held pack current; no snapshot bump) |

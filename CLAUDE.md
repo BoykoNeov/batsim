@@ -216,6 +216,12 @@ and double as the scenario file format.
   (converges in a few iterations; guard with bisection fallback and iteration cap).
 - `Demand::Voltage(V)`: solve for I from the same linear Thevenin aggregate
   (closed form). Used for CV charging; combined CC-CV is a client-side policy.
+- A voltage or power demand's current is chosen by the engine, so on a porous pack it is
+  held to the range each cell can carry over the step: the `Spm`'s probes to its surface
+  window, and a `Dfn`'s pack current to the currents that keep every cell's bulk between
+  the chemistry's empty and full — from conservation, no invented constant. A demand the
+  cells cannot meet inside it stops at the edge with `SOLVE_UNCONVERGED`; a current demand
+  is never held. See `docs/plans/spm-end-of-step.md` and `docs/plans/dfn-long-step-holds.md`.
 
 ### Thermal network
 
