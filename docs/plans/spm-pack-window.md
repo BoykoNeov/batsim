@@ -267,6 +267,33 @@ parent that fails: an hour at 1.7675 A gives 4.214 W against the 3.925 W it land
 maximum. `an_unreachable_power_lands_at_the_most_the_cell_can_give` passes unmodified,
 as registered.
 
+**The first design's predictions (1–7), judged on the redesign as shipped.** They were
+registered for a design that was then changed twice (the bulk range, then the score and
+the bracket), so they are read here as claims about what shipped, not as tests of the
+reasoning under them.
+
+1. **Held**: the current-and-rest and zero-length fingerprints are bit-identical on both
+   models (thermal run; the isothermal ones too, under R1).
+2. **False as written.** The `Dfn` moved: its hour-long discharge powers land on the
+   maximum-power point instead of wherever the cap fell, and 16 of its holds moved by at
+   most 4e-8 A (R4 above).
+3. **Held**: 0 silent misses on the `Spm` in the isothermal sweep (R3).
+4. **The counts held, the mechanism did not.** Voltage holds unconverged 28 at 1 s and 1 at
+   3600 s (bounds ≤ 37 and ≤ 15), hour-long discharge powers 324 (bound 300–330). But the
+   23 silent holds were not flagged: they now meet their target.
+5. **Held**, in both thermal modes. No sweep class has a larger current or a hotter cell
+   than the parent; the two classes that moved went down. Hour-long discharge power, the
+   largest current: `Spm` 10.28 → 6.92 A, `Dfn` 7.73 → 6.92 A. Its hottest cell with the
+   thermal network: `Spm` 381.6 → 308.7 K, `Dfn` 332.6 → 315.6 K. Every other class is
+   equal to 0.01 A and 0.01 K.
+6. **False as written.** The 10 W hour does not stop at the range's edge; it lands on the
+   maximum-power point (1.607 A, R2), and then takes the 0.196 A the cell has left, then
+   0 A. It is flagged every hour, no cell goes past empty, and with the thermal network the
+   hottest the cell gets over four hours is 300.7 K, against 372.4 K on the parent, whose
+   third and fourth hours drew 6.8 A from an empty cell.
+7. **Held**: the workspace suite, 84 test binaries including the guided path's 69 claims
+   (`path_claims`), all pass.
+
 **R12's third part was not measured as registered.** Nothing the harness records says
 whether a solve backtracked, so "the parent's bits on every solve that never backtracks"
 was never counted; the class-by-class comparison above is what was measured instead.
@@ -278,7 +305,8 @@ Each row breaks one piece of the change in `sim-core`, runs the `sim-data` binar
 `--no-fail-fast`, and is read by exit code and failing test names
 (`W:\temp\claude\spm-window\pert\pert.py`, which restores the files after each row; they
 were compared against its backups afterwards). The first run, before the last three tests
-existed and without `dfn_cell` in the set, caught two of eleven. Each green row was then
+existed, ran only `spm_long_step`, `dfn_long_step_holds` and `sim-core`'s own tests, and
+caught two of eleven. Each green row was then
 measured with the harness to see what it broke, and the tests below were written from
 those measurements.
 
