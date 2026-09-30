@@ -123,11 +123,15 @@ Same harnesses, same cases.
 | one-hour holds unconverged | 269 of 405, hottest 10¹⁷⁹ K | **0 of 405**, hottest 341.8 K |
 | one-second holds unconverged | 0 of 405 (six falsely) | 0 of 405, every one on target |
 | cell-steps that do not conserve lithium, twelve four-hour runs | 124 | **0** |
-| scattered 1S3P at 3.3 V, four hours | 27 A, 3e146 A, ∞ | 5.61, 0.52, 0.05, 0.01 A; all at 3.300 V |
+| scattered 1S3P at 3.3 V, four hours | 27 A, 3e146 A, ∞ | 5.61, 0.52, 0.05, 0.006 A; all at 3.300 V |
 | 4S2P at 10 V, four hours | 63 A at 382 K, then 76 A, then 6e9 A | 4.97 A at 10.000 V, then rests at 11.2 V, flagged |
 | 1S3P at 40 W, four hours | 12 A, then −2.5e52 A | 7.2 A at 2.82 V, 0.58 A, then rest; flagged every hour; ≤ 312.2 K |
-| 1S1P at 10 W from 35 %, four hours | 1.7 A at 2.88 V, then 1.5 A at 0.05 V, "converged", past empty | 1.80 A (0.0012 % short of the charge it held), then rest; flagged |
+| 1S1P at 10 W from 35 %, four hours | 1.7 A at 2.88 V, then 1.5 A at 0.05 V, "converged", past empty | 1.89 A at 2.17 V, then rest at 2.50 V; flagged every hour |
 | drained 98 % cell, one-hour steps at −0.4 … +0.3 A | all 15 unconverged, 1.4–12.9 V | all 15 converged, a smooth monotone curve |
+
+All of this table was re-measured on the commit as shipped, after the two deletions the
+perturbation table below records, and came out identical — as did the fingerprints, the
+930-record diff and the `Spm` checks.
 
 An unmeetable power demand now stops at the chemistry's empty, at about `v_min`, instead of on
 the collapse past it (0.47 V before part 2's edge was chosen).

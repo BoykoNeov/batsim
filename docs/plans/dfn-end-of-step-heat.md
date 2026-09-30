@@ -110,7 +110,8 @@ reads −5e69 A (new) or NaN (old) by the fourth hour; on the way the old engine
 282 K on the first hour and to −4721 K on the second. The heat rule does not cause this. It
 is the `Dfn`'s pack solve under `Voltage` and `Power` at a long step, the `Dfn` analogue of
 what `spm-end-of-step.md` fixed for the `Spm` with its current window. Logged under ROADMAP
-H8, not fixed here.
+H8, not fixed here. **Closed — see `dfn-long-step-holds.md`** (2026-09-30: 0 of 405
+unconverged, bounded, and conserving over four held hours).
 
 ## One lesson number moved
 
@@ -166,7 +167,8 @@ so it is logged under ROADMAP H10 rather than changed here.
 
 ## Still open
 
-* **The `Dfn`'s long-step `Voltage` and `Power` solves are unbounded** (above). ROADMAP H8.
+* ~~**The `Dfn`'s long-step `Voltage` and `Power` solves are unbounded** (above). ROADMAP H8.~~
+  **Closed — see `dfn-long-step-holds.md`.**
 * **The `Spm`'s trapezoid vs end-of-step choice** (above). ROADMAP H10.
 * **A step-mean reported pair** — the H10 item this change moves the `Dfn` onto, like the
   other two models.

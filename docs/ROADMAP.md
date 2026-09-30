@@ -276,7 +276,11 @@ where the rest-OCV gate refused to correct.
 The unconverged holds and the absurd `Dfn` current want the same kind of window
 (concentrations, voltages) with a flag on leaving it, which is the honest form of the
 guard `voltage-target-blowup.md` declined: not a magnitude someone picked, but a bound the
-model states about itself.
+model states about itself. **The `Dfn` has one now** (`dfn-long-step-holds.md`): the currents
+that keep its bulk between the chemistry's empty and full over the step, declared through
+`CellModel::current_window` and held at the pack for a voltage or power demand. The `Spm`'s
+surface window is the next to declare the same way; the absurd current is a current demand,
+which no such range may hold.
 
 ### H9. Performance is at the budget line and the instrument cannot see single digits
 

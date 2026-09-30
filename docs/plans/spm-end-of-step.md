@@ -235,8 +235,8 @@ held voltage.
 * **Short-step voltage holds low in the window** now stop at the range's edge unconverged
   (28 of 405 at 1 s, above). Bounded and flagged, which is the honest answer the model can
   give; converging on them needs the past-empty physics in the first bullet.
-* **The `Dfn` fails 269 of 405 hour-long voltage holds** from a fresh pack, on both engines.
-  Measured here, not investigated.
+* ~~**The `Dfn` fails 269 of 405 hour-long voltage holds** from a fresh pack, on both engines.
+  Measured here, not investigated.~~ **Closed — see `dfn-long-step-holds.md`.**
 * **Speed.** The probe adds one forward sweep per particle and the heat terms two voltage
   and two equilibrium evaluations per cell per step. Not benched; the `Spm` has no bench
   case (ROADMAP H9).
