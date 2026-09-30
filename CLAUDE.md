@@ -217,11 +217,16 @@ and double as the scenario file format.
 - `Demand::Voltage(V)`: solve for I from the same linear Thevenin aggregate
   (closed form). Used for CV charging; combined CC-CV is a client-side policy.
 - A voltage or power demand's current is chosen by the engine, so on a porous pack it is
-  held to the range each cell can carry over the step: the `Spm`'s probes to its surface
-  window, and a `Dfn`'s pack current to the currents that keep every cell's bulk between
-  the chemistry's empty and full — from conservation, no invented constant. A demand the
-  cells cannot meet inside it stops at the edge with `SOLVE_UNCONVERGED`; a current demand
-  is never held. See `docs/plans/spm-end-of-step.md` and `docs/plans/dfn-long-step-holds.md`.
+  held to the range each cell can carry over the step: the pack current to the currents
+  that keep every cell's bulk between the chemistry's empty and full — from conservation,
+  no invented constant — and, on the `Spm`, its particle surfaces inside `(0, c_max)` too.
+  A demand the cells cannot meet inside it stops at the edge, and a power past the most the
+  cells can give lands on their maximum-power point; both converge and say so with
+  `SOLVE_UNCONVERGED`. A current demand is never held. The damped search scores a trial on
+  the step the next pass would take from it, and narrows a sign bracket once one is known,
+  so where an unmet demand lands does not depend on the pass cap. See
+  `docs/plans/spm-end-of-step.md`, `docs/plans/dfn-long-step-holds.md` and
+  `docs/plans/spm-pack-window.md`.
 
 ### Thermal network
 

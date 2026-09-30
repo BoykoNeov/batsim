@@ -20,6 +20,8 @@ const LGM50: &str = include_str!("../../../chemistries/nmc_21700_lgm50.toml");
 /// The shell count `sim_core::spm::DEFAULT_SHELLS` recommends.
 const SHELLS: usize = 20;
 
+const HOUR_S: f64 = 3600.0;
+
 fn env() -> Env {
     Env {
         t_ambient: 298.15,
@@ -28,13 +30,29 @@ fn env() -> Env {
 }
 
 fn pack(parallel: u16, initial_soc: f64, sigma: f64) -> Pack {
+    pack_with(
+        1,
+        parallel,
+        initial_soc,
+        sigma,
+        ThermalConfig::Network {
+            k_neighbor_w_per_k: 1.0,
+        },
+    )
+}
+
+fn pack_with(
+    series: u16,
+    parallel: u16,
+    initial_soc: f64,
+    sigma: f64,
+    thermal: ThermalConfig,
+) -> Pack {
     let config = PackConfig {
         aging: None,
         bms: None,
-        thermal: ThermalConfig::Network {
-            k_neighbor_w_per_k: 1.0,
-        },
-        series: 1,
+        thermal,
+        series,
         parallel,
         initial_soc,
         initial_temp_k: 298.15,
@@ -314,6 +332,116 @@ fn a_zero_length_step_is_not_held_to_the_range() {
         assert!(
             !tele.flags.contains(EventFlags::SOLVE_UNCONVERGED),
             "a zero-length read at {target} V did not converge: {tele:?}"
+        );
+    }
+}
+
+/// An hour-long voltage hold or power demand either meets its demand or says it did not.
+/// Isothermal, because a thermal pack re-reads its terminal voltage after the step's heat
+/// and that moves it off a demand the solve met. The parent of
+/// `docs/plans/spm-pack-window.md` reported every case here converged: the holds from 98 %
+/// up to 0.56 V off target, the powers on a point that was neither the demand nor the
+/// cell's maximum.
+#[test]
+fn a_long_hold_or_power_meets_its_demand_or_says_so() {
+    let iso = |parallel, soc, sigma| pack_with(1, parallel, soc, sigma, ThermalConfig::Isothermal);
+    let mut silent = Vec::new();
+    for target in [
+        2.56375, 2.585, 2.60625, 2.69125, 2.7125, 2.77625, 2.8825, 3.07375, 3.11625,
+    ] {
+        let tele = iso(1, 0.98, 0.0).step(HOUR_S, Demand::Voltage(target), &env());
+        if !tele.flags.contains(EventFlags::SOLVE_UNCONVERGED)
+            && (tele.v_terminal - target).abs() > 1e-6
+        {
+            silent.push(format!("98 % held at {target} V: {} V", tele.v_terminal));
+        }
+    }
+    for (parallel, soc, sigma, watts) in [
+        (1, 0.02, 0.0, 11.07),
+        (1, 0.5, 0.0, 8.07375),
+        (1, 0.5, 0.0, 11.00625),
+        (3, 0.5, 0.05, 22.5),
+    ] {
+        let tele = iso(parallel, soc, sigma).step(HOUR_S, Demand::Power(watts), &env());
+        let delivered = tele.v_terminal * tele.i_actual;
+        if !tele.flags.contains(EventFlags::SOLVE_UNCONVERGED)
+            && (delivered - watts).abs() > 1e-6 * watts
+        {
+            silent.push(format!(
+                "1S{parallel}P from {soc} at {watts} W: {delivered} W"
+            ));
+        }
+    }
+    assert!(silent.is_empty(), "missed and said nothing: {silent:#?}");
+}
+
+/// Every power past what the pack can give over the hour lands on the most it can give,
+/// says so, and gets there well inside the pass cap — whatever the power asked.
+///
+/// The maximum is a steep knee on a single cell and, on a scattered group, one corner per
+/// cell. Halving towards the last iterate crawled up the knee to the cap, and a search
+/// scored against the last tangent cycled and landed wherever the cap fell (1.07 A or
+/// 1.80 A for the 10 W hour). A single cell lands on one current; a scattered pack's power
+/// curve has several peaks within 1.4e-5 of each other (measured over the 81 powers of the
+/// plan note's sweep), and which one the search reaches depends on the power, so there the
+/// check is the power delivered. Powers 9 and 11 of the sweep are where a 4S2P's bracket
+/// once collapsed onto a sign filed while its split was still settling, and sat at the cap.
+/// See `docs/plans/spm-pack-window.md`.
+#[test]
+fn unmet_powers_land_on_the_maximum_inside_the_pass_cap() {
+    for (series, parallel, sigma) in [(1u16, 1u16, 0.0), (1, 3, 0.05), (4, 2, 0.05)] {
+        let mut landed: Vec<(f64, f64)> = Vec::new();
+        for k in (0..81).step_by(10).chain([9, 11]) {
+            let volts = (2.5 + (4.2 - 2.5) * f64::from(k) / 80.0) * f64::from(series);
+            let watts = 3.0 * volts * f64::from(parallel);
+            let mut p = pack_with(series, parallel, 0.5, sigma, ThermalConfig::Isothermal);
+            let tele = p.step(HOUR_S, Demand::Power(watts), &env());
+            let what = format!("{series}S{parallel}P at {watts} W");
+            assert!(
+                tele.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+                "{what}: not met and not said: {tele:?}"
+            );
+            assert!(
+                tele.solve_iterations < sim_core::pack::SOLVE_ITER_CAP,
+                "{what}: ran to the cap"
+            );
+            landed.push((tele.i_actual, tele.v_terminal * tele.i_actual));
+        }
+        let most = landed.iter().map(|l| l.1).fold(f64::MIN, f64::max);
+        let least = landed.iter().map(|l| l.1).fold(f64::MAX, f64::min);
+        assert!(
+            most - least <= 1e-4 * most,
+            "{series}S{parallel}P: landed between {least} and {most} W: {landed:?}"
+        );
+        if parallel == 1 {
+            let hi = landed.iter().map(|l| l.0).fold(f64::MIN, f64::max);
+            let lo = landed.iter().map(|l| l.0).fold(f64::MAX, f64::min);
+            assert!(hi - lo <= 1e-8, "one cell, landed from {lo} to {hi} A");
+        }
+    }
+}
+
+/// Hour after hour of a power the cell cannot give takes what it has left and then
+/// nothing: the pack's current is held to the range that keeps each particle's bulk
+/// between the chemistry's empty and full. Without that range the second hour of 10 W
+/// drew 0.26 A from a cell holding 0.196 A·h and the third and fourth kept draining it
+/// past empty, to 1.19 V; before the range was declared to the pack at all, the third hour
+/// ran 6.8 A and 372 K. See `docs/plans/spm-pack-window.md`.
+#[test]
+fn an_unreachable_power_never_drives_the_cell_past_empty() {
+    let mut p = pack(1, 0.35, 0.0);
+    for hour in 0..4 {
+        let tele = p.step(HOUR_S, Demand::Power(10.0), &env());
+        assert!(
+            tele.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+            "hour {hour}: 10 W was not met and nothing said so: {:?}",
+            tele.flags
+        );
+        assert!(
+            !tele.flags.contains(EventFlags::SOC_CLAMPED_LOW) && tele.i_actual >= 0.0,
+            "hour {hour}: driven past empty ({} A, {:?})",
+            tele.i_actual,
+            tele.flags
         );
     }
 }

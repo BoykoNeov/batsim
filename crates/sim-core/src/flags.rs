@@ -110,6 +110,18 @@ bitflags! {
         /// those fields by name and would be blind to a new one. What a client loses
         /// is the ability to tell *which* solve struggled; what it keeps is the only
         /// thing it can act on, which is that some voltage this step is approximate.
+        ///
+        /// # A third meaning: the demand was not met
+        /// On a pack of porous cells (`Spm`, `Dfn`) at a step longer than zero, the pack's
+        /// solve also raises it when it **converged**, but on something other than the
+        /// demand: a voltage or power demand held at the edge of the current range the
+        /// cells can carry over the step, or a power past the most the cells can give,
+        /// answered with their maximum-power point. The step's numbers are then exact —
+        /// what is approximate is only the claim that the demand was delivered. A
+        /// current demand is never held, and an equivalent-circuit pack answers an
+        /// unreachable power with its maximum-power point without raising it, as it
+        /// always has. See `docs/plans/dfn-long-step-holds.md` and
+        /// `docs/plans/spm-pack-window.md`.
         const SOLVE_UNCONVERGED = 1 << 12;
         /// At least one parallel group was solved to a node voltage outside the
         /// chemistry's declared window, `[v_min, v_max]`.

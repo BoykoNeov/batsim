@@ -1020,19 +1020,7 @@ pub(crate) fn probe_at(
     let end = if dt.is_nan() || dt <= 0.0 {
         None
     } else {
-        // One forward sweep per particle; each copy is a stack row, so a probe allocates
-        // nothing. The shell count was checked against `MAX_SHELLS` at construction.
-        let sweep = |c: &[f64], r_p: f64, d_s: f64| {
-            let mut row = [0.0_f64; MAX_SHELLS];
-            let mut diag = [0.0_f64; MAX_SHELLS];
-            let row = &mut row[..c.len()];
-            row.copy_from_slice(c);
-            forward_sweep(row, &mut diag, r_p, d_s, dt)
-        };
-        Some((
-            sweep(&s.c_neg, spm.negative.particle_radius_m, w.neg.d_s),
-            sweep(&s.c_pos, spm.positive.particle_radius_m, w.pos.d_s),
-        ))
+        Some(step_ends(s, spm, &w, dt))
     };
     let curve = |i: f64| match end {
         Some((neg, pos)) => end_of_step_voltage(&w, s, neg, pos, i),
@@ -1057,6 +1045,89 @@ pub(crate) fn probe_at(
     };
     let v = curve(i);
     (v, (v + i * r, r))
+}
+
+/// Both particles' [`OuterShell`]s for a step of `dt` seconds (`dt > 0`): one forward sweep
+/// per particle, each on a stack copy of its profile, so this allocates nothing and mutates
+/// nothing. The shell count was checked against `MAX_SHELLS` at construction.
+fn step_ends(s: &SpmState, spm: &SpmParams, w: &Working<'_>, dt: f64) -> (OuterShell, OuterShell) {
+    let sweep = |c: &[f64], r_p: f64, d_s: f64| {
+        let mut row = [0.0_f64; MAX_SHELLS];
+        let mut diag = [0.0_f64; MAX_SHELLS];
+        let row = &mut row[..c.len()];
+        row.copy_from_slice(c);
+        forward_sweep(row, &mut diag, r_p, d_s, dt)
+    };
+    (
+        sweep(&s.c_neg, spm.negative.particle_radius_m, w.neg.d_s),
+        sweep(&s.c_pos, spm.positive.particle_radius_m, w.pos.d_s),
+    )
+}
+
+/// The range of cell current \[A, discharge-positive\] over which a step of `dt` seconds
+/// (`dt > 0`) leaves both particles' **bulk** — their mean stoichiometry — between the
+/// chemistry's empty and full, `stoich_min` and `stoich_max`: the same edges
+/// [`soc`] reads 0 and 1 at, so the range adds no constant of its own.
+///
+/// Closed form, from conservation: [`diffuse`] changes a particle's lithium by exactly the
+/// flux it is handed, so its mean concentration ends the step at `c̄ − 3·dt·j/R_p`, affine
+/// in the current through `j`. The interval may exclude zero — a cell a current demand
+/// already drove past empty — and may be empty or not finite on a state no step reaches;
+/// the caller intersects it and checks.
+#[must_use]
+fn bulk_window(w: &Working<'_>, s: &SpmState, dt: f64) -> (f64, f64) {
+    let side = |c: &[f64], side: &Side<'_>, j_per_amp: f64| {
+        let c_max = side.p.c_max_mol_per_m3;
+        let now = mean_concentration(c);
+        let per_amp = 3.0 * dt * j_per_amp / side.p.particle_radius_m;
+        let at_edge = |stoich: f64| (now - stoich * c_max) / per_amp;
+        let (x, y) = (at_edge(side.p.stoich_min), at_edge(side.p.stoich_max));
+        (x.min(y), x.max(y))
+    };
+    let (n_lo, n_hi) = side(&s.c_neg, &w.neg, w.j_neg(1.0));
+    let (p_lo, p_hi) = side(&s.c_pos, &w.pos, w.j_pos(1.0));
+    (n_lo.max(p_lo), n_hi.min(p_hi))
+}
+
+/// The range of cell current \[A, discharge-positive\] the pack holds a voltage or power
+/// demand to over a step of `dt` seconds: the currents over which both surfaces end the
+/// step inside the interval [`clamp_surface`] leaves alone ([`current_window`], the range
+/// [`held`] holds a probe to) **and** both particles' bulk stays between empty and full
+/// ([`bulk_window`]), **pulled in by the tangent's difference step**, so a current the
+/// pack commits at its edge is one a probe reads exactly.
+///
+/// The surface range alone is too wide for the pack: its edge is where a surface reaches
+/// an empty or full particle, well past the chemistry's declared empty, and a 10 W hour
+/// from 35 % held to it ended at 0.90 V past empty (`docs/plans/spm-pack-window.md`). The
+/// bulk range is the `Dfn`'s rule, [`crate::dfn::current_window`], and adds no constant.
+///
+/// `None` on a step where no time passes, where [`current_window`] has no range, and
+/// where the two ranges do not overlap in a finite interval.
+#[must_use]
+pub(crate) fn step_current_window(
+    s: &SpmState,
+    spm: &SpmParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    dt: f64,
+) -> Option<(f64, f64)> {
+    if dt.is_nan() || dt <= 0.0 {
+        return None;
+    }
+    let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    let (s_lo, s_hi) = current_window(&w, s, Some(step_ends(s, spm, &w, dt)))?;
+    let (b_lo, b_hi) = bulk_window(&w, s, dt);
+    let (lo, hi) = (s_lo.max(b_lo), s_hi.min(b_hi));
+    if !(lo.is_finite() && hi.is_finite() && lo < hi) {
+        return None;
+    }
+    let h = 1.0e-6 * eff_capacity_ah;
+    Some(if hi - lo > 2.0 * h {
+        (lo + h, hi - h)
+    } else {
+        let mid = 0.5 * (lo + hi);
+        (mid, mid)
+    })
 }
 
 /// The tangent a pack's **first** pass aggregates this cell from on a step of `dt`: the
@@ -1088,17 +1159,7 @@ pub(crate) fn first_pass_tangent(
     let mut i = s.i_last;
     if !dt.is_nan() && dt > 0.0 {
         let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
-        let sweep = |c: &[f64], r_p: f64, d_s: f64| {
-            let mut row = [0.0_f64; MAX_SHELLS];
-            let mut diag = [0.0_f64; MAX_SHELLS];
-            let row = &mut row[..c.len()];
-            row.copy_from_slice(c);
-            forward_sweep(row, &mut diag, r_p, d_s, dt)
-        };
-        let ends = (
-            sweep(&s.c_neg, spm.negative.particle_radius_m, w.neg.d_s),
-            sweep(&s.c_pos, spm.positive.particle_radius_m, w.pos.d_s),
-        );
+        let ends = step_ends(s, spm, &w, dt);
         // Only a cell that could rest through the step inside its range is pulled back
         // into it. One already past a limit has no range near zero to be pulled into,
         // and its answer is out on the flat stretch where the last current already is.

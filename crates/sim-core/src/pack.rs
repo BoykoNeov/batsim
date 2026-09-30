@@ -38,7 +38,7 @@ use crate::aging::{Aging, AgingConfig, CellAging, FadeParams};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::dfn;
-use crate::ecm::{rc_decays, solve_current, CellModel};
+use crate::ecm::{power_past_reach, rc_decays, solve_current, CellModel};
 use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
@@ -495,7 +495,12 @@ pub const SNAPSHOT_VERSION: u32 = 21;
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
 /// A pass is converged when every cell's true terminal voltage at the current it was
-/// just assigned agrees with the node voltage the solve settled on, to within this.
+/// just assigned agrees with the node voltage the solve settled on, to within this —
+/// and, on a step of positive length, when the step the next pass would take from that
+/// current, priced at the pack's resistance, is within it too. The second half is what
+/// says the *demand* is met: the first is measured on the last pass's tangents and is
+/// near zero at any current a small step from the last probe
+/// (`docs/plans/spm-pack-window.md`).
 ///
 /// **Provenance:** the Phase 6 spike measured a safeguarded solve against exactly this
 /// tolerance and reached it in 3 iterations, mean *and* worst, over a 600-step CV hold
@@ -520,8 +525,11 @@ pub const SOLVE_TOL_V: f64 = 1.0e-9;
 /// Reaching it raises [`EventFlags::SOLVE_UNCONVERGED`] and the step proceeds on the
 /// last **accepted** iterate — `step` reports, it does not fail. Set well above the
 /// spike's measured worst case of 3 so that hitting it means something has genuinely
-/// gone wrong (a demand at the max-power knee, a pathological state) rather than that
-/// a hard step needed one pass more than usual.
+/// gone wrong (a pathological state) rather than that a hard step needed one pass more
+/// than usual. A power past what the cells can give is not such a case: it converges on
+/// their maximum-power point and is flagged for the demand it did not meet. Over the
+/// porous models' 4860-solve sweep in `docs/plans/spm-pack-window.md` no solve reaches
+/// this cap — the most any takes is 22 — so no answer there depends on its value.
 pub const SOLVE_ITER_CAP: u32 = 32;
 
 /// How many step lengths the pack solve's damping line-search may try before giving up
@@ -592,6 +600,17 @@ pub const SOLVE_ITER_CAP: u32 = 32;
 /// (`docs/plans/spm-end-of-step.md`), the `Spm` half of the sweep is 28 of 405 at a 1 s
 /// step — targets it cannot reach inside the particle's range, stopped at its edge — and 1
 /// of 405 at an hour.
+///
+/// # What the search is now, and what that leaves of the above
+/// The table above was measured when a trial was scored by the split gap alone. A trial is
+/// now also scored by the step the next pass would take from it, and once two trials of
+/// opposite sign are known the attempts narrow that bracket (regula falsi, Illinois,
+/// bisection when it fails to halve) instead of halving toward the last iterate — the
+/// bracketed root find the paragraph above calls declined, reached from a different
+/// direction: it needs no second solve, because each trial's probes already hold the
+/// tangents the next pass would use. Both were built for demands the cells cannot meet,
+/// whose landing had depended on [`SOLVE_ITER_CAP`] (`docs/plans/spm-pack-window.md`).
+/// The attempt count was not re-swept after either.
 const DAMPING_ATTEMPTS: u32 = 16;
 
 /// Per-cell manufacturing scatter: independent Gaussian variation of capacity and
@@ -2279,6 +2298,22 @@ impl Pack {
         let mut residual_prev = f64::INFINITY;
         let mut i_g_prev = 0.0;
         let mut i_short_prev = 0.0;
+        // The bounds protection has revealed so far this step, as `[lo, hi]` of load
+        // current: a pass whose current it moved shows where its allowance ends. The
+        // allowance does not depend on the iterate (see the damping comment below), so a
+        // bound once revealed holds for every later pass of the step. Read only by the
+        // trial score, which cannot call protection itself: it mutates the BMS.
+        let mut prot_lo = f64::NEG_INFINITY;
+        let mut prot_hi = f64::INFINITY;
+        let mut trial_src: Vec<(f64, f64)> = Vec::new();
+        // The bracket on the next pass's step `g = Î − I` (see the damping search below):
+        // the latest pack current \[A\] tried with `g > 0` and with `g < 0`, each with the
+        // `g` \[A\] regula falsi weighs it by (halved by the Illinois rule when it is
+        // retained twice running). Carried across passes; empty on a zero-length step.
+        let mut br_pos: Option<(f64, f64)> = None;
+        let mut br_neg: Option<(f64, f64)> = None;
+        let mut br_last_side = 0_i8;
+        let mut br_bisect = false;
 
         // --- the pack current solve.
         //
@@ -2434,7 +2469,8 @@ impl Pack {
             // contactor, and that disconnects load and short together.
             let mut i_short_full = 0.0;
             let mut i_g_full = i_load;
-            if self.bms.as_ref().is_some_and(Bms::contactor_open) {
+            let contactor_open = self.bms.as_ref().is_some_and(Bms::contactor_open);
+            if contactor_open {
                 i_g_full = 0.0;
             } else if g_ext > 0.0 {
                 i_short_full = (e_load - i_load * r_load) * g_ext;
@@ -2443,6 +2479,18 @@ impl Pack {
             // The range decided this pass's current only if protection did not then move
             // it further — a derate is protection's verdict and carries its own flags.
             let window_decided = window_clipped && i_g_full.to_bits() == i_req.to_bits();
+            // A power past what this pass's line can give is answered with the line's
+            // maximum-power point; unless protection then moved it, that is the demand not
+            // met, and a solve that converges there has converged on the cells' maximum
+            // power, not on the demand.
+            let power_decided = dt > 0.0
+                && power_past_reach(demand, e_load, r_load)
+                && i_load.to_bits() == i_req.to_bits();
+            if i_load > i_req {
+                prot_lo = prot_lo.max(i_load);
+            } else if i_load < i_req {
+                prot_hi = prot_hi.min(i_load);
+            }
             solve_iterations += 1;
             if !nonlinear {
                 break (i_g_full, i_short_full, prot_flags);
@@ -2473,7 +2521,23 @@ impl Pack {
             // else, and every trajectory in the suite that never backtracks is
             // bit-for-bit what it was. Where the full step makes things *worse*, the
             // trial current is walked back towards the last accepted one by halving
-            // until it does not.
+            // until it does not — unless a **bracket** is known, below.
+            //
+            // # The bracket: where the next step changes sign
+            // On a step with time in it every trial is scored on `g = Î − I`, the step the
+            // next pass would take from it (see the score below), and `g` changes sign
+            // across the answer: a met demand, a smooth maximum-power point, and a corner
+            // in a cell's curve where the power peaks. Once trials of both signs are known,
+            // halving towards the last current is the wrong search — measured, it crawled
+            // at ~0.47 a pass up a steep maximum-power knee, never settled on a corner, and
+            // on a `Dfn` asked for 10.7 W crept upward 5 mA a pass from 1.64 A because every
+            // halved trial landed where `|g|` first *rises* before it falls. So the attempts
+            // after the full step narrow the bracket instead: regula falsi, with the
+            // Illinois rule, and a bisection whenever a trial failed to halve it. A trial
+            // inside the bracket lies between two currents already tried, each of which
+            // lay between currents protection passed, so the argument below still holds;
+            // it is no longer a convex combination of *this pass's* two ends, which is why
+            // the assertion after the loop exempts it. See `docs/plans/spm-pack-window.md`.
             //
             // As in [`crate::dfn`]'s Newton, the halving happens at the *top* of each
             // attempt rather than the bottom. That is what keeps `i_cell`, `probed` and
@@ -2496,10 +2560,27 @@ impl Pack {
             let mut i_g = i_g_full;
             let mut i_external_short_a = i_short_full;
             let mut residual_v = f64::INFINITY;
+            let mut bracketed = false;
             for attempt in 0..DAMPING_ATTEMPTS {
+                let mut narrowing = false;
                 if attempt > 0 {
-                    lambda *= 0.5;
-                    i_g = i_g_prev + lambda * (i_g_full - i_g_prev);
+                    let bracket = match (br_pos, br_neg) {
+                        (Some(a), Some(b)) if i_g_full != i_g_prev => Some((a, b)),
+                        _ => None,
+                    };
+                    if let Some(((a, ga), (b, gb))) = bracket {
+                        let c = if br_bisect {
+                            0.5 * (a + b)
+                        } else {
+                            (a * gb - b * ga) / (gb - ga)
+                        };
+                        lambda = (c - i_g_prev) / (i_g_full - i_g_prev);
+                        bracketed = true;
+                        i_g = c;
+                    } else {
+                        lambda *= 0.5;
+                        i_g = i_g_prev + lambda * (i_g_full - i_g_prev);
+                    }
                     i_external_short_a = i_short_prev + lambda * (i_short_full - i_short_prev);
                     // The last accepted current may lie outside this pass's range (the
                     // lines moved), so the trial is held to it too. Zero is in the range
@@ -2554,30 +2635,142 @@ impl Pack {
                         i_cell.push(i_k);
                     }
                 }
-                // On a held pass, how far this trial is from the demand's own answer on its
-                // line is part of what it is scored on — and so part of what "converged"
-                // means below. Without it the score has a trivial minimum: the line is the
-                // tangent the last probe took, so a trial a small `λ` from that probe scores
-                // near zero whatever the demand says. Two things followed, both measured on
-                // a `Dfn`. The search *stopped* there and called it converged: a 1S1P held
-                // at 3.393 V for an hour walked the score to 2.5e-10 V at `λ` = 6e-5 and
-                // reported 4.127 V, charging at 1.56 A; at a one-second step six holds from
-                // 98 % "converged" up to 45 mV off target. And once one tiny step was
-                // accepted no real step could beat it: a cell held at 2.5 V crawled at
-                // `λ` = 3e-5 for thirty passes and stopped 0.7 A short. A full step misses by
-                // exactly `0.0`, so any pass that takes one scores as it always did.
+                // --- the demand term: the step the next pass would take from this trial.
                 //
-                // **Held passes only, and that is a scope, not a claim that the rest is
-                // sound.** The same false convergence is reachable on any damped pass — the
-                // `Spm`'s unmet 10 W hour stops on one at 1.6 A — but there no range keeps
-                // the search inside what the cells can carry, and scoring the miss sent that
-                // hour to 3.4 A past empty. ROADMAP H8 carries it. See
-                // `docs/plans/dfn-long-step-holds.md`.
-                if pack_window.is_some() {
-                    let miss = (i_g_full - i_g).abs() * r_pack;
-                    if miss > residual_v || miss.is_nan() {
-                        residual_v = miss;
+                // The split gap above says whether each cell's curve agrees with the node;
+                // it cannot say whether the demand is met, because it is measured on the
+                // tangents the *last* probe took, so a trial a small `λ` from that probe
+                // scores near zero whatever the demand says. Measured on a `Dfn`, the search
+                // stopped there and called it converged — a 1S1P held at 3.393 V for an
+                // hour reported 4.127 V — and once one tiny step was accepted no real step
+                // could beat it. (`docs/plans/dfn-long-step-holds.md`.)
+                //
+                // But this trial's probes already hold the tangents the next pass would
+                // aggregate. Aggregating them exactly as the pass above does — groups,
+                // series sum, the short's transform, the demand solve, the range, and the
+                // bounds protection has revealed (it cannot be called here: it mutates the
+                // BMS) — gives `Î`, the current the next pass would commit, bit for bit
+                // wherever protection binds at no new bound (R9 in
+                // `docs/plans/spm-pack-window.md`: 0 mismatches over the sweep and the short
+                // runs, 10 over a protection sweep, all passes that met a latched rung for
+                // the first time). The term is `|Î − I|·R′`, the next step in volts. It is
+                // zero exactly at a fixed point: a met demand, or, for a power past reach,
+                // the cells' own maximum-power point. So it has no trivial minimum, and —
+                // unlike the miss against this pass's own line that it replaced, which cycled
+                // an unmet power between three passes and landed wherever the cap fell — no
+                // bias against the step towards the answer.
+                //
+                // With a bracket (see the search above) the answer is within its width `w`
+                // of the trial, so the term is `R′·min(|Î − I|, w)`: at a corner `|Î − I|`
+                // never shrinks, and it is the bracket that closes. A trial's sign is filed
+                // into the bracket only when the demand term outweighs the split gap: a
+                // parallel pack's `Î` rides on a split still settling, and a sign decided by
+                // that was measured to collapse a 4S2P's bracket onto a point that was not
+                // the answer. A current demand without a short gives `Î = I` exactly, so the
+                // term is `0.0` and the score is what it always was; a zero-length step does
+                // not compute it.
+                if dt > 0.0 {
+                    trial_src.clear();
+                    let mut idx = 0;
+                    for (g_idx, group) in self.groups.iter().enumerate() {
+                        let mut sum_g = bleed_at(g_idx);
+                        let mut sum_eg = 0.0;
+                        for cell in &group.cells {
+                            let (e, r) = probed[idx];
+                            idx += 1;
+                            let g = 1.0 / r;
+                            sum_g += g + cell.shunt_g;
+                            sum_eg += e * g;
+                        }
+                        trial_src.push((sum_eg / sum_g, 1.0 / sum_g));
                     }
+                    let e_next: f64 = trial_src.iter().map(|&(e, _)| e).sum();
+                    let r_next: f64 = trial_src.iter().map(|&(_, r)| r).sum();
+                    let (e_load_next, r_load_next) = if g_ext > 0.0 {
+                        let denom = 1.0 + r_next * g_ext;
+                        (e_next / denom, r_next / denom)
+                    } else {
+                        (e_next, r_next)
+                    };
+                    let mut i_hat = solve_current(demand, e_load_next, r_load_next);
+                    if hold_window {
+                        if let Some((lo, hi)) = pack_current_window(
+                            &self.groups,
+                            &self.chem,
+                            &probed,
+                            &trial_src,
+                            cap_ah,
+                            dt,
+                        ) {
+                            i_hat = i_hat.clamp(lo, hi);
+                        }
+                    }
+                    if i_hat > prot_hi {
+                        i_hat = prot_hi;
+                    } else if i_hat < prot_lo {
+                        i_hat = prot_lo;
+                    }
+                    if contactor_open {
+                        i_hat = 0.0;
+                    } else if g_ext > 0.0 {
+                        i_hat += (e_load_next - i_hat * r_load_next) * g_ext;
+                    }
+                    // File the trial into the bracket: replace the endpoint of its own sign
+                    // if it lies strictly inside, halve the other's weight if that side was
+                    // kept last time too (Illinois), and ask for a bisection next if the
+                    // bracket did not at least halve. Outside a formed bracket it is ignored:
+                    // a sign there means another root, not a narrower one.
+                    let g_t = i_hat - i_g;
+                    let mut reach = g_t.abs();
+                    if g_t != 0.0 && reach * r_next > residual_v {
+                        let (same, other) = if g_t > 0.0 {
+                            (&mut br_pos, br_neg)
+                        } else {
+                            (&mut br_neg, br_pos)
+                        };
+                        let side = if g_t > 0.0 { 1_i8 } else { -1_i8 };
+                        match other {
+                            Some((o, _)) => {
+                                let s = same.map_or(o, |(p, _)| p);
+                                let inside = same.is_none() || (i_g - s) * (i_g - o) < 0.0;
+                                if inside {
+                                    let formed = same.is_some();
+                                    let w_before = (s - o).abs();
+                                    *same = Some((i_g, g_t));
+                                    let w = (i_g - o).abs();
+                                    if br_last_side == side {
+                                        let halve =
+                                            |x: Option<(f64, f64)>| x.map(|(i, g)| (i, 0.5 * g));
+                                        if side > 0 {
+                                            br_neg = halve(br_neg);
+                                        } else {
+                                            br_pos = halve(br_pos);
+                                        }
+                                    }
+                                    br_last_side = side;
+                                    br_bisect = formed && w > 0.5 * w_before;
+                                    reach = reach.min(w);
+                                }
+                            }
+                            None => *same = Some((i_g, g_t)),
+                        }
+                    }
+                    // Compared by bits, not by subtracting: `0 × ∞` is NaN, and NaN wins the
+                    // score, so a degenerate `R′` would backtrack a met current demand.
+                    let d = if i_hat.to_bits() == i_g.to_bits() {
+                        0.0
+                    } else {
+                        reach * r_next
+                    };
+                    let gap = residual_v;
+                    if d > residual_v || d.is_nan() {
+                        residual_v = d;
+                    }
+                    // While the bracket, not the split, is what keeps the score up, the
+                    // search keeps narrowing inside this pass rather than ending it: new
+                    // lines would not help, and a corner needs ~30 halvings from a bracket
+                    // as wide as the jump in `Î` across it.
+                    narrowing = reach < g_t.abs() && d > gap && d > SOLVE_TOL_V;
                 }
                 // The first pass is accepted whatever it produces: there is no earlier
                 // residual for it to beat, and refusing it would leave the solve with no
@@ -2585,7 +2778,9 @@ impl Pack {
                 // which is what makes the accepted residuals a decreasing sequence and
                 // the iterate therefore bounded. A non-finite residual can never be an
                 // improvement, so a pass that produces one always backtracks.
-                if solve_iterations == 1 || (residual_v.is_finite() && residual_v < residual_prev) {
+                if (solve_iterations == 1 || (residual_v.is_finite() && residual_v < residual_prev))
+                    && !narrowing
+                {
                     break;
                 }
                 // Whether or not the search succeeds, the smallest step it tried is the
@@ -2593,7 +2788,7 @@ impl Pack {
                 // residual is what decides whether that was recoverable.
             }
             debug_assert!(
-                solve_iterations == 1 || (0.0..=1.0).contains(&lambda),
+                solve_iterations == 1 || bracketed || (0.0..=1.0).contains(&lambda),
                 "damping produced λ = {lambda}, which is not a convex combination of the \
                  last accepted current and this pass's; the argument that damping cannot \
                  defeat protection rests on it being one"
@@ -2607,7 +2802,7 @@ impl Pack {
                 // cannot meet it inside the range over this step, which is what the flag
                 // says. The `Spm`'s held probes reach the same verdict by never
                 // converging; here the edge is a fixed point, so it has to be said.
-                if window_decided {
+                if window_decided || power_decided {
                     flags |= EventFlags::SOLVE_UNCONVERGED;
                 }
                 break (i_g, i_external_short_a, prot_flags);

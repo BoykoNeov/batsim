@@ -227,12 +227,14 @@ where the rest-OCV gate refused to correct.
   first pass starts from it. What that slice left open is the next bullet.
 * **An `Spm` has no physics past empty or full within a step.** Once a step would drive a
   particle's surface out of `(0, c_max)`, the clamp holds it at the edge and `V(i)` goes
-  flat. `spm::current_window` now states that range in closed form, and two things use
-  it: the first pass's seed, and the probes of a power or voltage demand. A current demand that really
-  drives a cell out there is still solved on the flat curve, and a cell already past empty
-  under a power demand still runs on it (6.8 A and 372 K on the third hour of an
-  unreachable 10 W, against 38 A and 900 K before). The honest fix is physics — a reversal
-  branch like the equivalent circuit's `[reversal]` — not another guard.
+  flat. `spm::current_window` states that range in closed form, and since 2026-09-30
+  (`spm-pack-window.md`) the `Spm` also declares a range to the pack — that surface range
+  intersected with the bulk range the `Dfn` uses, the chemistry's empty and full as edges —
+  so a power or voltage demand's current is held to it: the unreachable 10 W hour that ran
+  6.8 A and 372 K on its third hour (38 A and 900 K before that) now draws 0 A there, the
+  cell empty and the step flagged. A **current** demand that drives a cell out there is
+  still solved on the flat curve. The honest fix is physics — a reversal branch like the
+  equivalent circuit's `[reversal]` — not another guard.
 * ~~**A `Dfn` books the equilibrium voltage's fall across a long step as heat.**~~ —
   **closed 2026-09-23** (`dfn-end-of-step-heat.md`): the heat is read at the end of the
   step off the cell's own solve, for the report and the network both (1.03 K against
@@ -249,23 +251,30 @@ where the rest-OCV gate refused to correct.
   Two retries in the cell's own Newton, a range for the cell from conservation with the
   chemistry's empty and full as edges, and a voltage or power demand's pack current held
   to it. Bracketing was declined because the residual is not a scalar monotone one.
-* **The pack's damped search can stop where the demand was not met, and call it
-  converged** (`dfn-long-step-holds.md`). It scores a trial against the tangent the last
-  probe took, so a trial a small step from that probe scores near zero whatever the
-  demand said: a `Dfn` held at 3.393 V for an hour "converged" at 4.127 V, charging. Fixed
-  **only on passes a cell range is in force on** — a `Dfn` under a voltage or power demand
-  — by scoring the demand's miss too. Everywhere else it stands: the `Spm`'s unmet 10 W hour
-  stops on such a pass at 1.6 A, and scoring the miss there sent it past empty, because the
-  `Spm` declares its surface window to its probes but not to the pack. The next step is
-  that declaration (`CellModel::current_window` for the `Spm`), then the score everywhere;
-  the redesign is scoring a trial against the demand rather than the last tangent.
+* ~~**The pack's damped search can stop where the demand was not met, and call it
+  converged**~~ — **closed 2026-09-30** (`spm-pack-window.md`). A damped trial is now
+  scored on the step the next pass would take from it, computed from the trial's own probes
+  (bit-identical to that pass wherever protection binds at no new bound), so the score is
+  zero only at a fixed point — a met demand, or an unreachable power's maximum-power point —
+  on every model and every pass, held or not. Once trials of both signs of that step are
+  known, the search narrows the bracket (regula falsi, Illinois, bisection fallback) instead
+  of halving: the maximum power sits on a steep knee or, on a `Dfn`, on a corner of the
+  curve, where halving crawled or never settled. Over the 4860-solve isothermal sweep, no
+  answer now changes between pass caps of 31, 32 and 33 (243 `Dfn` and 244 `Spm` did on the
+  parent), no solve reaches the cap, and no step reports converged while missing its demand
+  (120 `Spm` did). An unreachable power that lands on its maximum says so with
+  `SOLVE_UNCONVERGED`, on the porous models. (The previous slice declined bracketing inside
+  the `Dfn`'s own Newton, whose residual is a vector; this one brackets the pack's single
+  current, whose next step is a scalar.)
 * **A `Dfn` driven past its range by a `Demand::Current` does not conserve lithium** — and
   that is not only an absurd current. From half charge a one-hour `Current(3.5)`, 0.7C,
   empties the cell past what the electrode holds; the Newton does not converge and the
   state it leaves does not add up. At the extreme the cell is unrecoverable (−1105 V
-  forever). A current demand's caller chose the current, so the held-demand range does not
-  apply; the honest fix is past-empty physics for the porous models (the `Spm` bullet
-  above), not a magnitude guard.
+  forever). Under a 2 Ω external short the fourth hour of `Current(2.0)` on a 1S3P
+  reached 1e81 A isothermally and 830 K with the thermal network, on the parent of
+  `spm-pack-window.md` and after it alike. A current demand's caller chose the current, so
+  the held-demand range does not apply; the honest fix is past-empty physics for the porous
+  models (the `Spm` bullet above), not a magnitude guard.
 * ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
   2026-08-13** (`operating-point-window.md`): a current demand raises
   `OPERATING_POINT_OUT_OF_WINDOW` too, judged per group. `Rest` is still excluded by
@@ -429,3 +438,4 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | `Spm` parallel groups and voltage holds diverge at long steps (10 000 K by the fourth hour) | `end-of-step-split.md` | `spm-end-of-step.md` (end-of-step curve, curve-read heat, no snapshot bump; past-empty physics open under H8) |
 | a `Dfn` books the equilibrium voltage's fall across a long step as heat (3.7 K against 1.06 K at C/5, 55 K against 18 K at 1C) | `spm-end-of-step.md` | `dfn-end-of-step-heat.md` (end-of-step heat off the cell's own solve, no snapshot bump) |
 | `Dfn` hour-long voltage and power holds unconverged and unbounded (269 of 405; 1e179 K; 3e146 A by the second hour) | `dfn-end-of-step-heat.md` | `dfn-long-step-holds.md` (Newton retries, a cell range, held pack current; no snapshot bump) |
+| the pack search converging where the demand was not met, and landing an unmet power wherever the pass cap fell (120 silent `Spm` misses; 487 cap-dependent solves over the sweep) | `dfn-long-step-holds.md` | `spm-pack-window.md` (an `Spm` pack range, a trial scored on the next pass's step, a sign bracket; no snapshot bump) |

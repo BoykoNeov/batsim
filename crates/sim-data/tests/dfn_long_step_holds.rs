@@ -197,8 +197,14 @@ fn parallel_packs_hold_a_voltage_hour_after_hour() {
     }
 }
 
-/// A power no cell can deliver for the hour stops where the chemistry calls the cell empty,
-/// says it was not met, and stays there: no cell is ever driven past empty to find it.
+/// A power no cell can deliver for the hour lands on the most the cell can give over it,
+/// says it was not met, and never takes the cell past empty.
+///
+/// Where it lands is checked by what does not depend on how many passes the solve had: an
+/// hour of current a little either side of the landing delivers less. This test used to
+/// pin the landing next to the range's edge, 1.8036 A; that was where a cycling search
+/// happened to be on its 32nd pass, and at a cap of 30, 33 or 60 the same step landed at
+/// 1.07 A. See `docs/plans/spm-pack-window.md`.
 #[test]
 fn an_unreachable_power_stops_at_empty_and_says_so() {
     let q_ah = soc_capacity_ah();
@@ -208,13 +214,21 @@ fn an_unreachable_power_stops_at_empty_and_says_so() {
         unconverged(tele.flags),
         "10 W for an hour from 35 % is not met"
     );
-    // Held to the range, the current is at most the charge the cell had, and the search ends
-    // next to that edge: measured 1.803597 of 1.803619 A·h, 0.0012 % short, where its passes
-    // ran out. Never past it — that is the step the range exists to forbid.
+    let landed_w = tele.v_terminal * tele.i_actual;
+    for factor in [0.98, 1.02] {
+        let i = tele.i_actual * factor;
+        let t = pack(1, 1, 0.35, 0.0).step(HOUR_S, Demand::Current(i), &env());
+        assert!(
+            t.v_terminal * i < landed_w,
+            "an hour at {i} A gave {} W, more than the {landed_w} W landed at {} A",
+            t.v_terminal * i,
+            tele.i_actual
+        );
+    }
     let delivered_ah = tele.i_actual * HOUR_S / HOUR_S;
     let held_ah = 0.35 * q_ah;
     assert!(
-        delivered_ah <= held_ah * (1.0 + 1e-12) && delivered_ah >= held_ah * (1.0 - 1e-4),
+        delivered_ah <= held_ah * (1.0 + 1e-12),
         "delivered {delivered_ah} A·h of the {held_ah} A·h the cell held"
     );
     // Then the hours after: the scrap left over, and rest. Over all four the cell gives no
@@ -277,4 +291,46 @@ fn hour_long_holds_across_the_window_converge() {
         }
     }
     assert!(failed.is_empty(), "unmet holds: {failed:?}");
+}
+
+/// Every power past what the pack can give over the hour lands on the most it can give,
+/// says so, and gets there well inside the pass cap — whatever the power asked. The
+/// `Dfn`'s maximum is a corner of its curve (a slope of 1.2600 V/A below 2.30031 A on this
+/// cell and 1.2883 above), where the next pass's current jumps and no fixed point exists:
+/// the search has to close a bracket on it. Before, 243 of the plan note's 405 hour-long
+/// powers landed wherever the cap fell. On a scattered pack each cell adds a corner and the
+/// power curve has several peaks within 1.4e-5 of each other, so there the check is the
+/// power delivered, not the current. See `docs/plans/spm-pack-window.md`.
+#[test]
+fn unmet_powers_land_on_the_maximum_inside_the_pass_cap() {
+    for (series, parallel, sigma) in [(1u16, 1u16, 0.0), (1, 3, 0.05), (4, 2, 0.05)] {
+        let mut landed: Vec<(f64, f64)> = Vec::new();
+        for k in (0..81).step_by(10) {
+            let volts = (2.5 + (4.2 - 2.5) * f64::from(k) / 80.0) * f64::from(series);
+            let watts = 3.0 * volts * f64::from(parallel);
+            let tele =
+                pack(series, parallel, 0.5, sigma).step(HOUR_S, Demand::Power(watts), &env());
+            let what = format!("{series}S{parallel}P at {watts} W");
+            assert!(
+                unconverged(tele.flags),
+                "{what}: not met and not said: {tele:?}"
+            );
+            assert!(
+                tele.solve_iterations < sim_core::pack::SOLVE_ITER_CAP,
+                "{what}: ran to the cap"
+            );
+            landed.push((tele.i_actual, tele.v_terminal * tele.i_actual));
+        }
+        let most = landed.iter().map(|l| l.1).fold(f64::MIN, f64::max);
+        let least = landed.iter().map(|l| l.1).fold(f64::MAX, f64::min);
+        assert!(
+            most - least <= 1e-4 * most,
+            "{series}S{parallel}P: landed between {least} and {most} W: {landed:?}"
+        );
+        if parallel == 1 {
+            let hi = landed.iter().map(|l| l.0).fold(f64::MIN, f64::max);
+            let lo = landed.iter().map(|l| l.0).fold(f64::MAX, f64::min);
+            assert!(hi - lo <= 1e-8, "one cell, landed from {lo} to {hi} A");
+        }
+    }
 }

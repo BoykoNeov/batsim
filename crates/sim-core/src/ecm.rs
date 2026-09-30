@@ -451,15 +451,14 @@ impl CellModel {
     /// `dt` seconds without its model leaving the states it describes, or `None` where
     /// the model declares no such range.
     ///
-    /// Only the `Dfn` declares one here: the currents that leave both electrodes' bulk
-    /// lithium inside the particles, from conservation alone (see
-    /// [`crate::dfn::current_window`]). The pack holds a voltage or power demand's
+    /// Both porous models declare one. The `Dfn`'s is the currents that leave both
+    /// electrodes' bulk lithium inside the particles, from conservation alone (see
+    /// [`crate::dfn::current_window`]); the `Spm`'s is the same bulk rule intersected
+    /// with the range its surfaces can reach, which already holds its probes (see
+    /// [`crate::spm::step_current_window`]). The pack holds a voltage or power demand's
     /// current to the pack-level range this implies, so that the current a cell is
-    /// *committed* at is one its step can converge on. The `Spm` has a range of its own,
-    /// its surface window, which already holds its probes; it answers `None` here
-    /// because that hold was measured without this one and adding it is a change of
-    /// its behaviour, not of this slice's. The equivalent circuit has no edge — its
-    /// `[reversal]` branch is what describes it past empty.
+    /// *committed* at is one its step can converge on. The equivalent circuit has no edge — its `[reversal]` branch is what
+    /// describes it past empty.
     ///
     /// `None` for `dt <= 0` (and a `NaN` `dt`): no time passes, so no current moves any
     /// lithium.
@@ -472,10 +471,13 @@ impl CellModel {
         dt: f64,
     ) -> Option<(f64, f64)> {
         match self {
+            CellModel::Spm(s) => Self::spm_params(chem).and_then(|spm| {
+                spm::step_current_window(s, spm, eff_r0_factor, eff_capacity_ah, dt)
+            }),
             CellModel::Dfn(s) => Self::dfn_params(chem).and_then(|(spm, d)| {
                 dfn::step_current_window(s, spm, d, eff_r0_factor, eff_capacity_ah, dt)
             }),
-            _ => None,
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) => None,
         }
     }
 
@@ -1438,6 +1440,14 @@ pub(crate) fn solve_current(demand: Demand, e: f64, r0: f64) -> f64 {
             }
         }
     }
+}
+
+/// Whether [`solve_current`] answers `demand` on the line `(e, r0)` with the line's
+/// maximum-power point instead of meeting it: a [`Demand::Power`] past what the line can
+/// give. The same expression `solve_current` branches on, so the two cannot disagree.
+#[must_use]
+pub(crate) fn power_past_reach(demand: Demand, e: f64, r0: f64) -> bool {
+    matches!(demand, Demand::Power(p) if e * e - 4.0 * r0 * p <= 0.0)
 }
 
 /// A cell's Thévenin equivalent for one step: source `e = OCV(soc,T) − Σ V_rc`

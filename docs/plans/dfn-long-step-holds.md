@@ -190,14 +190,15 @@ deletions below; P7 and P9 are the reason for them.
 
 ## Still open
 
-* **The same false convergence off held passes.** The damped search can still stop where the
-  demand is not met on any pass no range is in force on — the `Spm` under every demand, a `Dfn`
-  under a current demand on a parallel group or when the range is empty. The fix is the one
-  here, and its prerequisite is the `Spm` declaring its surface window to the pack, not only to
-  its probes; that is a behaviour change for the `Spm` and was left out. ROADMAP H8.
-* **The score's trivial minimum** is the root of both the false convergence and the trap, and
-  is only patched here, on held passes. Replacing it — scoring a trial against the demand, not
-  against the last probe's tangent — is a redesign of the solve for every model.
+* ~~**The same false convergence off held passes.**~~ and ~~**the score's trivial
+  minimum**~~ — **closed 2026-09-30** by `spm-pack-window.md`: the `Spm` declares a range to
+  the pack, and every damped trial on a step with time in it is scored on the step the next
+  pass would take from it, which is zero only at a fixed point. Measuring that found the
+  held-pass miss this note built had its own fault: `an_unreachable_power_stops_at_empty_and_says_so`
+  passed because a cycling search happened to be on its "empty" pass at the 32nd; at a cap of
+  30, 33 or 60 the same step landed at 1.07 A and 3.36 V, and 243 of the 405 hour-long
+  discharge-power solves in this note's sweep moved with the cap. That test now checks that
+  the landing is the most the cell can give over the hour.
 * **Current demands past empty.** A current demand's caller chose its current, so nothing here
   holds it: a `Current(3.5)` hour from half charge still drives the cell past its physical
   limit, and the step does not conserve lithium. This is wider than H8's "absurd current"
