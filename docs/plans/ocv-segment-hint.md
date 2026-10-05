@@ -169,8 +169,12 @@ trajectory test can see it in release, and only the exhaustive comparison does.
   The next lever needs a profiler: `samply` is installed, but on Windows it needs the
   Windows Performance Toolkit (`xperf`), an admin install the owner has not been asked for.
 * **The remaining split cost**: the extra pass over every cell, the RC loop and one division
-  per cell. The hint arm still read +3–4 % over `12ea82d` before the reporting-pass search
-  sped up too; it is not separately priced.
+  per cell, not separately priced. The hint now beats the engine before the split, so this
+  is headroom, not a regression. (A first prototype read +3–4 % over `12ea82d` on a busy
+  moment, core 5 under ~50 % box load. It is the same release code as what landed: a later
+  three-arm check, prototype / landed / `12ea82d`, on core 7 at ~55 % box load, read the
+  prototype and the landed code within 1 % of each other and both 0.86–0.96 of `12ea82d`.
+  The +3–4 % was the moment, not the code.)
 * **The `Dfn`/`Spm` paths** search their stoichiometry tables (`spm::ocp`) with the same
   `interp1`; nothing here touches them, and their budgets are their own.
 * **The step loop is an instrument now** and is not in the tree. If it should be, it is a
