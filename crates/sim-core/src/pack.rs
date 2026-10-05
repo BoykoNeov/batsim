@@ -1343,8 +1343,9 @@ impl std::fmt::Debug for SourceCache {
 /// stepped since it was deserialized — anything else would make
 /// `snapshot != roundtrip(snapshot)` — and `Debug` prints the length because a thousand
 /// currents in every `{:?}` of a pack is noise.
-/// Each cell's OCV-table segment from its last lookup, series-major / parallel-minor:
-/// where the next lookup tries first. See `crate::ecm::bracket_hinted`.
+/// Each cell's table segments from its last lookups — the OCV table and both axes of the
+/// `R0` grid (`crate::ecm::TableHints`) — series-major / parallel-minor: where the next
+/// lookups try first. See `crate::ecm::bracket_hinted`.
 ///
 /// # A fourth kind of buffer
 ///
@@ -1359,14 +1360,14 @@ impl std::fmt::Debug for SourceCache {
 ///
 /// It exists for speed. The pack reads the OCV table twice per cell per step on an
 /// equivalent-circuit pack — once for the end-of-step slope, once for the next step's
-/// source — and a cell almost never leaves its segment in one step. Measured in
-/// `docs/plans/ocv-segment-hint.md`.
+/// source — and the `R0` grid once, and a cell almost never leaves its segments in one
+/// step. Measured in `docs/plans/ocv-segment-hint.md`.
 ///
 /// The impls are [`SourceCache`]'s, for its reasons: `PartialEq` always `true` (a
 /// deserialized pack starts empty, so anything else would make
 /// `snapshot != roundtrip(snapshot)`), `Debug` prints the length.
 #[derive(Clone, Default)]
-struct OcvHints(Vec<u32>);
+struct OcvHints(Vec<crate::ecm::TableHints>);
 
 impl PartialEq for OcvHints {
     fn eq(&self, _other: &Self) -> bool {
@@ -1510,7 +1511,7 @@ pub struct Pack {
     /// A report, not state — no physics reads it.
     #[serde(skip)]
     cell_currents: CellCurrents,
-    /// Each cell's last OCV-table segment; see [`OcvHints`]. Speed only — changes no bit.
+    /// Each cell's last table segments; see [`OcvHints`]. Speed only — changes no bit.
     #[serde(skip)]
     ocv_hints: OcvHints,
 }
@@ -2199,7 +2200,7 @@ impl Pack {
         let mut hints = std::mem::take(&mut self.ocv_hints).0;
         if hints.len() != n_cells {
             hints.clear();
-            hints.resize(n_cells, crate::ecm::NO_HINT);
+            hints.resize(n_cells, crate::ecm::TableHints::NONE);
         }
         if !warm {
             cell_src.clear();

@@ -3,10 +3,11 @@
 //! `CLAUDE.md` sets a budget of **< 50 µs per step at 100S10P** (1000 cells) on the
 //! dev box. That is a budget to keep an eye on, not a test gate: a wall-clock
 //! assertion would be machine- and CI-dependent, so nothing here fails a build.
-//! **Met features off, missed fully featured.** Registered and gated, 2026-10-05:
-//! `100S10P/current` **46.9 µs**, `100S10P/power` **46.7 µs**, `100S10P/full`
-//! **53.3 µs** — `full` (thermal + BMS on) was over before the end-of-step split
-//! too, at 55.7 µs. See `docs/plans/ocv-segment-hint.md`, which also records why
+//! Registered and gated, 2026-10-05: `100S10P/current` **46.9 µs**, `100S10P/power`
+//! **46.7 µs**, `100S10P/full` **53.3 µs** — before the `R0`-grid change of the same
+//! night, which a long-loop instrument puts at 0.73–0.86 of that (`full` 42–46 µs,
+//! under the budget). **This file's own reading of that is owed**: the registered
+//! batch after it had no verdict on a loaded box. See `docs/plans/ocv-segment-hint.md`, which also records why
 //! the split's cost had been understated about 3× and a step-loop instrument that
 //! reads this box under load, and `docs/plans/pack-step-perf.md` for the history.
 //!

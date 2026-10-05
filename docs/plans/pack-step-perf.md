@@ -5,7 +5,9 @@
 > ratio on a loaded box), and a checked per-cell OCV-segment hint took it back and more.
 > Criterion, registered and gated: **46.9 µs `current`, 46.7 µs `power`, 53.3 µs `full`** —
 > under the budget features off, over it fully featured, as `full` already was before the
-> split (55.7 µs). That note also records a second instrument for this box, a long
+> split (55.7 µs). A profile the same night found ~17 % of the step in the `R0` grid's
+> searches; sharing its temperature bracket and hinting it took the step loop to `full`
+> 42–46 µs, under the line — criterion's reading of that is owed. That note also records a second instrument for this box, a long
 > back-to-back step loop that reproduced to ~1 % at 25–40 % machine load, where criterion
 > could not.
 

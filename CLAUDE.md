@@ -453,10 +453,12 @@ numbers are not.
    mid-range") asserting on flags and key outcomes. Every client-facing file in
    `scenarios/` is loaded and run by `crates/sim-data/tests/scenario.rs`.
 5. Benchmarks (criterion) for `Pack::step` at 100S10P; budget < 50 µs per step at
-   that size on the dev box. **Met features-off, missed fully featured**: measured
-   2026-10-05 at 46.9 µs (`current`) and 53.3 µs (`full`, thermal + BMS on). Current
-   status, and how to measure a change on this machine: `docs/plans/pack-step-perf.md`
-   and `docs/plans/ocv-segment-hint.md`.
+   that size on the dev box. **Met on the step loop; criterion owes the fully featured
+   reading**: 2026-10-05, after the `R0`-grid change, 35.6–36.1 µs `current` and
+   41.9–46.0 µs `full` (thermal + BMS on) on a long-loop instrument; criterion read 46.9
+   and 53.3 µs before that change and had no verdict after it on a loaded box. Current
+   status, and how to measure a change on this machine: `docs/plans/ocv-segment-hint.md`
+   and `docs/plans/pack-step-perf.md`.
 
 ---
 

@@ -328,8 +328,9 @@ which no such range may hold.
 
 ### H9. Performance is at the budget line and the instrument cannot see single digits
 
-**Gap.** `Pack::step` at 100S10P measures 46.9 µs against a 50 µs budget features off, and
-53.3 µs fully featured — over the line (`ocv-segment-hint.md`, 2026-10-05).
+**Gap.** `Pack::step` at 100S10P is under the 50 µs budget on the step loop — ~36 µs features
+off, 42–46 µs fully featured, since the `R0`-grid change of 2026-10-05 — but the fully featured
+figure has no criterion reading yet (`ocv-segment-hint.md`).
 The DFN and SPM benches for the cell-size change were never run. The box the measurements
 were taken on has three performance states and reproducibility "is a property of the
 minute" (`cell-size.md`). The DFN re-solves at a current it already probed (a priced 33 %).
@@ -348,9 +349,11 @@ reproduces to ~1 % where criterion could not, run on every engine commit, put it
 checked per-cell segment hint — bit-identical whatever it holds, so it carries no
 invariant — removed both searches' cost. Criterion, registered and gated: **46.9 µs
 `current`, 46.7 µs `power`, 53.3 µs `full`**, against 49.8 / 49.7 / 55.7 µs for the engine
-before the split. **`full` is still over**, as it was before the split; the next lever needs
-a profiler, and the one installed (`samply`) needs the Windows Performance Toolkit, an
-admin install.
+before the split. `full` was still over; a profile (Windows Performance Toolkit installed the
+same night) then put ~17 % of the step in the `R0` grid's three binary searches per cell, and
+sharing its temperature bracket and hinting both axes — bit-identical — took the step loop to
+0.73–0.86 of before: `full` 42–46 µs. Criterion's confirmation of that is owed (a loaded box
+gave no verdict).
 
 ### H10. Smaller physics items, each one slice or less
 

@@ -519,8 +519,8 @@ impl CellModel {
         }
     }
 
-    /// [`Self::source`], with the equivalent circuit's OCV lookup started from the table
-    /// segment `hint` names (see `bracket_hinted`). The same bits whatever `hint` holds;
+    /// [`Self::source`], with the equivalent circuit's table lookups started from the
+    /// segments `hints` names (see `bracket_hinted`). The same bits whatever `hints` holds;
     /// the porous arms ignore it.
     #[must_use]
     pub(crate) fn source_hinted(
@@ -528,11 +528,11 @@ impl CellModel {
         chem: &ChemistryParams,
         eff_r0_factor: f64,
         eff_capacity_ah: f64,
-        hint: &mut u32,
+        hints: &mut TableHints,
     ) -> (f64, f64) {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
-                cell_source_hinted(s, chem, eff_r0_factor, hint)
+                cell_source_hinted(s, chem, eff_r0_factor, hints)
             }
             CellModel::Spm(_) | CellModel::Dfn(_) => {
                 self.source(chem, eff_r0_factor, eff_capacity_ah)
@@ -675,7 +675,7 @@ impl CellModel {
         soh_resistance: f64,
         charge_capacity_ah: f64,
         dt: f64,
-        hint: &mut u32,
+        hints: &mut TableHints,
     ) -> (f64, f64) {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => step_source_shift(
@@ -685,7 +685,7 @@ impl CellModel {
                 soh_resistance,
                 charge_capacity_ah,
                 dt,
-                hint,
+                &mut hints.ocv,
             ),
             CellModel::Spm(_) | CellModel::Dfn(_) => (0.0, 0.0),
         }
@@ -884,6 +884,28 @@ fn bracket(xs: &[f64], x: f64) -> (usize, usize, f64) {
 /// so the lookup searches.
 pub(crate) const NO_HINT: u32 = u32::MAX;
 
+/// One cell's [`bracket_hinted`] hints for every table its source reads: the OCV table,
+/// and the `R0` grid's SOC and temperature axes. Like each hint, the set changes no bit
+/// whatever it holds — it only decides where each lookup tries first.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TableHints {
+    /// The OCV table's segment.
+    pub ocv: u32,
+    /// The `R0` grid's SOC-axis segment.
+    pub r0_soc: u32,
+    /// The `R0` grid's temperature-axis segment.
+    pub r0_temp: u32,
+}
+
+impl TableHints {
+    /// Every hint empty: each lookup searches.
+    pub(crate) const NONE: Self = Self {
+        ocv: NO_HINT,
+        r0_soc: NO_HINT,
+        r0_temp: NO_HINT,
+    };
+}
+
 /// [`bracket`], tried first on the segment `hint` names, and **the same answer bit for
 /// bit** whatever `hint` holds. On a search, `hint` is left naming the segment found.
 ///
@@ -1071,16 +1093,35 @@ pub fn cell_heat_w(
 /// interpolation over the grid.
 #[must_use]
 pub fn r0_lookup(table: &R0Table, soc: f64, temp_k: f64) -> f64 {
+    let (mut soc_hint, mut temp_hint) = (NO_HINT, NO_HINT);
+    r0_lookup_hinted(table, soc, temp_k, &mut soc_hint, &mut temp_hint)
+}
+
+/// [`r0_lookup`], with each axis's search started from the segment its hint names. The
+/// same bits whatever the hints hold; see `bracket_hinted`.
+#[must_use]
+pub(crate) fn r0_lookup_hinted(
+    table: &R0Table,
+    soc: f64,
+    temp_k: f64,
+    soc_hint: &mut u32,
+    temp_hint: &mut u32,
+) -> f64 {
     // Interpolate along temperature within each soc row, then across soc rows —
     // but only the two rows the SOC bracket actually blends. Interpolating every
     // row first (into a scratch Vec) would give the identical answer at the cost
     // of a heap allocation on a path that runs twice per cell per step.
-    let (lo, hi, frac) = bracket(&table.soc, soc);
-    let r_lo = interp1(&table.temp_k, &table.ohms[lo], temp_k);
+    //
+    // Both rows share the temperature axis, so they share its bracket: one search, not
+    // two. `interp1` is `lerp_at` over `bracket`, so blending each row at the one bracket
+    // is the same bits as interpolating each row on its own.
+    let (lo, hi, frac) = bracket_hinted(&table.soc, soc, soc_hint);
+    let t = bracket_hinted(&table.temp_k, temp_k, temp_hint);
+    let r_lo = lerp_at(&table.ohms[lo], t);
     if lo == hi {
         return r_lo;
     }
-    let r_hi = interp1(&table.temp_k, &table.ohms[hi], temp_k);
+    let r_hi = lerp_at(&table.ohms[hi], t);
     r_lo + frac * (r_hi - r_lo)
 }
 
@@ -1573,21 +1614,27 @@ pub(crate) fn power_past_reach(demand: Demand, e: f64, r0: f64) -> bool {
 /// composes the two and guarantees the product is `> 0`, so `r > 0`.
 #[must_use]
 pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f64) -> (f64, f64) {
-    let mut hint = NO_HINT;
-    cell_source_hinted(state, chem, r0_factor, &mut hint)
+    let mut hints = TableHints::NONE;
+    cell_source_hinted(state, chem, r0_factor, &mut hints)
 }
 
-/// [`cell_source`], with the OCV lookup started from the segment `hint` names. The same
-/// bits whatever `hint` holds; see `bracket_hinted`.
+/// [`cell_source`], with every table lookup started from the segment `hints` names. The
+/// same bits whatever `hints` holds; see `bracket_hinted`.
 #[must_use]
 pub(crate) fn cell_source_hinted(
     state: &EcmState,
     chem: &ChemistryParams,
     r0_factor: f64,
-    hint: &mut u32,
+    hints: &mut TableHints,
 ) -> (f64, f64) {
-    let r = r0_lookup(&chem.r0, state.soc, state.temp_k) * r0_factor;
-    let e = open_circuit_v_hinted(chem, state, hint) - ecm_overpotential_v(state, chem);
+    let r = r0_lookup_hinted(
+        &chem.r0,
+        state.soc,
+        state.temp_k,
+        &mut hints.r0_soc,
+        &mut hints.r0_temp,
+    ) * r0_factor;
+    let e = open_circuit_v_hinted(chem, state, &mut hints.ocv) - ecm_overpotential_v(state, chem);
     (e, r)
 }
 
@@ -2071,6 +2118,76 @@ mod hinted_bracket {
             1.0000,
         ]);
         check(&[-3.0, -1.0, 0.0, 2.5, 1e6]);
+    }
+
+    /// `r0_lookup` before it shared one temperature bracket between its two rows and
+    /// took hints, verbatim but for the name.
+    fn r0_general(table: &crate::chem::R0Table, soc: f64, temp_k: f64) -> f64 {
+        use super::interp1;
+        let (lo, hi, frac) = bracket(&table.soc, soc);
+        let r_lo = interp1(&table.temp_k, &table.ohms[lo], temp_k);
+        if lo == hi {
+            return r_lo;
+        }
+        let r_hi = interp1(&table.temp_k, &table.ohms[hi], temp_k);
+        r_lo + frac * (r_hi - r_lo)
+    }
+
+    /// The `R0` grid lookup reads one temperature bracket for both rows and starts each
+    /// axis from a hint. Neither may change a bit: every SOC and temperature probe,
+    /// against every pair of hints, matches the lookup as it was.
+    #[test]
+    fn r0_lookup_matches_the_lookup_it_replaced() {
+        let tables = [
+            crate::chem::R0Table {
+                soc: vec![0.0, 0.5, 1.0],
+                temp_k: vec![263.15, 298.15, 318.15],
+                ohms: vec![
+                    vec![0.055, 0.022, 0.018],
+                    vec![0.048, 0.020, 0.016],
+                    vec![0.050, 0.021, 0.017],
+                ],
+            },
+            crate::chem::R0Table {
+                soc: vec![0.5],
+                temp_k: vec![298.15],
+                ohms: vec![vec![0.02]],
+            },
+            crate::chem::R0Table {
+                soc: vec![0.0, 0.1, 0.3, 0.7, 1.0],
+                temp_k: vec![253.15, 273.15, 298.15],
+                ohms: vec![
+                    vec![0.09, 0.05, 0.03],
+                    vec![0.08, 0.045, 0.028],
+                    vec![0.07, 0.04, 0.025],
+                    vec![0.071, 0.041, 0.026],
+                    vec![0.075, 0.043, 0.027],
+                ],
+            },
+        ];
+        for table in &tables {
+            let ns = u32::try_from(table.soc.len()).expect("small");
+            let nt = u32::try_from(table.temp_k.len()).expect("small");
+            let soc_hints: Vec<u32> = (0..ns + 1).chain([NO_HINT]).collect();
+            let temp_hints: Vec<u32> = (0..nt + 1).chain([NO_HINT]).collect();
+            for soc in probes(&table.soc) {
+                for temp in probes(&table.temp_k) {
+                    let want = r0_general(table, soc, temp).to_bits();
+                    for &hs in &soc_hints {
+                        for &ht in &temp_hints {
+                            let (mut a, mut b) = (hs, ht);
+                            let got = super::r0_lookup_hinted(table, soc, temp, &mut a, &mut b);
+                            assert_eq!(
+                                got.to_bits(),
+                                want,
+                                "soc {soc:e}, T {temp:e}, hints {hs}/{ht}"
+                            );
+                        }
+                    }
+                    assert_eq!(super::r0_lookup(table, soc, temp).to_bits(), want);
+                }
+            }
+        }
     }
 
     /// The hint is used, not merely tolerated: after a lookup lands in a segment, the

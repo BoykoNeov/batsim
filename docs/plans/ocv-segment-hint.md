@@ -163,11 +163,65 @@ P2's release column is the reason the unit test exists: `x` exactly on the last 
 blends `ys[n−2] + 1·(ys[n−1] − ys[n−2])`, which usually rounds to `ys[n−1]` — so no
 trajectory test can see it in release, and only the exhaustive comparison does.
 
+## Follow-up the same night: the profile, and the `R0` grid
+
+The hand arms having reached their limit, the owner approved installing the Windows
+Performance Toolkit (`xperf`), which `samply` needs on Windows. Two things a next session
+needs: samply's own symbolication left every function in the step loop unnamed, so the
+profile was symbolicated out of tree with `llvm-symbolizer --inlines` against the PDB
+(`W:\temp\claude\perf\analyze_profile.py`), and the build needs `CARGO_PROFILE_BENCH_DEBUG=true`
+— `line-tables-only` produced a PDB with no function names.
+
+`100S10P/full`, 60 000 samples at 4 kHz, share of all samples, by function the sample landed
+in (inlined frames resolved):
+
+| where | share |
+| --- | --- |
+| `Pack::step`'s own loops | 15 % |
+| `bracket` and its binary search, **outside** the hinted OCV lookups — almost all of it the `R0` grid | ~17 % inclusive (`r0_lookup` 9.5 %) |
+| `rc_step_mean_excess_v` (one division per RC pair per cell) | 5.8 % |
+| the thermal integrator (`euler_substep`) | 4.7 % |
+
+So the thermal rewrite above was aimed at under 5 % of the step, which is why it measured
+nothing. The `R0` grid was the target: `r0_lookup` ran **three** binary searches per call —
+the SOC axis, then the temperature axis once for each of the two rows it blends, although
+both rows share that axis. Two changes, both bit-identical by construction:
+
+* the two rows share one temperature bracket (`interp1` is `lerp_at` over `bracket`, so
+  blending each row at the one bracket is the same bits);
+* both axes start from a per-cell hint (`TableHints`: the OCV segment plus the two `R0`
+  axes, kept in the same `OcvHints` buffer).
+
+The division in `rc_step_mean_excess_v` is not touched: a reciprocal is not bit-identical.
+
+**Verification.** `r0_lookup_matches_the_lookup_it_replaced` compares against a verbatim copy
+of the old lookup on three grids (3×3, 1×1, 5×3), every SOC and temperature probe of the
+hinted-bracket test, every pair of hints; release too. 20 000-step trajectory fingerprints
+from two separately built binaries are equal in all five configurations (`current`, `power`,
+`thermal`, `bms`, `full`). `cargo test --workspace` 86 binaries green, clippy and fmt clean.
+Perturbations (`W:\temp\claude\perf\perturb2.py`): blending the high row at the SOC
+bracket reddens **183** tests in debug and in release; **swapping the two axes' hints reddens
+nothing**, debug or release — the demonstration that a hint carries no correctness.
+
+**Speed, step loop, quietest core (6), box at ~30 %, four rounds alternating:**
+
+| case | before (`58f2a57`) | with the `R0` change | ratio in-round |
+| --- | --- | --- | --- |
+| `current` | 47.0 – 48.6 µs | 35.6 – 36.1 µs | 0.73 – 0.76 |
+| `power` | 48.5 µs (one undisturbed round) | 37.1 µs | ~0.76 |
+| `full` | 53.6 – 55.6 µs | 41.9 – 46.0 µs | 0.75 – 0.86 |
+
+The step loop's `full` read 52.3 – 55.3 µs where criterion read 53.3 for the same code, so on
+that footing **`full` is now under the budget** — but that is an inference across
+instruments. **The criterion reading is owed**: batch b4 (registered: 58f2a57 against the
+change, same protocol as b3, predicted 0.75 – 0.85 / 0.80 – 0.92) returned **no verdict** —
+the box was loaded enough that two rounds never gated and almost no reading had a CI inside
+±1 % (the old arm read 54 – 97 µs on one case).
+
 ## Still open
 
-* **`full` is over the budget**, 53.3 µs on criterion. It was before the split too (55.7).
-  The next lever needs a profiler: `samply` is installed, but on Windows it needs the
-  Windows Performance Toolkit (`xperf`), an admin install.
+* ~~**`full` is over the budget**, 53.3 µs on criterion.~~ Under it on the step loop since
+  the `R0` change above (41.9 – 46.0 µs); **a criterion reading on a quiet box is owed**.
 * **Pricing `full` by hand was tried the same day and reached its limit — a null, kept as
   one.** Config arms on the step loop (thermal network only, BMS only, BMS parts) read the
   thermal network as the cost and the BMS as about nothing, but in the same binary `full`
