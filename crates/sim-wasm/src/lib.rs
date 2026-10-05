@@ -210,6 +210,12 @@ use wasm_bindgen::prelude::*;
 /// row reads the new instant without any code of its own changing. The bundle in
 /// `web/pkg` still has to be rebuilt, as after any engine change, or the page answers
 /// from the old solve. See `docs/plans/end-of-step-split.md`.
+///
+/// **v8 unmoved at [`sim_core::SNAPSHOT_VERSION`] 22**, when a single-particle cell gained a
+/// deficit: `CellView::soc_deficit` keeps its name and type and gains values on a second cell
+/// model, and no page method changed. What did change is its meaning on that model — it can
+/// coexist with charge still inside — so the page's row is labelled `over-drained` rather
+/// than `past empty`. See `docs/plans/porous-reversal.md`.
 pub const WASM_API_VERSION: u32 = 8;
 
 /// [`WASM_API_VERSION`], reachable from JS.

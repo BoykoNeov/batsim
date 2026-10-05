@@ -84,7 +84,7 @@ A 1S1P LG M50 cell at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no fa
 pulled at 3 C (15.459594 A) on parameters extracted verbatim from PyBaMM's Chen2020. \
 `cc_discharge_3c_spm.toml` with one block swapped. The electrolyte starves and the cell \
 is finished at 464 s having delivered 1.9926 A·h with 61.33 % still on the readout — \
-where the single-particle model runs to 1056 s and 4.5348 A·h and sees nothing wrong. At \
+where the single-particle model runs to 1056 s and 4.5348 A·h and sees nothing wrong until its last steps. At \
 1 C the two agree on the cut-off to 0.34 %."""
 
 [pack]

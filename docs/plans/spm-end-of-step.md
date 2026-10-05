@@ -222,19 +222,24 @@ held voltage.
 
 ## Still open
 
-* **Past-empty physics.** A current demand that drives a cell out of its range is solved
+* ~~**Past-empty physics.** A current demand that drives a cell out of its range is solved
   there, on the flat curve, and a cell *already* past empty under a power demand still runs
   on it: the third hour of the 10 W case draws 6.8 A at 372 K (38.9 A and 914 K before).
   The honest fix is a reversal branch for the particle, like the equivalent circuit's
-  `[reversal]`, not another guard. ROADMAP H8.
-* **The `Dfn` has the heat mix this slice removed from the `Spm`.** Measured: 3.7 K of rise
-  in one hour-long C/5 step against 1.1 K in sixty one-minute ones. ROADMAP H8.
+  `[reversal]`, not another guard. ROADMAP H8.~~ **Closed for the `Spm` past empty — see
+  `porous-reversal.md`** (a reversal at the surface or bulk edge, v22). Past full, and on the
+  `Dfn`, still open.
+* ~~**The `Dfn` has the heat mix this slice removed from the `Spm`.** Measured: 3.7 K of rise
+  in one hour-long C/5 step against 1.1 K in sixty one-minute ones. ROADMAP H8.~~ **Closed —
+  see `dfn-end-of-step-heat.md`.**
 * **A power or voltage demand met only by driving one weak cell past empty** cannot
   converge under the hold. It raises `SOLVE_UNCONVERGED` rather than landing on the flat
   curve. Not measured on a real case.
 * **Short-step voltage holds low in the window** now stop at the range's edge unconverged
   (28 of 405 at 1 s, above). Bounded and flagged, which is the honest answer the model can
-  give; converging on them needs the past-empty physics in the first bullet.
+  give; converging on them needs the past-empty physics in the first bullet. That physics
+  exists for the `Spm` since `porous-reversal.md`, but a held demand is still held inside the
+  range, so these holds still stop at its edge — still open.
 * ~~**The `Dfn` fails 269 of 405 hour-long voltage holds** from a fresh pack, on both engines.
   Measured here, not investigated.~~ **Closed — see `dfn-long-step-holds.md`.**
 * **Speed.** The probe adds one forward sweep per particle and the heat terms two voltage

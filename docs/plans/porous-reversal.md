@@ -284,5 +284,15 @@ The version check is what refuses it. The fixture pack is equivalent-circuit and
 * **Absurd currents** (`Current(1e9)`) are absurd on both engines.
 * **The settle under an external short**, and its cost: it runs only at the cap, after the
   loop's 32 passes, and was not benched (H9).
+* **The per-step cost inside the window was not measured either.** Every `Spm` probe and
+  advance now computes the step's discharge edge — a forward sweep per particle and two
+  window evaluations — even where the split then returns `(i, 0.0)`, and the pack adds two
+  guarded branches per cell for every model. H9 records the 100S10P bench as probably over
+  its budget already; this adds to an `Spm` pack's step and nothing to an equivalent
+  circuit's beyond the two branches. Not benched.
+* **Commit-or-nothing, the node fence and the previous-step seed have no test** (P5, P9 and
+  P10 above). The commit message's "(it went to NaN)" for the 3–5 C parallel cases is wrong
+  about the parent: those were bounded near 1300 K with unsettled steps; the NaN was the
+  20 A case and the first two trial designs. The tables here have the measured figures.
 * **The 3 C gradient lesson's pulse runs 4 s past the cut-off it says it runs to** "just
   past". Shortening the pulse moves every rest-phase claim; not done.

@@ -199,7 +199,9 @@ deletions below; P7 and P9 are the reason for them.
   30, 33 or 60 the same step landed at 1.07 A and 3.36 V, and 243 of the 405 hour-long
   discharge-power solves in this note's sweep moved with the cap. That test now checks that
   the landing is the most the cell can give over the hour.
-* **Current demands past empty.** A current demand's caller chose its current, so nothing here
+* **Current demands past empty.** *Re-measured and spiked in `porous-reversal.md`: closed for
+  the `Spm`, still open for the `Dfn`, with the spike's two defects recorded there.* A
+  current demand's caller chose its current, so nothing here
   holds it: a `Current(3.5)` hour from half charge still drives the cell past its physical
   limit, and the step does not conserve lithium. This is wider than H8's "absurd current"
   bullet, which spoke only of absurd magnitudes: 3.5 A is 0.7C.

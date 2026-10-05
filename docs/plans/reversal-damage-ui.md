@@ -287,8 +287,10 @@ describes the old behaviour. Two clauses above are worth correcting rather than 
   at is the generic "each point of capacity costs 1.5 points of resistance", not a fitted
   over-discharge number. The step's checkable 3.2 mV is checkable arithmetic about *this
   engine* either way.
-* **No porous-electrode arm.** The `Spm` and `Dfn` cells never clamp, carry no deficit, and
-  cannot reach this mechanism at all — so the guided path's over-discharge pair is
+* **No porous-electrode arm.** **Half closed — see `porous-reversal.md`**: the `Spm` carries a
+  deficit since v22 and is billed for it; the path still has no single-particle
+  over-discharge pair, and the `Dfn` still carries none. As written: the `Spm` and `Dfn`
+  cells never clamp, carry no deficit, and cannot reach this mechanism at all — so the guided path's over-discharge pair is
   circuit-only, and step 14's note about the particle's floor is still the only thing said
   about what those models do down there.
 * **Nothing here is asserted by a test.** The path's numbers never have been; that is what
