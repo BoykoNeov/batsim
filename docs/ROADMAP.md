@@ -335,8 +335,9 @@ The DFN and SPM benches for the cell-size change were never run. The box the mea
 were taken on has three performance states and reproducibility "is a property of the
 minute" (`cell-size.md`). The DFN re-solves at a current it already probed (a priced 33 %).
 
-**Approach.** In this order: get a profiler before a fifth guessed item (the note's own
-instruction); consume the DFN's converged probe (a slice, threaded through
+**Approach.** In this order: ~~get a profiler before a fifth guessed item (the note's own
+instruction)~~ — done 2026-10-05, the Windows Performance Toolkit with `samply`, symbolicated
+by `llvm-symbolizer` (`ocv-segment-hint.md`); consume the DFN's converged probe (a slice, threaded through
 `CellModel::advance`); write the SPM/DFN bench cases and run them only behind an
 interleaved null. Do not touch the reciprocal-multiply item: it is not bit-identical and
 was declined for that.

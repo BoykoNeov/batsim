@@ -4,6 +4,9 @@
 > 27 % faster than the commit before it, and faster than the engine before the end-of-step
 > split (5–9 % on `current`), with bit-for-bit the same trajectories. The split's cost had
 > been recorded as 8 %; it was about 27 % (1.17–1.40 across rounds and cases). ROADMAP H9.
+> **Then, the same night, a profile and the `R0` grid** (see the follow-up section): the
+> fully featured step went under the 50 µs budget on the step loop (41.9–46.0 µs); its
+> criterion reading is owed.
 
 ## What was believed
 
@@ -133,7 +136,8 @@ between them, and the box is not the empty box of that day, so the two are not a
 **The budget.** `current` and `power` are now under 50 µs (46.9 and 46.7 on criterion) and
 `full` is not (53.3). The budget is stated against `Pack::step` at 100S10P without a configuration,
 and `full` was already over it before the split (54.6–55.1 µs on criterion, 2026-09-01). This
-slice recovers the regression; it does not bring the featured case under the line.
+slice recovers the regression; it does not bring the featured case under the line. **Closed —
+see "Follow-up the same night"**: the `R0`-grid change does, on the step loop.
 
 ## Verification
 
