@@ -178,8 +178,12 @@ and double as the scenario file format.
   particles: past the current that takes a particle's surface or bulk to empty over the
   step, the particle carries no more and the rest goes down the same ramp into a
   `soc_deficit` of its own, repaid first by a charge and, once the surface has room, by the
-  particle's own lithium. So there a deficit can coexist with `soc > 0`. The `Dfn` has no
-  reversal yet. See `docs/plans/porous-reversal.md`.
+  particle's own lithium. So there a deficit can coexist with `soc > 0`. The `Dfn` has the
+  same branch on its **bulk** edge only (it has no closed-form surface edge), and past it its
+  curve keeps falling by the electrodes' kinetics at empty, which depend on no step length.
+  What neither porous model covers is the `Dfn`'s electrolyte limit: from 3 C up the
+  electrolyte at the positive current collector runs out mid-discharge and its solve fails
+  there (ROADMAP H8). See `docs/plans/porous-reversal.md`.
 - **Charge acceptance** (optional, `[charge_acceptance]`): above `soc_onset` the cell stores
   a linearly falling share `η = (1 − soc)/(1 − soc_onset)` of a charging current and turns
   the rest into heat — oxygen evolution on a nickel electrode. Integrated in closed form
@@ -284,7 +288,7 @@ and double as the scenario file format.
 - **Over-discharge damage**: charge delivered below empty oxidises the anode current
   collector, so it is billed per amp-hour past empty (`[reversal] fade_per_ah`) as a
   fourth mechanism beside calendar, cycle, and plating fade. Billed from the deficit, so it
-  applies to the equivalent circuit and the `Spm`; the `Dfn` carries none yet. See
+  applies to every cell model. See
   `docs/plans/reversal-damage.md` and `docs/plans/porous-reversal.md`.
 - All mechanisms reduce `soh_capacity` **and** increase `soh_resistance`
   (roughly: each % capacity lost adds a configurable % resistance). Resistance

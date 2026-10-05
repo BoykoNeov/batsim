@@ -489,6 +489,33 @@ fn half(
         + overpotential(side, w.temp_k, w.spm.c_e_mol_per_m3, c_s, i_s)
 }
 
+/// The kinetic part of the terminal voltage \[V\] at cell current `i` \[A,
+/// discharge-positive\] for a cell at the chemistry's declared **empty**: both electrodes'
+/// Butler–Volmer overpotentials for a reaction spread evenly over their whole interfacial
+/// area, at the surface stoichiometries the chemistry calls empty and at its reference
+/// electrolyte concentration. Negative on discharge, and falling as `i` rises.
+///
+/// What a cell past its edge pays for current its particles no longer carry: the reversal
+/// crosses the same interfaces, so it is charged their kinetics. Read at the declared empty
+/// rather than at the cell's actual surface, so it depends on no clamp margin and no step
+/// length — the property [`crate::dfn`]'s continuation past its edge needs, which a solve's
+/// tangent over a step does not have. See `docs/plans/porous-reversal.md`.
+#[must_use]
+pub(crate) fn kinetics_at_empty_v(
+    spm: &SpmParams,
+    temp_k: f64,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    i: f64,
+) -> f64 {
+    let w = Working::new(spm, temp_k, eff_r0_factor, eff_capacity_ah);
+    let c_n = w.neg.p.stoich_min * w.neg.p.c_max_mol_per_m3;
+    let c_p = w.pos.p.stoich_max * w.pos.p.c_max_mol_per_m3;
+    let c_e = spm.c_e_mol_per_m3;
+    overpotential(&w.pos, temp_k, c_e, c_p, -i / w.pos.g.area_m2)
+        - overpotential(&w.neg, temp_k, c_e, c_n, i / w.neg.g.area_m2)
+}
+
 /// Terminal voltage \[V\] at cell current `i` \[A, discharge-positive\], evaluated
 /// from the **start-of-step** solid state.
 ///
@@ -567,6 +594,11 @@ fn split(w: &Working<'_>, s: &SpmState, edge: f64, i: f64, dt: f64) -> (f64, f64
     // With no deficit the particles carry the current up to their edge; with one they
     // carry exactly the edge — all they can — and what the cell does not take out of the
     // terminals repays the deficit.
+    // A current that is not discharging cannot drive the cell past empty: at rest on an edge
+    // that rounding puts a hair below zero, splitting would book that hair as a deficit.
+    if d0 == 0.0 && i <= 0.0 {
+        return (i, 0.0);
+    }
     let i_p = if d0 > 0.0 { edge } else { i.min(edge) };
     if !i_p.is_finite() {
         return (i, d0);

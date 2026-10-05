@@ -361,14 +361,14 @@ impl CellModel {
     /// equivalent circuit — it can coexist with a charge state above zero, until rest lets
     /// the particle pay it back. See `docs/plans/porous-reversal.md`.
     ///
-    /// `0.0` for a `Dfn`, which does not yet have the reversal: past its range its lithium
-    /// keeps moving into states no electrode holds (ROADMAP H8).
+    /// The `Dfn`'s [`crate::DfnState::soc_deficit`] since v23, on its bulk edge alone — so,
+    /// as on the equivalent circuit, non-zero only once its solid is at empty.
     #[must_use]
     pub fn soc_deficit(&self) -> f64 {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc_deficit,
             CellModel::Spm(s) => s.soc_deficit,
-            CellModel::Dfn(_) => 0.0,
+            CellModel::Dfn(s) => s.soc_deficit,
         }
     }
 
@@ -579,7 +579,17 @@ impl CellModel {
                 )
             }),
             CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, (0.0, 1.0)), |(spm, d)| {
-                dfn::probe_at(s, spm, d, eff_r0_factor, eff_capacity_ah, i, dt, hold)
+                dfn::probe_at(
+                    s,
+                    spm,
+                    d,
+                    &chem.reversal,
+                    eff_r0_factor,
+                    eff_capacity_ah,
+                    i,
+                    dt,
+                    hold,
+                )
             }),
         }
     }
@@ -782,10 +792,11 @@ impl CellModel {
             }
             CellModel::Dfn(s) => {
                 Self::dfn_params(chem).map_or(no_rejection(EventFlags::empty()), |(spm, d)| {
-                    let (flags, delta_v) = dfn::advance(
+                    let (flags, delta_v, rev_w) = dfn::advance(
                         s,
                         spm,
                         d,
+                        &chem.reversal,
                         i,
                         dt,
                         eff_r0_factor,
@@ -797,6 +808,8 @@ impl CellModel {
                     Advanced {
                         rc_mean_excess_v: delta_v,
                         rc_delta_v: delta_v,
+                        reversal_w: rev_w,
+                        reversal_mean_w: rev_w,
                         ..no_rejection(flags)
                     }
                 })

@@ -89,7 +89,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
-use crate::chem::{DfnElectrode, DfnParams, ElectrodeParams, PowerTerm, SpmParams};
+use crate::chem::{DfnElectrode, DfnParams, ElectrodeParams, PowerTerm, ReversalParams, SpmParams};
 use crate::flags::EventFlags;
 use crate::spm::{
     c_surface, diffuse, geometric_capacity_ah, mean_concentration, ocp_lookup, ocp_slope,
@@ -354,6 +354,13 @@ pub struct DfnState {
     /// `None` is not "zero": it is a cell whose curve has never been evaluated, and
     /// [`source`] answers it with a documented first-order seed rather than a solve.
     pub tangent: Option<(f64, f64)>,
+    /// Charge drawn past empty, as a fraction of the cell's effective capacity — the sibling
+    /// of [`crate::SpmState::soc_deficit`], on the bulk edge alone: `> 0.0` only once both
+    /// electrodes' bulk has reached the chemistry's empty. Past it the solid carries no more
+    /// discharge, the rest of the current goes down the chemistry's `[reversal]` ramp, and
+    /// a charge repays it first. See `docs/plans/porous-reversal.md`.
+    #[serde(default)]
+    pub soc_deficit: f64,
 }
 
 impl DfnState {
@@ -397,6 +404,7 @@ impl DfnState {
             temp_k,
             i_last: 0.0,
             tangent: None,
+            soc_deficit: 0.0,
         }
     }
 }
@@ -1608,6 +1616,93 @@ fn raw_soc(s: &DfnState, spm: &SpmParams) -> f64 {
     window_fraction_neg(bulk_stoich(&s.c_neg, e.c_max_mol_per_m3), e)
 }
 
+/// The cell's equilibrium voltage \[V\] at the chemistry's declared empty — where the
+/// reversal ramp starts. The same point as [`crate::spm`]'s: both models read their OCPs
+/// from `[spm]`.
+#[must_use]
+fn empty_voltage(spm: &SpmParams) -> f64 {
+    ocp_lookup(&spm.positive.ocp, spm.positive.stoich_max)
+        - ocp_lookup(&spm.negative.ocp, spm.negative.stoich_min)
+}
+
+/// How far below [`empty_voltage`] the ramp has taken the reversal at deficit `d` \[V\].
+/// Exactly `0.0` at `d <= 0`.
+#[must_use]
+fn reversal_drop(spm: &SpmParams, rev: &ReversalParams, d: f64) -> f64 {
+    if d > 0.0 {
+        (rev.v_per_soc * d)
+            .min(empty_voltage(spm) - rev.floor_v)
+            .max(0.0)
+    } else {
+        0.0
+    }
+}
+
+/// How a step of `dt > 0` carrying `i` divides between the solid and the reversal:
+/// `(i_p, d_end)`. `edge` is [`current_window`]'s upper end, the current that takes the bulk
+/// to empty over the step. With no deficit the solid carries up to it; with one it carries
+/// exactly it, so what the terminals do not take out repays the deficit — the `Spm`'s rule
+/// (see [`crate::spm`]'s `split`). `(i, 0.0)` everywhere inside the window.
+#[must_use]
+fn split(s: &DfnState, edge: f64, i: f64, dt: f64, eff_capacity_ah: f64) -> (f64, f64) {
+    let per_amp = dt / (3600.0 * eff_capacity_ah);
+    let d0 = s.soc_deficit;
+    // A current that is not discharging cannot drive the cell past empty: at rest on an edge
+    // that rounding puts a hair below zero, splitting would book that hair as a deficit.
+    if d0 == 0.0 && i <= 0.0 {
+        return (i, 0.0);
+    }
+    let i_p = if d0 > 0.0 { edge } else { i.min(edge) };
+    if !i_p.is_finite() {
+        return (i, d0);
+    }
+    let d_end = d0 + (i - i_p) * per_amp;
+    if d_end < 0.0 {
+        (i + d0 / per_amp, 0.0)
+    } else {
+        (i_p, d_end)
+    }
+}
+
+/// The cell's end-of-step voltage and slope `(V, r)` at current `i`, given the solve at the
+/// solid's share `i_p` and the deficit `d_end` the step ends on. Inside the window that is
+/// the solve's own pair, bit for bit. Past it the curve continues from the solid's along
+/// the solid's own tangent — the cell's resistance at that operating point, so no constant
+/// of its own — and down the reversal ramp.
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+fn past_edge(
+    spm: &SpmParams,
+    rev: &ReversalParams,
+    temp_k: f64,
+    r0: f64,
+    solved: &Solved,
+    i: f64,
+    i_p: f64,
+    d_end: f64,
+    dt: f64,
+    eff_capacity_ah: f64,
+) -> (f64, f64) {
+    if i_p == i && d_end == 0.0 {
+        return (solved.v_terminal, solved.r_tangent);
+    }
+    let drop = reversal_drop(spm, rev, d_end);
+    let per_amp = dt / (3600.0 * eff_capacity_ah);
+    let ramp = if d_end > 0.0 && rev.v_per_soc * d_end < empty_voltage(spm) - rev.floor_v {
+        rev.v_per_soc * per_amp
+    } else {
+        0.0
+    };
+    // Past the edge the reversal carries what the solid does not, across the same
+    // interfaces, so it is charged their kinetics — read at the chemistry's empty, which
+    // depends on no step length (the solve's own tangent carries the electrolyte's and the
+    // equilibrium's change across the step, and drifted with `dt`).
+    let kin = |x: f64| crate::spm::kinetics_at_empty_v(spm, temp_k, r0, eff_capacity_ah, x);
+    let h = 1.0e-6 * eff_capacity_ah;
+    let r = -(kin(i + h) - kin(i - h)) / (2.0 * h);
+    (solved.v_terminal + (kin(i) - kin(i_p)) - drop, r + ramp)
+}
+
 /// Equilibrium (open-circuit) voltage \[V\] at the particles' **bulk** stoichiometry,
 /// averaged across x.
 ///
@@ -1769,6 +1864,14 @@ pub(crate) fn terminal_v(
 /// unconverged, the worst at 1e179 K, before any of `docs/plans/dfn-long-step-holds.md`.
 /// A current demand's probes are never held: its caller chose the current.
 ///
+/// # Past empty
+/// The solve runs at the solid's share of `i` — all of it inside the range, at most the range's
+/// upper end past it — and the curve continues from there by the electrodes' kinetics at the
+/// chemistry's empty ([`crate::spm::kinetics_at_empty_v`]) and down the reversal ramp. Not the
+/// solve's own tangent: over a step that carries the equilibrium voltage's and the
+/// electrolyte's change across it, and the voltage past empty then moved with `dt` (−0.85 V at
+/// a minute, −0.50 at ten seconds). See `docs/plans/porous-reversal.md`.
+///
 /// # `dt <= 0` does not reach the solver
 /// A zero-length probe step is how this repo reads an instantaneous voltage, and the
 /// backward-Euler mass rows carry `(c − c_old)/dt`. So a non-positive or `NaN` `dt` — which
@@ -1785,6 +1888,7 @@ pub(crate) fn probe_at(
     s: &DfnState,
     spm: &SpmParams,
     dfn: &DfnParams,
+    rev: &ReversalParams,
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     i: f64,
@@ -1806,16 +1910,28 @@ pub(crate) fn probe_at(
         // end; the matching answer here is the line, not a solve over a bad grid.
         return stored(s);
     }
-    let i = match current_window(s, &sides, dt) {
+    let window = current_window(s, &sides, dt);
+    let i = match window {
         Some((lo, hi)) if hold => i.clamp(lo, hi),
         _ => i,
     };
+    let edge = window.map_or(f64::INFINITY, |(_, hi)| hi);
+    let (i_p, d_end) = split(s, edge, i, dt, eff_capacity_ah);
     let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
-    let solved = solve(s, &setup, i, dt);
-    (
-        solved.v_terminal,
-        (solved.v_terminal + i * solved.r_tangent, solved.r_tangent),
-    )
+    let solved = solve(s, &setup, i_p, dt);
+    let (v, r) = past_edge(
+        spm,
+        rev,
+        s.temp_k,
+        eff_r0_factor,
+        &solved,
+        i,
+        i_p,
+        d_end,
+        dt,
+        eff_capacity_ah,
+    );
+    (v, (v + i * r, r))
 }
 
 /// [`current_window`] for the pack: the same range, built from the cell's scale factors,
@@ -2042,6 +2158,15 @@ pub(crate) fn heat_w(s: &DfnState, spm: &SpmParams, i: f64, v_terminal: f64) -> 
 /// particle keeps the lithium it was pushed, so the flag says the *readout* left its
 /// window rather than that state was discarded.
 ///
+/// # Past empty
+/// Since `docs/plans/porous-reversal.md` the solid carries no more than the current that takes
+/// its bulk to the chemistry's empty over the step ([`current_window`]'s upper end); the rest
+/// goes into [`DfnState::soc_deficit`] down the `[reversal]` ramp, and a charge repays it before
+/// it reaches the solid. The third value returned is the reversal's share of the heat \[W\],
+/// `i_d·(OCV_d − U_eq)` at the end of the step, which `i·(U_eq − V)` cannot express — exactly
+/// `0.0` on a step with no current past the edge. The stored tangent is the continuation's
+/// own line, so a read where no time passes divides the current the way the step did.
+///
 /// A zero-length probe step mutates nothing at all — no solve, no tangent, no `i_last`.
 /// That is the same contract [`crate::spm::advance`] holds, and the suite is full of probe
 /// steps that depend on it.
@@ -2074,15 +2199,16 @@ pub(crate) fn advance(
     s: &mut DfnState,
     spm: &SpmParams,
     dfn: &DfnParams,
+    rev: &ReversalParams,
     i: f64,
     dt: f64,
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     v_node: f64,
-) -> (EventFlags, f64) {
+) -> (EventFlags, f64, f64) {
     let mut flags = EventFlags::empty();
     if dt.is_nan() || dt <= 0.0 {
-        return (flags | soc_flags(s, spm), 0.0);
+        return (flags | soc_flags(s, spm), 0.0, 0.0);
     }
     let sides = Sides::new(spm, dfn, s.temp_k, eff_r0_factor, eff_capacity_ah);
     let grid = Grid::of(spm, dfn, &sides, s);
@@ -2090,17 +2216,32 @@ pub(crate) fn advance(
         // Only reachable from a hand-edited snapshot; `step` may not panic, so a grid that
         // does not describe the state it came from does nothing rather than indexing off
         // the end of it.
-        return (flags | soc_flags(s, spm), 0.0);
+        return (flags | soc_flags(s, spm), 0.0, 0.0);
     }
     let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
+    // The same division [`probe_at`] read the curve with: `(i, 0.0)` inside the window.
+    let edge = current_window(s, &sides, dt).map_or(f64::INFINITY, |(_, hi)| hi);
+    let (i_p, d_end) = split(s, edge, i, dt, eff_capacity_ah);
 
     // What the pack's heat estimate reads as the equilibrium voltage, and so what the
     // correction below has to take back out: the start of the step, before `commit`.
     let u_start = equilibrium_voltage(s, spm);
-    let solved = solve(s, &setup, i, dt);
+    let solved = solve(s, &setup, i_p, dt);
     if !solved.converged {
         flags |= EventFlags::SOLVE_UNCONVERGED;
     }
+    let (v_end, r_end) = past_edge(
+        spm,
+        rev,
+        s.temp_k,
+        eff_r0_factor,
+        &solved,
+        i,
+        i_p,
+        d_end,
+        dt,
+        eff_capacity_ah,
+    );
 
     // Commit: the electrolyte straight off the solved field, the particles reconstructed by
     // the same linearity the affine map was built on.
@@ -2123,9 +2264,23 @@ pub(crate) fn advance(
     }
     s.u = solved.u;
     s.i_last = i;
-    s.tangent = Some((solved.v_terminal + i * solved.r_tangent, solved.r_tangent));
-    let at_end = equilibrium_voltage(s, spm) - solved.v_terminal;
-    (flags | soc_flags(s, spm), at_end - (u_start - v_node))
+    s.soc_deficit = d_end;
+    s.tangent = Some((v_end + i * r_end, r_end));
+    let u_end = equilibrium_voltage(s, spm);
+    let at_end = u_end - v_end;
+    // The reversal channel's share of the heat: what `i·(U_eq − V)` misbooks when part of
+    // the current is not the solid's. See [`crate::spm::advance`].
+    let i_d = i - i_p;
+    let rev_w = if i_d == 0.0 {
+        0.0
+    } else {
+        i_d * (empty_voltage(spm) - reversal_drop(spm, rev, d_end) - u_end)
+    };
+    (
+        flags | soc_flags(s, spm),
+        at_end - (u_start - v_node),
+        rev_w,
+    )
 }
 
 /// The SOC-window flags for the state as it stands.
@@ -2133,7 +2288,7 @@ fn soc_flags(s: &DfnState, spm: &SpmParams) -> EventFlags {
     let raw = raw_soc(s, spm);
     if raw > 1.0 {
         EventFlags::SOC_CLAMPED_HIGH
-    } else if raw < 0.0 {
+    } else if raw < 0.0 || s.soc_deficit > 0.0 {
         EventFlags::SOC_CLAMPED_LOW
     } else {
         EventFlags::empty()

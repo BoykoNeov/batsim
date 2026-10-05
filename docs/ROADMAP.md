@@ -20,7 +20,7 @@ test passes — not when the list of interesting things runs out.
 
 Three cell models behind one API (`Ecm`, `Spm`, `Dfn`), seven chemistries, a thermal
 network, a sensor-limited BMS, four capacity-fade mechanisms with matching resistance
-growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 22,
+growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 23,
 and four clients (server, browser, Godot, an example script). Against grid-converged
 PyBaMM references the SPM tracks to 2–7 mV over a discharge and the DFN to 5.8 mV at 1 C.
 
@@ -273,25 +273,30 @@ where the rest-OCV gate refused to correct.
   `SOLVE_UNCONVERGED`, on the porous models. (The previous slice declined bracketing inside
   the `Dfn`'s own Newton, whose residual is a vector; this one brackets the pack's single
   current, whose next step is a scalar.)
-* **A `Dfn` driven past its range by a `Demand::Current` does not conserve lithium** — and
-  that is not only an absurd current. From half charge a one-hour `Current(3.5)`, 0.7C,
-  empties the cell past what the electrode holds; the Newton does not converge and the
-  state it leaves does not add up. At the extreme the cell is unrecoverable (−1105 V
-  forever). Under a 2 Ω external short the fourth hour of `Current(2.0)` on a 1S3P
-  reached 1e81 A isothermally and 830 K with the thermal network, on the parent of
-  `spm-pack-window.md` and after it alike. A current demand's caller chose the current, so
-  the held-demand range does not apply; the honest fix is past-empty physics, which the
-  `Spm` now has (above) and the `Dfn` does not. **Re-measured 2026-10-05**
-  (`porous-reversal.md`): a 1S3P driven through empty at 20 A reaches inf at a one-second
-  step and 1270–1340 K at ten and sixty; at 1 C from half charge it sits at −0.14 V for an
-  hour with its negative particle at −1.6 of a stoichiometry. The `Spm`'s rule was spiked
-  on it (its bulk edge, the solid's own tangent past it) and set aside: the voltage past
-  empty depended on the step length (−7.0 V at an hour against −0.39 V at a second),
-  because a long step's tangent carries the OCV's fall across the step, and at 3 C and
-  above — where a front node empties with up to 42 % of the bulk left — the ledger did not
-  close. The pack's split fallback (below) is switched off on `Dfn` packs for the same
-  reason: past its range the curve is not monotone. The spike is
-  `W:\temp\claude\porous-rev\spike3_dfn_bulk.patch`.
+* ~~**A `Dfn` driven past empty by a `Demand::Current` does not conserve lithium**~~ —
+  **closed 2026-10-05** (`porous-reversal.md`, v23): past the current that takes its bulk to
+  the chemistry's empty the solid carries no more, the rest goes down the `[reversal]` ramp
+  into a deficit, and the curve keeps falling by the electrodes' own kinetics at empty, which
+  depend on no step length (the solve's tangent did: −0.85 V at a minute against −0.50 at ten
+  seconds). The 1S3P under a 2 Ω short that reached 1e74 A on its fourth hour is bounded and
+  converged; the 1S3P driven through empty at 20 A that reached inf is converged at 350–360 K;
+  a rested over-drained cell reads its floor; the ledger closes linearly in `dt`. Bulk edge
+  only — the `Dfn` has no closed-form surface edge — and not the next bullet, which is a
+  different defect the first spike had mistaken for this one.
+* **The `Dfn` has no solution above its electrolyte's limiting current.** Measured
+  2026-10-05 (`porous-reversal.md`), identical on the engine before it: from 3 C up the
+  electrolyte next to the positive current collector runs out mid-discharge and the Newton
+  stops converging there — with 61.6 % still in the cell from full at 3 C (461 s, the 3 C
+  golden's own 464 s cut-off), 34.3 % from half, 12.6 % from 20 %, and earlier at 4 and 5 C.
+  At 1 C the solve never fails; at 2 C it fails only in the last 1–1.5 %, with the
+  electrolyte intact and a particle surface nearly empty. Past the limit a constant current
+  has nowhere to go in this model, the positive particle then overfills (1.47 of `c_max` at
+  4 C), and the voltage runs off (−21 691 V at 455 s from half). A real cell's voltage
+  collapses there and some other reaction carries a forced current; what that reaction is,
+  and its parameters, nothing in this repo states — the `[reversal]` section describes the
+  anode running out, a different reaction at the other electrode. The first `Dfn` spike
+  read these failures as "a front node empty with up to 42 % of the bulk left"; that was its
+  metric (an outer shell at 0 or 1) counting the overfilled positive particle, not the cause.
 * ~~**The pack's split under a current demand can cycle to its cap**~~ — **closed
   2026-10-05** (`porous-reversal.md`): with the pack current fixed every damped trial
   splits it the same way, so a split that cycles between passes — parallel cells either
@@ -344,7 +349,6 @@ cell's OCV and could hand the next step its slope, as it already hands it its so
 | --- | --- | --- |
 | `[safety]` is one `Option` for two mechanisms; a lithium cell that plates but cannot run away is unrepresentable | `plating-absence.md` | schema change, snapshot bump, no file needs it yet |
 | `runaway_power_w_at_onset = 0` means "reported, nothing burns" — the permissive convention plating now departs from | `plating-absence.md` | a validator rule and one doc |
-| Over-discharge damage does not reach the `Dfn`, which carries no deficit (the `Spm` does since `porous-reversal.md`, and is billed for it) | `reversal-damage.md` | needs the `Dfn`'s reversal, H8 |
 | `[diffusion]`'s charge direction is unvalidated; NiMH has no Peukert fit | `diffusion-overpotential.md` | data (H3) |
 | NiMH `[hysteresis]` is one width; lead-acid has no `[hysteresis]` | `phase-8-slice-c-hysteresis.md` | data (H3) — the table exists since v20 |
 | Mixed ECM/SPM packs are unrepresentable though the solve is mixed-ready | `phase-6-porous-electrodes.md` | config surface + the `soc_true` question |
@@ -465,4 +469,5 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | `Dfn` hour-long voltage and power holds unconverged and unbounded (269 of 405; 1e179 K; 3e146 A by the second hour) | `dfn-end-of-step-heat.md` | `dfn-long-step-holds.md` (Newton retries, a cell range, held pack current; no snapshot bump) |
 | the pack search converging where the demand was not met, and landing an unmet power wherever the pass cap fell (120 silent `Spm` misses; 487 cap-dependent solves over the sweep) | `dfn-long-step-holds.md` | `spm-pack-window.md` (an `Spm` pack range, a trial scored on the next pass's step, a sign bracket; no snapshot bump) |
 | an `Spm` driven past empty holds impossible lithium on a flat curve, fabricates energy, and blows up in parallel (NaN at 20 A on a scattered 1S3P) | `spm-end-of-step.md` | `porous-reversal.md` (surface-or-bulk reversal with a deficit, per-channel heat, a settle fallback for the split; v22) |
-| over-discharge damage is ECM-only | `reversal-damage.md` | `porous-reversal.md` for the `Spm`; the `Dfn` stays open under H10 |
+| over-discharge damage is ECM-only | `reversal-damage.md` | `porous-reversal.md` (the `Spm` at v22, the `Dfn` at v23) |
+| a `Dfn` driven past empty runs to 1e74 A under a short, inf at 20 A, −1.6 of a stoichiometry at 1 C | `dfn-long-step-holds.md` | `porous-reversal.md` (bulk-edge reversal, kinetics-at-empty continuation; v23; the electrolyte limit stays open under H8) |

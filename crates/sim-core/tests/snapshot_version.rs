@@ -21,16 +21,22 @@
 //!
 //! # The pair moves with the bump, rather than being renumbered
 //! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13, v13 -> v14,
-//! v14 -> v15, v15 -> v16, v16 -> v17, v17 -> v18, v18 -> v19, v19 -> v20 and v20 -> v21,
-//! each time carrying an assertion that a later bump needs its own pair. This is the
-//! v21 -> v22 pair, and it was re-argued rather than renamed.
+//! v14 -> v15, v15 -> v16, v16 -> v17, v17 -> v18, v18 -> v19, v19 -> v20, v20 -> v21 and
+//! v21 -> v22, each time carrying an assertion that a later bump needs its own pair. This is
+//! the v22 -> v23 pair, and it was re-argued rather than renamed.
 //!
-//! **The v20 -> v21 pair could not be kept alongside this one**, on the same terms every
+//! **The v21 -> v22 pair could not be kept alongside this one**, on the same terms every
 //! retirement here has been made: [`retagged`] fabricates a stale blob by writing *this
 //! build's* bytes under a fake tag, and the only tag those bytes can honestly wear is the
-//! previous version's, not one two back. As at the last three bumps the retirement is
-//! **not** structural — see the v22 section below, which is the fourth bump running where
+//! previous version's, not one two back. As at the last four bumps the retirement is
+//! **not** structural — see the v23 section below, which is the fifth bump running where
 //! the fixture's bytes do not change at all.
+//!
+//! # v23: one `f64` appended to the `Dfn` state, the v22 slide one model over
+//! v23 adds `soc_deficit` to `DfnState`. This fixture is an equivalent-circuit pack, so the
+//! pair below is the real case for the fifth bump running. The other half is
+//! [`a_v22_shaped_dfn_state_misparses_at_v23`]: the reader takes the `f64` after a v22
+//! cell's `tangent` — its `capacity_factor` — as its deficit, quietly.
 //!
 //! # v22: two `f64`s appended to the single-particle state, and the slide is quiet
 //! v22 adds `soc_deficit` and `i_reversal_last` to `SpmState`. See
@@ -296,44 +302,44 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v21-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v22 restore.
+/// A v22-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v23 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in, for the fourth time running.** Read the
-/// module's v22 section: the fixture is an equivalent-circuit pack, and the fields v22
-/// adds live in the single-particle state it does not have, so a v21 build's snapshot of
-/// this pack has exactly these bytes. The sibling [`a_v21_shaped_spm_state_misparses_at_v22`]
-/// answers the *other* case — a pack whose bytes do change — and its answer is the quiet
-/// one, which is why both exist.
+/// **At this bump the retag is not a stand-in, for the fifth time running.** Read the
+/// module's v23 section: the fixture is an equivalent-circuit pack, and the field v23 adds
+/// lives in the `Dfn` state it does not have, so a v22 build's snapshot of this pack has
+/// exactly these bytes. The sibling [`a_v22_shaped_dfn_state_misparses_at_v23`] answers the
+/// *other* case — a pack whose bytes do change — and its answer is the quiet one, which is
+/// why both exist.
 #[test]
-fn the_version_field_is_what_rejects_a_v21_snapshot() {
+fn the_version_field_is_what_rejects_a_v22_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 22,
-        "this test is written against the v21 -> v22 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 23,
+        "this test is written against the v22 -> v23 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
          the new layout is a fact about that layout change, and the answer has flipped \
          across this file's history — v15 'it does not parse at all', v16 'it parses, \
          wrongly and silently', v17 and v18 back to 'it does not parse at all', and v19 \
-         to v22 'for this fixture it parses fine and the version field is all there \
-         is'. A renumbered assertion cannot inherit any of them, and a run of four \
-         identical answers is not a rule — it is four layout changes that happened not \
+         to v23 'for this fixture it parses fine and the version field is all there \
+         is'. A renumbered assertion cannot inherit any of them, and a run of five \
+         identical answers is not a rule — it is five layout changes that happened not \
          to touch this fixture, which is a fact about the fixture."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 21);
+    let stale = retagged(&bytes, 22);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 21,
+            found: 22,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v21-tagged snapshot must be refused"
+        "a v22-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -837,4 +843,41 @@ fn a_v21_shaped_spm_state_misparses_at_v22() {
     let bytes = bincode::serialize(&v22).expect("a v22 state serializes");
     let back: sim_core::SpmState = bincode::deserialize(&bytes).expect("that is a v22 state");
     assert_eq!(back, v22);
+}
+
+/// A v22 `Dfn` state does not fail to parse at v23 — the `f64` after it becomes its deficit.
+///
+/// The state closes on `tangent: Option<(f64, f64)>`; in a `Cell` it is followed by
+/// `capacity_factor`. Read at v23 the reader takes that factor as `soc_deficit`, so a
+/// scatter-free cell comes back carrying its whole capacity past empty. The field, not a
+/// snapshot, on its siblings' terms.
+#[test]
+fn a_v22_shaped_dfn_state_misparses_at_v23() {
+    let c_e = vec![1000.0_f64; 3];
+    let c_neg = vec![vec![10_000.0_f64; 2]; 2];
+    let c_pos = vec![vec![30_000.0_f64; 2]; 2];
+    let u = vec![0.5_f64; 4];
+    let tangent = Some((3.7_f64, 0.02_f64));
+    let v22_then_cell = bincode::serialize(&(
+        c_e.clone(),
+        c_neg.clone(),
+        c_pos.clone(),
+        u.clone(),
+        298.15_f64,
+        2.5_f64,
+        tangent,
+        1.0_f64, // capacity_factor
+    ))
+    .expect("a v22-shaped state and the cell field after it serialize");
+    let read: sim_core::DfnState = bincode::deserialize(&v22_then_cell).expect(
+        "the v23 note says a v22 state parses quietly at v23 and it did not — correct the note \
+         rather than this test",
+    );
+    assert_eq!(read.c_e, c_e);
+    assert_eq!(read.tangent, tangent);
+    assert_eq!(
+        read.soc_deficit, 1.0,
+        "the cell's capacity factor has been read as its deficit — the hazard the version \
+         check stands in front of"
+    );
 }

@@ -1,7 +1,8 @@
 # Past empty on the porous models: a reversal for the particle, a settle for the split
 
-**Status: built for the `Spm`, 2026-10-05, `SNAPSHOT_VERSION` 21 → 22. The `Dfn` half is
-not built; why is below.** Follows ROADMAP H8's "an `Spm` has no physics past empty" and
+**Status: built, 2026-10-05 — the `Spm` at `SNAPSHOT_VERSION` 22, the `Dfn` (bulk edge only)
+at 23.** The `Dfn`'s electrolyte limit, which its first spike mistook for this defect, is a
+separate open item; see "The `Dfn`" below. Follows ROADMAP H8's "an `Spm` has no physics past empty" and
 "a `Dfn` driven past its range by a `Demand::Current`" bullets, and the "Still open"
 sections of `spm-end-of-step.md`, `spm-pack-window.md` and `dfn-long-step-holds.md`.
 
@@ -36,8 +37,10 @@ edge of its OCP table, and `V(i)` went flat there.
 The ledger is the separable store below, evaluated at the run's two endpoints; on the
 parent's negative bulk it charges the reversal ramp, one definition for both engines.
 
-Where the surface runs out relative to the bulk (1S1P from 50 %, 10 s steps; the outer
-shell reaching zero against the bulk SOC flag):
+Where the surface runs out relative to the bulk (1S1P from 50 %, 10 s steps; an outer
+shell reaching 0 or 1 against the bulk SOC flag). **The `Dfn` column measures something
+else**: on it the shell that reaches 1 is the *positive* particle overfilling after the
+electrolyte has run out, not a surface emptying — see "The `Dfn`" below:
 
 | rate | `Spm`: bulk left when the surface empties | `Dfn` |
 | --- | --- | --- |
@@ -227,6 +230,79 @@ scattered C/5 test, which now stops on the `SOC_CLAMPED_LOW` flag rather than on
 `soc_true == 0.0` — the particle lands on its edge to rounding (4e-14 of capacity), not to
 the bit.
 
+## The `Dfn` (v23)
+
+The first spike (`spike3_dfn_bulk.patch`: the `Spm`'s bulk rule, the solve's own tangent
+past the edge) fixed the moderate cases and was set aside for two defects. Both were
+re-measured before the second design.
+
+**What the fast cases really were.** A per-step trace of 20 A from half charge failed to
+converge from 67 s, with 43 % still in the cell. The electrolyte next to the positive current
+collector had run out (from about 25 mol/m³ to 0.03 by 200 s at 3 C, then negative), and the
+positive particle overfilled after it (1.47 of `c_max` at 127 s at 4 C). The engine before
+this slice fails at the same steps. Mapped at 1 s steps, isothermal:
+
+| from | 1 C | 2 C | 3 C | 4 C | 5 C |
+| --- | --- | --- | --- | --- | --- |
+| 100 % | never fails | fails at 1.5 % left, electrolyte intact | 61.6 % left (461 s), electrolyte out | 88.0 % | 91.7 % |
+| 50 % | never fails | 0.9 % left, intact | 34.3 % | 43.2 % | 45.0 % |
+| 20 % | never fails | 0.9 % left, intact | 12.6 % | 15.6 % | 16.3 % |
+
+So above 2 C the failure is the electrolyte's limiting current, a different defect with
+different physics (ROADMAP H8's new bullet), and at 2 C it is the last percent before empty.
+The owner chose to build the over-drain first and the limit after, as its own step.
+
+**The slope past the edge.** Three candidates, measured on the voltage after an hour at
+3.5 A from half charge, against step length:
+
+| continuation past the edge | 3600 s | 600 s | 60 s | 10 s |
+| --- | --- | --- | --- | --- |
+| the solve's own tangent | −7.016 | −3.588 | −0.850 | −0.498 |
+| that tangent less the equilibrium's fall `(dU/dz)·dt/(3600·Q)` | −2.391 | −0.666 | −0.558 | −0.449 |
+| **the electrodes' kinetics at empty** (`spm::kinetics_at_empty_v`) | −0.478 | −0.142 | −0.1307 | −0.1304 |
+
+The tangent carries the electrolyte's polarization across the step as well as the
+equilibrium's fall, so subtracting one still drifted. The kinetics at empty — both
+electrodes' Butler–Volmer overpotential for a uniform reaction at the chemistry's empty
+stoichiometries and its reference electrolyte — read the parameter file and nothing else,
+depend on no step length and no clamp margin, and give 0.018 Ω at 3.5 A. The `Spm`'s figure
+for the same hour is −0.1304 V.
+
+**At rest on the edge, rounding made a deficit.** A held power demand that stopped at empty
+rested at 0 A with the edge a hair below zero, and the split booked the hair as a deficit and
+raised `SOC_CLAMPED_LOW` (`dfn_long_step_holds.rs::an_unreachable_power_stops_at_empty_and_says_so`
+caught it). A current that is not discharging now never starts a deficit, on both models —
+which moves none of the `Spm`'s committed fingerprints or lesson numbers.
+
+**What it does now:**
+
+| case | before | now |
+| --- | --- | --- |
+| 1S3P, 2 Ω short, `Current(2.0)`, fourth hour, isothermal | 6.7e74 A | 1.98 A, −0.045 V, converged |
+| same, network on | 352 K, a negative shell at −1.09 | 299 K, every shell in range |
+| 1S3P scattered through empty at 20 A | inf at 1 s; 1272 / 1343 K at 10 / 60 s | 351–360 K, −0.10 V, converged every step, no fallback |
+| 1S1P 5 A two hours, then an hour's rest | −0.14 V flat, shells at −1.6; rest at 1.10 V | rest at 0.000 V, the floor; a charge repays first |
+| ledger, 3.5 A for an hour, 1 s / 10 s | (not closing) | 6.55 / 64.7 J |
+| 138 in-window `Dfn` fingerprints, zero-length reads | — | bit-identical |
+
+`dfn_reversal.rs` holds it: eight tests, seven red on the parent. The eighth,
+`the_dfn_voltage_past_empty_does_not_depend_on_the_step`, is green there too — the parent's
+flat curve depends on no step either — and is there to hold the slope against the tangent,
+which fails it (−0.85 against −0.50 V). The split fallback stays off on `Dfn` packs: where the
+model fails, past its electrolyte limit, the curve is not monotone, and the groups driven past
+empty that were measured converge without it.
+
+Perturbed on the same terms as the `Spm`'s (driver `W:\temp\claude\porous-rev\perturb2.py`, baseline exit 0),
+every piece is held:
+
+| # | deleted | exit | turned red |
+| --- | --- | --- | --- |
+| D1 | the `Dfn`'s split | 101 | seven of the eight `dfn_reversal.rs` tests |
+| D2 | the kinetics continuation, back to the solve's tangent | 101 | `the_dfn_voltage_past_empty_does_not_depend_on_the_step`, `a_dfn_group_driven_through_empty_converges` |
+| D3 | the `Dfn`'s reversal heat | 101 | `the_dfn_energy_ledger_closes_with_the_step`, `a_dfn_group_driven_through_empty_converges` |
+| D4 | "a current that is not discharging starts no deficit", on both models | 101 | `dfn_long_step_holds.rs::an_unreachable_power_stops_at_empty_and_says_so` |
+| D5 | the stored line the continuation's (back to the solid's) | 101 | `a_rested_dfn_reads_the_floor_and_a_charge_repays_first`, `the_dfn_energy_ledger_closes_with_the_step`, `the_dfn_voltage_past_empty_does_not_depend_on_the_step` |
+
 ## Perturbations
 
 Each piece deleted in turn in a worktree of the finished change, `sim-core` and `sim-data`
@@ -263,13 +339,15 @@ The version check is what refuses it. The fixture pack is equivalent-circuit and
 
 ## Still open
 
-* **The `Dfn`.** Its bulk-edge spike (`spike3_dfn_bulk.patch`) fixed the moderate cases
-  (ledger 6.5 J at 1 s, linear) and left two defects: past the edge the voltage continued
-  along the solve's own tangent, whose slope at a long step carries the OCV's fall across
-  the step, so the voltage past empty depended on `dt` (−7.0 V at an hour, −0.39 V at a
-  second); and its surface region — a front node empty with up to 42 % of the bulk left at
-  5 C — swung by ±1e6 J. It needs its own edge, which has no closed form, and its own slope.
-  ROADMAP H8.
+* **The `Dfn`'s electrolyte limit** (above, and ROADMAP H8): from 3 C up its solve fails
+  mid-discharge, on this engine and the one before it. The owner has chosen to build a
+  channel for it next; it needs a reaction and parameters nothing here states.
+* **The `Dfn` has no surface edge.** At 2 C its solve fails in the last 1–1.5 % with the
+  electrolyte intact — a particle surface nearly empty before the bulk — and the bulk-only
+  reversal does not reach it.
+* **The `Spm`'s reversal kinetics read the clamped surface; the `Dfn`'s read the declared
+  empty.** Moving the `Spm` to the `Dfn`'s rule would remove its `SURFACE_EDGE` dependence
+  (next bullet) and change its committed trajectories past the edge; not done here.
 * **Past full on the `Spm`.** The charge side is still the clamp and the flat curve.
 * **The reversal's kinetics are the intercalation kinetics at an emptied surface**, whose
   exchange current is set by `SURFACE_EDGE`. Between margins of 1e-6 and 1e-9 that moved the

@@ -517,7 +517,20 @@ use crate::{Demand, Env, Telemetry};
 /// changes and no telemetry field moves. [`crate::CellView::soc_deficit`] keeps its name and
 /// type and gains values on a second cell model, and the browser page relabels its row
 /// `over-drained`, because on that model the deficit can coexist with charge still inside.
-pub const SNAPSHOT_VERSION: u32 = 22;
+///
+/// v23 (the `Dfn` goes past empty): [`crate::DfnState`] gains `soc_deficit`, one `f64`
+/// appended after `tangent`. Past the current that takes its bulk to the chemistry's empty
+/// the solid carries no more, the rest goes down the `[reversal]` ramp, and the curve keeps
+/// falling by the electrodes' kinetics at empty. Bulk edge only: the `Dfn` has no closed-form
+/// surface edge, and the region where its solve fails mid-discharge is the electrolyte's
+/// limit, not empty. See `docs/plans/porous-reversal.md`.
+///
+/// **Semantic only for a `Dfn` driven past empty**: 138 of 138 in-window fingerprints and
+/// every zero-length read are bit-identical. **The stale-blob hazard is v22's**: the new field
+/// closes the boxed state, so a v22 `Dfn` cell read at v23 takes its `capacity_factor` as its
+/// deficit. Measured in `snapshot_version.rs::a_v22_shaped_dfn_state_misparses_at_v23`.
+/// `sim_server::API_VERSION` and `sim-wasm`'s constant stay put, for v22's reason.
+pub const SNAPSHOT_VERSION: u32 = 23;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -1038,8 +1051,7 @@ pub struct CellView {
     /// Ground-truth state of charge, in \[0, 1\].
     pub soc: f64,
     /// How far past empty this cell has been driven, as a fraction of its capacity;
-    /// `0.0` on any cell that is not in voltage reversal, and `0.0` on every `Dfn` cell,
-    /// which has no reversal yet.
+    /// `0.0` on any cell that is not in voltage reversal.
     ///
     /// **On an equivalent circuit this is the other half of [`Self::soc`], not a second
     /// opinion about it.** The cell's true position is `soc − soc_deficit`; the pair is
@@ -2872,10 +2884,12 @@ impl Pack {
         // the cell's own tangent there), so everything below sees an ordinary converged
         // split. Not under an external short, whose current rides on the node voltages
         // and would need a third, outer search.
-        // Not on a pack with a `Dfn` cell: past its range that model's curve is not yet
-        // monotone (ROADMAP H8), so the search's premise fails there, and each of its
-        // evaluations is a coupled nonlinear solve. Measured, it settled none of the `Dfn`
-        // steps it was tried on and multiplied their cost.
+        // Not on a pack with a `Dfn` cell: where that model's solve fails — the
+        // electrolyte's own limit, which its reversal does not cover (ROADMAP H8) — its
+        // curve is not monotone, so the search's premise fails, and each of its evaluations
+        // is a coupled nonlinear solve. Measured, it settled none of the `Dfn` steps it was
+        // tried on and multiplied their cost; the `Dfn` groups driven past empty that this
+        // slice measured converge without it.
         // Checked last, so a step that converged pays nothing for the scan.
         let mut settled = false;
         if capped
@@ -3154,9 +3168,8 @@ impl Pack {
                 // Read *before* `advance`, because the reversal accumulator below is a
                 // difference across it. Model-neutral: the equivalent circuit and the
                 // single-particle cell both carry a deficit, so both are billed for going
-                // past empty (`docs/plans/porous-reversal.md`). Structurally `0.0` for a
-                // `Dfn`, which has no reversal yet, so it contributes exactly zero here with
-                // no branch arranging it.
+                // past empty (`docs/plans/porous-reversal.md`), and so does the `Dfn` since
+                // v23.
                 //
                 // Gated on the same flag the consumer is, so that a pack without aging
                 // pays for this slice **not at all** rather than "negligibly". That is a
@@ -4205,6 +4218,8 @@ mod cell_footprint {
         // current that went there (`docs/plans/porous-reversal.md`). Boxed, so the 16 B
         // land on the heap block of the cells that have the model and on no `Cell`.
         assert_eq!(size_of::<SpmState>(), 80, "SpmState");
-        assert_eq!(size_of::<DfnState>(), 136, "DfnState");
+        // `DfnState` is 144 since SNAPSHOT_VERSION 23: `soc_deficit`, the `Dfn`'s half of
+        // `docs/plans/porous-reversal.md`. Boxed, like `SpmState`.
+        assert_eq!(size_of::<DfnState>(), 144, "DfnState");
     }
 }

@@ -331,4 +331,4 @@ required field with no `#[serde(default)]` inside a struct every snapshot carrie
   two the previous slice shipped.
 * **Porous-electrode over-discharge** is not modelled at all. See the scope note.
   **Half closed — see `porous-reversal.md`**: the `Spm` carries a deficit since v22, and
-  this mechanism bills it with no code of its own; the `Dfn` carries none yet.
+  this mechanism bills it with no code of its own; the `Dfn` does too since v23. **Closed.**

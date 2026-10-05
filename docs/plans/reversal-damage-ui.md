@@ -289,7 +289,7 @@ describes the old behaviour. Two clauses above are worth correcting rather than 
   engine* either way.
 * **No porous-electrode arm.** **Half closed — see `porous-reversal.md`**: the `Spm` carries a
   deficit since v22 and is billed for it; the path still has no single-particle
-  over-discharge pair, and the `Dfn` still carries none. As written: the `Spm` and `Dfn`
+  over-discharge pair. (The `Dfn` carries one too since v23.) As written: the `Spm` and `Dfn`
   cells never clamp, carry no deficit, and cannot reach this mechanism at all — so the guided path's over-discharge pair is
   circuit-only, and step 14's note about the particle's floor is still the only thing said
   about what those models do down there.
