@@ -190,6 +190,12 @@ the step, where they do share one:
    margin. The cost is a second pass over every cell, one OCV-segment search per cell, and
    a few multiplies; the searches could come from the reporting pass that already brackets
    each cell's OCV. That is recorded under H9, not done here.
+   **Corrected 2026-10-05 (`ocv-segment-hint.md`): the 1.08 was wrong by about 3×.** A
+   long-loop instrument that reproduces to ~1 % on a loaded box, run on every engine commit
+   since, puts this commit's cost at new/old **1.21–1.40** on `current` (1.17–1.31 `power`,
+   1.23–1.27 `full`) — about 14 µs, all of it here and none in the slices after. About half
+   was the second OCV search. A checked per-cell segment hint now removes both searches'
+   cost, bit for bit, and the step is faster than before this slice.
 7. **The `Spm` is not fixed — confirmed** by construction: `CellModel::step_source_shift`
    returns zero for it and the nonlinear path was not touched.
 
@@ -246,9 +252,10 @@ bytes restored after.
 ## Still open
 
 * ~~**The `Spm` half** (H8).~~ Closed 2026-09-23 by `spm-end-of-step.md`.
-* **The speed budget** (H9), probably now exceeded by a few per cent on the features-off
+* ~~**The speed budget** (H9), probably now exceeded by a few per cent on the features-off
   case, and unmeasurable cleanly while this machine is shared. The OCV-segment search is
-  the obvious saving.
+  the obvious saving.~~ **Closed 2026-10-05** by `ocv-segment-hint.md`: the excess was
+  ~27 %, not a few, and the hint took it back and more.
 * **A step-mean reported pair** (H10's residue) is optional now: the end-of-step pair closes
   the ledger with no lag, and a mean one would need a current-weighted group voltage that
   has nothing to divide by when cells circulate at rest.

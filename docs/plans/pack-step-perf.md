@@ -1,5 +1,14 @@
 # `Pack::step` performance — four items landed; budget now marginal
 
+> **Superseded as the current position on 2026-10-05 by `docs/plans/ocv-segment-hint.md`.**
+> The end-of-step split cost about 27 %, not the 8 % recorded on 2026-09-23 (an ungated
+> ratio on a loaded box), and a checked per-cell OCV-segment hint took it back and more.
+> Criterion, registered and gated: **46.9 µs `current`, 46.7 µs `power`, 53.3 µs `full`** —
+> under the budget features off, over it fully featured, as `full` already was before the
+> split (55.7 µs). That note also records a second instrument for this box, a long
+> back-to-back step loop that reproduced to ~1 % at 25–40 % machine load, where criterion
+> could not.
+
 > **The `Cell`-size lead recorded below and in `phase-3-aging-faults.md` was STALE, and is
 > now resolved — see `docs/plans/cell-size.md`.** It named `CellAging`'s accumulators as
 > the bulk of `Cell`'s growth. That was true at `Cell` = 160 B and was written *before
@@ -586,7 +595,10 @@ The 50 µs budget is deliberately **not** asserted in a test — a wall-clock as
 machine- and CI-dependent, and `CLAUDE.md` frames it as a budget to keep, not an exit
 criterion. Track it by running the bench, not by a gate.
 
-Current position (2026-09-01, **directly measured** rather than scaled): **47.2 µs at
+Current position: **see `ocv-segment-hint.md` (2026-10-05)** — 46.9 µs `current`, 53.3 µs
+`full`. The paragraph below is the 2026-09-01 position, kept for the trail.
+
+Position on 2026-09-01 (**directly measured** rather than scaled): **47.2 µs at
 `100S10P/current`, under the 50 µs budget by ~6 %.** The **fully-featured figure is an
 open question** — 47.2 plus an un-re-measured 3–10 µs delta puts it at roughly 50–57 µs, at
 or over the line. See "Measuring a change on this machine" above for the number, the

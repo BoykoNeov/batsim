@@ -1343,6 +1343,43 @@ impl std::fmt::Debug for SourceCache {
 /// stepped since it was deserialized — anything else would make
 /// `snapshot != roundtrip(snapshot)` — and `Debug` prints the length because a thousand
 /// currents in every `{:?}` of a pack is noise.
+/// Each cell's OCV-table segment from its last lookup, series-major / parallel-minor:
+/// where the next lookup tries first. See `crate::ecm::bracket_hinted`.
+///
+/// # A fourth kind of buffer
+///
+/// [`CellCurrents`] lists three `#[serde(skip)]` buffers and what each may do across a
+/// step boundary. This one is carried across like [`SourceCache`], and unlike it, it has
+/// **no invariant at all**: a lookup checks the hint against the table before using it
+/// and searches when the check fails, so a hint that is stale, empty or garbage changes
+/// the time a step takes and never a bit it produces. That is why nothing invalidates
+/// it — not [`Pack::set_cell_factors`], not a restore — and why it needs no staleness
+/// assert of its own: the one inside the lookup compares every hinted answer with the
+/// search's in a debug build.
+///
+/// It exists for speed. The pack reads the OCV table twice per cell per step on an
+/// equivalent-circuit pack — once for the end-of-step slope, once for the next step's
+/// source — and a cell almost never leaves its segment in one step. Measured in
+/// `docs/plans/ocv-segment-hint.md`.
+///
+/// The impls are [`SourceCache`]'s, for its reasons: `PartialEq` always `true` (a
+/// deserialized pack starts empty, so anything else would make
+/// `snapshot != roundtrip(snapshot)`), `Debug` prints the length.
+#[derive(Clone, Default)]
+struct OcvHints(Vec<u32>);
+
+impl PartialEq for OcvHints {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for OcvHints {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "OcvHints({} cells)", self.0.len())
+    }
+}
+
 #[derive(Clone, Default)]
 struct CellCurrents(Vec<f64>);
 
@@ -1473,6 +1510,9 @@ pub struct Pack {
     /// A report, not state — no physics reads it.
     #[serde(skip)]
     cell_currents: CellCurrents,
+    /// Each cell's last OCV-table segment; see [`OcvHints`]. Speed only — changes no bit.
+    #[serde(skip)]
+    ocv_hints: OcvHints,
 }
 
 impl Pack {
@@ -1650,6 +1690,7 @@ impl Pack {
             sim_time_s: 0.0,
             // Cold: the first step computes every cell's Thévenin source and fills it.
             src_cache: SourceCache::default(),
+            ocv_hints: OcvHints::default(),
             // Empty: the first step allocates each buffer once and every step after
             // it reuses them.
             scratch: StepScratch::default(),
@@ -2153,6 +2194,13 @@ impl Pack {
         let n_cells = series * parallel;
         let mut cell_src = std::mem::take(&mut self.src_cache).0;
         let warm = cell_src.len() == n_cells;
+        // Taken out and handed back like `cell_src`. Sized here rather than at build so a
+        // deserialized pack, which arrives with none, needs no special case.
+        let mut hints = std::mem::take(&mut self.ocv_hints).0;
+        if hints.len() != n_cells {
+            hints.clear();
+            hints.resize(n_cells, crate::ecm::NO_HINT);
+        }
         if !warm {
             cell_src.clear();
             cell_src.reserve(n_cells);
@@ -2234,10 +2282,11 @@ impl Pack {
                         );
                         cached
                     } else {
-                        let fresh = cell.model.source(
+                        let fresh = cell.model.source_hinted(
                             &self.chem,
                             cell.eff_r0_factor(),
                             cell.eff_capacity_ah(cap_ah),
+                            &mut hints[g_idx * parallel + k],
                         );
                         cell_src.push(fresh);
                         fresh
@@ -2265,6 +2314,7 @@ impl Pack {
                         soh_r,
                         cap_ah * cell.capacity_factor * cell.aging.soh_capacity,
                         dt,
+                        &mut hints[g_idx * parallel + k],
                     );
                     step_src.push((e + de, r + dr));
                 }
@@ -3564,10 +3614,11 @@ impl Pack {
                     cell.runaway.vented = true;
                 }
                 any_vented |= cell.runaway.vented || hot;
-                let (e, r) = cell.model.source(
+                let (e, r) = cell.model.source_hinted(
                     &self.chem,
                     cell.eff_r0_factor(),
                     cell.eff_capacity_ah(cap_ah),
+                    &mut hints[g_idx * parallel + k],
                 );
                 // This is the *next* step's start-of-step source: nothing below
                 // mutates a cell, so the state it was computed from is the state the
@@ -3649,6 +3700,7 @@ impl Pack {
         let soc_bms = self.bms.as_ref().map(Bms::soc_estimate);
         // Hand the buffer back, now holding the next step's start-of-step sources.
         self.src_cache = SourceCache(cell_src);
+        self.ocv_hints = OcvHints(hints);
         // Likewise, now holding what each cell just carried — or, on a probe step, what
         // it carried over the last step that moved.
         self.cell_currents = CellCurrents(i_report);

@@ -328,8 +328,8 @@ which no such range may hold.
 
 ### H9. Performance is at the budget line and the instrument cannot see single digits
 
-**Gap.** `Pack::step` at 100S10P measured 47.2 µs against a 50 µs budget, features off; the
-fully-featured figure is unmeasured and estimated at or over the line (`pack-step-perf.md`).
+**Gap.** `Pack::step` at 100S10P measures 46.9 µs against a 50 µs budget features off, and
+53.3 µs fully featured — over the line (`ocv-segment-hint.md`, 2026-10-05).
 The DFN and SPM benches for the cell-size change were never run. The box the measurements
 were taken on has three performance states and reproducibility "is a property of the
 minute" (`cell-size.md`). The DFN re-solves at a current it already probed (a priced 33 %).
@@ -340,13 +340,17 @@ instruction); consume the DFN's converged probe (a slice, threaded through
 interleaved null. Do not touch the reciprocal-multiply item: it is not bit-identical and
 was declined for that.
 
-**Since 2026-09-23 the features-off figure is probably over the line.** The end-of-step
-split (`end-of-step-split.md`) added a pass over every cell and an OCV-segment search per
-cell, and measured new/old at **1.08** on `100S10P/current` (1.07–1.25 across the cases).
-That was an *ungated* ratio — two processes outside the session held the machine at ~60 %
-CPU and the quiet gate never passed — so the ≈ 51 µs it implies is a projection, not a
-reading. The search is the obvious saving: the reporting pass already brackets every
-cell's OCV and could hand the next step its slope, as it already hands it its source.
+**Since 2026-09-23 the features-off figure was over the line, by more than recorded — and
+since 2026-10-05 it is back under** (`ocv-segment-hint.md`). The end-of-step split's cost was
+recorded as new/old 1.08, an ungated ratio on a loaded box; a long-loop instrument that
+reproduces to ~1 % where criterion could not, run on every engine commit, put it at about
+1.27, all of it in that one commit. About half was a second OCV-table search per cell. A
+checked per-cell segment hint — bit-identical whatever it holds, so it carries no
+invariant — removed both searches' cost. Criterion, registered and gated: **46.9 µs
+`current`, 46.7 µs `power`, 53.3 µs `full`**, against 49.8 / 49.7 / 55.7 µs for the engine
+before the split. **`full` is still over**, as it was before the split; the next lever needs
+a profiler, and the one installed (`samply`) needs the Windows Performance Toolkit, an
+admin install.
 
 ### H10. Smaller physics items, each one slice or less
 

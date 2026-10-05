@@ -519,6 +519,27 @@ impl CellModel {
         }
     }
 
+    /// [`Self::source`], with the equivalent circuit's OCV lookup started from the table
+    /// segment `hint` names (see `bracket_hinted`). The same bits whatever `hint` holds;
+    /// the porous arms ignore it.
+    #[must_use]
+    pub(crate) fn source_hinted(
+        &self,
+        chem: &ChemistryParams,
+        eff_r0_factor: f64,
+        eff_capacity_ah: f64,
+        hint: &mut u32,
+    ) -> (f64, f64) {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
+                cell_source_hinted(s, chem, eff_r0_factor, hint)
+            }
+            CellModel::Spm(_) | CellModel::Dfn(_) => {
+                self.source(chem, eff_r0_factor, eff_capacity_ah)
+            }
+        }
+    }
+
     /// Where this cell's curve is at current `i` \[A, discharge-positive\] over a step of
     /// `dt` seconds, and the straight line touching it there: `(V(i), (E, R))`.
     ///
@@ -654,11 +675,18 @@ impl CellModel {
         soh_resistance: f64,
         charge_capacity_ah: f64,
         dt: f64,
+        hint: &mut u32,
     ) -> (f64, f64) {
         match self {
-            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
-                step_source_shift(s, chem, decays, soh_resistance, charge_capacity_ah, dt)
-            }
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => step_source_shift(
+                s,
+                chem,
+                decays,
+                soh_resistance,
+                charge_capacity_ah,
+                dt,
+                hint,
+            ),
             CellModel::Spm(_) | CellModel::Dfn(_) => (0.0, 0.0),
         }
     }
@@ -852,6 +880,55 @@ fn bracket(xs: &[f64], x: f64) -> (usize, usize, f64) {
     (lo, hi, frac)
 }
 
+/// A [`bracket_hinted`] hint that names no segment: it fails the check on every table,
+/// so the lookup searches.
+pub(crate) const NO_HINT: u32 = u32::MAX;
+
+/// [`bracket`], tried first on the segment `hint` names, and **the same answer bit for
+/// bit** whatever `hint` holds. On a search, `hint` is left naming the segment found.
+///
+/// The check is the condition under which `bracket`'s search would land on
+/// `(lo, lo + 1)`: on strictly ascending breakpoints, `xs[lo] < x <= xs[lo + 1]` makes
+/// `lo + 1` the first breakpoint not below `x`, which is what `partition_point` returns.
+/// `x < xs[n − 1]` excludes the one interior-looking case `bracket` does not search —
+/// `x` exactly on the last breakpoint, which it returns clamped as `(n − 1, n − 1)` —
+/// and a NaN `x` fails every comparison and falls through. The blend weight is the same
+/// expression on the same operands. So a stale or garbage hint costs a search, never an
+/// answer, and nothing has to keep it in step with the state it was taken from.
+///
+/// Why it exists: a cell's charge moves a few parts in a hundred thousand per step, so
+/// the segment it sat in last step is almost always the one it sits in now, and the
+/// pack looks the OCV table up twice per cell per step (the end-of-step slope and the
+/// next step's source). A binary search on a 34-point table is a chain of
+/// unpredictable branches; the check is three. See `docs/plans/ocv-segment-hint.md`.
+#[must_use]
+fn bracket_hinted(xs: &[f64], x: f64, hint: &mut u32) -> (usize, usize, f64) {
+    let n = xs.len();
+    let lo = *hint as usize;
+    let found = if lo < n.saturating_sub(1) && xs[lo] < x && x <= xs[lo + 1] && x < xs[n - 1] {
+        let hi = lo + 1;
+        let span = xs[hi] - xs[lo];
+        (lo, hi, (x - xs[lo]) / span)
+    } else {
+        let b = bracket(xs, x);
+        if b.0 != b.1 {
+            // Segment indices fit: tables are a few dozen points.
+            *hint = b.0 as u32;
+        }
+        b
+    };
+    // The claim above, checked on every lookup a debug build makes — the `SourceCache`
+    // staleness assert's precedent.
+    debug_assert!(
+        {
+            let b = bracket(xs, x);
+            (b.0, b.1, b.2.to_bits()) == (found.0, found.1, found.2.to_bits())
+        },
+        "hinted bracket disagrees with the search at x = {x}"
+    );
+    found
+}
+
 /// Apply a [`bracket`] result to one value column.
 #[must_use]
 fn lerp_at(ys: &[f64], (lo, hi, frac): (usize, usize, f64)) -> f64 {
@@ -879,7 +956,12 @@ pub(crate) fn interp1(xs: &[f64], ys: &[f64], x: f64) -> f64 {
 #[must_use]
 pub(crate) fn interp1_slope(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     debug_assert!(!xs.is_empty() && xs.len() == ys.len());
-    let (lo, hi, _) = bracket(xs, x);
+    slope_at(xs, ys, bracket(xs, x))
+}
+
+/// The slope of the segment a [`bracket`] result names, and `0.0` at a clamped end.
+#[must_use]
+fn slope_at(xs: &[f64], ys: &[f64], (lo, hi, _): (usize, usize, f64)) -> f64 {
     if lo == hi {
         0.0
     } else {
@@ -1491,8 +1573,21 @@ pub(crate) fn power_past_reach(demand: Demand, e: f64, r0: f64) -> bool {
 /// composes the two and guarantees the product is `> 0`, so `r > 0`.
 #[must_use]
 pub(crate) fn cell_source(state: &EcmState, chem: &ChemistryParams, r0_factor: f64) -> (f64, f64) {
+    let mut hint = NO_HINT;
+    cell_source_hinted(state, chem, r0_factor, &mut hint)
+}
+
+/// [`cell_source`], with the OCV lookup started from the segment `hint` names. The same
+/// bits whatever `hint` holds; see `bracket_hinted`.
+#[must_use]
+pub(crate) fn cell_source_hinted(
+    state: &EcmState,
+    chem: &ChemistryParams,
+    r0_factor: f64,
+    hint: &mut u32,
+) -> (f64, f64) {
     let r = r0_lookup(&chem.r0, state.soc, state.temp_k) * r0_factor;
-    let e = open_circuit_v(chem, state) - ecm_overpotential_v(state, chem);
+    let e = open_circuit_v_hinted(chem, state, hint) - ecm_overpotential_v(state, chem);
     (e, r)
 }
 
@@ -1556,7 +1651,9 @@ pub(crate) fn step_source_shift(
     soh_resistance: f64,
     charge_capacity_ah: f64,
     dt: f64,
+    hint: &mut u32,
 ) -> (f64, f64) {
+    // `hint` is the cell's OCV-segment hint (see `bracket_hinted`); it changes no bit.
     let mut de = 0.0;
     let mut dr = 0.0;
     for ((pair, &v0), &d) in chem.rc.iter().zip(state.v_rc.iter()).zip(decays.iter()) {
@@ -1565,7 +1662,7 @@ pub(crate) fn step_source_shift(
         dr += pair.r_ohms * soh_resistance * gone;
     }
     if charge_capacity_ah > 0.0 {
-        dr += ocv_step_slope(chem, state) * dt / (3600.0 * charge_capacity_ah);
+        dr += ocv_step_slope(chem, state, hint) * dt / (3600.0 * charge_capacity_ah);
     }
     (de, dr)
 }
@@ -1593,9 +1690,9 @@ pub(crate) fn step_source_shift(
 ///   settled. The steeper answer only damps a charge into a full cell harder, and the
 ///   clamp already refuses that charge.
 #[must_use]
-pub(crate) fn ocv_step_slope(chem: &ChemistryParams, state: &EcmState) -> f64 {
+pub(crate) fn ocv_step_slope(chem: &ChemistryParams, state: &EcmState, hint: &mut u32) -> f64 {
     if state.soc_deficit > 0.0 {
-        if open_circuit_v(chem, state) > chem.reversal.floor_v {
+        if open_circuit_v_hinted(chem, state, hint) > chem.reversal.floor_v {
             chem.reversal.v_per_soc
         } else {
             0.0
@@ -1613,7 +1710,7 @@ pub(crate) fn ocv_step_slope(chem: &ChemistryParams, state: &EcmState) -> f64 {
         } else {
             state.soc
         };
-        interp1_slope(xs, ys, x).max(0.0)
+        slope_at(xs, ys, bracket_hinted(xs, x, hint)).max(0.0)
     }
 }
 
@@ -1667,16 +1764,30 @@ pub(crate) fn ocv_step_slope(chem: &ChemistryParams, state: &EcmState) -> f64 {
 /// that silently sources forever.
 #[must_use]
 pub(crate) fn open_circuit_v(chem: &ChemistryParams, state: &EcmState) -> f64 {
+    let mut hint = NO_HINT;
+    open_circuit_v_hinted(chem, state, &mut hint)
+}
+
+/// [`open_circuit_v`], with the table lookup started from the segment `hint` names. The
+/// same bits whatever `hint` holds: the lookup is [`ocv_lookup`]'s, `lerp_at` over
+/// `bracket`'s answer, which `bracket_hinted` reproduces exactly.
+#[must_use]
+pub(crate) fn open_circuit_v_hinted(
+    chem: &ChemistryParams,
+    state: &EcmState,
+    hint: &mut u32,
+) -> f64 {
+    let table = lerp_at(
+        &chem.ocv.volts,
+        bracket_hinted(&chem.ocv.soc, state.soc, hint),
+    );
     let ocv = match chem.ocv.t_ref_k {
         // The path, not a neutral zero: `+ 0.0 * (T - T)` would in fact be bit-identical
         // for finite values, but only by an argument about signed zeroes and about a
         // subtraction that is exactly zero, and neither is a thing a future edit can be
         // trusted not to break. Compare `ecm_overpotential_v`'s `None` arm.
-        None => ocv_lookup(&chem.ocv, state.soc),
-        Some(t_ref) => {
-            ocv_lookup(&chem.ocv, state.soc)
-                + docv_dt_lookup(&chem.ocv, state.soc) * (state.temp_k - t_ref)
-        }
+        None => table,
+        Some(t_ref) => table + docv_dt_lookup(&chem.ocv, state.soc) * (state.temp_k - t_ref),
     };
     if state.soc_deficit == 0.0 {
         // The overwhelmingly common case, and written as an early return so that a cell
@@ -1883,5 +1994,97 @@ pub(crate) fn advance_cell(
         rc_delta_v,
         reversal_w: 0.0,
         reversal_mean_w: 0.0,
+    }
+}
+
+/// `bracket_hinted` must return `bracket`'s answer bit for bit **whatever the hint holds**
+/// — that is the whole of its correctness argument, since nothing keeps a hint in step with
+/// the state. So this tries every hint a table admits, plus the sentinel and garbage, at
+/// every breakpoint, one ULP either side of each, the midpoints, both ends and past them,
+/// signed zero, the infinities and NaN. It runs in release too, where the lookup's own
+/// debug assert does not.
+#[cfg(test)]
+mod hinted_bracket {
+    use super::{bracket, bracket_hinted, NO_HINT};
+
+    fn probes(xs: &[f64]) -> Vec<f64> {
+        let mut out = vec![
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NAN,
+            -0.0,
+            0.0,
+            -1.0,
+            2.0,
+        ];
+        for (i, &x) in xs.iter().enumerate() {
+            out.extend([
+                x,
+                f64::from_bits(x.to_bits() + 1),
+                x - x.abs().max(1e-300) * 1e-15,
+            ]);
+            if x != 0.0 {
+                out.push(f64::from_bits(x.to_bits() - 1));
+            }
+            if let Some(&next) = xs.get(i + 1) {
+                out.push(0.5 * (x + next));
+            }
+        }
+        out
+    }
+
+    fn check(xs: &[f64]) {
+        let n = u32::try_from(xs.len()).expect("small table");
+        let hints: Vec<u32> = (0..n + 2).chain([NO_HINT, n * 7, u32::MAX - 1]).collect();
+        for x in probes(xs) {
+            let want = bracket(xs, x);
+            for &h in &hints {
+                let mut hint = h;
+                let got = bracket_hinted(xs, x, &mut hint);
+                assert_eq!(
+                    (got.0, got.1, got.2.to_bits()),
+                    (want.0, want.1, want.2.to_bits()),
+                    "x = {x:e} ({:#x}), hint {h}, table {xs:?}",
+                    x.to_bits()
+                );
+                // A second lookup from whatever the first left behind agrees too.
+                let again = bracket_hinted(xs, x, &mut hint);
+                assert_eq!(
+                    (again.0, again.1, again.2.to_bits()),
+                    (want.0, want.1, want.2.to_bits()),
+                    "second lookup, x = {x:e}, hint {h}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn matches_the_search_for_every_hint() {
+        check(&[0.5]);
+        check(&[0.0, 1.0]);
+        check(&[0.0, 0.2, 0.5, 0.8, 1.0]);
+        // The shape of a shipped OCV table: dense knees at both ends.
+        check(&[
+            0.0000, 0.0025, 0.0050, 0.0075, 0.0100, 0.0125, 0.0150, 0.0175, 0.0200, 0.0300, 0.0400,
+            0.0500, 0.1000, 0.1500, 0.2500, 0.3500, 0.4500, 0.5500, 0.6500, 0.7500, 0.8500, 0.9000,
+            0.9500, 0.9600, 0.9700, 0.9800, 0.9825, 0.9850, 0.9875, 0.9900, 0.9925, 0.9950, 0.9975,
+            1.0000,
+        ]);
+        check(&[-3.0, -1.0, 0.0, 2.5, 1e6]);
+    }
+
+    /// The hint is used, not merely tolerated: after a lookup lands in a segment, the
+    /// hint names it, so the next lookup in that segment takes the short path.
+    #[test]
+    fn a_lookup_leaves_the_hint_on_its_segment() {
+        let xs = [0.0, 0.2, 0.5, 0.8, 1.0];
+        let mut hint = NO_HINT;
+        let _ = bracket_hinted(&xs, 0.6, &mut hint);
+        assert_eq!(hint, 2);
+        // A clamped end names no segment, so it leaves the hint where it was.
+        let _ = bracket_hinted(&xs, 1.0, &mut hint);
+        assert_eq!(hint, 2);
+        let _ = bracket_hinted(&xs, 0.1, &mut hint);
+        assert_eq!(hint, 0);
     }
 }

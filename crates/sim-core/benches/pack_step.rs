@@ -3,15 +3,12 @@
 //! `CLAUDE.md` sets a budget of **< 50 µs per step at 100S10P** (1000 cells) on the
 //! dev box. That is a budget to keep an eye on, not a test gate: a wall-clock
 //! assertion would be machine- and CI-dependent, so nothing here fails a build.
-//! **`100S10P/full` — the case the budget is actually stated against — is
-//! UNMEASURED and may be over.** What is measured is `100S10P/current`
-//! (features off): **47.2 µs**, 2026-09-01, met with a ~6 % margin. Adding the
-//! last-known current↔full delta of 3–10 µs puts the featured case at roughly
-//! 50–57 µs. Two gated rounds did read `full` at **54.6–55.1 µs**, with the
-//! `current` arm reproducing its own floor to 0.2 % in the same invocations — but
-//! that batch needed three gated rounds to return a verdict and got two, so those
-//! are observations, not a measurement. Both cases run in one invocation; see
-//! `docs/plans/pack-step-perf.md`.
+//! **Met features off, missed fully featured.** Registered and gated, 2026-10-05:
+//! `100S10P/current` **46.9 µs**, `100S10P/power` **46.7 µs**, `100S10P/full`
+//! **53.3 µs** — `full` (thermal + BMS on) was over before the end-of-step split
+//! too, at 55.7 µs. See `docs/plans/ocv-segment-hint.md`, which also records why
+//! the split's cost had been understated about 3× and a step-loop instrument that
+//! reads this box under load, and `docs/plans/pack-step-perf.md` for the history.
 //!
 //! Run it with `cargo bench -p sim-core --bench pack_step`. The `--bench` selector
 //! is not optional if you pass criterion flags: plain `cargo bench -p sim-core`

@@ -112,6 +112,7 @@ Measurements of `Pack::step`, the instrument that takes them, and the rule for t
 | file | what it records |
 | --- | --- |
 | [`cell-size.md`](cell-size.md) | `Cell` is 264 bytes and the recorded hypothesis is stale |
+| [`ocv-segment-hint.md`](ocv-segment-hint.md) | The OCV segment hint — and the 8 % that was 27 % |
 | [`pack-step-allocations.md`](pack-step-allocations.md) | The per-step allocations, removed — and counted rather than timed |
 | [`pack-step-perf.md`](pack-step-perf.md) | `Pack::step` performance — four items landed; budget now marginal |
 

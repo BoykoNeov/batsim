@@ -1,0 +1,177 @@
+# The OCV segment hint — and the 8 % that was 27 %
+
+> **Status: landed 2026-10-05.** `Pack::step` at 100S10P on the equivalent circuit is about
+> 27 % faster than the commit before it, and faster than the engine before the end-of-step
+> split (5–9 % on `current`), with bit-for-bit the same trajectories. The split's cost had
+> been recorded as 8 %; it was about 27 % (1.17–1.40 across rounds and cases). ROADMAP H9.
+
+## What was believed
+
+`end-of-step-split.md` (scoring item 6) recorded the split's cost as new/old **1.08** on
+`100S10P/current`, measured ungated on a loaded machine, and projected 47.2 µs × 1.08 ≈ 51 µs:
+over the 50 µs budget by a little. That figure travelled to `pack-step-perf.md`, ROADMAP H9,
+`CLAUDE.md`'s testing section, the bench's module docs and the project memory.
+
+## What was measured
+
+### The criterion batch could not answer
+
+Two registered criterion batches (`W:\temp\claude\perf\REGISTRATION.md`, out of tree) ran
+against `12ea82d` (the split's parent) and `e71cee5` (HEAD). The first gated nothing: two
+processes outside the session held the box at ~25 %, under a 15 % gate. On the owner's
+instruction — one pinned thread is barely touched by 25–40 % load on sixteen logical
+processors — the gate went to 40 %, registered before any reading. The second batch then
+ran three of five rounds and returned **no verdict**: one arm's admissible readings ranged
+51–77 µs, and a reading CI rarely made ±1 %. What it did show was every adjacent pair with
+the new arm slower, by 12–74 %.
+
+### A long loop could
+
+A criterion iteration is one step on a fresh clone. A loop of 1000 steps per clone, run for
+four or five seconds, pinned to the quietest physical core and alternating arms, reproduced
+itself to about 1 % per arm on a box that criterion could not read (the driver is
+`benches/prof_step.rs` in the scratch worktree, never committed). Two cautions on what it
+measures: steps are warm and back to back, which is a client's steady state rather than
+criterion's one cold-cache step; and its absolutes depend on the machine's load, so only
+ratios inside one round are quoted.
+
+| arm | `100S10P/current`, µs/step, six alternating rounds |
+| --- | --- |
+| `12ea82d` (before the split) | 50.2 – 51.4 |
+| `e71cee5` (HEAD) | 64.8 – 65.6 |
+
+### All of it was one commit
+
+Every engine commit from `12ea82d` to HEAD, built and looped in turn, three rounds, order
+reversed each round: the step is ~51–57 µs before `905f256` (the end-of-step split) and
+~61–75 µs from it on. The later slices — `Spm` end-of-step, the `Dfn` holds, the `Spm` pack
+window, both porous reversals — move nothing above the noise of separately linked binaries.
+One possible exception, `9643c5c`, read 4–9 % over its parent in three of four rounds of a
+two-arm check, while HEAD (which contains it) read 2–8 %; that is the size code layout alone
+moves a binary here, so it is recorded and not chased.
+
+| case | split's cost, new/old inside a round |
+| --- | --- |
+| `current` | 1.21 – 1.40 (load-dependent: higher on a busier box) |
+| `power` | 1.17 – 1.31 |
+| `full` | 1.23 – 1.27 |
+
+(Every round that had both arms, across the sweep, the pricing round and the final round.)
+
+**So the split costs about 14 µs, not 4.** The 1.08 was a ratio taken on a box at ~60 %
+load; nothing in it was wrong except the one thing that mattered.
+
+### Where it went
+
+Pricing arms keep the code path and stub one cost (an arm that skipped the whole shift was
+also built and is **not** evidence: it put the solve back on the start-of-step line, which
+changes the trajectory, not just the cost). Same round, `current`:
+
+| arm | over `12ea82d` |
+| --- | --- |
+| HEAD | +32 to +40 % |
+| HEAD with the slope's table search replaced by a constant | +14 to +20 % |
+
+The split added a pass over every cell that computes `step_source_shift`, and in it
+`ocv_step_slope` — a binary search of the 34-point OCV table, a chain of unpredictable
+branches — on top of the search the reporting pass already made for the next step's source.
+About half of the cost was that second search.
+
+## What was built
+
+`ecm::bracket_hinted`: `bracket`, tried first on the segment a per-cell hint names. The
+check is the exact condition under which `bracket`'s search lands on `(lo, lo + 1)` — on
+strictly ascending breakpoints `xs[lo] < x <= xs[lo + 1]` makes `lo + 1` the first
+breakpoint not below `x` — plus `x < xs[n − 1]`, which excludes the one case that looks
+interior and is not (`x` on the last breakpoint, which `bracket` returns clamped). NaN fails
+every comparison. The blend weight is the same expression on the same operands. **So the
+answer is `bracket`'s bit for bit whatever the hint holds**, and a stale, empty or garbage
+hint costs a search, never a bit.
+
+That is the design choice, and it is why this is a hint and not a memo. A memoised slope
+written by the reporting pass would have been correct only under `SourceCache`'s invariant,
+which `pack-step-perf.md` calls the riskiest thing in the pack. A checked hint has no
+invariant: nothing invalidates it — not `set_cell_factors`, not a restore — and nothing
+needs to.
+
+The pack keeps the hints in `OcvHints`, a fourth kind of `#[serde(skip)]` buffer beside
+`SourceCache`, `StepScratch` and `CellCurrents`: carried across steps, never serialized, and
+correct in any state. Both per-cell OCV lookups on a linear pack read it — the end-of-step
+slope and the reporting pass's next-step source — so the hint also speeds up the search the
+engine made before the split, which is why the result beats the engine before the split.
+No snapshot change, no `SNAPSHOT_VERSION` bump.
+
+## Results
+
+Step loop, quietest core (6), box at ~19 % total, four rounds alternating, µs/step:
+
+| case | `12ea82d` (before the split) | `e71cee5` (HEAD) | with the hint |
+| --- | --- | --- | --- |
+| `current` | 50.1 – 53.4 | 64.1 – 67.7 | 47.5 – 49.2 |
+| `power` | 50.2 – 55.4 | 64.2 – 65.9 | 46.0 – 46.5 |
+| `full` | 56.1 – 56.7 | 70.7 – 72.1 | 52.3 – 55.3 |
+
+With the hint over HEAD, inside each round: `current` 0.73–0.75, `power` 0.70–0.72, `full`
+0.73–0.78. Over the engine before the split: `current` 0.91–0.95, `power` 0.83–0.93,
+`full` 0.93–0.99.
+
+**Criterion, registered and gated** (batch b3: gate 40 %, pinned to core 6, five rounds
+alternating, round 1 discarded, minimum of the readings whose CI is within ±1 %, at least two
+of them agreeing within 3 %). The arms are `12ea82d` and HEAD with the hint; HEAD without it
+was not in this batch, so its criterion figure is the step loop's ratio, not a reading.
+
+| case | `12ea82d` | with the hint | ratio | admissible readings (old / new) |
+| --- | --- | --- | --- | --- |
+| `100S10P/current` | 49.84 µs | **46.88 µs** | 0.94 | 4 / 2 |
+| `100S10P/power` | 49.66 µs | **46.73 µs** | 0.94 | 2 / 2 |
+| `100S10P/full` | 55.73 µs | **53.34 µs** | 0.96 | 2 / 2 |
+
+The registered prediction was 0.91–0.95: `current` and `power` inside it, `full` 0.007 over.
+`12ea82d` reads 49.8 µs where `846a0fc` read 47.2 on 2026-09-01 — three slices landed
+between them, and the box is not the empty box of that day, so the two are not a delta.
+
+**The budget.** `current` and `power` are now under 50 µs (46.9 and 46.7 on criterion) and
+`full` is not (53.3). The budget is stated against `Pack::step` at 100S10P without a configuration,
+and `full` was already over it before the split (54.6–55.1 µs on criterion, 2026-09-01). This
+slice recovers the regression; it does not bring the featured case under the line.
+
+## Verification
+
+* `cargo test --workspace`: 86 test binaries, all green, no tolerance touched, no golden
+  regenerated. A debug build checks every hinted lookup against the search (the assert in
+  `bracket_hinted`), so every debug-mode test is also a hint test.
+* `ecm::hinted_bracket::matches_the_search_for_every_hint` (in release too): five tables
+  from one point to the shipped 34-point shape; every hint the table admits plus the
+  sentinel and garbage; every breakpoint, one ULP either side, midpoints, both ends and past
+  them, signed zero, the infinities and NaN; and a second lookup from whatever the first
+  left behind.
+* The snapshot replay tests already compare a pack carrying warm hints with one rebuilt from
+  bytes, which carries none, bit for bit.
+* `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` clean.
+
+### Perturbation table
+
+`W:\temp\claude\perf\perturb.py`: one wrong edit to the check at a time, `cargo test -p
+sim-core --no-fail-fast` in debug and in release, the file's bytes restored after.
+
+| # | the wrong edit | debug | release |
+| --- | --- | --- | --- |
+| P1 | trust the hint without checking `x` against it | **91** red | **6** red: both `hinted_bracket` tests, `a_voltage_hold_tapers_at_long_steps`, `circulation_decays_without_changing_sign`, `saturation_lands_on_the_reversal_floor`, `the_same_abuse_through_a_bms_never_gets_warm` |
+| P2 | drop the `x < xs[n − 1]` guard | **36** red | **1** red: `matches_the_search_for_every_hint` |
+
+P2's release column is the reason the unit test exists: `x` exactly on the last breakpoint
+blends `ys[n−2] + 1·(ys[n−1] − ys[n−2])`, which usually rounds to `ys[n−1]` — so no
+trajectory test can see it in release, and only the exhaustive comparison does.
+
+## Still open
+
+* **`full` is over the budget**, 53.3 µs on criterion. It was before the split too (55.7).
+  The next lever needs a profiler: `samply` is installed, but on Windows it needs the
+  Windows Performance Toolkit (`xperf`), an admin install the owner has not been asked for.
+* **The remaining split cost**: the extra pass over every cell, the RC loop and one division
+  per cell. The hint arm still read +3–4 % over `12ea82d` before the reporting-pass search
+  sped up too; it is not separately priced.
+* **The `Dfn`/`Spm` paths** search their stoichiometry tables (`spm::ocp`) with the same
+  `interp1`; nothing here touches them, and their budgets are their own.
+* **The step loop is an instrument now** and is not in the tree. If it should be, it is a
+  `benches/` target with `harness = false` and nothing else.
