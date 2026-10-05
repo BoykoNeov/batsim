@@ -41,7 +41,7 @@
 #
 # The same holds for the DFN, and there the statement is sharper because the boundary has
 # since been measured: at 1 C the SPM and the DFN reach their cut-offs 12 s apart in 3484
-# (0.34 %), and only at 3 C do they part company — 464 s against 1060. 0.5 C is well below
+# (0.34 %), and only at 3 C do they part company — 464 s against 1056. 0.5 C is well below
 # that boundary, so nothing about the electrolyte is visible in this trace either.
 #
 # What separates the models is not an initial condition but a *demand program*. Two of

@@ -87,7 +87,10 @@ fn a_scattered_group_discharges_evenly_at_long_steps() {
         let mut n = 0;
         loop {
             let tele = p.step(dt, Demand::Current(3.0), &env());
-            if tele.soc_true <= 0.0 {
+            // Empty is the flag, not `soc_true == 0.0`: since `docs/plans/porous-reversal.md`
+            // a particle stops at the chemistry's empty and the reversal carries the rest,
+            // and the bulk lands there to rounding (4e-14 of capacity), not to the bit.
+            if tele.flags.contains(EventFlags::SOC_CLAMPED_LOW) {
                 break;
             }
             n += 1;

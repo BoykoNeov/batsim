@@ -20,8 +20,8 @@
 # ## What it shows, measured at dt = 2 s
 #
 # Free-running from full at 15.459594 A, the same cell that the SPM arm carries to
-# **1060 s and 4.5520 A·h** is finished at **464 s and 1.9926 A·h** — 43.8 % of the time
-# and 43.8 % of the charge, with **61.33 % of its capacity still showing on the readout**.
+# **1056 s and 4.5348 A·h** is finished at **464 s and 1.9926 A·h** — 43.9 % of the time
+# and 43.9 % of the charge, with **61.33 % of its capacity still showing on the readout**.
 # The whole of that gap is one quantity: the electrolyte between the particles. An SPM
 # holds its concentration constant by construction, so it cannot see the cell starve.
 #
@@ -31,7 +31,7 @@
 #
 #   rate   DFN cut-off   SPM cut-off   disagreement   mean |dV| to the DFN's cut-off
 #   1 C     3484 s        3496 s         0.34 %         60.1 mV
-#   3 C      464 s        1060 s          128 %        401.4 mV
+#   3 C      464 s        1056 s          128 %        401.4 mV
 #
 # The mean voltage gap at 1 C is not zero and this file does not claim it is: 60 mV of
 # standing offset survives, and it is a real difference between the two models on this
@@ -84,7 +84,7 @@ A 1S1P LG M50 cell at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no fa
 pulled at 3 C (15.459594 A) on parameters extracted verbatim from PyBaMM's Chen2020. \
 `cc_discharge_3c_spm.toml` with one block swapped. The electrolyte starves and the cell \
 is finished at 464 s having delivered 1.9926 A·h with 61.33 % still on the readout — \
-where the single-particle model runs to 1060 s and 4.5520 A·h and sees nothing wrong. At \
+where the single-particle model runs to 1056 s and 4.5348 A·h and sees nothing wrong. At \
 1 C the two agree on the cut-off to 0.34 %."""
 
 [pack]

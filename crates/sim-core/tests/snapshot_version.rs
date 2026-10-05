@@ -21,16 +21,31 @@
 //!
 //! # The pair moves with the bump, rather than being renumbered
 //! This file used to pin v9 -> v10, then v10 -> v11, v11 -> v12, v12 -> v13, v13 -> v14,
-//! v14 -> v15, v15 -> v16, v16 -> v17, v17 -> v18, v18 -> v19 and v19 -> v20, each time
-//! carrying an assertion that a later bump needs its own pair. This is the v20 -> v21 pair,
-//! and it was re-argued rather than renamed.
+//! v14 -> v15, v15 -> v16, v16 -> v17, v17 -> v18, v18 -> v19, v19 -> v20 and v20 -> v21,
+//! each time carrying an assertion that a later bump needs its own pair. This is the
+//! v21 -> v22 pair, and it was re-argued rather than renamed.
 //!
-//! **The v19 -> v20 pair could not be kept alongside this one**, on the same terms every
+//! **The v20 -> v21 pair could not be kept alongside this one**, on the same terms every
 //! retirement here has been made: [`retagged`] fabricates a stale blob by writing *this
 //! build's* bytes under a fake tag, and the only tag those bytes can honestly wear is the
-//! previous version's, not one two back. As at the last two bumps the retirement is **not**
-//! structural — see the v21 section below, which is the third bump running where the
-//! fixture's bytes do not change at all.
+//! previous version's, not one two back. As at the last three bumps the retirement is
+//! **not** structural — see the v22 section below, which is the fourth bump running where
+//! the fixture's bytes do not change at all.
+//!
+//! # v22: two `f64`s appended to the single-particle state, and the slide is quiet
+//! v22 adds `soc_deficit` and `i_reversal_last` to `SpmState`. See
+//! `docs/plans/porous-reversal.md`.
+//!
+//! This fixture is an equivalent-circuit pack, so its bytes do not move and the pair below
+//! is the real case for the fourth bump running — still a fact about the fixture.
+//!
+//! The other half is [`a_v21_shaped_spm_state_misparses_at_v22`]. A boxed state is
+//! serialized inline, positionally, so the reader takes the two `f64`s after a v21 cell's
+//! `i_last` — the cell's own `capacity_factor` and `r0_factor` — as the new fields. Any
+//! eight bytes are an `f64`, so nothing errors at the field: a scatter-free cell comes back
+//! carrying a deficit of exactly `1.0`, its whole capacity over-drained. Quiet, structural,
+//! and value-independent, which is the v21 shape reached through the cell state rather than
+//! the chemistry.
 //!
 //! # v21: one bare `f64` behind an `Option`, and the stale blob is quiet either way
 //! v21 adds `ChemistryParams::charge_acceptance`, an optional section holding a single
@@ -281,45 +296,44 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v20-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v21 restore.
+/// A v21-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v22 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in, for the third time running.** Read the
-/// module's v21 section: the fixture chemistry has no `[charge_acceptance]`, so the field
-/// v21 adds is one absent `Option` tag that a v20 build never wrote, and a v20 build's
-/// snapshot of this pack has exactly these bytes. The sibling
-/// [`a_v20_shaped_chemistry_tail_misparses_at_v21`] answers the *other* case — a
-/// chemistry whose bytes do change — and its answer is the quiet one, which is why both
-/// exist.
+/// **At this bump the retag is not a stand-in, for the fourth time running.** Read the
+/// module's v22 section: the fixture is an equivalent-circuit pack, and the fields v22
+/// adds live in the single-particle state it does not have, so a v21 build's snapshot of
+/// this pack has exactly these bytes. The sibling [`a_v21_shaped_spm_state_misparses_at_v22`]
+/// answers the *other* case — a pack whose bytes do change — and its answer is the quiet
+/// one, which is why both exist.
 #[test]
-fn the_version_field_is_what_rejects_a_v20_snapshot() {
+fn the_version_field_is_what_rejects_a_v21_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 21,
-        "this test is written against the v20 -> v21 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 22,
+        "this test is written against the v21 -> v22 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
          the new layout is a fact about that layout change, and the answer has flipped \
          across this file's history — v15 'it does not parse at all', v16 'it parses, \
          wrongly and silently', v17 and v18 back to 'it does not parse at all', and v19 \
-         to v21 'for this fixture it parses fine and the version field is all there \
-         is'. A renumbered assertion cannot inherit any of them, and a run of three \
-         identical answers is not a rule — it is three layout changes that happened not \
+         to v22 'for this fixture it parses fine and the version field is all there \
+         is'. A renumbered assertion cannot inherit any of them, and a run of four \
+         identical answers is not a rule — it is four layout changes that happened not \
          to touch this fixture, which is a fact about the fixture."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 20);
+    let stale = retagged(&bytes, 21);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 20,
+            found: 21,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v20-tagged snapshot must be refused"
+        "a v21-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -770,4 +784,57 @@ fn a_v20_shaped_chemistry_tail_misparses_at_v21() {
         params,
         Some(sim_core::ChargeAcceptanceParams { soc_onset: 0.9 })
     );
+}
+
+/// A v21 single-particle cell state does not fail to parse at v22 — it parses the two
+/// numbers after it into the two new fields.
+///
+/// `bincode` writes the boxed `SpmState` inline and positionally, and in a `Cell` it is
+/// followed by `capacity_factor` and `r0_factor`. So the v21 bytes `c_neg, c_pos, temp_k,
+/// i_last` plus those two factors are exactly as long as a v22 state, and the reader fills
+/// `soc_deficit` and `i_reversal_last` from them. On a scatter-free cell both factors are
+/// `1.0`, which reads as a cell carrying its whole capacity past empty.
+///
+/// **The field, not a snapshot**, on its siblings' terms: what is shown is the mechanism,
+/// which is what makes the version check the only thing between a v21 blob and that cell.
+#[test]
+fn a_v21_shaped_spm_state_misparses_at_v22() {
+    let c_neg = vec![10_000.0_f64; 3];
+    let c_pos = vec![30_000.0_f64; 3];
+    // A v21 state (`c_neg`, `c_pos`, `temp_k`, `i_last`), then the cell's next two fields.
+    let v21_then_cell = bincode::serialize(&(
+        c_neg.clone(),
+        c_pos.clone(),
+        298.15_f64,
+        2.5_f64,
+        1.0_f64, // capacity_factor
+        1.0_f64, // r0_factor
+    ))
+    .expect("a v21-shaped state and the cell fields after it serialize");
+    let read: sim_core::SpmState = bincode::deserialize(&v21_then_cell).expect(
+        "the v22 note says a v21 state parses quietly at v22 and it did not — correct the note \
+         rather than this test",
+    );
+    assert_eq!(read.c_neg, c_neg);
+    assert_eq!(read.i_last, 2.5);
+    assert_eq!(
+        read.soc_deficit, 1.0,
+        "the cell's capacity factor has been read as its deficit — quiet, and nonsense, \
+         which is the hazard the version check stands in front of"
+    );
+    assert_eq!(read.i_reversal_last, 1.0);
+
+    // The positive control: a v22 state round-trips to itself, so the reading above is the
+    // layout change and not a broken fixture.
+    let v22 = sim_core::SpmState {
+        c_neg,
+        c_pos,
+        temp_k: 298.15,
+        i_last: 2.5,
+        soc_deficit: 0.25,
+        i_reversal_last: 0.5,
+    };
+    let bytes = bincode::serialize(&v22).expect("a v22 state serializes");
+    let back: sim_core::SpmState = bincode::deserialize(&bytes).expect("that is a v22 state");
+    assert_eq!(back, v22);
 }

@@ -42,7 +42,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
-use crate::chem::{ElectrodeParams, OcpTable, SpmParams};
+use crate::chem::{ElectrodeParams, OcpTable, ReversalParams, SpmParams};
 use crate::ecm::interp1;
 use crate::flags::EventFlags;
 
@@ -140,6 +140,22 @@ pub struct SpmState {
     /// survive a snapshot like anything else. A cold cell starts at `0.0`, which is
     /// where a resting cell's tangent belongs.
     pub i_last: f64,
+    /// Charge drawn past empty, as a fraction of the cell's effective capacity — the
+    /// porous-electrode sibling of [`crate::EcmState::soc_deficit`], with the same
+    /// invariant: `> 0.0` only while both particles' **bulk** sits at the chemistry's
+    /// empty. Past that edge the particles carry no more discharge; the rest of the
+    /// current is carried here, and the cell's voltage falls down the chemistry's
+    /// `[reversal]` ramp from its own equilibrium voltage at empty. A charge repays it
+    /// before it reaches the particles. See `docs/plans/porous-reversal.md`.
+    #[serde(default)]
+    pub soc_deficit: f64,
+    /// The share of [`Self::i_last`] \[A\] the reversal carried rather than the particles:
+    /// `i_last − i_p`. **State, for the reason `i_last` is**: a read of this cell where no
+    /// time passes — the pack's end-of-step report, a zero-length probe — has to divide a
+    /// current the way the step that produced the state divided it, or it reports a voltage
+    /// the step never had. Exactly `0.0` on every cell never driven past its edge.
+    #[serde(default)]
+    pub i_reversal_last: f64,
 }
 
 impl SpmState {
@@ -157,6 +173,8 @@ impl SpmState {
             c_pos: vec![y * spm.positive.c_max_mol_per_m3; shells],
             temp_k,
             i_last: 0.0,
+            soc_deficit: 0.0,
+            i_reversal_last: 0.0,
         }
     }
 }
@@ -263,6 +281,9 @@ struct Working<'a> {
     kappa: f64,
     /// Lumped ohmic resistance \[ohms\] after the resistance-growth multiplier.
     r_contact: f64,
+    /// The cell's effective capacity \[Ah\] — what [`SpmState::soc_deficit`] is a
+    /// fraction of.
+    capacity_ah: f64,
     /// Cell temperature \[K\].
     temp_k: f64,
 }
@@ -310,6 +331,7 @@ impl<'a> Working<'a> {
             neg,
             pos: side(&spm.positive),
             r_contact: spm.contact_resistance_ohm * eff_r0_factor,
+            capacity_ah: eff_capacity_ah,
             temp_k,
         }
     }
@@ -474,41 +496,110 @@ fn half(
 /// overpotentials *and* through both surface concentrations, which the flux
 /// boundary condition shifts — this is what ends the pack's closed-form solve.
 #[must_use]
-fn voltage(w: &Working<'_>, s: &SpmState, i: f64) -> f64 {
+fn voltage(w: &Working<'_>, s: &SpmState, i_p: f64, i: f64) -> f64 {
     let outer = |c: &[f64]| (c[c.len() - 1], c.len());
-    voltage_from_outer(w, outer(&s.c_neg), outer(&s.c_pos), i)
+    voltage_split(w, outer(&s.c_neg), outer(&s.c_pos), i_p, i)
 }
 
-/// [`voltage`], given each particle's outermost shell `(concentration, shell count)`
-/// rather than its profile — the surface is extrapolated from that shell alone.
+/// Terminal voltage \[V\] given each particle's outermost shell `(concentration, shell
+/// count)`: the surface is extrapolated from that shell along the flux of the current the
+/// **particles** carry, `i_p`, and the kinetics and contact resistance carry the **cell's**
+/// current `i`. The two are the same current everywhere except past empty, where the
+/// particles carry only what takes their bulk to empty and the rest is carried by the
+/// reversal (see [`split`]) — across the same interface, so through the same kinetics.
 #[must_use]
-fn voltage_from_outer(w: &Working<'_>, neg: (f64, usize), pos: (f64, usize), i: f64) -> f64 {
-    let n = half(w, neg.0, neg.1, &w.neg, w.j_neg(i), i / w.neg.g.area_m2);
-    let p = half(w, pos.0, pos.1, &w.pos, w.j_pos(i), -i / w.pos.g.area_m2);
+fn voltage_split(w: &Working<'_>, neg: (f64, usize), pos: (f64, usize), i_p: f64, i: f64) -> f64 {
+    let n = half(w, neg.0, neg.1, &w.neg, w.j_neg(i_p), i / w.neg.g.area_m2);
+    let p = half(w, pos.0, pos.1, &w.pos, w.j_pos(i_p), -i / w.pos.g.area_m2);
     p - n - i * w.r_contact
 }
 
-/// Terminal voltage \[V\] at cell current `i` at the **end** of a step that carries `i`
-/// throughout: the particles diffused by backward Euler under that current's flux,
-/// exactly as [`advance`] will diffuse them, and the surface read from there.
-///
-/// `neg` and `pos` are the two particles' [`OuterShell`]s for the step, from
-/// [`forward_sweep`]. The whole dependence on `i` — kinetics, surface extrapolation, and
-/// the lithium the step moves — is in here.
+/// The cell's equilibrium voltage \[V\] at the chemistry's declared empty: both particles'
+/// bulk at `stoich_min` (negative) and `stoich_max` (positive), where [`soc`] reads `0`.
+/// The point the reversal ramp starts from — this model's own, not the equivalent
+/// circuit's `OCV(0)`.
 #[must_use]
-fn end_of_step_voltage(
-    w: &Working<'_>,
-    s: &SpmState,
-    neg: OuterShell,
-    pos: OuterShell,
-    i: f64,
-) -> f64 {
-    voltage_from_outer(
-        w,
-        (neg.at(w.j_neg(i)), s.c_neg.len()),
-        (pos.at(w.j_pos(i)), s.c_pos.len()),
-        i,
-    )
+fn empty_voltage(w: &Working<'_>) -> f64 {
+    ocp_lookup(&w.pos.p.ocp, w.pos.p.stoich_max) - ocp_lookup(&w.neg.p.ocp, w.neg.p.stoich_min)
+}
+
+/// How far below [`empty_voltage`] the reversal ramp has taken the cell at deficit `d`
+/// \[V\]: `v_per_soc · d`, stopping at `floor_v`. Exactly `0.0` at `d <= 0`, so every cell
+/// that has never been driven past empty subtracts a literal zero.
+#[must_use]
+fn reversal_drop(w: &Working<'_>, rev: &ReversalParams, d: f64) -> f64 {
+    if d > 0.0 {
+        (rev.v_per_soc * d)
+            .min(empty_voltage(w) - rev.floor_v)
+            .max(0.0)
+    } else {
+        0.0
+    }
+}
+
+/// The reversal channel's open-circuit voltage \[V\] at deficit `d`: the ramp down from
+/// [`empty_voltage`], stopping at the floor. What a unit of charge moved into (or out of)
+/// the deficit is booked at, so the stored energy of the deficit is a function of `d`
+/// alone and the ledger closes whatever the particles hold.
+#[must_use]
+fn reversal_ocv(w: &Working<'_>, rev: &ReversalParams, d: f64) -> f64 {
+    empty_voltage(w) - reversal_drop(w, rev, d)
+}
+
+/// How a step of `dt > 0` seconds carrying `i` divides between the particles and the
+/// reversal: `(i_p, d_end)`, the particles' current \[A\] and the deficit at the end of
+/// the step. `edge` is [`discharge_edge`] for this step: the most discharge the particles
+/// can carry, whether their surface or their bulk is what runs out.
+///
+/// * With **no deficit** the particles carry up to `edge` and the rest starts one.
+/// * With **a deficit** the particles carry exactly `edge` — all they can give — so what
+///   the terminals do not take out repays the deficit: a
+///   charge repays it before it reaches the particles (the equivalent circuit's order),
+///   and at rest the particle's own lithium repays it as fast as its surface allows.
+/// * A step that repays the whole deficit gives the deficit exactly what clears it and
+///   the particles the rest, so `d_end` is never below zero.
+///
+/// Inside the window `i <= edge` and the deficit is zero, so this returns `(i, 0.0)`.
+#[must_use]
+fn split(w: &Working<'_>, s: &SpmState, edge: f64, i: f64, dt: f64) -> (f64, f64) {
+    let per_amp = dt / (3600.0 * w.capacity_ah);
+    let d0 = s.soc_deficit;
+    // With no deficit the particles carry the current up to their edge; with one they
+    // carry exactly the edge — all they can — and what the cell does not take out of the
+    // terminals repays the deficit.
+    let i_p = if d0 > 0.0 { edge } else { i.min(edge) };
+    if !i_p.is_finite() {
+        return (i, d0);
+    }
+    let d_end = d0 + (i - i_p) * per_amp;
+    if d_end < 0.0 {
+        // Repaid within the step: the deficit takes exactly what clears it, the particles
+        // the rest.
+        (i + d0 / per_amp, 0.0)
+    } else {
+        (i_p, d_end)
+    }
+}
+
+/// The most discharge current \[A\] the particles can carry over a step of `dt > 0`: the
+/// lower of the current that takes a **surface** to the edge [`clamp_surface`] holds
+/// ([`current_window`]'s upper end, unpulled) and the one that takes the **bulk** to the
+/// chemistry's empty ([`bulk_window`]'s). Past it the reversal carries the rest.
+#[must_use]
+fn discharge_edge(w: &Working<'_>, s: &SpmState, ends: (OuterShell, OuterShell), dt: f64) -> f64 {
+    let bulk = bulk_window(w, s, dt).1;
+    match current_window(w, s, Some(ends)) {
+        Some((_, surf)) => surf.min(bulk),
+        None => bulk,
+    }
+}
+
+/// The particles' share of `i` on a read where no time passes: what the step that produced
+/// this state left the reversal carrying is held, and the particles take the rest. `i`
+/// itself on every cell never driven past its edge, bit for bit.
+#[must_use]
+fn stored_split(s: &SpmState, i: f64) -> f64 {
+    i - s.i_reversal_last
 }
 
 /// Equilibrium (open-circuit) voltage \[V\] at the particles' **mean** — bulk —
@@ -531,11 +622,16 @@ fn equilibrium_voltage(w: &Working<'_>, s: &SpmState) -> f64 {
 /// [`OuterShell`]s, at the stored state otherwise.
 ///
 /// # What this is the model saying about itself
-/// Outside this range a surface has been driven past empty or past full, and nothing in
-/// this model describes that: the clamp holds the surface at the edge, the tables stop
-/// there, and `V(i)` goes **flat** — it moves only through the kinetics and the contact
-/// resistance, not through the lithium the step moved. A flat curve is not a harmless
-/// artefact to a solver built on tangents. A tangent taken on it has almost no slope, so
+/// Past **full**, nothing in this model describes a surface outside this range: the clamp
+/// holds the surface at the edge, the tables stop there, and `V(i)` goes **flat** — it
+/// moves only through the kinetics and the contact resistance, not through the lithium the
+/// step moved. Past **empty** that was true as well until `docs/plans/porous-reversal.md`.
+/// Now this range's upper end, with the bulk's, is where the particles stop
+/// ([`discharge_edge`]): beyond it they carry nothing more and the reversal carries the
+/// rest down the chemistry's ramp, so the curve keeps falling. The measurements below are
+/// from before that, on the discharge side, and are why the pack still holds a voltage or
+/// power demand inside this range. A flat curve is not a harmless artefact to a solver
+/// built on tangents. A tangent taken on it has almost no slope, so
 /// the next pass puts almost any current there. Measured on the shipped LG M50: a 10 W
 /// demand no cell at 35 % can meet for an hour was "met" at 57 A and 0.18 V, a root that
 /// exists only on the flat stretch (the old engine found it one step later, at 1290 K); and
@@ -825,7 +921,8 @@ pub(crate) fn overpotential_v(
 ) -> f64 {
     let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
     let i = s.i_last;
-    equilibrium_voltage(&w, s) - voltage(&w, s, i) - i * w.r_contact
+    // The particles' own: the reversal ramp is a separate channel's voltage, not theirs.
+    equilibrium_voltage(&w, s) - voltage(&w, s, stored_split(s, i), i) - i * w.r_contact
 }
 
 /// Bulk minus surface stoichiometry on each electrode, `(negative, positive)`, both on
@@ -929,10 +1026,11 @@ pub(crate) fn heat_w(
 pub(crate) fn source(
     s: &SpmState,
     spm: &SpmParams,
+    rev: &ReversalParams,
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
 ) -> (f64, f64) {
-    source_at(s, spm, eff_r0_factor, eff_capacity_ah, s.i_last)
+    source_at(s, spm, rev, eff_r0_factor, eff_capacity_ah, s.i_last)
 }
 
 /// [`source`], but tangent to `V(i)` at the caller's operating point `i` rather
@@ -950,6 +1048,7 @@ pub(crate) fn source(
 pub(crate) fn source_at(
     s: &SpmState,
     spm: &SpmParams,
+    rev: &ReversalParams,
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     i: f64,
@@ -957,7 +1056,7 @@ pub(crate) fn source_at(
     // `dt = 0`: the start-of-step curve, which is what a tangent that has to be a pure
     // function of state (see [`source`]) can be taken on. The pack's iteration re-takes
     // every tangent on the end-of-step curve from its first probe on.
-    probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i, 0.0, false).1
+    probe_at(s, spm, rev, eff_r0_factor, eff_capacity_ah, i, 0.0, false).1
 }
 
 /// Where the curve is at `i` over a step of `dt` seconds, and what straight line touches it
@@ -987,8 +1086,9 @@ pub(crate) fn source_at(
 /// it instead — both the voltage and the tangent. The pack asks for that under
 /// [`crate::Demand::Power`] and [`crate::Demand::Voltage`], and the reason is who picks the
 /// current. A current demand's caller picks it, and a cell it really drives past empty is
-/// solved out there on the flat curve, as it must be. Under the other two the engine picks
-/// it, and the flat stretch is where its iteration gets lost:
+/// solved out there, as it must be — on the reversal since `docs/plans/porous-reversal.md`,
+/// on a flat curve before it. Under the other two the engine picks it, and before the
+/// reversal the flat stretch is where its iteration got lost:
 ///
 /// * **Power.** The flat stretch holds a root the physics does not: a 10 W hour from an
 ///   LG M50 at 35 %, whose true best is under 5 W, was "met" at 57 A and 0.18 V and ran
@@ -1007,9 +1107,13 @@ pub(crate) fn source_at(
 /// unconverged of 405, every one bounded (≤ 660 A pack current, ≤ 312 K). A pack whose
 /// demand is met only by driving one weak cell past empty fails the same way.
 #[must_use]
+// `rev` made it eight, and bundling the scale factors to silence that would hide which arrive
+// combined and which split — `CellModel::advance`'s reasoning, which `dfn::probe_at` cites too.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn probe_at(
     s: &SpmState,
     spm: &SpmParams,
+    rev: &ReversalParams,
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     i: f64,
@@ -1022,9 +1126,22 @@ pub(crate) fn probe_at(
     } else {
         Some(step_ends(s, spm, &w, dt))
     };
+    // Past empty the particles carry only what empties their bulk, and the rest goes down
+    // the reversal ramp (see [`split`]). Inside the window this is `(i, 0.0)` and the curve
+    // is the particles' alone, bit for bit.
+    let hi = end.map_or(f64::INFINITY, |e| discharge_edge(&w, s, e, dt));
     let curve = |i: f64| match end {
-        Some((neg, pos)) => end_of_step_voltage(&w, s, neg, pos, i),
-        None => voltage(&w, s, i),
+        Some((neg, pos)) => {
+            let (i_p, d) = split(&w, s, hi, i, dt);
+            voltage_split(
+                &w,
+                (neg.at(w.j_neg(i_p)), s.c_neg.len()),
+                (pos.at(w.j_pos(i_p)), s.c_pos.len()),
+                i_p,
+                i,
+            ) - reversal_drop(&w, rev, d)
+        }
+        None => voltage(&w, s, stored_split(s, i), i) - reversal_drop(&w, rev, s.soc_deficit),
     };
     let h = 1.0e-6 * eff_capacity_ah;
     let i = match current_window(&w, s, end) {
@@ -1136,22 +1253,23 @@ pub(crate) fn step_current_window(
 ///
 /// The last current is the natural place to start: a steady demand converges in one
 /// pass from it. But it was chosen for the previous step's length, and on a much longer
-/// step it can empty or overfill the particle several times over. There the curve is
-/// flat, a tangent to it has almost no slope, and the pass it seeds puts almost any
-/// current anywhere. Measured on the shipped LG M50: a 1S2P pack rested for 1e6 s after
+/// step it can empty or overfill the particle several times over. There the curve was
+/// flat — past full it still is — a tangent to it has almost no slope, and the pass it
+/// seeds puts almost any current anywhere. Measured on the shipped LG M50: a 1S2P pack rested for 1e6 s after
 /// a 5 A discharge seeded at 5 A and ran to 1e9 A on its first rest step, and to NaN
 /// after it (the start-of-step engine did the same one step later). Pulled back to the
 /// range — a few milliamps at that step length — the same step converges.
 ///
 /// Under a current demand only the **seed** is held to the range, not the iteration's own
 /// probes, because a current demand that really does drive a cell past empty has its answer
-/// out there, on the flat curve, and a solve held away from it would never converge on it.
-/// Power and voltage demands hold their probes too; see [`probe_at`].
-/// That region is where this model has no physics, which `docs/ROADMAP.md` (H8) records.
+/// out there, on the reversal, and a solve held away from it would never converge on it.
+/// Power and voltage demands hold their probes too; see [`probe_at`]. Past FULL this model
+/// still has no physics, which `docs/ROADMAP.md` (H8) records.
 #[must_use]
 pub(crate) fn first_pass_tangent(
     s: &SpmState,
     spm: &SpmParams,
+    rev: &ReversalParams,
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     dt: f64,
@@ -1162,14 +1280,14 @@ pub(crate) fn first_pass_tangent(
         let ends = step_ends(s, spm, &w, dt);
         // Only a cell that could rest through the step inside its range is pulled back
         // into it. One already past a limit has no range near zero to be pulled into,
-        // and its answer is out on the flat stretch where the last current already is.
+        // and its answer is out past its edge, where the last current already is.
         if let Some(range) =
             current_window(&w, s, Some(ends)).filter(|&(lo, hi)| lo < 0.0 && 0.0 < hi)
         {
             i = held(i, range, 1.0e-6 * eff_capacity_ah);
         }
     }
-    probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i, dt, false).1
+    probe_at(s, spm, rev, eff_r0_factor, eff_capacity_ah, i, dt, false).1
 }
 
 /// Advance both particles by `dt` seconds under the current `i` the pack solve
@@ -1181,6 +1299,11 @@ pub(crate) fn first_pass_tangent(
 /// says the *readout* has run past its window rather than that state was discarded.
 /// Getting that lithium back out is then a discharge, which is the physical answer
 /// and a more honest one than the equivalent circuit's hard SOC clamp.
+///
+/// Past **empty** it is the other way round, since `docs/plans/porous-reversal.md`: the
+/// particles carry only what [`split`] gives them, the rest of the current goes into
+/// [`SpmState::soc_deficit`], and `SOC_CLAMPED_LOW` is raised for as long as a deficit is
+/// carried. So a particle never holds less lithium than none.
 ///
 /// `i_last` is written only when time actually passed. A zero-length probe step
 /// mutates nothing — the diffusion solve is already a no-op at `dt = 0` by
@@ -1219,22 +1342,46 @@ pub(crate) fn first_pass_tangent(
 ///
 /// Both are exactly `0.0` at `dt <= 0`, which keeps a zero-length probe step bit-for-bit
 /// what it was.
+///
+/// # And a third, in watts
+/// Past the edge part of the current is the reversal's, and `i·(U_eq − V)` books all of
+/// it at the particles' equilibrium. The last pair returned is the reversal channel's own
+/// share, `i_d·(OCV_d(d) − U_eq)`, at the end of the step and as the step's trapezoid —
+/// the pack adds them as [`crate::ecm::Advanced`]'s `reversal_w` and `reversal_mean_w`.
+/// Watts and not volts because at rest the particle can be paying the deficit back at zero
+/// terminal current, which no voltage times `i` can express. Exactly `0.0` on every step
+/// with no current past the edge.
 #[must_use]
+// Eight with `rev`; see `probe_at` for why the list stays flat.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn advance(
     s: &mut SpmState,
     spm: &SpmParams,
+    rev: &ReversalParams,
     i: f64,
     dt: f64,
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     v_node: f64,
-) -> (EventFlags, f64, f64) {
+) -> (EventFlags, f64, f64, (f64, f64)) {
     let moves = !dt.is_nan() && dt > 0.0;
     // The heat terms read the kinetics, so they need the real resistance factor; the
     // diffusion below does not, which is the note on its own `Working`.
     let wk = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    // What the particles carry and what goes down the reversal ramp — the same division
+    // [`probe_at`] read the curve with. `(i, 0.0)` everywhere inside the window.
+    let (i_p, d_end) = if moves {
+        let edge = discharge_edge(&wk, s, step_ends(s, spm, &wk, dt), dt);
+        split(&wk, s, edge, i, dt)
+    } else {
+        (i, s.soc_deficit)
+    };
+    let d_start = s.soc_deficit;
     let start = if moves {
-        (equilibrium_voltage(&wk, s), voltage(&wk, s, i))
+        (
+            equilibrium_voltage(&wk, s),
+            voltage(&wk, s, i_p, i) - reversal_drop(&wk, rev, d_start),
+        )
     } else {
         (0.0, 0.0)
     };
@@ -1247,32 +1394,48 @@ pub(crate) fn advance(
         &mut s.c_neg,
         spm.negative.particle_radius_m,
         w.neg.d_s,
-        w.j_neg(i),
+        w.j_neg(i_p),
         dt,
     );
     diffuse(
         &mut s.c_pos,
         spm.positive.particle_radius_m,
         w.pos.d_s,
-        w.j_pos(i),
+        w.j_pos(i_p),
         dt,
     );
     if dt > 0.0 {
         s.i_last = i;
+        s.i_reversal_last = i - i_p;
+    }
+    if moves {
+        s.soc_deficit = d_end;
     }
     let raw = raw_soc(s, spm);
     let mut flags = EventFlags::empty();
     if raw > 1.0 {
         flags |= EventFlags::SOC_CLAMPED_HIGH;
-    } else if raw < 0.0 {
+    } else if raw < 0.0 || s.soc_deficit > 0.0 {
         flags |= EventFlags::SOC_CLAMPED_LOW;
     }
     if !moves {
-        return (flags, 0.0, 0.0);
+        return (flags, 0.0, 0.0, (0.0, 0.0));
     }
     let (u_start, v_start) = start;
     let u_end = equilibrium_voltage(&wk, s);
-    let v_end = voltage(&wk, s, i);
+    let v_end = voltage(&wk, s, i_p, i) - reversal_drop(&wk, rev, s.soc_deficit);
+    // The reversal channel's share of the heat, `i_d·(OCV_d − U_eq)` at each end: what
+    // `i·(U_eq − V)` misbooks when part of the current is not the particles'. Exactly
+    // `0.0` with no deficit at either end and no current past the edge.
+    let i_d = i - i_p;
+    let rev_at = |u: f64, d: f64| {
+        if i_d == 0.0 {
+            0.0
+        } else {
+            i_d * (reversal_ocv(&wk, rev, d) - u)
+        }
+    };
+    let (rev_start, rev_end) = (rev_at(u_start, d_start), rev_at(u_end, s.soc_deficit));
     // What the pack's estimate already holds, and so what each correction takes back out.
     let estimate = u_start - v_node;
     let at_end = u_end - v_end;
@@ -1280,5 +1443,6 @@ pub(crate) fn advance(
         flags,
         at_end - estimate,
         0.5 * ((u_start - v_start) + at_end) - estimate,
+        (rev_end, 0.5 * (rev_start + rev_end)),
     )
 }

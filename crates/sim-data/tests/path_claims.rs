@@ -121,7 +121,7 @@
 //! header, which is where a number describing that list belongs.
 //!
 //! **What is still spelled in English is named phrase by phrase**, in `[[english]]` in
-//! `web/path-claims.toml` — 44 of them across eleven steps, matched both ways so
+//! `web/path-claims.toml` — 43 of them across eleven steps, matched both ways so
 //! that the list can only get shorter. They are the half that was tied to nothing: rewriting
 //! one into digits makes the ledger see it, and the ledger has no waiver, so each is a rule
 //! or a claim rather than an edit. Two shapes stay out of the ban and are declared rather
@@ -134,7 +134,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is thirty-two steps and 771 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is thirty-two steps and 777 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -206,7 +206,7 @@
 //!   "in this path"** — is in the failure message rather than in anyone's memory. The entries
 //!   with no `over` are unchecked by construction: the table names them, and a green run says
 //!   nothing at all about whether they are true.
-//! * **One readout row: `past empty`.** It is formatted from `Pack::cell` output rather
+//! * **One readout row: `over-drained`.** It is formatted from `Pack::cell` output rather
 //!   than from telemetry *and* sampled on a 250 ms **wall**-clock throttle, so what it
 //!   shows at a given simulation time is not a function of that time at all. It is not
 //!   mirrored: a claim naming it panics rather than passing. See [`render_row`].
@@ -472,13 +472,13 @@ const MIRRORED: &[(&str, &str, &str)] = &[
     // into a telemetry-only row is noticed rather than silently leaving a mirrorable row
     // unmirrored.
     (
-        "the `past empty` row reads per-cell state",
+        "the `over-drained` row reads per-cell state",
         "app.js",
         "const d = Math.max(...cs.map((c) => c.soc_deficit));",
     ),
     // --- the `surface gap` row, and the three lines it is made of ------------
     //
-    // It sat beside `past empty` as unmirrored until the probe slice, and these four rows
+    // It sat beside `over-drained` as unmirrored until the probe slice, and these four rows
     // are what moving it cost. The last one is the reason they are here at all: with only
     // the row's own line pinned, deleting the page's negative-zero guard left the whole
     // suite green — the mirror kept its own copy of the guard and went on printing what
@@ -721,7 +721,7 @@ fn fmt_gap_pts(x: f64, dp: usize) -> String {
 ///
 /// One row is missing on purpose and panics instead of returning something plausible:
 ///
-/// * **`past empty`** is formatted from per-cell `soc_deficit`, which is not in
+/// * **`over-drained`** is formatted from per-cell `soc_deficit`, which is not in
 ///   `Telemetry` at all, and the page samples it on a 250 ms *wall*-clock throttle rather
 ///   than per frame. There is therefore no such thing as "what that row shows at
 ///   simulation time t" — at speed it can be a dozen seconds of simulation behind, which
@@ -731,12 +731,12 @@ fn fmt_gap_pts(x: f64, dp: usize) -> String {
 /// It is named in the module docs as uncovered rather than left to be inferred.
 ///
 /// **`surface gap` used to sit beside it and no longer does, and the reason given here for
-/// nine slices was wrong.** It said that row "carries no throttle, so unlike `past empty` it
+/// nine slices was wrong.** It said that row "carries no throttle, so unlike `over-drained` it
 /// *does* have a value at a given simulation time". Both are formatted from `cells`, and
 /// `cells` is sampled on `CELLS_PERIOD_MS` — see [`Row::surface_gap`], where the correction
 /// and what it costs are written out. What actually separates them is narrower: a throttled
 /// row is only behind while something is MOVING, so `surface gap` has a value at an instant
-/// the reader can stop on — the zero-length probe, and the mark — and `past empty` has none
+/// the reader can stop on — the zero-length probe, and the mark — and `over-drained` has none
 /// at all, because nothing in the path claims it anywhere but mid-run. That is what lets
 /// step 17's headline (`0.00 / 0.00` before the reader presses Run) be a display claim
 /// rather than a number with no panel behind it, and it is why the sixteen mid-run gap
@@ -784,8 +784,8 @@ fn render_row(label: &str, row: &Row) -> String {
                 format!("{} / {} pts", fmt_gap_pts(neg, 2), fmt_gap_pts(pos, 2))
             }
         },
-        "past empty" => panic!(
-            "`past empty` is a readout row this test deliberately does not mirror: it is \
+        "over-drained" => panic!(
+            "`over-drained` is a readout row this test deliberately does not mirror: it is \
              formatted from per-cell state and sampled on a wall-clock throttle, so it has \
              no value at a given simulation time. Claiming what it displays needs a \
              different instrument — see the module docs."
@@ -2501,7 +2501,7 @@ struct Row {
     telemetry: Telemetry,
     /// The pack's largest per-cell `soc_deficit`, as a fraction of capacity.
     ///
-    /// Ground truth, read straight off `Pack::cell` — **not** what the `past empty` row
+    /// Ground truth, read straight off `Pack::cell` — **not** what the `over-drained` row
     /// shows. That row samples the same quantity on a wall-clock throttle and so lags a
     /// running simulation by up to a quarter-second of real time; step 21's own prose
     /// records it reading 9.438 points at an instant the engine was at 9.704. Claims
@@ -2509,9 +2509,9 @@ struct Row {
     deficit_max: f64,
     /// The pack's *smallest* per-cell `soc_deficit`, as a fraction of capacity.
     ///
-    /// The other end of a spread no readout row prints. `past empty` shows the worst cell
+    /// The other end of a spread no readout row prints. `over-drained` shows the worst cell
     /// alone, and step 7's sentence is about the range — "the eight cells sit between 23.5
-    /// and 27.8 points of charge past empty" — which is the pack grid on `past empty`
+    /// and 27.8 points of charge past empty" — which is the pack grid on `over-drained`
     /// rather than the row. Value-only for the same reason [`Self::deficit_max`] is, and
     /// one reason more: the grid is per-cell, so no single string renders it.
     deficit_min: f64,
@@ -2538,7 +2538,7 @@ struct Row {
     /// fractions — `None` on an equivalent circuit, which has no electrodes.
     ///
     /// Per-cell like [`Self::deficit_max`], read the same way — and **on the same throttle**,
-    /// which is what an earlier version of this comment got wrong. It said `past empty` was
+    /// which is what an earlier version of this comment got wrong. It said `over-drained` was
     /// sampled on a 250 ms wall clock "and this row is not"; both are formatted from
     /// `cells`, and `cells` is sampled on `CELLS_PERIOD_MS` (250 ms) rather than per frame.
     /// Step 17's own prose says so from the reader's side — *"these two numbers are sampled
@@ -2552,7 +2552,7 @@ struct Row {
     /// probe, and the mark — and it is NOT sound mid-run, where the row can be up to a
     /// quarter-second of wall clock behind the voltage beside it (a dozen seconds of
     /// simulation at step 17's 200x). Claims read mid-run on this quantity are value-only
-    /// for that reason, and say so in their notes; `past empty` differs only in that it has
+    /// for that reason, and say so in their notes; `over-drained` differs only in that it has
     /// no un-throttled instant to be claimed at, since [`render_row`] refuses to mirror it
     /// at all.
     ///
@@ -3293,7 +3293,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 295 of 342 claims.
+    /// number's last printed place. The default shape: 301 of 348 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3304,12 +3304,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 40 of 342.
+    /// the number was always right and only the declaration was wrong. 40 of 348.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 342, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 348, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -3349,7 +3349,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 314 of 342, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 320 of 348, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -5666,7 +5666,7 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
                 .sum()
         }
         // When the debt STARTS: the first step at which any cell is past empty, which is
-        // what the `past empty` readout coming off zero is.
+        // what the `over-drained` readout coming off zero is.
         //
         // **Equal to `flag_first_s:SOC_CLAMPED_LOW` by construction, not by coincidence** —
         // the flag is raised on the step the coulomb counter clamps, which is the step the
@@ -10103,7 +10103,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Quoted {
             step: "looks-fine-from-outside",
             arm: Some("carries on"),
-            quantity: "soc_at:1060",
+            quantity: "soc_at:1056",
             states: QuotedAs::Same,
         }],
         pow10: 2,
@@ -10251,21 +10251,13 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
-        // The floor, quoted from the step that measured it rather than re-measured here —
-        // reaching it costs eight more marks of simulation on an arm that belongs to step 14.
-        // The sentence gives one decimal where that step gives four, which is what the
-        // quotation arm's rounding is for; and the ordinal beside it is the same step, named
-        // twice in one sentence for two different reasons.
-        phrase: "it eventually pins near {n} V, which is the floor step {n} mentions",
-        ties: &[
-            Tie::Quoted {
-                step: "three-times-the-current",
-                arm: Some("past the clamp"),
-                quantity: "v_at:12600",
-                states: QuotedAs::Same,
-            },
-            Tie::Ordinal("three-times-the-current"),
-        ],
+        // The step whose floor this is. The sentence used to quote that floor too ("pins near
+        // 0.3 V"), off step 14's claim; since `docs/plans/porous-reversal.md` the floor is a
+        // reversal below zero that a steady discharge approaches rather than meets on a
+        // tooth, so the sentence says where it is without a figure and only the ordinal is
+        // left to tie.
+        phrase: "settles not far below it, which is the floor step {n} mentions",
+        ties: &[Tie::Ordinal("three-times-the-current")],
         pow10: 0,
     },
     LedgerRule {
@@ -12750,7 +12742,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
     },
     LedgerRule {
         // The sampler's own period, which is the whole of the caveat this step closes on:
-        // the `past empty` row is sampled on a wall clock and not on the telemetry frame,
+        // the `over-drained` row is sampled on a wall clock and not on the telemetry frame,
         // so a quarter-second is how long it can stay wrong once nothing is moving. The
         // page holds it in milliseconds and the sentence says it in seconds.
         phrase: "throttled to a {n} of wall clock",
@@ -12854,11 +12846,11 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // `Tie::Derived`, taken one level further: a ratio OF two differences, which is the
         // first place in this vocabulary where an arithmetic tie nests inside another.
         //
-        // The floor of the rebound is the cut-off voltage, which this step never prints and
-        // step 15 does - *"2.495 V at 1060 s"*, on its own continuation arm. Reading it
-        // through `Tie::Quoted` rather than re-measuring is what keeps the two lessons'
-        // accounts of one trajectory from drifting apart: they are the same file at the same
-        // current, and step 15's claim is checked against the engine where it lives.
+        // The floor of the rebound is the voltage the discharge leg ends on. It used to be
+        // quoted from step 15 (*"2.495 V at 1060 s"*, its cut-off) because this step never
+        // printed it; since `docs/plans/porous-reversal.md` moved step 15's cut-off to 1056 s
+        // the two instants are no longer the same, so this step prints its own — *"from the
+        // 2.442 V it ended the discharge on"* — and the rule reads that claim.
         phrase: "so about **{n} % of the rebound is already over**",
         ties: &[Tie::Ratio(&[
             Tie::Difference(&[
@@ -12869,8 +12861,8 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                     states: QuotedAs::Same,
                 },
                 Tie::Quoted {
-                    step: "looks-fine-from-outside",
-                    arm: Some("carries on"),
+                    step: "the-gradient-itself",
+                    arm: None,
                     quantity: "v_at:1060",
                     states: QuotedAs::Same,
                 },
@@ -12883,8 +12875,8 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                     states: QuotedAs::Same,
                 },
                 Tie::Quoted {
-                    step: "looks-fine-from-outside",
-                    arm: Some("carries on"),
+                    step: "the-gradient-itself",
+                    arm: None,
                     quantity: "v_at:1060",
                     states: QuotedAs::Same,
                 },
@@ -12976,7 +12968,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
                 Tie::Quoted {
                     step: "the-gradient-itself",
                     arm: None,
-                    quantity: "surface_gap_neg_pts:1060",
+                    quantity: "surface_gap_neg_pts:1050",
                     states: QuotedAs::Same,
                 },
                 Tie::Quoted {
@@ -12998,13 +12990,13 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
             Tie::Quoted {
                 step: "the-gradient-itself",
                 arm: None,
-                quantity: "surface_gap_pos_pts:1060",
+                quantity: "surface_gap_pos_pts:1050",
                 states: QuotedAs::Same,
             },
             Tie::Quoted {
                 step: "the-gradient-itself",
                 arm: None,
-                quantity: "surface_gap_neg_pts:1060",
+                quantity: "surface_gap_neg_pts:1050",
                 states: QuotedAs::Same,
             },
         ])],

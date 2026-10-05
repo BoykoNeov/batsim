@@ -490,7 +490,34 @@ use crate::{Demand, Env, Telemetry};
 /// changes and no telemetry field moves - [`crate::Telemetry::i_rejected_a`] and
 /// [`EventFlags::SOC_CLAMPED_HIGH`] gain a second cause on one chemistry, which is what
 /// both were named to allow.
-pub const SNAPSHOT_VERSION: u32 = 21;
+///
+/// v22 (the single-particle cell goes past empty): [`crate::SpmState`] gains
+/// `soc_deficit` and `i_reversal_last`, two `f64`s appended after `i_last`. The particle no
+/// longer carries current its surface or its bulk cannot give: past either edge the rest
+/// goes down the chemistry's `[reversal]` ramp into a deficit, which a charge repays first
+/// and the particle's own lithium repays when its surface has room. See
+/// `docs/plans/porous-reversal.md`.
+///
+/// **Semantic only for a single-particle cell driven past its edge**, structurally: inside
+/// both windows the split hands the particles the whole current and the deficit stays
+/// exactly `0.0`, so every trajectory that never reaches an edge is bit-identical (276 of
+/// 276 in-window fingerprints, and every zero-length read). Equivalent-circuit and `Dfn`
+/// cells are untouched; the `Dfn` gets the same treatment in a later bump.
+///
+/// **The stale-blob hazard is the quiet one, and structural.** The two new fields close the
+/// boxed state, and in a `Cell` the next bytes are `capacity_factor` and `r0_factor`, two
+/// bare `f64`s. So a v21 single-particle cell read at v22 takes its own capacity factor as
+/// its deficit and its resistance factor as the reversal's share of its last current — a
+/// cell restored about 100 % over-drained — and the slide continues from there. Measured at
+/// the field in `snapshot_version.rs::a_v21_shaped_spm_state_misparses_at_v22`. An
+/// equivalent-circuit pack, which is this file's version fixture, is byte-for-byte
+/// unchanged, so for it the version field is the only thing that refuses a v21 blob.
+///
+/// `sim_server::API_VERSION` and `sim-wasm`'s constant both stay put: no call signature
+/// changes and no telemetry field moves. [`crate::CellView::soc_deficit`] keeps its name and
+/// type and gains values on a second cell model, and the browser page relabels its row
+/// `over-drained`, because on that model the deficit can coexist with charge still inside.
+pub const SNAPSHOT_VERSION: u32 = 22;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -1011,15 +1038,21 @@ pub struct CellView {
     /// Ground-truth state of charge, in \[0, 1\].
     pub soc: f64,
     /// How far past empty this cell has been driven, as a fraction of its capacity;
-    /// `0.0` on any cell that is not in voltage reversal, and `0.0` on every
-    /// porous-electrode cell (they have no clamp to pass).
+    /// `0.0` on any cell that is not in voltage reversal, and `0.0` on every `Dfn` cell,
+    /// which has no reversal yet.
     ///
-    /// **This is the other half of [`Self::soc`], not a second opinion about it.** The
-    /// cell's true position is `soc − soc_deficit`; the pair is split so that `soc` can
-    /// keep its documented `[0, 1]` range for the tables and thresholds that index on it.
-    /// Non-zero only while `soc` reads exactly `0.0`, so the two never carry information
-    /// at the same time, and a client that ignores this field sees exactly what it saw
-    /// before the field existed.
+    /// **On an equivalent circuit this is the other half of [`Self::soc`], not a second
+    /// opinion about it.** The cell's true position is `soc − soc_deficit`; the pair is
+    /// split so that `soc` can keep its documented `[0, 1]` range for the tables and
+    /// thresholds that index on it. There it is non-zero only while `soc` reads `0.0`, so
+    /// the two never carry information at the same time.
+    ///
+    /// **A single-particle cell breaks that last promise, on purpose.** Its deficit is the
+    /// charge a reversal carried because the particle could not give it — either its bulk
+    /// was empty, or its *surface* was while the bulk still held some. In the second case
+    /// the deficit coexists with a charge state above zero until rest lets the particle pay
+    /// it back, which is why the browser page labels this row `over-drained` rather than
+    /// `past empty`. See [`crate::SpmState::soc_deficit`] and `docs/plans/porous-reversal.md`.
     ///
     /// Reading it is how a client tells a cell that has *stopped* at empty from one that
     /// is being driven through it — the first is resting, the second has a falling
@@ -2314,6 +2347,9 @@ impl Pack {
         let mut br_neg: Option<(f64, f64)> = None;
         let mut br_last_side = 0_i8;
         let mut br_bisect = false;
+        // Whether the pass loop below gave up at its cap, which is the one exit the split
+        // fallback after it answers.
+        let mut capped = false;
 
         // --- the pack current solve.
         //
@@ -2808,7 +2844,7 @@ impl Pack {
                 break (i_g, i_external_short_a, prot_flags);
             }
             if solve_iterations >= SOLVE_ITER_CAP {
-                flags |= EventFlags::SOLVE_UNCONVERGED;
+                capped = true;
                 break (i_g, i_external_short_a, prot_flags);
             }
 
@@ -2817,6 +2853,104 @@ impl Pack {
             std::mem::swap(&mut tangent, &mut probed);
         };
         flags |= prot_flags;
+
+        // --- the split, settled where the pass loop could not settle it.
+        //
+        // Under a current or rest demand the pack current is the caller's, so every
+        // damped trial above splits the *same* group current the same way: the search
+        // can shorten no step that matters, and a split that cycles between passes cycles
+        // to the cap. Measured on a scattered 1S3P single-particle pack driven past
+        // empty at 3 C with one-minute steps: two cells swapping between −0.1 and 36 A
+        // pass after pass, then circulating billions of amps (`docs/plans/porous-reversal.md`).
+        //
+        // But each cell's curve is strictly decreasing in its current, so each group's
+        // shared node voltage is the root of one decreasing scalar function — the sum of
+        // the currents its cells carry at that voltage, less the group current — and a
+        // bracketed search finds it whatever the curves' bends. Run only where the loop
+        // gave up, so every step that converges is untouched, bit for bit; its answer is
+        // written back as the lines the reporting pass reads (`(V + i·R, R)` with `R`
+        // the cell's own tangent there), so everything below sees an ordinary converged
+        // split. Not under an external short, whose current rides on the node voltages
+        // and would need a third, outer search.
+        // Not on a pack with a `Dfn` cell: past its range that model's curve is not yet
+        // monotone (ROADMAP H8), so the search's premise fails there, and each of its
+        // evaluations is a coupled nonlinear solve. Measured, it settled none of the `Dfn`
+        // steps it was tried on and multiplied their cost.
+        // Checked last, so a step that converged pays nothing for the scan.
+        let mut settled = false;
+        if capped
+            && nonlinear
+            && dt > 0.0
+            && g_ext == 0.0
+            && matches!(demand, Demand::Current(_) | Demand::Rest)
+            && solve_iterations > 1
+            && !self.groups.iter().any(|g| {
+                g.cells
+                    .iter()
+                    .any(|c| matches!(c.model, crate::ecm::CellModel::Dfn(_)))
+            })
+        {
+            // Every group is settled into `probed` first — the last pass's probes, which
+            // nothing after the loop reads — and committed only if all of them settle, so
+            // a search that fails leaves the loop's answer exactly as it was.
+            settled = true;
+            for (g_idx, group) in self.groups.iter().enumerate() {
+                let base = g_idx * parallel;
+                let g_leak = bleed_at(g_idx) + group.cells.iter().map(|c| c.shunt_g).sum::<f64>();
+                // Seeded from the split the previous step committed, not from the loop's
+                // last pass: a split that cycled to the cap can be billions of amps out,
+                // and a search started there starts where no cell's curve was ever
+                // evaluated. A pack that has never stepped seeds an even share.
+                let prev = &self.cell_currents.0;
+                let seed = |k: usize| {
+                    if prev.len() == n_cells && prev[base + k].is_finite() {
+                        prev[base + k]
+                    } else {
+                        i_g / parallel as f64
+                    }
+                };
+                if !settle_group(
+                    &group.cells,
+                    &self.chem,
+                    cap_ah,
+                    dt,
+                    i_g,
+                    g_leak,
+                    seed,
+                    &mut probed[base..base + parallel],
+                ) {
+                    settled = false;
+                    break;
+                }
+            }
+            if settled {
+                tangent.copy_from_slice(&probed);
+                // Re-aggregate exactly as a pass does, so the reporting pass's node is the
+                // settled one, and re-derive each current from that node by the reporting
+                // pass's own expression — the identity its assert checks.
+                for (g_idx, group) in self.groups.iter().enumerate() {
+                    let base = g_idx * parallel;
+                    let mut sum_g = bleed_at(g_idx);
+                    let mut sum_eg = 0.0;
+                    for (k, cell) in group.cells.iter().enumerate() {
+                        let (e, r) = tangent[base + k];
+                        let g = 1.0 / r;
+                        sum_g += g + cell.shunt_g;
+                        sum_eg += e * g;
+                    }
+                    group_src[g_idx] = (sum_eg / sum_g, 1.0 / sum_g);
+                    let (e_gv, r_gv) = group_src[g_idx];
+                    let v_node = e_gv - i_g * r_gv;
+                    for k in 0..parallel {
+                        let (e, r) = tangent[base + k];
+                        i_cell[base + k] = (e - v_node) / r;
+                    }
+                }
+            }
+        }
+        if capped && !settled {
+            flags |= EventFlags::SOLVE_UNCONVERGED;
+        }
 
         // --- did this step land anywhere a client can use?
         //
@@ -3018,11 +3152,11 @@ impl Pack {
                 }
                 let soc_before = cell.model.soc(&self.chem);
                 // Read *before* `advance`, because the reversal accumulator below is a
-                // difference across it. Structurally `0.0` for the porous-electrode
-                // models, which never clamp and so never carry a deficit — see
-                // `CellModel::soc_deficit`, whose doc argues that is physics and not a
-                // stub. Those variants therefore contribute exactly zero here with no
-                // branch arranging it.
+                // difference across it. Model-neutral: the equivalent circuit and the
+                // single-particle cell both carry a deficit, so both are billed for going
+                // past empty (`docs/plans/porous-reversal.md`). Structurally `0.0` for a
+                // `Dfn`, which has no reversal yet, so it contributes exactly zero here with
+                // no branch arranging it.
                 //
                 // Gated on the same flag the consumer is, so that a pack without aging
                 // pays for this slice **not at all** rather than "negligibly". That is a
@@ -3122,7 +3256,13 @@ impl Pack {
                 // `rc_delta_v` is exactly `0.0` for a zero-length step, and the guard
                 // keeps it bit-identical — the rejection tally's `-0.0` argument again.
                 let delta = advanced.rc_delta_v;
-                q_gen_w += if delta == 0.0 { q } else { q + i_k * delta };
+                // A porous cell driven past its edge adds the reversal channel's own share,
+                // which `i·(U_eq − V)` cannot express: the particles may be paying the
+                // deficit back at zero terminal current. Exactly `0.0` everywhere else, and
+                // guarded for the same `-0.0` reason.
+                let rev = advanced.reversal_w;
+                let q_end = if delta == 0.0 { q } else { q + i_k * delta };
+                q_gen_w += if rev == 0.0 { q_end } else { q_end + rev };
                 if thermal_live {
                     // --- and the one number that is *not* `q`: the heat this step
                     // really generated, rather than the heat its first instant was
@@ -3150,9 +3290,11 @@ impl Pack {
                     // become `+0.0` and move a trajectory for no physics, the same trap
                     // the rejection tally above is written around.
                     let excess = advanced.rc_mean_excess_v;
+                    let rev = advanced.reversal_mean_w;
+                    let q_mean = if excess == 0.0 { q } else { q + i_k * excess };
                     // Series-major, parallel-minor — the index order `thermal`
                     // expects.
-                    heat_w.push(if excess == 0.0 { q } else { q + i_k * excess });
+                    heat_w.push(if rev == 0.0 { q_mean } else { q_mean + rev });
                 }
                 if aging_accumulates {
                     // --- charge delivered past empty, which is the third quantity this
@@ -3568,6 +3710,187 @@ impl Pack {
 /// Wrapping the positive form in a name keeps the NaN-honest behaviour and keeps clippy
 /// quiet, which is the same device `chem.rs` uses for its own version of this.
 #[must_use]
+/// The root of a **decreasing** scalar function, by Newton safeguarded with a bracket.
+///
+/// `f(x)` returns `(f, s)` with `s = −df/dx > 0`. Newton's step `x + f/s` is taken while it
+/// stays inside the bracket the signs seen so far define; outside it, or not finite, the
+/// bracket is bisected. `(lo, hi)` is a bracket the caller already knows (infinite ends if
+/// not). Until both ends are known each step is at most `step` and at least twice the last,
+/// so a nearly flat stretch — where Newton's step is tiny however far the root — is crossed
+/// geometrically rather than at a constant crawl. Returns the last `x` once `|f| <= tol`,
+/// `None` if `f` stops being finite or the search runs out.
+fn solve_decreasing(
+    mut x: f64,
+    mut step: f64,
+    (mut lo, mut hi): (f64, f64),
+    tol: f64,
+    mut f: impl FnMut(f64) -> (f64, f64),
+) -> Option<f64> {
+    // `lo` has `f > 0` (the root lies above it), `hi` has `f < 0`.
+    let mut last = 0.0_f64;
+    for _ in 0..SETTLE_ITER_CAP {
+        let (fx, sx) = f(x);
+        if !fx.is_finite() {
+            return None;
+        }
+        if fx.abs() <= tol {
+            return Some(x);
+        }
+        if fx > 0.0 {
+            lo = lo.max(x);
+        } else {
+            hi = hi.min(x);
+        }
+        let newton = x + fx / sx;
+        let next = if lo.is_finite() && hi.is_finite() {
+            if newton.is_finite() && newton > lo && newton < hi {
+                newton
+            } else {
+                0.5 * (lo + hi)
+            }
+        } else {
+            let toward = if newton.is_finite() {
+                (newton - x).clamp(-step, step)
+            } else {
+                step.copysign(fx)
+            };
+            // At least double the last step while the sign has not changed.
+            let grown = if last != 0.0 && toward.signum() == last.signum() {
+                toward.abs().max(2.0 * last.abs()).copysign(toward)
+            } else {
+                toward
+            };
+            last = grown;
+            step = step.max(2.0 * grown.abs());
+            x + grown
+        };
+        if next == x {
+            // The bracket has closed to adjacent floats: as near as `f64` gets.
+            return Some(x);
+        }
+        x = next;
+    }
+    None
+}
+
+/// Iteration cap for each of [`settle_group`]'s two searches. Bisection alone halves a
+/// bracket per iteration, so this is room to close any finite bracket to `f64` resolution.
+const SETTLE_ITER_CAP: u32 = 200;
+
+/// One parallel group's split under a group current `i_g` \[A\], settled by search rather
+/// than by the pass loop's tangents: the node voltage `V` at which the cells' currents,
+/// less the leakage `g_leak·V` (bleed and internal shorts), sum to `i_g`, each cell's
+/// current being the one at which its own end-of-step curve reads `V`.
+///
+/// Both searches are [`solve_decreasing`]: a cell's terminal voltage falls as its current
+/// rises, so its current at `V` falls as `V` rises, and so does the group's sum. `seed(k)`
+/// starts cell `k`'s search, and the node's is bracketed by the curves themselves (below).
+/// On success `lines` holds each cell's tangent at its settled current, re-anchored to pass
+/// through `(i, V)`; on failure `lines` is scratch and the caller discards it.
+#[allow(clippy::too_many_arguments)]
+fn settle_group(
+    cells: &[Cell],
+    chem: &ChemistryParams,
+    cap_ah: f64,
+    dt: f64,
+    i_g: f64,
+    g_leak: f64,
+    seed: impl Fn(usize) -> f64,
+    lines: &mut [(f64, f64)],
+) -> bool {
+    let probe = |cell: &Cell, i: f64| {
+        cell.model.probe_at(
+            chem,
+            cell.eff_r0_factor(),
+            cell.eff_capacity_ah(cap_ah),
+            i,
+            dt,
+            false,
+        )
+    };
+    // The current a cell carries at node voltage `v`, from `seed`.
+    let current_at = |cell: &Cell, v: f64, seed: f64| {
+        let step = cell.eff_capacity_ah(cap_ah).max(seed.abs());
+        solve_decreasing(
+            seed,
+            step,
+            (f64::NEG_INFINITY, f64::INFINITY),
+            0.1 * SOLVE_TOL_V,
+            |i| {
+                let (vk, (_, r)) = probe(cell, i);
+                (vk - v, r)
+            },
+        )
+    };
+    let n = cells.len();
+    let mut seeds = [0.0_f64; MAX_PARALLEL_SETTLE];
+    if n > MAX_PARALLEL_SETTLE {
+        return false;
+    }
+    for (k, x) in seeds[..n].iter_mut().enumerate() {
+        *x = seed(k);
+    }
+    // The node is bracketed by the cells' own curves at an even share: the currents sum to
+    // the group's, so some cell carries at least the share and some at most, and each
+    // curve falls with its current — so the node is no higher than the highest of the
+    // curves there and no lower than the lowest. (Leakage moves the share a little; the
+    // bracket is widened by one step if it misses, which the search then checks.)
+    let share = i_g / n as f64;
+    let (mut v_lo, mut v_hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    for cell in cells {
+        let v = probe(cell, share).0;
+        v_lo = v_lo.min(v);
+        v_hi = v_hi.max(v);
+    }
+    if !(v_lo.is_finite() && v_hi.is_finite()) {
+        return false;
+    }
+    let v0 = 0.5 * (v_lo + v_hi);
+    let mut failed = false;
+    let pad = if g_leak > 0.0 {
+        0.5 * (v_hi - v_lo) + SOLVE_TOL_V
+    } else {
+        0.0
+    };
+    let v = solve_decreasing(v0, 0.5, (v_lo - pad, v_hi + pad), f64::MIN_POSITIVE, |v| {
+        let mut sum_i = -g_leak * v - i_g;
+        let mut sum_g = g_leak;
+        for (k, cell) in cells.iter().enumerate() {
+            match current_at(cell, v, seeds[k]) {
+                Some(i) => {
+                    seeds[k] = i;
+                    sum_i += i;
+                    sum_g += 1.0 / probe(cell, i).1 .1;
+                }
+                None => {
+                    failed = true;
+                    return (f64::NAN, 1.0);
+                }
+            }
+        }
+        // In volts, the loop's own residual: how far the node is from where these
+        // currents would put it.
+        let gap = sum_i / sum_g;
+        (if gap.abs() <= SOLVE_TOL_V { 0.0 } else { sum_i }, sum_g)
+    });
+    let Some(v) = v else {
+        return false;
+    };
+    if failed {
+        return false;
+    }
+    for (k, cell) in cells.iter().enumerate() {
+        let i = seeds[k];
+        let (_, (_, r)) = probe(cell, i);
+        lines[k] = (v + i * r, r);
+    }
+    true
+}
+
+/// The widest parallel group [`settle_group`] settles: its per-cell seeds live on the stack,
+/// which keeps the fallback, like the rest of `Pack::step`, free of allocation.
+const MAX_PARALLEL_SETTLE: usize = 64;
+
 fn within_inclusive(v: f64, lo: f64, hi: f64) -> bool {
     v >= lo && v <= hi
 }
@@ -3877,7 +4200,11 @@ mod cell_footprint {
         // the solve's hot path and a second serde shape. See
         // `docs/plans/phase-8-slice-c-hysteresis.md`.
         assert_eq!(size_of::<EcmState>(), 56, "EcmState");
-        assert_eq!(size_of::<SpmState>(), 64, "SpmState");
+        // `SpmState` is 80 since SNAPSHOT_VERSION 22: `soc_deficit` and `i_reversal_last`,
+        // the charge a single-particle cell carries past its edge and the share of its last
+        // current that went there (`docs/plans/porous-reversal.md`). Boxed, so the 16 B
+        // land on the heap block of the cells that have the model and on no `Cell`.
+        assert_eq!(size_of::<SpmState>(), 80, "SpmState");
         assert_eq!(size_of::<DfnState>(), 136, "DfnState");
     }
 }

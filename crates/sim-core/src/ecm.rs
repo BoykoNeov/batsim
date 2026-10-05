@@ -354,16 +354,21 @@ impl CellModel {
 
     /// How far past empty this cell has been driven, as a fraction of its capacity.
     ///
-    /// `0.0` for a porous-electrode model, and that is physics rather than a stub: those
-    /// models never clamp, so there is no truncation for a deficit to record. Their
-    /// lithium simply keeps moving and [`Self::soc`] reports the readout leaving its
-    /// window — which is now what `SOC_CLAMPED_LOW` means for every model. See
-    /// [`EcmState::soc_deficit`].
+    /// The equivalent circuit's [`EcmState::soc_deficit`] and the single-particle cell's
+    /// [`crate::SpmState::soc_deficit`]: the charge a reversal carried because the cell had
+    /// none left to give. On a single-particle cell it can also be charge its particle's
+    /// *surface* could not give while its bulk still held some, so there — unlike on the
+    /// equivalent circuit — it can coexist with a charge state above zero, until rest lets
+    /// the particle pay it back. See `docs/plans/porous-reversal.md`.
+    ///
+    /// `0.0` for a `Dfn`, which does not yet have the reversal: past its range its lithium
+    /// keeps moving into states no electrode holds (ROADMAP H8).
     #[must_use]
     pub fn soc_deficit(&self) -> f64 {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc_deficit,
-            CellModel::Spm(_) | CellModel::Dfn(_) => 0.0,
+            CellModel::Spm(s) => s.soc_deficit,
+            CellModel::Dfn(_) => 0.0,
         }
     }
 
@@ -506,7 +511,7 @@ impl CellModel {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => cell_source(s, chem, eff_r0_factor),
             CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
-                spm::source(s, spm, eff_r0_factor, eff_capacity_ah)
+                spm::source(s, spm, &chem.reversal, eff_r0_factor, eff_capacity_ah)
             }),
             CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, 1.0), |(spm, d)| {
                 dfn::source(s, spm, d, eff_r0_factor, eff_capacity_ah)
@@ -562,7 +567,16 @@ impl CellModel {
                 (e - i * r, (e, r))
             }
             CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, (0.0, 1.0)), |spm| {
-                spm::probe_at(s, spm, eff_r0_factor, eff_capacity_ah, i, dt, hold)
+                spm::probe_at(
+                    s,
+                    spm,
+                    &chem.reversal,
+                    eff_r0_factor,
+                    eff_capacity_ah,
+                    i,
+                    dt,
+                    hold,
+                )
             }),
             CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, (0.0, 1.0)), |(spm, d)| {
                 dfn::probe_at(s, spm, d, eff_r0_factor, eff_capacity_ah, i, dt, hold)
@@ -590,7 +604,7 @@ impl CellModel {
     ) -> (f64, f64) {
         match self {
             CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
-                spm::first_pass_tangent(s, spm, eff_r0_factor, eff_capacity_ah, dt)
+                spm::first_pass_tangent(s, spm, &chem.reversal, eff_r0_factor, eff_capacity_ah, dt)
             }),
             _ => self.source(chem, eff_r0_factor, eff_capacity_ah),
         }
@@ -726,6 +740,8 @@ impl CellModel {
             // The porous arms override both below. See the fields.
             rc_mean_excess_v: 0.0,
             rc_delta_v: 0.0,
+            reversal_w: 0.0,
+            reversal_mean_w: 0.0,
         };
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => advance_cell(
@@ -745,9 +761,10 @@ impl CellModel {
                 chem.spm
                     .as_ref()
                     .map_or(no_rejection(EventFlags::empty()), |spm| {
-                        let (flags, delta_v, mean_excess_v) = spm::advance(
+                        let (flags, delta_v, mean_excess_v, rev_w) = spm::advance(
                             s,
                             spm,
+                            &chem.reversal,
                             i,
                             dt,
                             eff_r0_factor,
@@ -757,6 +774,8 @@ impl CellModel {
                         Advanced {
                             rc_mean_excess_v: mean_excess_v,
                             rc_delta_v: delta_v,
+                            reversal_w: rev_w.0,
+                            reversal_mean_w: rev_w.1,
                             ..no_rejection(flags)
                         }
                     })
@@ -1707,6 +1726,15 @@ pub(crate) struct Advanced {
     /// [`crate::spm::advance`]); for a `Dfn`, the same move read off its own solve (see
     /// [`crate::dfn::advance`]). Exactly `0.0` at `dt <= 0`, where nothing moves.
     pub rc_delta_v: f64,
+    /// Heat \[W\] at the end of the step that the reversal channel adds to
+    /// `i·(U_eq − V)`: `i_d·(OCV_d − U_eq)`, with `i_d` the share of the current the
+    /// reversal carried and `OCV_d` its open-circuit voltage. Exactly `0.0` on every cell
+    /// that carries no deficit and is not driven past its edge — every equivalent circuit
+    /// and `Dfn`, and every `Spm` inside its window. See [`crate::spm::advance`].
+    pub reversal_w: f64,
+    /// [`Self::reversal_w`] as the thermal network integrates it: the mean of the step's
+    /// two ends, the `Spm`'s trapezoid.
+    pub reversal_mean_w: f64,
 }
 
 /// Advance one cell's internal state by `dt` seconds under the current `i`
@@ -1840,5 +1868,7 @@ pub(crate) fn advance_cell(
         rejected_as: step.rejected_as,
         rc_mean_excess_v,
         rc_delta_v,
+        reversal_w: 0.0,
+        reversal_mean_w: 0.0,
     }
 }

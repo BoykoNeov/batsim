@@ -174,7 +174,12 @@ and double as the scenario file format.
   `soc_deficit` and the cell's OCV falls through the `[reversal]` ramp to its floor, so
   the external circuit pays instead of the model inventing energy. `soc` itself still
   never leaves [0, 1], which is what keeps every table and threshold indexed on it
-  unchanged. See `docs/plans/low-clamp-reversal.md`.
+  unchanged. See `docs/plans/low-clamp-reversal.md`. The `Spm` has the same branch on its
+  particles: past the current that takes a particle's surface or bulk to empty over the
+  step, the particle carries no more and the rest goes down the same ramp into a
+  `soc_deficit` of its own, repaid first by a charge and, once the surface has room, by the
+  particle's own lithium. So there a deficit can coexist with `soc > 0`. The `Dfn` has no
+  reversal yet. See `docs/plans/porous-reversal.md`.
 - **Charge acceptance** (optional, `[charge_acceptance]`): above `soc_onset` the cell stores
   a linearly falling share `η = (1 − soc)/(1 − soc_onset)` of a charging current and turns
   the rest into heat — oxygen evolution on a nickel electrode. Integrated in closed form
@@ -211,6 +216,12 @@ and double as the scenario file format.
   high-SOC cell takes more load. This is where imbalance physics emerges; do not
   shortcut it by averaging cells.
 - **Series**: identical current through every group; terminal voltage = Σ group V.
+- A current or rest demand whose split the pass loop cannot settle within its cap — parallel
+  cells either side of an edge, where one curve bends sharply — is settled after it by a
+  bracketed search on each group's node voltage: every cell's curve falls with its current,
+  so the root exists. Commit-or-nothing, only where the loop gave up, so a converging step
+  is untouched; not under an external short, and not yet on a pack with a `Dfn` cell. See
+  `docs/plans/porous-reversal.md`.
 - `Demand::Power(P)`: Newton-iterate on pack current with `P = V(I)·I`
   (converges in a few iterations; guard with bisection fallback and iteration cap).
 - `Demand::Voltage(V)`: solve for I from the same linear Thevenin aggregate
@@ -272,8 +283,9 @@ and double as the scenario file format.
   weights is enough and is transparent to students).
 - **Over-discharge damage**: charge delivered below empty oxidises the anode current
   collector, so it is billed per amp-hour past empty (`[reversal] fade_per_ah`) as a
-  fourth mechanism beside calendar, cycle, and plating fade. ECM-only — the porous
-  models never clamp, so they carry no deficit. See `docs/plans/reversal-damage.md`.
+  fourth mechanism beside calendar, cycle, and plating fade. Billed from the deficit, so it
+  applies to the equivalent circuit and the `Spm`; the `Dfn` carries none yet. See
+  `docs/plans/reversal-damage.md` and `docs/plans/porous-reversal.md`.
 - All mechanisms reduce `soh_capacity` **and** increase `soh_resistance`
   (roughly: each % capacity lost adds a configurable % resistance). Resistance
   growth is pedagogically important — do not model capacity fade alone.
