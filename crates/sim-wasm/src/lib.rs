@@ -213,7 +213,7 @@ use wasm_bindgen::prelude::*;
 ///
 /// **v8 unmoved at [`sim_core::SNAPSHOT_VERSION`] 22**, when a single-particle cell gained a
 /// deficit: `CellView::soc_deficit` keeps its name and type and gains values on a second cell
-/// model, and no page method changed. What did change is its meaning on that model — it can
+/// model — and on a third at 23, the `Dfn` — and no page method changed. What did change is its meaning on that model — it can
 /// coexist with charge still inside — so the page's row is labelled `over-drained` rather
 /// than `past empty`. See `docs/plans/porous-reversal.md`.
 pub const WASM_API_VERSION: u32 = 8;

@@ -285,6 +285,10 @@ which moves none of the `Spm`'s committed fingerprints or lesson numbers.
 | ledger, 3.5 A for an hour, 1 s / 10 s | (not closing) | 6.55 / 64.7 J |
 | 138 in-window `Dfn` fingerprints, zero-length reads | — | bit-identical |
 
+The `Dfn`'s whole voltage-and-power hold sweep (`spm-window`'s `dump`, `MODEL=dfn`, 4860
+lines, isothermal and with the network) is identical to the parent's, line for line: a held
+demand stops inside the range, where the split hands the solid everything.
+
 `dfn_reversal.rs` holds it: eight tests, seven red on the parent. The eighth,
 `the_dfn_voltage_past_empty_does_not_depend_on_the_step`, is green there too — the parent's
 flat curve depends on no step either — and is there to hold the slope against the tangent,
