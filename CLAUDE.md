@@ -37,10 +37,10 @@ The engine is the product. Every UI, server, and game is just a client of `sim-c
    group, a few temperature probes, a noisy current sensor) and maintains its own
    SOC *estimate*. The gap between truth and estimate is a feature to expose, not
    a bug to hide.
-9. **Start simple, keep the door open.** v1 cell model is an equivalent-circuit
-   model (ECM). The `CellModel` enum and per-cell opaque state must allow adding
-   `Spm` / `Dfn` (porous electrodes, likely via the `diffsol` crate) later without
-   touching the pack layer.
+9. **Keep the door open.** Cell models live behind the `CellModel` enum with
+   per-cell opaque state: the equivalent-circuit model (ECM) and the porous-electrode
+   `Spm` and `Dfn` sit there today, and another must be addable without touching
+   the pack layer.
 10. **Chemistry is data, not code.** A chemistry is a TOML parameter set. Adding a
     chemistry must never require a code change.
 
@@ -145,7 +145,7 @@ pub struct Telemetry {
                                    // BALANCING, CONTACTOR_OPEN, VENTED, THERMAL_RUNAWAY, ...
 }
 
-pub enum CellModel { Ecm1Rc(EcmState), Ecm2Rc(EcmState) /* later: Spm(...), Dfn(...) */ }
+pub enum CellModel { Ecm1Rc(EcmState), Ecm2Rc(EcmState), Spm(Box<SpmState>), Dfn(Box<DfnState>) }
 ```
 
 Topology is config: `PackConfig { series: u16, parallel: u16, chemistry: ChemistryId,
@@ -162,8 +162,7 @@ and double as the scenario file format.
 - `V = OCV(soc, T) − I·R0(soc, T) − Σ V_rc,k` (discharge-positive I).
 - OCV: monotone lookup table over SOC with linear interpolation; optional
   `dOCV/dT` table for temperature correction and entropic heating. Optional
-  simple hysteresis term per chemistry (needed to do NiMH/lead-acid justice later;
-  can be stubbed for LFP/NMC v1).
+  resting-voltage hysteresis per chemistry (`[hysteresis]`, e.g. NiMH).
 - **RC pairs use the exact exponential update** for piecewise-constant current
   over the step — no numerical integration, unconditionally stable at any dt:
   `V_rc ← V_rc·exp(−dt/τ) + R·I·(1 − exp(−dt/τ))`, with `τ = R·C`.
@@ -433,18 +432,15 @@ numbers are not.
    leakage (`CellView::current_a` is the branch current, not the terminal one); pack energy balance
    (electrical energy out + heat = stored energy change within tolerance);
    snapshot round-trip equality.
-4. **Scenario tests**: named TOML scenarios under `tests/scenarios/` (e.g.
-   "overcharge with BMS off reaches runaway", "weak cell caps pack capacity",
-   "LFP SOC estimate drifts mid-range") asserting on flags and key outcomes.
-5. Benchmarks (criterion) for `Pack::step` at 100S10P once Phase 1 lands; keep a
-   budget (< 50 µs per step at that size on the dev box). Directly measured at
-   **47.2 µs features-off** on 2026-09-01. **Probably no longer met**: the end-of-step
-   split (2026-09-23, `docs/plans/end-of-step-split.md`) measured new/old at 1.08 on the
-   same case, which projects ~51 µs — an *ungated* ratio taken while outside processes
-   loaded the machine, so a projection rather than a reading. On 2026-09-01 it was met, but
-   the margin was ~6 %, not "far
-   below", and the fully-featured figure is unmeasured. See
-   `docs/plans/pack-step-perf.md`, "Measuring a change on this machine".
+4. **Scenario tests**: `crates/*/tests/scenario_*.rs` (e.g. "overcharge with BMS
+   off reaches runaway", "weak cell caps pack capacity", "LFP SOC estimate drifts
+   mid-range") asserting on flags and key outcomes. Every client-facing file in
+   `scenarios/` is loaded and run by `crates/sim-data/tests/scenario.rs`.
+5. Benchmarks (criterion) for `Pack::step` at 100S10P; budget < 50 µs per step at
+   that size on the dev box. It is **probably exceeded**: the last direct reading was
+   47.2 µs features-off, and a later change projects ~51 µs. The fully-featured figure
+   is unmeasured. Current status, and how to measure a change on this machine:
+   `docs/plans/pack-step-perf.md`.
 
 ---
 
@@ -477,7 +473,7 @@ the previous one's tests pass.
 - **Phase 5 — Godot adapter.** `sim-godot` (gdext): `BatteryPack` node, exported
   chemistry/topology properties, fixed-dt accumulator in `_physics_process`,
   signals (`protection_tripped`, `thermal_runaway_started`, `soc_changed`, …).
-- **Phase 6 (future) — porous electrodes.** Add `Spm`/`Dfn` variants to
+- **Phase 6 — porous electrodes.** Add `Spm`/`Dfn` variants to
   `CellModel`, evaluate `diffsol` for the stiff DAE solve, validate against
   PyBaMM directly. Nothing in earlier phases may assume ECM-only internals
   outside the `CellModel` enum.
