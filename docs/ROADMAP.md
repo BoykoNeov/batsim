@@ -297,6 +297,11 @@ where the rest-OCV gate refused to correct.
   anode running out, a different reaction at the other electrode. The first `Dfn` spike
   read these failures as "a front node empty with up to 42 % of the bulk left"; that was its
   metric (an outer shell at 0 or 1) counting the overfilled positive particle, not the cause.
+  **Spiked 2026-10-05 and recorded rather than built** (`porous-reversal.md`): a side
+  reaction at the positive electrode is the energy-consistent channel, but it cannot switch
+  on — the electrolyte's potential equation goes singular as its conductivity vanishes and
+  the solve fails first. The next step is solving the near-empty electrolyte (e.g. in its
+  logarithm), which moves the region the 3 C golden and lesson 16 end on.
 * ~~**The pack's split under a current demand can cycle to its cap**~~ — **closed
   2026-10-05** (`porous-reversal.md`): with the pack current fixed every damped trial
   splits it the same way, so a split that cycles between passes — parallel cells either

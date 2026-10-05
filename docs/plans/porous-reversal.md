@@ -340,8 +340,32 @@ The version check is what refuses it. The fixture pack is equivalent-circuit and
 ## Still open
 
 * **The `Dfn`'s electrolyte limit** (above, and ROADMAP H8): from 3 C up its solve fails
-  mid-discharge, on this engine and the one before it. The owner has chosen to build a
-  channel for it next; it needs a reaction and parameters nothing here states.
+  mid-discharge, on this engine and the one before it. The owner chose a side reaction for
+  the current past it; the spike for one stopped on the solver, and the owner chose to record
+  it rather than rework the solver here. What the next slice starts from:
+  * **The limit falls fast.** Bisecting the largest current a one-second step converges at,
+    from half charge at 3 C: 23.2 A at 151 s, 16.7 A at 181 s, 12.9 A at 201 s, 9.6 A at
+    261 s, against the 15.46 A demand. Soon after it is reached most of a forced current is
+    excess, so the channel would do most of the work.
+  * **A channel that moves no lithium creates energy** (the advisor's check, on paper): the
+    terminal is still about 2.4 V when the solve fails, so excess current through a channel
+    with no store behind it delivers energy from nothing — the low-clamp hole by another
+    route. The consistent form keeps the negative electrode giving lithium for the whole
+    current and switches only the positive electrode's share to a side reaction at its own
+    potential against lithium: a node-level term in the `Dfn`'s solve.
+  * **That term never switches on.** Spiked as an irreversible cathodic Tafel current at
+    every positive node (placeholders 0.8 V against lithium, 1e-3 A/m², α = 0.5; it carries
+    charge but no lithium, and releases rather than consumes lithium ions in the
+    electrolyte), the map of where the solve fails did not move by a step. The electrolyte's
+    potential equation goes singular as its conductivity goes to zero, and the solve fails
+    before the positive electrode's potential can fall the ~3 V the side reaction needs.
+    Letting the reaction see the real electrolyte rather than `C_E_FLOOR_MOL_PER_M3` kept the
+    electrolyte from going negative and moved the failures by at most 17 s.
+  * **So the channel needs the near-empty electrolyte solved first** — for example in its
+    logarithm — which is the region the 3 C golden's cut-off (464 s) and lesson 16 already
+    end on. Patches: `W:\temp\claude\porous-rev\spike6_side_reaction.patch` (the term and the
+    kinetics change), `W:\temp\claude\porous-rev\spike5_dfn_kinetics.patch` (the `Dfn` reversal as
+    first measured).
 * **The `Dfn` has no surface edge.** At 2 C its solve fails in the last 1–1.5 % with the
   electrolyte intact — a particle surface nearly empty before the bulk — and the bulk-only
   reversal does not reach it.
