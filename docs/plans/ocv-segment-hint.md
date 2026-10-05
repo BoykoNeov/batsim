@@ -167,7 +167,27 @@ trajectory test can see it in release, and only the exhaustive comparison does.
 
 * **`full` is over the budget**, 53.3 µs on criterion. It was before the split too (55.7).
   The next lever needs a profiler: `samply` is installed, but on Windows it needs the
-  Windows Performance Toolkit (`xperf`), an admin install the owner has not been asked for.
+  Windows Performance Toolkit (`xperf`), an admin install.
+* **Pricing `full` by hand was tried the same day and reached its limit — a null, kept as
+  one.** Config arms on the step loop (thermal network only, BMS only, BMS parts) read the
+  thermal network as the cost and the BMS as about nothing, but in the same binary `full`
+  (thermal + BMS) read ~4 µs *faster* than thermal alone, in two batches, unexplained — so
+  those attributions do not hold at the few-µs level. Code arms that skipped the integrator,
+  the temperature gather and scatter, or the heat push changed the pack's state too (a
+  skipped integrator freezes every temperature), so they priced more than the work. On that
+  footing two bit-identical rewrites were built: a branch-free update for the middle of each
+  interior row of the thermal grid, and folding the temperature gather into the heat loop.
+  Both were proven bit-identical — a unit test against a verbatim copy of the old update on
+  nine topologies with signed zeroes, infinities and NaN, and matching 20 000-step trajectory
+  fingerprints in five configurations from two separately built binaries — and both measured
+  **nothing** at pack level (`full` 53.3–54.2 against 53.4–55.8 µs, step loop, same rounds),
+  against a predicted 2–4 µs. The likely reason is plain: the per-cell edge branches are
+  perfectly predicted, and a ten-wide row leaves eight cells to run side by side. Both were
+  reverted, on the rule that a change whose effect measures nothing is removed. The
+  remaining effects (1–3 µs) are below this box's round-to-round wander, so the next step is
+  the profiler, not another hand arm. The fingerprint mode stays in the out-of-tree driver
+  (`prof_step.rs <case> <steps> hash`): a bit-identity check across two builds that needs no
+  code coupling.
 * **The remaining split cost**: the extra pass over every cell, the RC loop and one division
   per cell, not separately priced. The hint now beats the engine before the split, so this
   is headroom, not a regression. (A first prototype read +3–4 % over `12ea82d` on a busy
