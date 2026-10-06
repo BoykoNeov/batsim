@@ -339,7 +339,9 @@ which no such range may hold.
 
 **Gap.** `Pack::step` at 100S10P is under the 50 µs budget on the step loop — ~36 µs features
 off, 42–46 µs fully featured, since the `R0`-grid change of 2026-10-05 — but the fully featured
-figure has no criterion reading yet (`ocv-segment-hint.md`).
+figure has no criterion reading yet (`ocv-segment-hint.md`). Since 2026-10-06 each cell
+reuses the pack's RC decay instead of recomputing it: 30.2 / 36.4 µs, best of twelve
+rounds on a loaded box (`cross-platform-math.md`).
 The DFN and SPM benches for the cell-size change were never run. The box the measurements
 were taken on has three performance states and reproducibility "is a property of the
 minute" (`cell-size.md`). The DFN re-solves at a current it already probed (a priced 33 %).

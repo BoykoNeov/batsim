@@ -750,6 +750,9 @@ impl CellModel {
     /// scatter and the `WeakCell` fault and is named for `R0` in the public config. The
     /// DFN arm wants the product and takes `eff_r0_factor` unchanged.
     /// See `docs/plans/rc-resistance-growth.md`.
+    ///
+    /// `rc_decays` is [`rc_decays`] at this `soh_resistance` and `dt`; only the
+    /// equivalent-circuit arm reads it (see [`rc_update_decayed`]).
     #[must_use]
     // The eighth argument is what trips this, and bundling the four multipliers into a
     // struct to silence it would hide the one thing this signature exists to say: which
@@ -767,6 +770,7 @@ impl CellModel {
         soh_capacity: f64,
         soh_resistance: f64,
         v_node: f64,
+        rc_decays: &[f64; MAX_RC_PAIRS],
     ) -> Advanced {
         // Only the equivalent circuit can reject charge, so only its arm carries a
         // non-zero amount out. The porous-electrode arms are wrapped here rather than
@@ -790,6 +794,7 @@ impl CellModel {
                 eff_capacity_ah,
                 soh_capacity,
                 soh_resistance,
+                rc_decays,
             ),
             // The two multipliers arrive here split, because `soc_true`'s contract
             // makes the split meaningful to the equivalent circuit. A single-particle
@@ -1189,12 +1194,50 @@ pub fn rc_step_mean_excess_v(
 pub fn rc_update(v_rc: f64, i: f64, r_ohms: f64, c_farad: f64, dt: f64) -> f64 {
     let tau = r_ohms * c_farad;
     if tau > 0.0 && dt > 0.0 {
-        let decay = (-dt / tau).exp();
-        v_rc * decay + r_ohms * i * (1.0 - decay)
+        rc_blend(v_rc, i, r_ohms, (-dt / tau).exp())
     } else {
         // Non-positive tau or dt (or NaN): no well-defined exponential update.
         v_rc
     }
+}
+
+/// [`rc_update`] with its exponential supplied by the caller: `decay` is this pair's
+/// slot of [`rc_decays`] at the same `soh_resistance` and `dt`.
+///
+/// The pack already computes that slot once per step for the split, and every cell of a
+/// pack without aging shares it, so recomputing it here cost one `exp` per cell per step
+/// — 1000 at 100S10P. Bit-identical to [`rc_update`]: `rc_decays` forms `τ` as
+/// `(r_ohms · soh_resistance) · c_farad`, the same product in the same order as
+/// `r_ohms · c_farad` with `r_ohms` already scaled, and the branch is the same test. The
+/// branch is kept rather than leaning on the slot's `1.0`: `v + r·i·0` is not `v` when
+/// `v` is `−0.0` or `r·i` is not finite. See `docs/plans/cross-platform-math.md`.
+#[must_use]
+pub(crate) fn rc_update_decayed(
+    v_rc: f64,
+    i: f64,
+    r_ohms: f64,
+    c_farad: f64,
+    dt: f64,
+    decay: f64,
+) -> f64 {
+    let tau = r_ohms * c_farad;
+    if tau > 0.0 && dt > 0.0 {
+        debug_assert_eq!(
+            decay.to_bits(),
+            (-dt / tau).exp().to_bits(),
+            "RC decay supplied for a different tau or dt"
+        );
+        rc_blend(v_rc, i, r_ohms, decay)
+    } else {
+        v_rc
+    }
+}
+
+/// The exact update's blend, `V_rc·d + R·I·(1 − d)`, shared so the supplied-decay path
+/// cannot drift from [`rc_update`].
+#[inline]
+fn rc_blend(v_rc: f64, i: f64, r_ohms: f64, decay: f64) -> f64 {
+    v_rc * decay + r_ohms * i * (1.0 - decay)
 }
 
 /// Exact exponential update of a cell's [`EcmState::depletion`] for piecewise-constant
@@ -1921,7 +1964,13 @@ pub(crate) struct Advanced {
 /// coulomb step. Terminal voltage is *not* returned here: the pack recomputes each
 /// group's shared node voltage from the end-of-step state via [`cell_source`] so
 /// parallel cells report one consistent voltage.
+///
+/// `decays` is [`rc_decays`] at this `soh_resistance` and `dt`, which the pack holds
+/// already; see [`rc_update_decayed`].
 #[must_use]
+// The eighth argument is `decays`, and it is the reason the function exists in this form;
+// see [`CellModel::advance`] for why these are not bundled into a struct.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn advance_cell(
     state: &mut EcmState,
     chem: &ChemistryParams,
@@ -1930,6 +1979,7 @@ pub(crate) fn advance_cell(
     eff_capacity_ah: f64,
     soh_capacity: f64,
     soh_resistance: f64,
+    decays: &[f64; MAX_RC_PAIRS],
 ) -> Advanced {
     // Zipped against the chemistry rather than indexed by it: the pair count bounds the
     // iteration, so a one-pair chemistry writes one slot and leaves the second at the
@@ -1938,7 +1988,7 @@ pub(crate) fn advance_cell(
     // trajectory moves.
     let mut rc_mean_excess_v = 0.0;
     let mut rc_delta_v = 0.0;
-    for (pair, v_rc) in chem.rc.iter().zip(state.v_rc.iter_mut()) {
+    for ((pair, v_rc), &decay) in chem.rc.iter().zip(state.v_rc.iter_mut()).zip(decays) {
         // Aging grows the slow resistances along with the instant one, which is what
         // `CLAUDE.md`'s physics spec has always said and what this line did not do until
         // `docs/plans/rc-resistance-growth.md`. Three things about the expression:
@@ -1958,7 +2008,7 @@ pub(crate) fn advance_cell(
         //   what the multiply costs.
         let r = pair.r_ohms * soh_resistance;
         let v_before = *v_rc;
-        *v_rc = rc_update(v_before, i, r, pair.c_farad, dt);
+        *v_rc = rc_update_decayed(v_before, i, r, pair.c_farad, dt, decay);
         // ...and, from the value that update just produced rather than from a second
         // exponential, how far this pair's step *mean* sits above where the step
         // started. Summed across pairs because that is how the overpotential enters

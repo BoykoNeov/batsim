@@ -3127,6 +3127,11 @@ impl Pack {
         let mut i_balancing_a = 0.0;
         let mut i_internal_short_a = 0.0;
         let mut i_rejected_a = 0.0;
+        // The RC decays each cell's update needs, memoised on `soh_resistance` exactly as
+        // the split's are above: once per step on a pack without aging, where every cell
+        // used to recompute its own `exp`. See [`crate::ecm::rc_update_decayed`].
+        let mut adv_decay_for = f64::NAN;
+        let mut adv_decays = [1.0; crate::ecm::MAX_RC_PAIRS];
         for (g, group) in self.groups.iter_mut().enumerate() {
             let (e_gv, r_gv) = group_src[g];
             // The shared node voltage the solve committed to: on a linear pack with
@@ -3246,6 +3251,11 @@ impl Pack {
                 if plating {
                     flags |= EventFlags::PLATING_RISK;
                 }
+                let soh_r = cell.aging.soh_resistance;
+                if soh_r.to_bits() != adv_decay_for.to_bits() {
+                    adv_decays = rc_decays(&self.chem, soh_r, dt);
+                    adv_decay_for = soh_r;
+                }
                 let advanced = cell.model.advance(
                     &self.chem,
                     i_k,
@@ -3253,8 +3263,9 @@ impl Pack {
                     eff_r0,
                     eff_cap,
                     soh_cap,
-                    cell.aging.soh_resistance,
+                    soh_r,
                     v_node,
+                    &adv_decays,
                 );
                 flags |= advanced.flags;
                 // --- charge the clamp refused, and the heat that refusing it makes.

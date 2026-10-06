@@ -157,11 +157,47 @@ read 1.24 s against 1.29 s median, about 4 %, inside this box's noise. The `Spm`
 were too short to time. The browser pays nothing; it was already on this library.
 
 **Where the cost is, and how to take it back.** The ECM pack computes the RC decay
-`exp(−dt/τ)` once per step for the split (`ecm::rc_decays`), and then each cell computes
+`exp(−dt/τ)` once per step for the split (`ecm::rc_decays`), and then each cell computed
 it again in `rc_update` — 1000 exponentials a step at 100S10P, and `libm`'s `exp` is a few
 nanoseconds slower than the MSVC runtime's. The two compute `τ` as the same product in the
 same order, so handing the pack's decay to the cell is bit-identical whichever library is
-in use. That is a separate perf slice; it would probably return most of the library's cost.
+in use. **Built the same day** — see the next section.
+
+## The RC-decay reuse — landed 2026-10-06
+
+The owner chose "the reuse first, then `libm`". `CellModel::advance` and
+`ecm::advance_cell` take the pack's decays (`&[f64; MAX_RC_PAIRS]`), memoised in the
+advance loop on `soh_resistance` exactly as the split's are; `ecm::rc_update_decayed`
+applies one, and shares its blend with `rc_update` so the two cannot drift. Its branch is
+`rc_update`'s own test rather than a reliance on the slot's `1.0`, because `v + r·i·0` is
+not `v` when `v` is `−0.0` or `r·i` is not finite. A `debug_assert` checks every supplied
+decay against a fresh `exp` to the bit.
+
+**Bit-identical:** all 54 trajectory runs of the harness above, native before against
+native after; the step-loop fingerprints of `current` and `full`; the workspace suite,
+726 passed, 0 failed.
+
+**Perturbation** — the memo fed `soh_resistance = 1.0` instead of the cell's (the way
+this goes wrong: an aged pack whose cells' RC pairs stop growing):
+
+| build | what reddens |
+| --- | --- |
+| debug | 30 `sim-core` tests, all through the new `debug_assert` ("RC decay supplied for a different tau or dt") |
+| release | 1: `aging_grows_the_rc_resistance_of_an_ecm_cell`, on its values |
+
+**What it bought.** Four arms on the step loop, twelve rounds, alternating, on a box at
+45–72 % load with the pinned core shared (load 125 on the pair) — rounds swung by up to
+1.7×, so the per-arm **minimum** is quoted, the reading load can only add to:
+
+| case | HEAD | reuse | `libm` | reuse + `libm` |
+| --- | --- | --- | --- | --- |
+| `current` | 35.55 µs | 30.19 µs | 36.53 µs | 30.03 µs |
+| `full` | 41.86 µs | 36.39 µs | 42.41 µs | 37.45 µs |
+
+The reuse takes 13–15 % off the step; `libm` on top of it gives back 0–3 %; the pair
+together is 11–16 % under HEAD. Fingerprints: reuse = HEAD, reuse + `libm` = `libm`. A
+quiet-box reading of the absolute figures is still owed, but the sign of the decision no
+longer depends on it: with the reuse in, `libm` costs less than the reuse returned.
 
 ## What a build would be
 
@@ -190,6 +226,5 @@ Not needed: a snapshot bump (the layout does not change), re-pinned goldens (non
 
 ## Still open
 
-* The owner's decision on the dependency and the contract sentence.
-* The RC-decay reuse above, worth doing either way.
+* ~~The owner's decision~~ — taken 2026-10-06: the reuse first (landed above), then `libm`.
 * A Linux native build was not measured.
