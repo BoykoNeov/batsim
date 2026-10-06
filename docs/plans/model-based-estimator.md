@@ -241,6 +241,7 @@ were written because the table was about to be.
   wrong" happens. **Swept since** (5–100 mV, `docs/plans/path-gauge-filter-steps.md`, "The
   headline rides on a hand-picked setting"): up to about 30 mV the weak-cell filter only goes
   wrong later and ends the rest about as far out; at 100 mV it ends +0.31 points, inside its
-  own error bar. Loosening costs the exact-model LFP file almost nothing and the sodium-ion
-  pair about half a point at rest. What is still open is a scenario the *reader* can sweep it
+  own error bar. Loosening costs the exact-model LFP file almost nothing by the end of the
+  rest (about a point earlier, under load) and the sodium-ion filter pair about half a point
+  at rest. What is still open is a scenario the *reader* can sweep it
   in — the page has no control for it — and a lesson on choosing it.

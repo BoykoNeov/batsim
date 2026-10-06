@@ -27,6 +27,8 @@ struct Marks {
     err: [f64; 3],
     /// Estimate minus truth \[points\] at 60 s, the guided path's step 33 mark.
     mark: f64,
+    /// The lowest estimate minus truth \[points\] at any step of the run.
+    low: f64,
     sigma: [Option<f64>; 3],
     /// The estimate itself \[%\] at 1800 s and at 3900 s.
     est: [f64; 2],
@@ -63,6 +65,7 @@ fn run_with(sc: Scenario, strip_hysteresis: bool) -> Marks {
     let mut out = Marks {
         err: [f64::NAN; 3],
         mark: f64::NAN,
+        low: f64::INFINITY,
         sigma: [None; 3],
         est: [f64::NAN; 2],
     };
@@ -74,6 +77,7 @@ fn run_with(sc: Scenario, strip_hysteresis: bool) -> Marks {
             Demand::Rest
         };
         let tele = pack.step(0.5, demand, &env);
+        out.low = out.low.min((tele.soc_bms.unwrap() - tele.soc_true) * 100.0);
         match n {
             120 => out.mark = (tele.soc_bms.unwrap() - tele.soc_true) * 100.0,
             3600 => out.est[0] = tele.soc_bms.unwrap() * 100.0,
@@ -342,10 +346,11 @@ fn with_voltage_sigma(name: &str, sigma_v: f64) -> Marks {
 /// it and name this test. Measured at 10, 30 and 100 mV (and in the slice's scratch sweep at
 /// 5, 15, 20 and 50, which fall in order between): a filter told to trust the voltage three
 /// times less is close to the truth at step 33's mark and falls later in the pulse, ending the
-/// rest about as far out; told to trust it ten times less it never falls far, ends close and
+/// rest about as far out; told to trust it ten times less it never falls far at any step, ends close and
 /// inside its own error bar, and beats the counter. Loosening it costs the exact-model LFP
-/// file almost nothing over this run, and costs the sodium-ion files something: both land
-/// further out at the end of the rest. See `docs/plans/path-gauge-filter-steps.md`.
+/// file almost nothing by the end of the rest (about a point before that, under load, which
+/// no step claims), and costs the sodium-ion filter files something: both land further out
+/// at the end of the rest. See `docs/plans/path-gauge-filter-steps.md`.
 #[test]
 fn the_lesson_rides_on_how_far_the_filter_trusts_the_voltage() {
     let weak = "lfp_gauge_filter_weak_cell";
@@ -376,9 +381,9 @@ fn the_lesson_rides_on_how_far_the_filter_trusts_the_voltage() {
     );
     // Ten times less: never falls far, ends close, honest about it, ahead of the counter.
     assert!(
-        loosest.err[1] > -1.0,
-        "end of the pulse: {}",
-        loosest.err[1]
+        loosest.low > -1.0,
+        "never falls far, at any step of the run: {}",
+        loosest.low
     );
     let sigma = loosest.sigma[2].unwrap();
     assert!(
@@ -395,7 +400,7 @@ fn the_lesson_rides_on_how_far_the_filter_trusts_the_voltage() {
         loosest.err[2],
         counter.err[2]
     );
-    // What loosening costs. Almost nothing on the exact-model LFP file over this run ...
+    // What loosening costs. Almost nothing on the exact-model LFP file by the end of the rest ...
     let exact = with_voltage_sigma("lfp_gauge_filter", 0.010);
     let exact_loose = with_voltage_sigma("lfp_gauge_filter", 0.100);
     assert!(

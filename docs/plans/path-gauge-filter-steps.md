@@ -166,8 +166,10 @@ fall.) So up to about three times the shipped value a less trusting filter only 
 *later* and ends the rest about as far out — the reviewer's "half a point off at the same
 moment" was the 30 s reading, not the mark's — and at ten times it never goes far wrong, ends
 inside its own error bar and beats the counter (+2.06). What loosening costs: on the
-exact-model `lfp_gauge_filter` almost nothing over this run (end of rest +0.63 → +0.83); on
-the sodium-ion pair something, both landing further out at rest (−0.56 → −1.05 mid-range,
+exact-model `lfp_gauge_filter` almost nothing by the end of the rest (+0.63 → +0.83), though
+about a point before that (+1.95 → +2.88 at the end of the pulse, +1.05 → +1.89 at 900 s),
+which no step claims; on the sodium-ion filter pair (`na_ion_gauge_filter`,
+`na_ion_gauge_low_filter` — not the counter files steps 30–32 run) something, both landing further out at rest (−0.56 → −1.05 mid-range,
 −1.00 → −1.50 near empty). Why the sodium-ion pair pays is not measured here. So the shipped
 10 mV is close to the worst setting for the weak cell and buys almost nothing on its healthy
 twin; the lesson's result is a fact about a filter that trusts its voltage more than its
@@ -178,7 +180,8 @@ the page, so a figure for another setting would be right and unreachable. Step 3
 caveat after "a flat curve multiplies every millivolt the model gets wrong" (the sentence a
 reader who stops there would overgeneralise); step 34 scopes its counter comparison and its
 closing "trade" to this tuning. `the_lesson_rides_on_how_far_the_filter_trusts_the_voltage`
-in `gauge_filter.rs` pins the 10 / 30 / 100 mV rows, the counter comparison, and both costs,
+in `gauge_filter.rs` pins the 10 / 30 / 100 mV rows (the loosest over every step, for
+step 33's "never"), the counter comparison, and both costs,
 and both steps name it. A numeral perturbation of the new step 33 sentence reddened
 `every_numeral_in_a_ledgered_step_is_accounted_for`, so the new prose is under the scan.
 
