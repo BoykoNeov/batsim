@@ -142,15 +142,24 @@ Estimate minus truth in points of charge; booted 3 points high, 1 C for 300 s, r
 3. **Wrong boot, steep cell — held.** Under 0.1 point by 60 s; the counter holds 3.
 4. **Sodium-ion mid-range — held.** Ends −0.563 against the counter's −0.494 (within 0.15)
    and is −0.24 at the end of the discharge, within 0.5 of the counter's final figure.
-5. **Sodium-ion near empty — held.** −1.0015 against −0.9753.
+   That the loop is the cause has a control arm (added after review): the same twin on the
+   chemistry with `[hysteresis]` removed ends at −0.105, the remainder being the offset
+   (−0.002 with the offset removed too, scratch harness only).
+5. **Sodium-ion near empty — held.** −1.0015 against −0.9753; −0.064 without the loop.
 6. **LFP with an exact model — half right.** More than a point off at the end of the
-   discharge (1.95), as predicted; **not** under 0.5 by the end of the rest (0.63). The
+   discharge (1.95), as predicted; **not** under 0.5 by the end of the rest (0.63, against
+   the counter's 2.06 on the same run — the comparison, not the distance moved). The
    information estimate counted samples and forgot that the filter's own sigma shrinks as
    it learns, which slows the tail.
 7. **LFP with a model error — held, and understated.** −14.7 points under load (predicted
    "more than 3", sign right). The prediction said the error would "relax back toward the
    truth at rest"; it relaxes from −11.4 to −6.7 and **stops there**, because by then the
-   filter is sure of itself — the finding this note is about. The sodium-ion half ("the
+   filter is sure of itself — the finding this note is about. **Where** it stops is the
+   `[ocv]` table's 0.45 node, held there by the offset (advisor's catch, then measured): from
+   1800 s to the end the estimate sits on 45.00 %, because above the node the plateau's
+   0.057 V per unit pulls less than the 20 mA offset pushes and below it 0.297 V per unit
+   pulls more. With the offset removed it crosses the node and is at 45.45 %, −6.22 points
+   and still moving, at the hour's end. Both are asserted in `gauge_filter.rs`. The sodium-ion half ("the
    same weak cell costs under 0.5 point") was **wrong**: the spike measured −1.33 at the
    end of the discharge. Sodium-ion's `R0` is 0.074 Ω, more than three times LFP's, so the
    same 20 % is 21 mV, not 9; the prediction priced LFP's resistance onto the other cell.
@@ -180,7 +189,8 @@ LFP, and one new failure the counter cannot have: on a flat curve a model error 
 millivolts is ten or more points of charge, and while the filter is making that error under
 load its uncertainty collapses, so at rest it no longer listens to the voltage that would
 put it right. The counter, which never reads the voltage under load, is the better
-estimator on that cell.
+estimator on that cell. (The exact figure it stops at, −6.67, is the table's 0.45 node with
+the offset holding it there — quote the collapse, not the number, when teaching it.)
 
 ### Perturbation table
 

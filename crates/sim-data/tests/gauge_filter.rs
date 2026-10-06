@@ -26,6 +26,8 @@ fn scenario(name: &str) -> Scenario {
 struct Marks {
     err: [f64; 3],
     sigma: [Option<f64>; 3],
+    /// The estimate itself \[%\] at 1800 s and at 3900 s.
+    est: [f64; 2],
 }
 
 fn run(name: &str) -> Marks {
@@ -33,13 +35,22 @@ fn run(name: &str) -> Marks {
 }
 
 fn run_scenario(sc: Scenario) -> Marks {
+    run_with(sc, false)
+}
+
+/// `strip_hysteresis` removes the chemistry's `[hysteresis]` section — the control arm for
+/// "the loop is what the filter lands short by".
+fn run_with(sc: Scenario, strip_hysteresis: bool) -> Marks {
     let chem_id = sc
         .chemistry
         .clone()
         .expect("these files name their chemistry");
-    let chem =
+    let mut chem =
         sim_data::load_chemistry_file(root().join("chemistries").join(format!("{chem_id}.toml")))
             .unwrap();
+    if strip_hysteresis {
+        chem.hysteresis = None;
+    }
     // Each cell at its own 1 C, as every gauge header measures it.
     let i_1c = chem.cell.capacity_ah;
     let mut pack = sc.build_pack(chem).unwrap();
@@ -50,6 +61,7 @@ fn run_scenario(sc: Scenario) -> Marks {
     let mut out = Marks {
         err: [f64::NAN; 3],
         sigma: [None; 3],
+        est: [f64::NAN; 2],
     };
     // Integer step counts, so the marks are exact rather than accumulated floats.
     for n in 1..=7800_u32 {
@@ -59,6 +71,11 @@ fn run_scenario(sc: Scenario) -> Marks {
             Demand::Rest
         };
         let tele = pack.step(0.5, demand, &env);
+        match n {
+            3600 => out.est[0] = tele.soc_bms.unwrap() * 100.0,
+            7800 => out.est[1] = tele.soc_bms.unwrap() * 100.0,
+            _ => {}
+        }
         let slot = match n {
             60 => 0,
             600 => 1,
@@ -193,4 +210,61 @@ fn on_lfp_a_wrong_model_makes_the_filter_confidently_wrong() {
     let cc = run_scenario(sc);
     assert_marks("the weak cell's counter", &cc.err, [3.0067, 2.9420, 2.0574]);
     assert!(f.err[0].abs() > 4.0 * cc.err[0].abs());
+}
+
+/// The control arm for the sodium-ion rows: the same twins on a chemistry with its
+/// `[hysteresis]` section removed. The filter's end error falls from −0.563 to −0.105
+/// points mid-range and from −1.002 to −0.064 near empty, so the loop is most of what it
+/// lands short by; what is left is the 20 mA offset. (With the offset removed as well the
+/// mid-range run ends at −0.002, measured in the slice's scratch harness, not here.)
+#[test]
+fn on_sodium_ion_the_loop_is_what_the_filter_lands_short_by() {
+    let with_loop = run("na_ion_gauge_filter");
+    let without = run_with(scenario("na_ion_gauge_filter"), true);
+    assert!(
+        without.err[2].abs() < 0.15 && with_loop.err[2] < -0.5,
+        "mid-range: {} without the loop against {} with it",
+        without.err[2],
+        with_loop.err[2]
+    );
+    let with_loop = run("na_ion_gauge_low_filter");
+    let without = run_with(scenario("na_ion_gauge_low_filter"), true);
+    assert!(
+        without.err[2].abs() < 0.1 && with_loop.err[2] < -0.95,
+        "near empty: {} without the loop against {} with it",
+        without.err[2],
+        with_loop.err[2]
+    );
+}
+
+/// Why the weak-cell filter stops at −6.67 points: it is pinned on the `[ocv]` table's
+/// 0.45 breakpoint. Above it the plateau is 0.057 V per unit and the voltage's pull on the
+/// confident filter is weaker than the 20 mA offset's push down; below it the curve is
+/// 0.297 V per unit and the pull wins. So the estimate sits on 45.00 % from the half hour to
+/// the end. Take the offset away and it crosses the node and keeps creeping up — still more
+/// than six points low after the hour, because the collapsed sigma is what makes it slow.
+/// Both halves are true, and the end figure is a fact about the node, not about the filter
+/// having converged on something.
+#[test]
+fn on_lfp_the_wrong_model_is_held_at_a_table_node_by_the_offset() {
+    let shipped = run("lfp_gauge_filter_weak_cell");
+    for est in shipped.est {
+        assert!(
+            (est - 45.0).abs() < 0.01,
+            "the shipped arm sits on the 0.45 node from 1800 s to the end: {est}"
+        );
+    }
+    let mut sc = scenario("lfp_gauge_filter_weak_cell");
+    sc.pack.bms.as_mut().unwrap().current_offset_a = 0.0;
+    let no_offset = run_scenario(sc);
+    assert!(
+        no_offset.est[1] > 45.3 && no_offset.est[1] - no_offset.est[0] > 0.3,
+        "without the offset it crosses the node and keeps moving: {:?}",
+        no_offset.est
+    );
+    assert!(
+        no_offset.err[2] < -6.0,
+        "and is still confidently wrong after the hour: {}",
+        no_offset.err[2]
+    );
 }

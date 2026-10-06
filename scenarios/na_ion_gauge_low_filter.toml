@@ -16,7 +16,8 @@
 #
 # The wider loop down here costs the filter what it costs the rest read: it ends a point
 # low, twice the mid-range figure, and within three hundredths of the counter. A model
-# without the loop reads it as charge, under load and at rest alike.
+# without the loop reads it as charge, under load and at rest alike. With the chemistry's
+# [hysteresis] section removed the same file ends at -0.064 points.
 
 chemistry = "na_ion_18650_generic"
 

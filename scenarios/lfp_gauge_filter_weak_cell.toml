@@ -25,6 +25,17 @@
 # back: while it was wrong under load it became sure of itself (sigma 0.14 points at the
 # end of the discharge, 0.065 at the end of the rest), so it now gives each reading almost
 # no weight. Confidently wrong, by a hundred times its own error bar.
+#
+# WHERE it stops is a fact about the table, not about the filter, and it is worth knowing
+# before quoting the -6.67. From 1800 s to the end the estimate sits on 45.00 %, which is
+# the [ocv] table's 0.45 breakpoint. Above it the plateau is 0.057 V per unit and the
+# voltage's pull on a filter this sure of itself is weaker than the 20 mA offset's push
+# down; below it the curve is 0.297 V per unit and the pull wins. So the offset holds it on
+# the node. Run this file with `current_offset_a = 0` and the estimate crosses the node and
+# keeps creeping up -- 45.45 % at the hour's end, -6.22 points, still moving. Both halves
+# are measured in `crates/sim-data/tests/gauge_filter.rs`
+# (`on_lfp_the_wrong_model_is_held_at_a_table_node_by_the_offset`): the collapsed sigma is
+# what makes it slow, the node and the offset are what make it stop.
 
 chemistry = "lfp_26650_generic"
 

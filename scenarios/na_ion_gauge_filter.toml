@@ -21,6 +21,10 @@
 # loop, which neither estimator models. The filter does not escape that error; it reaches
 # it sooner. Note its sigma: 0.015 points of self-assessed doubt about an error almost
 # forty times that size.
+#
+# That the loop is the cause is measured, not assumed: the same file on the chemistry with
+# its [hysteresis] section removed ends at -0.105 points, and what is left of that is the
+# 20 mA offset (`on_sodium_ion_the_loop_is_what_the_filter_lands_short_by`).
 
 chemistry = "na_ion_18650_generic"
 

@@ -234,7 +234,9 @@ approach below predicted: the filter fixes a boot error on sodium-ion in half a 
 then lands where the counter lands, because the hysteresis fools both the same way; on LFP
 with an exact model it corrects, slowly; and on LFP with the cell's resistance 20 % off the
 table it is the **worse** estimator — 15 points low under load, 6.7 low after an hour's
-rest, with a self-reported sigma of 0.065 points. **Still open: the guided-path lesson**,
+rest, with a self-reported sigma of 0.065 points (where it stops is the `[ocv]` table's
+0.45 node, held there by the sensor offset; without the offset it creeps on, still six
+points low after the hour). **Still open: the guided-path lesson**,
 which is its own slice under the claims harness. What follows is the entry as written.
 
 

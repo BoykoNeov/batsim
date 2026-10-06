@@ -16,8 +16,11 @@
 #
 # The filter does NOT decline the way the rest read does -- it corrects, every frame, by a
 # gain the curve's slope sets -- but the slope here is 0.022-0.057 V per unit of charge
-# against sodium-ion's 1.9, so each frame is worth almost nothing and it closes the three
-# points over the hour rather than over half a minute. Slow, not refused. And this is the
+# against sodium-ion's 1.9, so each frame is worth almost nothing: it ends the hour 0.63
+# points high where the counter on the same run ends 2.06 high, rather than closing the
+# gap in half a minute. (How far it MOVED is not the measure: the counter moved most of a
+# point across the same rest on the 20 mA offset alone, correcting nothing.) Slow, not
+# refused. And this is the
 # FLATTERING case: the filter's model of this cell is exact. The partner
 # `lfp_gauge_filter_weak_cell.toml` is the same run with the cell's resistance 20 % above
 # the table, and there the filter is the worse of the two estimators by a wide margin.
@@ -30,7 +33,7 @@ description = """
 `lfp_gauge_declines.toml` with one section added: the BMS estimates its charge with a \
 Kalman filter over a model of the cell. Where the counter refuses to correct on LFP's flat \
 curve, the filter corrects on every reading -- but each reading is worth almost nothing on \
-a curve this flat, so the 3-point boot error takes the whole hour to shrink. Compare with \
+a curve this flat: after the hour it is 0.6 points high where the counter is 2.1 high. Compare with \
 the sodium-ion twin, which closes the same error in half a minute."""
 
 [pack]
