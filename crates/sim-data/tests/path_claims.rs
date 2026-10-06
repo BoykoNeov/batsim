@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 32 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 34 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -134,7 +134,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is thirty-two steps and 777 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is thirty-four steps and 800 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -255,10 +255,10 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed thirty-two whole steps — but only thirty-two. Steps here carrying
+//!   has now closed thirty-four whole steps — but only thirty-four. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
 //!   of the prose free: none. `[ledger].unledgered`
-//!   names what is left — none of the thirty-two — one line each, so this list cannot go
+//!   names what is left — none of the thirty-four — one line each, so this list cannot go
 //!   quietly out of date; it is empty, and it stays in the file so that the next lesson
 //!   added to the path has somewhere to say it is not checked.
 //!   **What that closes is one axis and not the gap.** Every numeral in every step of the
@@ -3293,7 +3293,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 301 of 348 claims.
+    /// number's last printed place. The default shape: 317 of 364 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3304,12 +3304,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 40 of 348.
+    /// the number was always right and only the declaration was wrong. 40 of 364.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 348, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 364, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -3349,7 +3349,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 320 of 348, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 335 of 364, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -13590,6 +13590,25 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ],
         pow10: 0,
     },
+    // --- Steps 33 and 34, the model-based gauge --------------------------------
+    //
+    // The pulse and the boot error share step 30's rules, read off these steps' own file.
+    // Every measurement either step prints is claimed, on one of its three arms.
+    LedgerRule {
+        // The one fault the weak-cell file adds to its control, which is the whole of the
+        // difference between the two runs. Read off this step's own scenario.
+        phrase: "its resistance **`{n}`** times what",
+        ties: &[Tie::Scenario("faults.*.fault.WeakCell.r0_factor")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Where the wrong filter comes to rest: a node of the charge axis of the chemistry's
+        // `[ocv]` table. Existential, as `Tie::Member` always is; the claim on the `soc (bms)`
+        // row is what says the estimate is there.
+        phrase: "**`{n}`** is a breakpoint of this chemistry's `[ocv]` table",
+        ties: &[Tie::Member("ocv.soc.*")],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -16578,6 +16597,8 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (30, "thirty"),
     (31, "thirty-one"),
     (32, "thirty-two"),
+    (33, "thirty-three"),
+    (34, "thirty-four"),
     // The ledger's numeral count passed twenty-five with its fifth step and will keep
     // going; the tens are here so the next one does not have to stop and add a word.
     (30, "thirty"),

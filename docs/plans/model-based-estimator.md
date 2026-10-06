@@ -232,8 +232,12 @@ were written because the table was about to be.
 
 ## Still open
 
-* The lesson (above).
+* ~~The lesson (above).~~ **Landed 2026-10-06** as guided-path steps 33 and 34, on the LFP
+  pair at LFP's own 1 C: `docs/plans/path-gauge-filter-steps.md`. The filter's sigma is
+  still not on the wire; the steps state the collapse in words and name the test.
 * Whether the Joseph form matters anywhere in this engine (row C): not on these runs.
 * A filter whose `voltage_sigma_v` is too small for its model error is how "confidently
   wrong" happens; a scenario that sweeps it on the weak LFP cell would show the trade-off
-  directly. Not measured here.
+  directly. Not measured here. One point since, from the lesson slice's perturbation
+  table: at `voltage_sigma_v` = 0.030 the weak-cell filter is +0.48 points at 30 s, against
+  −14.74 at the shipped 0.010.

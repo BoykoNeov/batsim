@@ -172,6 +172,7 @@ One continuous arc of bookkeeping over the lesson prose: claims, arms, the ledge
 | [`path-untouched-steps.md`](path-untouched-steps.md) | The five steps nothing was about |
 | [`path-wedge.md`](path-wedge.md) | The guided path's last step, and a freeze nobody has attributed |
 | [`path-wider-loop-step.md`](path-wider-loop-step.md) | The lesson for a loop that is not one width |
+| [`path-gauge-filter-steps.md`](path-gauge-filter-steps.md) | The lesson for the model-based gauge (H7): fifteen points wrong under load, and sure of it at rest |
 | [`path-word-batch-five.md`](path-word-batch-five.md) | Word batch five — the millivolt, and the amp that was never about the word |
 | [`path-word-batch-four.md`](path-word-batch-four.md) | The unit that was left out on purpose, and the two lessons it was holding |
 | [`path-word-batch-three.md`](path-word-batch-three.md) | The third batch of word-scanned steps |

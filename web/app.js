@@ -4760,6 +4760,67 @@ const LESSONS = [
     expect:
       "At the mark this cell has been open-circuit since its pulse ended. `current` reads **`0.000 A`**, `terminal` has settled at **`2.622 V`**, and `soc (true)` reads **`16.7 %`** against a `soc (bms)` of **`15.7 %`** — **`1.0`** point apart. Now go back to the file the last two steps ran. Load `na_ion_gauge_corrects` from the picker — the same file with one field changed, `initial_soc` — and run it to the same mark. There `soc (true)` reads **`51.7 %`** and `soc (bms)` reads **`51.2 %`**, and the same subtraction on those two rows gives the gap step 31 was about. Same cell, same sensors, same seed, same gate, same correction, and the estimate lands further out down here. Two things decide how far out it lands, and neither of them is the same everywhere on the curve. The first is how far a rested cell sits off the midline its `[ocv]` table draws — that is the hysteresis loop, and this file says the loop is wider near empty. The second is how steep that table is where the estimator reads it, because the slope is what turns millivolts into points of charge, and this cell's curve is steeper near empty as well. The two pull in opposite directions and the wider loop wins; `the_wider_loop_costs_the_gauge_more_than_the_steeper_curve_saves` measures both of them on both runs, so neither half of that sentence is a claim about a picture. Look at where the width comes from, because it is the thing this step exists for. `[hysteresis]` gives `scale_v`, which is the half-width where the multiplier beside it reads **`1.00`**, and `[hysteresis.width_over_soc]` gives that multiplier as a small table over charge: **`1.00`** anywhere at or above **`0.35`** charge, rising to **`4.00`** at the empty end. Both of those levels and the breakpoint between them come from the same laboratory data the rest of this file was fitted from, and the shape in between is labelled in the file as interpolation rather than as measurement. And the last thing, which is what makes this a lesson about a parameter file rather than about fuel gauges near empty. Take that table out of the chemistry and run this scenario again, and the estimate here would land *closer* to the truth than the mid-range one, not further: with the table gone the steeper curve is the only thing left that differs between the two runs, and a steeper curve helps a gauge. The test named above builds both chemistries in one process and asserts exactly that. The comparison you just did came out the way it did because of that table.",
   },
+  {
+    id: "a-model-that-is-wrong",
+    title: "A gauge that runs a model of the cell",
+    // The client half of ROADMAP H7. `EstimatorConfig::Ekf` shipped at SNAPSHOT_VERSION 24
+    // (docs/plans/model-based-estimator.md); this step and the next teach it, and
+    // docs/plans/path-gauge-filter-steps.md is the slice.
+    //
+    // The scenario is `lfp_gauge_filter.toml` with ONE `[[faults]]` entry added, and the arm
+    // below loads that file, so the two runs differ by the weak cell alone -- asserted on the
+    // parsed configs in `gauge_filter.rs`, not only said here.
+    scenario: "lfp_gauge_filter_weak_cell.toml",
+    // LFP's own 1 C -- the cell's capacity in amps -- rather than the sodium-ion current the
+    // gauge steps before this one run. Every figure in the scenario headers and in
+    // gauge_filter.rs is measured at this current, and the model error the weak cell makes is
+    // clearest here. The off-leg outlasts both this step's mark and the next one's.
+    demand: { mode: "Pulse", value: 2.303451, on_s: 300, off_s: 9000 },
+    ambient_c: 25,
+    // The scenario's own BMS: a protection block with nothing to trip on, and the filter.
+    // The page builds the pack from the scenario's own `[pack.bms]`, estimator section
+    // included -- `build_pack_with_bms` -- and the wasm parity check runs this file.
+    bms: true,
+    // Slow, because the mark is early and the fall is the thing to watch.
+    speed_x: 10,
+    dt: 0.5,
+    // Under load. By 30 s the estimate has already fallen the whole way; the mark is past
+    // that so the row has stopped jumping when the page stops.
+    until_s: 60,
+    reload: true,
+    watch: ["readouts", "plot-soc"],
+    prose: [
+      "Back to LFP, the cell whose flat curve the gauge on the earlier steps declined to read. This file gives its BMS a different way to estimate: a Kalman filter. It carries a small model of the cell built from the chemistry's own tables, predicts the voltage the cell should show, and corrects its estimate by how far the sensor disagrees — on every reading, under load as well as at rest.",
+      "The demand box runs a pulse: `2.303451 A` for `300 s`, which is the current that empties this cell at its rated pace, and then nothing.",
+      "Watch `soc (bms)` against `soc (true)` from the moment you press Run. The mark comes early.",
+    ],
+    expect:
+      "At the mark the pulse is still on. `current` reads **`2.303 A`**, and `soc (true)` reads **`58.3 %`** against a `soc (bms)` of **`43.9 %`** — **`14.4`** points apart, and on the wrong side. The estimate booted **`3`** points high, the same field the sodium-ion files set, and it has gone straight through the truth and out the other side: it believes the cell is much emptier than it is. Now the control arm. Load `lfp_gauge_filter` from the picker and run it to the same mark. It is this file with one entry taken out — the `[[faults]]` entry at the bottom, which builds this cell with its resistance **`1.2`** times what the chemistry's table says. There `soc (true)` reads **`58.3 %`** again and `soc (bms)` reads **`61.5 %`**: the same filter, with its boot error barely touched, because on this plateau even a correct reading is worth very little. So that one entry is the whole of the difference between the two estimates, and it is worth seeing what it does to the voltage. `terminal` there reads **`3.200 V`** against this file's **`3.191 V`** — 9 mV apart. The filter's model reads the chemistry's table, so it expects this cell to hold its voltage that much higher under this current than it does, and the only way its model can explain a lower voltage is a lower charge. On a steep curve a few millivolts would be a small correction. On this plateau they are worth the gap you just read off the two charge rows, and the filter, doing exactly what it was built to do, turned them into that. A model-based gauge is only as good as its model, and a flat curve multiplies every millivolt the model gets wrong.",
+  },
+  {
+    id: "wrong-and-sure-of-it",
+    title: "Wrong, and sure of it",
+    // The same file and the same trajectory as the step before. `reload` is absent and every
+    // control is identical, so Next continues -- unless the reader took the arm, in which
+    // case the page rebuilds this file from t = 0. The pulse is a function of the clock
+    // alone, so both routes land on the same state; the prose says so rather than assert one.
+    scenario: "lfp_gauge_filter_weak_cell.toml",
+    demand: { mode: "Pulse", value: 2.303451, on_s: 300, off_s: 9000 },
+    ambient_c: 25,
+    bms: true,
+    speed_x: 300,
+    dt: 0.5,
+    // 3600 s of rest after the 300 s leg, the rest every gauge step in this path uses: long
+    // past the slow RC pair, so the voltage at the mark is an open-circuit voltage.
+    until_s: 3900,
+    watch: ["readouts", "plot-soc"],
+    prose: [
+      "The same cell, carried on to a mark long after the pulse ended. If you came straight here the run simply continued; if you went off to the control arm, the page rebuilds this file and runs it again from the start, and both routes arrive at the same place.",
+      "The current is off now, so the resistance this cell has wrong no longer moves its voltage at all. The sensor is reading the filter an honest voltage. Watch whether the estimate comes back.",
+    ],
+    expect:
+      "At the mark `current` reads **`0.000 A`**, `terminal` reads **`3.266 V`**, and `soc (true)` reads **`51.7 %`** against a `soc (bms)` of **`45.0 %`**. Load `lfp_gauge_filter` from the picker again and run it to this mark. `terminal` there reads **`3.266 V`** too — at rest the extra resistance costs nothing, so the two filters are being shown the same voltage — and `soc (bms)` reads **`52.3 %`** against the same **`51.7 %`** of truth. Same voltage, same filter, and one estimate is close while the other is still **`6.7`** points low after the whole rest. That is the part of this lesson that is new, and it is about what a filter keeps besides its estimate. It also keeps its own opinion of how wrong that estimate might be, and it weighs every reading against that opinion. Under load the wrong model made every reading disagree with its prediction in the same direction, and the filter read that consistency as information: its uncertainty shrank quickly while its estimate fell away from the truth. By the time the current stopped it was sure of itself, so a voltage that now says something different moves it only slowly. This page does not show that uncertainty — it lives inside the BMS — but `on_lfp_a_wrong_model_makes_the_filter_confidently_wrong` reads it, and asserts that at this mark the estimate is wrong by many times its own error bar. One footnote about where it ended, because it is not the filter's doing. The estimate has not moved for a long time, and that is not the confidence either: **`0.45`** is a breakpoint of this chemistry's `[ocv]` table, the curve is steeper below it than above, and the sensor's small current offset happens to hold the estimate on it. Take the offset away and the estimate creeps on past the breakpoint, still far from the truth. `on_lfp_the_wrong_model_is_held_at_a_table_node_by_the_offset` measures both halves: the confidence is what makes it slow, the table and the offset are what make it stop. Last, the gauge from the sodium-ion steps. Load `lfp_gauge_declines` from the picker and run it to this mark. It only counts, and it declined to correct at rest: `soc (bms)` reads **`53.7 %`**, still high, still drifting. On this cell it beats the filter that is reading the wrong model, and a weak cell would not change that — the test named above runs the counter on this file's weak cell as well and gets the same readings, because a resistance it never looks at cannot fool it. That is the trade every real BMS makes. A model buys speed where the model is right and the curve can be read, and on a flat curve with a model that is wrong, it buys this.",
+  },
 ];
 
 /** Authored strings, so the escape is belt-and-braces; the backticks are the point. */

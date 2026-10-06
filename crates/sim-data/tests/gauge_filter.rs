@@ -195,6 +195,12 @@ fn on_lfp_a_wrong_model_makes_the_filter_confidently_wrong() {
         &f.err,
         [-14.7430, -11.4428, -6.6661],
     );
+    // The collapse, which the guided path's step 34 states in words because the page does
+    // not show sigma: from the 5 points `initial_soc_sigma` boots it with to about one by
+    // 30 s, while the estimate falls fifteen points the wrong way, and on down under load.
+    // (The exact-model twin is still at 4.16 at 30 s: the shrinking is the wrong model's.)
+    assert!((f.sigma[0].unwrap() - 1.1719).abs() <= TOL_PTS);
+    assert!((f.sigma[1].unwrap() - 0.1396).abs() <= TOL_PTS);
     let sigma = f.sigma[2].unwrap();
     assert!((sigma - 0.0646).abs() <= TOL_PTS);
     assert!(

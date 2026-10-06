@@ -223,7 +223,7 @@ claims and two lessons' prose, which is the first time any of the three changed 
 reader sees. What it deliberately did not move is `Telemetry::q_gen_w`; that half stays in
 H10.
 
-### ~~H7. The BMS can only coulomb-count, so it cannot teach what a real one does~~ — **engine CLOSED 2026-10-06**, lesson open
+### ~~H7. The BMS can only coulomb-count, so it cannot teach what a real one does~~ — **CLOSED 2026-10-06** (engine and lesson)
 
 **Closed in the engine** (`model-based-estimator.md`, v24): `EstimatorConfig::Ekf`, an
 extended Kalman filter over an equivalent-circuit cell built from the chemistry's tables and
@@ -236,8 +236,11 @@ with an exact model it corrects, slowly; and on LFP with the cell's resistance 2
 table it is the **worse** estimator — 15 points low under load, 6.7 low after an hour's
 rest, with a self-reported sigma of 0.065 points (where it stops is the `[ocv]` table's
 0.45 node, held there by the sensor offset; without the offset it creeps on, still six
-points low after the hour). **Still open: the guided-path lesson**,
-which is its own slice under the claims harness. What follows is the entry as written.
+points low after the hour). **The lesson landed the same day** as guided-path steps 33 and
+34 (`path-gauge-filter-steps.md`): the wrong-model filter fifteen points low under load beside
+the exact-model one still on its boot error, then still almost seven low after the rest while
+the counter beats it. The filter's own uncertainty is stated in words, not shown — it is not on
+the wire. What follows is the entry as written.
 
 
 **Gap.** The estimator is coulomb counting on an imperfect sensor with an OCV correction at
@@ -482,7 +485,7 @@ predicted re-pinning cost did not exist: no test moved.
 * **`crates/sim-data/tests/path_claims.rs` is 18 000 lines** and is the single largest file
   in the workspace. It works, its rules are documented at length inside it, and splitting
   it is worth doing only when a rule changes; it is named here so nobody is surprised.
-* **The guided path has 32 steps and no argument about how many it should have**
+* **The guided path has 34 steps and no argument about how many it should have**
   (`phase-8-chemistries.md`). Phases 9 and 10 each propose two more; Phase 11 proposes
   none and re-measures the existing ones instead. Decide the shape of the path
   before they land: the honest options are a longer single path or a set of short tracks
