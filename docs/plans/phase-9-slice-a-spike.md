@@ -233,7 +233,8 @@ below its edge 0.216, on the discharge arm; 13 at 0.044 and 7 at 0.818 on the ch
 Those states are locally stable and survive the rest, which is where the warm gap comes from.
 So the cold zero was one seed whose two directions landed on the same count. Three more
 seeds landed on different counts: discharge 5, 6, 6 full against charge 8, 8, 7. Their gaps,
-27.44, 23.32 and 13.35 mV, are the count table below to the hundredth.
+27.44, 23.32 and 13.35 mV, match the count table below within 0.03 mV (predicted 27.42, 23.29, 13.33; the table is
+built from seed 9's end compositions to five digits, so it reads no finer).
 
 **The pack-visible rises.** Listing every probe at the worst state (SOC 0.25, 15 min)
 put the 30 mV rise between −2.53 C and −2.47 C. That is exactly where the probe went from one

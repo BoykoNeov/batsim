@@ -22,7 +22,9 @@ All four were asked and answered on 2026-10-06.
 2. **Keep U0 = 3.42 V (Bai 2011).** Do not fit it to PyBaMM's Prada2013 curve (mean
    ≈ 3.40 V). The cell then reads +10.3 mV above PyBaMM's SPM at C/20, and that offset is
    documented, not tuned away. Ω stays the only constant we fitted.
-3. **The 1 h step's non-monotone voltage is a documented limit, not a fix.** See
+3. **The long step's non-monotone voltage is a documented limit, not a fix.** It was
+   asked about the 1 h measurement; the limit is stated from the last length that passed,
+   15 min. See
    §"Long steps" below. No pack code changes for it, and the cell declares no new range for
    it.
 4. **The lesson shows the cold too, as a range.** At 263 K the rest gap is one of a few
@@ -39,11 +41,11 @@ and outputs are in `W:/temp/claude/phase9-spike/`.
 | plateau from particles filling one at a time | yes, at the fitted Ω with 20 particles; not below ~100 at Bai's Ω | the model's whole point; an exit criterion |
 | C/20 vs PyBaMM SPM (Prada2013, Afshar's monotone OCP), 20–80 % | +10.3 mV mean (+6.3…+17.5), span 138 vs 145 mV | golden, with the offset attributed to U0 |
 | LFP window in this cell | graphite runs out first; LFP y 0.0038–0.7035, 2.3034 Ah | the chemistry's stoichiometry window and capacity |
-| rest gap at 298 K (C/20 approach to SOC 0.5, 2 h rest) | 14.2–19.6 mV over 4 seeds, σ 0.1/0.3, N 10/40, SOC 0.3/0.7; discharge-arrival always lower; seed spread 1.2 mV | exit criterion with a band |
-| rest gap at 263 K | 0.00 / 27.44 / 23.32 / 13.35 mV on seeds 9/1/2/3, each the count table's value to 0.01 mV | the lesson shows a range; the test pins the mechanism |
+| rest gap at 298 K (C/20 approach to SOC 0.5, 2 h rest) | 14.2–19.6 mV over every arm (4 seeds, σ 0.1/0.3, N 10/40, SOC 0.3/0.7); at N 20, SOC 0.5 the four seeds read 19.64, 19.64, 18.43, 18.43 — discrete here too; discharge-arrival always lower | exit criterion with a band |
+| rest gap at 263 K | 0.00 / 27.44 / 23.32 / 13.35 mV on seeds 9/1/2/3, each within 0.03 mV of the count table's value | the lesson shows a range; the test pins the mechanism |
 | 1 s steps, C/20 to 3C, 10 and 20 shells | no sub-step needed anywhere | the real-time path needs no internal sub-steps |
 | surface read at 10 shells | folds while a particle transforms; 20 shells clear N = 20, N = 100 needs 40 | minimum shell count is a validated setting, not a default |
-| whole cell's end-of-step V(I), same sub-steps for every probe | falls with current at 1 s, 60 s and 15 min at all 20 states; rises at 13 of 20 states at 1 h, by up to 6.6 mV | §"Long steps" |
+| whole cell's end-of-step V(I), same sub-steps for every probe | falls with current at 1 s, 60 s and 15 min (1 s sub-steps) at all 20 states; rises at 13 of 20 states at 1 h (4 s sub-steps), by up to 6.6 mV; nothing between 15 min and 1 h was run | §"Long steps" |
 | the same, with sub-steps chosen by halving a failed trial | rises by up to 30 mV at 15 min | a design rule for slice B (below) |
 
 Not established, and not assumed: the cost of an N-particle cell inside the engine, the
@@ -76,7 +78,13 @@ monotone by construction), and particle counts above 40 at the full-cell level.
   length and state before the split. They are never found by halving a trial that failed.**
   Halving made the sub-step count jump between neighbouring trial currents, and that jump
   alone turned a 6 mV property into a 30 mV one. The real-time path needs none (1 s: no
-  sub-step at any rate). The fast-forward sub-step length gets measured in this slice.
+  sub-step at any rate). The count is chosen from the step length and the state — for
+  example from the most extreme current the window allows — and **never from the trial
+  current**. A trial whose split does not solve at that count is flagged (as an unsolved
+  step is today), not halved: a fallback that halves brings the jump back. The
+  fast-forward sub-step length gets measured in this slice. The 15 min monotonicity was
+  measured with 1 s sub-steps (about ten times the adaptive run's cost), so any coarser
+  length slice B picks must be re-measured at 15 min. A coarser length was not measured.
 - `source`, `probe_at` and the current window keep `Spm`'s contracts. The window is the
   hard part: with an internal split, "every surface stays in range" is no longer one
   interval per electrode by closed form. In round 2, 228 of 1 220 probes at 15 min left
@@ -125,7 +133,9 @@ every trial current, it falls at 1 s, 60 s and 15 min at all 20 states. At 1 h i
 hour's charge walks the LFP across one of its teeth, and the graphite's slope no longer
 outweighs it.
 
-**Decided: documented, not fixed.** A pack of these cells at ≥ 1 h steps is not guaranteed
+**Decided: documented, not fixed.** The limit starts from the last step length that
+passed, not from the first that failed. Nothing between 15 min and 1 h was run. A pack of
+these cells at steps **longer than 15 min** is not guaranteed
 to land on the right root if it has cells in parallel or is under a voltage or power demand.
 A single series string under a current demand is unaffected, because that solve brackets
 nothing. The limit is stated where the pack's assumption is stated, with the measurement,
@@ -138,12 +148,16 @@ and checked by a test so a later change to the cell cannot silently move it.
    The mean offset over 20–80 % lies within a stated band around +10.3 mV, attributed to U0.
    The 20–80 % span is within a stated band of 138 mV. Bands are set in slice C from the
    seed spread, not chosen to pass.
-3. Hysteresis at 298 K: C/20 approach to SOC 0.5 from each side, then 2 h rest. The gap is
-   14–20 mV on four seeds, and discharge-arrival reads below charge-arrival on every seed.
+3. Hysteresis at 298 K: C/20 approach to SOC 0.5 from each side, then 2 h rest, N 20. The
+   gap is 18.0–20.0 mV on each of four seeds (measured 18.43–19.64), and discharge-arrival
+   reads below charge-arrival on every seed. The upper end holds by construction (the
+   fitted Ω puts its extremes 20 mV apart); the lower end is the test.
 4. Hysteresis at 263 K: on each of four seeds the gap equals a count-table value to
    0.1 mV, and is never negative.
-5. Long steps: end-of-step V(I) falls with current at 1 s, 60 s and 15 min at 20 states. The
-   1 h non-monotonicity is pinned by a test and documented as the limit above.
+5. Long steps: end-of-step V(I) falls with current at 1 s, 60 s and 15 min at 20 states, at
+   the sub-step length slice B picks (re-measured there, since 15 min passed at 1 s
+   sub-steps). The 1 h non-monotonicity is pinned by a test, and steps above 15 min are
+   documented as the limit above.
 6. Charge conserved to 1e-12 of capacity; no unsolved split from C/20 to 3C at a 1 s step.
 7. Per-cell step cost measured and recorded (no budget is set: the 50 µs budget is for a
    100S10P ECM pack).

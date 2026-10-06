@@ -476,8 +476,8 @@ at an affordable particle count; the owner chose the fitted constant (under H1).
 are re-planned in `phase-9-lfp-ensemble.md`**, which supersedes the slice list and exit above:
 an ensemble cell on the fitted constant with U0 kept at the published 3.42 V (+10.3 mV against
 PyBaMM, documented), a hysteresis test at 298 K and at 263 K (where the gap is discrete,
-0–27 mV by seed), and the 1 h step's non-monotone end-of-step voltage (≤ 6.6 mV) recorded as
-a documented limit rather than fixed.
+0–27 mV by seed), and the long step's non-monotone end-of-step voltage (≤ 6.6 mV at 1 h; fine
+at 15 min) recorded as a limit on steps above 15 min rather than fixed.
 
 *Exit.* A CC discharge of the LFP ensemble matches the Prada 2013 DFN reference within a
 stated tolerance over the plateau; at rest after a partial charge and a partial discharge
