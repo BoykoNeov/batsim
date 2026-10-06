@@ -69,6 +69,21 @@ lesson is written about a number the model does produce.
 enum dispatch is designed for this). `[spm]` for LFP needs extracted parameters with the
 OCP replaced — a `tools/reference/` extension. Per-cell cost lands between SPM and DFN.
 
+**Spiked 2026-10-06 (`phase-9-slice-a-spike.md`), and the approach above does not deliver
+at the published constant.** Particles of different sizes do fill one at a time, and with
+20 shells per particle the solve has an answer throughout (at the default 10 the
+half-shell surface read folds while a particle transforms). But with the published
+interaction strength (Bai 2011, 0.183 eV) each transforming particle drags the voltage
+through most of its own 182 mV hump — 20 particles give a 168 mV span over 20–80 %, 100
+give 48 mV — and the charge/discharge gap at rest is exactly zero, against the 20 mV
+measured (Dreyer 2010). The split also needs a continuity rule there: almost every
+particle's end-of-step curve rises somewhere in the range a step allows. An interaction
+strength fitted to that 20 mV runs cleanly with the engine's solve at real-time steps and
+20 particles (7 mV plateau, 15 mV rest gap that depends on the direction of arrival, ~15 s
+sub-steps for fast-forward), but the gap is then capped by the fitted constant. **The
+choice between that, a per-particle phase-field model, shrinking-core, or declining H1 is
+the owner's, and is open.**
+
 ### H2. Aging is semi-empirical on every model, and the porous models cannot age their pores
 
 **Gap.** Calendar and cycle fade are `sqrt(t)` and throughput laws with placeholder
@@ -452,6 +467,10 @@ per electrode and a seeded radius distribution, validated against the existing `
 `N = 1` to the bit; (C) the non-monotone OCP for LFP's positive electrode with a cited
 source and a regularisation chosen by measurement; (D) an `[spm]` section for LFP via
 `tools/reference/`, a scenario, and two guided-path steps.
+
+*Slice A ran 2026-10-06* (`phase-9-slice-a-spike.md`): slices B–D as written assume the
+published OCP produces the plateau and the hysteresis, which on that measurement it does not
+at an affordable particle count; they wait on the owner's choice recorded under H1.
 
 *Exit.* A CC discharge of the LFP ensemble matches the Prada 2013 DFN reference within a
 stated tolerance over the plateau; at rest after a partial charge and a partial discharge

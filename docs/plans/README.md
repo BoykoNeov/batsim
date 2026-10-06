@@ -35,6 +35,7 @@ One per phase, the slice notes under it. Each records what was measured, what wa
 | [`phase-8-slice-c-hysteresis.md`](phase-8-slice-c-hysteresis.md) | Phase 8, slice C — the hysteresis state, the OCV temperature correction, and NiMH |
 | [`phase-8-slice-c-spike.md`](phase-8-slice-c-spike.md) | Phase 8, slice C — the spike, and what it decided |
 | [`phase-8-slice-d-nimh-client.md`](phase-8-slice-d-nimh-client.md) | Phase 8 slice D — teaching the nickel cell, and closing the phase |
+| [`phase-9-slice-a-spike.md`](phase-9-slice-a-spike.md) | Phase 9, slice A — the spike: does a many-particle LFP electrode give a plateau, and can the engine's solve carry it |
 
 ## Engine physics slices
 
