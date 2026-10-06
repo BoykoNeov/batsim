@@ -46,15 +46,103 @@
 //! enough to relax, which is only informative where the OCV curve is steep. On LFP
 //! it mostly is not, so the estimate stays wrong through the middle of the range.
 //! That contrast between chemistries is a teaching goal.
+//!
+//! # The other estimator: a model the BMS owns
+//!
+//! [`EstimatorConfig::Ekf`] replaces the count-and-correct-at-rest scheme with what a
+//! production BMS runs: an extended Kalman filter over an equivalent-circuit cell built
+//! from the chemistry's **tables** — never from any cell's state — that predicts the
+//! measured voltage and corrects its charge estimate from the miss, on every frame,
+//! under load as well as at rest. How far it moves on each frame depends on how steep the
+//! curve is there and on how much it was told to trust the voltage
+//! ([`EkfConfig::voltage_sigma_v`]) against the current ([`EkfConfig::current_sigma_a`]).
+//!
+//! The simulated voltage sensors are exact, so what that filter calls measurement noise is
+//! really **model error**: everything the engine models that its copy does not — the
+//! hysteresis loop, the lead-acid diffusion term, charge acceptance, aging, scatter, a weak
+//! cell, a porous model's physics, a lying sensor. That error divided by the curve's slope
+//! is where the estimate settles, which is why the same filter that closes a boot error in
+//! a minute on a steep cell can be several points wrong on LFP's plateau. See
+//! `docs/plans/model-based-estimator.md`.
 
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::chem::ChemistryParams;
-use crate::ecm::ocv_invert;
+use crate::ecm::{docv_dt_lookup, ocv_invert, ocv_lookup, r0_lookup};
 use crate::faults::{SensorFault, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal;
+
+/// Which algorithm turns the sensor frame into a state-of-charge estimate.
+///
+/// In a scenario file this is `estimator = "CoulombCount"` or a
+/// `[pack.bms.estimator.Ekf]` table, the externally tagged shape
+/// [`crate::CellModelConfig`] uses. Omitting it means [`Self::CoulombCount`], which is the
+/// code path every scenario written before this field existed takes, bit for bit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum EstimatorConfig {
+    /// Coulomb counting on the measured current against nominal capacity, corrected from
+    /// the open-circuit voltage only after a rest and only where the curve is steep enough
+    /// ([`BmsConfig::min_ocv_slope_v_per_soc`]). The default.
+    #[default]
+    CoulombCount,
+    /// An extended Kalman filter over an equivalent-circuit model of the average cell.
+    /// [`BmsConfig::rest_time_for_ocv_s`], [`BmsConfig::ocv_correction_gain`] and
+    /// [`BmsConfig::min_ocv_slope_v_per_soc`] are not read: the filter corrects on every
+    /// frame by its own gain, which is the point.
+    Ekf(EkfConfig),
+}
+
+/// What an [`EstimatorConfig::Ekf`] assumes about its sensors and its own model.
+///
+/// These are the filter's **beliefs**, deliberately separate from the sensor model in
+/// [`BmsConfig`] — [`BmsConfig::current_noise_sigma_a`] is what the sensor really does,
+/// [`Self::current_sigma_a`] is what the BMS was tuned to expect. In a real pack those are
+/// different numbers, and a filter tuned too confident stops listening to its voltage.
+///
+/// No value here is a property of a chemistry; each is a tuning choice, and a scenario
+/// that sets one owes a provenance note for it like any other constant.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EkfConfig {
+    /// Assumed standard deviation of the pack-current reading \[A\], one independent
+    /// error per sampled frame held over its interval — the way the sensor model draws
+    /// it. Sets how fast the filter's charge uncertainty grows between frames, and so how
+    /// much it is willing to move on the next voltage. A current-sensor **offset** is not
+    /// noise, and this filter has no state for it; covering one means assuming more noise
+    /// than the sensor has. Must be finite and `>= 0`.
+    pub current_sigma_a: f64,
+    /// Assumed standard deviation of the miss between the measured mean group voltage and
+    /// the voltage the filter's model predicts \[V\]. The simulated voltage sensors are
+    /// exact, so this stands for **model error** — hysteresis, aging, scatter, whatever the
+    /// filter's copy of the cell leaves out — rather than sensor noise. Must be finite and
+    /// `> 0`.
+    pub voltage_sigma_v: f64,
+    /// Standard deviation of the filter's belief about its own starting charge
+    /// \[fraction of capacity\]. Its RC voltages start at zero with no uncertainty: the
+    /// BMS assumes it boots on a rested pack, which every pack in this engine is. Must be
+    /// finite and `>= 0`.
+    pub initial_soc_sigma: f64,
+}
+
+/// The state of an [`EstimatorConfig::Ekf`]: its belief about the average cell and how
+/// sure it is.
+///
+/// Fixed-size arrays rather than vectors so a step allocates nothing; slots past the
+/// chemistry's RC-pair count stay exactly zero, in `x` and in `p`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+struct EkfState {
+    /// `[soc, v_rc,1, v_rc,2]`: charge \[fraction\] and each RC pair's voltage \[V\],
+    /// discharge-positive, of the average cell.
+    x: [f64; 3],
+    /// Covariance of `x`, symmetric.
+    p: [[f64; 3]; 3],
+    /// Sample time of the last frame the filter consumed \[s\]. The next frame's
+    /// prediction covers exactly the interval since, which is the interval its current
+    /// reading was measured over — so state and measurement stay paired at any `dt`
+    /// pattern, which the coulomb counter's one-step lag does not.
+    last_t_s: f64,
+}
 
 /// How the BMS responds when a measurement crosses a limit.
 ///
@@ -364,6 +452,13 @@ pub struct BmsConfig {
     /// turns sensor error into enormous SOC error. This single threshold is what
     /// makes an LFP estimator behave differently from an NMC one on identical code.
     pub min_ocv_slope_v_per_soc: f64,
+    /// Which estimator produces [`Bms::soc_estimate`]. Omitted means
+    /// [`EstimatorConfig::CoulombCount`].
+    ///
+    /// `#[serde(default)]` for deserialization only, as [`Self::balancing`]: the field is
+    /// always written, so it is part of the snapshot layout (v24).
+    #[serde(default)]
+    pub estimator: EstimatorConfig,
 }
 
 /// Everything the BMS measured at the end of a step.
@@ -465,6 +560,10 @@ pub struct Bms {
     /// `tests/snapshot_version.rs` for why that is the only thing which does).
     #[serde(default)]
     bleed_held: Vec<bool>,
+    /// The filter's belief, present exactly when [`BmsConfig::estimator`] is
+    /// [`EstimatorConfig::Ekf`]. [`Self::soc_est`] is kept equal to its charge, so every
+    /// reader of the estimate reads one field whichever estimator is running.
+    ekf: Option<EkfState>,
 }
 
 impl Bms {
@@ -503,14 +602,32 @@ impl Bms {
                 .map(|&v| v > bal.v_threshold_v)
                 .collect()
         });
+        let soc_est = (initial_soc + config.initial_soc_error).clamp(0.0, 1.0);
+        // The synthesised frame above is sampled at t = 0, the same instant the filter
+        // starts from, so the filter does not consume it: only a sampled frame is a
+        // measurement. A wrong boot is the BMS's starting belief, not something a read
+        // nobody took should erase.
+        let ekf = match config.estimator {
+            EstimatorConfig::CoulombCount => None,
+            EstimatorConfig::Ekf(cfg) => {
+                let mut p = [[0.0; 3]; 3];
+                p[0][0] = cfg.initial_soc_sigma * cfg.initial_soc_sigma;
+                Some(EkfState {
+                    x: [soc_est, 0.0, 0.0],
+                    p,
+                    last_t_s: frame.sampled_at_s,
+                })
+            }
+        };
         Self {
-            soc_est: (initial_soc + config.initial_soc_error).clamp(0.0, 1.0),
+            soc_est,
             rest_time_s: 0.0,
             config,
             frame,
             contactor_open: false,
             latches: SoftLatches::default(),
             bleed_held,
+            ekf,
         }
     }
 
@@ -709,6 +826,15 @@ impl Bms {
         self.soc_est
     }
 
+    /// How sure an [`EstimatorConfig::Ekf`] is of its estimate: the standard deviation of
+    /// its charge belief \[fraction of capacity\]. `None` under coulomb counting, which
+    /// keeps no such number. Like the estimate, this is the filter's opinion of itself, and
+    /// a filter whose model is wrong can be confidently wrong.
+    #[must_use]
+    pub fn soc_sigma(&self) -> Option<f64> {
+        self.ekf.map(|s| s.p[0][0].max(0.0).sqrt())
+    }
+
     /// The most recent sensor frame — the entirety of what the BMS can see.
     #[must_use]
     pub fn sensors(&self) -> &SensorFrame {
@@ -733,13 +859,31 @@ impl Bms {
     /// `pack_nominal_ah` is the capacity the BMS *believes* the pack has: nominal
     /// per-cell capacity times the parallel count. It is deliberately not the true
     /// effective capacity — that difference is one of the drift sources.
+    ///
+    /// Under [`EstimatorConfig::Ekf`] `dt` is not read at all: the filter predicts over the
+    /// interval since the last frame it consumed (see `EkfState::last_t_s`), and `parallel`
+    /// turns the pack current into the average cell's.
     pub(crate) fn update_estimate(
         &mut self,
         chem: &ChemistryParams,
         dt: f64,
         pack_nominal_ah: f64,
+        parallel: u16,
     ) {
         let i_meas = self.frame.i_pack_a;
+
+        if let (Some(ekf), EstimatorConfig::Ekf(cfg)) = (&mut self.ekf, self.config.estimator) {
+            // Rest is still tracked — it is reported, and it is a fact about the frames
+            // rather than about either estimator.
+            if i_meas.abs() <= self.config.rest_current_threshold_a {
+                self.rest_time_s += dt;
+            } else {
+                self.rest_time_s = 0.0;
+            }
+            ekf_step(ekf, &cfg, chem, &self.frame, parallel);
+            self.soc_est = ekf.x[0];
+            return;
+        }
 
         // --- coulomb counting on the imperfect reading.
         let capacity_as = 3600.0 * pack_nominal_ah;
@@ -831,6 +975,184 @@ impl Bms {
             if let Some(slot) = slot {
                 *slot = fault.corrupt(*slot);
             }
+        }
+    }
+}
+
+/// Mean measured probe temperature \[K\], or `None` with no probes.
+fn mean_probe_k(frame: &SensorFrame) -> Option<f64> {
+    if frame.temp_probe_k.is_empty() {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let n = frame.temp_probe_k.len() as f64;
+    Some(frame.temp_probe_k.iter().sum::<f64>() / n)
+}
+
+/// The slope of a piecewise-linear table at `x`, reading the **end segment** where `x` is
+/// at or past an end rather than the clamped zero [`crate::ecm`]'s interpolation reports
+/// there. A filter whose estimate has clamped to full must still be able to learn from a
+/// voltage that says it is not; a zero slope at the clamp would freeze it there.
+fn segment_slope(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+    let n = xs.len();
+    if n < 2 {
+        return 0.0;
+    }
+    let hi = xs.partition_point(|&v| v < x).clamp(1, n - 1);
+    let lo = hi - 1;
+    (ys[hi] - ys[lo]) / (xs[hi] - xs[lo])
+}
+
+/// The filter's model of the average cell's terminal voltage \[V\] at charge `soc`, RC
+/// voltages `v_rc`, cell current `i_cell` (discharge-positive \[A\]) and measured
+/// temperature `temp_k`, and that voltage's derivative with respect to `soc` \[V per
+/// unit\].
+///
+/// `OCV(soc, T) − i·R0(soc, T) − Σ v_rc`, from the chemistry's tables alone: the
+/// temperature correction is the engine's (`ocv.t_ref_k` and the `docv_dt` column),
+/// applied at the **measured** temperature. Nothing here reads any cell.
+fn ekf_model_v(
+    chem: &ChemistryParams,
+    soc: f64,
+    v_rc: f64,
+    i_cell: f64,
+    temp_k: f64,
+) -> (f64, f64) {
+    let table = &chem.ocv;
+    let mut ocv = ocv_lookup(table, soc);
+    let mut docv = segment_slope(&table.soc, &table.volts, soc);
+    if let (Some(t_ref), Some(col)) = (table.t_ref_k, &table.docv_dt_v_per_k) {
+        let dt_k = temp_k - t_ref;
+        ocv += docv_dt_lookup(table, soc) * dt_k;
+        docv += segment_slope(&table.soc, col, soc) * dt_k;
+    }
+    let r0 = r0_lookup(&chem.r0, soc, temp_k);
+    // R0's slope along the charge axis at this temperature: the grid evaluated at the two
+    // nodes either side, which is the slope bilinear interpolation has there.
+    let xs = &chem.r0.soc;
+    let dr0 = if xs.len() < 2 {
+        0.0
+    } else {
+        let hi = xs.partition_point(|&v| v < soc).clamp(1, xs.len() - 1);
+        let lo = hi - 1;
+        (r0_lookup(&chem.r0, xs[hi], temp_k) - r0_lookup(&chem.r0, xs[lo], temp_k))
+            / (xs[hi] - xs[lo])
+    };
+    (ocv - i_cell * r0 - v_rc, docv - i_cell * dr0)
+}
+
+/// One predict-and-correct cycle of the filter on the frame just consumed.
+///
+/// Does nothing unless `frame` was sampled after the last frame consumed, so a repeated
+/// call, the synthesised boot frame, and a restored pack's first step all leave the state
+/// alone. A non-finite current skips the prediction (the interval is still consumed —
+/// there is no better current to integrate it with); a non-finite voltage or temperature,
+/// or a degenerate innovation variance, skips the correction. Never panics.
+///
+/// `needless_range_loop` is allowed because the 3×3 products index two matrices by the
+/// same row and column, which is the arithmetic written as it is on paper; iterators over
+/// one of them would hide the other.
+#[allow(clippy::needless_range_loop)]
+fn ekf_step(
+    s: &mut EkfState,
+    cfg: &EkfConfig,
+    chem: &ChemistryParams,
+    frame: &SensorFrame,
+    parallel: u16,
+) {
+    let t = frame.sampled_at_s;
+    // Written so a NaN sample time is "not newer" too.
+    let newer = t > s.last_t_s;
+    if !newer {
+        return;
+    }
+    let interval = t - s.last_t_s;
+    s.last_t_s = t;
+
+    let p_count = f64::from(parallel.max(1));
+    let i_cell = frame.i_pack_a / p_count;
+    let n_rc = chem.rc.len().min(2);
+
+    // --- predict over the interval the current was measured over. Charge by coulomb
+    // counting against the average cell's nominal capacity; each RC pair by the engine's
+    // exact exponential. Linear in the state, so `F` is diagonal and exact.
+    if i_cell.is_finite() {
+        let mut f = [1.0; 3];
+        // `b`: how the state moves per amp of cell current over this interval.
+        let mut b = [0.0; 3];
+        b[0] = -interval / (3600.0 * chem.cell.capacity_ah);
+        s.x[0] = (s.x[0] + b[0] * i_cell).clamp(0.0, 1.0);
+        for (k, pair) in chem.rc.iter().take(n_rc).enumerate() {
+            let decay = crate::math::exp(-interval / (pair.r_ohms * pair.c_farad));
+            f[k + 1] = decay;
+            b[k + 1] = pair.r_ohms * (1.0 - decay);
+            s.x[k + 1] = s.x[k + 1] * decay + b[k + 1] * i_cell;
+        }
+        // P ← F·P·Fᵀ + σ²·b·bᵀ, with σ the assumed per-cell current error.
+        let sigma_cell = cfg.current_sigma_a / p_count;
+        let q = sigma_cell * sigma_cell;
+        for r in 0..3 {
+            for c in 0..3 {
+                s.p[r][c] = f[r] * s.p[r][c] * f[c] + q * b[r] * b[c];
+            }
+        }
+    }
+
+    // --- correct from the voltage the frame measured at the end of that interval.
+    let (Some(v_meas), Some(temp_k)) = (frame.mean_group_v(), mean_probe_k(frame)) else {
+        return;
+    };
+    if !(v_meas.is_finite() && temp_k.is_finite() && i_cell.is_finite()) {
+        return;
+    }
+    let v_rc_sum: f64 = s.x[1..=n_rc].iter().sum();
+    let (v_model, dv_dsoc) = ekf_model_v(chem, s.x[0], v_rc_sum, i_cell, temp_k);
+    let mut h = [0.0; 3];
+    h[0] = dv_dsoc;
+    for slot in h.iter_mut().skip(1).take(n_rc) {
+        *slot = -1.0;
+    }
+    let mut ph = [0.0; 3];
+    for (r, out) in ph.iter_mut().enumerate() {
+        *out = (0..3).map(|c| s.p[r][c] * h[c]).sum();
+    }
+    let r_meas = cfg.voltage_sigma_v * cfg.voltage_sigma_v;
+    let innov_var: f64 = (0..3).map(|r| h[r] * ph[r]).sum::<f64>() + r_meas;
+    if !(innov_var.is_finite() && innov_var > 0.0) {
+        return;
+    }
+    let k_gain = ph.map(|v| v / innov_var);
+    let innovation = v_meas - v_model;
+    for (x, k) in s.x.iter_mut().zip(k_gain) {
+        *x += k * innovation;
+    }
+    s.x[0] = s.x[0].clamp(0.0, 1.0);
+    // Joseph form, P ← A·P·Aᵀ + R·K·Kᵀ with A = I − K·H: stays symmetric and
+    // positive semi-definite under rounding where the short form need not.
+    let mut a = [[0.0; 3]; 3];
+    for (r, row) in a.iter_mut().enumerate() {
+        for (c, v) in row.iter_mut().enumerate() {
+            *v = f64::from(u8::from(r == c)) - k_gain[r] * h[c];
+        }
+    }
+    let mut ap = [[0.0; 3]; 3];
+    for r in 0..3 {
+        for c in 0..3 {
+            ap[r][c] = (0..3).map(|m| a[r][m] * s.p[m][c]).sum();
+        }
+    }
+    let mut p_new = [[0.0; 3]; 3];
+    for r in 0..3 {
+        for c in 0..3 {
+            p_new[r][c] =
+                (0..3).map(|m| ap[r][m] * a[c][m]).sum::<f64>() + r_meas * k_gain[r] * k_gain[c];
+        }
+    }
+    for r in 0..3 {
+        for c in r..3 {
+            let v = 0.5 * (p_new[r][c] + p_new[c][r]);
+            s.p[r][c] = v;
+            s.p[c][r] = v;
         }
     }
 }

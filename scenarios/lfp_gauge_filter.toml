@@ -1,0 +1,102 @@
+# The same gauge, with a model of the cell running beside it. LFP, on its plateau.
+#
+# Everything below the [meta] table is `lfp_gauge_declines.toml` character for character, with ONE
+# section added at the end: [pack.bms.estimator.Ekf]. Same chemistry, same pack, same
+# seed, same sensor offset and noise, same boot error. Only the way the BMS turns its
+# readings into a charge estimate differs. See docs/plans/model-based-estimator.md.
+#
+# Booted 3 points high, discharged at 1 C for 300 s, then rested for 3600 s, at
+# dt = 0.5 s (the browser page's default), 25 degC. Estimate minus truth, in points of
+# charge, with the partner file's coulomb counter beside it. `sigma` is the filter's own
+# opinion of how wrong it is, in points.
+#
+#                  at 30 s    discharge ends    rest ends    sigma at the end
+#   counter        +3.0067           +2.9420      +2.0574                   -
+#   filter         +2.9864           +1.9534      +0.6286              0.2055
+#
+# The filter does NOT decline the way the rest read does -- it corrects, every frame, by a
+# gain the curve's slope sets -- but the slope here is 0.022-0.057 V per unit of charge
+# against sodium-ion's 1.9, so each frame is worth almost nothing and it closes the three
+# points over the hour rather than over half a minute. Slow, not refused. And this is the
+# FLATTERING case: the filter's model of this cell is exact. The partner
+# `lfp_gauge_filter_weak_cell.toml` is the same run with the cell's resistance 20 % above
+# the table, and there the filter is the worse of the two estimators by a wide margin.
+
+chemistry = "lfp_26650_generic"
+
+[meta]
+name = "A gauge with a model, LFP"
+description = """
+`lfp_gauge_declines.toml` with one section added: the BMS estimates its charge with a \
+Kalman filter over a model of the cell. Where the counter refuses to correct on LFP's flat \
+curve, the filter corrects on every reading -- but each reading is worth almost nothing on \
+a curve this flat, so the 3-point boot error takes the whole hour to shrink. Compare with \
+the sodium-ion twin, which closes the same error in half a minute."""
+
+[pack]
+series = 1
+parallel = 1
+# Inside this cell's flat plateau, and a 1 C discharge from here stays inside it for the
+# whole run -- which is what makes the refusal a fact about the curve rather than about
+# where on the curve the run happened to stop.
+initial_soc = 0.60
+initial_temp_k = 298.15
+# The current sensor's noise is drawn from the pack RNG, so the seed is load-bearing here
+# rather than merely named: both files use the same one so the two runs see the same noise.
+seed = 20260831
+
+# Omitted below, and each omission means "off", not "on with defaults":
+#   [pack.scatter]  -> every cell identical; one cell, so there is nothing to scatter
+#   [pack.thermal]  -> Isothermal. Deliberate: R0 falls as a cell warms, which would move
+#                      the resting voltage the correction is read from and make the two
+#                      chemistries differ for a second reason
+#   [pack.aging]    -> the pack never wears out; over ten minutes it would not anyway, and
+#                      a health row that cannot move invites a stronger conclusion than the
+#                      run supports
+#   [[faults]]      -> nothing scheduled. The sensor error below is CONFIGURATION, not a
+#                      fault: it is what an honest sensor costs, present from step 0, and
+#                      it is the thing the correction has to undo
+
+[pack.bms]
+# Every number in this section is identical in `na_ion_gauge_corrects.toml`.
+#
+# Sensor error the BMS cannot know about. 20 mA against this cell's 2.303451 A discharge is
+# 0.87 %, and because coulomb counting integrates it, it is worth 0.058 points of charge
+# over the five-minute leg — small beside the boot error below, and the mechanism that runs
+# away over a long drive. The partner file's cell is smaller, so the same offset costs it
+# 0.100 points over the same five minutes; the FIELD is identical and what it buys is not.
+current_offset_a = 0.02
+current_noise_sigma_a = 0.01
+# One probe for one cell. The estimator does not read temperature; this is here because
+# protection does.
+temp_probes = [[0, 0]]
+# A BMS that has just been powered on does not know what it is holding. Three points is the
+# error the correction exists to remove, and it is what makes the difference between the two
+# chemistries legible in the first place: without it both estimates would start correct and
+# there would be nothing to correct.
+initial_soc_error = 0.03
+rest_current_threshold_a = 0.05
+rest_time_for_ocv_s = 600.0
+ocv_correction_gain = 0.1
+# The gate. Below this slope an OCV reading is noise amplification and the estimator
+# declines. This cell's plateau sits under it, which is the whole point of this arm.
+min_ocv_slope_v_per_soc = 0.15
+
+[pack.bms.protection]
+v_hard_margin_v = 0.15
+t_hard_margin_k = 10.0
+
+[pack.bms.estimator.Ekf]
+# THE one section this file adds to its partner. What the filter ASSUMES, not what the
+# sensors do -- the sensor model above is unchanged. Each is a tuning choice, not a
+# property of any cell; provenance: placeholder, chosen by hand for this lesson, not fitted.
+#   current_sigma_a   -- 0.05 A, two and a half times the sensor's real 0.01 A of noise,
+#                        because the filter has no state for the 0.02 A offset and has to
+#                        cover it somehow
+#   voltage_sigma_v   -- 10 mV. The voltage sensors are exact, so this is the filter's
+#                        allowance for its own model being wrong: the loop it does not
+#                        model, the resistance it may have wrong
+#   initial_soc_sigma -- 5 points: it knows it booted unsure, not how unsure it should be
+current_sigma_a = 0.05
+voltage_sigma_v = 0.010
+initial_soc_sigma = 0.05

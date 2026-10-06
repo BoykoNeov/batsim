@@ -530,7 +530,25 @@ use crate::{Demand, Env, Telemetry};
 /// closes the boxed state, so a v22 `Dfn` cell read at v23 takes its `capacity_factor` as its
 /// deficit. Measured in `snapshot_version.rs::a_v22_shaped_dfn_state_misparses_at_v23`.
 /// `sim_server::API_VERSION` and `sim-wasm`'s constant stay put, for v22's reason.
-pub const SNAPSHOT_VERSION: u32 = 23;
+///
+/// v24 (a model-based estimator): [`crate::bms::BmsConfig`] gains `estimator`, an enum
+/// whose default is today's coulomb counter, and [`Bms`] gains the filter's state, an
+/// `Option` that is `None` under that default. See `docs/plans/model-based-estimator.md`.
+///
+/// **Structural for every pack with a BMS, semantic for none written before it.** A v23
+/// pack ran the coulomb counter, which is what both new fields read as, so nothing a v23
+/// blob meant has changed — but `bincode` is positional, and a v23 blob with
+/// `bms: Some(..)` is a variant tag and an option tag short. What it then does is
+/// **value-dependent**, which is why the version field has to refuse it: the reader takes
+/// the low four bytes of the estimate after the config as the estimator's variant, so an
+/// estimate of 0.6 is an unknown variant and fails loudly, and an estimate of exactly 0.5 —
+/// whose low four bytes are zero — reads as the coulomb counter and parses on, four bytes
+/// out of step. Measured at the field in
+/// `snapshot_version.rs::a_v23_shaped_bms_config_parses_or_not_by_its_next_value`. A pack
+/// without a BMS is byte-for-byte unchanged, so for it the version field is all there is.
+/// `sim_server::API_VERSION` and `sim-wasm`'s constant stay put: no call signature changes
+/// and no telemetry field moves.
+pub const SNAPSHOT_VERSION: u32 = 24;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -2145,7 +2163,7 @@ impl Pack {
         if sensor_tick {
             if let Some(bms) = &mut self.bms {
                 let pack_nominal_ah = cap_ah * f64::from(self.parallel);
-                bms.update_estimate(&self.chem, dt, pack_nominal_ah);
+                bms.update_estimate(&self.chem, dt, pack_nominal_ah, self.parallel);
             }
         }
 
@@ -4140,6 +4158,47 @@ fn validate_bms(bms: &BmsConfig, series: u16, parallel: u16) -> Result<(), Build
             reason: "must be finite",
             value: bms.initial_soc_error,
         });
+    }
+    if let crate::bms::EstimatorConfig::Ekf(ekf) = bms.estimator {
+        let checks: [(&'static str, f64, &'static str, bool); 3] = [
+            (
+                "estimator.Ekf.current_sigma_a",
+                ekf.current_sigma_a,
+                "must be finite and >= 0",
+                ekf.current_sigma_a.is_finite() && ekf.current_sigma_a >= 0.0,
+            ),
+            (
+                "estimator.Ekf.voltage_sigma_v",
+                ekf.voltage_sigma_v,
+                "must be finite and > 0",
+                ekf.voltage_sigma_v.is_finite() && ekf.voltage_sigma_v > 0.0,
+            ),
+            (
+                "estimator.Ekf.initial_soc_sigma",
+                ekf.initial_soc_sigma,
+                "must be finite and >= 0",
+                ekf.initial_soc_sigma.is_finite() && ekf.initial_soc_sigma >= 0.0,
+            ),
+        ];
+        for (field, value, reason, ok) in checks {
+            if !ok {
+                return Err(BuildError::BadBmsConfig {
+                    field,
+                    reason,
+                    value,
+                });
+            }
+        }
+        // The filter's resistance and OCV tables are read at a temperature, and the
+        // only temperature the BMS may know is a probe's. A fallback would have to be a
+        // guess or a read of ground truth, so the configuration is refused instead.
+        if bms.temp_probes.is_empty() {
+            return Err(BuildError::BadBmsConfig {
+                field: "temp_probes",
+                reason: "must name at least one probe when estimator is Ekf",
+                value: 0.0,
+            });
+        }
     }
     for (index, &(s, p)) in bms.temp_probes.iter().enumerate() {
         if s >= series || p >= parallel {

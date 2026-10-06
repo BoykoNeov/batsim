@@ -115,6 +115,7 @@ fn config() -> PackConfig {
             rest_time_for_ocv_s: 5.0, // short, so corrections actually fire mid-run
             ocv_correction_gain: 0.5,
             min_ocv_slope_v_per_soc: 0.1,
+            estimator: Default::default(),
         }),
         thermal: ThermalConfig::Isothermal,
         series: 2,

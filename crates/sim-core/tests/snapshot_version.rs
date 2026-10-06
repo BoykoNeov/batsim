@@ -302,51 +302,41 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v22-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v23 restore.
+/// A v23-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v24 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in, for the fifth time running.** Read the
-/// module's v23 section: the fixture is an equivalent-circuit pack, and the field v23 adds
-/// lives in the `Dfn` state it does not have, so a v22 build's snapshot of this pack has
-/// exactly these bytes. The sibling [`a_v22_shaped_dfn_state_misparses_at_v23`] answers the
-/// *other* case — a pack whose bytes do change — and its answer is the quiet one, which is
-/// why both exist.
+/// **At this bump the retag is not a stand-in, for the sixth time running — and this time
+/// the reason is the fixture's `bms: None`.** v24's two new fields both live inside the
+/// BMS, which this pack does not have, so a v23 build's snapshot of it has exactly these
+/// bytes. The sibling [`a_v23_shaped_bms_config_parses_or_not_by_its_next_value`] answers
+/// the case whose bytes do change, and its answer depends on a value, which is why both
+/// exist.
 #[test]
-fn the_version_field_is_what_rejects_a_v22_snapshot() {
+fn the_version_field_is_what_rejects_a_v23_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 23,
-        "this test is written against the v22 -> v23 bump specifically. A later bump \
-         needs its own pair rather than this one renumbered: what a stale blob does under \
-         the new layout is a fact about that layout change, and the answer has flipped \
-         across this file's history — v15 'it does not parse at all', v16 'it parses, \
-         wrongly and silently', v17 and v18 back to 'it does not parse at all', and v19 \
-         to v23 'for this fixture it parses fine and the version field is all there \
-         is'. A renumbered assertion cannot inherit any of them, and a run of five \
-         identical answers is not a rule — it is five layout changes that happened not \
-         to touch this fixture, which is a fact about the fixture."
+        SNAPSHOT_VERSION, 24,
+        "this test is written against the v23 -> v24 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v23 'for this fixture it parses fine and the version field is all there is',          and v24 the same for this fixture and 'it depends on the next value' for a pack          with a BMS. A renumbered assertion cannot inherit any of them."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 22);
+    let stale = retagged(&bytes, 23);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 22,
+            found: 23,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v22-tagged snapshot must be refused"
+        "a v23-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
     let restored = Pack::restore(&current).expect(
-        "the identical bytes at the current version must restore — if this fails, the \
-         rejection above was deserialization rather than the version check, and the \
-         bump is still untested",
+        "the identical bytes at the current version must restore — if this fails, the          rejection above was deserialization rather than the version check, and the          bump is still untested",
     );
     assert_eq!(restored.series(), 2);
     assert_eq!(restored.parallel(), 2);
@@ -880,4 +870,46 @@ fn a_v22_shaped_dfn_state_misparses_at_v23() {
         "the cell's capacity factor has been read as its deficit — the hazard the version \
          check stands in front of"
     );
+}
+
+/// A v23 `BmsConfig` is a variant tag short at v24, and whether that fails depends on the
+/// value that follows it in the snapshot.
+///
+/// In a `Bms` the config is followed by the estimate, an `f64`. bincode writes an enum's
+/// variant as a `u32`, so the v24 reader takes the estimate's low four bytes as the
+/// estimator: for 0.6 those are `0x3333_3333`, an unknown variant, and the read fails; for
+/// exactly 0.5 they are zero, which is `CoulombCount`, and the read goes on four bytes out
+/// of step. Loud or quiet by the state of charge the pack was saved at — which is why the
+/// version field is what has to refuse a v23 blob, and why the pair test above cannot
+/// stand for a pack with a BMS. The field, not a snapshot, on its siblings' terms.
+#[test]
+fn a_v23_shaped_bms_config_parses_or_not_by_its_next_value() {
+    use sim_core::{BmsConfig, EstimatorConfig};
+    // A v23 `BmsConfig`: every field up to `min_ocv_slope_v_per_soc`, in order. `None`
+    // for the two optional policies, then the scalars and the probe list.
+    let v23_then = |next: f64| {
+        bincode::serialize(&(
+            None::<()>,
+            None::<()>,
+            0.02_f64,
+            0.01_f64,
+            vec![(0_u16, 0_u16)],
+            0.03_f64,
+            0.05_f64,
+            600.0_f64,
+            0.1_f64,
+            0.15_f64,
+            next, // the `Bms`'s estimate, which follows its config
+        ))
+        .expect("a v23-shaped config serializes")
+    };
+    assert!(
+        bincode::deserialize::<BmsConfig>(&v23_then(0.6)).is_err(),
+        "the v24 note says an estimate of 0.6 makes a v23 config fail loudly, and it parsed"
+    );
+    let quiet: BmsConfig = bincode::deserialize(&v23_then(0.5)).expect(
+        "the v24 note says an estimate of 0.5 makes a v23 config parse quietly, and it did          not — correct the note rather than this test",
+    );
+    assert_eq!(quiet.estimator, EstimatorConfig::CoulombCount);
+    assert_eq!(quiet.min_ocv_slope_v_per_soc, 0.15);
 }

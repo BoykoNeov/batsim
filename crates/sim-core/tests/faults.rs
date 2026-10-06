@@ -136,6 +136,7 @@ fn protecting_bms() -> BmsConfig {
         rest_time_for_ocv_s: 1.0e9,
         ocv_correction_gain: 0.0,
         min_ocv_slope_v_per_soc: 0.0,
+        estimator: Default::default(),
     }
 }
 

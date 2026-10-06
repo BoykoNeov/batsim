@@ -129,6 +129,7 @@ fn bms(v_band: f64, t_band: f64) -> BmsConfig {
         rest_time_for_ocv_s: 1.0e9, // never correct; this file is not about the estimator
         ocv_correction_gain: 0.0,
         min_ocv_slope_v_per_soc: 0.5,
+        estimator: Default::default(),
     }
 }
 

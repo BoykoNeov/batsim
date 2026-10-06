@@ -388,6 +388,7 @@ proptest! {
             rest_time_for_ocv_s: 1.0e9,
             ocv_correction_gain: 0.0,
             min_ocv_slope_v_per_soc: 0.0,
+            estimator: Default::default(),
         });
         let mut pack = Pack::new(&config, flat_chem()).unwrap();
 
@@ -452,6 +453,7 @@ proptest! {
             rest_time_for_ocv_s: 60.0,
             ocv_correction_gain: 0.5,
             min_ocv_slope_v_per_soc: 0.05,
+            estimator: Default::default(),
         });
         let mut pack = Pack::new(&config, chem()).unwrap();
         for &i in &currents {
@@ -495,6 +497,7 @@ proptest! {
             rest_time_for_ocv_s: 600.0,
             ocv_correction_gain: 1.0,
             min_ocv_slope_v_per_soc: 0.5,
+            estimator: Default::default(),
         });
         let mut pack = Pack::new(&config, chem()).unwrap();
         let pack_ah = CAP_AH * f64::from(parallel);
@@ -991,6 +994,7 @@ proptest! {
             rest_time_for_ocv_s: 600.0,
             ocv_correction_gain: 0.5,
             min_ocv_slope_v_per_soc: 0.05,
+            estimator: Default::default(),
         });
         let mut original = Pack::new(&config, aging_chem()).unwrap();
         original.schedule_fault(0.0, Fault::SoftInternalShort { s: 0, p: 0, ohms: short_ohms }).unwrap();

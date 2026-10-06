@@ -62,6 +62,7 @@ fn bms() -> BmsConfig {
         // Rejects the entire LFP plateau (steepest segment there ≈ 0.47 V) and
         // accepts the end knees (> 4 V). See the module docs.
         min_ocv_slope_v_per_soc: 0.5,
+        estimator: Default::default(),
     }
 }
 

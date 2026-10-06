@@ -303,7 +303,11 @@ and double as the scenario file format.
 - **SOC estimator**: coulomb counting on the (imperfect) current sensor, with
   drift; OCV-based correction only when the pack has rested long enough for a
   valid OCV read. On LFP the flat curve makes correction weak mid-range — this
-  is intended and should be visible.
+  is intended and should be visible. Opt-in alternative (`estimator = Ekf`): an
+  extended Kalman filter over an ECM built from the chemistry's **tables** and read at
+  the **probe** temperature, correcting on every frame; whatever the engine models that
+  the tables do not (hysteresis, aging, a weak cell) reaches it as model error, divided
+  by the curve's slope. See `docs/plans/model-based-estimator.md`.
 - **Protection**: over/under-voltage per group, over-current (separate charge and
   discharge limits), over/under-temperature, charge inhibit below `t_charge_min`.
   Graduated response: derate (clamp demand) → open contactor. All thresholds from

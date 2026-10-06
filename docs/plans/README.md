@@ -72,6 +72,7 @@ The pack solve, the demand window, and the BMS comparators.
 | --- | --- |
 | [`balancing-chatter.md`](balancing-chatter.md) | Balancing chatter: the last bandless comparator, and a band sized by a different rule |
 | [`cc-cv.md`](cc-cv.md) | CC-CV: the other half of the demand story, and the leg LFP does not have |
+| [`model-based-estimator.md`](model-based-estimator.md) | A Kalman-filter SOC estimator (H7): fast where the model is right, confidently wrong on LFP where it is not |
 | [`operating-point-window.md`](operating-point-window.md) | The client naming a current did not know where it was going either |
 | [`power-operating-point.md`](power-operating-point.md) | A power demand never says where it landed |
 | [`protection-chatter.md`](protection-chatter.md) | Protection chatter: a comparator that oscillated, and the band that is not the one you would size |

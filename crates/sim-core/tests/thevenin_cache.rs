@@ -127,6 +127,7 @@ fn config() -> PackConfig {
             rest_time_for_ocv_s: 5.0,
             ocv_correction_gain: 0.5,
             min_ocv_slope_v_per_soc: 0.1,
+            estimator: Default::default(),
         }),
         thermal: ThermalConfig::Network {
             k_neighbor_w_per_k: 1.0,

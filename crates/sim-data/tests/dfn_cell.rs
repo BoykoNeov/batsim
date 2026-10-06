@@ -898,6 +898,7 @@ fn a_derate_inside_the_iteration_does_not_chatter() {
             rest_time_for_ocv_s: 300.0,
             ocv_correction_gain: 0.2,
             min_ocv_slope_v_per_soc: 0.05,
+            estimator: Default::default(),
         });
         let mut p = Pack::new(&c, parse_chemistry(LGM50).expect("LG M50 parses")).expect("builds");
         // A power demand, because it is the one whose current is solved off the line and so

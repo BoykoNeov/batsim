@@ -112,6 +112,7 @@ fn bms(balancing: Option<BalancingConfig>) -> BmsConfig {
         rest_time_for_ocv_s: 1.0e9, // effectively never correct: keep this test about balancing
         ocv_correction_gain: 0.0,
         min_ocv_slope_v_per_soc: 0.0,
+        estimator: Default::default(),
     }
 }
 

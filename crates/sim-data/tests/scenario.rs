@@ -115,6 +115,7 @@ fn soft_short_example_matches_a_hand_built_config() {
                 rest_time_for_ocv_s: 600.0,
                 ocv_correction_gain: 0.1,
                 min_ocv_slope_v_per_soc: 0.15,
+                estimator: Default::default(),
             }),
             cell_model: CellModelConfig::Ecm,
         }

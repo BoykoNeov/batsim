@@ -20,7 +20,7 @@ test passes — not when the list of interesting things runs out.
 
 Three cell models behind one API (`Ecm`, `Spm`, `Dfn`), seven chemistries, a thermal
 network, a sensor-limited BMS, four capacity-fade mechanisms with matching resistance
-growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 23,
+growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 24,
 and four clients (server, browser, Godot, an example script). Against grid-converged
 PyBaMM references the SPM tracks to 2–7 mV over a discharge and the DFN to 5.8 mV at 1 C.
 
@@ -223,7 +223,20 @@ claims and two lessons' prose, which is the first time any of the three changed 
 reader sees. What it deliberately did not move is `Telemetry::q_gen_w`; that half stays in
 H10.
 
-### H7. The BMS can only coulomb-count, so it cannot teach what a real one does
+### ~~H7. The BMS can only coulomb-count, so it cannot teach what a real one does~~ — **engine CLOSED 2026-10-06**, lesson open
+
+**Closed in the engine** (`model-based-estimator.md`, v24): `EstimatorConfig::Ekf`, an
+extended Kalman filter over an equivalent-circuit cell built from the chemistry's tables and
+read at the probe temperature, predicting over exactly the interval its current was measured
+over. Four scenario twins (`na_ion_gauge_filter`, `na_ion_gauge_low_filter`,
+`lfp_gauge_filter`, `lfp_gauge_filter_weak_cell`). The measured story is not the one the
+approach below predicted: the filter fixes a boot error on sodium-ion in half a minute and
+then lands where the counter lands, because the hysteresis fools both the same way; on LFP
+with an exact model it corrects, slowly; and on LFP with the cell's resistance 20 % off the
+table it is the **worse** estimator — 15 points low under load, 6.7 low after an hour's
+rest, with a self-reported sigma of 0.065 points. **Still open: the guided-path lesson**,
+which is its own slice under the claims harness. What follows is the entry as written.
+
 
 **Gap.** The estimator is coulomb counting on an imperfect sensor with an OCV correction at
 rest (`bms.rs`). That is enough to show drift and hysteresis bias — and the lessons do —
@@ -510,3 +523,4 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | an `Spm` driven past empty holds impossible lithium on a flat curve, fabricates energy, and blows up in parallel (NaN at 20 A on a scattered 1S3P) | `spm-end-of-step.md` | `porous-reversal.md` (surface-or-bulk reversal with a deficit, per-channel heat, a settle fallback for the split; v22) |
 | over-discharge damage is ECM-only | `reversal-damage.md` | `porous-reversal.md` (the `Spm` at v22, the `Dfn` at v23) |
 | a `Dfn` driven past empty runs to 1e74 A under a short, inf at 20 A, −1.6 of a stoichiometry at 1 C | `dfn-long-step-holds.md` | `porous-reversal.md` (bulk-edge reversal, kinetics-at-empty continuation; v23; the electrolyte limit stays open under H8) |
+| the BMS can only coulomb-count (H7, engine half) | `ROADMAP.md` | `model-based-estimator.md` (`EstimatorConfig::Ekf`, four scenario twins; v24) |

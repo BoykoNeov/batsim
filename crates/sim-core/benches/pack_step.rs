@@ -362,6 +362,7 @@ fn make_full_pack(series: u16, parallel: u16, aging: Option<AgingConfig>) -> Pac
         rest_time_for_ocv_s: 600.0,
         ocv_correction_gain: 0.5,
         min_ocv_slope_v_per_soc: 0.5,
+        estimator: Default::default(),
     };
     Pack::new(
         &pack_config(

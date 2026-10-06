@@ -38,7 +38,9 @@ pub mod spm;
 pub mod thermal;
 
 pub use aging::{Aging, AgingConfig};
-pub use bms::{BalancingConfig, Bms, BmsConfig, ProtectionConfig, SensorFrame};
+pub use bms::{
+    BalancingConfig, Bms, BmsConfig, EkfConfig, EstimatorConfig, ProtectionConfig, SensorFrame,
+};
 pub use chem::{
     AgingParams, ChargeAcceptanceParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams,
     DfnSeparator, DiffusionParams, ElectrodeParams, HysteresisParams, HysteresisWidth, OcpTable,

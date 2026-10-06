@@ -33,8 +33,8 @@ use sim_core::chem::{
     AgingParams, CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };
 use sim_core::{
-    AgingConfig, BalancingConfig, BmsConfig, CellModelConfig, Demand, Env, Pack, PackConfig,
-    ProtectionConfig, Scatter, ThermalConfig,
+    AgingConfig, BalancingConfig, BmsConfig, CellModelConfig, Demand, EkfConfig, Env,
+    EstimatorConfig, Pack, PackConfig, ProtectionConfig, Scatter, ThermalConfig,
 };
 
 // --- the instrument -------------------------------------------------------------
@@ -173,6 +173,7 @@ fn bms() -> BmsConfig {
         rest_time_for_ocv_s: 5.0,
         ocv_correction_gain: 0.5,
         min_ocv_slope_v_per_soc: 0.1,
+        estimator: Default::default(),
     }
 }
 
@@ -241,6 +242,19 @@ fn cases() -> Vec<(&'static str, PackConfig)> {
         sub_clock_period_s: 0.0, // age on every step: the most expensive arm
     });
     out.push(("thermal + BMS + aging", c));
+
+    // The model-based estimator: its state and covariance are fixed-size arrays, and
+    // this is the arm that would catch one turning into a `Vec`.
+    let mut c = base_config();
+    c.thermal = network;
+    let mut b = bms();
+    b.estimator = EstimatorConfig::Ekf(EkfConfig {
+        current_sigma_a: 0.05,
+        voltage_sigma_v: 0.01,
+        initial_soc_sigma: 0.05,
+    });
+    c.bms = Some(b);
+    out.push(("thermal + BMS (EKF estimator)", c));
 
     // The size `CLAUDE.md`'s budget is stated at, so the bytes below are the ones that
     // matter rather than an extrapolation from a toy pack: three of these buffers are

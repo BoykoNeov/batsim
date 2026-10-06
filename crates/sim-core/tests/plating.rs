@@ -636,6 +636,7 @@ fn a_zero_probability_consumes_no_draw() {
         rest_time_for_ocv_s: 1.0e9,
         ocv_correction_gain: 0.0,
         min_ocv_slope_v_per_soc: 1.0e9,
+        estimator: Default::default(),
     };
 
     let noise_stream = |temp_k: f64, hazard: f64| {
@@ -834,6 +835,7 @@ fn charge_inhibit_keeps_a_protected_pack_out_of_plating() {
         rest_time_for_ocv_s: 1.0e9,
         ocv_correction_gain: 0.0,
         min_ocv_slope_v_per_soc: 1.0e9,
+        estimator: Default::default(),
     };
 
     let run = |bms: Option<BmsConfig>| {
