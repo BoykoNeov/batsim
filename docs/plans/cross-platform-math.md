@@ -226,7 +226,10 @@ longer depends on it: with the reuse in, `libm` costs less than the reuse return
    measured — native Windows and wasm, bit for bit, snapshot handoff included; the native
    Godot build is the same route — and that other targets are expected and unmeasured.
 
-**Results.** Workspace suite: 726 passed, 0 failed, nothing re-pinned. `web/pkg` rebuilt
+**Results.** Workspace suite: 726 passed, 0 failed, nothing re-pinned. The Godot exit gate
+(`sim-godot` `godot_gate`, `--ignored`, Godot 4.7 on this machine), which drives the native
+engine through the `BatteryPack` node outside `cargo test`: 2 passed — it compares the node
+with the in-process engine of the same build, so it pins no number a library could move. `web/pkg` rebuilt
 (`WASM_API_VERSION` 8 and `SNAPSHOT_VERSION` 23, both unchanged). Parity: **108 / 108**
 against the rebuilt package — and 108 / 108 against the package built the day before,
 which is the measurement's own claim seen from the other side: the browser's bits never
@@ -243,8 +246,16 @@ moved.
 The exit codes were read from `node` run directly, not through `start /wait`, which hides
 them.
 
-**Cost:** see the four-arm table in the reuse section — reuse + `libm` is 10–16 % under the
-engine before either change.
+**Cost, as shipped.** The step-loop driver built at 5c8bc6a fingerprints identically to
+the reuse + `libm` prototype (`current` `ca3722d6189b1860`, `full` `2e9f8086c5f49d79` over
+three steps), so the free-function routing computes what the timed trait did. Twelve
+alternating rounds against the engine before this note, on a box at 100 % (the pinned
+pair at 199) — yet tight this time, medians within 3 % of minimums:
+
+| case | before (min) | 5c8bc6a (min) | ratio of minimums | median of paired ratios |
+| --- | --- | --- | --- | --- |
+| `current` | 35.58 µs | 30.06 µs | 0.845 | 0.843 |
+| `full` | 41.23 µs | 35.79 µs | 0.868 | 0.859 |
 
 ## Still open
 

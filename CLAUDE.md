@@ -465,8 +465,10 @@ numbers are not.
    reading**: 2026-10-05, after the `R0`-grid change, 35.6–36.1 µs `current` and
    41.9–46.0 µs `full` (thermal + BMS on) on a long-loop instrument; criterion read 46.9
    and 53.3 µs before that change and had no verdict after it on a loaded box. 2026-10-06,
-   after each cell stopped recomputing the pack's RC decay: 30.2 µs `current` and 36.4 µs
-   `full`, best of twelve rounds on a loaded box (`docs/plans/cross-platform-math.md`).
+   after each cell stopped recomputing the pack's RC decay and the transcendentals moved to
+   `libm` (5c8bc6a): 30.1 µs `current` and 35.8 µs `full`, best of twelve alternating
+   rounds against 35.6 / 41.2 µs for the engine before both, on a saturated box
+   (`docs/plans/cross-platform-math.md`).
    Current status, and how to measure a change on this machine:
    `docs/plans/ocv-segment-hint.md` and `docs/plans/pack-step-perf.md`.
 
