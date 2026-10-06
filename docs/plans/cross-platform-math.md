@@ -1,15 +1,13 @@
 # Do the browser and the server compute the same trajectory? — H5, measured
 
-> **Status: measured 2026-10-06; nothing built.** They do not, by the last bit, on 33 of
-> 54 runs — but every field of every frame and snapshot agrees to about 10⁻¹⁴ of its
-> value, every discrete field (RNG state, counters, queues, flags) agrees exactly, and all
-> 184 flag transitions land on the same frame. Routing the engine's nine transcendental
-> functions through the pure-Rust `libm` crate makes them agree on all 54, makes a
-> snapshot taken in either one continue bit for bit in the other, and moves **no** test.
-> Its cost to the native step read 5–6 % on a fully loaded box; a quiet-box reading is
-> owed before anyone weighs it against the budget. Whether to
-> take it is the owner's decision: it adds a dependency to `sim-core`, whose list
-> `CLAUDE.md` closes, and it changes a sentence of the design contract. ROADMAP H5.
+> **Status: landed 2026-10-06.** Measured first: the native and wasm builds parted in the
+> last bit on 33 of 54 runs — every field within about 10⁻¹⁴ of its value, every discrete
+> field (RNG state, counters, queues, flags) identical, all 184 flag transitions on the same
+> frame. The owner chose "the reuse first, then `libm`": each ECM cell now takes the pack's
+> RC decay instead of recomputing it (13–15 % off the step, bit for bit), and every
+> transcendental in `sim-core` goes through `crate::math` on the `libm` crate. The native
+> build moved onto the wasm build's bits; the browser did not move; no test moved; no
+> snapshot bump. `node tools/wasm-parity/parity.mjs` checks it: 108 of 108. ROADMAP H5.
 
 ## What was believed
 
@@ -195,36 +193,64 @@ this goes wrong: an aged pack whose cells' RC pairs stop growing):
 | `full` | 41.86 µs | 36.39 µs | 42.41 µs | 37.45 µs |
 
 The reuse takes 13–15 % off the step; `libm` on top of it gives back 0–3 %; the pair
-together is 11–16 % under HEAD. Fingerprints: reuse = HEAD, reuse + `libm` = `libm`. A
+together is 10–16 % under HEAD. Fingerprints: reuse = HEAD, reuse + `libm` = `libm`. A
 quiet-box reading of the absolute figures is still owed, but the sign of the decision no
 longer depends on it: with the reuse in, `libm` costs less than the reuse returned.
 
-## What a build would be
+## What was built — `libm`, landed 2026-10-06
 
-If the owner takes it:
+1. **`libm` as the fourth runtime dependency of `sim-core`**, through the workspace table
+   and pinned exactly (`=0.2.16`): it is `no_std` with no dependencies of its own, and a
+   version bump is a numerical change. `CLAUDE.md`'s dependency line says so.
+2. **`src/math.rs`**: nine free functions (`exp`, `exp_m1`, `ln`, `powf`, `sinh`, `cosh`,
+   `asinh`, `sin`, `cos`), and the 24 calls rewritten to them — including the
+   `debug_assert` in `rc_update_decayed`, which would otherwise compare a `libm` decay
+   against a `std` one. `sqrt` and `powi` stay on `f64` and the module says why.
+3. **A lint**: `crates/sim-core/clippy.toml` lists the nine methods, and the nine more that
+   would bypass the module if anyone reached for them (`tanh`, `log10`, …), under
+   `disallowed-methods`. It is confirmed to fire on a primitive method in this clippy:
+   on its first run it stopped on the `std` calls in the crate's own tests. Those tests compute their
+   expected values with `std` on purpose — an independent reference, compared within a
+   tolerance — so the eleven files allow the lint at the top, with that reason.
+4. **No pin test for "`libm` equals wasm's `std`".** The plan above wanted one; it guards a
+   link the build removes. With the engine calling `libm` explicitly, both targets compile
+   the same `libm` source, and what wasm's own `std` vendors no longer enters.
+5. **A parity tool, not a `cargo test`**: `cargo test` cannot run the wasm build, and
+   committed trajectory hashes would add no parity coverage while every physics slice
+   re-pinned them. `crates/sim-wasm/examples/wasm_parity.rs` runs the 54 runs natively
+   (frames thinned to about fifty a call; the snapshot after every phase carries the whole
+   state), and `tools/wasm-parity/parity.mjs` replays them through the built `web/pkg` and
+   compares every result string, then restores each run's first native snapshot into a
+   fresh wasm engine and compares the rest. It builds the example itself; one command.
+6. `CLAUDE.md`'s determinism rules and the README's determinism section now say what was
+   measured — native Windows and wasm, bit for bit, snapshot handoff included; the native
+   Godot build is the same route — and that other targets are expected and unmeasured.
 
-1. `libm` as a fourth runtime dependency of `sim-core` (it is `no_std`, has no
-   dependencies of its own, and is what the wasm target already runs), the `CLAUDE.md`
-   dependency line amended to say so.
-2. A `math` module and the 24 calls, as in the scratch copy. Free functions or the
-   trait — the trait keeps each call site's shape.
-3. A lint so a bare `.exp()` cannot creep back: `clippy::disallowed_methods` in
-   `clippy.toml` naming the nine `f64` methods for `sim-core`.
-4. **A test that pins the assumption**: the function sweep above, as a wasm-vs-native check
-   that runs when someone rebuilds `web/pkg`, or at least a committed table of
-   `libm` outputs on a few hundred inputs that the native test compares against — if a
-   future toolchain's vendored copy drifts from the crate, this is what notices.
-5. A trajectory test: a handful of the 54 runs' final snapshots committed as hashes, so
-   the trajectory instrument the Phase 6 note declined can come in.
-6. `CLAUDE.md`'s determinism section rewritten carefully: bit-exact between the native
-   Windows build and the wasm build, *measured*; still not promised against a Linux
-   server's glibc or any other target, which this did not measure — though with `libm`
-   doing all the transcendentals, the remaining differences would be the compiler's, not
-   the library's.
+**Results.** Workspace suite: 726 passed, 0 failed, nothing re-pinned. `web/pkg` rebuilt
+(`WASM_API_VERSION` 8 and `SNAPSHOT_VERSION` 23, both unchanged). Parity: **108 / 108**
+against the rebuilt package — and 108 / 108 against the package built the day before,
+which is the measurement's own claim seen from the other side: the browser's bits never
+moved.
 
-Not needed: a snapshot bump (the layout does not change), re-pinned goldens (none moved).
+**Perturbation:**
+
+| break | what catches it |
+| --- | --- |
+| `runaway.rs`: `math::exp(exponent)` put back as `exponent.exp()` | clippy: "use of a disallowed method `f64::exp`" (and the now-unused import) |
+| `dfn.rs`: one `math::sinh` put back as `.sinh()` (bypassing the lint, as an `allow` would) | `parity.mjs`: 106 / 108, exit code 1 — `cc_discharge_3c_dfn__cycle` from its first call, and its handoff; the only run that reaches that site |
+| (clean tree) | `parity.mjs`: 108 / 108, exit code 0 |
+
+The exit codes were read from `node` run directly, not through `start /wait`, which hides
+them.
+
+**Cost:** see the four-arm table in the reuse section — reuse + `libm` is 10–16 % under the
+engine before either change.
 
 ## Still open
 
-* ~~The owner's decision~~ — taken 2026-10-06: the reuse first (landed above), then `libm`.
-* A Linux native build was not measured.
+* A Linux or macOS native build was not measured. The transcendentals no longer depend on
+  the platform, so what is left to differ is the compiler's code generation; expected to
+  agree, not claimed.
+* The out-of-tree trajectory instrument (`ANCHORS.md`) could now come in, as a parity
+  check like this one rather than a committed baseline.
+* A quiet-box reading of the step's absolute cost is still owed (ROADMAP H9).

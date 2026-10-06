@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use crate::chem::{ChemistryParams, DfnParams, HysteresisParams, OcvTable, R0Table, SpmParams};
 use crate::dfn::{self, DfnState};
 use crate::flags::EventFlags;
+use crate::math;
 use crate::spm::{self, SpmState};
 use crate::Demand;
 
@@ -1194,7 +1195,7 @@ pub fn rc_step_mean_excess_v(
 pub fn rc_update(v_rc: f64, i: f64, r_ohms: f64, c_farad: f64, dt: f64) -> f64 {
     let tau = r_ohms * c_farad;
     if tau > 0.0 && dt > 0.0 {
-        rc_blend(v_rc, i, r_ohms, (-dt / tau).exp())
+        rc_blend(v_rc, i, r_ohms, math::exp(-dt / tau))
     } else {
         // Non-positive tau or dt (or NaN): no well-defined exponential update.
         v_rc
@@ -1224,7 +1225,7 @@ pub(crate) fn rc_update_decayed(
     if tau > 0.0 && dt > 0.0 {
         debug_assert_eq!(
             decay.to_bits(),
-            (-dt / tau).exp().to_bits(),
+            math::exp(-dt / tau).to_bits(),
             "RC decay supplied for a different tau or dt"
         );
         rc_blend(v_rc, i, r_ohms, decay)
@@ -1258,7 +1259,7 @@ fn rc_blend(v_rc: f64, i: f64, r_ohms: f64, decay: f64) -> f64 {
 pub fn diffusion_update(depletion: f64, i: f64, capacity_ah: f64, tau_s: f64, dt: f64) -> f64 {
     if tau_s > 0.0 && dt > 0.0 && capacity_ah > 0.0 {
         let steady = i / capacity_ah;
-        let decay = (-dt / tau_s).exp();
+        let decay = math::exp(-dt / tau_s);
         steady + (depletion - steady) * decay
     } else {
         // Non-positive tau, dt or capacity (or NaN): no well-defined exponential update.
@@ -1302,7 +1303,7 @@ pub fn diffusion_overpotential_v(params: &crate::DiffusionParams, depletion: f64
     if x.is_nan() || x >= 1.0 {
         return params.max_overpotential_v;
     }
-    let raw = -params.scale_v * (1.0 - x).ln();
+    let raw = -params.scale_v * math::ln(1.0 - x);
     let max = params.max_overpotential_v;
     if raw > max {
         max
@@ -1351,7 +1352,7 @@ pub fn hysteresis_update(h: f64, i: f64, capacity_ah: f64, gamma: f64, dt: f64) 
     if dz.is_nan() || dz <= 0.0 || gamma.is_nan() || gamma <= 0.0 {
         return h;
     }
-    let decay = (-gamma * dz).exp();
+    let decay = math::exp(-gamma * dz);
     // `i` is non-zero here (`dz > 0` proves it), so this is a real sign and not a
     // stand-in for one. Discharge drives the cell to the lower branch of the loop.
     let target = if i > 0.0 { -1.0 } else { 1.0 };
@@ -1569,7 +1570,7 @@ pub fn coulomb_step_tapered(
     let x_start = if t_linear > 0.0 { soc_onset } else { x0 };
     let u0 = 1.0 - x_start;
     let k = j / (1.0 - soc_onset);
-    let u1 = u0 * (-k * tau).exp();
+    let u1 = u0 * math::exp(-k * tau);
     let x1 = 1.0 - u1;
     // Booked in amp-seconds directly rather than as a capacity fraction scaled back up,
     // so that a cell storing nothing reports exactly the current it was offered - `−i·dt`
@@ -1700,7 +1701,7 @@ pub(crate) fn rc_decays(
     for (slot, pair) in d.iter_mut().zip(chem.rc.iter()) {
         let tau = pair.r_ohms * soh_resistance * pair.c_farad;
         if tau > 0.0 && dt > 0.0 {
-            *slot = (-dt / tau).exp();
+            *slot = math::exp(-dt / tau);
         }
     }
     d

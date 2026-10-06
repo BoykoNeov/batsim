@@ -91,6 +91,7 @@ use serde::{Deserialize, Serialize};
 use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
 use crate::chem::{DfnElectrode, DfnParams, ElectrodeParams, PowerTerm, ReversalParams, SpmParams};
 use crate::flags::EventFlags;
+use crate::math;
 use crate::spm::{
     c_surface, diffuse, geometric_capacity_ah, mean_concentration, ocp_lookup, ocp_slope,
     window_fraction_neg, window_fraction_pos, Geometry, FARADAY_C_PER_MOL,
@@ -623,7 +624,7 @@ fn arrhenius(ea_j_per_mol: f64, t_ref_k: f64, temp_k: f64) -> f64 {
     if ea_j_per_mol == 0.0 {
         return 1.0;
     }
-    (ea_j_per_mol / GAS_CONSTANT_J_PER_MOL_K * (1.0 / t_ref_k - 1.0 / temp_k)).exp()
+    math::exp(ea_j_per_mol / GAS_CONSTANT_J_PER_MOL_K * (1.0 / t_ref_k - 1.0 / temp_k))
 }
 
 /// `x^p`, with the exponents the shipped fits actually use evaluated in **pure IEEE-754
@@ -655,7 +656,7 @@ fn powx(x: f64, p: f64) -> f64 {
     } else if p == 1.5 {
         x * x.sqrt()
     } else {
-        x.powf(p)
+        math::powf(x, p)
     }
 }
 
@@ -932,7 +933,7 @@ impl<'a> System<'a> {
             let ie = |a: usize| {
                 let b = a + 1;
                 -self.face(tr[a].k, tr[b].k, a) * (phie(b) - phie(a))
-                    + self.face(tr[a].kd, tr[b].kd, a) * (tr[b].ce.ln() - tr[a].ce.ln())
+                    + self.face(tr[a].kd, tr[b].kd, a) * (math::ln(tr[b].ce) - math::ln(tr[a].ce))
             };
             let ie_l = if i == 0 { 0.0 } else { ie(i - 1) };
             let ie_r = if i == n - 1 { 0.0 } else { ie(i) };
@@ -974,7 +975,7 @@ impl<'a> System<'a> {
             r[NVAR * i + PHIS] = (is_r - is_l) + g.a_s[i] * jr(i) * g.h[i];
 
             let k = self.kinetics(u, &tr[i], i);
-            r[NVAR * i + JJ] = jr(i) - 2.0 * k.i0 * k.arg.sinh();
+            r[NVAR * i + JJ] = jr(i) - 2.0 * k.i0 * math::sinh(k.arg);
         }
     }
 
@@ -1032,7 +1033,7 @@ impl<'a> System<'a> {
                 let kdf = self.face(tr[a].kd, tr[b].kd, a);
                 let (dkd_lo, dkd_hi) = self.face_sens(kdf, tr[a].kd, tr[b].kd, a);
                 let dphi = phie(b) - phie(a);
-                let dln = tr[b].ce.ln() - tr[a].ce.ln();
+                let dln = math::ln(tr[b].ce) - math::ln(tr[a].ce);
                 band.add(row_pe, NVAR * a + PHIE, sign * kf);
                 band.add(row_pe, NVAR * b + PHIE, -sign * kf);
                 band.add(
@@ -1084,8 +1085,8 @@ impl<'a> System<'a> {
             }
 
             let k = self.kinetics(u, &tr[i], i);
-            let sh = k.arg.sinh();
-            let ch = k.arg.cosh();
+            let sh = math::sinh(k.arg);
+            let ch = math::cosh(k.arg);
             // r_j = j − 2·i0(c_e, c_s(j))·sinh(scale·η(φ_s, φ_e, c_s(j)))
             band.add(row_j, NVAR * i + PHIS, -2.0 * k.i0 * ch * k.scale);
             band.add(row_j, NVAR * i + PHIE, 2.0 * k.i0 * ch * k.scale);

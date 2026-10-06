@@ -14,6 +14,9 @@ rand_chacha = { workspace = true }
 rand_core = { workspace = true }
 bitflags = { workspace = true }
 thiserror = { workspace = true }
+# Every transcendental the engine calls (`src/math.rs`): the same source on every target,
+# so the native and wasm builds agree bit for bit. See docs/plans/cross-platform-math.md.
+libm = { workspace = true }
 
 [dev-dependencies]
 # Byte-exact serde format for the snapshot bit-identical replay test. Dev-only:

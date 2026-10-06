@@ -59,6 +59,10 @@ rand_chacha = { version = "0.3", features = ["serde1"] }
 rand_core = "0.6"
 bitflags = { version = "2", features = ["serde"] }
 thiserror = "2"
+# Pinned EXACTLY, not by caret: sim-core's transcendentals come from here on every target,
+# and the native/wasm bit-for-bit agreement holds because both compile the same version.
+# A bump is a deliberate numerical change. See docs/plans/cross-platform-math.md.
+libm = "=0.2.16"
 
 [profile.release]
 lto = true

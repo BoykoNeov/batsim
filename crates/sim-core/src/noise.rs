@@ -11,6 +11,8 @@
 
 use rand_chacha::ChaCha8Rng;
 
+use crate::math;
+
 /// A uniform `f64` in `[0, 1)` with full 53-bit mantissa resolution.
 ///
 /// Exposed for the plating short roll ([`crate::plating::short_probability`]), which
@@ -34,9 +36,9 @@ pub(crate) fn standard_normal_pair(rng: &mut ChaCha8Rng) -> (f64, f64) {
     // Guard the radius against u1 == 0 (ln(0) = −∞); MIN_POSITIVE keeps it finite.
     let u1 = next_unit(rng).max(f64::MIN_POSITIVE);
     let u2 = next_unit(rng);
-    let mag = (-2.0 * u1.ln()).sqrt();
+    let mag = (-2.0 * math::ln(u1)).sqrt();
     let angle = core::f64::consts::TAU * u2;
-    (mag * angle.cos(), mag * angle.sin())
+    (mag * math::cos(angle), mag * math::sin(angle))
 }
 
 /// One standard normal, discarding Box–Muller's second value.

@@ -82,6 +82,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
 use crate::chem::SafetyParams;
+use crate::math;
 
 /// True iff `x` is strictly positive. NaN yields `false`, so every predicate below
 /// answers "no" for a cell that has left the physical domain rather than crediting it
@@ -170,7 +171,7 @@ pub fn reaction_power(params: &SafetyParams, temp_k: f64, energy_remaining_j: f6
     let alpha = (energy_remaining_j / params.runaway_energy_j).min(1.0);
     let exponent = -(params.runaway_ea_j_per_mol / GAS_CONSTANT_J_PER_MOL_K)
         * (1.0 / temp_k - 1.0 / params.t_onset_k);
-    p_onset * alpha * exponent.exp()
+    p_onset * alpha * math::exp(exponent)
 }
 
 /// Slope `∂Q_rxn/∂T` \[W/K\] of the reaction term at `temp_k`, holding the reactant

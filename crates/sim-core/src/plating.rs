@@ -74,6 +74,7 @@
 //!   the integral, and a cell that stopped plating simply stopped adding to it.
 
 use crate::chem::SafetyParams;
+use crate::math;
 
 /// True iff `x` is strictly positive. NaN yields `false`, so `!is_positive(x)` rejects
 /// NaN as well as non-positive values (and reads clear of clippy's negated-comparison
@@ -182,5 +183,5 @@ pub fn short_probability(params: &SafetyParams, ah_plating: f64) -> f64 {
     if !is_positive(lambda) || !is_positive(ah_plating) {
         return 0.0;
     }
-    -(-lambda * ah_plating).exp_m1()
+    -math::exp_m1(-lambda * ah_plating)
 }

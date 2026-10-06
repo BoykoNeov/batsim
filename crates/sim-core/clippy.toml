@@ -1,0 +1,23 @@
+# The engine computes every transcendental through `crate::math` (libm), never through the
+# platform's maths library, so the native and wasm builds agree bit for bit. These are the
+# std methods that would bypass it. See src/math.rs and docs/plans/cross-platform-math.md.
+disallowed-methods = [
+    { path = "f64::exp", reason = "use crate::math::exp — platform libm differs from wasm's" },
+    { path = "f64::exp_m1", reason = "use crate::math::exp_m1 — platform libm differs from wasm's" },
+    { path = "f64::ln", reason = "use crate::math::ln — platform libm differs from wasm's" },
+    { path = "f64::powf", reason = "use crate::math::powf — platform libm differs from wasm's" },
+    { path = "f64::sinh", reason = "use crate::math::sinh — platform libm differs from wasm's" },
+    { path = "f64::cosh", reason = "use crate::math::cosh — platform libm differs from wasm's" },
+    { path = "f64::asinh", reason = "use crate::math::asinh — platform libm differs from wasm's" },
+    { path = "f64::sin", reason = "use crate::math::sin — platform libm differs from wasm's" },
+    { path = "f64::cos", reason = "use crate::math::cos — platform libm differs from wasm's" },
+    { path = "f64::tan", reason = "add it to crate::math first" },
+    { path = "f64::tanh", reason = "add it to crate::math first" },
+    { path = "f64::log10", reason = "add it to crate::math first" },
+    { path = "f64::log2", reason = "add it to crate::math first" },
+    { path = "f64::ln_1p", reason = "add it to crate::math first" },
+    { path = "f64::cbrt", reason = "add it to crate::math first" },
+    { path = "f64::hypot", reason = "add it to crate::math first" },
+    { path = "f64::atan2", reason = "add it to crate::math first" },
+    { path = "f64::exp2", reason = "add it to crate::math first" },
+]

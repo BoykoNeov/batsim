@@ -14,6 +14,11 @@
 //!   (b) a single linear OCV segment additionally validates interpolation.
 //! A dt-invariance check confirms the exact update is stable/consistent at any dt.
 
+// This test computes its expected values with `std`'s own transcendentals on purpose:
+// a reference independent of the engine's `crate::math` (libm), compared within a
+// tolerance. The engine itself may not call them; see crates/sim-core/clippy.toml.
+#![allow(clippy::disallowed_methods)]
+
 use sim_core::chem::{
     CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
 };

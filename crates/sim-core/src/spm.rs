@@ -45,6 +45,7 @@ use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
 use crate::chem::{ElectrodeParams, OcpTable, ReversalParams, SpmParams};
 use crate::ecm::interp1;
 use crate::flags::EventFlags;
+use crate::math;
 
 /// Faraday constant \[C/mol\].
 ///
@@ -224,7 +225,7 @@ fn arrhenius(ea_j_per_mol: f64, t_ref_k: f64, temp_k: f64) -> f64 {
     if ea_j_per_mol == 0.0 {
         return 1.0;
     }
-    (ea_j_per_mol / GAS_CONSTANT_J_PER_MOL_K * (1.0 / t_ref_k - 1.0 / temp_k)).exp()
+    math::exp(ea_j_per_mol / GAS_CONSTANT_J_PER_MOL_K * (1.0 / t_ref_k - 1.0 / temp_k))
 }
 
 /// One electrode, resolved at this cell's temperature and health.
@@ -459,7 +460,7 @@ fn overpotential(side: &Side<'_>, temp_k: f64, c_e: f64, c_s: f64, i_s: f64) -> 
     let i_0 = side.m_ref * (c_e * c_s * (c_max - c_s)).sqrt();
     let prefactor =
         GAS_CONSTANT_J_PER_MOL_K * temp_k / (side.p.charge_transfer_alpha * FARADAY_C_PER_MOL);
-    prefactor * (i_s / (2.0 * i_0)).asinh()
+    prefactor * math::asinh(i_s / (2.0 * i_0))
 }
 
 /// One electrode's contribution to the terminal voltage \[V\]: its open-circuit

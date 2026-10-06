@@ -29,6 +29,7 @@ pub mod dfn;
 pub mod ecm;
 pub mod faults;
 pub mod flags;
+mod math;
 mod noise;
 pub mod pack;
 pub mod plating;

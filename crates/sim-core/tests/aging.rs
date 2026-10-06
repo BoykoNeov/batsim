@@ -13,6 +13,11 @@
 //! compares bits, so any test here that ages a pack in a debug build is checking
 //! that the update is correctly sequenced *before* the pass that fills the memo.
 
+// This test computes its expected values with `std`'s own transcendentals on purpose:
+// a reference independent of the engine's `crate::math` (libm), compared within a
+// tolerance. The engine itself may not call them; see crates/sim-core/clippy.toml.
+#![allow(clippy::disallowed_methods)]
+
 use sim_core::aging::{calendar_increment, calendar_rate, cycle_increment, soc_stress};
 use sim_core::chem::{
     AgingParams, CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,

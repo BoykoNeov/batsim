@@ -425,8 +425,16 @@ numbers are not.
   serialized inside the snapshot. Never `thread_rng()`.
 - No reading of wall-clock time, environment variables, or files in `sim-core`.
 - No fast-math flags; plain IEEE `f64` ops. Same-binary determinism is
-  guaranteed; cross-platform bit-exactness is *not* promised (libm differences)
-  — do not claim it in docs.
+  guaranteed.
+- **Transcendentals only through `crate::math`** (the `libm` crate), never `f64::exp`,
+  `ln`, `powf` and the rest, which come from the platform's maths library and differ
+  between targets. `crates/sim-core/clippy.toml` forbids them in the crate; a test that
+  wants an independent `std` reference allows the lint in that file, with the reason.
+  `sqrt` and `powi` are exempt (correctly rounded; multiplication).
+- With that, the native Windows build and the wasm build are bit-identical — measured,
+  including a snapshot handed between them, by `tools/wasm-parity/parity.mjs`
+  (`docs/plans/cross-platform-math.md`). The native Godot build is the same route. Other
+  targets are expected to agree and are **not** measured — do not claim them in docs.
 - Regression test: run a scenario, snapshot at t/2, restore, continue; the two
   telemetry streams must be bit-identical.
 
@@ -523,7 +531,8 @@ the previous one's tests pass.
   or return `Err` for physical events. Binaries may use `anyhow`.
 - Doc comments on all public items; units in every numeric doc comment.
 - Keep `sim-core` dependencies minimal: `serde`, `rand_chacha` (+`rand_core`),
-  `bitflags`, `thiserror`. TOML parsing lives in `sim-data`, not core.
+  `bitflags`, `thiserror`, and `libm` (pinned exactly — a version bump is a numerical
+  change). TOML parsing lives in `sim-data`, not core.
 - Prefer small pure functions for physics steps so property tests can hit them
   directly.
 
@@ -535,6 +544,7 @@ cargo test -p sim-core                 # fast inner loop
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 python tools/reference/generate.py     # regenerate golden CSVs (needs pybamm; commit results)
+node tools/wasm-parity/parity.mjs      # browser build vs native, bit for bit (build web/pkg first)
 ```
 
 ## Never do

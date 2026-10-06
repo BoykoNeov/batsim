@@ -72,6 +72,7 @@ use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::chem::{AgingParams, ReversalParams, SafetyParams};
+use crate::math;
 use crate::noise::uniform_unit;
 use crate::plating::{plating_fade_increment, short_probability};
 
@@ -516,7 +517,7 @@ pub fn calendar_rate(params: &AgingParams, temp_k: f64, soc: f64) -> f64 {
     if !is_positive(temp_k) || !temp_k.is_finite() {
         return 0.0;
     }
-    let arrhenius = (-params.cal_ea_j_per_mol / (GAS_CONSTANT_J_PER_MOL_K * temp_k)).exp();
+    let arrhenius = math::exp(-params.cal_ea_j_per_mol / (GAS_CONSTANT_J_PER_MOL_K * temp_k));
     params.cal_pre_exp * arrhenius * soc_stress(&params.cal_soc_stress, soc)
 }
 
@@ -569,7 +570,7 @@ pub fn cycle_increment(params: &AgingParams, ah: f64, dod: f64) -> f64 {
     let weight = if exponent == 0.0 {
         1.0
     } else if dod > 0.0 {
-        dod.powf(exponent)
+        math::powf(dod, exponent)
     } else {
         0.0
     };

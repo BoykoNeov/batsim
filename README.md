@@ -525,8 +525,21 @@ snapshot → REST → restore → resume leg in the middle of the timeline. Bits
 `==`, because `-0.0 == 0.0` and `NaN != NaN`, so `==` can both hide a real difference
 and invent one.
 
-Same-binary determinism is the promise. Cross-platform bit-exactness is *not*
-promised — `libm` differs between platforms — and nothing here claims it.
+Same-binary determinism is the promise, and one cross-build promise is measured on top
+of it: **the browser's wasm build and the native Windows build agree bit for bit**,
+including a snapshot taken in one and continued in the other. They did not until
+2026-10-06 — `exp`, `ln` and the rest came from each platform's own maths library and
+differed in the last bit — and now every transcendental in `sim-core` goes through the
+pure-Rust `libm` crate, so both builds compile the same source for them
+(`docs/plans/cross-platform-math.md`). `cargo test` cannot run the wasm build, so the
+check is a tool: after building `web/pkg`,
+
+```bash
+node tools/wasm-parity/parity.mjs   # every scenario, native vs web/pkg, plus snapshot handoffs
+```
+
+Other targets (a Linux server, a macOS Godot export) are expected to agree for the same
+reason and have not been measured; nothing here claims them.
 
 ## License
 

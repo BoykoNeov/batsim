@@ -143,7 +143,7 @@ does not schedule it).
 **Cost.** One slice; a snapshot bump only if the side reaction carries state (it need not).
 The lesson numbers in steps 27–28 move again.
 
-### H5. Cross-platform determinism is not promised, and the browser and the server may already disagree
+### ~~H5. Cross-platform determinism is not promised, and the browser and the server may already disagree~~ — **CLOSED** for native Windows and wasm
 
 **Gap.** `CLAUDE.md` promises same-binary determinism and explicitly not bit-exactness
 across platforms, because `exp`, `ln` and `powf` come from the platform's libm. The
@@ -171,8 +171,18 @@ all 184 flag transitions are identical. The `libm` crate matches wasm's maths bi
 bit, and routing the 24 calls through it makes all 54 runs, and a snapshot handed either
 way, agree exactly. The re-pinning cost above was **wrong**: no test moved. Its cost read
 5–6 % of the native step on a saturated box (a quiet-box reading is owed), probably most
-of it a per-cell RC decay the pack already computes. Not built: it adds a `sim-core`
-dependency and changes a `CLAUDE.md` sentence, which is the owner's call.
+of it a per-cell RC decay the pack already computes.
+
+**Closed 2026-10-06, on the owner's choice of "the reuse first, then `libm`".** Each cell
+now takes the pack's RC decay (13–15 % off the step, bit for bit), and every
+transcendental in `sim-core` goes through `crate::math` on `libm`, pinned exactly and
+enforced by a clippy `disallowed-methods` list. The two builds now compile the same source
+for those functions, so the native build moved to the wasm build's bits — the browser did
+not move at all — and `tools/wasm-parity/parity.mjs` checks every scenario plus a
+snapshot handoff against the built `web/pkg`: 108 of 108. No test moved and no snapshot
+bump. What stays open: other targets (Linux, macOS) are unmeasured, and the trajectory
+instrument the Phase 6 note declined could now come in — as a parity check, not as a
+committed baseline, since `cargo test` cannot see wasm.
 
 ### ~~H6. Thermal integration stops being valid above a 1.7-hour step, which the aging fast-forward exceeds~~ — **CLOSED**
 
@@ -432,12 +442,13 @@ capacity table; (D) the claims re-measurement each of those forces.
 pulse lessons quote numbers from a fitted circuit; every fit's residual is in its
 provenance line. Pinned by a test that greps the shipped files for the label.
 
-### Not phases: H5 (determinism across platforms) and ~~H6 (the thermal integrator)~~
+### Not phases: ~~H5 (determinism across platforms)~~ and ~~H6 (the thermal integrator)~~
 
 Each is one slice with a perturbation table and belongs before Phase 9 rather than after
 it, because both change what every later golden is allowed to promise. **H6 is done**
 (2026-09-08) and in the event it changed no golden at all, because the new integrator is
-gated above every `dt` any golden uses; H5 remains, and its re-pinning cost is real.
+gated above every `dt` any golden uses. **H5 is done** too (2026-10-06), and its
+predicted re-pinning cost did not exist: no test moved.
 
 ---
 
@@ -462,7 +473,9 @@ gated above every `dt` any golden uses; H5 remains, and its re-pinning cost is r
   per theme (chemistries, models, protection, aging), and the claims harness does not care
   which.
 * **The out-of-tree trajectory instrument** (`ANCHORS.md`, not in this repo) is stale by at
-  least one slice and has four documented blind spots. H5 is what would let it come in.
+  least one slice and has four documented blind spots. H5 was what would let it come in, and
+  is closed (2026-10-06): it can come in now, as a native-versus-wasm parity check rather
+  than a committed baseline.
 * **`docs/plans/` has an index now** (`docs/plans/README.md`). Add a row per note.
 
 ---
@@ -487,6 +500,7 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | the step-19 wedge | `surface-vs-bulk.md` | `path-wedge.md` (a renderer crash, not a lesson) |
 | no per-cell current accessor | `phase-6-porous-electrodes.md` | `per-cell-current.md` (`CellView::current_a`, no snapshot bump) |
 | thermal integration invalid above a 1.7-hour step (H6) | `phase-2-thermal-bms.md` | `thermal-implicit-integrator.md` (backward Euler above the gate, no snapshot bump) |
+| the browser's wasm build and the native build part in the last bit on 33 of 54 runs (H5) | `phase-6-porous-electrodes.md` | `cross-platform-math.md` (every transcendental through `libm`; 108/108 by `tools/wasm-parity/`; no snapshot bump, no test moved) |
 | ECM parallel groups and voltage holds diverge past a few hundred seconds of `dt` (11 000 K at an hour) | `end-of-step-split.md` (found measuring H10) | `end-of-step-split.md` (end-of-step sources, no snapshot bump) |
 | `Spm` parallel groups and voltage holds diverge at long steps (10 000 K by the fourth hour) | `end-of-step-split.md` | `spm-end-of-step.md` (end-of-step curve, curve-read heat, no snapshot bump; past-empty physics open under H8) |
 | a `Dfn` books the equilibrium voltage's fall across a long step as heat (3.7 K against 1.06 K at C/5, 55 K against 18 K at 1C) | `spm-end-of-step.md` | `dfn-end-of-step-heat.md` (end-of-step heat off the cell's own solve, no snapshot bump) |
