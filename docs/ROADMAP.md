@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
 Phases 0–8 are complete and each is pinned by a committed test (see the README's status
-table). A hundred and eight design notes under `docs/plans/` record what each slice measured,
+table). A hundred and fifteen design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -275,7 +275,7 @@ where the rest-OCV gate refused to correct.
   engine reached −1.26 of a stoichiometry), a rested over-drained cell reads its floor
   (0.00 V, was 1.10), and the energy ledger closes linearly in `dt` (the old engine's was
   ~16 kJ out at any step length).
-* **An `Spm` has no physics past FULL within a step.** Once a step would drive a particle's
+* **An `Spm` has no physics past FULL within a step — and nor does a `Dfn`.** Once a step would drive a particle's
   surface past `c_max`, the clamp holds it at the edge and `V(i)` goes flat.
   `spm::current_window` states that range in closed form, and since 2026-09-30
   (`spm-pack-window.md`) the `Spm` also declares a range to the pack — that surface range
@@ -283,7 +283,10 @@ where the rest-OCV gate refused to correct.
   so a power or voltage demand's current is held to it: the unreachable 10 W hour that ran
   6.8 A and 372 K on its third hour (38 A and 900 K before that) now draws 0 A there, the
   cell empty and the step flagged. A **current** demand that drives a cell out there was
-  solved on the flat curve until the reversal above; past full it still is.
+  solved on the flat curve until the reversal above; past full it still is. The `Dfn` has
+  the same gap, found 2026-10-06 (`dfn-electrolyte-limit.md`): a charge driven on past the
+  4.2 V ceiling puts a particle surface past full 220 s later at 3 C and twenty-four minutes
+  later at 1 C, which `SURFACE_OUT_OF_RANGE` now flags.
 * ~~**A `Dfn` books the equilibrium voltage's fall across a long step as heat.**~~ —
   **closed 2026-09-23** (`dfn-end-of-step-heat.md`): the heat is read at the end of the
   step off the cell's own solve, for the report and the network both (1.03 K against
@@ -325,7 +328,19 @@ where the rest-OCV gate refused to correct.
   a rested over-drained cell reads its floor; the ledger closes linearly in `dt`. Bulk edge
   only — the `Dfn` has no closed-form surface edge — and not the next bullet, which is a
   different defect the first spike had mistaken for this one.
-* **The `Dfn` has no solution above its electrolyte's limiting current.** Measured
+* **The `Dfn` has no physics past its rate limit — now diagnosed, and flagged.**
+  Re-measured 2026-10-06 (`dfn-electrolyte-limit.md`), which corrects what follows: the
+  failure is always at or after the cell's own 2.5 V cut-off (2–5 C from full, half and a
+  fifth), so a protected pack, capped at 1.5 C, never reaches it. It is not the
+  electrolyte's charge equation going singular — the conductivity floor is inert from 1e-12
+  to 1e-6 — but a pinched positive electrode: full particles beside the separator, where
+  there is still electrolyte, and room only deeper in, where there is none. The logarithm
+  plan below is struck. A solve keeping every particle surface in range was built and
+  refused: past the limit it finds no answer either, and the current's lithium leaves the
+  cell's books (0.04–0.17 A·h in a minute) where the engine keeps it, at concentrations up
+  to twice full. What shipped is `SURFACE_OUT_OF_RANGE`, raised when a step's answer has a
+  surface past full or below empty and changing no value; it first fires on the 3 C
+  scenario's 464 s cut-off step, which converged 0.22 % past full. Measured
   2026-10-05 (`porous-reversal.md`), identical on the engine before it: from 3 C up the
   electrolyte next to the positive current collector runs out mid-discharge and the Newton
   stops converging there — with 61.6 % still in the cell from full at 3 C (461 s, the 3 C
@@ -342,8 +357,10 @@ where the rest-OCV gate refused to correct.
   **Spiked 2026-10-05 and recorded rather than built** (`porous-reversal.md`): a side
   reaction at the positive electrode is the energy-consistent channel, but it cannot switch
   on — the electrolyte's potential equation goes singular as its conductivity vanishes and
-  the solve fails first. The next step is solving the near-empty electrolyte (e.g. in its
-  logarithm), which moves the region the 3 C golden and lesson 16 end on.
+  the solve fails first. ~~The next step is solving the near-empty electrolyte (e.g. in its
+  logarithm)~~ — struck 2026-10-06: aimed at an equation that was not failing. A channel for
+  the current past the limit still needs a reaction, its parameters, and a reference that
+  runs past the cut-off, and none of the three is in the repo.
 * ~~**The pack's split under a current demand can cycle to its cap**~~ — **closed
   2026-10-05** (`porous-reversal.md`): with the pack current fixed every damped trial
   splits it the same way, so a split that cycles between passes — parallel cells either

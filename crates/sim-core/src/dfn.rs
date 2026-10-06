@@ -2231,6 +2231,9 @@ pub(crate) fn advance(
     if !solved.converged {
         flags |= EventFlags::SOLVE_UNCONVERGED;
     }
+    if !surfaces_in_range(&setup, &solved.u) {
+        flags |= EventFlags::SURFACE_OUT_OF_RANGE;
+    }
     let (v_end, r_end) = past_edge(
         spm,
         rev,
@@ -2282,6 +2285,32 @@ pub(crate) fn advance(
         at_end - (u_start - v_node),
         rev_w,
     )
+}
+
+/// Whether every particle surface the unknowns `u` imply lies inside the range the kinetics
+/// follow, `(SURFACE_EDGE_FRACTION, 1 − SURFACE_EDGE_FRACTION)` of `c_max` — the band
+/// [`System::kinetics`] clamps to. Outside it the exchange current no longer falls as the
+/// surface fills or empties, which is the feedback that stops a particle at full; see
+/// [`EventFlags::SURFACE_OUT_OF_RANGE`].
+#[must_use]
+fn surfaces_in_range(setup: &StepSetup<'_>, u: &[f64]) -> bool {
+    let g = setup.grid;
+    let in_band = |side: &Side<'_>, part: &Particle, nd: usize| {
+        let c_max = side.p.c_max_mol_per_m3;
+        let c_s = part.c0 + part.beta * u[NVAR * nd + JJ];
+        c_s > SURFACE_EDGE_FRACTION * c_max && c_s < (1.0 - SURFACE_EDGE_FRACTION) * c_max
+    };
+    let neg = setup
+        .parts_neg
+        .iter()
+        .enumerate()
+        .all(|(nd, part)| in_band(&setup.sides.neg, part, nd));
+    let pos = setup
+        .parts_pos
+        .iter()
+        .enumerate()
+        .all(|(k, part)| in_band(&setup.sides.pos, part, g.first_pos() + k));
+    neg && pos
 }
 
 /// The SOC-window flags for the state as it stands.

@@ -343,6 +343,11 @@ The version check is what refuses it. The fixture pack is equivalent-circuit and
 
 ## Still open
 
+* **Diagnosis superseded — see `dfn-electrolyte-limit.md`.** The conductivity floor is inert
+  from 1e-12 to 1e-6, so the singular charge equation below is not the cause and the
+  logarithm plan is struck: the stuck rows are Butler–Volmer rows at positive particles
+  already full beside the separator, with the electrolyte gone only deeper in. That note
+  also measures the failure as always at or after the 2.5 V cut-off, and ships a flag.
 * **The `Dfn`'s electrolyte limit** (above, and ROADMAP H8): from 3 C up its solve fails
   mid-discharge, on this engine and the one before it. The owner chose a side reaction for
   the current past it; the spike for one stopped on the solver, and the owner chose to record

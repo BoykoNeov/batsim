@@ -6583,8 +6583,10 @@ the prose states.
 #     and the prose now prints the constant whole: a constant is compared EXACTLY, so a
 #     rounded restatement of one could not be tied at all.
 #
-# ONE FLAG THE PROSE DOES NOT NAME. `OPERATING_POINT_OUT_OF_WINDOW` arrives at 464 s, the
-# same step the cut-off is crossed on. The step says nothing about it, which is not a
+# TWO FLAGS ARRIVE AT 464 s AND THE PROSE NAMES ONE. `SURFACE_OUT_OF_RANGE` (since
+# `docs/plans/dfn-electrolyte-limit.md`) is named, without a numeral: the cut-off step's solve
+# converged on a particle surface past full. `OPERATING_POINT_OUT_OF_WINDOW` arrives on the
+# same step, the step the cut-off is crossed on. The step says nothing about it, which is not a
 # defect — the flag means the demand landed outside the window the pack can serve, and
 # "it is finished" is that in words. It matters here for a mechanical reason: the `ReadAt`
 # accounting is refused at an instant a flag arrives, so `464` has to be SPELLED by a claim

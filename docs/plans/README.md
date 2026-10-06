@@ -59,6 +59,7 @@ Changes to what `sim-core` computes. Every one names the snapshot version it cos
 | [`reversal-damage.md`](reversal-damage.md) | Over-discharge that leaves a mark |
 | [`spm-end-of-step.md`](spm-end-of-step.md) | The single-particle cell at a long step — its curve read at the end of the step |
 | [`spm-pack-window.md`](spm-pack-window.md) | The pack's damped search scored on the next pass's step: a range for the single-particle cell, and unmet powers landing on their maximum |
+| [`dfn-electrolyte-limit.md`](dfn-electrolyte-limit.md) | The `Dfn` past its rate limit: only ever past the 2.5 V cut-off; a pinched positive electrode, not a singular electrolyte equation (the logarithm plan struck); a solve keeping every surface in range built and refused — it loses the current's lithium instead; `SURFACE_OUT_OF_RANGE` shipped, changing no value |
 | [`porous-reversal.md`](porous-reversal.md) | Both porous models past empty: the `Spm`'s reversal at its surface or bulk edge with a deficit it pays back (v22), the `Dfn`'s at its bulk edge continued by its kinetics at empty (v23), per-channel heat, and a bracketed settle for a parallel split the pass loop cannot settle; the `Dfn`'s electrolyte limit spiked and recorded, not built |
 | [`step-mean-heat.md`](step-mean-heat.md) | The heat a step really generated — the step-mean overpotential |
 | [`surface-vs-bulk.md`](surface-vs-bulk.md) | Surface vs bulk: the gradient an equivalent circuit cannot have |

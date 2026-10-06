@@ -181,9 +181,11 @@ and double as the scenario file format.
   particle's own lithium. So there a deficit can coexist with `soc > 0`. The `Dfn` has the
   same branch on its **bulk** edge only (it has no closed-form surface edge), and past it its
   curve keeps falling by the electrodes' kinetics at empty, which depend on no step length.
-  What neither porous model covers is the `Dfn`'s electrolyte limit: from 3 C up the
-  electrolyte at the positive current collector runs out mid-discharge and its solve fails
-  there (ROADMAP H8). See `docs/plans/porous-reversal.md`.
+  What neither porous model covers is the `Dfn` past its rate limit: from 3 C up, at its own
+  cut-off, the positive electrode is pinched — full particles where there is electrolyte, no
+  electrolyte where there is room — and the solve fails or converges on a particle surface
+  past full, which `SURFACE_OUT_OF_RANGE` flags without changing a value (ROADMAP H8). See
+  `docs/plans/porous-reversal.md` and `docs/plans/dfn-electrolyte-limit.md`.
 - **Charge acceptance** (optional, `[charge_acceptance]`): above `soc_onset` the cell stores
   a linearly falling share `η = (1 − soc)/(1 − soc_onset)` of a charging current and turns
   the rest into heat — oxygen evolution on a nickel electrode. Integrated in closed form
