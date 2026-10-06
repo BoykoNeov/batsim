@@ -95,6 +95,7 @@ What a reader can reach, and how the page shows it.
 | --- | --- |
 | [`carrier-diagram.md`](carrier-diagram.md) | The carrier diagram: what moves inside the cell, drawn from the engine's state, with the chemistry's `[diagram]` table behind it |
 | [`client-redraw.md`](client-redraw.md) | The client's redraw: paint on change, fold to the pixel, one cursor across six panels — and what is left |
+| [`cross-platform-math.md`](cross-platform-math.md) | Do the browser and the server compute the same trajectory? — H5, measured: not to the last bit, and what `libm` would cost |
 | [`dfn-scenario.md`](dfn-scenario.md) | The DFN scenario: a rate at which the particle model stops knowing the cell is dying |
 | [`lead-acid-client.md`](lead-acid-client.md) | The lead-acid client slice: a cell that is not empty, and will not give you the rest |
 | [`reversal-damage-ui.md`](reversal-damage-ui.md) | The damage, shown to a reader — and four count claims that had already drifted |
