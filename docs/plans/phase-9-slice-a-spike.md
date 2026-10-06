@@ -200,6 +200,76 @@ this spike did not measure. Every number above is from a half cell against lithi
 at C/20, 298 K and one seed; none of them is an exit criterion until it is re-measured on
 the full cell the plan builds.
 
+## Round 2 — the full cell, re-measured before the plan (2026-10-06, after the decision)
+
+Pre-registered in `W:/temp/claude/phase9-spike/PREREG2.md`; harness `harness/src/bin/fullcell.rs`;
+output `out2/`. The cell the plan would build: the ensemble (fitted Ω, 20 particles, 20
+shells) against **one Prada2013 graphite particle** (Chen 2020 graphite OCP, 5 µm, D 3e-15),
+lithium inventory from Prada2013's initial concentrations. Graphite runs out first: at its
+empty the LFP sits at y = 0.7035, so **in this cell the LFP never fills past 70 %**, and the
+window is 2.303 Ah. Every run below conserves charge to ≤ 9e-13 of the window and has no
+unsolved sub-step.
+
+| question | prediction | measured |
+| --- | --- | --- |
+| C/20 against PyBaMM's SPM on the same set (Afshar's monotone LFP curve) | 0–20 mV above, mean +5…+15 | **+10.3 mV mean** over 20–80 % (+6.3…+17.5); held |
+| C/20 span over 20–80 % | 30–60 mV | **138 mV** — graphite's staging dominates (PyBaMM's own: 145 mV); false |
+| 1C and 3C at a 1 s step, 10 and 20 shells | no sub-steps at 1C; some at 3C on 10 shells | **none at either rate or shell count**; 3C collapses at 0.58 of the window in PyBaMM too (graphite diffusion), and sits 6 mV above it at 20 % depth |
+| particles fill together at 3C (Bai's suppression) | spread < 0.5 | 0.77 against 0.84 at C/20; false as stated |
+| rest gap at 298 K, varied one at a time: seeds 9/1/2/3, σ 0.1/0.3, N 10/40, rest SOC 0.3/0.7 | 8–20 mV, discharge-arrival always lower, seed spread ≤ 4 mV | **14.2–19.6 mV**, sign never flips, seed spread 1.2 mV; held. N = 10 is the low end; at 50 % the gap sits within 0.4 mV of its 20 mV cap |
+| **rest gap at 263 K**, seeds 9/1/2/3 (σ 0.2, N 20, SOC 0.5) | larger than at 298 K, below 28.4 mV | **0.00 / 27.44 / 23.32 / 13.35 mV**. Clean runs (charge to 5e-13, no early stop). Held on two seeds, false on two. The first reading, seed 9 alone, was 0.00 and was nearly written up as "the gap vanishes in the cold"; the mechanism below said it was one draw |
+| the whole cell's end-of-step voltage against its current, sub-stepping inside the step, currents that keep every surface in range | falls everywhere at 1 s; rare exceptions at 60 s; rises somewhere at most states at 15 min and 1 h | first reading: falls everywhere at 1 s and 60 s, rises at 5 of 20 states at 15 min (up to 30 mV) and 15 of 20 at 1 h (up to 7.8 mV). **The rises were the harness, not the cell** — see below. With every probe on the same sub-steps: **falls everywhere at 15 min** (1 s sub-steps); **rises at 13 of 20 states at 1 h, by up to 6.6 mV** (900 four-second sub-steps, no probe halved further): that one is the model |
+
+**The cold gap.** At the end of the approach (one arm, 263 K), the slower reaction
+(Arrhenius on i0: ×0.12) has left many particles part-way through switching. 16 particles
+at y 0.16–0.29 on the discharge arm, and 7 at 0.71–0.79 on the charge arm, are inside the
+cold spinodal (0.183–0.817). In the two-hour rest each one finishes switching, to full or
+to empty. Every particle in this model has the same volume share; radius sets only its area.
+So once all of them sit at one of the two ends, the resting voltage depends only on **how
+many are full**. Both arms resolve to 7 of 20 full: different particles, the same count. So
+both read the same voltage, 3.8 mV above the coexistence value, not the coexistence value
+itself. At 298 K the approach leaves particles **outside** the spinodal: 16 at y 0.203, just
+below its edge 0.216, on the discharge arm; 13 at 0.044 and 7 at 0.818 on the charge arm.
+Those states are locally stable and survive the rest, which is where the warm gap comes from.
+So the cold zero was one seed whose two directions landed on the same count. Three more
+seeds landed on different counts: discharge 5, 6, 6 full against charge 8, 8, 7. Their gaps,
+27.44, 23.32 and 13.35 mV, are the count table below to the hundredth.
+
+**The pack-visible rises.** Listing every probe at the worst state (SOC 0.25, 15 min)
+put the 30 mV rise between −2.53 C and −2.47 C. That is exactly where the probe went from one
+900 s backward-Euler step to 37 halved ones. The 16.8 mV rise at SOC 0.30 is the same switch,
+from 1 to 50 sub-steps. A single coarse step reads a different end state from a fine one,
+mostly on the graphite (diffusion time R²/D = 8 300 s). So a current at which the step
+**count** changes is a jump in the reported voltage. Re-run with every probe taking the same
+900 one-second sub-steps, the whole cell falls with current at all 20 states. The LFP alone
+still rises by up to 6.3 mV (its teeth), and the graphite's slope outweighs that.
+What the pack row means for the engine. The pack's split and its voltage and power holds
+bracket a root on each cell's end-of-step curve, which the code and `CLAUDE.md` both assume
+falls with current. Measured on uniform sub-steps, this cell's does at 15 min and does not at
+1 h: rises of 1.5–6.6 mV at 13 of 20 states, at small charging currents (−0.25 C at SOC 0.65),
+where an hour's charge walks the LFP across a tooth. So the 1 h result is the cell's own, and
+the principle-9 question stands at fast-forward step lengths, at a fifth of the size first
+read. What turned a 6 mV property into a 30 mV one was an integrator whose sub-step count
+depends on the current being tried. So the requirement on slice B is on the cell, not the pack: **a
+step's internal sub-division must not change between neighbouring trial currents**. It
+should be chosen from the step length (and state) before the split, not by halving on a
+failed trial. The LFP alone is non-monotone at long steps by up to 6.3 mV, so a cell whose
+other electrode is flatter than this graphite may still fail it. That belongs in the plan's
+exit criteria as a measured property, not an assumption. And at the 1 h step, which the
+aging fast-forward uses, the plan must choose: the cell declares a range the pack already
+reads, or parallel groups and voltage/power holds of these cells at long steps are a
+documented limit. Either is principle 9; editing the pack's search quietly is not.
+
+What the cold row means for the decision. The model keeps its hysteresis in the cold, but
+the gap there is **discrete and seed-dependent**. At 263 K, with this lithium, a fully
+resolved ensemble with 5, 6, 7 or 8 of 20 particles full rests at −13.7, −9.5, +3.8 or
++13.8 mV around U0. No other count fits inside the spinodal band. Which counts the two
+directions reach is decided by how the instability resolves in the rest, so the gap is 0, 13,
+23 or 27 mV by seed, with discharge-arrival never above charge-arrival. At 298 K the
+approach stays outside the spinodal and the gap is smooth (14.2–19.6 mV, seed spread 1.2).
+So a cold number cannot be an exit criterion on one seed. A lesson about the gap should stay
+at room temperature, or show the cold one as a spread.
+
 ## Still open
 
 * Charge direction at N = 100, and N between 100 and a few hundred, were not run.
