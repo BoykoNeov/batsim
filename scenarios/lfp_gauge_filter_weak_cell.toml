@@ -111,7 +111,10 @@ t_hard_margin_k = 10.0
 #                        cover it somehow
 #   voltage_sigma_v   -- 10 mV. The voltage sensors are exact, so this is the filter's
 #                        allowance for its own model being wrong: the loop it does not
-#                        model, the resistance it may have wrong
+#                        model, the resistance it may have wrong. The guided path's
+#                        steps 33 and 34 ride on this value and say so: trust the
+#                        voltage ten times less and the filter no longer goes far wrong
+#                        (`the_lesson_rides_on_how_far_the_filter_trusts_the_voltage`)
 #   initial_soc_sigma -- 5 points: it knows it booted unsure, not how unsure it should be
 current_sigma_a = 0.05
 voltage_sigma_v = 0.010

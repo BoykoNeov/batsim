@@ -25,6 +25,8 @@ fn scenario(name: &str) -> Scenario {
 /// of the discharge (300 s) and at the end of the rest (3900 s).
 struct Marks {
     err: [f64; 3],
+    /// Estimate minus truth \[points\] at 60 s, the guided path's step 33 mark.
+    mark: f64,
     sigma: [Option<f64>; 3],
     /// The estimate itself \[%\] at 1800 s and at 3900 s.
     est: [f64; 2],
@@ -60,6 +62,7 @@ fn run_with(sc: Scenario, strip_hysteresis: bool) -> Marks {
     };
     let mut out = Marks {
         err: [f64::NAN; 3],
+        mark: f64::NAN,
         sigma: [None; 3],
         est: [f64::NAN; 2],
     };
@@ -72,6 +75,7 @@ fn run_with(sc: Scenario, strip_hysteresis: bool) -> Marks {
         };
         let tele = pack.step(0.5, demand, &env);
         match n {
+            120 => out.mark = (tele.soc_bms.unwrap() - tele.soc_true) * 100.0,
             3600 => out.est[0] = tele.soc_bms.unwrap() * 100.0,
             7800 => out.est[1] = tele.soc_bms.unwrap() * 100.0,
             _ => {}
@@ -321,4 +325,94 @@ fn on_lfp_the_wrong_model_is_held_at_a_table_node_by_the_offset() {
         "and is still confidently wrong after the hour: {}",
         no_offset.err[2]
     );
+}
+
+/// `name` with the filter's `voltage_sigma_v` replaced and nothing else.
+fn with_voltage_sigma(name: &str, sigma_v: f64) -> Marks {
+    let mut sc = scenario(name);
+    match &mut sc.pack.bms.as_mut().unwrap().estimator {
+        EstimatorConfig::Ekf(ekf) => ekf.voltage_sigma_v = sigma_v,
+        other => panic!("{name} runs {other:?}, not the filter"),
+    }
+    run_scenario(sc)
+}
+
+/// The guided path's steps 33 and 34 run the filter at the 10 mV `voltage_sigma_v` the
+/// scenario header calls a hand-picked placeholder, and both steps say their result rides on
+/// it and name this test. Measured at 10, 30 and 100 mV (and in the slice's scratch sweep at
+/// 5, 15, 20 and 50, which fall in order between): a filter told to trust the voltage three
+/// times less is close to the truth at step 33's mark and falls later in the pulse, ending the
+/// rest about as far out; told to trust it ten times less it never falls far, ends close and
+/// inside its own error bar, and beats the counter. Loosening it costs the exact-model LFP
+/// file almost nothing over this run, and costs the sodium-ion files something: both land
+/// further out at the end of the rest. See `docs/plans/path-gauge-filter-steps.md`.
+#[test]
+fn the_lesson_rides_on_how_far_the_filter_trusts_the_voltage() {
+    let weak = "lfp_gauge_filter_weak_cell";
+    let shipped = with_voltage_sigma(weak, 0.010);
+    let looser = with_voltage_sigma(weak, 0.030);
+    let loosest = with_voltage_sigma(weak, 0.100);
+    assert!(
+        shipped.mark < -14.0,
+        "the step 33 reading: {}",
+        shipped.mark
+    );
+    // Three times less trust: close at the mark, wrong later, about as far out after the hour.
+    assert!(
+        looser.mark > -2.5 && looser.mark < -1.0,
+        "close at the mark: {}",
+        looser.mark
+    );
+    assert!(
+        looser.err[1] < -9.0,
+        "but falls later in the pulse: {}",
+        looser.err[1]
+    );
+    assert!(
+        (looser.err[2] - shipped.err[2]).abs() < 1.0,
+        "and ends the rest about as far out: {} against {}",
+        looser.err[2],
+        shipped.err[2]
+    );
+    // Ten times less: never falls far, ends close, honest about it, ahead of the counter.
+    assert!(
+        loosest.err[1] > -1.0,
+        "end of the pulse: {}",
+        loosest.err[1]
+    );
+    let sigma = loosest.sigma[2].unwrap();
+    assert!(
+        loosest.err[2].abs() < 0.5 && loosest.err[2].abs() < sigma,
+        "end of the rest: {} inside its own sigma {sigma}",
+        loosest.err[2]
+    );
+    let mut sc = scenario(weak);
+    sc.pack.bms.as_mut().unwrap().estimator = EstimatorConfig::CoulombCount;
+    let counter = run_scenario(sc);
+    assert!(
+        loosest.err[2].abs() < counter.err[2].abs(),
+        "beats the counter: {} against {}",
+        loosest.err[2],
+        counter.err[2]
+    );
+    // What loosening costs. Almost nothing on the exact-model LFP file over this run ...
+    let exact = with_voltage_sigma("lfp_gauge_filter", 0.010);
+    let exact_loose = with_voltage_sigma("lfp_gauge_filter", 0.100);
+    assert!(
+        (exact_loose.err[2] - exact.err[2]).abs() < 0.3,
+        "the exact-model file: {} against {}",
+        exact_loose.err[2],
+        exact.err[2]
+    );
+    // ... and something on the sodium-ion pair, which both land further out.
+    for name in ["na_ion_gauge_filter", "na_ion_gauge_low_filter"] {
+        let tight = with_voltage_sigma(name, 0.010);
+        let loose = with_voltage_sigma(name, 0.100);
+        assert!(
+            loose.err[2] < tight.err[2] - 0.3,
+            "{name}: {} at 100 mV against {} at 10",
+            loose.err[2],
+            tight.err[2]
+        );
+    }
 }

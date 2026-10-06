@@ -240,7 +240,12 @@ points low after the hour). **The lesson landed the same day** as guided-path st
 34 (`path-gauge-filter-steps.md`): the wrong-model filter fifteen points low under load beside
 the exact-model one still on its boot error, then still almost seven low after the rest while
 the counter beats it. The filter's own uncertainty is stated in words, not shown — it is not on
-the wire. What follows is the entry as written.
+the wire. **Both results ride on the filter's hand-picked `voltage_sigma_v`** (10 mV, a
+placeholder): up to about three times that it only goes wrong later and ends the rest about
+as far out, and at ten times it never goes far wrong and beats the counter. The steps say so
+in words (`path-gauge-filter-steps.md`, "The headline rides on a hand-picked setting"). Still
+open: a control on the page for that setting, and a lesson on choosing it. What follows is
+the entry as written.
 
 
 **Gap.** The estimator is coulomb counting on an imperfect sensor with an OCV correction at

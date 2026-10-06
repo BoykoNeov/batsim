@@ -238,8 +238,9 @@ were written because the table was about to be.
   still not on the wire; the steps state the collapse in words and name the test.
 * Whether the Joseph form matters anywhere in this engine (row C): not on these runs.
 * A filter whose `voltage_sigma_v` is too small for its model error is how "confidently
-  wrong" happens; a scenario that sweeps it on the weak LFP cell would show the trade-off
-  directly. Not measured here. One point since, from the lesson slice's perturbation
-  table: at `voltage_sigma_v` = 0.030 the weak-cell filter is +0.48 points at 30 s, against
-  −14.74 at the shipped 0.010 — but −9.86 at 300 s and −5.96 at the end of the rest, so it
-  falls more slowly and lands about as far out. Not a sweep.
+  wrong" happens. **Swept since** (5–100 mV, `docs/plans/path-gauge-filter-steps.md`, "The
+  headline rides on a hand-picked setting"): up to about 30 mV the weak-cell filter only goes
+  wrong later and ends the rest about as far out; at 100 mV it ends +0.31 points, inside its
+  own error bar. Loosening costs the exact-model LFP file almost nothing and the sodium-ion
+  pair about half a point at rest. What is still open is a scenario the *reader* can sweep it
+  in — the page has no control for it — and a lesson on choosing it.

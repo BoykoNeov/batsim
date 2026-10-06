@@ -141,7 +141,46 @@ told to expect 30 mV of model error instead of 10, the same filter on the same w
 **+0.48** points at 30 s instead of −14.74 — but −9.86 at 300 s and −5.96 at 3900 s, against
 −11.44 and −6.67. The first draft of this paragraph read the 30 s figure as "trusting the
 voltage less saves it"; the later readings say it only falls more slowly and lands about as
-far out. One setting, not a sweep.
+far out. One setting, not a sweep — the sweep is the next section.
+
+### The headline rides on a hand-picked setting
+
+A review after the slice landed pointed out that step 33's fifteen points rest on
+`voltage_sigma_v` = 0.010, which the scenario header labels a hand-picked placeholder, and that
+neither step said so. Measured at 5, 10, 15, 20, 30, 50 and 100 mV on the weak-cell file
+(estimate minus truth, points, at step 33's 60 s mark / the end of the pulse / the end of the
+rest):
+
+| `voltage_sigma_v` | 60 s | 300 s | 3900 s | sigma at 3900 s |
+| --- | --- | --- | --- | --- |
+| 0.005 | −14.74 | −11.69 | −6.57 | 0.036 |
+| **0.010** (shipped) | **−14.47** | **−11.44** | **−6.67** | 0.065 |
+| 0.015 | −13.93 | −11.09 | −6.65 | 0.103 |
+| 0.020 | −9.74 | −10.69 | −6.51 | 0.150 |
+| 0.030 | −1.83 | −9.86 | −5.96 | 0.280 |
+| 0.050 | +1.15 | −8.23 | −2.78 | 0.793 |
+| 0.100 | +2.53 | −0.42 | +0.31 | 1.893 |
+
+(The +2.5 at 60 s on the loosest row is the three-point boot error not yet corrected, not a
+fall.) So up to about three times the shipped value a less trusting filter only goes wrong
+*later* and ends the rest about as far out — the reviewer's "half a point off at the same
+moment" was the 30 s reading, not the mark's — and at ten times it never goes far wrong, ends
+inside its own error bar and beats the counter (+2.06). What loosening costs: on the
+exact-model `lfp_gauge_filter` almost nothing over this run (end of rest +0.63 → +0.83); on
+the sodium-ion pair something, both landing further out at rest (−0.56 → −1.05 mid-range,
+−1.00 → −1.50 near empty). Why the sodium-ion pair pays is not measured here. So the shipped
+10 mV is close to the worst setting for the weak cell and buys almost nothing on its healthy
+twin; the lesson's result is a fact about a filter that trusts its voltage more than its
+model deserves, which is what step 33 now says.
+
+Both steps now say so in words, with no numerals: the reader cannot change the setting on
+the page, so a figure for another setting would be right and unreachable. Step 33 adds the
+caveat after "a flat curve multiplies every millivolt the model gets wrong" (the sentence a
+reader who stops there would overgeneralise); step 34 scopes its counter comparison and its
+closing "trade" to this tuning. `the_lesson_rides_on_how_far_the_filter_trusts_the_voltage`
+in `gauge_filter.rs` pins the 10 / 30 / 100 mV rows, the counter comparison, and both costs,
+and both steps name it. A numeral perturbation of the new step 33 sentence reddened
+`every_numeral_in_a_ledgered_step_is_accounted_for`, so the new prose is under the scan.
 
 ### The mechanism the first draft got wrong
 
