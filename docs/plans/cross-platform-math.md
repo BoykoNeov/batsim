@@ -1,10 +1,13 @@
 # Do the browser and the server compute the same trajectory? — H5, measured
 
 > **Status: measured 2026-10-06; nothing built.** They do not, by the last bit, on 33 of
-> 54 runs — and the largest gap any run reached is about 10⁻¹⁴ of a volt, with not one
-> flag different. Routing the engine's nine transcendental functions through the pure-Rust
-> `libm` crate makes them agree on all 54, makes a snapshot taken in either one continue
-> bit for bit in the other, moves **no** test, and costs the native step 5–6 %. Whether to
+> 54 runs — but every field of every frame and snapshot agrees to about 10⁻¹⁴ of its
+> value, every discrete field (RNG state, counters, queues, flags) agrees exactly, and all
+> 184 flag transitions land on the same frame. Routing the engine's nine transcendental
+> functions through the pure-Rust `libm` crate makes them agree on all 54, makes a
+> snapshot taken in either one continue bit for bit in the other, and moves **no** test.
+> Its cost to the native step read 5–6 % on a fully loaded box; a quiet-box reading is
+> owed before anyone weighs it against the budget. Whether to
 > take it is the owner's decision: it adds a dependency to `sim-core`, whose list
 > `CLAUDE.md` closes, and it changes a sentence of the design contract. ROADMAP H5.
 
@@ -69,11 +72,27 @@ relationship, not a guarantee. A test that pins it is part of any build (below).
 
 Where they part, they part early — the first differing frame is at 2 s on the `Dfn` and
 within a few hundred seconds on most others; the year-long fast-forward agrees for its
-first 33 million seconds — and they stay close. The largest gap any run reached:
-**9 × 10⁻¹⁴ V** in terminal voltage (on the `Spm` power draw), **6 × 10⁻¹⁴ K** in
-temperature, **2 × 10⁻¹⁵** of SOC. **Not one frame's flags differ.** The two builds agree
-to about fourteen significant figures and then go their own ways in the last bit or two;
-nothing in this sample amplifies the difference.
+first 33 million seconds — and they stay close. A walk over **every leaf** of every frame
+and every snapshot (`deep_compare.py`, out of tree) found:
+
+* **Every non-float field identical** on all 54 runs: the RNG state, the counters, the
+  fault queue, the BMS's discrete state, and the flags. No run took a different number of
+  RNG draws.
+* **Every float within about 10⁻¹⁴ of its own value**, with the largest relative gaps on
+  state measured in big units — `Dfn` concentrations (2.3 × 10⁻¹⁰ mol/m³ of ~5 × 10⁴),
+  SOC (2 × 10⁻¹⁵), terminal voltage (9 × 10⁻¹⁴ V, on the `Spm` power draw), temperature
+  (6 × 10⁻¹⁴ K). The fields that read as large *relative* gaps are quantities sitting at
+  zero, where the gap is absolute noise: a voltage hold's settled current (2.9 × 10⁻¹² A),
+  the heat at the instant the current crosses zero (6.5 × 10⁻¹² W), a rested RC
+  overpotential (3.5 × 10⁻¹⁸ V), the `Dfn`'s potentials near their reference.
+* **The flags were exercised, and agree.** 40 of the 54 runs cross a threshold —
+  184 flag transitions in all, including under-voltage, over-current and
+  over-temperature trips, the contactor opening, plating risk, balancing, both SOC clamps
+  and the operating window — and every transition lands on the same reported frame on
+  both sides. Not exercised: an over-voltage trip, venting, runaway.
+
+The two builds agree to about fourteen significant figures and then go their own ways in
+the last bit or two; nothing in this sample amplifies the difference.
 
 Twenty-one runs agree completely because the inputs they happen to feed the functions
 land where the two libraries round alike (79–99 % of inputs, depending on the function) — the bare LFP and NMC curves
@@ -87,7 +106,7 @@ when it happens the two stories diverge by a whole step.
 ### The trajectories, with every transcendental routed through `libm`
 
 A scratch copy put a `math` module in `sim-core` — a trait giving `f64` nine `p_*` methods,
-each calling `libm` — and changed the 21 call sites in `aging`, `dfn`, `ecm`, `noise`,
+each calling `libm` — and changed the 24 calls (on 21 lines) in `aging`, `dfn`, `ecm`, `noise`,
 `plating`, `runaway` and `spm` to use it. `sqrt` and `powi` were left alone.
 
 | comparison | runs bit-identical |
@@ -116,7 +135,10 @@ none of them.
 
 The step-loop driver from `ocv-segment-hint.md` (100S10P, pinned to the quietest physical
 core, three arms alternating, six rounds of four seconds) on a box held at 100 % by other
-work — so the absolute figures are inflated about 1.8× and only the ratios carry over. The
+work: the quietest core's two logical processors were both saturated. That is a state the
+instrument was never validated in — it reproduced to ~1 % at 25–40 % load, and a ratio read
+on a loaded box was once wrong by 3× (`ocv-segment-hint.md`). The absolute figures are
+inflated about 1.8×; the ratios below are this reading, not a settled number. The
 third arm, **null**, is the routed copy with every `p_*` method calling `std` instead:
 the same code shape, so it separates the library's cost from layout. Its fingerprint is
 bit-identical to HEAD's.
@@ -126,9 +148,10 @@ bit-identical to HEAD's.
 | `current` | 67.97 µs | 67.53 µs | 71.65 µs | 1.054 |
 | `full` | 77.32 µs | 77.60 µs | 82.14 µs | 1.062 |
 
-The null arm sits on HEAD, so the 5–6 % is the library, not the layout. Scaled to the
-quiet-box figures `ocv-segment-hint.md` recorded, that is roughly 36 → 38 µs on `current`
-and 42–46 → 44–49 µs on `full`: still under the 50 µs budget, with less room. The `Dfn`
+What this reading does establish is *where* a cost comes from: the null arm sits on HEAD,
+so whatever the gap is, it is the library and not the layout. What it does not establish
+is how much headroom is left under the 50 µs budget — **a quiet-box reading is owed before
+that question is weighed**, and no projection is made from this one. The `Dfn`
 (`cc_discharge_3c_dfn`, five alternating runs per arm through the trajectory harness)
 read 1.24 s against 1.29 s median, about 4 %, inside this box's noise. The `Spm` runs
 were too short to time. The browser pays nothing; it was already on this library.
@@ -138,7 +161,7 @@ were too short to time. The browser pays nothing; it was already on this library
 it again in `rc_update` — 1000 exponentials a step at 100S10P, and `libm`'s `exp` is a few
 nanoseconds slower than the MSVC runtime's. The two compute `τ` as the same product in the
 same order, so handing the pack's decay to the cell is bit-identical whichever library is
-in use. That is a separate perf slice; it would probably return most of the 5–6 %.
+in use. That is a separate perf slice; it would probably return most of the library's cost.
 
 ## What a build would be
 
@@ -147,7 +170,7 @@ If the owner takes it:
 1. `libm` as a fourth runtime dependency of `sim-core` (it is `no_std`, has no
    dependencies of its own, and is what the wasm target already runs), the `CLAUDE.md`
    dependency line amended to say so.
-2. A `math` module and the 21 call sites, as in the scratch copy. Free functions or the
+2. A `math` module and the 24 calls, as in the scratch copy. Free functions or the
    trait — the trait keeps each call site's shape.
 3. A lint so a bare `.exp()` cannot creep back: `clippy::disallowed_methods` in
    `clippy.toml` naming the nine `f64` methods for `sim-core`.

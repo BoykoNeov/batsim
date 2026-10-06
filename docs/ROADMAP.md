@@ -166,12 +166,13 @@ refusal of multiply-by-reciprocal: this is the same class of change, taken delib
 table.
 
 **Measured 2026-10-06** (`cross-platform-math.md`): they do disagree — 33 of 54 runs part
-in the last bit, the largest gap ~10⁻¹⁴ V, no flag ever different. The `libm` crate does
-match wasm's maths bit for bit, and routing the 21 call sites through it makes all 54 runs
-and a snapshot handed either way agree exactly. The re-pinning cost above was **wrong**:
-no test moved. What it costs is 5–6 % of the native step, most of it a per-cell RC decay
-the pack already computes. Not built: it adds a `sim-core` dependency and changes a
-`CLAUDE.md` sentence, which is the owner's call.
+in the last bit — but every field stays within ~10⁻¹⁴ of its value, and the RNG state and
+all 184 flag transitions are identical. The `libm` crate matches wasm's maths bit for
+bit, and routing the 24 calls through it makes all 54 runs, and a snapshot handed either
+way, agree exactly. The re-pinning cost above was **wrong**: no test moved. Its cost read
+5–6 % of the native step on a saturated box (a quiet-box reading is owed), probably most
+of it a per-cell RC decay the pack already computes. Not built: it adds a `sim-core`
+dependency and changes a `CLAUDE.md` sentence, which is the owner's call.
 
 ### ~~H6. Thermal integration stops being valid above a 1.7-hour step, which the aging fast-forward exceeds~~ — **CLOSED**
 
