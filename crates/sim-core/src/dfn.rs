@@ -2287,18 +2287,17 @@ pub(crate) fn advance(
     )
 }
 
-/// Whether every particle surface the unknowns `u` imply lies inside the range the kinetics
-/// follow, `(SURFACE_EDGE_FRACTION, 1 − SURFACE_EDGE_FRACTION)` of `c_max` — the band
-/// [`System::kinetics`] clamps to. Outside it the exchange current no longer falls as the
-/// surface fills or empties, which is the feedback that stops a particle at full; see
-/// [`EventFlags::SURFACE_OUT_OF_RANGE`].
+/// Whether every particle surface the unknowns `u` imply lies inside `[0, c_max]`. See
+/// [`EventFlags::SURFACE_OUT_OF_RANGE`]. The physical bounds rather than the band
+/// [`System::kinetics`] clamps to, for the reason [`crate::spm`]'s twin of this gives: a
+/// surface sitting on that band's edge is a model at its margin, not a particle past full.
 #[must_use]
 fn surfaces_in_range(setup: &StepSetup<'_>, u: &[f64]) -> bool {
     let g = setup.grid;
     let in_band = |side: &Side<'_>, part: &Particle, nd: usize| {
         let c_max = side.p.c_max_mol_per_m3;
         let c_s = part.c0 + part.beta * u[NVAR * nd + JJ];
-        c_s > SURFACE_EDGE_FRACTION * c_max && c_s < (1.0 - SURFACE_EDGE_FRACTION) * c_max
+        (0.0..=c_max).contains(&c_s)
     };
     let neg = setup
         .parts_neg

@@ -208,48 +208,54 @@ bitflags! {
         /// there is no snap and no maximum — the client named the current and the
         /// voltage went where the resistance put it.
         const OPERATING_POINT_OUT_OF_WINDOW = 1 << 13;
-        /// A particle surface in the step's answer lies outside the range the cell's
-        /// kinetics can follow — past full, or below empty, at the surface of at least one
-        /// particle of a porous-electrode cell (`Dfn`).
+        /// A particle surface in the step's answer holds more lithium than full or less
+        /// than none — outside `[0, c_max]` at the surface of at least one particle of a
+        /// porous-electrode cell (`Spm` or `Dfn`).
         ///
         /// # What it means, and what it does not
         /// The exchange current `i₀ ∝ √(c_s·(c_max − c_s))` vanishes at both ends of the
         /// range, and that vanishing is what stops a particle filling past full: as its
-        /// surface approaches `c_max` the reaction needs an ever larger overpotential. The
-        /// model evaluates the kinetics at a surface held just inside the range
-        /// (`dfn::SURFACE_EDGE_FRACTION`), so an answer whose surface is *past* the edge has
-        /// lost that feedback, and the particle has been handed lithium it cannot hold. **No
-        /// number is changed**: the step's values are what the solve produced. The flag
-        /// says that the state they describe is not a physical one, and that the voltage
-        /// read off it is not a prediction of anything.
+        /// surface approaches `c_max` the reaction needs an ever larger overpotential. Both
+        /// models evaluate the kinetics at a surface held just inside the range, so an
+        /// answer whose surface is *past* it has lost that feedback, and the particle has
+        /// been handed lithium it cannot hold. **No number is changed**: the step's values
+        /// are what the solve produced. The flag says that the state they describe is not a
+        /// physical one, and that the voltage read off it is not a prediction of anything.
+        ///
+        /// The bounds are the physical ones, not the models' clamp margins: past empty the
+        /// `Spm` parks a surface on its margin by construction, and rounding lands it a hair
+        /// outside (`spm::surfaces_in_range`); a margin test flagged those as impossible.
         ///
         /// # Where it is raised
-        /// Measured on the shipped LG M50 cell, isothermal, from full, half and a fifth of
-        /// charge at 2–5 C: only at or after the cell's own 2.5 V cut-off. At 3 C and above
-        /// the positive electrode is pinched — its particles next to the separator are full
-        /// while the electrolyte deeper in, beside particles with room, has run out — and
-        /// the solve answers with a surface over full or fails to answer at all
-        /// ([`Self::SOLVE_UNCONVERGED`]). On the 3 C scenario at its 2 s step the 464 s
-        /// cut-off step itself converges with a surface 0.22 % over full, and this flag is
-        /// the only thing that says so. A charge driven on past full raises it too, sooner
-        /// the faster it is: from half charge, 3 C is flagged 220 s past the 4.2 V ceiling
-        /// and 1 C twenty-four minutes past it. A protected pack reaches none of these: the
-        /// BMS caps the
-        /// discharge at `max_discharge_c`, 1.5 C on that cell, and stops a charge at its
-        /// ceiling.
+        /// Measured on the shipped LG M50 cell, isothermal, single cells. On a `Dfn`
+        /// discharged at 2–5 C from full, half and a fifth of charge: only at or after the
+        /// cell's own 2.5 V cut-off, and at 3 C and above. There the positive electrode is
+        /// pinched — its particles next to the separator are full while the electrolyte
+        /// deeper in, beside particles with room, has run out — and the solve answers with a
+        /// surface past full or fails to answer at all ([`Self::SOLVE_UNCONVERGED`]). On the
+        /// 3 C scenario at its 2 s step the 464 s cut-off step itself converges with a
+        /// surface 0.22 % past full, and this flag is the only thing that says so. An `Spm`
+        /// discharged the same way, on past empty, never raises it.
+        ///
+        /// A charge driven on past full raises it on both models, sooner the faster it is:
+        /// from half charge, a `Dfn` at 3 C is flagged 220 s past the 4.2 V ceiling and at
+        /// 1 C twenty-four minutes past it; an `Spm` nine and eighteen minutes past it; a
+        /// half-C charge on either, not in the nineteen minutes past it that were run. A
+        /// protected pack reaches none of these: the BMS caps the discharge at
+        /// `max_discharge_c`, 1.5 C on that cell, and stops a charge at its ceiling. Not
+        /// measured: long steps, voltage and power holds, parallel packs of `Dfn` cells, the
+        /// thermal network.
         ///
         /// # Why not a solve that refuses it
-        /// One was built and measured: a Newton that keeps every surface inside its range
-        /// finds no answer past the limit, so the current goes nowhere and the cell loses
-        /// 0.04–0.17 A·h of lithium from its books in a minute. Past this point the model
-        /// can keep concentrations possible or lithium conserved, not both, and it keeps
-        /// lithium conserved. See `docs/plans/dfn-electrolyte-limit.md`.
+        /// One was built and measured on the `Dfn`: a Newton that keeps every surface inside
+        /// its range finds no answer past the limit, so the current goes nowhere and the
+        /// cell loses 0.04–0.17 A·h of lithium from its books in a minute. Past this point
+        /// the model can keep concentrations possible or lithium conserved, not both, and it
+        /// keeps lithium conserved. See `docs/plans/dfn-electrolyte-limit.md`.
         ///
-        /// Not raised by the electrolyte going below zero: the model reaches small
-        /// negative concentrations well inside its window (the 3 C discharge from full,
-        /// from about 300 s on), the lookups floor them, and the reference does the same.
-        /// Not raised by an `Spm` cell either, whose surface past full is open
-        /// (ROADMAP H8).
+        /// Not raised by a `Dfn`'s electrolyte going below zero: the model reaches small
+        /// negative concentrations well inside its window (the 3 C discharge from full, from
+        /// about 300 s on), the lookups floor them, and the reference does the same.
         const SURFACE_OUT_OF_RANGE = 1 << 14;
     }
 }

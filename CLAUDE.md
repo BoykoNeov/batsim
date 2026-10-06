@@ -184,7 +184,8 @@ and double as the scenario file format.
   What neither porous model covers is the `Dfn` past its rate limit: from 3 C up, at its own
   cut-off, the positive electrode is pinched — full particles where there is electrolyte, no
   electrolyte where there is room — and the solve fails or converges on a particle surface
-  past full, which `SURFACE_OUT_OF_RANGE` flags without changing a value (ROADMAP H8). See
+  past full, which `SURFACE_OUT_OF_RANGE` flags without changing a value (ROADMAP H8) — as
+  it does on either porous model charged on past full. See
   `docs/plans/porous-reversal.md` and `docs/plans/dfn-electrolyte-limit.md`.
 - **Charge acceptance** (optional, `[charge_acceptance]`): above `soc_onset` the cell stores
   a linearly falling share `η = (1 − soc)/(1 − soc_onset)` of a charging current and turns

@@ -517,6 +517,31 @@ pub(crate) fn kinetics_at_empty_v(
         - overpotential(&w.neg, temp_k, c_e, c_n, i / w.neg.g.area_m2)
 }
 
+/// Whether both particle surfaces lie inside `[0, c_max]`, read the way [`voltage`] reads
+/// them: from the outermost shell along the flux of the particles' current `i_p`. See
+/// [`EventFlags::SURFACE_OUT_OF_RANGE`].
+///
+/// The physical bounds and **not** [`clamp_surface`]'s band, on measurement: past empty this
+/// model parks a surface on that band's edge by construction ([`split`]), and rounding lands
+/// it a hair outside — up to 2.4e-18 of `c_max` below the empty edge and 1e-16 above the
+/// full one, on 494 steps of 2–5 C discharges driven past empty. A band test flagged every one
+/// of them as a surface past full or empty.
+#[must_use]
+fn surfaces_in_range(w: &Working<'_>, s: &SpmState, i_p: f64) -> bool {
+    let in_band = |c: &[f64], side: &Side<'_>, j_surf: f64| {
+        let c_max = side.p.c_max_mol_per_m3;
+        let c_s = surface_from_outer(
+            c[c.len() - 1],
+            c.len(),
+            side.p.particle_radius_m,
+            side.d_s,
+            j_surf,
+        );
+        (0.0..=c_max).contains(&c_s)
+    };
+    in_band(&s.c_neg, &w.neg, w.j_neg(i_p)) && in_band(&s.c_pos, &w.pos, w.j_pos(i_p))
+}
+
 /// Terminal voltage \[V\] at cell current `i` \[A, discharge-positive\], evaluated
 /// from the **start-of-step** solid state.
 ///
@@ -1455,6 +1480,9 @@ pub(crate) fn advance(
         return (flags, 0.0, 0.0, (0.0, 0.0));
     }
     let (u_start, v_start) = start;
+    if !surfaces_in_range(&wk, s, i_p) {
+        flags |= EventFlags::SURFACE_OUT_OF_RANGE;
+    }
     let u_end = equilibrium_voltage(&wk, s);
     let v_end = voltage(&wk, s, i_p, i) - reversal_drop(&wk, rev, s.soc_deficit);
     // The reversal channel's share of the heat, `i_d·(OCV_d − U_eq)` at each end: what

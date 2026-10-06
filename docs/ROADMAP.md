@@ -286,7 +286,8 @@ where the rest-OCV gate refused to correct.
   solved on the flat curve until the reversal above; past full it still is. The `Dfn` has
   the same gap, found 2026-10-06 (`dfn-electrolyte-limit.md`): a charge driven on past the
   4.2 V ceiling puts a particle surface past full 220 s later at 3 C and twenty-four minutes
-  later at 1 C, which `SURFACE_OUT_OF_RANGE` now flags.
+  later at 1 C. `SURFACE_OUT_OF_RANGE` now flags that state on both models (on the `Spm`
+  nine and eighteen minutes past the ceiling at 3 C and 1 C); neither gives it physics.
 * ~~**A `Dfn` books the equilibrium voltage's fall across a long step as heat.**~~ —
   **closed 2026-09-23** (`dfn-end-of-step-heat.md`): the heat is read at the end of the
   step off the cell's own solve, for the report and the network both (1.03 K against
