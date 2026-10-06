@@ -80,9 +80,11 @@ measured (Dreyer 2010). The split also needs a continuity rule there: almost eve
 particle's end-of-step curve rises somewhere in the range a step allows. An interaction
 strength fitted to that 20 mV runs cleanly with the engine's solve at real-time steps and
 20 particles (7 mV plateau, 15 mV rest gap that depends on the direction of arrival, ~15 s
-sub-steps for fast-forward), but the gap is then capped by the fitted constant. **The
-choice between that, a per-particle phase-field model, shrinking-core, or declining H1 is
-the owner's, and is open.**
+sub-steps for fast-forward), but the gap is then capped by the fitted constant. **Decided
+2026-10-06 by the owner: build on the fitted constant.** That closes the plateau emerging
+from particles filling one at a time, and a rest gap that exists and depends on which way
+the cell arrived. It does not close the gap's size — capped by the fitted constant — nor the
+rate dependence of the knee, which was not measured.
 
 ### H2. Aging is semi-empirical on every model, and the porous models cannot age their pores
 
@@ -470,7 +472,7 @@ source and a regularisation chosen by measurement; (D) an `[spm]` section for LF
 
 *Slice A ran 2026-10-06* (`phase-9-slice-a-spike.md`): slices B–D as written assume the
 published OCP produces the plateau and the hysteresis, which on that measurement it does not
-at an affordable particle count; they wait on the owner's choice recorded under H1.
+at an affordable particle count; the owner chose the fitted constant (under H1), and slices B–D are being re-planned on it.
 
 *Exit.* A CC discharge of the LFP ensemble matches the Prada 2013 DFN reference within a
 stated tolerance over the plateau; at rest after a partial charge and a partial discharge

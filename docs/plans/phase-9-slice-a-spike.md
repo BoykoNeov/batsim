@@ -191,6 +191,15 @@ hysteresis at rest at all. The options, for the owner:
 4. **Stop Phase 9 here.** LFP stays on the equivalent circuit; H1 is recorded as
    measured-and-declined with this note as the reason.
 
+### Decided 2026-10-06 by the owner: option 1, the fitted constant
+
+What that closes of H1: the plateau emerging from particles filling one at a time, and a
+rest gap that exists and depends on which way the cell arrived. What it does not: the
+gap's size, which is capped by the fitted Ω, and the rate dependence of the knee, which
+this spike did not measure. Every number above is from a half cell against lithium metal
+at C/20, 298 K and one seed; none of them is an exit criterion until it is re-measured on
+the full cell the plan builds.
+
 ## Still open
 
 * Charge direction at N = 100, and N between 100 and a few hundred, were not run.
