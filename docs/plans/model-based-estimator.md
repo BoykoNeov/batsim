@@ -217,7 +217,8 @@ were written because the table was about to be.
 * **The guided-path lesson.** The four scenarios are loadable from the picker (the server
   lists the directory), but no step teaches them; that is its own slice under the claims
   harness, and it should be the LFP pair — the filter that corrects slowly beside the same
-  filter on a cell 20 % off its table.
+  filter on a cell 20 % off its table. **Done since**, as steps 33 and 34
+  (`path-gauge-filter-steps.md`).
 * **A bias state for the current offset.** The textbook fix for prediction 8 is a state the
   filter estimates; leaving it out is what makes "assume more noise" visible as a tuning
   trade-off. Add it as a separate estimator arm if a lesson wants the contrast.
@@ -240,4 +241,5 @@ were written because the table was about to be.
   wrong" happens; a scenario that sweeps it on the weak LFP cell would show the trade-off
   directly. Not measured here. One point since, from the lesson slice's perturbation
   table: at `voltage_sigma_v` = 0.030 the weak-cell filter is +0.48 points at 30 s, against
-  −14.74 at the shipped 0.010.
+  −14.74 at the shipped 0.010 — but −9.86 at 300 s and −5.96 at the end of the rest, so it
+  falls more slowly and lands about as far out. Not a sweep.

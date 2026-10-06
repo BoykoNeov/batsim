@@ -13597,7 +13597,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
     LedgerRule {
         // The one fault the weak-cell file adds to its control, which is the whole of the
         // difference between the two runs. Read off this step's own scenario.
-        phrase: "its resistance **`{n}`** times what",
+        phrase: "ohmic resistance **`{n}`** times what",
         ties: &[Tie::Scenario("faults.*.fault.WeakCell.r0_factor")],
         pow10: 0,
     },
@@ -13605,7 +13605,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // Where the wrong filter comes to rest: a node of the charge axis of the chemistry's
         // `[ocv]` table. Existential, as `Tie::Member` always is; the claim on the `soc (bms)`
         // row is what says the estimate is there.
-        phrase: "**`{n}`** is a breakpoint of this chemistry's `[ocv]` table",
+        phrase: "past **`{n}`**, a breakpoint of this chemistry's `[ocv]` table",
         ties: &[Tie::Member("ocv.soc.*")],
         pow10: 0,
     },

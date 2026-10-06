@@ -198,7 +198,8 @@ fn on_lfp_a_wrong_model_makes_the_filter_confidently_wrong() {
     // The collapse, which the guided path's step 34 states in words because the page does
     // not show sigma: from the 5 points `initial_soc_sigma` boots it with to about one by
     // 30 s, while the estimate falls fifteen points the wrong way, and on down under load.
-    // (The exact-model twin is still at 4.16 at 30 s: the shrinking is the wrong model's.)
+    // What shrinks it is WHERE the estimate went, not that the readings disagreed — see
+    // `the_filter_grows_sure_of_itself_where_the_curve_is_steep`.
     assert!((f.sigma[0].unwrap() - 1.1719).abs() <= TOL_PTS);
     assert!((f.sigma[1].unwrap() - 0.1396).abs() <= TOL_PTS);
     let sigma = f.sigma[2].unwrap();
@@ -216,6 +217,53 @@ fn on_lfp_a_wrong_model_makes_the_filter_confidently_wrong() {
     let cc = run_scenario(sc);
     assert_marks("the weak cell's counter", &cc.err, [3.0067, 2.9420, 2.0574]);
     assert!(f.err[0].abs() > 4.0 * cc.err[0].abs());
+}
+
+/// Why the wrong-model filter grows sure of itself: the covariance update reads the curve's
+/// slope at the ESTIMATE and never the innovation, so a filter whose estimate sits below the
+/// `[ocv]` table's 0.45 node, where LFP is several times steeper than on its plateau, shrinks
+/// its sigma fast whether or not its readings agree with it. The control is the exact-model
+/// file with no boot error, so every reading agrees: started on the plateau (60 %) it is
+/// still at 4.16 points at 30 s — identical to the shipped run with its 3-point boot error —
+/// and started at 44 %, below the node, it is at 0.42, further down than the wrong model's
+/// 1.17. The guided path's step 34 names this test for that sentence.
+#[test]
+fn the_filter_grows_sure_of_itself_where_the_curve_is_steep() {
+    let at = |soc0: f64, boot: f64| {
+        let mut sc = scenario("lfp_gauge_filter");
+        sc.pack.initial_soc = soc0;
+        sc.pack.bms.as_mut().unwrap().initial_soc_error = boot;
+        run_scenario(sc)
+    };
+    let plateau = at(0.60, 0.0);
+    let steep = at(0.44, 0.0);
+    let shipped = run("lfp_gauge_filter");
+    let wrong = run("lfp_gauge_filter_weak_cell");
+    let s30 = |m: &Marks| m.sigma[0].unwrap();
+    assert!(
+        (s30(&plateau) - 4.1611).abs() <= TOL_PTS,
+        "{}",
+        s30(&plateau)
+    );
+    assert!((s30(&steep) - 0.4236).abs() <= TOL_PTS, "{}", s30(&steep));
+    // To the fourth decimal rather than to the bit: the two estimates sit at different
+    // charges, so the slope the update reads differs a little. What does not enter is the
+    // three points of disagreement between them.
+    assert!(
+        (s30(&plateau) - s30(&shipped)).abs() <= TOL_PTS,
+        "the boot error, and every disagreement it causes, does not move sigma: {} against {}",
+        s30(&plateau),
+        s30(&shipped)
+    );
+    assert!(
+        steep.err[0].abs() < 0.2,
+        "below the node with the model exact, the readings agree: {}",
+        steep.err[0]
+    );
+    assert!(
+        s30(&steep) < s30(&wrong) && s30(&wrong) < s30(&plateau) / 3.0,
+        "agreeing readings on the steep part collapse it at least as far as the wrong model's"
+    );
 }
 
 /// The control arm for the sodium-ion rows: the same twins on a chemistry with its

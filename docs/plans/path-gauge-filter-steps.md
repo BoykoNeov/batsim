@@ -138,8 +138,33 @@ that had dropped the scenario's estimator section would have run the counter and
 Case F is also a measurement the estimator note listed as open ("a filter whose
 `voltage_sigma_v` is too small for its model error is how 'confidently wrong' happens"):
 told to expect 30 mV of model error instead of 10, the same filter on the same weak cell is
-**+0.48** points at 30 s instead of −14.74. Trusting the voltage less is what saves it here.
-One point, not a sweep; recorded so the next slice on it starts from a number.
+**+0.48** points at 30 s instead of −14.74 — but −9.86 at 300 s and −5.96 at 3900 s, against
+−11.44 and −6.67. The first draft of this paragraph read the 30 s figure as "trusting the
+voltage less saves it"; the later readings say it only falls more slowly and lands about as
+far out. One setting, not a sweep.
+
+### The mechanism the first draft got wrong
+
+Step 34 first said the filter grew sure of itself because the wrong model made every reading
+disagree with it in the same direction, and it "read that consistency as information". The
+final review caught it, and the code settles it: the covariance update in
+`sim-core/src/bms.rs` reads the curve's slope at the **estimate**, the filter's settings and
+its own covariance, and never the innovation. Measured with the probe, the exact-model file
+with **no** boot error — every reading agreeing — has sigma 4.1611 points at 30 s started on
+the plateau at 60 % (the shipped run, three points of disagreement, also 4.1611) and
+**0.4236** started at 44 %, below the `[ocv]` table's 0.45 node, where the curve is several
+times steeper: further down than the wrong model's 1.1719. So the wrong model makes the filter
+sure of itself by dragging its estimate onto the steep part of the curve, not by disagreeing
+with it. The prose now says that, the same node is the one the footnote says it comes to rest
+on, and `the_filter_grows_sure_of_itself_where_the_curve_is_steep` pins the control. The
+comment the first commit put in `gauge_filter.rs` ("the shrinking is the wrong model's") had
+the same error and is gone.
+
+The first commit also named "the test named above" for the counter-on-the-weak-cell claim
+where the nearest test named above is the node test; it now names
+`on_lfp_a_wrong_model_makes_the_filter_confidently_wrong`. And the weak cell's factor scales
+`R0` alone (`CLAUDE.md`: static multipliers scale R0, not the RC pairs), so the prose says
+"ohmic resistance" rather than "resistance".
 
 ### Found and not fixed
 
