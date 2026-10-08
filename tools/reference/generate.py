@@ -124,6 +124,19 @@ SCENARIOS = {
             {"c_rate": 3.0, "dt_s": 2.0},
         ),
     ],
+    # Phase 9: the reference for batsim's many-particle LFP cell. PyBaMM has no
+    # phase-separating LFP model, so this is its SPM on the set's own MONOTONE potential;
+    # batsim's cell reads a regular-solution potential instead, and the offset between the
+    # two (U0) is what `lfp_ensemble.rs` asserts a band on, not a match.
+    "lfp_26650_prada2013": [
+        (
+            "spm_cc_c20_25c.csv",
+            "C/20 constant-current discharge from full, isothermal 25 degC",
+            run_cc_discharge,
+            SPM_CONVERGED,
+            {"c_rate": 1.0 / 20.0, "dt_s": 30.0},
+        ),
+    ],
 }
 
 

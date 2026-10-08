@@ -33,7 +33,9 @@ Most fields are a direct key read. Three need a note:
 
 from __future__ import annotations
 
+import ast
 import inspect
+import operator
 import re
 import sys
 
@@ -90,6 +92,81 @@ EXTEND_TO_FULL_RANGE = True
 TAIL_SEED_POINTS = 3
 
 
+# Constants the engine uses (`sim_core::aging::GAS_CONSTANT_J_PER_MOL_K`,
+# `sim_core::spm::FARADAY_C_PER_MOL`), so the fit below is solved against the same `kT`
+# the many-particle cell evaluates.
+GAS_CONSTANT_J_PER_MOL_K = 8.31446261815324
+FARADAY_C_PER_MOL = 96485.33212331001
+
+# The second form of a positive potential, for the chemistries that carry one:
+# `U(y) = U0 - (RT/F) ln(y/(1-y)) - Omega (1 - 2y)`, read only by the many-particle cell
+# (`CellModelConfig::SpmEnsemble`). The parameter set's own potential stays in the table
+# beside it. Two of the three numbers are cited; Omega is fitted, and this is the fit.
+#
+# Per chemistry: (u0_v, its source, rest gap the fit targets [V], its source, fit T [K]).
+# See docs/plans/phase-9-lfp-ensemble.md, owner decisions 1 and 2: U0 is Bai 2011's and is
+# NOT fitted to the set's potential (+10 mV against PyBaMM, documented); Omega is chosen so
+# the curve's two turning points sit the measured rest gap apart, because Bai 2011's
+# published 0.183 eV gives neither a plateau nor a rest gap at an affordable particle count.
+REGULAR_SOLUTION = {
+    "lfp_26650_prada2013": (
+        3.42,
+        "Bai, Cogswell & Bazant 2011 (Nano Lett. 11, 4890), LFP regular-solution U0",
+        0.020,
+        "Dreyer et al. 2010 (Nat. Mater. 9, 448), LFP rest-voltage gap ~20 mV",
+        298.15,
+    ),
+}
+
+
+def _fit_omega(gap_v: float, t_k: float) -> float:
+    """The interaction strength [eV] whose regular-solution curve has its local minimum and
+    maximum `gap_v` apart at `t_k`.
+
+    With `kT = RT/F`, the turning points sit at `y(1-y) = kT/(2 Omega)`, and by the curve's
+    symmetry about y = 1/2 they are `U0 -+ gap/2`; `U0` drops out, so the gap is a function
+    of Omega alone, rising monotonically from zero at `Omega = 2 kT`. Bisection to the last
+    bit.
+    """
+    import math
+
+    kt = GAS_CONSTANT_J_PER_MOL_K * t_k / FARADAY_C_PER_MOL
+
+    def gap(omega: float) -> float:
+        y = 0.5 - math.sqrt(0.25 - kt / (2.0 * omega))
+        # U(1 - y) - U(y) for the minimum at y < 1/2.
+        return 2.0 * (kt * math.log(y / (1.0 - y)) + omega * (1.0 - 2.0 * y))
+
+    lo, hi = 2.0 * kt * (1.0 + 1e-12), 1.0
+    if not gap(lo) < gap_v < gap(hi):
+        raise RuntimeError(f"no interaction strength gives a {gap_v} V gap at {t_k} K")
+    while True:
+        mid = 0.5 * (lo + hi)
+        if mid in (lo, hi):
+            return hi
+        if gap(mid) < gap_v:
+            lo = mid
+        else:
+            hi = mid
+
+
+def _regular_solution_block(rs) -> None:
+    u0, u0_src, gap_v, gap_src, t_k = rs
+    omega = _fit_omega(gap_v, t_k)
+    print("# The positive electrode's regular-solution potential, read only by the "
+          "many-particle cell")
+    print("# (SpmEnsemble); the table above stays the set's own potential, for every "
+          "other reader.")
+    print(f"# u0_v: {u0_src}. Cited, not fitted.")
+    print(f"# omega_ev: FITTED by tools/reference/extract_spm.py so the curve's turning "
+          f"points sit")
+    print(f"# {gap_v * 1e3:g} mV apart at {t_k:g} K -- {gap_src}.")
+    print("[spm.positive.regular_solution]")
+    print(f"u0_v     = {u0!r}")
+    print(f"omega_ev = {omega!r}")
+    print()
+
+
 def _literal_from_source(fn, name: str) -> float:
     """Read a scalar literal assigned to `name` in `fn`'s source text.
 
@@ -100,11 +177,60 @@ def _literal_from_source(fn, name: str) -> float:
     parameter set is upgraded, while this raises.
     """
     src = inspect.getsource(fn)
-    match = re.search(rf"^\s*{name}\s*=\s*([0-9.eE+-]+)", src, re.MULTILINE)
+    # The whole right-hand side up to a comment, not the leading number: Prada2013's LFP
+    # function writes `m_ref = 6 * 10 ** (-7)`, and a number-only pattern read that as
+    # **6** — ten million times the rate, emitted without a word.
+    match = re.search(rf"^\s*{name}\s*=\s*([^#\n]+)", src, re.MULTILINE)
     if match is None:
         raise RuntimeError(
             f"could not find literal '{name}' in {fn.__name__}; PyBaMM's parameter "
             f"set has changed shape and this extractor needs updating"
+        )
+    return _arithmetic(match.group(1).strip(), f"{name} in {fn.__name__}")
+
+
+def _arithmetic(expr: str, what: str) -> float:
+    """Evaluate a constant expression of numbers, `+ - * / **` and parentheses — nothing else.
+
+    Anything else (a name, a call) raises: an extractor that guessed at it would be the
+    silent mis-read the literal parse exists to prevent.
+    """
+    ops = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Pow: operator.pow,
+    }
+
+    def ev(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, ast.BinOp) and type(node.op) in ops:
+            return ops[type(node.op)](ev(node.left), ev(node.right))
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+            v = ev(node.operand)
+            return -v if isinstance(node.op, ast.USub) else v
+        raise RuntimeError(f"{what}: `{expr}` is not a constant arithmetic expression")
+
+    return ev(ast.parse(expr, mode="eval").body)
+
+
+def _arrhenius_reference_k(fn) -> float:
+    """The reference temperature the exchange-current function's Arrhenius factor is
+    written against: the `298.15` in `exp(E_r / R * (1 / 298.15 - 1 / T))`.
+
+    This, and not the set's "Reference temperature [K]" key, is the temperature at which
+    `m_ref` is the rate — and the engine's `t_ref_k` is read only by that Arrhenius factor.
+    Prada2013 shows the two can differ: its key is 298 while both of its functions are
+    written at 298.15, a 0.7 % shift in the positive rate at 25 degC had the key been used.
+    """
+    src = inspect.getsource(fn)
+    match = re.search(r"\(\s*1\s*/\s*([0-9.]+)\s*-\s*1\s*/\s*T\s*\)", src)
+    if match is None:
+        raise RuntimeError(
+            f"could not find the Arrhenius reference temperature in {fn.__name__}; "
+            f"this extractor needs updating"
         )
     return float(match.group(1))
 
@@ -253,11 +379,34 @@ def main(argv: list[str]) -> int:
           f"by tools/reference/extract_spm.py ---")
     print(f"# Every value below is a key of the {param_set} parameter set, a literal "
           f"inside one of its")
-    print(f"# functions, or a stated product of two keys. Nothing here is fitted or "
-          f"invented.")
+    rs = REGULAR_SOLUTION.get(chem_id)
+    if rs is None:
+        print(f"# functions, or a stated product of two keys. Nothing here is fitted or "
+              f"invented.")
+    else:
+        print(f"# functions, or a stated product of two keys -- except the positive "
+              f"electrode's")
+        print(f"# [spm.positive.regular_solution], which replaces the set's monotone "
+              f"potential and whose")
+        print(f"# interaction strength is FITTED here (see REGULAR_SOLUTION).")
     print()
+    # The temperature `m_ref` is the rate at: the one the exchange-current functions'
+    # Arrhenius factors are written against, which must agree between the electrodes.
+    # The set's own "Reference temperature [K]" key is printed beside it when it differs.
+    t_refs = {
+        _arrhenius_reference_k(pv[f"{side} electrode exchange-current density [A.m-2]"])
+        for side in ("Negative", "Positive")
+    }
+    if len(t_refs) != 1:
+        raise RuntimeError(f"the electrodes' Arrhenius references disagree: {t_refs}")
+    t_ref = t_refs.pop()
+    t_key = float(pv["Reference temperature [K]"])
     print("[spm]")
-    print(f"t_ref_k                = {pv['Reference temperature [K]']:.6g}")
+    if t_ref == t_key:
+        print(f"t_ref_k                = {t_ref:.6g}")
+    else:
+        print(f"t_ref_k                = {t_ref:.6g}   # the exchange-current functions' "
+              f"Arrhenius reference; the set's key reads {t_key:.6g}")
     print(f"c_e_mol_per_m3         = {pv['Initial concentration in electrolyte [mol.m-3]']:.6g}")
     # Electrode plate area: the set gives height and width separately and PyBaMM
     # multiplies them for the current-collector area, so this product is the set's
@@ -270,6 +419,8 @@ def main(argv: list[str]) -> int:
 
     _electrode_block("negative", "Negative", pv, float(xmin), float(xmax), tol_v)
     _electrode_block("positive", "Positive", pv, float(ymin), float(ymax), tol_v)
+    if rs is not None:
+        _regular_solution_block(rs)
     return 0
 
 

@@ -1,8 +1,9 @@
 # Phase 9 — an LFP cell whose plateau and hysteresis come from its particles
 
 **Status: PLANNED 2026-10-06. Slice B BUILT 2026-10-08** (`phase-9-slice-b-ensemble.md`:
-the engine model, `SNAPSHOT_VERSION` 25, sub-step 10 s on measurement); C and D not
-started. Written after slice A's spike and its second round (`phase-9-slice-a-spike.md`),
+the engine model, `SNAPSHOT_VERSION` 25, sub-step 10 s on measurement). **Slice C BUILT
+2026-10-08** (`phase-9-slice-c-chemistry.md`: `chemistries/lfp_26650_prada2013.toml`, the
+PyBaMM golden, criteria 2–6 pinned in `sim-data/tests/lfp_ensemble.rs`). D not started. Written after slice A's spike and its second round (`phase-9-slice-a-spike.md`),
 which is the measurement this plan stands on. Where a later slice note contradicts this
 text, **the slice note is the measurement and wins**. When written the repo was at
 `SNAPSHOT_VERSION` 24 and `WASM_API_VERSION` 8.
@@ -98,9 +99,13 @@ monotone by construction), and particle counts above 40 at the full-cell level.
 
 ### C — the LFP chemistry and its goldens (data plus `tools/reference/`)
 
-- A new chemistry file, Prada2013's A123 26650 LFP/graphite (2.3 Ah). It needs a new file
-  because `lfp_26650_generic.toml` is a 2.5 Ah ECM fit, and moving its capacity would move
-  every ECM golden and guided-path number built on it. Its `[spm]` section is extracted by
+- A new chemistry file, Prada2013's 26650 LFP/graphite (2.3 Ah). **Corrected in slice C:**
+  the reason first written here was false — `lfp_26650_generic.toml` is not a 2.5 Ah fit; it
+  is already fitted to Prada2013 at 2.303451 Ah (the 2.5 is `CLAUDE.md`'s example block,
+  which is a shape, not a source). A new file is still the choice, for a different reason: a
+  `[spm.positive.regular_solution]` makes `Pack::new` refuse the plain `Spm` and the `Dfn`, so
+  the generic file would lose a model, and every LFP scenario and guided-path step on it would
+  start carrying a section it never reads. Its `[spm]` section is extracted by
   `tools/reference/`, with the positive OCP replaced by the regular-solution form (U0 3.42,
   Ω 0.0759 fitted, with provenance saying so). Its ECM sections are placeholders, labelled
   as such.
@@ -148,6 +153,9 @@ and checked by a test so a later change to the cell cannot silently move it.
 1. `N = 1`, table OCP: bit-identical to `Spm` on every existing `Spm` golden and scenario.
 2. The plateau: C/20 discharge of the 20-particle LFP cell against PyBaMM's Prada2013 SPM.
    The mean offset over 20–80 % lies within a stated band around +10.3 mV, attributed to U0.
+   *(Slice C: the anchor re-measured on the converged reference is +9.65 mV; the band is
+   +9.14…+10.19 mV. The references agree to 0.03 mV — the shift is on batsim's side; see
+   `phase-9-slice-c-chemistry.md`.)*
    The 20–80 % span is within a stated band of 138 mV. Bands are set in slice C from the
    seed spread, not chosen to pass.
 3. Hysteresis at 298 K: C/20 approach to SOC 0.5 from each side, then 2 h rest, N 20. The

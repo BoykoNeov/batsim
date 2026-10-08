@@ -926,6 +926,10 @@ const SHIPPED_CHEMISTRIES: &[(&str, &str)] = &[
         include_str!("../../../chemistries/lfp_26650_generic.toml"),
     ),
     (
+        "lfp_26650_prada2013",
+        include_str!("../../../chemistries/lfp_26650_prada2013.toml"),
+    ),
+    (
         "lto_20ah_generic",
         include_str!("../../../chemistries/lto_20ah_generic.toml"),
     ),

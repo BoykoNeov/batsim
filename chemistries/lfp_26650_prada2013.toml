@@ -1,0 +1,240 @@
+# LFP / graphite 26650 on PyBaMM's Prada2013 set -- the chemistry for the many-particle cell.
+#
+# The same cell as `lfp_26650_generic.toml`: the same parameter set, the same fitted [ocv],
+# the same 2.303451 A.h. What this file adds is an [spm] section, extracted from Prada2013,
+# whose positive electrode carries the regular-solution potential that only the
+# many-particle cell (`CellModelConfig::SpmEnsemble`) reads. See
+# docs/plans/phase-9-lfp-ensemble.md and docs/plans/phase-9-slice-c-chemistry.md.
+#
+# A separate file rather than an [spm] section in the generic one, because a positive
+# electrode with a [spm.positive.regular_solution] is refused under the plain `Spm` and the
+# `Dfn` (`BuildError::RegularSolutionNeedsEnsemble`): the generic file would lose a
+# model it can run today, and every LFP scenario and guided-path step built on it would
+# start carrying a section it never reads.
+#
+# ## The parts of this file have very different provenance, and it matters
+#
+# * **[spm] is extracted** from Prada2013 by `tools/reference/extract_spm.py` -- every
+#   value a key of the set, a literal inside one of its functions, or a stated product of
+#   two keys -- with ONE exception, written down where it sits: the positive electrode's
+#   regular-solution potential replaces the set's monotone fit (Afshar 2017) for the
+#   many-particle cell, its U0 is Bai 2011's, and its interaction strength is FITTED to a
+#   20 mV rest gap. The set's own potential stays in [spm.positive.ocp] beside it.
+# * **[ocv] and capacity_ah are fitted** from the same set by `tools/reference/fit_ocv.py`;
+#   identical to the generic file's, because the fit is.
+# * **[r0], [[rc]], [reversal], [thermal], [aging] and [safety] are COPIED from
+#   lfp_26650_generic.toml** and are placeholders there, so they are here. They are read
+#   by the equivalent-circuit model, by the thermal network and by the BMS -- not by the
+#   particles, except [reversal] past empty and [aging]'s health multipliers.
+
+[meta]
+id         = "lfp_26650_prada2013"
+name       = "LFP/graphite 26650 (Prada2013, many-particle)"
+provenance = "[spm] extracted from PyBaMM Prada2013 via tools/reference/extract_spm.py, positive electrode's regular-solution potential U0 cited (Bai 2011) and interaction strength fitted (20 mV rest gap, Dreyer 2010); OCV and capacity fitted to Prada2013 via tools/reference/fit_ocv.py; R0, RC, reversal, thermal, aging and safety copied from lfp_26650_generic as order-of-magnitude placeholders (TODO: fit)."
+
+[cell]
+# provenance: usable capacity between the Prada2013 stoichiometry limits
+# (Q_n*(x_max-x_min)), computed by tools/reference/fit_ocv.py. Setting this to the
+# reference's usable capacity makes batsim's coulomb-counted SOC track PyBaMM's
+# stoichiometry SOC under constant current, which is what the golden CC test relies on.
+capacity_ah     = 2.303451
+v_max           = 3.65     # provenance: standard LFP charge cutoff (protection limit; Prada2013 OCV tops out at 3.60 V)
+v_min           = 2.00     # provenance: standard LFP discharge cutoff (matches Prada2013 lower cut-off)
+max_charge_c    = 1.0      # provenance: typical LFP continuous charge rating
+max_discharge_c = 3.0      # provenance: typical LFP continuous discharge rating
+t_charge_min_k  = 273.15   # provenance: charge inhibit below 0 degC (Li plating guard)
+t_max_k         = 333.15   # provenance: 60 degC operating ceiling (datasheet class)
+
+# Monotone OCV(soc); linear interpolation, clamped at the ends. SOC here is the
+# stoichiometry-window state of charge (1 = fully charged). Grid is dense at the
+# steep, convex knees and coarse across the flat plateau.
+# provenance: thermodynamic cell OCV = U_p(y(soc)) - U_n(x(soc)) of the PyBaMM
+# Prada2013 parameter set, emitted by tools/reference/fit_ocv.py (pybamm 26.6.2.0).
+# Max piecewise-linear representation error vs the continuous OCV ~25 mV, confined
+# to the sub-1% bottom knee; a few mV across the plateau.
+[ocv]
+soc   = [0.0000, 0.0025, 0.0050, 0.0075, 0.0100, 0.0125, 0.0150, 0.0175, 0.0200, 0.0300, 0.0400, 0.0500, 0.1000, 0.1500, 0.2500, 0.3500, 0.4500, 0.5500, 0.6500, 0.7500, 0.8500, 0.9000, 0.9500, 0.9600, 0.9700, 0.9800, 0.9825, 0.9850, 0.9875, 0.9900, 0.9925, 0.9950, 0.9975, 1.0000]
+volts = [2.0000, 2.0743, 2.1430, 2.2066, 2.2655, 2.3199, 2.3703, 2.4169, 2.4600, 2.6028, 2.7077, 2.7853, 2.9781, 3.1080, 3.1857, 3.2324, 3.2621, 3.2678, 3.2700, 3.2926, 3.3132, 3.3142, 3.3164, 3.3193, 3.3274, 3.3502, 3.3607, 3.3743, 3.3920, 3.4150, 3.4449, 3.4838, 3.5343, 3.6000]
+
+# Ohmic resistance R0[soc][temp_k], ohms. Bilinear interpolation, clamped.
+# provenance: order-of-magnitude placeholder — a few tens of milliohms, rising at
+# low temperature and near the SOC extremes (TODO: fit).
+[r0]
+soc    = [0.0, 0.5, 1.0]
+temp_k = [263.15, 298.15, 318.15]
+ohms   = [[0.055, 0.022, 0.018],
+          [0.048, 0.020, 0.016],
+          [0.050, 0.021, 0.017]]
+
+# Single RC (Thevenin) pair. tau = r_ohms * c_farad = 20 s.
+# provenance: order-of-magnitude placeholder for the dominant polarization time
+# constant of an LFP cell (TODO: fit from GITT/pulse data).
+[[rc]]
+r_ohms  = 0.010
+c_farad = 2000.0
+
+# How the cell behaves below empty. Driven past soc = 0 a real cell does not stop
+# delivering current -- it goes into voltage reversal, its OCV falls through zero, and the
+# external circuit starts paying. Without this the engine would keep sourcing at OCV(0)
+# forever and fabricate energy; see docs/plans/low-clamp-reversal.md.
+[reversal]
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized so the cell collapses
+# from its empty-endpoint OCV (2.0 V) to the floor over 2 % of capacity.
+v_per_soc = 100.0
+# provenance: placeholder -- a declared limit rather than a measured plateau. A real
+# reversed cell continues to roughly -1 to -2 V on copper dissolution before failing; 0 V
+# is the conservative choice and bounds an otherwise unbounded ramp.
+floor_v   = 0.0
+# What over-discharge costs: capacity fraction lost per Ah delivered past empty. Past
+# empty the anode has no lithium left to give and its copper current collector oxidises
+# instead, which does not come back.
+# provenance: placeholder -- order-of-magnitude only, TODO fit. Sized against the collapse
+# window above, the same way v_per_soc is sized against OCV(0): one FULL reversal (2 % of
+# capacity past empty, 0.0461 Ah here) costs ~1.0 % of capacity. That puts an amp-hour
+# delivered past empty at ~11000x an ordinary cycle amp-hour and ~220x a plated one, so a
+# single deep over-discharge costs about what a year on the shelf costs -- bad enough to
+# matter on the first event, not so bad that the cell is scrap.
+fade_per_ah = 2.2e-1
+
+[thermal]
+heat_capacity_j_per_k = 95.0   # provenance: ~m*cp for a 26650 (~85 g, mixed materials); placeholder
+# h*A for a FULLY EXPOSED cell (as on a 1S1P pack). Inside a pack the engine scales
+# this down per cell by the fraction of surface not blocked by neighbours, so a
+# core cell sheds heat only by conduction toward the edge.
+h_area_w_per_k        = 0.35   # provenance: natural-convection h*A placeholder for a bare cell
+
+# No docv_dt_v_per_k column, so entropic heating is disabled for this chemistry
+# (TODO: add measured dU/dT to enable the reversible heat term).
+
+# Semi-empirical aging. Calendar fade is k(T, soc)*sqrt(t) with t in SECONDS and the
+# result a capacity *fraction*; cycle fade is per Ah of throughput, weighted by the
+# depth of the excursion carrying it. Every number below is a placeholder: they are
+# order-of-magnitude plausible together (the set below gives roughly 10 % calendar
+# fade over a year at 25 degC and full SOC, and a few percent over 500 full cycles),
+# but none is fitted, so scenarios must assert the SHAPE of a fade curve, never a
+# number on it.
+[aging]
+cal_pre_exp                = 1.0e4    # provenance: placeholder — order-of-magnitude only, TODO fit
+cal_ea_j_per_mol           = 5.0e4    # provenance: placeholder Arrhenius activation energy, TODO fit
+cal_soc_stress             = [1.0, 1.0, 1.4]  # provenance: placeholder SOC stress at soc = 0.0/0.5/1.0
+cyc_fade_per_ah            = 2.0e-5   # provenance: placeholder cycle fade per Ah throughput, TODO fit
+cyc_dod_stress_exp         = 1.1      # provenance: placeholder DOD stress exponent (per-cycle convention)
+r_growth_per_capacity_loss = 1.5     # provenance: placeholder — resistance grows faster than capacity fades
+
+# Emergent-failure thresholds. Both halves are live.
+#
+# Runaway: above t_onset_k a cell releases runaway_power_w_at_onset watts, accelerating
+# with an Arrhenius exponent runaway_ea_j_per_mol and fading as its runaway_energy_j
+# budget burns off. Scale check on the placeholders, which only mean anything TOGETHER
+# (the failure mode the [aging] pair demonstrated in slice A):
+#   - adiabatic ceiling  = 24 kJ / 95 J/K = 253 K, so a fully-reacted cell peaks near
+#     676 K (403 degC) — hot, survivable-looking for LFP, and comfortably past the vent.
+#   - onset -> vent      = 30 K x 95 J/K = 2.85 kJ, released at 5 W rising to ~33 W
+#     across that span. Integrated through the engine's own reaction_power that is 263 s,
+#     roughly 4.5 minutes. It is NOT the ~3 minutes an average of the two endpoint powers
+#     predicts: the Arrhenius rise is convex, so the cell spends most of the span near the
+#     cold end and the endpoint average runs fast. Corrected against a measurement in
+#     docs/plans/phase-8-slice-a-lto.md, which walked into the same trap writing the LTO set.
+# Both are shape checks, not fits; sim-data pins them against a band.
+#
+# Plating: charging below t_plating_min_k above plating_c_threshold plates metallic
+# lithium. The three coefficients below say what that costs. Scale check on the
+# placeholders, at this cell's 2.303 Ah: one full cold charge above the threshold
+# moves ~2.3 Ah of plating throughput, so it costs ~0.23 % capacity (about 50x what
+# the same amp-hours cost as ordinary cycle fade) and carries a ~0.23 % chance of
+# leaving a soft internal short behind. Roughly 300 cold charges for an even chance of
+# a shorted cell — bad enough to matter, slow enough to be a curve rather than a cliff.
+[safety]
+t_onset_k           = 423.15   # provenance: ~150 degC exothermic onset (LFP is relatively stable); placeholder
+t_vent_k            = 453.15   # provenance: ~180 degC vent placeholder
+runaway_energy_j    = 24.0e3   # provenance: placeholder per-cell exothermic budget, set for a 253 K adiabatic rise (LFP peaks far below NMC in ARC tests); was 60.0e3, which gave a 632 K rise this cell has no business reaching; TODO fit
+runaway_power_w_at_onset = 5.0     # provenance: placeholder amplitude, chosen with the Ea below for a ~3 min adiabatic onset-to-vent; TODO fit
+runaway_ea_j_per_mol     = 1.0e5   # provenance: placeholder activation energy for the decomposition exotherm, order-of-magnitude typical for Li-ion ARC fits; TODO fit
+t_plating_min_k     = 273.15   # provenance: plating risk below 0 degC
+plating_c_threshold = 0.5      # provenance: placeholder C-rate above which cold-charge plating risk flags
+plating_fade_per_ah        = 1.0e-3  # provenance: placeholder — set ~50x cyc_fade_per_ah so plated charge is decisively worse than ordinary throughput, TODO fit
+plating_short_hazard_per_ah = 1.0e-3 # provenance: placeholder Poisson hazard per Ah plated, TODO fit
+plating_short_ohms         = 50.0    # provenance: placeholder soft short, ~2500x this cell's R0 (~66 mA leak at 3.3 V, days to drain); TODO fit
+
+# ---------------------------------------------------------------------------------------
+# [spm] -- extracted from PyBaMM Prada2013 (pybamm 26.6.2.0) by tools/reference/extract_spm.py.
+# ---------------------------------------------------------------------------------------
+[spm]
+t_ref_k                = 298.15   # the Arrhenius reference both exchange-current functions are written at; the set's "Reference temperature [K]" key reads 298, which would shift the positive rate 0.7 % at 25 degC
+c_e_mol_per_m3         = 1200     # Prada2013 "Initial concentration in electrolyte [mol.m-3]"; constant, per the single-particle approximation
+electrode_area_m2      = 0.18     # = "Electrode height [m]" 0.6 x "Electrode width [m]" 0.3
+contact_resistance_ohm = 0        # Prada2013 "Contact resistance [Ohm]" -- the set's own value, not an omission
+
+[spm.negative]
+particle_radius_m       = 5e-06      # Prada2013 "Negative particle radius [m]"
+diffusivity_m2_per_s    = 3e-15      # Prada2013 "Negative particle diffusivity [m2.s-1]", constant (no activation energy published)
+c_max_mol_per_m3        = 30555      # Prada2013 "Maximum concentration in negative electrode [mol.m-3]"
+active_volume_fraction  = 0.58       # Prada2013 "Negative electrode active material volume fraction"
+thickness_m             = 3.4e-05    # Prada2013 "Negative electrode thickness [m]"
+m_ref                   = 6.48e-07   # literal inside graphite_LGM50_electrolyte_exchange_current_density_Chen2020, which Prada2013 uses
+reaction_ea_j_per_mol   = 35000      # E_r, literal inside the same function
+charge_transfer_alpha   = 0.5        # Prada2013 "Negative electrode charge transfer coefficient"
+stoich_min              = 0.017617931791027226  # pybamm.lithium_ion.get_min_max_stoichiometries
+stoich_max              = 0.8100434952651947    # ditto
+docp_dt_v_per_k         = 0          # Prada2013 "Negative electrode OCP entropic change [V.K-1]" -- literally zero
+# The set's graphite potential is Chen2020's LG M50 fit (graphite_LGM50_ocp_Chen2020), sampled
+# by extract_spm.py: 45 adaptively-placed points over [0, 0.8600] (the usable window plus a
+# 0.05 margin) and 2 appended above, to the full range [0, 1]. Max piecewise-linear
+# interpolation error 1.95 mV over the core, 0.00 mV over the extension (the fit is flat there).
+[spm.negative.ocp]
+stoich = [0.000000, 0.001720, 0.003870, 0.005590, 0.007740, 0.009460, 0.011611, 0.013761, 0.015911, 0.018061, 0.020641, 0.022791, 0.025371, 0.027951, 0.030962, 0.033542, 0.036552, 0.039132, 0.042142, 0.045152, 0.048162, 0.051603, 0.055043, 0.062353, 0.070094, 0.079124, 0.088584, 0.107505, 0.134597, 0.144057, 0.153518, 0.163838, 0.175449, 0.215011, 0.246832, 0.322516, 0.366379, 0.430022, 0.537527, 0.583109, 0.626972, 0.645033, 0.677284, 0.752538, 0.860043, 0.930022, 1.000000]
+volts  = [2.383542, 2.253950, 2.103822, 1.992537, 1.863616, 1.768049, 1.657336, 1.555601, 1.462115, 1.376207, 1.282257, 1.210924, 1.132907, 1.062404, 0.988680, 0.932050, 0.872816, 0.827300, 0.779666, 0.737283, 0.699550, 0.661437, 0.627991, 0.569652, 0.522340, 0.479943, 0.444398, 0.381828, 0.292811, 0.268742, 0.250905, 0.237663, 0.228200, 0.211552, 0.196871, 0.151307, 0.138825, 0.133939, 0.132575, 0.126455, 0.102928, 0.096436, 0.092703, 0.092027, 0.092020, 0.092020, 0.092020]
+
+[spm.positive]
+particle_radius_m       = 5e-08      # Prada2013 "Positive particle radius [m]"; the many-particle cell's MEDIAN radius
+diffusivity_m2_per_s    = 5.9e-18    # Prada2013 "Positive particle diffusivity [m2.s-1]", constant
+c_max_mol_per_m3        = 22806      # Prada2013 "Maximum concentration in positive electrode [mol.m-3]"
+active_volume_fraction  = 0.374      # Prada2013 "Positive electrode active material volume fraction"
+thickness_m             = 8e-05      # Prada2013 "Positive electrode thickness [m]"
+m_ref                   = 6e-07      # literal inside LFP_electrolyte_exchange_current_density_kashkooli2017, written there as `6 * 10 ** (-7)`
+reaction_ea_j_per_mol   = 39570      # E_r, literal inside the same function
+charge_transfer_alpha   = 0.5        # Prada2013 "Positive electrode charge transfer coefficient"
+stoich_min              = 0.0037615921079256352 # pybamm.lithium_ion.get_min_max_stoichiometries: the LFP when the cell is full
+stoich_max              = 0.7035020209291313    # ditto, the LFP when the GRAPHITE runs out: in this cell the LFP never fills past 70 %
+docp_dt_v_per_k         = 0          # Prada2013 "Positive electrode OCP entropic change [V.K-1]" -- zero; and it must be beside a regular_solution, which carries its own
+# The set's own LFP potential (LFP_ocp_Afshar2017, monotone by construction), sampled by
+# extract_spm.py: 24 adaptively-placed points over [0, 0.7535] (the usable window plus a 0.05
+# margin) and 19 appended above, to the full range [0, 1]. Max piecewise-linear interpolation
+# error 2.00 mV over the core, 1.97 mV over the extension. Read by every model EXCEPT the
+# many-particle cell, which reads [spm.positive.regular_solution] below instead -- and the
+# plain Spm and the Dfn refuse this file, because that section is present.
+[spm.positive.ocp]
+stoich = [0.000000, 0.000754, 0.001507, 0.002261, 0.003391, 0.004144, 0.005275, 0.007158, 0.008289, 0.009419, 0.011679, 0.014317, 0.017707, 0.020721, 0.024112, 0.033908, 0.094188, 0.188376, 0.282563, 0.376751, 0.470939, 0.565127, 0.659314, 0.753502, 0.832381, 0.857031, 0.876751, 0.890678, 0.902880, 0.913726, 0.923586, 0.932583, 0.940840, 0.948482, 0.955630, 0.962409, 0.968695, 0.974611, 0.980280, 0.985580, 0.990633, 0.995440, 1.000000]
+volts  = [3.907700, 3.854249, 3.806508, 3.763868, 3.708296, 3.676148, 3.634249, 3.578419, 3.551751, 3.529237, 3.494186, 3.465799, 3.442452, 3.429621, 3.420645, 3.410104, 3.405791, 3.403882, 3.401973, 3.400064, 3.398154, 3.396244, 3.394304, 3.391874, 3.384935, 3.377983, 3.367622, 3.355770, 3.340548, 3.321542, 3.298061, 3.269708, 3.236062, 3.196599, 3.150560, 3.096802, 3.036204, 2.967752, 2.889731, 2.803788, 2.708101, 2.602598, 2.487431]
+
+# The positive electrode's regular-solution potential, read only by the many-particle cell
+# (SpmEnsemble); the table above stays the set's own potential, for every other reader.
+# u0_v: Bai, Cogswell & Bazant 2011 (Nano Lett. 11, 4890), LFP regular-solution U0. Cited, not fitted.
+# omega_ev: FITTED by tools/reference/extract_spm.py so the curve's turning points sit
+# 20 mV apart at 298.15 K -- Dreyer et al. 2010 (Nat. Mater. 9, 448), LFP rest-voltage gap ~20 mV.
+[spm.positive.regular_solution]
+u0_v     = 3.42
+omega_ev = 0.07591738897375097
+
+# ---------------------------------------------------------------------------------------
+# [diagram] — what this cell is made of, for the browser client's carrier diagram.
+#
+# Read by NO engine code. sim_data::parse_chemistry_facts reads this table separately and
+# hands it to the page; ChemistryParams never sees it. Labels are how the page names the
+# parts; the four captions are what the page says when the ENGINE reports each state (the
+# engine decides when, this table says what). `cold_charge` is required exactly when
+# [safety].t_plating_min_k is present and `runaway` exactly when [safety] is, and the loader
+# rejects a mismatch. See docs/plans/carrier-diagram.md.
+# ---------------------------------------------------------------------------------------
+[diagram]
+family             = "intercalation"
+carrier            = "Li⁺"
+negative           = "graphite"
+positive           = "LiFePO₄"
+electrolyte        = "LiPF₆ in carbonate solvents"
+negative_collector = "copper"
+positive_collector = "aluminium"
+overcharge     = "The positive has no lithium left to give and the graphite no room to take it, so the charger's current becomes heat rather than stored charge; on a real cell the lithium plates on the graphite as metal and the electrolyte oxidises on the LiFePO₄."
+deep_discharge = "Below empty the graphite is out of lithium and the cell voltage collapses; the copper collector under it is pushed above its own dissolution potential and goes into solution, which is the damage billed per amp-hour past empty."
+cold_charge    = "Below 0 °C lithium arrives at the graphite faster than it can enter, and deposits on the surface as metal instead of intercalating: plating — capacity gone, and a dendrite that can bridge the separator."
+runaway        = "Above onset the film on the graphite breaks down and both electrodes react with the electrolyte; LiFePO₄ holds its oxygen tightly, so the exotherm is smaller and slower than on a nickel-rich positive."

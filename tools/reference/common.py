@@ -46,6 +46,9 @@ warnings.filterwarnings("ignore")
 # docs/plans/phase-6-porous-electrodes.md for the decision.
 PARAM_SETS = {
     "lfp_26650_generic": "Prada2013",
+    # The same set, as the porous-electrode cell (Phase 9): `extract_spm.py` reads it, and
+    # `fit_ocv.py` gives the same [ocv] as the generic file's.
+    "lfp_26650_prada2013": "Prada2013",
     "nmc_21700_lgm50": "Chen2020",
 }
 

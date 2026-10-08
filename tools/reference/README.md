@@ -56,7 +56,20 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
    - the kinetic rate coefficient `m_ref` and its activation energy `E_r` are *not*
      parameter-set keys — they are literals inside the exchange-current-density
      function bodies, and the script parses them out of the source so a set upgrade
-     raises instead of leaving a stale TOML;
+     raises instead of leaving a stale TOML. It evaluates the **whole** right-hand side
+     (numbers and `+ - * / **` only, anything else raises): Prada2013's LFP function
+     writes `m_ref = 6 * 10 ** (-7)`, and the first pattern, which read the leading
+     number, would have emitted **6** without a word;
+   - `t_ref_k` is the temperature the exchange-current functions' Arrhenius factors are
+     written against (parsed from the same bodies, and required to agree), **not** the
+     set's `Reference temperature [K]` key: the engine reads `t_ref_k` only in that factor,
+     and Prada2013's key says 298 where both functions say 298.15;
+   - a chemistry listed in `REGULAR_SOLUTION` also gets
+     `[spm.positive.regular_solution]`, the two-phase potential only the many-particle cell
+     reads: `u0_v` cited, `omega_ev` **fitted** by the script (bisection, to the last bit)
+     so the curve's turning points sit the cited rest gap apart. Today that is
+     `lfp_26650_prada2013` (Phase 9); its header says so instead of "nothing here is
+     fitted";
    - the OCP grid is refined adaptively to a stated tolerance (2 mV by default, passable
      as a second argument) rather than laid down uniformly. Graphite's OCP rises steeply
      near zero stoichiometry, where 81 uniform points left 43.9 mV of error; 45 adaptive
@@ -103,6 +116,11 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
    - `cc_c20_25c.csv` — C/20 constant-current discharge (low-rate, tight);
    - `cc_1c_25c.csv` — 1C constant-current discharge (rate effects, looser);
    - `pulse_relax_25c.csv` — GITT-like C/2 pulses with rests.
+
+   *`lfp_26650_prada2013`* — the reference for batsim's many-particle LFP cell:
+   - `spm_cc_c20_25c.csv` — C/20 from full, PyBaMM's SPM on Prada2013's own (monotone)
+     potential. batsim's cell runs a regular-solution potential instead, so
+     `lfp_ensemble.rs` asserts a band on the **offset** between them, not a match.
 
    *`nmc_21700_lgm50`* — SPM references for batsim's **SPM**, plus one DFN:
    - `spm_cc_c5_25c.csv`, `spm_cc_1c_25c.csv`, `spm_pulse_relax_25c.csv`;

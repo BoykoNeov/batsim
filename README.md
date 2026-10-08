@@ -110,8 +110,9 @@ See [`docs/plans/path-claims.md`](docs/plans/path-claims.md),
 [`docs/plans/path-display.md`](docs/plans/path-display.md) and
 [`docs/plans/path-prose-value-tie.md`](docs/plans/path-prose-value-tie.md).
 
-Seven chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650,
-LG M50 21700, LTO 20 Ah, sodium-ion 18650, NiMH sub-C, and a 2 V AGM lead-acid cell. Every
+Eight chemistries ship under [`chemistries/`](chemistries) — LFP 26650, NMC 18650,
+LG M50 21700, LTO 20 Ah, sodium-ion 18650, NiMH sub-C, a 2 V AGM lead-acid cell, and the
+LFP 26650 again as a many-particle cell (`lfp_26650_prada2013`, Phase 9). Every
 constant in them carries a provenance note, **including the ones
 whose note says they are order-of-magnitude placeholders awaiting a fit**; that is the
 project rule (placeholders are acceptable, unlabeled numbers are not) rather than a claim
@@ -188,12 +189,19 @@ need one because the models genuinely differ. In the 3C depletion scenario the D
 the reference to 62 mV where the SPM is off by **521 mV**, which is the clearest single
 statement of what the electrolyte equations buy.
 
-**`[spm]` and `[dfn]` are NMC-only on purpose.** LFP keeps its ECM path and its existing
-goldens and gets neither section: lithium iron phosphate intercalates through a moving phase
-boundary, which is what produces the flat plateau this repo teaches with, and a
-single-particle model with Fickian diffusion is the wrong physics for it. It could be
-made to *fit*; shipping that as "porous-electrode physics for LFP" is the kind of
-unlabelled claim the provenance rule exists to prevent.
+**LFP never got the single-particle model, on purpose.** Lithium iron phosphate
+intercalates through a moving phase boundary, which is what produces the flat plateau this
+repo teaches with, and a single particle with Fickian diffusion is the wrong physics for it.
+It could be made to *fit*; shipping that as "porous-electrode physics for LFP" is the kind
+of unlabelled claim the provenance rule exists to prevent. What LFP got instead (Phase 9) is
+a **many-particle** cell: twenty particles of different sizes sharing one electrode, each
+with a two-phase (regular-solution) potential, so the plateau comes out of the particles
+filling one at a time and the resting voltage remembers which direction the cell arrived
+from. Its file, `lfp_26650_prada2013.toml`, is extracted from PyBaMM's Prada2013 set except
+for that potential, whose centre is cited (Bai 2011) and whose one interaction constant is
+**fitted** to a 20 mV rest gap — and the plain single-particle model refuses it. The
+original `lfp_26650_generic.toml` keeps its ECM path and its goldens unchanged. See
+[`docs/plans/phase-9-lfp-ensemble.md`](docs/plans/phase-9-lfp-ensemble.md).
 
 **`diffsol` was evaluated for the stiff solve and declined**, because its solver state
 cannot be extracted and restored bit-identically through its public API — which fails

@@ -5,25 +5,22 @@
 //! * The shipped **LG M50**, with its table potentials, for the guard that one particle *is*
 //!   the single-particle model: bit for bit, on every telemetry field and every cell view,
 //!   through the cases the single-particle model's own tests cover.
-//! * A **slice-B fixture** LFP cell for everything with more than one particle: the shipped
-//!   `lfp_26650_generic.toml` with an `[spm]` block built here from the Phase 9 spike's
-//!   parameters (Prada2013's A123 cell, the Kashkooli2017 LFP kinetics, the regular-solution
-//!   LFP potential at the fitted `Ω`). It stands in for the chemistry file slice C extracts
-//!   with `tools/reference/`, and nothing here is a claim about that file.
+//! * The shipped **`lfp_26650_prada2013`** for everything with more than one particle: its
+//!   `[spm]` is extracted from PyBaMM's Prada2013 set, with the regular-solution potential on
+//!   the positive electrode. Slice B wrote these tests against a fixture built from the
+//!   spike's parameters; slice C replaced it with the file, and every assertion held.
 //!
-//! What slice B measured that is too slow for a debug test — the rest gaps, the C/20
-//! plateau, the long-step monotonicity sweep — is in `docs/plans/phase-9-slice-b-ensemble.md`
-//! with its harness.
+//! The chemistry's own claims — the plateau against PyBaMM, the rest gaps, the long-step
+//! limit — are in `lfp_ensemble.rs`.
 
 use sim_core::{
-    BuildError, CellModelConfig, ChemistryParams, Demand, ElectrodeParams, Env, EventFlags,
-    OcpTable, Pack, PackConfig, RegularSolutionParams, Scatter, SpmParams, Telemetry,
-    ThermalConfig,
+    BuildError, CellModelConfig, ChemistryParams, Demand, Env, EventFlags, Pack, PackConfig,
+    RegularSolutionParams, Scatter, Telemetry, ThermalConfig,
 };
 use sim_data::{parse_chemistry, parse_scenario};
 
 const LGM50: &str = include_str!("../../../chemistries/nmc_21700_lgm50.toml");
-const LFP: &str = include_str!("../../../chemistries/lfp_26650_generic.toml");
+const LFP: &str = include_str!("../../../chemistries/lfp_26650_prada2013.toml");
 
 const FARADAY: f64 = 96_485.332_123_310_01;
 
@@ -58,78 +55,35 @@ fn config(
     }
 }
 
-// --- the slice-B LFP fixture -----------------------------------------------------------
+// --- the shipped LFP many-particle chemistry ---------------------------------------------
 
-/// Prada2013's graphite potential, sampled onto a table: the function PyBaMM's
-/// `Prada2013` set uses, as the spike's harness evaluated it.
-fn graphite_v(x: f64) -> f64 {
-    1.9793 * (-39.3631 * x).exp() + 0.2482
-        - 0.0909 * (29.8538 * (x - 0.1234)).tanh()
-        - 0.04478 * (14.9159 * (x - 0.2769)).tanh()
-        - 0.0205 * (30.4444 * (x - 0.6103)).tanh()
+/// The shipped many-particle LFP chemistry (Phase 9 slice C). Slice B ran these tests on a
+/// fixture built here from the spike's parameters; it is replaced by the file, so these
+/// tests now guard what ships.
+fn lfp_fixture() -> ChemistryParams {
+    parse_chemistry(LFP).expect("the many-particle LFP chemistry parses")
 }
 
-/// The fitted interaction strength \[eV\] of `docs/plans/phase-9-lfp-ensemble.md`.
-const OMEGA_EV: f64 = 0.075_917_388_974_677_12;
+/// Its capacity \[Ah\], as `[cell] capacity_ah` declares it (asserted below).
+const LFP_CAP_AH: f64 = 2.303_451;
 
-/// The fixture's capacity \[Ah\]: the negative window's geometric capacity, so the cell's
-/// charge-to-flux factor is one.
-const LFP_CAP_AH: f64 = 2.303_324_557_209_257;
+/// Its positive electrode's regular-solution constants: `(U0 [V], Ω [eV])`.
+fn regular_solution() -> (f64, f64) {
+    let rs = lfp_fixture()
+        .spm
+        .expect("[spm]")
+        .positive
+        .regular_solution
+        .expect("[spm.positive.regular_solution]");
+    (rs.u0_v, rs.omega_ev)
+}
 
-fn lfp_fixture() -> ChemistryParams {
-    let mut c = parse_chemistry(LFP).expect("LFP parses");
-    c.cell.capacity_ah = LFP_CAP_AH;
-    let xs: Vec<f64> = (0..=400).map(|k| f64::from(k) / 400.0).collect();
-    c.spm = Some(SpmParams {
-        t_ref_k: 298.15,
-        c_e_mol_per_m3: 1200.0,
-        electrode_area_m2: 0.18,
-        contact_resistance_ohm: 0.0,
-        negative: ElectrodeParams {
-            particle_radius_m: 5e-6,
-            diffusivity_m2_per_s: 3e-15,
-            c_max_mol_per_m3: 30555.0,
-            active_volume_fraction: 0.58,
-            thickness_m: 3.4e-5,
-            m_ref: 6.48e-7,
-            reaction_ea_j_per_mol: 35000.0,
-            diffusivity_ea_j_per_mol: 0.0,
-            charge_transfer_alpha: 0.5,
-            stoich_min: 0.017_617_931_791_027_094,
-            stoich_max: 0.81,
-            docp_dt_v_per_k: 0.0,
-            ocp: OcpTable {
-                volts: xs.iter().map(|&x| graphite_v(x)).collect(),
-                stoich: xs,
-            },
-            regular_solution: None,
-        },
-        positive: ElectrodeParams {
-            particle_radius_m: 5e-8,
-            diffusivity_m2_per_s: 5.9e-18,
-            c_max_mol_per_m3: 22806.0,
-            active_volume_fraction: 0.374,
-            thickness_m: 8e-5,
-            m_ref: 6e-7,
-            reaction_ea_j_per_mol: 39570.0,
-            diffusivity_ea_j_per_mol: 0.0,
-            charge_transfer_alpha: 0.5,
-            stoich_min: 0.0038,
-            stoich_max: 0.703_502_020_929_131_3,
-            docp_dt_v_per_k: 0.0,
-            // Required, and never read by the many-particle cell when the regular-solution
-            // form is present.
-            ocp: OcpTable {
-                stoich: vec![0.0, 1.0],
-                volts: vec![3.6, 3.3],
-            },
-            regular_solution: Some(RegularSolutionParams {
-                u0_v: 3.42,
-                omega_ev: OMEGA_EV,
-            }),
-        },
-    });
-    c
+#[test]
+fn the_lfp_capacity_used_here_is_the_files() {
+    assert_eq!(
+        lfp_fixture().cell.capacity_ah.to_bits(),
+        LFP_CAP_AH.to_bits()
+    );
 }
 
 fn ensemble(particles: usize, sigma: f64) -> CellModelConfig {
@@ -628,7 +582,8 @@ fn the_energy_ledger_closes_through_a_rest() {
     let chem = lfp_fixture();
     let spm = chem.spm.clone().expect("[spm]");
     let t = 298.15;
-    let phi_p = |y: f64| 3.42 * y - OMEGA_EV * (y - y * y);
+    let (u0, omega) = regular_solution();
+    let phi_p = |y: f64| u0 * y - omega * (y - y * y);
     let tab = spm.negative.ocp.clone();
     let phi_n = |x: f64| {
         let mut s = 0.0;
@@ -682,7 +637,9 @@ fn the_energy_ledger_closes_through_a_rest() {
         rest_heat += tel.q_gen_w;
     }
     let imbalance = (e0 - stored(&p)) - elec - heat;
-    // Measured 0.48 J of 257 J. Without the reversible heat it is 105 J out; without the
+    println!("ledger: {imbalance} J out against {heat} J of heat ({rest_heat} J at rest)");
+    // Measured 0.48 J of 258 J on the shipped file (0.48 of 257 on slice B's fixture). Without
+    // the reversible heat it was 105 J out on the fixture; without the
     // exchange heat, short by the ~9 J the particles' trading makes at rest.
     assert!(
         imbalance.abs() < 0.01 * heat,

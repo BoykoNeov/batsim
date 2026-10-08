@@ -2,7 +2,7 @@
 //! captions to the file's physics, and the engine never sees it.
 //!
 //! What the section is *for* is a browser panel no test here can look at; what a test can
-//! hold is the contract between the file and the page — that the seven files parse, that
+//! hold is the contract between the file and the page — that the eight files parse, that
 //! their families are what the page's three drawings expect, and that the two caption
 //! rules in `sim_data::diagram` reject exactly the mismatches they claim to.
 
@@ -10,6 +10,7 @@ use sim_core::ChemistryParams;
 use sim_data::{parse_chemistry, parse_chemistry_facts, DataError, DiagramFamily};
 
 const LFP: &str = include_str!("../../../chemistries/lfp_26650_generic.toml");
+const LFP_PRADA: &str = include_str!("../../../chemistries/lfp_26650_prada2013.toml");
 const NMC: &str = include_str!("../../../chemistries/nmc_18650_generic.toml");
 const LGM50: &str = include_str!("../../../chemistries/nmc_21700_lgm50.toml");
 const NA_ION: &str = include_str!("../../../chemistries/na_ion_18650_generic.toml");
@@ -17,8 +18,13 @@ const LTO: &str = include_str!("../../../chemistries/lto_20ah_generic.toml");
 const NIMH: &str = include_str!("../../../chemistries/nimh_subc_3ah_generic.toml");
 const PBA: &str = include_str!("../../../chemistries/pba_agm_2v_generic.toml");
 
-const SHIPPED: [(&str, &str, DiagramFamily); 7] = [
+const SHIPPED: [(&str, &str, DiagramFamily); 8] = [
     ("lfp_26650_generic", LFP, DiagramFamily::Intercalation),
+    (
+        "lfp_26650_prada2013",
+        LFP_PRADA,
+        DiagramFamily::Intercalation,
+    ),
     ("nmc_18650_generic", NMC, DiagramFamily::Intercalation),
     ("nmc_21700_lgm50", LGM50, DiagramFamily::Intercalation),
     ("na_ion_18650_generic", NA_ION, DiagramFamily::Intercalation),
@@ -107,7 +113,7 @@ fn the_captions_are_present_exactly_where_the_physics_they_describe_is() {
             "{id}: runaway vs [safety]"
         );
     }
-    // And the split is not degenerate: both answers occur among the seven.
+    // And the split is not degenerate: both answers occur among the eight.
     let plating: Vec<bool> = SHIPPED
         .iter()
         .map(|(_, t, _)| parse_chemistry_facts(t).unwrap().t_plating_min_k.is_some())

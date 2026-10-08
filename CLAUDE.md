@@ -59,7 +59,7 @@ batsim/
 │   ├── sim-server/             # axum: REST (setup/snapshots) + WebSocket (stream/commands)
 │   ├── sim-wasm/               # wasm-bindgen build of the engine for the browser pedagogy client
 │   └── sim-godot/              # gdext GDExtension: BatteryPack node, signals (Phase 5)
-├── chemistries/                # *.toml parameter sets — seven ship; see "Chemistry parameter files"
+├── chemistries/                # *.toml parameter sets — eight ship; see "Chemistry parameter files"
 ├── scenarios/                  # *.toml scenarios: a pack, a chemistry, its faults; what a client loads
 ├── web/                        # the browser demo: one HTML file, one JS file, the guided-path claims
 ├── godot/                      # the Godot demo project and the Phase 5 exit gate
@@ -252,10 +252,13 @@ and double as the scenario file format.
   sub-steps of at most `ensemble::SUBSTEP_S` (10 s, measured), a count fixed by the step
   length alone and never by the current being tried. **Its long-step limit:** the pack's
   bracketing assumes each cell's end-of-step curve falls with current; on the LFP cell it
-  does at steps up to 15 min and does not at 1 h (≤ 6 mV, measured). So a pack of these
+  does at steps up to 15 min and does not at 1 h (rises of up to 6.1 mV at 15 of 20 states,
+  measured on the shipped `lfp_26650_prada2013`, pinned by
+  `lfp_ensemble.rs::the_hour_step_rises_where_fifteen_minutes_still_falls`). So a pack of these
   cells in parallel, or under a voltage or power demand, is not guaranteed its root at steps
   above 15 min; a single string under a current demand brackets nothing and is unaffected.
-  See `docs/plans/phase-9-lfp-ensemble.md` and `docs/plans/phase-9-slice-b-ensemble.md`.
+  See `docs/plans/phase-9-lfp-ensemble.md`, `docs/plans/phase-9-slice-b-ensemble.md` and
+  `docs/plans/phase-9-slice-c-chemistry.md`.
 
 ### Thermal network
 
@@ -354,7 +357,9 @@ and double as the scenario file format.
 
 One file per chemistry. `sim-data` parses and validates (monotone OCV table,
 positive resistances, limits ordered, etc.) into `sim_core::ChemistryParams`.
-Seven ship: LFP 26650, NMC 18650, LG M50 21700 (the only one with `[spm]` and `[dfn]`),
+Eight ship: LFP 26650, NMC 18650, LG M50 21700 (`[spm]`, and the only `[dfn]`), the same LFP
+26650 as a many-particle cell (`lfp_26650_prada2013`: `[spm]` with
+`[spm.positive.regular_solution]`, which the plain `Spm` and the `Dfn` refuse),
 LTO 20 Ah, sodium-ion 18650, NiMH sub-C (`[hysteresis]`, `[charge_acceptance]`, an OCV
 temperature correction) and a 2 V AGM lead-acid cell (`[diffusion]`). Every constant carries
 a provenance note, and many of those notes say "placeholder"; `docs/ROADMAP.md` lists which.

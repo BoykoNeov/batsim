@@ -19,7 +19,7 @@ test passes — not when the list of interesting things runs out.
 ## 1. Where the engine stands
 
 Four cell models behind one API (`Ecm`, `Spm`, `Dfn`, and since Phase 9 slice B the
-many-particle `SpmEnsemble`), seven chemistries, a thermal
+many-particle `SpmEnsemble`), eight chemistries, a thermal
 network, a sensor-limited BMS, four capacity-fade mechanisms with matching resistance
 growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 25,
 and four clients (server, browser, Godot, an example script). Against grid-converged
@@ -86,6 +86,14 @@ sub-steps for fast-forward), but the gap is then capped by the fitted constant. 
 from particles filling one at a time, and a rest gap that exists and depends on which way
 the cell arrived. It does not close the gap's size — capped by the fitted constant — nor the
 rate dependence of the knee, which was not measured.
+
+**Slice C (2026-10-08) ships the chemistry** (`lfp_26650_prada2013.toml`,
+`phase-9-slice-c-chemistry.md`): the `[spm]` extracted from Prada2013 with the regular-solution
+potential on the positive electrode; C/20 sits +9.5…+9.8 mV above PyBaMM's SPM over 20–80 %
+across 20 seeds. Over 20 seeds the room-temperature rest gap is 19.64 mV on 16, 18.43 on 3
+and **14.14 mV on one** — below the 18–20 mV the plan's criterion states for its four seeds
+(which all read 19.64) — each set by how many particles end full, as in the cold. So a
+single room-temperature number is also one draw, just a likelier one.
 
 ### H2. Aging is semi-empirical on every model, and the porous models cannot age their pores
 
@@ -494,6 +502,12 @@ C/20 plateau (138.44 mV over 20–80 %) and rest gaps (19.64 mV at 298 K; 23.32�
 263 K); 10 s sub-steps keep the end-of-step curve falling with current up to 15 min, and the
 hour rises by ≤ 6.13 mV as documented. ~100–125 µs per cell per 1 s step. Next: slice C, the
 chemistry file and its goldens.
+
+*Slice C built 2026-10-08* (`phase-9-slice-c-chemistry.md`): `chemistries/lfp_26650_prada2013.toml`
+(extracted, the extractor's two silent misreads fixed: a rate written `6 * 10 ** (-7)` read as
+6, and the set's 298 K key in place of the functions' 298.15), the PyBaMM C/20 golden, and
+`sim-data/tests/lfp_ensemble.rs` pinning criteria 2–6 on it; slice B's tests now run on the
+file instead of their fixture. Next: slice D, the scenario and the lesson.
 
 *Exit.* A CC discharge of the LFP ensemble matches the Prada 2013 DFN reference within a
 stated tolerance over the plateau; at rest after a partial charge and a partial discharge
