@@ -77,17 +77,31 @@ on these seeds. No solve went unconverged on any of the eight.
    moved this voltage by half a microvolt would redden it, which is the point.
 2. **"To every digit and beyond"** was written about the two cold charge arms. They are 0.13 µV
    apart: the radii differ, the count does not. The headers and the test say a microvolt.
-3. **One at a time is true of one run.** After the first hour of the room-temperature charge no
-   two particles are ever between 0.3 and 0.7 at once; on the discharge and in the cold two or
-   three switch together. So only step 35's prose says "in turn", and only of that run.
+3. **"One at a time" was true of one window, and the final review caught it.** After the first
+   hour of the room-temperature charge never more than one particle is between 0.3 and 0.7 of
+   full — but up to four are in 0.25–0.75 and seventeen inside the whole unstable region,
+   because the full particles drift down together before each tips over. The first prose said
+   "no particle starts to switch until the previous has finished", which the window made look
+   true. Step 35 now says what was measured: the full ones give up a little lithium together,
+   then tip over in turn, and no two are caught halfway across at once. On the discharge and in
+   the cold two or three cross together even in 0.3–0.7, so only this run's prose says it.
+4. **Step 36 first said the memory is made by the particles, without scope.** The file's one
+   fitted constant (Ω, `[spm.positive.regular_solution]`) was fitted to Dreyer 2010's 20 mV
+   rest gap, so the gap's *size* at room temperature was put into the file; its existence and
+   direction are the particles'. The step now says so, and step 37 says the cold widening is
+   the model's own. Same family as the gauge lesson's hand-picked `voltage_sigma_v`
+   (`path-gauge-filter-steps.md`): a fitted setting under a headline is a claim the prose
+   must scope.
 
 ### Two things the lesson could not write, and how they were written instead
 
 * **"One at a time"** — the English-quantity ban reads "a time" as a quantity. "In turn".
 * **The cold gaps over 20 seeds** (27.44 on 11, 23.32 on 4, 17.48 on 4, 13.35 on 1, slice C's
-  note). No test holds them — only the four pinned seeds — so the prose says "a few more such
-  values, the one this file shows the most common" and sends the reader to the cold file's
-  header, which lists them. A test of all twenty was offered and not chosen.
+  note). The owner's choice was for the text to state them. It does not, yet: every numeral in
+  a lesson must be tied, and no test holds these — only the four pinned seeds — so the prose
+  says "a few more such values, the one this file shows the most common" and sends the reader
+  to the cold file's header, which lists them. Putting them in the text costs a 20-seed test;
+  that is the owner's call and is put to them.
 
 The arm instructions first said "take the minus sign off"; `every_arm_is_instructed_by_its_own_step`
 requires the current an arm types to be printed in its instruction, so each now names

@@ -101,13 +101,18 @@ fn run(name: &str, sign: f64) -> Run {
 
 /// The first step's picture: seven hours into the charge from empty the cell is at 35 %, and
 /// no particle is anywhere near 35 % of anything — eleven are most of the way full, nine are
-/// nearly empty, none is between. And after the first hour of the charge the particles
-/// switch strictly one at a time.
+/// nearly empty, none is between. And after the first hour of the charge no two particles are
+/// ever caught halfway across at once.
 ///
-/// Measured: 0.797–0.799 and 0.044 at 25 200 s; at most one particle between 0.3 and 0.7 at
-/// any step after the first hour (five at once near empty, at 270 s, which the lesson does
-/// not claim). On the discharge and in the cold two or three can switch together, which is
-/// why only this run's prose says "one at a time".
+/// **"Halfway across" is the window 0.3–0.7 of full, and the claim depends on it.** Measured
+/// after the first hour: at most one particle in 0.3–0.7 at any step; up to four in 0.25–0.75
+/// (34 900 s) and seventeen inside the whole unstable region, about 0.216–0.784 at 298 K
+/// (3 610 s). That is because the FULL particles drift down together — 0.83 to about 0.73 —
+/// into the edge of that region before each tips over, and the tipping, from about 0.7 to
+/// 0.044, is what goes in turn. The prose says exactly that: the full ones give up a little
+/// lithium together, then tip over in turn. Five cross at once near empty, at 270 s, which the
+/// lesson does not claim; on the discharge and in the cold two or three cross together in
+/// 0.3–0.7, which is why only this run's prose says it.
 #[test]
 fn halfway_through_the_charge_no_particle_is_halfway() {
     let r = run("lfp_particles_charged", -1.0);
