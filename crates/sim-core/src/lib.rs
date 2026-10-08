@@ -27,6 +27,7 @@ pub mod bms;
 pub mod chem;
 pub mod dfn;
 pub mod ecm;
+pub mod ensemble;
 pub mod faults;
 pub mod flags;
 mod math;
@@ -44,10 +45,11 @@ pub use bms::{
 pub use chem::{
     AgingParams, ChargeAcceptanceParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams,
     DfnSeparator, DiffusionParams, ElectrodeParams, HysteresisParams, HysteresisWidth, OcpTable,
-    PowerTerm, ReversalParams, SafetyParams, SpmParams, ThermalParams,
+    PowerTerm, RegularSolutionParams, ReversalParams, SafetyParams, SpmParams, ThermalParams,
 };
 pub use dfn::DfnState;
 pub use ecm::{CellModel, EcmState};
+pub use ensemble::EnsembleState;
 pub use faults::{Fault, FaultError, FaultState, ScheduledFault, SensorFault, SensorId};
 pub use flags::EventFlags;
 pub use pack::{

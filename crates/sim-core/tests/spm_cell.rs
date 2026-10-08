@@ -82,6 +82,7 @@ fn spm_chem() -> ChemistryParams {
                         0.092020, 0.092020,
                     ],
                 },
+                regular_solution: None,
             },
             positive: ElectrodeParams {
                 particle_radius_m: 5.22e-6,
@@ -100,6 +101,7 @@ fn spm_chem() -> ChemistryParams {
                     stoich: vec![0.213845, 0.300111, 0.428821, 0.558910, 0.731442, 0.903975],
                     volts: vec![4.439085, 4.205249, 4.060738, 3.884181, 3.704691, 3.564985],
                 },
+                regular_solution: None,
             },
         }),
         thermal: ThermalParams {

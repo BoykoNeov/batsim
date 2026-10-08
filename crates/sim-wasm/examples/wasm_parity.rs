@@ -64,7 +64,7 @@ fn main() {
         let series = f64::from(pack.series);
         let (porous, dfn) = match pack.cell_model {
             CellModelConfig::Ecm => (false, false),
-            CellModelConfig::Spm { .. } => (true, false),
+            CellModelConfig::Spm { .. } | CellModelConfig::SpmEnsemble { .. } => (true, false),
             CellModelConfig::Dfn { .. } => (true, true),
         };
         // The porous models take a longer step only to keep the check quick.

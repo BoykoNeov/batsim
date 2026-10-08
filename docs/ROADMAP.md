@@ -18,9 +18,10 @@ test passes — not when the list of interesting things runs out.
 
 ## 1. Where the engine stands
 
-Three cell models behind one API (`Ecm`, `Spm`, `Dfn`), seven chemistries, a thermal
+Four cell models behind one API (`Ecm`, `Spm`, `Dfn`, and since Phase 9 slice B the
+many-particle `SpmEnsemble`), seven chemistries, a thermal
 network, a sensor-limited BMS, four capacity-fade mechanisms with matching resistance
-growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 24,
+growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 25,
 and four clients (server, browser, Godot, an example script). Against grid-converged
 PyBaMM references the SPM tracks to 2–7 mV over a discharge and the DFN to 5.8 mV at 1 C.
 
@@ -478,6 +479,14 @@ an ensemble cell on the fitted constant with U0 kept at the published 3.42 V (+1
 PyBaMM, documented), a hysteresis test at 298 K and at 263 K (where the gap is discrete,
 0–27 mV by seed), and the long step's non-monotone end-of-step voltage (≤ 6.6 mV at 1 h; fine
 at 15 min) recorded as a limit on steps above 15 min rather than fixed.
+
+*Slice B built 2026-10-08* (`phase-9-slice-b-ensemble.md`): `SpmEnsemble` in the engine,
+`[spm.positive.regular_solution]`, `SNAPSHOT_VERSION` 25. One particle is the `Spm` bit for
+bit; on a test fixture built from the spike's parameters, 20 particles reproduce the spike's
+C/20 plateau (138.44 mV over 20–80 %) and rest gaps (19.64 mV at 298 K; 23.32–27.44 mV at
+263 K); 10 s sub-steps keep the end-of-step curve falling with current up to 15 min, and the
+hour rises by ≤ 6.13 mV as documented. ~100–125 µs per cell per 1 s step. Next: slice C, the
+chemistry file and its goldens.
 
 *Exit.* A CC discharge of the LFP ensemble matches the Prada 2013 DFN reference within a
 stated tolerance over the plateau; at rest after a partial charge and a partial discharge

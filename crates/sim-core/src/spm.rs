@@ -191,9 +191,9 @@ impl SpmState {
 pub(crate) struct Geometry {
     /// Total interfacial area \[m²\] the reaction current spreads over:
     /// `3·ε_s·A·L / R_p`, i.e. the surface area of every particle in the coating.
-    area_m2: f64,
+    pub(crate) area_m2: f64,
     /// Active-material volume \[m³\]: `ε_s·A·L`.
-    volume_m3: f64,
+    pub(crate) volume_m3: f64,
 }
 
 impl Geometry {
@@ -230,23 +230,23 @@ fn arrhenius(ea_j_per_mol: f64, t_ref_k: f64, temp_k: f64) -> f64 {
 
 /// One electrode, resolved at this cell's temperature and health.
 #[derive(Clone, Copy, Debug)]
-struct Side<'a> {
-    p: &'a ElectrodeParams,
-    g: Geometry,
+pub(crate) struct Side<'a> {
+    pub(crate) p: &'a ElectrodeParams,
+    pub(crate) g: Geometry,
     /// Solid diffusivity \[m²/s\] at the cell's temperature.
-    d_s: f64,
+    pub(crate) d_s: f64,
     /// Exchange-current amplitude at the cell's temperature, **after** the
     /// resistance-growth division (see [`Working::new`]).
-    m_ref: f64,
+    pub(crate) m_ref: f64,
 }
 
 /// Everything a step needs that is derived from the chemistry and the cell's scale
 /// factors rather than stored. Built per call; see [`Geometry`] for why.
 #[derive(Clone, Copy, Debug)]
-struct Working<'a> {
-    spm: &'a SpmParams,
-    neg: Side<'a>,
-    pos: Side<'a>,
+pub(crate) struct Working<'a> {
+    pub(crate) spm: &'a SpmParams,
+    pub(crate) neg: Side<'a>,
+    pub(crate) pos: Side<'a>,
     /// Charge-to-stoichiometry scale: geometric capacity ÷ effective capacity.
     ///
     /// # Where the two capacity multipliers land, and why here
@@ -279,14 +279,14 @@ struct Working<'a> {
     /// factor and traverses its own window at whatever rate its own geometry gives
     /// — for a self-consistent parameter set that is the same number (Chen2020's
     /// two electrodes agree to 3e-5 relative).
-    kappa: f64,
+    pub(crate) kappa: f64,
     /// Lumped ohmic resistance \[ohms\] after the resistance-growth multiplier.
-    r_contact: f64,
+    pub(crate) r_contact: f64,
     /// The cell's effective capacity \[Ah\] — what [`SpmState::soc_deficit`] is a
     /// fraction of.
-    capacity_ah: f64,
+    pub(crate) capacity_ah: f64,
     /// Cell temperature \[K\].
-    temp_k: f64,
+    pub(crate) temp_k: f64,
 }
 
 impl<'a> Working<'a> {
@@ -308,7 +308,7 @@ impl<'a> Working<'a> {
     /// by the factor multiplies `R_ct` by it. Doing it on **both** electrodes
     /// rather than only the negative (the physical SEI story) is what makes that
     /// identity hold for the cell rather than for half of it.
-    fn new(
+    pub(crate) fn new(
         spm: &'a SpmParams,
         temp_k: f64,
         eff_r0_factor: f64,
@@ -339,13 +339,13 @@ impl<'a> Working<'a> {
 
     /// Molar flux \[mol/(m²·s)\] leaving the **negative** particle's surface at cell
     /// current `i`. Positive on discharge: lithium leaves the negative electrode.
-    fn j_neg(&self, i: f64) -> f64 {
+    pub(crate) fn j_neg(&self, i: f64) -> f64 {
         self.kappa * i / (self.neg.g.area_m2 * FARADAY_C_PER_MOL)
     }
 
     /// Molar flux \[mol/(m²·s)\] leaving the **positive** particle's surface.
     /// Negative on discharge: the positive electrode is being filled.
-    fn j_pos(&self, i: f64) -> f64 {
+    pub(crate) fn j_pos(&self, i: f64) -> f64 {
         -self.kappa * i / (self.pos.g.area_m2 * FARADAY_C_PER_MOL)
     }
 }
@@ -416,7 +416,13 @@ pub fn c_surface(c: &[f64], r_p: f64, d_s: f64, j_surf: f64) -> f64 {
 /// things it reads off the profile. [`probe_at`] needs it for an *end-of-step* outer
 /// shell that exists as a number, not as a profile.
 #[must_use]
-fn surface_from_outer(c_outer: f64, shells: usize, r_p: f64, d_s: f64, j_surf: f64) -> f64 {
+pub(crate) fn surface_from_outer(
+    c_outer: f64,
+    shells: usize,
+    r_p: f64,
+    d_s: f64,
+    j_surf: f64,
+) -> f64 {
     let dr = r_p / shells as f64;
     c_outer - 0.5 * dr * j_surf / d_s
 }
@@ -430,7 +436,7 @@ fn surface_from_outer(c_outer: f64, shells: usize, r_p: f64, d_s: f64, j_surf: f
 /// given and has to give it back — so this guard is confined to the lookups, which
 /// is what keeps `step` free of NaNs without quietly rewriting the physics.
 #[must_use]
-fn clamp_surface(c_s: f64, c_max: f64) -> f64 {
+pub(crate) fn clamp_surface(c_s: f64, c_max: f64) -> f64 {
     c_s.clamp(SURFACE_EDGE * c_max, (1.0 - SURFACE_EDGE) * c_max)
 }
 
@@ -439,7 +445,7 @@ fn clamp_surface(c_s: f64, c_max: f64) -> f64 {
 /// real only strictly inside `(0, c_max)`, and this is the margin that keeps it so.
 /// [`current_window`] reads the same number, so the range it declares is exactly the range
 /// over which no clamp is acting.
-const SURFACE_EDGE: f64 = 1.0e-6;
+pub(crate) const SURFACE_EDGE: f64 = 1.0e-6;
 
 /// Butler–Volmer overpotential \[V\] driving current density `i_s` \[A/m²\] at an
 /// electrode whose surface sits at `c_s`.
@@ -455,7 +461,7 @@ const SURFACE_EDGE: f64 = 1.0e-6;
 /// load such a set or to paying a per-electrode Newton solve inside every voltage
 /// evaluation.
 #[must_use]
-fn overpotential(side: &Side<'_>, temp_k: f64, c_e: f64, c_s: f64, i_s: f64) -> f64 {
+pub(crate) fn overpotential(side: &Side<'_>, temp_k: f64, c_e: f64, c_s: f64, i_s: f64) -> f64 {
     let c_max = side.p.c_max_mol_per_m3;
     let i_0 = side.m_ref * (c_e * c_s * (c_max - c_s)).sqrt();
     let prefactor =
@@ -474,7 +480,7 @@ fn overpotential(side: &Side<'_>, temp_k: f64, c_e: f64, c_s: f64, i_s: f64) -> 
 /// `c_outer` and `shells` are the outermost shell's concentration \[mol/m³\] and the
 /// profile's shell count — all [`c_surface`] reads — so the caller decides *which* outer
 /// shell: the stored one, or the end-of-step one [`probe_at`] solves for.
-fn half(
+pub(crate) fn half(
     w: &Working<'_>,
     c_outer: f64,
     shells: usize,
@@ -572,7 +578,7 @@ fn voltage_split(w: &Working<'_>, neg: (f64, usize), pos: (f64, usize), i_p: f64
 /// The point the reversal ramp starts from — this model's own, not the equivalent
 /// circuit's `OCV(0)`.
 #[must_use]
-fn empty_voltage(w: &Working<'_>) -> f64 {
+pub(crate) fn empty_voltage(w: &Working<'_>) -> f64 {
     ocp_lookup(&w.pos.p.ocp, w.pos.p.stoich_max) - ocp_lookup(&w.neg.p.ocp, w.neg.p.stoich_min)
 }
 
@@ -580,7 +586,7 @@ fn empty_voltage(w: &Working<'_>) -> f64 {
 /// \[V\]: `v_per_soc · d`, stopping at `floor_v`. Exactly `0.0` at `d <= 0`, so every cell
 /// that has never been driven past empty subtracts a literal zero.
 #[must_use]
-fn reversal_drop(w: &Working<'_>, rev: &ReversalParams, d: f64) -> f64 {
+pub(crate) fn reversal_drop(w: &Working<'_>, rev: &ReversalParams, d: f64) -> f64 {
     if d > 0.0 {
         (rev.v_per_soc * d)
             .min(empty_voltage(w) - rev.floor_v)
@@ -595,7 +601,7 @@ fn reversal_drop(w: &Working<'_>, rev: &ReversalParams, d: f64) -> f64 {
 /// the deficit is booked at, so the stored energy of the deficit is a function of `d`
 /// alone and the ledger closes whatever the particles hold.
 #[must_use]
-fn reversal_ocv(w: &Working<'_>, rev: &ReversalParams, d: f64) -> f64 {
+pub(crate) fn reversal_ocv(w: &Working<'_>, rev: &ReversalParams, d: f64) -> f64 {
     empty_voltage(w) - reversal_drop(w, rev, d)
 }
 
@@ -615,8 +621,15 @@ fn reversal_ocv(w: &Working<'_>, rev: &ReversalParams, d: f64) -> f64 {
 /// Inside the window `i <= edge` and the deficit is zero, so this returns `(i, 0.0)`.
 #[must_use]
 fn split(w: &Working<'_>, s: &SpmState, edge: f64, i: f64, dt: f64) -> (f64, f64) {
+    split_from(w, s.soc_deficit, edge, i, dt)
+}
+
+/// [`split`], from the deficit `d0` the step starts at rather than from a whole state: the
+/// many-particle cell divides its current the same way and keeps its deficit in a state of
+/// its own ([`crate::ensemble`]).
+#[must_use]
+pub(crate) fn split_from(w: &Working<'_>, d0: f64, edge: f64, i: f64, dt: f64) -> (f64, f64) {
     let per_amp = dt / (3600.0 * w.capacity_ah);
-    let d0 = s.soc_deficit;
     // With no deficit the particles carry the current up to their edge; with one they
     // carry exactly the edge — all they can — and what the cell does not take out of the
     // terminals repays the deficit.
@@ -746,7 +759,7 @@ fn current_window(
 /// quotient taken there straddles no flat stretch; the middle of a range too narrow for
 /// that. Unchanged, bit for bit, when it is already that far inside.
 #[must_use]
-fn held(i: f64, (lo, hi): (f64, f64), h: f64) -> f64 {
+pub(crate) fn held(i: f64, (lo, hi): (f64, f64), h: f64) -> f64 {
     if hi - lo > 2.0 * h {
         i.clamp(lo + h, hi - h)
     } else {
@@ -817,21 +830,21 @@ pub fn diffuse(c: &mut [f64], r_p: f64, d_s: f64, j_surf: f64, dt: f64) {
 /// [`diffuse`] evaluates its own outer row through [`Self::at`] too, the answer is
 /// **bit-for-bit** the outer shell `advance` then produces at that current.
 #[derive(Clone, Copy, Debug)]
-struct OuterShell {
+pub(crate) struct OuterShell {
     /// `vol · c_old` of the outer shell: its right-hand side before the flux.
-    t: f64,
+    pub(crate) t: f64,
     /// `dt · R_p²`: how much a unit of flux removes from that right-hand side.
-    k: f64,
+    pub(crate) k: f64,
     /// What eliminating the shell beneath subtracts from it.
-    m: f64,
+    pub(crate) m: f64,
     /// The outer row's diagonal after elimination.
-    d: f64,
+    pub(crate) d: f64,
 }
 
 impl OuterShell {
     /// The outer shell's end-of-step concentration \[mol/m³\] under surface flux `j`
     /// \[mol/(m²·s)\].
-    fn at(self, j: f64) -> f64 {
+    pub(crate) fn at(self, j: f64) -> f64 {
         ((self.t - self.k * j) - self.m) / self.d
     }
 }
@@ -842,7 +855,7 @@ impl OuterShell {
 /// Overwrites `c[..n−1]` with the swept right-hand sides and `diag[..n]` with the swept
 /// diagonal, which is exactly the working state [`diffuse`]'s back substitution needs.
 /// Requires `dt > 0` and `MIN_SHELLS ≤ c.len() ≤ MAX_SHELLS`; both callers guarantee them.
-fn forward_sweep(
+pub(crate) fn forward_sweep(
     c: &mut [f64],
     diag: &mut [f64; MAX_SHELLS],
     r_p: f64,

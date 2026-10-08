@@ -39,6 +39,7 @@ use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::dfn;
 use crate::ecm::{power_past_reach, rc_decays, solve_current, CellModel};
+use crate::ensemble;
 use crate::faults::{Fault, FaultError, FaultState, SensorFaultKind, SensorId};
 use crate::flags::EventFlags;
 use crate::noise::standard_normal_pair;
@@ -548,7 +549,29 @@ use crate::{Demand, Env, Telemetry};
 /// without a BMS is byte-for-byte unchanged, so for it the version field is all there is.
 /// `sim_server::API_VERSION` and `sim-wasm`'s constant stay put: no call signature changes
 /// and no telemetry field moves.
-pub const SNAPSHOT_VERSION: u32 = 24;
+///
+/// v25 (the many-particle cell, Phase 9 slice B): [`crate::chem::ElectrodeParams`] gains
+/// `regular_solution`, an `Option` appended after `ocp`; [`CellModel`] gains
+/// `SpmEnsemble(Box<EnsembleState>)` and [`CellModelConfig`] gains `SpmEnsemble`, each as
+/// its last variant. See `docs/plans/phase-9-slice-b-ensemble.md`.
+///
+/// **Structural for every pack on a chemistry with an `[spm]` section, semantic for none
+/// written before it**: whatever model runs it, the chemistry is in the snapshot, and each
+/// of its electrodes now closes on a one-byte tag a v24 writer did not write. Nothing a v24
+/// blob meant has changed — no shipped chemistry has the new section, and the new variants
+/// close their enums, so no earlier tag moved. A v24 `[spm]` section at v25 **fails, by a
+/// route a value chooses**: the reader takes the first byte of the positive particle's
+/// radius as the negative electrode's tag. For the shipped LG M50 (5.22e-6, low byte `0xf7`)
+/// that is not a tag and the read fails there; a radius with a zero low byte reads as
+/// `None`, and the electrode read one byte out of step fails at its potential table, whose
+/// length comes out near `2^57`. Written expecting that second route to parse quietly;
+/// measured, it does not. At the field in
+/// `snapshot_version.rs::a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length`. A pack
+/// on a chemistry with no `[spm]` section is byte-for-byte unchanged, so for it the version
+/// field is all there is. `sim_server::API_VERSION` and `sim-wasm`'s constant stay put: the
+/// new model is one more value of a config field the wire already carries, and no telemetry
+/// field moves.
+pub const SNAPSHOT_VERSION: u32 = 25;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -766,7 +789,8 @@ pub struct PackConfig {
 /// concentration gradient is resolved and how much each step costs. It is part of
 /// the snapshot layout all the same — it is the length of every concentration
 /// vector.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+// No `Eq`: [`Self::SpmEnsemble`] carries an `f64`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum CellModelConfig {
     /// Equivalent circuit, with the RC-pair count taken from the chemistry's
     /// `[[rc]]` sections. The default, and what every scenario written before
@@ -823,6 +847,37 @@ pub enum CellModelConfig {
         nodes_separator: usize,
         /// Finite volumes across the positive electrode, in the same range.
         nodes_positive: usize,
+    },
+    /// The single-particle model with its **positive** electrode split into `particles`
+    /// particles of different sizes sharing one potential — the model an LFP cell's plateau
+    /// and rest gap come out of (Phase 9). Requires an `[spm]` section, and is the only model
+    /// that reads `[spm.positive.regular_solution]`. See [`crate::ensemble`] and
+    /// `docs/plans/phase-9-lfp-ensemble.md`.
+    ///
+    /// # Cost
+    /// One step solves a split among the particles and, for a step longer than
+    /// [`crate::ensemble::SUBSTEP_S`], does so once per sub-step. See
+    /// `docs/plans/phase-9-slice-b-ensemble.md` for the measured cost per cell.
+    ///
+    /// # Long steps
+    /// The pack's solve brackets each cell's end-of-step curve assuming it falls with
+    /// current. On the LFP cell that holds at steps up to 15 min and fails at one hour, so a
+    /// pack of these cells in parallel, or under a voltage or power demand, is not guaranteed
+    /// its root at steps longer than 15 min. A single string under a current demand brackets
+    /// nothing and is unaffected. `docs/plans/phase-9-lfp-ensemble.md` §"Long steps".
+    SpmEnsemble {
+        /// Radial finite volumes per particle, in
+        /// \[[`crate::spm::MIN_SHELLS`], [`crate::spm::MAX_SHELLS`]\]. The same for every
+        /// particle and for the negative one.
+        shells: usize,
+        /// Positive particles, in
+        /// \[[`crate::ensemble::MIN_PARTICLES`], [`crate::ensemble::MAX_PARTICLES`]\]. One
+        /// particle with a table potential is the single-particle model, bit for bit.
+        particles: usize,
+        /// Spread of the particle radii: each is `particle_radius_m · exp(σ·z)`, `z`
+        /// standard normal, drawn once from the pack's seed. Finite and `>= 0`; `0` gives
+        /// every particle the chemistry's radius and draws nothing.
+        radius_sigma: f64,
     },
 }
 
@@ -938,6 +993,35 @@ pub enum BuildError {
     /// The chemistry itself failed validation.
     #[error("invalid chemistry: {0}")]
     Chemistry(#[from] crate::chem::ChemistryError),
+    /// [`CellModelConfig::SpmEnsemble::particles`] was outside the supported range.
+    #[error("cell_model.particles must be in [{min}, {max}], got {particles}")]
+    BadParticleCount {
+        /// Requested particle count.
+        particles: usize,
+        /// Smallest supported count ([`crate::ensemble::MIN_PARTICLES`]).
+        min: usize,
+        /// Largest supported count ([`crate::ensemble::MAX_PARTICLES`]).
+        max: usize,
+    },
+    /// [`CellModelConfig::SpmEnsemble::radius_sigma`] was negative or not finite.
+    #[error("cell_model.radius_sigma must be finite and >= 0, got {0}")]
+    BadRadiusSigma(f64),
+    /// The chemistry's positive electrode has a `[spm.positive.regular_solution]` potential
+    /// and the model selected is one that cannot carry it.
+    ///
+    /// The single-particle and electrolyte models read the table, and one particle on the
+    /// two-phase curve gives neither a plateau nor a rest gap. Running either on the table
+    /// beside it without saying so would be the quiet fallback `Pack::new` refuses elsewhere.
+    #[error(
+        "chemistry '{chem_id}' gives its positive electrode a regular-solution potential, \
+         which only cell_model SpmEnsemble reads; {model} would run on the table instead"
+    )]
+    RegularSolutionNeedsEnsemble {
+        /// Identifier of the chemistry.
+        chem_id: String,
+        /// The model that was selected.
+        model: &'static str,
+    },
 }
 
 /// Reasons [`Pack::restore`] can reject a [`Snapshot`].
@@ -1584,8 +1668,9 @@ impl Pack {
         // electrode has no defensible fallback. Falling back to the equivalent
         // circuit would be worse than failing — the run would look like it
         // worked.
-        if let CellModelConfig::Spm { shells } | CellModelConfig::Dfn { shells, .. } =
-            config.cell_model
+        if let CellModelConfig::Spm { shells }
+        | CellModelConfig::Dfn { shells, .. }
+        | CellModelConfig::SpmEnsemble { shells, .. } = config.cell_model
         {
             if chem.spm.is_none() {
                 return Err(BuildError::MissingSpmParams {
@@ -1625,6 +1710,41 @@ impl Pack {
                         max: dfn::MAX_NODES,
                     });
                 }
+            }
+        }
+
+        if let CellModelConfig::SpmEnsemble {
+            particles,
+            radius_sigma,
+            ..
+        } = config.cell_model
+        {
+            if !(ensemble::MIN_PARTICLES..=ensemble::MAX_PARTICLES).contains(&particles) {
+                return Err(BuildError::BadParticleCount {
+                    particles,
+                    min: ensemble::MIN_PARTICLES,
+                    max: ensemble::MAX_PARTICLES,
+                });
+            }
+            if !(radius_sigma.is_finite() && radius_sigma >= 0.0) {
+                return Err(BuildError::BadRadiusSigma(radius_sigma));
+            }
+        }
+        let regular_solution = chem
+            .spm
+            .as_ref()
+            .is_some_and(|spm| spm.positive.regular_solution.is_some());
+        if regular_solution {
+            let model = match config.cell_model {
+                CellModelConfig::Spm { .. } => Some("Spm"),
+                CellModelConfig::Dfn { .. } => Some("Dfn"),
+                CellModelConfig::Ecm | CellModelConfig::SpmEnsemble { .. } => None,
+            };
+            if let Some(model) = model {
+                return Err(BuildError::RegularSolutionNeedsEnsemble {
+                    chem_id: chem.meta.id.clone(),
+                    model,
+                });
             }
         }
 
@@ -1672,6 +1792,20 @@ impl Pack {
                                 CellModel::new_ecm(n_rc, config.initial_soc, config.initial_temp_k)
                             }
                         },
+                        CellModelConfig::SpmEnsemble {
+                            shells, particles, ..
+                        } => match &chem.spm {
+                            Some(spm) => CellModel::new_ensemble(
+                                spm,
+                                shells,
+                                particles,
+                                config.initial_soc,
+                                config.initial_temp_k,
+                            ),
+                            None => {
+                                CellModel::new_ecm(n_rc, config.initial_soc, config.initial_temp_k)
+                            }
+                        },
                     },
                     capacity_factor,
                     r0_factor,
@@ -1681,6 +1815,26 @@ impl Pack {
                 });
             }
             groups.push(ParallelGroup { cells });
+        }
+
+        // The particle radii, drawn after every scatter factor so that choosing this model
+        // moves no draw another model makes, and not at all for one particle or no spread
+        // (see `ensemble::draw_radii`). Same series-major, parallel-minor order.
+        if let (CellModelConfig::SpmEnsemble { radius_sigma, .. }, Some(spm)) =
+            (config.cell_model, chem.spm.as_ref())
+        {
+            for group in &mut groups {
+                for cell in &mut group.cells {
+                    if let Some(radii) = cell.model.radii_mut() {
+                        ensemble::draw_radii(
+                            &mut rng,
+                            spm.positive.particle_radius_m,
+                            radius_sigma,
+                            radii,
+                        );
+                    }
+                }
+            }
         }
 
         // Built after the scatter draws so that adding a BMS cannot shift the
@@ -2358,11 +2512,10 @@ impl Pack {
         // tangent it stores is already one its last end-of-step solve took.
         let seeded = nonlinear
             && dt > 0.0
-            && self.groups.iter().any(|g| {
-                g.cells
-                    .iter()
-                    .any(|c| matches!(c.model, crate::ecm::CellModel::Spm(_)))
-            });
+            && self
+                .groups
+                .iter()
+                .any(|g| g.cells.iter().any(|c| c.model.seeds_first_pass()));
         if seeded {
             for group in &self.groups {
                 for cell in &group.cells {

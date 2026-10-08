@@ -443,6 +443,47 @@ pub struct ElectrodeParams {
     /// Open-circuit potential of this electrode against lithium metal
     /// (`[spm.*.ocp]`).
     pub ocp: OcpTable,
+    /// A second form of the open-circuit potential, `[spm.positive.regular_solution]`: the
+    /// closed-form curve of a material that separates into two phases. Optional; `None` on
+    /// every chemistry written before Phase 9.
+    ///
+    /// **Only the many-particle cell reads it** ([`crate::CellModelConfig::SpmEnsemble`]),
+    /// and where it is present that cell reads it *instead of* [`Self::ocp`]. The curve is
+    /// not monotone — that is the point of it — and one particle cannot carry it: a single
+    /// particle on it has no plateau and no rest gap, only a voltage that rises through
+    /// the middle of a discharge (`docs/plans/phase-9-slice-a-spike.md`). So
+    /// [`crate::Pack::new`] refuses it under the single-particle and electrolyte models,
+    /// rather than either running them on the table beside it without saying so. The table
+    /// stays required, because those refusals are per model and the file still has to load.
+    ///
+    /// Positive electrode only: validation refuses it on the negative, where nothing reads
+    /// it.
+    #[serde(default)]
+    pub regular_solution: Option<RegularSolutionParams>,
+}
+
+/// The regular-solution open-circuit potential of a two-phase electrode
+/// (`[spm.positive.regular_solution]`):
+///
+/// `U(y) = U0 − (R·T/F)·ln(y/(1 − y)) − Ω·(1 − 2y)` \[V\],
+///
+/// with `y` the stoichiometry and `T` the cell's own temperature. The logarithm is the
+/// entropy of mixing lithium and vacancies; `Ω` is the energy two neighbours pay for being
+/// different, which is what makes the curve rise through its middle and the material
+/// separate into a full and an empty phase. With `Ω` below `2·R·T/F` the curve is monotone
+/// and the material is a solid solution.
+///
+/// Bai 2011 (Nano Lett. 11, 4890) gives both constants for LFP; Phase 9 keeps its `U0` and
+/// fits `Ω` (`docs/plans/phase-9-lfp-ensemble.md`). The chemistry file carries the
+/// provenance of each.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RegularSolutionParams {
+    /// `U0` \[V\]: the potential at half-filling, `y = 0.5`, where both other terms vanish.
+    /// Must be finite and `> 0`.
+    pub u0_v: f64,
+    /// `Ω` \[eV per site, so volts per elementary charge\]: the interaction energy. Must be
+    /// finite and `>= 0`; `0` is the ideal solution.
+    pub omega_ev: f64,
 }
 
 /// Half-cell open-circuit potential as a function of stoichiometry (`[spm.*.ocp]`).
@@ -2152,6 +2193,25 @@ fn check_electrode(side: &'static str, e: &ElectrodeParams) -> Result<(), Chemis
                 "spm.positive.ocp.stoich must span [stoich_min, stoich_max]"
             },
         });
+    }
+    if let Some(rs) = &e.regular_solution {
+        if side == "spm.negative" {
+            return Err(ChemistryError::BadRange {
+                what: "spm.negative.regular_solution is not supported: only the positive \
+                       electrode of the many-particle cell reads it",
+            });
+        }
+        if !is_positive(rs.u0_v) || !rs.u0_v.is_finite() {
+            return Err(ChemistryError::NotPositive {
+                what: "spm.positive.regular_solution.u0_v",
+                value: rs.u0_v,
+            });
+        }
+        if !is_non_negative(rs.omega_ev) || !rs.omega_ev.is_finite() {
+            return Err(ChemistryError::BadRange {
+                what: "spm.positive.regular_solution.omega_ev must be finite and >= 0",
+            });
+        }
     }
     Ok(())
 }

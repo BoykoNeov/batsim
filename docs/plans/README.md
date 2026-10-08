@@ -37,6 +37,7 @@ One per phase, the slice notes under it. Each records what was measured, what wa
 | [`phase-8-slice-d-nimh-client.md`](phase-8-slice-d-nimh-client.md) | Phase 8 slice D — teaching the nickel cell, and closing the phase |
 | [`phase-9-slice-a-spike.md`](phase-9-slice-a-spike.md) | Phase 9, slice A — the spike: does a many-particle LFP electrode give a plateau, and can the engine's solve carry it |
 | [`phase-9-lfp-ensemble.md`](phase-9-lfp-ensemble.md) | Phase 9 — the plan for slices B–D: an LFP cell whose plateau and hysteresis come from its particles |
+| [`phase-9-slice-b-ensemble.md`](phase-9-slice-b-ensemble.md) | Phase 9, slice B — the many-particle cell in the engine: the split inside the cell, its fallback, the 10 s sub-step, `N = 1` bit for bit |
 
 ## Engine physics slices
 

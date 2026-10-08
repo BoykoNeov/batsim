@@ -38,9 +38,10 @@ The engine is the product. Every UI, server, and game is just a client of `sim-c
    SOC *estimate*. The gap between truth and estimate is a feature to expose, not
    a bug to hide.
 9. **Keep the door open.** Cell models live behind the `CellModel` enum with
-   per-cell opaque state: the equivalent-circuit model (ECM) and the porous-electrode
-   `Spm` and `Dfn` sit there today, and another must be addable without touching
-   the pack layer.
+   per-cell opaque state: the equivalent-circuit model (ECM), the porous-electrode
+   `Spm` and `Dfn`, and `SpmEnsemble` — the `Spm` with its positive electrode split into
+   particles that share one potential — sit there today, and another must be addable
+   without touching the pack layer.
 10. **Chemistry is data, not code.** A chemistry is a TOML parameter set. Adding a
     chemistry must never require a code change.
 
@@ -145,7 +146,8 @@ pub struct Telemetry {
                                    // BALANCING, CONTACTOR_OPEN, VENTED, THERMAL_RUNAWAY, ...
 }
 
-pub enum CellModel { Ecm1Rc(EcmState), Ecm2Rc(EcmState), Spm(Box<SpmState>), Dfn(Box<DfnState>) }
+pub enum CellModel { Ecm1Rc(EcmState), Ecm2Rc(EcmState), Spm(Box<SpmState>), Dfn(Box<DfnState>),
+                     SpmEnsemble(Box<EnsembleState>) }
 ```
 
 Topology is config: `PackConfig { series: u16, parallel: u16, chemistry: ChemistryId,
@@ -244,6 +246,16 @@ and double as the scenario file format.
   so where an unmet demand lands does not depend on the pass cap. See
   `docs/plans/spm-end-of-step.md`, `docs/plans/dfn-long-step-holds.md` and
   `docs/plans/spm-pack-window.md`.
+- **The many-particle cell** (`SpmEnsemble`) splits its own current among its positive
+  particles each step, inside the cell — tangent passes, and a bracketed search where they
+  fail to settle — so the pack sees one curve per cell as before. A long step is cut into
+  sub-steps of at most `ensemble::SUBSTEP_S` (10 s, measured), a count fixed by the step
+  length alone and never by the current being tried. **Its long-step limit:** the pack's
+  bracketing assumes each cell's end-of-step curve falls with current; on the LFP cell it
+  does at steps up to 15 min and does not at 1 h (≤ 6 mV, measured). So a pack of these
+  cells in parallel, or under a voltage or power demand, is not guaranteed its root at steps
+  above 15 min; a single string under a current demand brackets nothing and is unaffected.
+  See `docs/plans/phase-9-lfp-ensemble.md` and `docs/plans/phase-9-slice-b-ensemble.md`.
 
 ### Thermal network
 
@@ -393,6 +405,9 @@ soc_onset = 0.985            # above this the accepted share falls linearly to 0
 #   [hysteresis]  resting-voltage memory (scale_v, gamma, [hysteresis.width_over_soc])
 #   [diffusion]   a Peukert-shaped rate penalty (lead-acid)
 #   [spm], [dfn]  porous-electrode parameters, extracted from a PyBaMM set
+#   [spm.positive.regular_solution]  u0_v, omega_ev: a two-phase (non-monotone) positive
+#                 potential. Read ONLY by the many-particle cell, which reads it instead of
+#                 [spm.positive.ocp]; Pack::new refuses it under Spm and Dfn
 #   [diagram]     what the cell is made of, for the client's carrier diagram. Read by NO
 #                 engine code (sim_data::parse_chemistry_facts); its captions are tied to
 #                 [safety] and the loader rejects a mismatch. See docs/plans/carrier-diagram.md
@@ -517,7 +532,10 @@ the previous one's tests pass.
 - **Phase 7 — the electrolyte.** The `Dfn` half of the bullet above, split out
   once Phase 6 shipped `Spm` and declined `diffsol` on measurement. Criteria and
   slice notes in `docs/plans/phase-7-dfn.md`.
-- **Phases 9 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
+- **Phase 9 — the LFP many-particle cell.** An LFP cell whose flat plateau and rest
+  hysteresis come out of its particles filling one at a time (ROADMAP H1). Plan, owner
+  decisions and exit criteria in `docs/plans/phase-9-lfp-ensemble.md`; slice notes beside it.
+- **Phases 10 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.
 - **Phase 8 — new chemistries.** One cheap-tier lithium parameter set added with

@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chem::{ChemistryParams, DfnParams, HysteresisParams, OcvTable, R0Table, SpmParams};
 use crate::dfn::{self, DfnState};
+use crate::ensemble::{self, EnsembleState};
 use crate::flags::EventFlags;
 use crate::math;
 use crate::spm::{self, SpmState};
@@ -219,6 +220,12 @@ pub enum CellModel {
     /// Boxed for the reason on [`CellModel::Spm`] — this is the variant that was setting
     /// the enum's width.
     Dfn(Box<DfnState>),
+    /// The single-particle model with its positive electrode split into particles of
+    /// different sizes that share one potential (Phase 9). See [`crate::ensemble`].
+    ///
+    /// Boxed for the reason on [`CellModel::Spm`]. Last, so every earlier variant keeps its
+    /// tag.
+    SpmEnsemble(Box<EnsembleState>),
 }
 
 impl CellModel {
@@ -284,6 +291,39 @@ impl CellModel {
         CellModel::Dfn(Box::new(DfnState::new(spm, nodes, shells, soc, temp_k)))
     }
 
+    /// A fresh many-particle cell, every particle at the chemistry's radius; the pack
+    /// spreads the radii afterwards ([`Self::radii_mut`]). See [`EnsembleState::new`].
+    pub(crate) fn new_ensemble(
+        spm: &SpmParams,
+        shells: usize,
+        particles: usize,
+        soc: f64,
+        temp_k: f64,
+    ) -> Self {
+        CellModel::SpmEnsemble(Box::new(EnsembleState::new(
+            spm, shells, particles, soc, temp_k,
+        )))
+    }
+
+    /// The positive particles' radii \[m\] of a many-particle cell, for the pack to draw once
+    /// at construction; `None` for every other model.
+    pub(crate) fn radii_mut(&mut self) -> Option<&mut [f64]> {
+        match self {
+            CellModel::SpmEnsemble(s) => Some(&mut s.radii_m),
+            _ => None,
+        }
+    }
+
+    /// Whether a nonlinear pack's first pass should start from this cell's end-of-step
+    /// tangent at its last current ([`Self::first_pass_tangent`]) rather than from its
+    /// memoised start-of-step one. The single-particle models: their probe is cheap and their
+    /// start-of-step tangent grows rounding at long rests. Not the `Dfn`, whose memoised
+    /// tangent is already the one its last end-of-step solve took. See `Pack::step`.
+    #[must_use]
+    pub(crate) fn seeds_first_pass(&self) -> bool {
+        matches!(self, CellModel::Spm(_) | CellModel::SpmEnsemble(_))
+    }
+
     /// The chemistry's `[spm]` block, for the arms that need it.
     ///
     /// A missing section cannot happen on a built pack — [`crate::Pack::new`]
@@ -316,6 +356,9 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc,
             CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| spm::soc(s, spm)),
             CellModel::Dfn(s) => Self::spm_params(chem).map_or(0.0, |spm| dfn::soc(s, spm)),
+            CellModel::SpmEnsemble(s) => {
+                Self::spm_params(chem).map_or(0.0, |spm| ensemble::soc(s, spm))
+            }
         }
     }
 
@@ -349,7 +392,9 @@ impl CellModel {
     pub(crate) fn rejection_ocv_v(&self, chem: &ChemistryParams) -> f64 {
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => open_circuit_v(chem, s),
-            CellModel::Spm(_) | CellModel::Dfn(_) => ocv_lookup(&chem.ocv, 1.0),
+            CellModel::Spm(_) | CellModel::Dfn(_) | CellModel::SpmEnsemble(_) => {
+                ocv_lookup(&chem.ocv, 1.0)
+            }
         }
     }
 
@@ -370,6 +415,7 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.soc_deficit,
             CellModel::Spm(s) => s.soc_deficit,
             CellModel::Dfn(s) => s.soc_deficit,
+            CellModel::SpmEnsemble(s) => s.soc_deficit,
         }
     }
 
@@ -380,6 +426,7 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.temp_k,
             CellModel::Spm(s) => s.temp_k,
             CellModel::Dfn(s) => s.temp_k,
+            CellModel::SpmEnsemble(s) => s.temp_k,
         }
     }
 
@@ -392,6 +439,7 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => s.temp_k = temp_k,
             CellModel::Spm(s) => s.temp_k = temp_k,
             CellModel::Dfn(s) => s.temp_k = temp_k,
+            CellModel::SpmEnsemble(s) => s.temp_k = temp_k,
         }
     }
 
@@ -417,6 +465,9 @@ impl CellModel {
             }),
             CellModel::Dfn(s) => Self::dfn_params(chem).map_or(0.0, |(spm, d)| {
                 dfn::overpotential_v(s, spm, d, eff_r0_factor, eff_capacity_ah)
+            }),
+            CellModel::SpmEnsemble(s) => Self::spm_params(chem).map_or(0.0, |spm| {
+                ensemble::overpotential_v(s, spm, eff_r0_factor, eff_capacity_ah)
             }),
         }
     }
@@ -450,6 +501,9 @@ impl CellModel {
             CellModel::Dfn(s) => {
                 Self::dfn_params(chem).map(|(spm, d)| dfn::surface_gap(s, spm, d, eff_capacity_ah))
             }
+            CellModel::SpmEnsemble(s) => {
+                Self::spm_params(chem).map(|spm| ensemble::surface_gap(s, spm, eff_capacity_ah))
+            }
         }
     }
 
@@ -482,6 +536,9 @@ impl CellModel {
             }),
             CellModel::Dfn(s) => Self::dfn_params(chem).and_then(|(spm, d)| {
                 dfn::step_current_window(s, spm, d, eff_r0_factor, eff_capacity_ah, dt)
+            }),
+            CellModel::SpmEnsemble(s) => Self::spm_params(chem).and_then(|spm| {
+                ensemble::step_current_window(s, spm, eff_r0_factor, eff_capacity_ah, dt)
             }),
             CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) => None,
         }
@@ -517,6 +574,9 @@ impl CellModel {
             CellModel::Dfn(s) => Self::dfn_params(chem).map_or((0.0, 1.0), |(spm, d)| {
                 dfn::source(s, spm, d, eff_r0_factor, eff_capacity_ah)
             }),
+            CellModel::SpmEnsemble(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
+                ensemble::source(s, spm, &chem.reversal, eff_r0_factor, eff_capacity_ah)
+            }),
         }
     }
 
@@ -535,7 +595,7 @@ impl CellModel {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
                 cell_source_hinted(s, chem, eff_r0_factor, hints)
             }
-            CellModel::Spm(_) | CellModel::Dfn(_) => {
+            CellModel::Spm(_) | CellModel::Dfn(_) | CellModel::SpmEnsemble(_) => {
                 self.source(chem, eff_r0_factor, eff_capacity_ah)
             }
         }
@@ -613,6 +673,18 @@ impl CellModel {
                     hold,
                 )
             }),
+            CellModel::SpmEnsemble(s) => Self::spm_params(chem).map_or((0.0, (0.0, 1.0)), |spm| {
+                ensemble::probe_at(
+                    s,
+                    spm,
+                    &chem.reversal,
+                    eff_r0_factor,
+                    eff_capacity_ah,
+                    i,
+                    dt,
+                    hold,
+                )
+            }),
         }
     }
 
@@ -638,7 +710,19 @@ impl CellModel {
             CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
                 spm::first_pass_tangent(s, spm, &chem.reversal, eff_r0_factor, eff_capacity_ah, dt)
             }),
-            _ => self.source(chem, eff_r0_factor, eff_capacity_ah),
+            CellModel::SpmEnsemble(s) => Self::spm_params(chem).map_or((0.0, 1.0), |spm| {
+                ensemble::first_pass_tangent(
+                    s,
+                    spm,
+                    &chem.reversal,
+                    eff_r0_factor,
+                    eff_capacity_ah,
+                    dt,
+                )
+            }),
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::Dfn(_) => {
+                self.source(chem, eff_r0_factor, eff_capacity_ah)
+            }
         }
     }
 
@@ -656,7 +740,7 @@ impl CellModel {
     pub(crate) fn is_linear(&self) -> bool {
         match self {
             CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) => true,
-            CellModel::Spm(_) | CellModel::Dfn(_) => false,
+            CellModel::Spm(_) | CellModel::Dfn(_) | CellModel::SpmEnsemble(_) => false,
         }
     }
 
@@ -688,7 +772,7 @@ impl CellModel {
                 dt,
                 &mut hints.ocv,
             ),
-            CellModel::Spm(_) | CellModel::Dfn(_) => (0.0, 0.0),
+            CellModel::Spm(_) | CellModel::Dfn(_) | CellModel::SpmEnsemble(_) => (0.0, 0.0),
         }
     }
 
@@ -731,6 +815,9 @@ impl CellModel {
             CellModel::Dfn(s) => {
                 Self::spm_params(chem).map_or(0.0, |spm| dfn::heat_w(s, spm, i, v_terminal))
             }
+            CellModel::SpmEnsemble(s) => Self::spm_params(chem).map_or(0.0, |spm| {
+                ensemble::heat_w(s, spm, eff_r0_factor, eff_capacity_ah, i, v_terminal)
+            }),
         }
     }
 
@@ -847,6 +934,31 @@ impl CellModel {
                         ..no_rejection(flags)
                     }
                 })
+            }
+            // The single-particle arm's contract, with the particles' exchange heat folded
+            // into the watts slots: see `ensemble::advance`.
+            CellModel::SpmEnsemble(s) => {
+                chem.spm
+                    .as_ref()
+                    .map_or(no_rejection(EventFlags::empty()), |spm| {
+                        let (flags, delta_v, mean_excess_v, watts, _v_end) = ensemble::advance(
+                            s,
+                            spm,
+                            &chem.reversal,
+                            i,
+                            dt,
+                            eff_r0_factor,
+                            eff_capacity_ah * soh_capacity,
+                            v_node,
+                        );
+                        Advanced {
+                            rc_mean_excess_v: mean_excess_v,
+                            rc_delta_v: delta_v,
+                            reversal_w: watts.0,
+                            reversal_mean_w: watts.1,
+                            ..no_rejection(flags)
+                        }
+                    })
             }
         }
     }
@@ -1946,6 +2058,10 @@ pub(crate) struct Advanced {
     /// reversal carried and `OCV_d` its open-circuit voltage. Exactly `0.0` on every cell
     /// that carries no deficit and is not driven past its edge — every equivalent circuit
     /// and `Dfn`, and every `Spm` inside its window. See [`crate::spm::advance`].
+    ///
+    /// On a many-particle cell it also carries the heat its particles make trading lithium
+    /// among themselves, `Σ x_k·(U_k − Ū)`, which no voltage times `i` can express either —
+    /// at rest it is all the heat there is. See [`crate::ensemble::advance`].
     pub reversal_w: f64,
     /// [`Self::reversal_w`] as the thermal network integrates it: the mean of the step's
     /// two ends, the `Spm`'s trapezoid.

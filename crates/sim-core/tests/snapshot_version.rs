@@ -302,36 +302,37 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v23-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v24 restore.
+/// A v24-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v25 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in, for the sixth time running — and this time
-/// the reason is the fixture's `bms: None`.** v24's two new fields both live inside the
-/// BMS, which this pack does not have, so a v23 build's snapshot of it has exactly these
-/// bytes. The sibling [`a_v23_shaped_bms_config_parses_or_not_by_its_next_value`] answers
-/// the case whose bytes do change, and its answer depends on a value, which is why both
-/// exist.
+/// **At this bump the retag is not a stand-in, for the seventh time running — and this
+/// time the reason is the fixture's `spm: None`.** v25's one new field lives inside every
+/// `[spm.*]` electrode, and its two new variants close their enums, so an
+/// equivalent-circuit pack on a chemistry with no `[spm]` section is byte-for-byte what a
+/// v24 build wrote. The sibling [`a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length`]
+/// answers the case whose bytes do change, and its answer depends on a value, which is why
+/// both exist.
 #[test]
-fn the_version_field_is_what_rejects_a_v23_snapshot() {
+fn the_version_field_is_what_rejects_a_v24_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 24,
-        "this test is written against the v23 -> v24 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v23 'for this fixture it parses fine and the version field is all there is',          and v24 the same for this fixture and 'it depends on the next value' for a pack          with a BMS. A renumbered assertion cannot inherit any of them."
+        SNAPSHOT_VERSION, 25,
+        "this test is written against the v24 -> v25 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v23 'for this fixture it parses fine and the version field is all there is',          v24 the same for this fixture and 'it depends on the next value' for a pack          with a BMS, and v25 the same for this fixture and 'it fails, by a route the positive          particle's radius chooses' for a chemistry with an [spm] section. A renumbered assertion          cannot inherit any of them."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 23);
+    let stale = retagged(&bytes, 24);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 23,
+            found: 24,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v23-tagged snapshot must be refused"
+        "a v24-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -912,4 +913,84 @@ fn a_v23_shaped_bms_config_parses_or_not_by_its_next_value() {
     );
     assert_eq!(quiet.estimator, EstimatorConfig::CoulombCount);
     assert_eq!(quiet.min_ocv_slope_v_per_soc, 0.15);
+}
+
+/// A v24 `[spm]` section fails to parse at v25 — by one of two routes, chosen by the first
+/// byte of the positive particle's radius.
+///
+/// v25 appends `regular_solution: Option<RegularSolutionParams>` to each electrode. bincode
+/// writes an `Option` as a one-byte tag and writes fields positionally, so a v24 section
+/// read at v25 takes the first byte of the **positive** electrode's radius as the negative
+/// electrode's tag. For the shipped LG M50 radius, 5.22e-6, that byte is `0xf7`, not a tag,
+/// and the read fails there. For a radius whose low byte is `0x00` it reads as `None`, the
+/// positive electrode is read one byte out of step, and the read fails at its potential
+/// table: the length prefix, read a byte late, carries the real length's low byte in its top
+/// byte (`2 << 56` entries here). **Written expecting that second route to parse quietly;
+/// measured, it does not**, so this says what was measured. A quiet parse would need a table
+/// whose length is a multiple of 256. The version field refuses a v24 blob before either.
+/// The field, not a snapshot, on its siblings' terms.
+#[test]
+fn a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length() {
+    use sim_core::chem::{ElectrodeParams, OcpTable, SpmParams};
+    let electrode = |r: f64| ElectrodeParams {
+        particle_radius_m: r,
+        diffusivity_m2_per_s: 4.0e-15,
+        c_max_mol_per_m3: 63104.0,
+        active_volume_fraction: 0.665,
+        thickness_m: 7.56e-5,
+        m_ref: 3.42e-6,
+        reaction_ea_j_per_mol: 17800.0,
+        diffusivity_ea_j_per_mol: 0.0,
+        charge_transfer_alpha: 0.5,
+        stoich_min: 0.26,
+        stoich_max: 0.85,
+        docp_dt_v_per_k: 0.0,
+        ocp: OcpTable {
+            stoich: vec![0.2, 0.9],
+            volts: vec![4.4, 3.5],
+        },
+        regular_solution: None,
+    };
+    let spm = |r_pos: f64| SpmParams {
+        t_ref_k: 298.15,
+        c_e_mol_per_m3: 1000.0,
+        electrode_area_m2: 0.1027,
+        contact_resistance_ohm: 0.0,
+        negative: electrode(5.86e-6),
+        positive: electrode(r_pos),
+    };
+    // A v24 writer's bytes: each electrode's v25 bytes without the new field's tag, which a
+    // `None` writes as one zero byte at the electrode's end. Then the `f64` that follows.
+    let v24_then = |p: &SpmParams| {
+        let mut out = bincode::serialize(&(
+            p.t_ref_k,
+            p.c_e_mol_per_m3,
+            p.electrode_area_m2,
+            p.contact_resistance_ohm,
+        ))
+        .expect("the scalars serialize");
+        for e in [&p.negative, &p.positive] {
+            let b = bincode::serialize(e).expect("an electrode serializes");
+            assert_eq!(b.last(), Some(&0), "a `None` tag closes the v25 electrode");
+            out.extend_from_slice(&b[..b.len() - 1]);
+        }
+        out.extend(bincode::serialize(&298.15_f64).expect("an f64 serializes"));
+        out
+    };
+    assert!(
+        bincode::deserialize::<SpmParams>(&v24_then(&spm(5.22e-6))).is_err(),
+        "the v25 note says the shipped radius makes a v24 section fail loudly, and it parsed"
+    );
+    let zero_low_byte = f64::from_bits(5.22e-6_f64.to_bits() & !0xff);
+    assert!(
+        bincode::deserialize::<SpmParams>(&v24_then(&spm(zero_low_byte))).is_err(),
+        "the v25 note says a radius with a zero low byte reads the tag as `None` and then \
+         fails on the potential table's length, and it parsed"
+    );
+
+    // The positive control: a v25 section round-trips to itself.
+    let v25 = spm(5.22e-6);
+    let bytes = bincode::serialize(&v25).expect("a v25 section serializes");
+    let back: SpmParams = bincode::deserialize(&bytes).expect("that is a v25 section");
+    assert_eq!(back, v25);
 }

@@ -1,9 +1,11 @@
 # Phase 9 — an LFP cell whose plateau and hysteresis come from its particles
 
-**Status: PLANNED 2026-10-06, nothing built.** Written after slice A's spike and its second
-round (`phase-9-slice-a-spike.md`), which is the measurement this plan stands on. Where a
-later slice note contradicts this text, **the slice note is the measurement and wins**. The
-repo is at `SNAPSHOT_VERSION` 24 and `WASM_API_VERSION` 8.
+**Status: PLANNED 2026-10-06. Slice B BUILT 2026-10-08** (`phase-9-slice-b-ensemble.md`:
+the engine model, `SNAPSHOT_VERSION` 25, sub-step 10 s on measurement); C and D not
+started. Written after slice A's spike and its second round (`phase-9-slice-a-spike.md`),
+which is the measurement this plan stands on. Where a later slice note contradicts this
+text, **the slice note is the measurement and wins**. When written the repo was at
+`SNAPSHOT_VERSION` 24 and `WASM_API_VERSION` 8.
 
 This replaces the slice list in `docs/ROADMAP.md` §Phase 9, which assumed the published
 interaction strength would give the plateau and the hysteresis. On the spike's measurement it
