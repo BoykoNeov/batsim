@@ -197,6 +197,11 @@
   #path-nav { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
   #path-nav button { width: auto; padding: 4px 13px; }
   #path-nav .sp { flex: 1; }
+  #path-nav select { width: auto; max-width: 22em; }
+  #path-chapter {
+    color: var(--dim); font-size: 10px; text-transform: uppercase;
+    letter-spacing: .07em; margin-bottom: 4px;
+  }
   #path-note { color: var(--dim); font-size: 11px; margin-top: 8px; }
 
   /*
@@ -365,7 +370,9 @@
        the number here is not `LESSONS.length`. It said 24 while the path had 26 before
        that tally existed. -->
   <button id="path-start">Start — 37 steps</button>
-  <div class="note">From one cell to a pack with nothing watching it. Each step sets the
+  <div class="note">From one cell to a pack with nothing watching it, then inside the cell,
+    across other chemistries and their gauges — in chapters, which the menu beside Back
+    and Next jumps between. Each step sets the
     controls below and says what to look at; they all stay live, and stepping back or
     forward re-applies the whole set.</div>
 
@@ -516,6 +523,7 @@
 
 <div id="main">
   <div id="path">
+    <div id="path-chapter"></div>
     <div id="path-head">
       <span class="t">guided path</span>
       <span id="path-title"></span>
@@ -526,6 +534,8 @@
     <div id="path-nav">
       <button id="path-back">&larr; Back</button>
       <button id="path-next">Next &rarr;</button>
+      <!-- Filled from `CHAPTERS` in app.js; choosing one restarts that chapter at t = 0. -->
+      <select id="path-chapters" title="Jump to the start of a chapter"></select>
       <span class="sp"></span>
       <button id="path-exit">Exit</button>
     </div>

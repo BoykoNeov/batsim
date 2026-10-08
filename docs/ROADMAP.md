@@ -584,12 +584,14 @@ predicted re-pinning cost did not exist: no test moved.
 * **`crates/sim-data/tests/path_claims.rs` is 18 000 lines** and is the single largest file
   in the workspace. It works, its rules are documented at length inside it, and splitting
   it is worth doing only when a rule changes; it is named here so nobody is surprised.
-* **The guided path has 34 steps and no argument about how many it should have**
-  (`phase-8-chemistries.md`). Phases 9 and 10 each propose two more; Phase 11 proposes
-  none and re-measures the existing ones instead. Decide the shape of the path
-  before they land: the honest options are a longer single path or a set of short tracks
-  per theme (chemistries, models, protection, aging), and the claims harness does not care
-  which.
+* ~~**The guided path has no argument about how many steps it should have**~~ — **decided
+  2026-10-08** (`path-chapters.md`): one path in its existing order, under chapter headings,
+  with a menu that jumps to a chapter's first step on a freshly built pack. Steps keep one
+  numbering across the path because the prose cites them by number; themed tracks were
+  declined for the rewrite they cost. A new lesson goes into a chapter (Phase 10's aging
+  lessons into a new one, which is also the natural home for the idle-wear step), and
+  `sim-data/tests/path_chapters.rs` holds every chapter to opening on a step that builds its
+  own pack.
 * **The out-of-tree trajectory instrument** (`ANCHORS.md`, not in this repo) is stale by at
   least one slice and has four documented blind spots. H5 was what would let it come in, and
   is closed (2026-10-06): it can come in now, as a native-versus-wasm parity check rather

@@ -4966,6 +4966,49 @@ const LESSONS = [
   },
 ];
 
+// The path's chapters: headings over the lessons above, in the order they already run.
+//
+// Kept outside `LESSONS` on purpose. The claims test (`path_claims.rs`) splits that array
+// on its `id:` fields and reads every string literal in a block as prose a reader is shown;
+// a chapter title inside a lesson record would be scanned as that lesson's sentence. And a
+// chapter is named by its **first lesson's id**, never by an index, so inserting a lesson
+// cannot slide a boundary along without anyone touching this list.
+//
+// Steps keep their numbers across the whole path ("step N of M"), not within a chapter:
+// the prose addresses its neighbours by those numbers, dozens of times.
+//
+// Titles carry no counts — no digits and no number words — because nothing would derive
+// them. The "chapter N of M" the reader sees is computed.
+//
+// `crates/sim-data/tests/path_chapters.rs` pins the list: every `first` names a lesson,
+// in lesson order, the first chapter opens the path, and every chapter opens on a step
+// that builds its own pack when reached by Next. A jump (`jumpToChapter`) always rebuilds.
+// See `docs/plans/path-chapters.md`.
+const CHAPTERS = [
+  { first: "bare-curve", title: "What a cell does" },
+  { first: "pack-disagrees", title: "A pack, its gauge, and its protection" },
+  { first: "wearing-out-while-idle", title: "Wear, and putting charge back" },
+  { first: "circuit-repeats-itself", title: "Inside the cell: circuit, particle, electrolyte" },
+  { first: "one-step-that-got-through", title: "Abuse: shorts, and running past empty" },
+  { first: "slow-and-patient", title: "Other chemistries" },
+  { first: "a-curve-worth-reading", title: "Gauges that read the curve" },
+  { first: "no-particle-is-halfway", title: "LFP's particles" },
+];
+
+/** Each chapter's first lesson as an index into `LESSONS`; a bad id fails at load. */
+const CHAPTER_STARTS = CHAPTERS.map((c) => {
+  const i = LESSONS.findIndex((L) => L.id === c.first);
+  if (i < 0) throw new Error(`chapter "${c.title}" names no lesson "${c.first}"`);
+  return i;
+});
+
+/** The chapter a lesson index falls in: the last one starting at or before it. */
+function chapterOf(i) {
+  let c = 0;
+  for (let k = 0; k < CHAPTER_STARTS.length; k++) if (CHAPTER_STARTS[k] <= i) c = k;
+  return c;
+}
+
 /** Authored strings, so the escape is belt-and-braces; the backticks are the point. */
 function proseHtml(s) {
   return s
@@ -4994,6 +5037,11 @@ function setWatch(ids) {
 
 function renderStep() {
   const L = LESSONS[path.i];
+  const c = chapterOf(path.i);
+  $("path-chapter").textContent =
+    `chapter ${c + 1} of ${CHAPTERS.length} — ${CHAPTERS[c].title}`;
+  $("path-chapters").value = String(c);
+  $("path-chapters").disabled = path.busy;
   $("path-title").textContent = L.title;
   $("path-where").textContent = `step ${path.i + 1} of ${LESSONS.length}`;
   $("path-prose").innerHTML = L.prose.map((p) => `<p>${proseHtml(p)}</p>`).join("");
@@ -5044,7 +5092,7 @@ function renderStep() {
  * step re-applies its whole set on the way in, which is also what makes Back-then-Next a
  * repair for a reader who moved a slider mid-lesson.
  */
-async function applyStep(L) {
+async function applyStep(L, fresh = false) {
   path.until = null;
   path.busy = true;
   path.switchedTransport = false;
@@ -5073,7 +5121,12 @@ async function applyStep(L) {
     // satisfies neither clause — so 13 would arm from t = 1980 on a pack three 3 C
     // pulses into its life, while its prose talks about a first tooth at 90 %. Steps
     // 2-5 never met this because their marks ascend.
+    //
+    // `fresh` is a chapter jump, which can arrive from anywhere: paused part-way through a
+    // later step on the same scenario, short of this step's mark, neither clause below
+    // fires and the jump would inherit that half-run pack. A chapter is entered from t = 0.
     const reload =
+      fresh ||
       !state.backend ||
       path.switchedTransport ||
       L.reload === true ||
@@ -5153,11 +5206,21 @@ function pathArrived() {
   renderStep();
 }
 
-async function gotoStep(i) {
+async function gotoStep(i, fresh = false) {
   if (path.busy) return;
   path.i = Math.max(0, Math.min(LESSONS.length - 1, i));
-  await applyStep(LESSONS[path.i]);
+  await applyStep(LESSONS[path.i], fresh);
 }
+
+/** The chapter menu: jump to a chapter's first step, always on a freshly built pack. */
+async function jumpToChapter(c) {
+  await gotoStep(CHAPTER_STARTS[c], true);
+}
+
+for (const [k, c] of CHAPTERS.entries()) {
+  $("path-chapters").add(new Option(`${k + 1}. ${c.title}`, String(k)));
+}
+$("path-chapters").onchange = () => jumpToChapter(Number($("path-chapters").value));
 
 /**
  * The button's idle label, derived rather than written.

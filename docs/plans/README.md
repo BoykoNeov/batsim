@@ -104,6 +104,7 @@ What a reader can reach, and how the page shows it.
 | [`cross-platform-math.md`](cross-platform-math.md) | Do the browser and the server compute the same trajectory? — H5: not to the last bit, until every transcendental went through `libm`; the RC-decay reuse; the parity tool |
 | [`dfn-scenario.md`](dfn-scenario.md) | The DFN scenario: a rate at which the particle model stops knowing the cell is dying |
 | [`lead-acid-client.md`](lead-acid-client.md) | The lead-acid client slice: a cell that is not empty, and will not give you the rest |
+| [`path-chapters.md`](path-chapters.md) | The guided path in chapters: headings over the existing order, a jump menu that always rebuilds the pack — the owner's answer to the path-shape question |
 | [`reversal-damage-ui.md`](reversal-damage-ui.md) | The damage, shown to a reader — and four count claims that had already drifted |
 | [`reversal-ui.md`](reversal-ui.md) | Over-discharge, made visible — and four lessons that still described the old engine |
 | [`scenario-catalog.md`](scenario-catalog.md) | The scenario catalogue, and the two scenarios nobody could load |

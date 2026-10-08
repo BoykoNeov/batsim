@@ -304,7 +304,9 @@ the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
 If you do not already know what to look at, press **Start** under *Guided path*
-instead. It walks thirty-seven steps — one cell on its own, the same discharge on a
+instead. The steps are grouped into chapters, and a menu beside Back and Next jumps to
+the start of any chapter on a freshly built pack; the steps keep one numbering from
+start to end, because the lessons point at each other by step number. It walks thirty-seven steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
 with protection on and then off, a pack that wears out while doing nothing at all,
