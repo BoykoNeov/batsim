@@ -5040,7 +5040,7 @@ function renderStep() {
   const c = chapterOf(path.i);
   $("path-chapter").textContent =
     `chapter ${c + 1} of ${CHAPTERS.length} — ${CHAPTERS[c].title}`;
-  $("path-chapters").value = String(c);
+  $("path-chapters").value = "";
   $("path-chapters").disabled = path.busy;
   $("path-title").textContent = L.title;
   $("path-where").textContent = `step ${path.i + 1} of ${LESSONS.length}`;
@@ -5217,10 +5217,18 @@ async function jumpToChapter(c) {
   await gotoStep(CHAPTER_STARTS[c], true);
 }
 
+// The menu rests on a placeholder, never on the current chapter. A `<select>` fires no
+// `change` when the reader picks the option already shown, so a menu that tracked the
+// current chapter could not restart it — and the chapter line above the title already
+// says which one this is. `renderStep` puts it back on the placeholder after every jump.
+$("path-chapters").add(new Option("Jump to chapter…", ""));
 for (const [k, c] of CHAPTERS.entries()) {
   $("path-chapters").add(new Option(`${k + 1}. ${c.title}`, String(k)));
 }
-$("path-chapters").onchange = () => jumpToChapter(Number($("path-chapters").value));
+$("path-chapters").onchange = () => {
+  const v = $("path-chapters").value;
+  if (v !== "") jumpToChapter(Number(v));
+};
 
 /**
  * The button's idle label, derived rather than written.

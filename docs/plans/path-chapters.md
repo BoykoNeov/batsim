@@ -28,7 +28,11 @@ single path or short tracks per theme. Three were put to the owner:
   list. `step N of 37` stays as it was: steps keep **one numbering across the whole
   path**, because the prose addresses its neighbours by those numbers.
 * A chapter menu beside Back and Next. Choosing a chapter goes to its first step **on a
-  freshly built pack** (`applyStep(L, fresh = true)`), whatever step the reader was on.
+  freshly built pack** (`applyStep(L, fresh = true)`), whatever step the reader was on —
+  including the chapter they are already in, which is how a chapter is restarted. The menu
+  rests on a "Jump to chapter…" placeholder rather than on the current chapter: a native
+  `<select>` fires no `change` when the option already shown is picked again, so a menu that
+  tracked the chapter could not restart it (found at review, follow-up commit).
 * The sidebar note under *Start* and the README's path paragraph say the chapters exist.
 
 The chapters, by first step: what a cell does (1), a pack and its gauge and protection
@@ -39,22 +43,34 @@ other chemistries (22), gauges that read the curve (30), LFP's particles (35).
 
 Every chapter happens to open on a step whose scenario differs from the step before it, so
 arriving by Next already reloads (`applyStep` reloads on a changed scenario). A jump is not
-arriving by Next: it can come from anywhere. Paused part-way through step 4 at 66 s, the
-chapter menu's "chapter 2" goes to step 3 — **the same scenario**, with the clock short of
-step 3's 300 s mark — so neither reload clause fires and step 3 would have carried on with
-step 4's half-run pack. Hence `fresh`.
+arriving by Next: it can come from anywhere. Steps 20 (`past-empty`) and 1 (`bare-curve`)
+run the same scenario, `cc_discharge_lfp.toml`. Paused early in step 20, short of step 1's
+4200 s mark, the menu's chapter 1 goes to step 1 with **the same scenario** and the clock
+under its mark — neither reload clause fires, and step 1 would carry on with step 20's
+half-run pack. Restarting the chapter you are in is the same case. Hence `fresh`.
 
-Measured in the page (headless Chrome over CDP, the server's `/app/` route):
+Measured in the page (headless Chrome over CDP, the server's `/app/` route), with **real
+input**: the menu focused and the chapter's digit typed (`Input.dispatchKeyEvent`, the
+closed `<select>`'s type-ahead), no value written and no synthetic event:
 
-| arm | clock before the jump | clock just after |
-| --- | --- | --- |
-| with `fresh` | 66 s | 7 s (rebuilt, running from zero) |
-| control: `fresh` forced to `false` | 67 s | 67 s (inherited) |
+| case | arm | clock before the jump | clock just after |
+| --- | --- | --- | --- |
+| step 20 paused, then chapter 1 | with `fresh` | 4m | 22 s (rebuilt, running from zero) |
+| step 20 paused, then chapter 1 | control: `fresh` forced to `false` | 10m | 10m (inherited) |
+| step 4 paused, then chapter 2 again (restart) | with `fresh` | 81 s | 6 s, on step 3 |
 
-Also checked there: eight menu entries in order; Start shows chapter 1 / step 1 of 37;
-Next across a boundary moves the chapter line and the menu; Back across one moves them
+**The first measurement was not a reader's.** As first committed, the menu showed the current
+chapter, and the check jumped from step 4 to chapter 2 by writing the menu's value and
+dispatching a synthetic `change` — which a browser never fires for an unchanged pick, and step
+4 is in chapter 2. Its 66 s → 7 s row was true of the code and unreachable by a reader; the
+table above replaces it.
+
+Also checked on the corrected page: the placeholder and eight entries in order; Start shows
+chapter 1 / step 1 of 37; after a jump the menu is back on its placeholder; no console
+errors. Checked in the first run only, on code that differs from the corrected one in the
+menu alone: Next across a boundary moves the chapter line, and Back across one moves it
 back; jumping to the last chapter lands on step 35; Exit restores `Start — 37 steps`, and
-Start again opens chapter 1. No console errors.
+Start again opens chapter 1.
 
 ## The test
 
