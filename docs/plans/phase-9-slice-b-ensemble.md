@@ -103,14 +103,23 @@ the positive surface stays in, as the `Spm`'s does. Probes out of range: 1 / 1 2
 
 ### Heat
 
-`i·(U_eq − V)` with `U_eq` the particles' mean bulk potential minus the negative's, plus the
-**exchange heat** `Σ x_k·(U_k − Ū)` the particles make trading lithium among themselves,
-folded into the watts the pack adds unmultiplied (`Advanced::reversal_w`). At rest it is the
-whole of the heat. Measured on the fixture, 20 particles, C/2 for an hour then 2 h rest: the
-ledger (stored energy from the shells, closed-form regular-solution integral) closes to
-**0.0035 J of 13 723 J**, with **9.30 J** booked during the rest; without the term the rest's
-9.3 J is missing. One particle: 0.067 J — the `Spm`'s own intra-particle relaxation, which
-it does not book at zero current.
+Three terms. `i·(U_eq − V)` with `U_eq` the particles' mean bulk potential minus the
+negative's, as the single-particle model books it. The **exchange heat** `Σ x_k·(U_k − Ū)`
+the particles make trading lithium among themselves. And the **reversible heat of the
+regular-solution form**, `−T·Σ x_k·∂U_k/∂T` with `∂U/∂T = −(R/F)·ln(y/(1−y))` per particle at
+its bulk. The last two go in the watts the pack adds unmultiplied (`Advanced::reversal_w`),
+because both run at rest. A scalar `docp_dt_v_per_k` beside a `regular_solution` is refused
+at validation, so the form's temperature dependence cannot be counted twice.
+
+**The third term was missing from the first commit, and the ledger that passed could not see
+it** (the advisor's review). That ledger stored `∫U dn` — the work the cell can do — which
+closes with irreversible heat alone. The heat the pack reports is all of it, so the store has
+to be the enthalpy, `∫(U − T·∂U/∂T) dn`, which for the regular solution is `U0·y − Ω·(y − y²)`.
+Against the enthalpy, the first commit's ledger was **105 J out of 361 J** of heat (1 C for
+30 min, then 1 h rest, 20 particles); with the term it closes to **0.48 J of 257 J**, 48 J of
+it at rest (`the_energy_ledger_closes_through_a_rest`, now on the enthalpy, at 1 % of the
+heat). The Gibbs-ledger figures in the first commit's note (0.0035 J of 13 723 J) measured
+the wrong store and are withdrawn.
 
 ## Results against the plan's exit criteria
 
@@ -140,6 +149,13 @@ Each row breaks one thing in `ensemble.rs` and runs both test sets (`pert.py`):
 | the step seeds its split from zero, the probe from the last shares | `the_probe_and_the_step_agree_bit_for_bit` |
 | radii drawn for one particle | `one_particle_is_the_single_particle_model_bit_for_bit`, `the_radius_draw_is_seeded_and_moves_no_other_draw` |
 | split tolerance 1e6× looser | `the_particles_agree_on_their_potential` |
+| no reversible heat | `the_energy_ledger_closes_through_a_rest` |
+| the pack does not seed the many-particle cell's first pass | `one_particle_is_the_single_particle_model_bit_for_bit`, `the_shipped_single_particle_scenarios_run_identically_on_one_particle` |
+
+The seeding row was meant for `a_resting_parallel_pair_stays_at_rounding_through_hour_steps`,
+written for it on the advisor's review; with the hook off that pair stays at rounding too
+(5.5e-15 A), so it does not guard the hook and its doc says so. The one-particle twins do:
+they part from the single-particle model the moment the new model stops being seeded.
 
 Two findings from the first round of this table. A special case written so that one
 particle's kinetics carry exactly `i` broke nothing when removed: the general expression
@@ -159,7 +175,19 @@ wrong: read a byte out of step, the positive electrode's potential table gets a 
 `2^57` and the read fails there too. The test and the version note say what was measured
 (`snapshot_version.rs::a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length`).
 
-Full suite: 764 tests, 763 passed on the first run; the one failure was that prediction.
+Full suite: 764 tests, 763 passed on the first run; the one failure was that prediction. After
+the review's additions: 766 passed, 0 failed, 2 ignored (as before).
+
+## Checked on the advisor's review
+
+* **A zero-length step mutates nothing** on a separated 20-particle ensemble mid-rest, under
+  current, rest, voltage and power demands: the snapshot is the same bytes
+  (`a_zero_length_step_mutates_nothing_on_a_separated_ensemble`).
+* **Allocations.** `step_allocations.rs` had only ever counted equivalent-circuit packs. On a
+  porous pack `Pack::step` allocates 4 blocks (224 B) a step — **the single-particle model
+  too, before this slice**: four scratch `Vec`s of the pack's pass loop. Recorded in
+  `ROADMAP.md` H9. The many-particle cell adds nothing to it, at one sub-step and at four,
+  and the test now pins that (its count may not exceed the single-particle model's).
 
 ## Deliberately not done
 

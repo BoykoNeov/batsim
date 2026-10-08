@@ -437,6 +437,13 @@ sharing its temperature bracket and hinting both axes — bit-identical — took
 0.73–0.86 of before: `full` 42–46 µs. Criterion's confirmation of that is owed (a loaded box
 gave no verdict).
 
+**Found 2026-10-08 (Phase 9 slice B): the porous models' step is not allocation-free.**
+`step_allocations.rs` counted equivalent-circuit packs only; a 1S2P `Spm` allocates 4 blocks
+(224 B) a step in the pass loop's scratch (`tangent`, `probed`, `i_cell`, `trial_src` /
+`report_src`), and `SpmEnsemble` the same count. Moving them into pack-owned buffers is the
+same lever the zero-allocation slice pulled for the linear path; the test now pins that the
+many-particle cell adds none.
+
 ### H10. Smaller physics items, each one slice or less
 
 | item | note | cost |

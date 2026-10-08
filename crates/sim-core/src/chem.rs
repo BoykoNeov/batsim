@@ -2212,6 +2212,13 @@ fn check_electrode(side: &'static str, e: &ElectrodeParams) -> Result<(), Chemis
                 what: "spm.positive.regular_solution.omega_ev must be finite and >= 0",
             });
         }
+        // The form carries its own temperature dependence, and with it its own reversible
+        // heat (`ensemble::reversible_w`); a scalar coefficient beside it would count it twice.
+        if e.docp_dt_v_per_k != 0.0 {
+            return Err(ChemistryError::BadRange {
+                what: "spm.positive.docp_dt_v_per_k must be 0 beside a regular_solution,                        which carries its own temperature dependence",
+            });
+        }
     }
     Ok(())
 }

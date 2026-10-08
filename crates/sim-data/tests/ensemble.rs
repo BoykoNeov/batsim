@@ -615,14 +615,20 @@ fn a_separated_ensemble_round_trips_through_json() {
 /// keeps falling as the particles relax towards each other, and that is heat. The cell
 /// books it per particle (`ensemble::exchange_w`); without it the ledger here is short by
 /// the whole of the rest's heat.
+///
+/// **The store is the enthalpy, `∫(U − T·∂U/∂T) dn`, because the heat is all of it.** The
+/// regular-solution potential depends on temperature through its mixing term, so lithium
+/// moving in or out of a particle also absorbs or releases reversible heat, and
+/// `q_gen_w` books that too (`ensemble::reversible_w`). Against a store of `∫U dn` — the
+/// work the cell can do — the ledger closes only without that heat; against the enthalpy it
+/// closes only with it. For the regular solution `U − T·∂U/∂T = U0 − Ω·(1 − 2y)`: the
+/// logarithm, the only term with a temperature in it, cancels.
 #[test]
 fn the_energy_ledger_closes_through_a_rest() {
     let chem = lfp_fixture();
     let spm = chem.spm.clone().expect("[spm]");
     let t = 298.15;
-    let kt = 8.314_462_618_153_24 * t / FARADAY;
-    let phi_p =
-        |y: f64| 3.42 * y - kt * (y * y.ln() + (1.0 - y) * (1.0 - y).ln()) - OMEGA_EV * (y - y * y);
+    let phi_p = |y: f64| 3.42 * y - OMEGA_EV * (y - y * y);
     let tab = spm.negative.ocp.clone();
     let phi_n = |x: f64| {
         let mut s = 0.0;
@@ -676,12 +682,86 @@ fn the_energy_ledger_closes_through_a_rest() {
         rest_heat += tel.q_gen_w;
     }
     let imbalance = (e0 - stored(&p)) - elec - heat;
+    // Measured 0.48 J of 257 J. Without the reversible heat it is 105 J out; without the
+    // exchange heat, short by the ~9 J the particles' trading makes at rest.
     assert!(
-        imbalance.abs() < 0.1 * rest_heat,
-        "the ledger is {imbalance} J out against {rest_heat} J of rest heat"
+        imbalance.abs() < 0.01 * heat,
+        "the ledger is {imbalance} J out against {heat} J of heat ({rest_heat} J at rest)"
     );
     assert!(
         rest_heat > 1.0,
         "the rest made {rest_heat} J: nothing was exchanged"
+    );
+}
+
+/// A step where no time passes changes nothing, on a separated ensemble mid-rest, under every
+/// demand class: the whole state — every particle's profile, the shares, the deficit — is the
+/// same bytes after as before. The single-particle model's rule, now with a split in it.
+#[test]
+fn a_zero_length_step_mutates_nothing_on_a_separated_ensemble() {
+    let mut p = lfp_pack(20, 1.0);
+    for _ in 0..1800 {
+        p.step(1.0, Demand::Current(LFP_CAP_AH), &env(298.15));
+    }
+    for _ in 0..30 {
+        p.step(1.0, Demand::Rest, &env(298.15));
+    }
+    let before = serde_json::to_string(&p.snapshot()).expect("serializes");
+    for d in [
+        Demand::Current(2.0 * LFP_CAP_AH),
+        Demand::Current(-LFP_CAP_AH),
+        Demand::Rest,
+        Demand::Voltage(3.2),
+        Demand::Power(5.0),
+    ] {
+        p.step(0.0, d, &env(298.15));
+        assert_eq!(
+            serde_json::to_string(&p.snapshot()).expect("serializes"),
+            before,
+            "a zero-length {d:?} step moved the state"
+        );
+    }
+}
+
+/// Two identical many-particle cells in parallel, rested through hour-long steps after a
+/// discharge, exchange nothing but rounding (5.5e-15 A measured).
+///
+/// Written as the guard on the pack's first-pass seeding (`CellModel::seeds_first_pass`),
+/// which on the single-particle model stops exactly this from growing. **Measured, it is not
+/// that guard**: with the hook off for this model the pair stays at rounding too. The hook is
+/// pinned instead by `one_particle_is_the_single_particle_model_bit_for_bit` and the
+/// shipped-scenario twin, which part from the single-particle model the moment it stops
+/// being seeded. This one stays as what it is — a resting pair of these cells is quiet.
+#[test]
+fn a_resting_parallel_pair_stays_at_rounding_through_hour_steps() {
+    let mut c = config(
+        ensemble(20, 0.0),
+        (1, 2),
+        1.0,
+        0.0,
+        ThermalConfig::Isothermal,
+    );
+    c.seed = 3;
+    let mut p = Pack::new(&c, lfp_fixture()).expect("builds");
+    for _ in 0..600 {
+        p.step(1.0, Demand::Current(2.0 * LFP_CAP_AH), &env(298.15));
+    }
+    let mut worst: f64 = 0.0;
+    for _ in 0..6 {
+        let t = p.step(3600.0, Demand::Rest, &env(298.15));
+        assert!(!t.flags.contains(EventFlags::SOLVE_UNCONVERGED));
+        for k in 0..2 {
+            let i = p
+                .cell(0, k)
+                .expect("cell")
+                .current_a
+                .expect("a split was solved");
+            worst = worst.max(i.abs());
+        }
+    }
+    println!("resting pair: largest branch current {worst:e} A");
+    assert!(
+        worst < 1e-9,
+        "a resting identical pair circulates {worst:e} A"
     );
 }

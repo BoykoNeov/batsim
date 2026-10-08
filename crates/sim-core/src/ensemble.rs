@@ -816,6 +816,32 @@ fn exchange_w(w: &Working<'_>, pp: &Particles, s: &EnsembleState, x: &[f64]) -> 
     q
 }
 
+/// Reversible heat \[W\] of the regular-solution potential: `−T·Σ x_k·∂U_k/∂T`, each
+/// particle's share times its own entropy coefficient at its bulk stoichiometry.
+///
+/// The regular-solution form depends on temperature through its mixing term alone, so
+/// `∂U/∂T = −(R/F)·ln(y/(1 − y))`: lithium entering a nearly empty particle releases heat
+/// and lithium entering a nearly full one absorbs it, and a particle at half-filling does
+/// neither. That is not the chemistry's scalar `docp_dt_v_per_k`, which validation refuses
+/// beside this form so the two cannot be counted twice. Like [`exchange_w`] it runs at rest
+/// too — the particles trading lithium carry entropy with it — which is why it travels in
+/// the watts the pack adds rather than as a voltage times `i`.
+///
+/// `0.0` on a table potential, whose temperature dependence is the scalar's alone.
+#[must_use]
+fn reversible_w(w: &Working<'_>, pp: &Particles, s: &EnsembleState, x: &[f64]) -> f64 {
+    if w.pos.p.regular_solution.is_none() {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    for (k, &xk) in x.iter().enumerate().take(pp.n) {
+        let y = (mean_concentration(pp.profile(&s.c_pos, k)) / w.pos.p.c_max_mol_per_m3)
+            .clamp(SURFACE_EDGE, 1.0 - SURFACE_EDGE);
+        sum += xk * math::ln(y / (1.0 - y));
+    }
+    w.temp_k * GAS_CONSTANT_J_PER_MOL_K / FARADAY_C_PER_MOL * sum
+}
+
 /// The cell's equilibrium voltage at the chemistry's declared empty — [`spm::empty_voltage`]
 /// through [`positive_ocp`].
 #[must_use]
@@ -1315,7 +1341,11 @@ pub(crate) fn advance(
     let start = if moves {
         let u = equilibrium_voltage(&wk, &pp, s);
         let v = read_now(&wk, &pp, s, i_p, i, &mut x_start).0 - reversal_drop(&wk, rev, d_start);
-        (u, v, exchange_w(&wk, &pp, s, &x_start))
+        (
+            u,
+            v,
+            exchange_w(&wk, &pp, s, &x_start) + reversible_w(&wk, &pp, s, &x_start),
+        )
     } else {
         (0.0, 0.0, 0.0)
     };
@@ -1398,8 +1428,10 @@ pub(crate) fn advance(
         let (rev_start, rev_end) = (rev_at(u_start, d_start), rev_at(u_end, s.soc_deficit));
         (rev_end, 0.5 * (rev_start + rev_end))
     };
-    if pp.n > 1 {
-        let ex_end = exchange_w(&wk, &pp, s, &x);
+    // Exactly `0.0` from both for one particle on a table potential, and added only where
+    // either can be non-zero, so that cell's heat is the single-particle model's bit for bit.
+    if pp.n > 1 || wk.pos.p.regular_solution.is_some() {
+        let ex_end = exchange_w(&wk, &pp, s, &x) + reversible_w(&wk, &pp, s, &x);
         w_end += ex_end;
         w_mean += 0.5 * (ex_start + ex_end);
     }

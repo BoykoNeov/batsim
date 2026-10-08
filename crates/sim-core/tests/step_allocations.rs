@@ -30,7 +30,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use sim_core::chem::{
-    AgingParams, CellLimits, ChemMeta, ChemistryParams, OcvTable, R0Table, RcPair, ThermalParams,
+    AgingParams, CellLimits, ChemMeta, ChemistryParams, ElectrodeParams, OcpTable, OcvTable,
+    R0Table, RcPair, RegularSolutionParams, SpmParams, ThermalParams,
 };
 use sim_core::{
     AgingConfig, BalancingConfig, BmsConfig, CellModelConfig, Demand, EkfConfig, Env,
@@ -152,6 +153,64 @@ fn rich_chem() -> ChemistryParams {
     }
 }
 
+/// [`rich_chem`] with an LFP `[spm]` section on the regular-solution potential: the
+/// many-particle cell's split, its sub-steps and its bracketed fallback are new code on the
+/// step path, and this is what puts them under the counter. The numbers are the Phase 9
+/// spike's (`sim-data/tests/ensemble.rs` has the full fixture).
+fn ensemble_chem() -> ChemistryParams {
+    let mut c = rich_chem();
+    c.cell.capacity_ah = 2.303_324_557_209_257;
+    let electrode =
+        |r: f64, d: f64, c_max: f64, eps: f64, l: f64, m: f64, ea: f64| ElectrodeParams {
+            particle_radius_m: r,
+            diffusivity_m2_per_s: d,
+            c_max_mol_per_m3: c_max,
+            active_volume_fraction: eps,
+            thickness_m: l,
+            m_ref: m,
+            reaction_ea_j_per_mol: ea,
+            diffusivity_ea_j_per_mol: 0.0,
+            charge_transfer_alpha: 0.5,
+            stoich_min: 0.0,
+            stoich_max: 1.0,
+            docp_dt_v_per_k: 0.0,
+            ocp: OcpTable {
+                stoich: vec![0.0, 1.0],
+                volts: vec![0.0, 0.0],
+            },
+            regular_solution: None,
+        };
+    let mut neg = electrode(5e-6, 3e-15, 30555.0, 0.58, 3.4e-5, 6.48e-7, 35000.0);
+    neg.stoich_min = 0.017_617_931_791_027_094;
+    neg.stoich_max = 0.81;
+    neg.ocp = OcpTable {
+        stoich: vec![0.0, 0.02, 0.1, 0.2, 0.5, 0.7, 1.0],
+        volts: vec![
+            2.383542, 1.304718, 0.406516, 0.216986, 0.133086, 0.092194, 0.09202,
+        ],
+    };
+    let mut pos = electrode(5e-8, 5.9e-18, 22806.0, 0.374, 8e-5, 6e-7, 39570.0);
+    pos.stoich_min = 0.0038;
+    pos.stoich_max = 0.703_502_020_929_131_3;
+    pos.ocp = OcpTable {
+        stoich: vec![0.0, 1.0],
+        volts: vec![3.6, 3.3],
+    };
+    pos.regular_solution = Some(RegularSolutionParams {
+        u0_v: 3.42,
+        omega_ev: 0.075_917_388_974_677_12,
+    });
+    c.spm = Some(SpmParams {
+        t_ref_k: 298.15,
+        c_e_mol_per_m3: 1200.0,
+        electrode_area_m2: 0.18,
+        contact_resistance_ohm: 0.0,
+        negative: neg,
+        positive: pos,
+    });
+    c
+}
+
 fn bms() -> BmsConfig {
     BmsConfig {
         balancing: Some(BalancingConfig {
@@ -269,13 +328,52 @@ fn cases() -> Vec<(&'static str, PackConfig)> {
     out
 }
 
+/// The many-particle cell: a scattered 1S2P of 20 particles each, from a third charged, at a
+/// step of one sub-step and at one of four — `(label, config, dt)`.
+fn ensemble_cases() -> Vec<(&'static str, PackConfig, f64)> {
+    let mut c = base_config();
+    c.thermal = ThermalConfig::Network {
+        k_neighbor_w_per_k: 1.0,
+    };
+    c.series = 1;
+    c.parallel = 2;
+    c.initial_soc = 0.35;
+    c.cell_model = CellModelConfig::SpmEnsemble {
+        shells: 20,
+        particles: 20,
+        radius_sigma: 0.2,
+    };
+    vec![
+        ("SpmEnsemble 20 particles, 2 s", c.clone(), 2.0),
+        ("SpmEnsemble 20 particles, 37 s", c, 37.0),
+    ]
+}
+
 #[test]
 fn a_warm_step_allocates_nothing() {
-    let dt = 2.0;
     let mut failures: Vec<String> = Vec::new();
+    let mut porous: Vec<(&str, usize)> = Vec::new();
 
-    for (label, cfg) in cases() {
-        let mut pack = Pack::new(&cfg, rich_chem()).expect("valid config");
+    let all = cases()
+        .into_iter()
+        .map(|(label, cfg)| (label, cfg, rich_chem(), 2.0))
+        .chain(
+            ensemble_cases()
+                .into_iter()
+                .map(|(label, cfg, dt)| (label, cfg, ensemble_chem(), dt)),
+        )
+        .chain(std::iter::once({
+            // The single-particle model on the same cell, its positive on the table.
+            let mut chem = ensemble_chem();
+            if let Some(spm) = chem.spm.as_mut() {
+                spm.positive.regular_solution = None;
+            }
+            let (_, mut cfg, _) = ensemble_cases().remove(0);
+            cfg.cell_model = CellModelConfig::Spm { shells: 20 };
+            ("Spm 20 shells, 2 s", cfg, chem, 2.0)
+        }));
+    for (label, cfg, chem, dt) in all {
+        let mut pack = Pack::new(&cfg, chem).expect("valid config");
         for s in 0..WARM {
             pack.step(dt, demand_at(s), &env());
         }
@@ -294,9 +392,31 @@ fn a_warm_step_allocates_nothing() {
         let bytes = per_step.iter().map(|&(_, b)| b).max().unwrap_or(0);
         println!("{label:26} allocs/step {best}..{worst}   bytes/step <= {bytes}");
 
-        if worst != 0 {
+        if label.starts_with("Spm") {
+            porous.push((label, worst));
+        } else if worst != 0 {
             failures.push(format!(
                 "`{label}`: a warm step allocates {best}..{worst} times ({bytes} B at worst)"
+            ));
+        }
+    }
+
+    // The porous models' nonlinear path is **not** allocation-free, and was not before
+    // Phase 9: four per-step scratch `Vec`s of the pack's pass loop (`tangent`, `probed`,
+    // `i_cell`, `trial_src`/`report_src`), measured at 4 blocks and 224 B a step on this
+    // 1S2P — the slice that brought `Pack::step` to zero measured equivalent-circuit packs
+    // only. Recorded in `docs/ROADMAP.md` H9. What is pinned here is what Phase 9 slice B
+    // owns: its split, sub-steps and fallback add **nothing** to the single-particle
+    // model's count on the same pack.
+    let spm = porous
+        .iter()
+        .find(|(l, _)| l.starts_with("Spm 20"))
+        .map(|&(_, w)| w)
+        .expect("the single-particle case ran");
+    for &(label, worst) in &porous {
+        if worst > spm {
+            failures.push(format!(
+                "`{label}`: {worst} allocations a step against the single-particle model's {spm}"
             ));
         }
     }
