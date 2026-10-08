@@ -23,9 +23,14 @@ the harness (`ens/`, slice B's, pointed at the shipped file) and every raw outpu
   the capacity against the negative electrode's geometry, which models run the file, and
   criteria 2–6 on the shipped file.
 * **Slice B's tests moved onto the file.** `ensemble.rs` ran its many-particle tests on a
-  fixture built from the spike's parameters; that fixture is gone and every one of its twelve
-  tests passes on the shipped file unchanged. The energy ledger reads 0.48 J of 258 J (0.48 of
-  257 on the fixture).
+  fixture built from the spike's parameters; that fixture is gone, its eleven tests pass on
+  the shipped file unchanged, and one is added (the capacity they use is the file's). The
+  energy ledger reads 0.48 J of 258 J (0.48 of 257 on the fixture). **Green is not the same as
+  still guarding**, so slice B's engine perturbation table (`W:/temp/claude/phase9b/pert.py`,
+  eight breaks in `ensemble.rs` and `ecm.rs`) was rerun on the moved tests: every row is
+  caught by exactly the tests that caught it on the fixture — including the bracketed
+  fallback, whose only guard (`a_hard_charge_into_a_full_electrode_keeps_its_particles_bounded`)
+  depends on the tangent passes diverging at three hard-charge points, which they still do.
 * The sweeps over every shipped chemistry (`load.rs`, `diagram.rs`) include the new file;
   `CLAUDE.md`, `README.md` and `ROADMAP.md` count eight.
 
