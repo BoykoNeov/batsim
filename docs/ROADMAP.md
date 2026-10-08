@@ -38,6 +38,11 @@ make**, not by effort.
 
 ### H1. LFP has no porous-electrode model, and it is the teaching chemistry
 
+**Status 2026-10-08: Phase 9 is complete, and most of this is closed.** LFP now has a
+many-particle cell (`SpmEnsemble`), a chemistry file for it and a guided-path lesson. What stays
+open is listed at the end of this entry and in `phase-9-lfp-ensemble.md` §"What this phase does
+not close".
+
 **Gap.** `[spm]` and `[dfn]` are NMC-only by decision: lithium iron phosphate intercalates
 through a moving phase boundary, and a single particle with Fickian diffusion is the wrong
 physics for its flat plateau (`phase-6-porous-electrodes.md`, README "`[spm]` and `[dfn]`
@@ -94,6 +99,16 @@ across 20 seeds. Over 20 seeds the room-temperature rest gap is 19.64 mV on 16, 
 and **14.14 mV on one** — below the 18–20 mV the plan's criterion states for its four seeds
 (which all read 19.64) — each set by how many particles end full, as in the cold. So a
 single room-temperature number is also one draw, just a likelier one.
+
+**Slice D (2026-10-08) teaches it** (`phase-9-slice-d-lesson.md`): guided-path steps 35–37 on
+eight scenario files that differ from each other only in direction, model, temperature or
+seed, a `particles` readout row and a particle view in the cell diagram (`sim_wasm`
+`WASM_API_VERSION` 9). The reader sees a half-charged electrode as some particles full and the
+rest empty, a 19.6 mV rest gap that the equivalent circuit on the same file does not have, and
+in the cold two seeds giving two gaps. **What H1 leaves open:** the gap's size at 298 K is capped
+by the fitted interaction strength, the knee's rate dependence was not measured, there is no
+external reference for phase separation, and a pack of these cells is not guaranteed its
+solve at steps above 15 min (`CLAUDE.md`, the pack solve).
 
 ### H2. Aging is semi-empirical on every model, and the porous models cannot age their pores
 
@@ -507,7 +522,12 @@ chemistry file and its goldens.
 (extracted, the extractor's two silent misreads fixed: a rate written `6 * 10 ** (-7)` read as
 6, and the set's 298 K key in place of the functions' 298.15), the PyBaMM C/20 golden, and
 `sim-data/tests/lfp_ensemble.rs` pinning criteria 2–6 on it; slice B's tests now run on the
-file instead of their fixture. Next: slice D, the scenario and the lesson.
+file instead of their fixture.
+
+*Slice D built 2026-10-08 — Phase 9 complete* (`phase-9-slice-d-lesson.md`): eight scenario
+files, guided-path steps 35–37 ledgered whole, the `particles` readout row and the particle view
+in the carrier diagram, `Pack::positive_particles` on the wire as the cells frame's `particles`
+(`WASM_API_VERSION` 9; `sim_server::API_VERSION` stays 2, `SNAPSHOT_VERSION` stays 25).
 
 *Exit.* A CC discharge of the LFP ensemble matches the Prada 2013 DFN reference within a
 stated tolerance over the plateau; at rest after a partial charge and a partial discharge

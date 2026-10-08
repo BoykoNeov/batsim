@@ -18,6 +18,43 @@ const NIMH_OVERCHARGE_ISO: &str =
 const NIMH_MEMORY_CHARGED: &str = include_str!("../../../scenarios/nimh_memory_charged.toml");
 const NIMH_MEMORY_DISCHARGED: &str = include_str!("../../../scenarios/nimh_memory_discharged.toml");
 
+/// The many-particle LFP lesson's files (Phase 9 slice D), in the order the guided path
+/// reads them. See [`the_particle_files_differ_only_where_their_headers_say`].
+const LFP_PARTICLES: [(&str, &str); 8] = [
+    (
+        "charged",
+        include_str!("../../../scenarios/lfp_particles_charged.toml"),
+    ),
+    (
+        "discharged",
+        include_str!("../../../scenarios/lfp_particles_discharged.toml"),
+    ),
+    (
+        "circuit_charged",
+        include_str!("../../../scenarios/lfp_circuit_charged.toml"),
+    ),
+    (
+        "circuit_discharged",
+        include_str!("../../../scenarios/lfp_circuit_discharged.toml"),
+    ),
+    (
+        "cold_charged",
+        include_str!("../../../scenarios/lfp_particles_cold_charged.toml"),
+    ),
+    (
+        "cold_discharged",
+        include_str!("../../../scenarios/lfp_particles_cold_discharged.toml"),
+    ),
+    (
+        "cold_charged_seed3",
+        include_str!("../../../scenarios/lfp_particles_cold_charged_seed3.toml"),
+    ),
+    (
+        "cold_discharged_seed3",
+        include_str!("../../../scenarios/lfp_particles_cold_discharged_seed3.toml"),
+    ),
+];
+
 fn env() -> Env {
     Env {
         t_ambient: 298.15,
@@ -669,4 +706,61 @@ fn the_memory_pair_differs_only_in_where_it_starts() {
          threshold somebody picked: {} is outside (0.05, 0.10]",
         bms.min_ocv_slope_v_per_soc
     );
+}
+
+/// The many-particle lesson's eight files differ from `lfp_particles_charged.toml` in exactly
+/// the fields their headers name, and in nothing else.
+///
+/// Every contrast the guided path draws from them is a subtraction, and a subtraction is only
+/// attributable if everything else is held: the direction of arrival (`initial_soc`), the
+/// particles (the cell model), the cold (`initial_temp_k`) and the draw (`seed`). This is
+/// what holds "the same file with one field changed" over the whole `PackConfig` rather than
+/// over a list of fields.
+#[test]
+fn the_particle_files_differ_only_where_their_headers_say() {
+    let parsed: Vec<(&str, Scenario)> = LFP_PARTICLES
+        .iter()
+        .map(|(n, t)| (*n, parse_scenario(t).unwrap_or_else(|e| panic!("{n}: {e}"))))
+        .collect();
+    let base = parsed[0].1.pack.clone();
+    assert_eq!(base.initial_soc, 0.0);
+    assert_eq!(base.initial_temp_k, 298.15);
+    assert_eq!(
+        base.seed, 9,
+        "seed 9 is the first of the four the plan's criteria pin"
+    );
+    assert_eq!(
+        base.cell_model,
+        CellModelConfig::SpmEnsemble {
+            shells: 20,
+            particles: 20,
+            radius_sigma: 0.2,
+        }
+    );
+    assert!(base.bms.is_none() && base.aging.is_none());
+    for (name, sc) in &parsed {
+        assert_eq!(
+            sc.chemistry_source(),
+            ChemistrySource::Id("lfp_26650_prada2013"),
+            "{name}"
+        );
+        assert!(sc.faults.is_empty(), "{name} schedules no fault");
+        let mut want = base.clone();
+        if name.contains("discharged") {
+            want.initial_soc = 1.0;
+        }
+        if name.starts_with("circuit") {
+            want.cell_model = CellModelConfig::Ecm;
+        }
+        if name.starts_with("cold") {
+            want.initial_temp_k = 263.15;
+        }
+        if name.ends_with("seed3") {
+            want.seed = 3;
+        }
+        assert_eq!(
+            sc.pack, want,
+            "`{name}` must differ from `lfp_particles_charged.toml` in the fields its name              says and in nothing else: the guided path's contrasts are subtractions"
+        );
+    }
 }

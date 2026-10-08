@@ -89,6 +89,11 @@ use tokio::net::TcpListener;
 /// generated") survive; a client that integrated it keeps integrating a rate, and one that
 /// paired it with the previous frame's voltage now pairs it with its own frame's. See
 /// `docs/plans/end-of-step-split.md`.
+///
+/// **v2 unmoved for the cells frame's `particles`** (2026-10-08). An added key on
+/// `GET /sessions/{id}/cells` — each cell's positive particles on the many-particle cell,
+/// `null` otherwise — so the first paragraph's exemption, as for `current_a`;
+/// `sim_wasm::WASM_API_VERSION` moves to 9 alone. See `docs/plans/phase-9-slice-d-lesson.md`.
 pub const API_VERSION: u32 = 2;
 
 /// Build the application router over a session registry.

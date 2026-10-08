@@ -79,8 +79,15 @@ function clearBanner() {
  * would normalise a range over nothing and the diagram would advance a cell at `NaN` —
  * quieter than a throw and worse, which is the reason this rule is about what the page
  * consumes rather than about method names.
+ *
+ * v9 is a field on the cells frame rather than on a cell — `particles`, each positive
+ * particle's lithium content on the many-particle cell and `null` on every other model.
+ * Against a v8 bundle it is `undefined` and nothing throws: the `particles` row would
+ * print "one per electrode" about a cell with twenty, and the diagram would draw carrier
+ * dots where the particles are. A wrong sentence rather than a blank, which is the case
+ * this rule moves for.
  */
-const WASM_API_MIN = 8;
+const WASM_API_MIN = 9;
 
 let wasm = null;
 try {
@@ -1291,6 +1298,26 @@ const READOUTS = [
     },
     "circuit — no electrodes",
   ],
+  // How many of the positive electrode's particles are full, out of how many there are —
+  // the many-particle cell's own quantity, and the one its plateau and its rest gap are
+  // made of. A particle on this cell's curve is either nearly empty or nearly full and
+  // almost never in between, so the count is the electrode's state in one number.
+  //
+  // "Full" is past the curve's midpoint, `0.5`, which is where `lfp_ensemble.rs` draws the
+  // same line. Formatted from `cells`, so it is sampled on `CELLS_PERIOD_MS` like the row
+  // above and is behind a running simulation by up to that much wall clock.
+  [
+    "particles",
+    (m, f, cells) => {
+      const ps = cells?.particles?.[0];
+      if (!ps) return null;
+      return `${ps.filter((y) => y > 0.5).length} of ${ps.length} full`;
+    },
+    // Two silences again: a circuit has no particles at all, and the single-particle and
+    // DFN models have one per electrode — nothing to fill one at a time.
+    (m, f, cells) =>
+      isPorous(cells?.cells?.[0]) ? "one per electrode" : "circuit — no particles",
+  ],
 ];
 
 /**
@@ -2381,6 +2408,10 @@ function carrierState() {
     vented: !!cell?.vented,
     shorted: !!(cell && cell.internal_short_conductance_s > 0),
     pastEmpty: !!(cell && cell.soc_deficit > 0),
+    // Each positive particle's lithium content, `0` empty to `1` full — `null` on every
+    // model but the many-particle cell (wasm api 9). Drawn in place of the positive
+    // electrode's carrier dots, because there they are what the electrode is made of.
+    particles: data?.particles?.[sel] ?? null,
     // Lane crossings so far: the phase every marker shares.
     phase: flow.q_c / (cap * 3600 * LANE_PER_CAPACITY),
   };
@@ -2560,6 +2591,7 @@ function drawCellBand(ctx, w, y0, h, st) {
     cellDischarging: discharging,
     contactorOpen,
     cellPhase: phase,
+    particles,
   } = st;
   const d = chem?.diagram ?? null;
   const fam = FAMILIES[d?.family] ?? FAMILIES.intercalation;
@@ -2666,7 +2698,9 @@ function drawCellBand(ctx, w, y0, h, st) {
       ctx.fillRect(q.x - r, q.y - r, 2 * r, 2 * r);
     } else dot(ctx, q.x, q.y, r, CARRIER_INK);
   }
-  for (let k = 0; k < nPos; k += 1) {
+  // On the many-particle cell the positive electrode is drawn as its particles instead,
+  // below; dots on top of them would be a second picture of the same lithium.
+  for (let k = 0; k < (particles ? 0 : nPos); k += 1) {
     const q = posOrder[k];
     if (sulfate) {
       ctx.fillStyle = METAL_INK;
@@ -2678,6 +2712,39 @@ function drawCellBand(ctx, w, y0, h, st) {
   for (let k = 0; k < nTrapped; k += 1) {
     const q = negOrder[N_CARRIERS - 1 - k];
     dot(ctx, lane.x - film - 5, q.y, r, TRAPPED_INK);
+  }
+
+  // The many-particle cell: one circle per positive particle, filled from the bottom by the
+  // share of its sites holding lithium. On this cell's curve a particle is nearly empty or
+  // nearly full and almost never between, so a half-charged electrode is drawn as some
+  // circles full and the rest empty — not as every circle half full. That picture is the
+  // lesson; see the `particles` readout row for the count.
+  if (particles && particles.length > 0) {
+    const n = particles.length;
+    const cols = Math.max(1, Math.round(Math.sqrt((n * pos.w) / eh)));
+    const rowsP = Math.ceil(n / cols);
+    const cw = pos.w / cols;
+    const ch = eh / rowsP;
+    const rp = Math.max(3, Math.min(cw, ch) * 0.36);
+    for (let k = 0; k < n; k += 1) {
+      const cxp = pos.x + cw * ((k % cols) + 0.5);
+      const cyp = top + ch * (Math.floor(k / cols) + 0.5);
+      const y = Math.max(0, Math.min(1, particles[k]));
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cxp, cyp, rp, 0, 2 * Math.PI);
+      ctx.clip();
+      ctx.fillStyle = "#1a1e27";
+      ctx.fillRect(cxp - rp, cyp - rp, 2 * rp, 2 * rp);
+      ctx.fillStyle = CARRIER_INK;
+      ctx.fillRect(cxp - rp, cyp + rp - 2 * rp * y, 2 * rp, 2 * rp * y);
+      ctx.restore();
+      ctx.strokeStyle = y > 0.5 ? CARRIER_INK : PLOT_INK;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cxp, cyp, rp, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
   }
 
   // Porous models: the surface band of each electrode is tinted by how far its surface
@@ -4820,6 +4887,82 @@ const LESSONS = [
     ],
     expect:
       "At the mark `current` reads **`0.000 A`**, `terminal` reads **`3.266 V`**, and `soc (true)` reads **`51.7 %`** against a `soc (bms)` of **`45.0 %`**. Load `lfp_gauge_filter` from the picker again and run it to this mark. `terminal` there reads **`3.266 V`** too — at rest the extra resistance costs nothing, so the two filters are being shown the same voltage — and `soc (bms)` reads **`52.3 %`** against the same **`51.7 %`** of truth. Same voltage, same filter, and one estimate is close while the other is still **`6.7`** points low after the whole rest. That is the part of this lesson that is new, and it is about what a filter keeps besides its estimate. It also keeps its own opinion of how wrong that estimate might be, and every reading shrinks that opinion by an amount set by how steep the curve is where the filter thinks the cell is — not by whether the reading agreed with it. Under load the wrong model dragged the estimate down past **`0.45`**, a breakpoint of this chemistry's `[ocv]` table below which the curve is much steeper than the plateau the cell is really on. Down there every reading looked informative, so the filter quickly grew sure of itself, of an answer that was wrong, and by the time the current stopped a voltage saying something different could move it only slowly. This page does not show that uncertainty — it lives inside the BMS — but `on_lfp_a_wrong_model_makes_the_filter_confidently_wrong` reads it and asserts that at this mark the estimate is wrong by many times its own error bar, and `the_filter_grows_sure_of_itself_where_the_curve_is_steep` runs the same filter with a correct model, started below the breakpoint, and watches its uncertainty collapse at least as fast while every reading agrees with it. One footnote about where it ended. The estimate climbed back up to that same breakpoint and has not moved since, and that is not the confidence either: above it the curve is flat again, and the sensor's small current offset happens to hold the estimate on it. Take the offset away and the estimate creeps on past the breakpoint, still far from the truth. `on_lfp_the_wrong_model_is_held_at_a_table_node_by_the_offset` measures both halves: the confidence is what makes it slow, the table and the offset are what make it stop. Last, the gauge from the sodium-ion steps. Load `lfp_gauge_declines` from the picker and run it to this mark. It only counts, and it declined to correct at rest: `soc (bms)` reads **`53.7 %`**, still high, still drifting. On this cell it beats the filter that is reading the wrong model, and a weak cell would not change that — `on_lfp_a_wrong_model_makes_the_filter_confidently_wrong` also runs the counter on this file's weak cell and gets the same readings, because a resistance it never looks at cannot fool it. Both of those comparisons are about this filter as this file tunes it, and the setting the last step named decides how much of them holds. Told to trust the voltage a good deal less, the filter goes wrong later but still ends the rest about as far out as this one: that much distrust makes the wrong model slower, not harmless. Told to trust it far less, it ends the rest close to the truth, inside its own error bar, and ahead of the counter. And on `lfp_gauge_filter`, with the model right, trusting the voltage that much less costs almost nothing by the end of the rest. It is not free everywhere: run the sodium-ion cell from the earlier steps with this same filter — `na_ion_gauge_filter` and `na_ion_gauge_low_filter` in the picker — and the same change leaves its gauge further from the truth at the end of the rest, not closer. The test named in the last step measures all of it. How far to trust the voltage is a tuning choice with no right answer for every cell, and this lesson made it by hand. That is the trade every real BMS makes. A model buys speed where the model is right and the curve can be read, and on a flat curve with a model that is wrong, it buys this.",
+  },
+  {
+    id: "no-particle-is-halfway",
+    title: "Halfway, and no particle is",
+    // Phase 9's lesson, slice D (docs/plans/phase-9-slice-d-lesson.md): the many-particle cell
+    // (`SpmEnsemble`) on `lfp_26650_prada2013`, whose positive electrode is a crowd of
+    // particles on a two-phase curve. This step and the next are one run, as 27 and 28 are.
+    scenario: "lfp_particles_charged.toml",
+    // C/20 -- the cell's capacity in amps over twenty -- for the 36000 s that moves exactly
+    // half its charge, then nothing: the off-leg outlasts both marks, so the next step's mark
+    // at 43200 s sits on the rest leg rather than on the start of a second pulse.
+    demand: { mode: "Pulse", value: -0.11517255, on_s: 36000, off_s: 36000 },
+    ambient_c: 25,
+    bms: null,
+    // 10 s, where the plan's criteria are pinned and the page can keep up: the many-particle
+    // cell costs about a hundred times a single particle per step, and 10 s moves the rest
+    // gap by at most 0.05 mV against 1 s (phase-9-slice-c-chemistry.md).
+    dt: 10,
+    speed_x: 10000,
+    // 7 h in, at 35 %: 11 particles full and 9 empty, none between.
+    until_s: 25200,
+    reload: true,
+    watch: ["carriers", "readouts"],
+    prose: [
+      "Back to LFP, built a new way. The chemistry file is the same LFP cell with one section added, and this scenario selects the model that reads it: the many-particle cell, which gives the positive electrode `20` separate particles instead of a single curve. Each of them fills and empties on its own.",
+      "The demand box charges it from empty at `-0.11517255 A` for `36000 s` and then stops. That is slow, and it is long enough to bring the cell from empty to the charge the next step reads.",
+      "Watch the cell diagram, where the positive electrode is now drawn as its particles — each circle one particle, filled from the bottom by how much lithium it holds — and the new `particles` row in the readouts. The mark comes part of the way through the charge.",
+    ],
+    expect:
+      "At the mark `soc (true)` reads **`35.0 %`**, `terminal` reads **`3.270 V`**, and the `particles` row reads **`11 of 20 full`**. Now look at the diagram rather than the row. The electrode is part of the way through its charge, and no particle is: the circles that are full are most of the way full, the rest are nearly empty, and not one sits in between. That is the material, not the drawing. Iron phosphate does not like being partly full — a grain with some lithium in it would rather have all of it or none — so the cheapest way for the electrode to hold part of its lithium is for some grains to be full and the rest empty. A charge does not empty every particle a little. It empties them in turn, each of them all the way, while the others wait: once this charge is under way no particle starts to switch until the previous has finished, and `halfway_through_the_charge_no_particle_is_halfway` checks every step of it. The count falls while the cell charges, and that is not backwards: charging pulls lithium out of the positive electrode, so on this cell a full particle is a discharged one. The voltage plot looks like any LFP charge. What the particles did on the way only shows once the current stops, which is the next step.",
+  },
+  {
+    id: "which-way-it-arrived",
+    title: "Same charge, two voltages, and nothing in the file says so",
+    // The same file and trajectory as the step before; `reload` is absent, so Next carries
+    // the run on to the end of the rest. The arms are fresh runs, as every arm is.
+    scenario: "lfp_particles_charged.toml",
+    demand: { mode: "Pulse", value: -0.11517255, on_s: 36000, off_s: 36000 },
+    ambient_c: 25,
+    bms: null,
+    dt: 10,
+    speed_x: 10000,
+    // Two hours of rest after the charge: long enough that every particle has finished
+    // switching and the terminal has stopped moving in its printed digits.
+    until_s: 43200,
+    watch: ["readouts", "carriers", "plot-v"],
+    prose: [
+      "The same run, carried on: the charge runs to its end and the cell rests until the mark. If you came straight here the run simply continued.",
+      "Watch `terminal` settle through the rest, and the `particles` row.",
+    ],
+    expect:
+      "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and the `particles` row reads **`8 of 20 full`**. Now the twin. Load `lfp_particles_discharged` from the picker — the same file with `initial_soc` changed and nothing else — take the minus sign off the pulse current, so the box reads `0.11517255`, and run it to the same mark. That cell started full and was discharged down to where this one was charged up to. There `soc (true)` reads **`50.0 %`** as well, and the `particles` row reads **`4 of 20 full`**. `terminal` there reads **`3.275 V`** against this file's **`3.294 V`** — 19 mV apart. Same cell, same charge, same temperature, and they stay apart for the rest of the run. Both electrodes hold the same lithium; what differs is how it is shared out. How many particles end full depends on the road the electrode took, and the voltage at which every particle can rest together depends on how many are full. `the_room_temperature_rest_gap_depends_on_the_direction_of_arrival` measures it on several seeds. Last, the control. Load `lfp_circuit_charged` from the picker — this file with its cell model block deleted, so the same chemistry runs as the equivalent circuit — keep the minus sign, and run it to the mark. Then load `lfp_circuit_discharged`, set the pulse current back to `0.11517255`, and do the same. Both read **`3.265 V`**. A circuit has one curve, so it cannot know which way it was driven, and the gap you read off the two particle runs is the particles' and nothing else's. The level differs from both of theirs as well — the two models read different sections of the chemistry file — so compare the gaps, not the voltages. The NiMH cell's memory came out of a `[hysteresis]` section its chemistry file declares. This cell's file declares none: here the memory is made by the particles.",
+  },
+  {
+    id: "a-throw-of-the-dice",
+    title: "In the cold, the gap is a draw",
+    // The same experiment at 263.15 K. A separate FILE, because the thermal network is off
+    // and the slider moves nothing; `ambient_c` matches it so the panel and the prose agree.
+    // Seed 9, as the room-temperature pair: the four seeds the plan's criteria are pinned on
+    // give 27.44 mV on three and 23.32 on the last, and the arms below show both.
+    scenario: "lfp_particles_cold_charged.toml",
+    demand: { mode: "Pulse", value: -0.11517255, on_s: 36000, off_s: 36000 },
+    ambient_c: -10,
+    bms: null,
+    dt: 10,
+    speed_x: 10000,
+    until_s: 43200,
+    reload: true,
+    watch: ["readouts", "carriers"],
+    prose: [
+      "The same experiment in the cold, at `-10 °C`: the charge arm from the last two steps with its starting temperature changed and nothing else.",
+      "There is still no BMS, and here that matters: this chemistry refuses to charge below freezing when one is watching, and the question is what the particles do, not what a protection rule allows.",
+      "Watch `terminal` and the `particles` row at the mark, as before.",
+    ],
+    expect:
+      "At the mark `terminal` reads **`3.299 V`** and the `particles` row reads **`8 of 20 full`**. Load `lfp_particles_cold_discharged` from the picker, take the minus sign off so the pulse current reads `0.11517255`, and run it to the mark. It rests at **`3.271 V`** against this file's **`3.299 V`** — 28 mV apart, wider than at room temperature — and the `particles` row there reads **`5 of 20 full`**. Now roll the dice. Load `lfp_particles_cold_discharged_seed3` — the same file with its `seed` changed and nothing else; the seed decides how big each particle is — and run it with the pulse current still at `0.11517255`. It rests at **`3.275 V`** against this file's **`3.299 V`** — 24 mV apart — with **`6 of 20 full`**. Same cell, same charge, same cold, same road, and a different answer. Then load `lfp_particles_cold_charged_seed3`, the charge arm on that new seed, keep the minus sign, and run it. It reads **`3.299 V`** with **`8 of 20 full`**, where this file is. The dice moved one arm and left the other alone, and on the arm they moved some particles switched during the rest, after the current had stopped — in the cold the rest is part of the experiment. `another_draw_in_the_cold_moves_only_the_discharge_arm` checks all of it. So in the cold the gap is not a number the cell has. It is one of a few values, each set by how many particles end full on either side, and which one a given cell lands on is a draw: `the_cold_rest_gap_is_set_by_how_many_particles_end_full` checks that every gap it sees is the value its two counts predict. The slice that built this cell ran many more seeds and found a few more such values, the one this file shows the most common, and the header of `lfp_particles_cold_charged` lists them. At room temperature it is a draw as well, only a rarer one.",
   },
 ];
 

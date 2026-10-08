@@ -1963,6 +1963,20 @@ impl Pack {
         })
     }
 
+    /// Ground truth for the positive particles of the cell at series position `s`, parallel
+    /// position `p`: each one's mean stoichiometry, `0` empty of lithium and `1` full — or
+    /// `None` if either index is out of range or the cell model has a single positive
+    /// particle (see [`crate::CellModel::positive_particles`]).
+    ///
+    /// Not a [`CellView`] field, because that view is `Copy` and a fixed array would put
+    /// [`crate::ensemble::MAX_PARTICLES`] numbers on the wire for every cell of every pack.
+    /// A pure function of stored state, so no snapshot changed shape.
+    #[must_use]
+    pub fn positive_particles(&self, s: usize, p: usize) -> Option<Vec<f64>> {
+        let cell = self.groups.get(s)?.cells.get(p)?;
+        cell.model.positive_particles(&self.chem)
+    }
+
     /// The pack's aging clock, or `None` if this pack does not age.
     ///
     /// Exposes the sub-clock's pending interval, which is what makes a mid-period

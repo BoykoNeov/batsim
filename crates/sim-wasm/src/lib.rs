@@ -216,7 +216,21 @@ use wasm_bindgen::prelude::*;
 /// model — and on a third at 23, the `Dfn` — and no page method changed. What did change is its meaning on that model — it can
 /// coexist with charge still inside — so the page's row is labelled `over-drained` rather
 /// than `past empty`. See `docs/plans/porous-reversal.md`.
-pub const WASM_API_VERSION: u32 = 8;
+///
+/// v9 (the many-particle cell's particles): [`Cells`] gains `particles`, each cell's
+/// positive particles' mean stoichiometry from `sim_core::Pack::positive_particles` — `null`
+/// for the whole pack on every cell model but `SpmEnsemble`. A field on the frame rather
+/// than on `CellView`, which is `Copy` and would have had to carry a fixed array for every
+/// cell of every pack.
+///
+/// An addition, so `sim_server::API_VERSION` stays at 2 by its own exemption, and the two
+/// part company for the **sixth** time; the server's `/cells` route gains the same key so
+/// the two dialects stay one. `WASM_API_MIN` in `web/app.js` moves with it, on v8's test: the
+/// page reads the field at once, and against a v8 bundle its `particles` row would print
+/// "one per electrode" about a cell with twenty — a wrong sentence, quieter than a throw.
+/// `sim_core::SNAPSHOT_VERSION` stays at 25: the stoichiometries are a pure function of the
+/// stored shell concentrations. See `docs/plans/phase-9-slice-d-lesson.md`.
+pub const WASM_API_VERSION: u32 = 9;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///

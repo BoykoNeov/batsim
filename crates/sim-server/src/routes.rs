@@ -348,6 +348,10 @@ struct CellsResponse {
     /// This is ground truth — every cell's true state, not what the BMS can sense.
     /// The gap between this and `Telemetry::soc_bms` is a feature to look at.
     cells: Vec<CellView>,
+    /// Each cell's positive particles, in the order of `cells`, or `None` for a pack whose
+    /// cell model has one positive particle per cell. Matches `sim_wasm::Cells::particles`,
+    /// whose doc is the authority.
+    particles: Option<Vec<Vec<f64>>>,
 }
 
 /// `GET /sessions/{id}/sensors` response: what the BMS measured.
@@ -555,10 +559,17 @@ fn cells_of(session: &Session) -> CellsResponse {
             }
         }
     }
+    let particles = pack.positive_particles(0, 0).map(|_| {
+        (0..usize::from(series))
+            .flat_map(|s| (0..usize::from(parallel)).map(move |p| (s, p)))
+            .filter_map(|(s, p)| pack.positive_particles(s, p))
+            .collect()
+    });
     CellsResponse {
         series,
         parallel,
         cells,
+        particles,
     }
 }
 

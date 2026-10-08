@@ -3,7 +3,9 @@
 **Status: PLANNED 2026-10-06. Slice B BUILT 2026-10-08** (`phase-9-slice-b-ensemble.md`:
 the engine model, `SNAPSHOT_VERSION` 25, sub-step 10 s on measurement). **Slice C BUILT
 2026-10-08** (`phase-9-slice-c-chemistry.md`: `chemistries/lfp_26650_prada2013.toml`, the
-PyBaMM golden, criteria 2–6 pinned in `sim-data/tests/lfp_ensemble.rs`). D not started. Written after slice A's spike and its second round (`phase-9-slice-a-spike.md`),
+PyBaMM golden, criteria 2–6 pinned in `sim-data/tests/lfp_ensemble.rs`). **Slice D BUILT
+2026-10-08** (`phase-9-slice-d-lesson.md`: eight scenario files, guided-path steps 35–37, the
+particle view; criterion 8). **Phase 9 is complete.** Written after slice A's spike and its second round (`phase-9-slice-a-spike.md`),
 which is the measurement this plan stands on. Where a later slice note contradicts this
 text, **the slice note is the measurement and wins**. When written the repo was at
 `SNAPSHOT_VERSION` 24 and `WASM_API_VERSION` 8.
@@ -171,7 +173,8 @@ and checked by a test so a later change to the cell cannot silently move it.
 6. Charge conserved to 1e-12 of capacity; no unsolved split from C/20 to 3C at a 1 s step.
 7. Per-cell step cost measured and recorded (no budget is set: the 50 µs budget is for a
    100S10P ECM pack).
-8. A guided-path lesson teaches it, ledgered.
+8. A guided-path lesson teaches it, ledgered. *(Slice D: steps 35–37, every numeral tied,
+   the sentences with no number pinned in `sim-data/tests/lfp_particles_lesson.rs`.)*
 
 ## What this phase does not close (H1)
 

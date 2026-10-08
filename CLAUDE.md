@@ -538,8 +538,10 @@ the previous one's tests pass.
   once Phase 6 shipped `Spm` and declined `diffsol` on measurement. Criteria and
   slice notes in `docs/plans/phase-7-dfn.md`.
 - **Phase 9 — the LFP many-particle cell.** An LFP cell whose flat plateau and rest
-  hysteresis come out of its particles filling one at a time (ROADMAP H1). Plan, owner
-  decisions and exit criteria in `docs/plans/phase-9-lfp-ensemble.md`; slice notes beside it.
+  hysteresis come out of its particles filling one at a time (ROADMAP H1). **Complete**
+  2026-10-08: the engine (slice B), the chemistry and its golden (C), and the guided-path
+  lesson (D, `docs/plans/phase-9-slice-d-lesson.md`). Plan, owner decisions and exit
+  criteria in `docs/plans/phase-9-lfp-ensemble.md`; slice notes beside it.
 - **Phases 10 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

@@ -507,6 +507,26 @@ impl CellModel {
         }
     }
 
+    /// Each positive particle's mean stoichiometry (`0` empty of lithium, `1` full), or
+    /// `None` on a model whose positive electrode is one particle or none.
+    ///
+    /// Only [`CellModel::SpmEnsemble`] answers: its plateau and its rest gap are made of
+    /// these particles filling one at a time, and this is what lets a client draw that.
+    /// The `Spm` and the `Dfn` answer `None` rather than a one-element list, because a
+    /// single particle has nothing to fill one at a time and [`Self::surface_gap`] already
+    /// reports its gradient. See [`crate::ensemble::positive_stoichiometry`].
+    #[must_use]
+    pub fn positive_particles(&self, chem: &ChemistryParams) -> Option<Vec<f64>> {
+        match self {
+            CellModel::SpmEnsemble(s) => {
+                Self::spm_params(chem).map(|spm| ensemble::positive_stoichiometry(s, spm))
+            }
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::Spm(_) | CellModel::Dfn(_) => {
+                None
+            }
+        }
+    }
+
     /// The range of current \[A, discharge-positive\] this cell can carry over a step of
     /// `dt` seconds without its model leaving the states it describes, or `None` where
     /// the model declares no such range.

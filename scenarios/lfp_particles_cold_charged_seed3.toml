@@ -1,0 +1,66 @@
+# The cold charge arm on a second seed. Read `lfp_particles_cold_charged.toml` first.
+#
+# ## The experiment, which is `crates/sim-data/tests/lfp_ensemble.rs`'s
+#
+# C/20 (0.11517255 A, a twentieth of the cell's 2.303451 A.h) for 36000 s moves exactly
+# half the cell's charge, so a run from empty and a run from full both arrive at 50.0 %.
+# Then the circuit opens for 7200 s. The guided path drives it with the page's Pulse mode
+# (on 36000 s, off 36000 s, so the mark at 43200 s sits on the rest leg) at dt = 10 s,
+# where criteria 3 and 4 of the plan are pinned; 10 s moves the rest gap by at most
+# 0.05 mV against 1 s.
+#
+# Measured on the page's shape at t = 43200 s: 3.298584 V, 8 of 20 particles full -- the
+# seed-9 file's value to 0.13 microvolts. Not to the bit: the radii differ, so the rested
+# particles sit a hair apart, and nothing a panel prints can see it.
+#
+# ## Why this is a separate file and not the ambient slider
+#
+# The thermal network is off (Isothermal), so the cell sits at initial_temp_k for the whole
+# run, and the page's ambient slider moves nothing. A cold lesson has to be a cold FILE.
+#
+# ## No BMS, and that matters here
+#
+# This chemistry inhibits charging below 0 degC (`t_charge_min_k = 273.15`), and the charge
+# arm runs at -10 degC. With a protecting BMS the charge would be refused and the lesson
+# would be about the BMS. There is none: the question is what the particles do, and a C/20
+# charge is below this chemistry's plating threshold, so nothing flags.
+#
+# Seed 3, and that is the ONLY difference from the seed-9 file: it is the last of the four
+# seeds the plan's criteria are pinned on, and the one of them whose cold gap is not the
+# common value. A reader cannot change a seed from the page, so the second draw is a file.
+
+chemistry = "lfp_26650_prada2013"
+
+[meta]
+name = "LFP many-particle cell, cold, charged, another draw"
+description = """
+`lfp_particles_cold_charged.toml` with a different seed and nothing else. It rests at the \
+same 3.299 V as seed 9, with the same 8 of 20 particles full: on this pair the draw moves \
+the discharge arm and leaves the charge arm where it was."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.0
+initial_temp_k = 263.15
+seed = 3
+
+# The model. The many-particle cell is the only one that reads this chemistry's two-phase
+# positive potential (`[spm.positive.regular_solution]`); the plain `Spm` and the `Dfn`
+# refuse it. 20 particles of lognormal radius (sigma 0.2), 20 shells each: the values
+# every criterion in `docs/plans/phase-9-lfp-ensemble.md` was measured at, and part of the
+# snapshot layout, which is why they are written out rather than defaulted.
+[pack.cell_model.SpmEnsemble]
+shells = 20
+particles = 20
+radius_sigma = 0.2
+
+# Omitted, and each omission means "off":
+#   [pack.scatter]  -> one cell, nothing to scatter
+#   [pack.thermal]  -> Isothermal: the cell sits at initial_temp_k whatever the page's
+#                      ambient slider says, so the temperature is this file's and nothing
+#                      else's
+#   [pack.bms]      -> nothing to protect at C/20, and nothing to estimate: the lesson is
+#                      the terminal voltage, and every reading here is ground truth
+#   [pack.aging]    -> half a day of this is not aging
+#   [[faults]]      -> nothing scheduled

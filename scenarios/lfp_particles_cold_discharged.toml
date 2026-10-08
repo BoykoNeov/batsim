@@ -1,0 +1,65 @@
+# `lfp_particles_cold_charged.toml` with initial_soc changed from 0.0 to 1.0. Read that
+# file's header; the pair is the experiment.
+#
+# ## The experiment, which is `crates/sim-data/tests/lfp_ensemble.rs`'s
+#
+# C/20 (0.11517255 A, a twentieth of the cell's 2.303451 A.h) for 36000 s moves exactly
+# half the cell's charge, so a run from empty and a run from full both arrive at 50.0 %.
+# Then the circuit opens for 7200 s. The guided path drives it with the page's Pulse mode
+# (on 36000 s, off 36000 s, so the mark at 43200 s sits on the rest leg) at dt = 10 s,
+# where criteria 3 and 4 of the plan are pinned; 10 s moves the rest gap by at most
+# 0.05 mV against 1 s.
+#
+# Measured on the page's shape at t = 43200 s: 3.271140 V, 5 of 20 particles full, 50.0 %.
+# The panel prints 3.271 V.
+#
+# ## Why this is a separate file and not the ambient slider
+#
+# The thermal network is off (Isothermal), so the cell sits at initial_temp_k for the whole
+# run, and the page's ambient slider moves nothing. A cold lesson has to be a cold FILE.
+#
+# ## No BMS, and that matters here
+#
+# This chemistry inhibits charging below 0 degC (`t_charge_min_k = 273.15`), and the charge
+# arm runs at -10 degC. With a protecting BMS the charge would be refused and the lesson
+# would be about the BMS. There is none: the question is what the particles do, and a C/20
+# charge is below this chemistry's plating threshold, so nothing flags.
+#
+# Seed 9, one of the four seeds the plan's criteria are pinned on. Seed 0 would not do here:
+# at this temperature it still has two particles switching after a 2 h rest.
+
+chemistry = "lfp_26650_prada2013"
+
+[meta]
+name = "LFP many-particle cell, cold, discharged down to half"
+description = """
+The room-temperature pair's discharge arm at -10 degC. From full, C/20 for ten hours to \
+50 %, then two hours of rest: 3.271 V with 5 of 20 particles full, 27 mV under the cold \
+charge arm's 3.299 V."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 263.15
+seed = 9
+
+# The model. The many-particle cell is the only one that reads this chemistry's two-phase
+# positive potential (`[spm.positive.regular_solution]`); the plain `Spm` and the `Dfn`
+# refuse it. 20 particles of lognormal radius (sigma 0.2), 20 shells each: the values
+# every criterion in `docs/plans/phase-9-lfp-ensemble.md` was measured at, and part of the
+# snapshot layout, which is why they are written out rather than defaulted.
+[pack.cell_model.SpmEnsemble]
+shells = 20
+particles = 20
+radius_sigma = 0.2
+
+# Omitted, and each omission means "off":
+#   [pack.scatter]  -> one cell, nothing to scatter
+#   [pack.thermal]  -> Isothermal: the cell sits at initial_temp_k whatever the page's
+#                      ambient slider says, so the temperature is this file's and nothing
+#                      else's
+#   [pack.bms]      -> nothing to protect at C/20, and nothing to estimate: the lesson is
+#                      the terminal voltage, and every reading here is ground truth
+#   [pack.aging]    -> half a day of this is not aging
+#   [[faults]]      -> nothing scheduled

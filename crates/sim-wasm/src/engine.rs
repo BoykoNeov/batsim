@@ -137,6 +137,15 @@ pub struct Cells {
     /// Ground truth — every cell's true state, not what the BMS can sense. The gap
     /// between this and `Telemetry::soc_bms` is a feature to look at.
     pub cells: Vec<CellView>,
+    /// Each cell's positive particles, in the same order as [`Self::cells`]: every
+    /// particle's mean stoichiometry, `0` empty of lithium and `1` full — or `None` for the
+    /// whole pack when its cell model has one positive particle per cell (every model but
+    /// the many-particle `SpmEnsemble`). See `sim_core::Pack::positive_particles`.
+    ///
+    /// `None` for the pack rather than a `null` per cell, so a 100S10P equivalent-circuit
+    /// pack does not put a thousand nulls in every frame. The model is chosen in the pack
+    /// config, so the first cell answers for all of them.
+    pub particles: Option<Vec<Vec<f64>>>,
 }
 
 /// Everything the BMS measured, as the BMS sees it.
@@ -552,10 +561,17 @@ impl SimEngine {
                 }
             }
         }
+        let particles = self.pack.positive_particles(0, 0).map(|_| {
+            (0..usize::from(series))
+                .flat_map(|s| (0..usize::from(parallel)).map(move |p| (s, p)))
+                .filter_map(|(s, p)| self.pack.positive_particles(s, p))
+                .collect()
+        });
         Cells {
             series,
             parallel,
             cells,
+            particles,
         }
     }
 

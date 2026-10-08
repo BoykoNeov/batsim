@@ -1,0 +1,62 @@
+# The control: the many-particle experiment on a cell that has no particles.
+#
+# `lfp_particles_charged.toml` with its [pack.cell_model.SpmEnsemble] table deleted, and
+# nothing else changed. Its twin `lfp_circuit_discharged.toml` is that file's twin with the
+# same table deleted.
+#
+# ## The experiment, which is `crates/sim-data/tests/lfp_ensemble.rs`'s
+#
+# C/20 (0.11517255 A, a twentieth of the cell's 2.303451 A.h) for 36000 s moves exactly
+# half the cell's charge, so a run from empty and a run from full both arrive at 50.0 %.
+# Then the circuit opens for 7200 s. The guided path drives it with the page's Pulse mode
+# (on 36000 s, off 36000 s, so the mark at 43200 s sits on the rest leg) at dt = 10 s,
+# where criteria 3 and 4 of the plan are pinned; 10 s moves the rest gap by at most
+# 0.05 mV against 1 s.
+#
+# Measured on the page's shape at t = 43200 s: 3.264950 V from both sides, equal to every
+# digit printed and beyond -- the [ocv] table's value at 0.5 (3.2621 + 0.05 x 0.057 /
+# 0.1 = 3.26495), the RC pair long relaxed. The many-particle pair's 19.6 mV is therefore
+# the particles' and nothing else's: same chemistry file, same seed, same road.
+#
+# The circuit's voltage also differs from either many-particle arm's by ten to thirty
+# millivolts. That is not the lesson: the two models read different halves of the file
+# (the fitted [ocv] against the regular-solution potential, whose U0 is cited and sits
+# about 10 mV above PyBaMM's curve -- plan criterion 2). Compare the gap, not the level.
+#
+# Seed 9, not the 0 nearly every other scenario uses, and the choice is load-bearing: the
+# seed draws the particles' radii, and how many particles end full is a draw. Seed 9 is the
+# first of the four seeds the plan's criteria are pinned on, so every number above is one
+# `lfp_ensemble.rs` already asserts. Seed 0 is not one of them, and in the cold it is still
+# switching after a 2 h rest (27.18 mV, not 27.44).
+
+chemistry = "lfp_26650_prada2013"
+
+[meta]
+name = "LFP equivalent circuit, charged up to half (control)"
+description = """
+The control arm for the many-particle pair: `lfp_particles_charged.toml` with the cell \
+model block removed, so the same chemistry runs as an equivalent circuit. From empty, \
+C/20 for ten hours, two hours of rest: 3.265 V -- and the same 3.265 V from full. A circuit \
+has one curve, so the direction of arrival cannot show."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.0
+initial_temp_k = 298.15
+seed = 9
+
+# No [pack.cell_model] table, which means the equivalent circuit -- and that is the ONE
+# difference from the many-particle file of the same name. The circuit reads this
+# chemistry's [ocv], [r0] and [[rc]] (the fitted table and the generic file's placeholders)
+# and nothing in [spm].
+
+# Omitted, and each omission means "off":
+#   [pack.scatter]  -> one cell, nothing to scatter
+#   [pack.thermal]  -> Isothermal: the cell sits at initial_temp_k whatever the page's
+#                      ambient slider says, so the temperature is this file's and nothing
+#                      else's
+#   [pack.bms]      -> nothing to protect at C/20, and nothing to estimate: the lesson is
+#                      the terminal voltage, and every reading here is ground truth
+#   [pack.aging]    -> half a day of this is not aging
+#   [[faults]]      -> nothing scheduled

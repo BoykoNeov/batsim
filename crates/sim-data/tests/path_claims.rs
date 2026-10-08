@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 34 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 37 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -134,7 +134,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is thirty-four steps and 800 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is thirty-seven steps and 841 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -255,10 +255,10 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed thirty-four whole steps — but only thirty-four. Steps here carrying
+//!   has now closed thirty-seven whole steps — but only thirty-seven. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
 //!   of the prose free: none. `[ledger].unledgered`
-//!   names what is left — none of the thirty-four — one line each, so this list cannot go
+//!   names what is left — none of the thirty-seven — one line each, so this list cannot go
 //!   quietly out of date; it is empty, and it stays in the file so that the next lesson
 //!   added to the path has somewhere to say it is not checked.
 //!   **What that closes is one axis and not the gap.** Every numeral in every step of the
@@ -493,6 +493,26 @@ const MIRRORED: &[(&str, &str, &str)] = &[
         "the `surface gap` row's placeholder on a circuit",
         "app.js",
         "    \"circuit — no electrodes\",",
+    ),
+    // --- the `particles` row (Phase 9 slice D) --------------------------------
+    //
+    // The row's line, the line that decides "full", and its fallback, which is a function
+    // here because the row has two silences. Pinned for `surface gap`'s reason: a change
+    // to the page's threshold or wording would otherwise leave the mirror green.
+    (
+        "the `particles` row",
+        "app.js",
+        "return `${ps.filter((y) => y > 0.5).length} of ${ps.length} full`;",
+    ),
+    (
+        "the `particles` row reads the first cell's list",
+        "app.js",
+        "const ps = cells?.particles?.[0];",
+    ),
+    (
+        "the `particles` row's two placeholders",
+        "app.js",
+        "isPorous(cells?.cells?.[0]) ? \"one per electrode\" : \"circuit — no particles\",",
     ),
     (
         "isPorous: which cells have the quantity at all",
@@ -784,6 +804,14 @@ fn render_row(label: &str, row: &Row) -> String {
                 format!("{} / {} pts", fmt_gap_pts(neg, 2), fmt_gap_pts(pos, 2))
             }
         },
+        // The page's two silences, mirrored for the reason `surface gap` above mirrors its
+        // one: a circuit's row names why there is no count, and so does a single-particle
+        // model's, and neither prints a zero.
+        "particles" => match row.particles_full {
+            Some((full, n)) => format!("{full} of {n} full"),
+            None if row.surface_gap.is_some() => "one per electrode".to_string(),
+            None => "circuit — no particles".to_string(),
+        },
         "over-drained" => panic!(
             "`over-drained` is a readout row this test deliberately does not mirror: it is \
              formatted from per-cell state and sampled on a wall-clock throttle, so it has \
@@ -794,7 +822,7 @@ fn render_row(label: &str, row: &Row) -> String {
             "path-claims.toml names a readout row that is not in web/app.js's READOUTS: \
              `{other}`. Known: sim time, terminal, current, soc (true), soc (bms), \
              cell v, cell t, heat, soh cap, soh res, balancing, short (int), clamp, \
-             surface gap."
+             surface gap, particles."
         ),
     }
 }
@@ -2559,6 +2587,16 @@ struct Row {
     /// Cell `(0, 0)` because the page's readout reads `cells[0]` — the packs that have this
     /// quantity are 1S1P, which is a fact the readout's own doc comment turns on.
     surface_gap: Option<(f64, f64)>,
+    /// The `particles` row's two numbers: how many of cell `(0, 0)`'s positive particles are
+    /// past half full, and how many there are — `None` on every model but the many-particle
+    /// cell, which is what that row's placeholder says.
+    ///
+    /// Read off `Pack::positive_particles`, which is what the page's `cells.particles` is,
+    /// and on the same `CELLS_PERIOD_MS` throttle as [`Self::surface_gap`]: sound at the
+    /// mark and at the probe, behind a running simulation everywhere else. Every claim on it
+    /// is read at a mark. "Full" is past `0.5`, the line `lfp_ensemble.rs` and the page's
+    /// row both draw.
+    particles_full: Option<(usize, usize)>,
     /// What the BMS had **measured** as of the end of this step — `None` on a pack with no
     /// BMS, which has no sensors at all.
     ///
@@ -2706,6 +2744,11 @@ fn rc_overpotential_v(pack: &Pack) -> f64 {
 }
 
 /// The `surface gap` row's pair, off the cell the page's readout reads.
+fn particles_full(pack: &Pack) -> Option<(usize, usize)> {
+    let ps = pack.positive_particles(0, 0)?;
+    Some((ps.iter().filter(|&&y| y > 0.5).count(), ps.len()))
+}
+
 fn surface_gap(pack: &Pack) -> Option<(f64, f64)> {
     let cell = pack.cell(0, 0).expect("pack has a cell at 0S0P");
     Some((cell.surface_gap_neg?, cell.surface_gap_pos?))
@@ -3048,6 +3091,7 @@ fn drive(
             deficit_max_cell: (deficit_max.series, deficit_max.parallel),
             deficit_min_cell: (deficit_min.series, deficit_min.parallel),
             surface_gap: surface_gap(pack),
+            particles_full: particles_full(pack),
             sensed: sensed(pack),
             rest_v,
             overpotential_v: pack
@@ -3195,6 +3239,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
         deficit_max_cell: (probe_deficit_max.series, probe_deficit_max.parallel),
         deficit_min_cell: (probe_deficit_min.series, probe_deficit_min.parallel),
         surface_gap: surface_gap(&pack),
+        particles_full: particles_full(&pack),
         sensed: sensed(&pack),
         // The open-circuit end of the first tooth's sag, and the only place to get it: at
         // t = 0 a pulse train is already on its first ON leg, so the probe above is taken
@@ -3293,7 +3338,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 317 of 364 claims.
+    /// number's last printed place. The default shape: 339 of 386 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3304,12 +3349,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 40 of 364.
+    /// the number was always right and only the declaration was wrong. 40 of 386.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 364, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 386, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -3349,7 +3394,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 335 of 364, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 357 of 386, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -5013,6 +5058,24 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
         // A circuit panics rather than reading zero, for the reason the row prints its
         // reason instead of a number: "no electrodes" and "flat" are not the same fact,
         // and this file's own `isPorous` mirror exists to keep them apart.
+        // How many of the many-particle cell's positive particles are full, the first number
+        // of the `particles` row. A count, compared as a number like every other quantity;
+        // the row's second number, how many there are, is the scenario's own field and is
+        // accounted where the row's string is shown.
+        //
+        // Panics off the many-particle cell, on `surface gap`'s terms: the row there prints
+        // why there is no count, and a claim reading one is on the wrong step.
+        "particles_full_at" => row.particles_full.map_or_else(
+            || {
+                panic!(
+                    "a claim reads `particles_full_at` at t = {} s on a step whose cell \
+                     model is not the many-particle cell; the `particles` row there prints \
+                     its reason rather than a count",
+                    row.t_s
+                )
+            },
+            |(full, _)| full as f64,
+        ),
         "surface_gap_neg_pts" | "surface_gap_pos_pts" => {
             let (neg, pos) = row.surface_gap.unwrap_or_else(|| {
                 panic!(
@@ -6064,7 +6127,8 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
              soc_lost_pts_at, t_rise_k_at and 
              v_below_cccv_target_mv_at (all three of which take an instant tag too), 
              soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, v_group_min_at, \
-             surface_gap_neg_pts, surface_gap_pos_pts, gap_neg_zero_s, flag_first_s:<FLAG>, \
+             surface_gap_neg_pts, surface_gap_pos_pts, particles_full_at, gap_neg_zero_s, \
+             flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>, overpotential_mv_at, \
              rc_overpotential_mv_at, diffusion_overpotential_mv_at, leg_delivered_ah, \
              leg_s_at_v_below:<volts>.\n\
@@ -13608,6 +13672,87 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         phrase: "past **`{n}`**, a breakpoint of this chemistry's `[ocv]` table",
         ties: &[Tie::Member("ocv.soc.*")],
         pow10: 0,
+    },    // --- Steps 35 to 37, the many-particle cell (Phase 9 slice D) -------------
+    //
+    // Every measurement the three steps print is claimed, on the step or on one of its six
+    // arms; these are the file's own numbers and the page's.
+    LedgerRule {
+        // How many particles the model gives the positive electrode: the scenario's own
+        // field, the second number of every `particles` row the next two steps quote.
+        phrase: "gives the positive electrode `{n}` separate particles",
+        ties: &[Tie::Scenario("pack.cell_model.SpmEnsemble.particles")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The pulse box: C/20 charging, and the on-leg that moves exactly half the charge.
+        // The minus is in the phrase because the scanner's tokens carry no sign.
+        phrase: "charges it from empty at `-{n} A` for `{n} s`",
+        ties: &[
+            Tie::Magnitude(&Tie::Setting(Control::DemandValue)),
+            Tie::Setting(Control::PulseOn),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The cold. The page's ambient, which this step sets to match the file's
+        // `initial_temp_k`; the thermal network is off, so the file's is what the cell sits at
+        // and `the_particle_files_differ_only_where_their_headers_say` holds the 263.15.
+        phrase: "in the cold, at `-{n} °C`",
+        ties: &[Tie::Magnitude(&Tie::Setting(Control::Ambient))],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The second draw's two files, each named in the sentence that sends the reader to
+        // it. The digit is the seed, and it is half a file name: the arm decides it.
+        phrase: "Load `lfp_particles_cold_discharged_seed{n}`",
+        ties: &[Tie::Picker {
+            arm: "another draw",
+            prefix: "lfp_particles_cold_discharged_seed",
+        }],
+        pow10: 0,
+    },
+    // The current each discharging arm types, said in the sentence that sends the reader
+    // there. Four phrases for four arms rather than one loose one, so each digit names the
+    // arm whose box it is -- the shape step 29's "put the pulse current to" took.
+    LedgerRule {
+        phrase: "so the box reads `{n}`, and run it to the same mark",
+        ties: &[Tie::OnArm {
+            arm: "discharged",
+            tie: &Tie::Setting(Control::DemandValue),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "set the pulse current back to `{n}`",
+        ties: &[Tie::OnArm {
+            arm: "circuit discharged",
+            tie: &Tie::Setting(Control::DemandValue),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "so the pulse current reads `{n}`",
+        ties: &[Tie::OnArm {
+            arm: "cold discharged",
+            tie: &Tie::Setting(Control::DemandValue),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "with the pulse current still at `{n}`",
+        ties: &[Tie::OnArm {
+            arm: "another draw",
+            tie: &Tie::Setting(Control::DemandValue),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "Then load `lfp_particles_cold_charged_seed{n}`",
+        ties: &[Tie::Picker {
+            arm: "another draw, charged",
+            prefix: "lfp_particles_cold_charged_seed",
+        }],
+        pow10: 0,
     },
 ];
 
@@ -16599,6 +16744,9 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (32, "thirty-two"),
     (33, "thirty-three"),
     (34, "thirty-four"),
+    (35, "thirty-five"),
+    (36, "thirty-six"),
+    (37, "thirty-seven"),
     // The ledger's numeral count passed twenty-five with its fifth step and will keep
     // going; the tens are here so the next one does not have to stop and add a word.
     (30, "thirty"),

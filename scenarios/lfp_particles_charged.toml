@@ -1,0 +1,90 @@
+# The LFP cell whose rest voltage depends on which way it arrived, because its particles
+# fill one at a time.
+#
+# `chemistries/lfp_26650_prada2013.toml` is the same LFP 26650 as `lfp_26650_generic.toml`
+# with a two-phase positive potential that only the many-particle cell reads. A particle on
+# that curve is either nearly empty of lithium or most of the way full and does not sit in
+# between; a half-charged electrode is some particles full and the rest empty, not every
+# particle half full. Which ones are full, and how many, depends on the road the electrode
+# took. That is Phase 9 (`docs/plans/phase-9-lfp-ensemble.md`), and this file is the client
+# half of it: `docs/plans/phase-9-slice-d-lesson.md`.
+#
+# `lfp_particles_discharged.toml` is this file with ONE field changed -- initial_soc -- and
+# it arrives at the same half charge from above. The pair is the experiment.
+#
+# ## The experiment, which is `crates/sim-data/tests/lfp_ensemble.rs`'s
+#
+# C/20 (0.11517255 A, a twentieth of the cell's 2.303451 A.h) for 36000 s moves exactly
+# half the cell's charge, so a run from empty and a run from full both arrive at 50.0 %.
+# Then the circuit opens for 7200 s. The guided path drives it with the page's Pulse mode
+# (on 36000 s, off 36000 s, so the mark at 43200 s sits on the rest leg) at dt = 10 s,
+# where criteria 3 and 4 of the plan are pinned; 10 s moves the rest gap by at most
+# 0.05 mV against 1 s.
+#
+# ## What it reads, measured on the page's own shape (zero-length probe at each mark)
+#
+#                               this file (from empty)     the twin (from full)
+#   at 25200 s, under charge    3.270266 V, 11 of 20 full  --
+#   rested (t = 43200 s)        3.294500 V,  8 of 20 full  3.274862 V, 4 of 20 full
+#   soc (true)                  50.0 %                     50.0 %
+#
+# 19.638 mV apart, which is `lfp_ensemble.rs`'s 19.64 on this seed. The panel prints 3.294 V
+# and 3.275 V -- 3.294 and not 3.295, because this file rests 0.42 microvolts under the
+# rounding edge, so the gap read off the two panels is 19 mV. Every particle at 25200 s sits at 0.044 or near 0.80 of full and none in
+# between; after the first hour of this charge no two particles are ever switching at once
+# (`lfp_particles_lesson.rs` pins both). The resting voltage is set by how many particles
+# end full, which is why it is a count and not a smooth function of the charge.
+#
+# The equivalent circuit on the same chemistry file (`lfp_circuit_charged.toml` and
+# `lfp_circuit_discharged.toml`) rests at 3.264950 V from both sides: its [ocv] table has
+# one branch, so the direction of arrival cannot show.
+#
+# ## A draw, even at room temperature
+#
+# Over 20 seeds this gap read 19.64 mV on 16, 18.43 on 3 and 14.14 on one (seed 17), each
+# equal to the count table for its full counts (`docs/plans/phase-9-slice-c-chemistry.md`).
+# This file shows the common one.
+#
+# Seed 9, not the 0 nearly every other scenario uses, and the choice is load-bearing: the
+# seed draws the particles' radii, and how many particles end full is a draw. Seed 9 is the
+# first of the four seeds the plan's criteria are pinned on, so every number above is one
+# `lfp_ensemble.rs` already asserts. Seed 0 is not one of them, and in the cold it is still
+# switching after a 2 h rest (27.18 mV, not 27.44).
+
+chemistry = "lfp_26650_prada2013"
+
+[meta]
+name = "LFP many-particle cell, charged up to half"
+description = """
+A 1S1P LFP 26650 cell built as twenty particles, at 25 degC, starting EMPTY. Charge it at \
+C/20 for ten hours to exactly 50 %, then leave it alone for two. It rests at 3.294 V, with \
+8 of its 20 positive particles full. `lfp_particles_discharged.toml` -- the same file with \
+one field changed, arriving at the same 50 % from above -- rests at 3.275 V with 4 full. \
+The equivalent circuit on the same cell rests at 3.265 V either way."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.0
+initial_temp_k = 298.15
+seed = 9
+
+# The model. The many-particle cell is the only one that reads this chemistry's two-phase
+# positive potential (`[spm.positive.regular_solution]`); the plain `Spm` and the `Dfn`
+# refuse it. 20 particles of lognormal radius (sigma 0.2), 20 shells each: the values
+# every criterion in `docs/plans/phase-9-lfp-ensemble.md` was measured at, and part of the
+# snapshot layout, which is why they are written out rather than defaulted.
+[pack.cell_model.SpmEnsemble]
+shells = 20
+particles = 20
+radius_sigma = 0.2
+
+# Omitted, and each omission means "off":
+#   [pack.scatter]  -> one cell, nothing to scatter
+#   [pack.thermal]  -> Isothermal: the cell sits at initial_temp_k whatever the page's
+#                      ambient slider says, so the temperature is this file's and nothing
+#                      else's
+#   [pack.bms]      -> nothing to protect at C/20, and nothing to estimate: the lesson is
+#                      the terminal voltage, and every reading here is ground truth
+#   [pack.aging]    -> half a day of this is not aging
+#   [[faults]]      -> nothing scheduled

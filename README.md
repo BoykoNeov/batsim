@@ -102,10 +102,10 @@ value, because the failure being guarded against is prose drifting from a *corre
 the first two, which for a long time passed separately with nothing between them: each
 claim declares which frame its sentence states the quantity in — the value itself, a
 magnitude, a shortfall from one, a duration off the step's mark — and that frame is
-checked at the sentence's own precision. Coverage is sixty-five claims across ten of
-the twenty-four steps and is meant to grow; the uncovered steps are unchecked rather than
-verified, and the test's own docs say which they are — as they say which two readout rows
-cannot be claimed at all.
+checked at the sentence's own precision. Coverage started at sixty-five claims across
+ten of the then twenty-four steps; today every step is claimed and its whole prose
+scanned, and the test's own docs say what is still not covered — as they say which
+readout row cannot be claimed at all.
 See [`docs/plans/path-claims.md`](docs/plans/path-claims.md),
 [`docs/plans/path-display.md`](docs/plans/path-display.md) and
 [`docs/plans/path-prose-value-tie.md`](docs/plans/path-prose-value-tie.md).
@@ -304,7 +304,7 @@ the run from t = 0, because the honest way to compare a protected pack with an
 unprotected one is two runs, not one run with the rules changed halfway.
 
 If you do not already know what to look at, press **Start** under *Guided path*
-instead. It walks twenty-four steps — one cell on its own, the same discharge on a
+instead. It walks thirty-seven steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
 with protection on and then off, a pack that wears out while doing nothing at all,
@@ -334,7 +334,11 @@ what it holds: taken over twenty hours it delivers all but three points of its c
 taken at sixty times that current it reaches the same cutoff voltage with **more than a
 third still in it**, and left alone for four hours it recovers enough to do it again —
 with the charge readout flat at that same third for the whole rest, because nothing is
-being put back and the recovery is the acid finding its way to the plate. Each
+being put back and the recovery is the acid finding its way to the plate. Later steps
+add an LTO cell, a NiMH cell, a sodium-ion cell and two lessons on fuel gauges, and the
+last three build LFP out of twenty particles: halfway through a charge no particle is
+halfway, they switch in turn, and the voltage a half-charged cell rests at depends on
+which way it arrived — by a gap that in the cold is a throw of the dice. Each
 step sets the controls for itself and outlines the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step's whole control set,
 so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when

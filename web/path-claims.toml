@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Thirty-four steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Thirty-seven steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -129,7 +129,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 141 claims below that set
+#              Be clear about what this buys TODAY: in all 163 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -148,7 +148,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled 317 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled 339 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  40 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -208,7 +208,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 40 claims.
 #
-#   same 335 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same 357 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude 11. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -254,8 +254,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 347 of the 406 numbers the
-#            237 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 368 of the 437 numbers the
+#            246 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -286,7 +286,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 237 claimed sentences need none. A future literal printing a chemistry constant will
+# the 246 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -301,7 +301,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — thirty-four steps of the thirty-four so far, which is all of them.
+# of this file — thirty-seven steps of the thirty-seven so far, which is all of them.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -4672,8 +4672,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: thirty-four
-# steps, 800 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: thirty-seven
+# steps, 841 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -4720,7 +4720,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # and "all but three points of what it holds" is tied to that step's own charge claim.
 #
 # So "digits-closed is less than closed" is no longer a fact about the whole path — it is a
-# fact about the steps in `word_blind` below, which is nine of thirty-four. The sentence
+# fact about the steps in `word_blind` below, which is nine of thirty-seven. The sentence
 # stays because the gap it names is real for every one of them, and because the pairing of
 # `spelled` and `word_blind` is what keeps it honest: a step is now one or the other by
 # declaration, never by silence.
@@ -10528,6 +10528,521 @@ integrating with the pack open. At steps 30 and 31 the same file read 56.8 % her
 sodium-ion current, which took fewer points out of this larger cell.
 """
 
+# --- steps 35 to 37: the many-particle LFP cell (Phase 9 slice D) ----------------------
+#
+# docs/plans/phase-9-slice-d-lesson.md. Every file is `lfp_particles_charged.toml` with the
+# fields its name says changed (`the_particle_files_differ_only_where_their_headers_say`),
+# driven by the page's pulse at C/20 for 36000 s and read at dt = 10 s. The sentences with no
+# number in them -- none sits between, one switch at a time, the circuit cannot tell, the
+# draw moves one arm -- are pinned in `lfp_particles_lesson.rs`, not here.
+
+[[claim]]
+step = "no-particle-is-halfway"
+literal = "At the mark `soc (true)` reads **`35.0 %`**, `terminal` reads **`3.270 V`**, and the `particles` row reads **`11 of 20 full`**."
+quantity = "soc_at"
+value = 0.35
+tol = 0.0005
+tol_from = "spelled"
+spells = "35.0"
+spells_pow10 = 2
+states = "same"
+read_at_s = 25200.0
+display = "soc (true)"
+shows = "35.0 %"
+quoted = true
+note = """
+7 h of C/20 from empty: 35 points on the nose.
+"""
+
+[[claim]]
+step = "no-particle-is-halfway"
+literal = "At the mark `soc (true)` reads **`35.0 %`**, `terminal` reads **`3.270 V`**, and the `particles` row reads **`11 of 20 full`**."
+quantity = "v_at_mark"
+value = 3.2702663151
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.270"
+states = "same"
+read_at_s = 25200.0
+display = "terminal"
+shows = "3.270 V"
+quoted = true
+note = """
+Under the charge current, so above the resting curve by the overpotential.
+"""
+
+[[claim]]
+step = "no-particle-is-halfway"
+literal = "At the mark `soc (true)` reads **`35.0 %`**, `terminal` reads **`3.270 V`**, and the `particles` row reads **`11 of 20 full`**."
+quantity = "particles_full_at"
+value = 11.0
+tol = 0.5
+tol_from = "spelled"
+spells = "11"
+states = "same"
+read_at_s = 25200.0
+display = "particles"
+shows = "11 of 20 full"
+quoted = true
+note = """
+The row this step is about. At this instant the eleven sit at 0.797-0.799 of full and the
+other nine at 0.044, which `halfway_through_the_charge_no_particle_is_halfway` asserts. A
+count, so its tolerance is half a unit and the value is exact. The 20 is the scenario's own
+`particles`, shown by the same string.
+"""
+
+[[arm]]
+step = "which-way-it-arrived"
+name = "discharged"
+instruction = "Load `lfp_particles_discharged` from the picker — the same file with `initial_soc` changed and nothing else — take the minus sign off the pulse current, so the box reads `0.11517255`, and run it to the same mark"
+start = "restart"
+scenario = "lfp_particles_discharged.toml"
+pulse_a = 0.11517255
+actions = [{ do = "run", to_s = 43200.0 }]
+note = """
+The twin, arriving at the same half charge from above. The file supplies the start and the
+reader supplies the sign: the pulse box is discharge-positive, so the step's -0.11517255 A
+fills a cell that starts empty and this 0.11517255 A drains one that starts full, by the same
+half. `the_particle_files_differ_only_where_their_headers_say` holds "and nothing else".
+"""
+
+[[arm]]
+step = "which-way-it-arrived"
+name = "circuit charged"
+instruction = "Load `lfp_circuit_charged` from the picker — this file with its cell model block deleted, so the same chemistry runs as the equivalent circuit — keep the minus sign, and run it to the mark"
+start = "restart"
+scenario = "lfp_circuit_charged.toml"
+actions = [{ do = "run", to_s = 43200.0 }]
+note = """
+The control, from below: the step's own pulse, on the equivalent circuit. No current is
+retyped, so the arm inherits the step's.
+"""
+
+[[arm]]
+step = "which-way-it-arrived"
+name = "circuit discharged"
+instruction = "Then load `lfp_circuit_discharged`, set the pulse current back to `0.11517255`, and do the same"
+start = "restart"
+scenario = "lfp_circuit_discharged.toml"
+pulse_a = 0.11517255
+actions = [{ do = "run", to_s = 43200.0 }]
+note = """
+The control, from above.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and the `particles` row reads **`8 of 20 full`**."
+quantity = "soc_at"
+value = 0.5
+tol = 0.0005
+tol_from = "spelled"
+spells = "50.0"
+spells_pow10 = 2
+states = "same"
+read_at_s = 43200.0
+display = "soc (true)"
+shows = "50.0 %"
+quoted = true
+note = """
+36000 s of C/20 from empty is exactly half the charge.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and the `particles` row reads **`8 of 20 full`**."
+quantity = "i_at"
+value = 0.0
+tol = 0.0005
+tol_from = "spelled"
+spells = "0.000"
+states = "same"
+read_at_s = 43200.0
+display = "current"
+shows = "0.000 A"
+quoted = true
+note = """
+Two hours into the off-leg.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "At the mark the cell is at **`50.0 %`**, `current` reads **`0.000 A`**, and the `particles` row reads **`8 of 20 full`**."
+quantity = "particles_full_at"
+value = 8.0
+tol = 0.5
+tol_from = "spelled"
+spells = "8"
+states = "same"
+read_at_s = 43200.0
+display = "particles"
+shows = "8 of 20 full"
+quoted = true
+note = """
+The charge arm's count, which sets its resting voltage.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "There `soc (true)` reads **`50.0 %`** as well, and the `particles` row reads **`4 of 20 full`**."
+quantity = "soc_at"
+arm = "discharged"
+value = 0.5
+tol = 0.0005
+tol_from = "spelled"
+spells = "50.0"
+spells_pow10 = 2
+states = "same"
+read_at_s = 43200.0
+display = "soc (true)"
+shows = "50.0 %"
+quoted = true
+note = """
+The same half, from above.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "There `soc (true)` reads **`50.0 %`** as well, and the `particles` row reads **`4 of 20 full`**."
+quantity = "particles_full_at"
+arm = "discharged"
+value = 4.0
+tol = 0.5
+tol_from = "spelled"
+spells = "4"
+states = "same"
+read_at_s = 43200.0
+display = "particles"
+shows = "4 of 20 full"
+quoted = true
+note = """
+Half the charge arm's count, holding the same lithium in a different shape.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "`terminal` there reads **`3.275 V`** against this file's **`3.294 V`** — 19 mV apart."
+quantity = "v_at_mark"
+arm = "discharged"
+value = 3.2748615448
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.275"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.275 V"
+quoted = true
+note = """
+Rested; the discharge arm sits lower.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "`terminal` there reads **`3.275 V`** against this file's **`3.294 V`** — 19 mV apart."
+quantity = "v_at_mark"
+value = 3.2944995811
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.294"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.294 V"
+quoted = true
+note = """
+**3.294 and not 3.295, by 0.42 microvolts**: the engine reads 3.2944995811 and the page's
+`toFixed(3)` rounds it down. The display check is what holds the printed digit; a change to
+the cell that moved this by half a microvolt would flip it and redden here.
+"""
+
+[[derived]]
+step = "which-way-it-arrived"
+literal = "`terminal` there reads **`3.275 V`** against this file's **`3.294 V`** — 19 mV apart."
+spells = "19"
+op = "difference"
+from = ["3.294", "3.275"]
+pow10 = 3
+note = """
+The subtraction off the two printed rows. The engine's gap is 19.638 mV -- the
+`lfp_ensemble.rs` criterion-3 value on this seed -- and the panel's rounding of the charge
+arm down to 3.294 is why the printed difference is 19 and not 20.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "Both read **`3.265 V`**."
+quantity = "v_at_mark"
+arm = "circuit charged"
+value = 3.26495
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.265"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.265 V"
+quoted = true
+note = """
+The [ocv] table's value at 0.5, the RC pair long relaxed.
+"""
+
+[[claim]]
+step = "which-way-it-arrived"
+literal = "Both read **`3.265 V`**."
+quantity = "v_at_mark"
+arm = "circuit discharged"
+value = 3.26495
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.265"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.265 V"
+quoted = true
+note = """
+The same to 5 nV: a circuit has one curve whichever way it arrives.
+"""
+
+[[arm]]
+step = "a-throw-of-the-dice"
+name = "cold discharged"
+instruction = "Load `lfp_particles_cold_discharged` from the picker, take the minus sign off so the pulse current reads `0.11517255`, and run it to the mark"
+start = "restart"
+scenario = "lfp_particles_cold_discharged.toml"
+pulse_a = 0.11517255
+actions = [{ do = "run", to_s = 43200.0 }]
+note = """
+The cold twin from above, on the same seed as this step's file.
+"""
+
+[[arm]]
+step = "a-throw-of-the-dice"
+name = "another draw"
+instruction = "Load `lfp_particles_cold_discharged_seed3` — the same file with its `seed` changed and nothing else; the seed decides how big each particle is — and run it with the pulse current still at `0.11517255`"
+start = "restart"
+scenario = "lfp_particles_cold_discharged_seed3.toml"
+pulse_a = 0.11517255
+actions = [{ do = "run", to_s = 43200.0 }]
+note = """
+The second draw. "The same way" is the previous arm's sign, so the arm types the same
+positive current.
+"""
+
+[[arm]]
+step = "a-throw-of-the-dice"
+name = "another draw, charged"
+instruction = "Then load `lfp_particles_cold_charged_seed3`, the charge arm on that new seed, keep the minus sign, and run it"
+start = "restart"
+scenario = "lfp_particles_cold_charged_seed3.toml"
+actions = [{ do = "run", to_s = 43200.0 }]
+note = """
+The charge arm on the second draw. No current is retyped, so the arm inherits the step's.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "At the mark `terminal` reads **`3.299 V`** and the `particles` row reads **`8 of 20 full`**."
+quantity = "v_at_mark"
+value = 3.2985836757
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.299"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.299 V"
+quoted = true
+note = """
+The cold charge arm, rested.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "At the mark `terminal` reads **`3.299 V`** and the `particles` row reads **`8 of 20 full`**."
+quantity = "particles_full_at"
+value = 8.0
+tol = 0.5
+tol_from = "spelled"
+spells = "8"
+states = "same"
+read_at_s = 43200.0
+display = "particles"
+shows = "8 of 20 full"
+quoted = true
+note = """
+The same count as at room temperature, on this seed.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "It rests at **`3.271 V`** against this file's **`3.299 V`** — 28 mV apart, wider than at room temperature — and the `particles` row there reads **`5 of 20 full`**."
+quantity = "v_at_mark"
+arm = "cold discharged"
+value = 3.2711395337
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.271"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.271 V"
+quoted = true
+note = """
+The cold discharge arm, rested.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "It rests at **`3.271 V`** against this file's **`3.299 V`** — 28 mV apart, wider than at room temperature — and the `particles` row there reads **`5 of 20 full`**."
+quantity = "v_at_mark"
+value = 3.2985836757
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.299"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.299 V"
+quoted = true
+note = """
+This file's, repeated in the sentence that subtracts it.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "It rests at **`3.271 V`** against this file's **`3.299 V`** — 28 mV apart, wider than at room temperature — and the `particles` row there reads **`5 of 20 full`**."
+quantity = "particles_full_at"
+arm = "cold discharged"
+value = 5.0
+tol = 0.5
+tol_from = "spelled"
+spells = "5"
+states = "same"
+read_at_s = 43200.0
+display = "particles"
+shows = "5 of 20 full"
+quoted = true
+note = """
+One more full than at room temperature.
+"""
+
+[[derived]]
+step = "a-throw-of-the-dice"
+literal = "It rests at **`3.271 V`** against this file's **`3.299 V`** — 28 mV apart, wider than at room temperature — and the `particles` row there reads **`5 of 20 full`**."
+spells = "28"
+op = "difference"
+from = ["3.299", "3.271"]
+pow10 = 3
+note = """
+Off the printed rows. The engine's gap is 27.444 mV, `lfp_ensemble.rs`'s criterion-4 value on
+this seed. "Wider than at room temperature" is that against the 19.638 of the step before.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "It rests at **`3.275 V`** against this file's **`3.299 V`** — 24 mV apart — with **`6 of 20 full`**."
+quantity = "v_at_mark"
+arm = "another draw"
+value = 3.2752684912
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.275"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.275 V"
+quoted = true
+note = """
+The second draw's discharge arm, rested.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "It rests at **`3.275 V`** against this file's **`3.299 V`** — 24 mV apart — with **`6 of 20 full`**."
+quantity = "v_at_mark"
+value = 3.2985836757
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.299"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.299 V"
+quoted = true
+note = """
+This file's again.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "It rests at **`3.275 V`** against this file's **`3.299 V`** — 24 mV apart — with **`6 of 20 full`**."
+quantity = "particles_full_at"
+arm = "another draw"
+value = 6.0
+tol = 0.5
+tol_from = "spelled"
+spells = "6"
+states = "same"
+read_at_s = 43200.0
+display = "particles"
+shows = "6 of 20 full"
+quoted = true
+note = """
+Four were full when the current stopped and two switched during the rest, which the prose
+says in words and `another_draw_in_the_cold_moves_only_the_discharge_arm` asserts.
+"""
+
+[[derived]]
+step = "a-throw-of-the-dice"
+literal = "It rests at **`3.275 V`** against this file's **`3.299 V`** — 24 mV apart — with **`6 of 20 full`**."
+spells = "24"
+op = "difference"
+from = ["3.299", "3.275"]
+pow10 = 3
+note = """
+Off the printed rows; the engine's is 23.316 mV, `lfp_ensemble.rs`'s criterion-4 value on
+seed 3.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "It reads **`3.299 V`** with **`8 of 20 full`**, where this file is."
+quantity = "v_at_mark"
+arm = "another draw, charged"
+value = 3.2985835471
+tol = 0.0005
+tol_from = "spelled"
+spells = "3.299"
+states = "same"
+read_at_s = 43200.0
+display = "terminal"
+shows = "3.299 V"
+quoted = true
+note = """
+0.13 microvolts from this file's: the radii differ, the count does not.
+"""
+
+[[claim]]
+step = "a-throw-of-the-dice"
+literal = "It reads **`3.299 V`** with **`8 of 20 full`**, where this file is."
+quantity = "particles_full_at"
+arm = "another draw, charged"
+value = 8.0
+tol = 0.5
+tol_from = "spelled"
+spells = "8"
+states = "same"
+read_at_s = 43200.0
+display = "particles"
+shows = "8 of 20 full"
+quoted = true
+note = """
+The same count as seed 9's charge arm.
+"""
+
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -10871,9 +11386,12 @@ steps = [
   "a-model-that-is-wrong", # 13 numbers: the model-based gauge under load: the pulse, the boot error,
                      # the weak cell's factor, and the panel on this file and the control
   "wrong-and-sure-of-it",  # 10 numbers: the same run at rest, two arms, and the [ocv] node it sits on
+  "no-particle-is-halfway", # 7 numbers: the particle count and the pulse, and the panel at the mark
+  "which-way-it-arrived",   # 13 numbers: the panel on this file, the twin and the two circuit arms
+  "a-throw-of-the-dice",    # 21 numbers: the cold, four panels, two subtractions, two file names
 ]
 # Not scanned, and why. THIS LIST IS EMPTY for the first time, which is what the
-# thirty-four entries above amount to: every step of the guided path now has its whole
+# thirty-seven entries above amount to: every step of the guided path now has its whole
 # prose scanned, not only the sentences a claim quotes. Of the steps below, those that
 # carry claims: none of them. Unchecked entirely: none. Both sentences are derived and
 # both now say the same thing.
@@ -10909,16 +11427,17 @@ unledgered = [
 # unit noun, and thirteen vocabulary rules — almost all of them for an instant stated
 # RELATIVE to another one, which the first batch never met. The third batch needed no shape
 # at all and the fourth needed one UNIT NOUN — the volt — which is what let the last two
-# steps holding one join the scan. The list holds twenty-five steps now.
+# steps holding one join the scan. The list holds twenty-eight steps now.
 #
 # THE ENTRIES DO NOT ALL SAY THE SAME THING, and the split is a result rather than a gap:
-# eighteen of them read nothing at all. Fifteen are the steps whose English quantities had
+# twenty-one of them read nothing at all. Fifteen are the steps whose English quantities had
 # been read and tied to something; the digits rule rewrote all twenty-nine of them into
 # digits, so the word scan ran over those steps and found nothing left to account for. The
 # sixteenth is `protection-off`, whose one spelled quantity — "ten seconds" between its two
 # flags — stopped being true when `docs/plans/end-of-step-split.md` moved the first flag
-# half a step earlier, and was dropped rather than respelled. What ties those
-# quantities today is the ordinary digit ledger, which has covered all thirty-four steps since
+# half a step earlier, and was dropped rather than respelled. The rest are steps written
+# under the ban, which never held one. What ties those
+# quantities today is the ordinary digit ledger, which has covered all thirty-seven steps since
 # before this list existed.
 #
 # THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the two batches after it were one
@@ -10950,6 +11469,9 @@ spelled = [
   "still-wrong-and-it-has-stopped",  # 0
   "a-model-that-is-wrong",           # 0, written under the ban
   "wrong-and-sure-of-it",            # 0, written under the ban
+  "no-particle-is-halfway",          # 0, written under the ban
+  "which-way-it-arrived",            # 0, written under the ban
+  "a-throw-of-the-dice",             # 0, written under the ban
   "the-loop-is-wider-down-here",     # 0, and it was written under the ban rather than
                                      # cleaned up afterwards: the phrase "for an hour" was
                                      # in the first draft of its opening sentence, which is

@@ -1156,6 +1156,22 @@ pub(crate) fn surface_gap(s: &EnsembleState, spm: &SpmParams, eff_capacity_ah: f
     )
 }
 
+/// Each positive particle's mean stoichiometry, the fraction of its sites holding lithium, in
+/// the order the particles are stored: `0` empty, `1` full.
+///
+/// The raw stoichiometry, not [`soc`]'s window: what a particle's state *is* on the
+/// regular-solution curve, so a client can count which side of the spinodal each sits on.
+/// The midpoint `0.5` is the curve's centre for any `Ω`, which is why a count of particles
+/// above it is the number the cold rest gap is set by.
+#[must_use]
+pub(crate) fn positive_stoichiometry(s: &EnsembleState, spm: &SpmParams) -> Vec<f64> {
+    let shells = s.c_pos.len() / s.radii_m.len();
+    s.c_pos
+        .chunks(shells)
+        .map(|c| mean_concentration(c) / spm.positive.c_max_mol_per_m3)
+        .collect()
+}
+
 /// Heat \[W\] estimate at current `i` given the node voltage `v_terminal`: `i·(U_eq − V)` plus
 /// the entropic term, [`crate::spm`]'s `heat_w`. The particles' exchange and the end-of-step
 /// corrections arrive from [`advance`].
