@@ -84,3 +84,55 @@ mechanism for the fast early part; fit the drawn curve instead):
 - The 95–100 % dip at 45 °C — a positive-electrode mechanism, most likely; not in scope.
 - The 0 %-SOC baseline: any engine law has to say where 2–4 % a year at empty comes from, or the
   lesson has to say the cells were being tested, not left alone.
+
+## The fast part, spiked (2026-10-09)
+
+Pre-registered in `W:/temp/claude/phase10-spike/FAST_PREREG.md`; results in `FAST_FINDINGS.md`.
+Three arms beside the slow film, fitted on 25 + 45 °C, 0 °C held out:
+
+| arm | free parameters | RMS 25 + 45 °C | RMS 0 °C, held out | 0 °C : 25 °C in the first month (cells 0.98) |
+| --- | --- | --- | --- | --- |
+| a one-time step at the first post-storage test | 3 | 0.881 % | **0.483 %** | 0.92 |
+| anode overhang (τ 26 days at 25 °C, 43 kJ/mol) | 5 | 0.877 % | 0.538 % | 0.28 |
+| a tunnelling-limited second film | 5 | 0.776 %, on its bounds | 0.638 % | 0.53 |
+
+The tunnelling arm is degenerate: unbounded it switched itself off and gave the slow film a
+negative activation energy; bounded it sits on the bounds and keeps rising after day 200
+(+1.11 points against the cells' +0.31). The overhang fits no better than the step and gets the
+cold cells wrong; an overhang has to be slow in the cold, and the cells' early loss is the same
+at 0 and 25 °C. **The data cannot tell a physical fast mechanism from a one-time step**, and the
+pre-registered stop rule fired. Two facts found on the way: the first interval always spans a
+change of test type (an extended test at day 0, a regular one next), which accounts for about
+0.16 of the ~1.5-point early gap; and every test ran at room temperature, 0 °C cells included.
+This cell's overhang size is not published (Chen 2020 reports one electrode size), so the
+fitted ~2.5 % of electrode area is consistent with generic designs, not confirmed.
+
+**Owner, 2026-10-09: the film only.** The early step is recorded as real and unexplained, not
+modelled. A simulated cell will lose less than the measured ones in their first months.
+
+## The constants (`tools/reference/fit_sei_wmg.py`)
+
+The script reads the 39 analysed files, tracks cells, fits the film with the step as a nuisance
+term that is then discarded, fits the resistivity, and checks its closed form against PyBaMM.
+Everything on Chen2020 (the chemistry's own source; its Li:SEI ratio is 2, OKane2022's 1, which
+the fitted rate and resistivity absorb).
+
+| constant | value | evidence |
+| --- | --- | --- |
+| `D_li` | 5.934e-19 m²/s (59 × Chen2020's default) | RMS 0.853 % of storage-driven fade over 25 + 45 °C, film + step; **0.482 % on the held-out 0 °C cells**; the film alone, step dropped, 1.63 % |
+| activation energy | 96.9 kJ/mol | same fit; with the front-loaded part removed the film carries mostly the late growth at 45 °C |
+| `ρ_sei` | 5.47e4 Ω·m (0.27 × PyBaMM's) | least squares on the storage-driven pulse-resistance rise, 232 tests with the day-0 cell set; **RMS 1.1 mΩ, the size of the signal — a weak fit** |
+| initial thickness, `V̄`, `c_li0`, Li:SEI ratio | Chen2020's defaults, 5 nm, 9.585e-5 m³/mol, 15 mol/m³, 2 | not fitted; labelled |
+
+Closed form against PyBaMM's SPM at these constants, one year at rest: −0.02 % (85 %, 25 °C),
+−0.03 % (85 %, 45 °C), −0.12 % (30 %, 25 °C) of the lithium lost.
+
+What they mean for a cell stored at 85 %: 0.82 % of capacity in the first year at 25 °C and
+3.57 % at 45 °C, the film growing from 5 to 28 and 105 nm; the film adds 0.37 and 1.62 mΩ —
+**1.4–2.0 % of resistance per 1 % of capacity** (against WMG's 32.5 mΩ and PyBaMM's 22.3 mΩ
+respectively). Today's placeholder `r_growth_per_capacity_loss` is 1.5: the measured cells and
+the old guess agree, and the spike's "ten times the placeholder" was PyBaMM's resistivity, not
+the cells.
+
+The `[sei]` section itself waits for slice C: the engine's chemistry sections do not reject
+unknown keys, so a section added before the loader reads it would be silently ignored.
