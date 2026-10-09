@@ -115,3 +115,20 @@ Pinned by `crates/sim-data/tests/sei_golden.rs`:
 4. Resistance rises from the film alone, with no `r_growth_per_capacity_loss` on the path.
 5. The fitted constants reproduce the WMG 25 and 45 °C capacity fade within the residual their
    provenance lines state.
+
+## Addendum 2026-10-09 — slice A ran; the owner re-decided
+
+Slice A (`phase-10-slice-a-fit.md`) fitted the film's rate to the WMG cells: `D_li` 939 times
+PyBaMM's default, activation energy 48–53 kJ/mol, the one-year ranking across SOC right (rank
+correlation 0.81 at 25 °C). Its stop rule fired on the time shape: about half of the cells'
+storage-charge effect arrives in the first month, at every temperature including 0 °C, and has
+mostly stopped growing by day 200, which no film can do. The film's resistance came out 15–25
+times the cells'. The owner's answers, which amend the decisions above:
+
+- **Decision 2 stands and gains a mechanism**: the film stays, and a second, fast, levelling-off
+  mechanism carries the front-loaded part. Its physical identity (the anode overhang is the lead
+  candidate) is settled by a spike, pre-registered, **before** slice B; the slice list below is
+  extended by that spike's result, not rewritten now.
+- **Decision 3 is reversed**: the film's resistivity is fitted to the data's resistance rise
+  (2.5–4.0 mΩ per Ah of storage-driven loss), not kept at PyBaMM's value.
+- Exit criterion 5 now reads against the film **plus** the fast mechanism.
