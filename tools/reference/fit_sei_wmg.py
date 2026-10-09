@@ -12,10 +12,34 @@ WMG Calendar Ageing Dataset - LGM50 Commercial Cells (39 Storage Conditions),
 J. A. Kuzhiyil and W. D. Widanage, zenodo.org/record/14577286, CC-BY-4.0; the article is
 Kuzhiyil et al., Applied Energy 382 (2025) 125221, doi:10.1016/j.apenergy.2024.125221.
 Only the 39 analysed files are read (`<T>degC/Analysed MAT files/calAnal_<soc>Per_<T>degC.mat`,
-~1 GB of a 10 GB zip, which is Deflate64-compressed). Neither is committed. Extract them into
-one directory and point this script at it:
+~1 GB of a 10 GB zip). Neither is committed. The zip is Deflate64-compressed, which
+Python's `zipfile` cannot read; either download it whole and extract with 7-Zip, or read just
+the 39 members over HTTP range requests with the `zipfile-deflate64` package:
 
-    python tools/reference/fit_sei_wmg.py <dir-with-calAnal-files>
+    pip install zipfile-deflate64
+    python - <<'EOF'
+    import io, os, urllib.request, zipfile_deflate64 as zf
+    URL = "https://zenodo.org/api/records/14577286/files/Calendar%20ageing%20dataset.zip/content"
+    class Remote(io.RawIOBase):
+        def __init__(s):
+            with urllib.request.urlopen(urllib.request.Request(URL, method="HEAD")) as r:
+                s.n = int(r.headers["Content-Length"]); s.p = 0
+        def readable(s): return True
+        def seekable(s): return True
+        def tell(s): return s.p
+        def seek(s, o, w=0): s.p = (o, s.p + o, s.n + o)[w]; return s.p
+        def readinto(s, b):
+            k = min(len(b), s.n - s.p)
+            if k <= 0: return 0
+            rq = urllib.request.Request(URL, headers={"Range": f"bytes={s.p}-{s.p + k - 1}"})
+            d = urllib.request.urlopen(rq).read(); b[:len(d)] = d; s.p += len(d); return len(d)
+    z = zf.ZipFile(io.BufferedReader(Remote(), buffer_size=8 << 20))
+    os.makedirs("wmg", exist_ok=True)
+    for i in z.infolist():
+        if "Analysed MAT files/calAnal_" in i.filename:
+            open(os.path.join("wmg", os.path.basename(i.filename)), "wb").write(z.read(i))
+    EOF
+    python tools/reference/fit_sei_wmg.py wmg
 
 Each file holds `calResults` with per-cell C/3 capacity (`Capacity.indCap`, one row per
 reference test), 10 s pulse resistance at five SOCs (`Resistance`, means only) and the
@@ -31,11 +55,16 @@ How the data is read
   temperature. The 0 % cells fade 2-4 % a year at every temperature, most likely from the
   reference tests' own cycling; an interstitial film on near-empty graphite grows by under a
   thousandth of its high-SOC rate, so it is the baseline, not a signal.
-* **A one-time step** at the first post-storage test, `A * (x(SOC) - x(0))`, is fitted beside
-  the film and then discarded: about half of the cells' storage-charge effect appears in the
-  first month at every temperature, 0 C included, and stops growing. A physical overhang arm
-  fitted no better than this step and predicted the held-out 0 C cells worse, so the owner chose
-  (2026-10-09) to model the film only and record the step as real but unexplained.
+* **The film is fitted to growth after the first post-storage test only.** About half of the
+  cells' storage-charge effect appears before that test, at every temperature, 0 C included,
+  and then stops growing. A physical overhang arm fitted no better than a one-time step there
+  and predicted the held-out 0 C cells worse, so the owner chose (2026-10-09) to model the film
+  only and record the early step as real but unexplained. The film is therefore scored on
+  `excess(t) - excess(t1)` against `film(t) - film(t1)`, `t1` the first post-storage test, and
+  nothing models the step. For comparison the script also fits film + a one-time step
+  `A * (x(SOC) - x(0))` over every test; that fit's activation energy is NOT the shipped one,
+  because one temperature-independent step cannot cover 45 C's larger first-month gap and so
+  pushes the film's temperature dependence up.
 * 25 and 45 C are fitted; **0 C is held out**. One cell is excluded by a stated rule: the 45 C /
   90 % condition after day 400, when only its weakest cell remains (14.4 % faded at day 367
   against ~8.7 % for its eight siblings).
@@ -45,8 +74,10 @@ The film
 `j = -(D_li c_li0 F / L) exp(-F U_n(x) / RT) arrhenius(E_sei)`, integrated in closed form over
 one-day ticks with the graphite potential frozen per tick and the graphite's lithium moved by
 what the film takes -- the same update the engine will run on its aging sub-clock. Capacity
-lost is 1.45 x lithium lost (measured in the Phase 10 spike from a C/20 check after a year).
-Geometry, OCP and the electrode windows are Chen2020's (the chemistry's own source).
+lost per lithium lost is MEASURED here, in PyBaMM, on WMG's own capacity steps (1.67 A CC charge
+to 4.2 V with no CV hold, 1.67 A discharge to 2.5 V), fresh against a year at 85 % / 25 C; the
+spike's 1.45 came from a C/20 CC-CV check and is not this protocol. Geometry, OCP and the
+electrode windows are Chen2020's (the chemistry's own source).
 """
 
 from __future__ import annotations
@@ -68,7 +99,7 @@ warnings.filterwarnings("ignore")
 
 F = 96485.33212
 R_GAS = 8.314462618
-K_CAP = 1.45  # capacity-% per lithium-% (Phase 10 spike, C/20 check from full charge)
+
 PARAM_SET = "Chen2020"
 
 P = pybamm.ParameterValues(PARAM_SET)
@@ -187,8 +218,8 @@ def film_thickness(days, soc, temp_k, d_li, e_sei):
     return np.array(out)
 
 
-def film_fade(days, soc_pct, tc, d_li, e_sei):
-    return K_CAP * (film_thickness(days, soc_pct / 100, tc + 273.15, d_li, e_sei) - L0) * LLI_PCT_PER_M
+def film_fade(days, soc_pct, tc, d_li, e_sei, k_cap):
+    return k_cap * (film_thickness(days, soc_pct / 100, tc + 273.15, d_li, e_sei) - L0) * LLI_PCT_PER_M
 
 
 def step(days, soc_pct, a):
@@ -199,36 +230,76 @@ def conditions(data, temps):
     return [(tc, s) for (tc, s) in sorted(data) if tc in temps and s > 0]
 
 
-def rms(data, theta, temps, with_step=True):
-    d_li, e_sei, a = 10 ** theta[0] * D_LI_DEFAULT, theta[1] * 1e4, theta[2]
+def growth_rms(data, d_li, e_sei, k_cap, temps):
+    """RMS of growth after the first post-storage test: excess(t)-excess(t1) vs film(t)-film(t1)."""
     errs = []
     for tc, s in conditions(data, temps):
         t, ex = excess(data, tc, s)
-        model = film_fade(t, s, tc, d_li, e_sei) + (step(t, s, a) if with_step else 0)
-        errs.append(np.mean((ex - model) ** 2))
+        t, ex = t[1:], ex[1:]  # drop day 0; t[0] is now the first post-storage test
+        model = film_fade(t, s, tc, d_li, e_sei, k_cap)
+        errs.append(np.mean(((ex - ex[0]) - (model - model[0])) ** 2))
     return math.sqrt(float(np.mean(errs)))
 
 
-def fit(data):
-    bounds = [(0, 5), (0, 15), (0, 50)]
+def step_rms(data, d_li, e_sei, a, k_cap, temps):
+    """RMS over every test of film + a one-time step (the comparison fit)."""
+    errs = []
+    for tc, s in conditions(data, temps):
+        t, ex = excess(data, tc, s)
+        errs.append(np.mean((ex - film_fade(t, s, tc, d_li, e_sei, k_cap) - step(t, s, a)) ** 2))
+    return math.sqrt(float(np.mean(errs)))
 
-    def obj(th):
+
+def _minimise(obj, starts, bounds):
+    def guarded(th):
         if any(not lo <= v <= hi for v, (lo, hi) in zip(th, bounds)):
             return 1e3
-        return rms(data, th, FIT_TEMPS)
+        return obj(th)
 
     best = None
-    for start in ([2.0, 10.0, 2.5], [3.0, 5.0, 2.0], [1.5, 12.0, 3.0]):
-        r = minimize(obj, start, method="Nelder-Mead", options={"xatol": 1e-5, "fatol": 1e-8, "maxiter": 4000})
+    for start in starts:
+        r = minimize(guarded, start, method="Nelder-Mead", options={"xatol": 1e-5, "fatol": 1e-8, "maxiter": 4000})
         if best is None or r.fun < best.fun:
             best = r
     return best.x
 
 
-def fit_resistivity(data, d_li, e_sei):
+def fit_growth(data, k_cap):
+    th = _minimise(lambda th: growth_rms(data, 10 ** th[0] * D_LI_DEFAULT, th[1] * 1e4, k_cap, FIT_TEMPS),
+                   ([2.0, 5.0], [1.5, 10.0], [2.5, 3.0]), [(0, 5), (0, 15)])
+    return 10 ** th[0] * D_LI_DEFAULT, th[1] * 1e4
+
+
+def fit_step(data, k_cap):
+    th = _minimise(lambda th: step_rms(data, 10 ** th[0] * D_LI_DEFAULT, th[1] * 1e4, th[2], k_cap, FIT_TEMPS),
+                   ([2.0, 10.0, 2.5], [3.0, 5.0, 2.0], [1.5, 12.0, 3.0]), [(0, 5), (0, 15), (0, 50)])
+    return 10 ** th[0] * D_LI_DEFAULT, th[1] * 1e4, th[2]
+
+
+def group_growth(data, d_li, e_sei, k_cap, tc):
+    """Mean high-SOC minus mean low-SOC growth from the first post-storage test to the last common
+    day: cells against film."""
+    hi, lo = (70, 80, 85, 90, 95), (2, 5, 10)
+    first = max(data[(tc, s)]["t"][1] for s in hi + lo)
+    last = min(data[(tc, s)]["t"][-1] for s in hi + lo)
+    days = np.array([first, last])
+
+    def cells(s):
+        t, ex = excess(data, tc, s)
+        return np.interp(days, t, ex)
+
+    def film(s):
+        return film_fade(days, s, tc, d_li, e_sei, k_cap)
+
+    g = lambda f: np.mean([f(s) for s in hi], 0) - np.mean([f(s) for s in lo], 0)
+    gc, gf = g(cells), g(film)
+    return first, last, gc[1] - gc[0], gf[1] - gf[0]
+
+
+def fit_resistivity(data, d_li, e_sei, temps):
     """Least squares, through the origin, of the storage-driven resistance rise on the film's."""
     xs, ys = [], []
-    for tc, s in conditions(data, FIT_TEMPS):
+    for tc, s in conditions(data, temps):
         d, b = data[(tc, s)], data[(tc, 0)]
         sel = d["full"] & np.isfinite(d["r50"])
         bsel = np.isfinite(b["r50"])
@@ -243,38 +314,78 @@ def fit_resistivity(data, d_li, e_sei):
         ys.extend(dr * 1e-3)  # mohm -> ohm
     xs, ys = np.array(xs), np.array(ys)
     rho = float(xs @ ys / (xs @ xs))
-    resid = ys - rho * xs
-    return rho, float(np.sqrt(np.mean(resid ** 2)) * 1e3), len(xs)
+    return rho, float(np.sqrt(np.mean((ys - rho * xs) ** 2)) * 1e3), float(np.sqrt(np.mean(ys ** 2)) * 1e3), len(xs)
 
 
-def pybamm_check(d_li, e_sei, rho, soc, tc, days=365):
-    """Lithium lost [%] after `days` at rest in PyBaMM's SPM at the fitted constants."""
+def _spm(d_li, e_sei, rho, tc):
     p = pybamm.ParameterValues(PARAM_SET)
     p.update({"SEI lithium interstitial diffusivity [m2.s-1]": d_li,
               "SEI growth activation energy [J.mol-1]": e_sei,
               "SEI resistivity [Ohm.m]": rho,
               "Ambient temperature [K]": tc + 273.15,
               "Initial temperature [K]": tc + 273.15})
-    model = pybamm.lithium_ion.SPM({"SEI": "interstitial-diffusion limited"})
+    return p, pybamm.lithium_ion.SPM({"SEI": "interstitial-diffusion limited"})
+
+
+def capacity_per_lithium(d_li, e_sei, rho):
+    """Capacity lost % / lithium lost %, WMG's capacity steps, fresh vs a year at 85 % / 25 C."""
+    def run(days):
+        p, m = _spm(d_li, e_sei, rho, 25)
+        steps = [pybamm.step.string(f"Rest for {days * 24} hours", period="24 hours")] if days else []
+        steps += [pybamm.step.string(s, period="2 minutes") for s in (
+            "Discharge at 1.67 A until 2.5 V", "Rest for 30 minutes", "Charge at 1.67 A until 4.2 V",
+            "Rest for 30 minutes", "Discharge at 1.67 A until 2.5 V")]
+        sol = pybamm.Simulation(m, parameter_values=p, experiment=pybamm.Experiment(steps)).solve(initial_soc=0.85)
+        q = sol.cycles[-1]["Discharge capacity [A.h]"].entries
+        return float(q[-1] - q[0]), float(sol["Loss of lithium inventory [%]"].entries[-1])
+
+    q0, l0 = run(0)
+    q1, l1 = run(365)
+    return (1 - q1 / q0) * 100 / (l1 - l0)
+
+
+def pybamm_check(d_li, e_sei, rho, soc, tc, days=365):
+    """Lithium lost [%] after `days` at rest in PyBaMM's SPM at the fitted constants."""
+    p, m = _spm(d_li, e_sei, rho, tc)
     exp = pybamm.Experiment([pybamm.step.string(f"Rest for {days * 24} hours", period="24 hours")])
-    sol = pybamm.Simulation(model, parameter_values=p, experiment=exp).solve(initial_soc=soc)
+    sol = pybamm.Simulation(m, parameter_values=p, experiment=exp).solve(initial_soc=soc)
     return float(sol["Loss of lithium inventory [%]"].entries[-1])
 
 
 def main(directory: str):
     data = load(directory)
-    th_step = fit(data)
-    d_li, e_sei, a = 10 ** th_step[0] * D_LI_DEFAULT, th_step[1] * 1e4, th_step[2]
-    fit_rms = rms(data, th_step, FIT_TEMPS)
-    held = rms(data, th_step, (HELD_OUT,))
-    print(f"film: D_li = {d_li:.4e} m2/s ({d_li / D_LI_DEFAULT:.1f} x {PARAM_SET}'s), "
-          f"E_sei = {e_sei / 1e3:.2f} kJ/mol; one-time step A = {a:.3f} (discarded)")
-    print(f"RMS of storage-driven fade, film + step: {fit_rms:.3f} % (25+45 C, fitted), "
-          f"{held:.3f} % (0 C, held out)")
-    print(f"  film alone (step dropped): {rms(data, th_step, FIT_TEMPS, with_step=False):.3f} % (25+45 C)")
-    rho, r_rms, n = fit_resistivity(data, d_li, e_sei)
-    print(f"film resistivity: rho = {rho:.4g} ohm m ({rho / RHO_DEFAULT:.3g} x {PARAM_SET}'s), "
-          f"RMS {r_rms:.3f} mohm over {n} full-set tests")
+    # The ratio depends on the constants it is measured at -- the film's resistance shortens a
+    # charge with no CV hold, so rho enters it -- and the fit depends on the ratio: iterate the
+    # three to a fixed point.
+    k_cap, rho = 1.5, RHO_DEFAULT
+    for it in range(6):
+        d_li, e_sei = fit_growth(data, k_cap)
+        rho, *_ = fit_resistivity(data, d_li, e_sei, FIT_TEMPS)
+        k_new = capacity_per_lithium(d_li, e_sei, rho)
+        print(f"  iteration {it}: ratio {k_cap:.4f} -> {k_new:.4f}, D_li {d_li:.4e}, "
+              f"E {e_sei / 1e3:.2f} kJ/mol, rho {rho:.4g}")
+        done = abs(k_new / k_cap - 1) < 0.002
+        k_cap = k_new
+        if done:
+            break
+    d_li, e_sei = fit_growth(data, k_cap)
+    print(f"capacity lost per lithium lost, WMG's capacity steps at the fitted rho: {k_cap:.3f}")
+    print(f"FILM (fitted to growth after the first post-storage test, 25+45 C): "
+          f"D_li = {d_li:.4e} m2/s ({d_li / D_LI_DEFAULT:.1f} x {PARAM_SET}'s), E_sei = {e_sei / 1e3:.2f} kJ/mol")
+    print(f"  growth RMS: {growth_rms(data, d_li, e_sei, k_cap, FIT_TEMPS):.3f} % (25+45 C, fitted), "
+          f"{growth_rms(data, d_li, e_sei, k_cap, (HELD_OUT,)):.3f} % (0 C, held out)")
+    for tc in (0, 25, 45):
+        first, last, gc, gf = group_growth(data, d_li, e_sei, k_cap, tc)
+        print(f"  {tc:2d} C high-minus-low growth, day {first:.0f} -> {last:.0f}: cells {gc:+.2f}, film {gf:+.2f} points")
+    sd, se, sa = fit_step(data, k_cap)
+    print(f"comparison, film + one-time step over every test: D_li = {sd:.4e}, E_sei = {se / 1e3:.2f} kJ/mol, "
+          f"A = {sa:.3f}; RMS {step_rms(data, sd, se, sa, k_cap, FIT_TEMPS):.3f} % (25+45 C), "
+          f"{step_rms(data, sd, se, sa, k_cap, (HELD_OUT,)):.3f} % (0 C) -- NOT the shipped constants")
+    for temps, label in ((FIT_TEMPS, "25+45 C"), ((25,), "25 C"), ((45,), "45 C")):
+        rho, r_rms, sig, n = fit_resistivity(data, d_li, e_sei, temps)
+        print(f"film resistivity, {label}: rho = {rho:.4g} ohm m ({rho / RHO_DEFAULT:.3g} x {PARAM_SET}'s); "
+              f"residual RMS {r_rms:.3f} mohm against a signal RMS of {sig:.3f} mohm, {n} tests")
+    rho, *_ = fit_resistivity(data, d_li, e_sei, FIT_TEMPS)
     print("closed form vs PyBaMM SPM at the fitted constants, one year at rest (lithium lost %):")
     for soc, tc in ((0.85, 25), (0.85, 45), (0.3, 25)):
         ref = pybamm_check(d_li, e_sei, rho, soc, tc)

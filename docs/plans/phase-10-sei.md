@@ -143,3 +143,14 @@ bullet of the addendum above (no second mechanism). Fitted on Chen2020 by
 criterion 5 therefore reads against the film with the step set aside (0.85 % RMS on 25 + 45 °C,
 0.48 % on 0 °C). The next slice is B (`AgingModel`, unchanged physics), and C carries the
 `[sei]` section with its loader.
+
+## Addendum 2026-10-09 (last) — slice A's constants corrected
+
+The constants in the addendum above are superseded (`phase-10-slice-a-fit.md`, last addendum):
+the held-out figure there tested the discarded step, and the capacity ratio came from the wrong
+protocol. Refitted to growth after the first post-storage test, with the ratio measured on WMG's
+capacity steps (1.567): `D_li` 1.480e-18 m²/s, **42.5 kJ/mol**, `ρ_sei` 5.59e4 Ω·m (0.54–2.53 % of
+resistance per 1 % capacity across the per-temperature fits). **Exit criterion 5 is restated:**
+the engine's film reproduces the WMG cells' storage-driven fade *growth after the first
+post-storage test* within 0.62 % RMS at 25 + 45 °C and predicts the held-out 0 °C cells within
+0.41 %; the early step is not modelled and the criterion does not score it.

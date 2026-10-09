@@ -136,3 +136,43 @@ the cells.
 
 The `[sei]` section itself waits for slice C: the engine's chemistry sections do not reject
 unknown keys, so a section added before the loader reads it would be silently ignored.
+
+## Addendum 2026-10-09 (later) — the constants above are SUPERSEDED
+
+A review caught two flaws in the section above, and both were real:
+
+1. **The held-out 0 °C figure (0.48 %) tested the step, not the film.** It was scored with the
+   one-time step switched on; the step is temperature-independent and the film, at 97 kJ/mol,
+   barely grows at 0 °C, so the step did nearly all the matching. The film alone scored 1.63 %.
+   The 97 kJ/mol itself came from the step: one temperature-independent amplitude cannot cover
+   45 °C's larger first-month gap, so the film had to, with a steep Arrhenius term.
+2. **The capacity-per-lithium ratio 1.45 was measured on the wrong protocol** (the spike's C/20
+   CC-CV check with a C/100 hold). WMG measures capacity with a 1.67 A CC charge to 4.2 V and
+   **no** CV hold, then a 1.67 A discharge. Measured in PyBaMM on those steps, at the fitted
+   constants, it is **1.567** — and it depends on the film's resistivity, because a stiffer film
+   ends a hold-less charge sooner; the script now iterates ratio, film and resistivity to a fixed
+   point (three iterations).
+
+The film is now fitted to **growth after the first post-storage test** only —
+`excess(t) − excess(t1)` against `film(t) − film(t1)` — with no step term, which is what "the film
+only, the early step set aside" means. `tools/reference/fit_sei_wmg.py` as committed with this
+addendum:
+
+| constant | value | evidence |
+| --- | --- | --- |
+| capacity lost / lithium lost | 1.567 | PyBaMM, WMG's capacity steps, fresh vs a year at 85 % / 25 °C, at the fitted constants |
+| `D_li` | **1.480e-18 m²/s** (148 × Chen2020's) | growth RMS 0.622 % over 25 + 45 °C; **0.405 % on the held-out 0 °C cells, film alone** |
+| activation energy | **42.5 kJ/mol** | same fit (the step comparison fit gives 95.5 and is not shipped) |
+| `ρ_sei` | **5.59e4 Ω·m** (0.28 × PyBaMM's), joint 25 + 45 °C | 25 °C alone 1.56e4, 45 °C alone 7.33e4 — a 4.7× spread; at 25 °C the residual (0.81 mΩ) equals the signal (0.82 mΩ), i.e. the 25 °C resistance rise is not explained at all |
+
+High-minus-low SOC growth after the first test, cells against film: 0 °C (held out) +0.98 against
++0.66 points, 25 °C +1.38 against +1.41, 45 °C +2.02 against +2.12 — within 2× everywhere, so the
+review's stop rule (no single activation energy covering 0 and 45 °C) does not fire. Closed form
+against PyBaMM at these constants: within 0.04 %.
+
+What they mean for a cell stored at 85 %: 1.49 % of capacity in the first year at 25 °C and 3.02 %
+at 45 °C (the film 5 → 44 and 83 nm). The film's resistance per 1 % of capacity, against the
+engine's PyBaMM-matched ~22.3 mΩ: **1.93 %** at the joint resistivity, **0.54–2.53 %** across the
+per-temperature fits. The section above's "1.4–2.0, the cells and the old guess agree" is
+withdrawn: today's placeholder 1.5 lies inside a wide measured range, which is all that can be
+said.
