@@ -39,6 +39,9 @@ One per phase, the slice notes under it. Each records what was measured, what wa
 | [`phase-9-lfp-ensemble.md`](phase-9-lfp-ensemble.md) | Phase 9 — the plan for slices B–D: an LFP cell whose plateau and hysteresis come from its particles |
 | [`phase-9-slice-b-ensemble.md`](phase-9-slice-b-ensemble.md) | Phase 9, slice B — the many-particle cell in the engine: the split inside the cell, its fallback, the 10 s sub-step, `N = 1` bit for bit |
 | [`phase-9-slice-c-chemistry.md`](phase-9-slice-c-chemistry.md) | Phase 9, slice C — the LFP many-particle chemistry file, its PyBaMM golden, and the rest-gap and long-step criteria pinned on it |
+| [`phase-9-slice-d-lesson.md`](phase-9-slice-d-lesson.md) | Phase 9, slice D — the many-particle cell taught: guided-path steps 35–37, the particle view; Phase 9 complete |
+| [`phase-10-spike.md`](phase-10-spike.md) | Phase 10, the spike — four PyBaMM SEI growth laws on a shelf; why the roadmap's reaction-limited film could not give `sqrt(t)` fade |
+| [`phase-10-sei.md`](phase-10-sei.md) | Phase 10 — the plan: an interstitial-diffusion SEI film on the `Spm`, its rate fitted to the WMG LG M50 calendar data |
 
 ## Engine physics slices
 

@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
 Phases 0–8 are complete and each is pinned by a committed test (see the README's status
-table). A hundred and fifteen design notes under `docs/plans/` record what each slice measured,
+table). A hundred and twenty-three design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -137,6 +137,14 @@ porosity change are second-order and should be scoped only after LLI validates.
 **Cost.** A phase (proposed as **Phase 10**, §3). Aging state grows (snapshot bump). The
 SEI parameters for LG M50 are published (OKane 2022 extends Chen 2020), so the extraction
 script gains a section rather than a fit.
+
+**Spiked 2026-10-09** (`phase-10-spike.md`), and two sentences above did not survive it. A
+reaction-limited film grows **linearly** on a shelf; of PyBaMM's laws only the
+interstitial-diffusion one gives `sqrt(t)` fade and a state-of-charge effect together, and the
+owner chose it. And the "published" LG M50 SEI constants are PyBaMM's shared defaults (the
+`OKane2022` set says it "does not claim to be representative"); with them the film takes
+0.03 % of the lithium a year. **It is a fit, not an extraction**: the owner chose to fit the
+rate to the WMG LG M50 calendar data. Plan: `phase-10-sei.md`.
 
 ### H3. Nearly every constant that is not extracted from PyBaMM is a labelled placeholder, and there is no fitting pipeline
 
@@ -546,6 +554,15 @@ the law and by the mechanism.
 *Exit.* Calendar fade under the SEI model is `sqrt(t)`-shaped without a `sqrt` in the
 code, matches the PyBaMM SEI reference within tolerance, and grows resistance without a
 `r_growth_per_capacity_loss` coefficient. Pinned by `sim-data/tests/sei_golden.rs`.
+
+*Spike ran 2026-10-09* (`phase-10-spike.md`): slice B and the exit above contradict each other
+— a reaction-limited film grows linearly on a shelf (log-log slope 0.96). The owner chose the
+interstitial-diffusion law (`sqrt(t)` once the film outgrows its start, and 6.5× faster stored
+full than at 30 %), its rate **fitted** to the WMG LG M50 calendar data, and PyBaMM's film
+resistivity kept and labelled (it makes resistance rise ~14 % per 1 % of capacity lost, ten
+times today's placeholder). **The slices and exit are re-planned in `phase-10-sei.md`**, which
+supersedes the list above: (A) the fit, (B) `AgingModel`, (C) the film on the `Spm`, (D) on the
+`Dfn`, (E) the lesson.
 
 ### Phase 11 — the fitting pipeline (H3)
 
