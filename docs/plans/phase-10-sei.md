@@ -132,3 +132,14 @@ times the cells'. The owner's answers, which amend the decisions above:
 - **Decision 3 is reversed**: the film's resistivity is fitted to the data's resistance rise
   (2.5–4.0 mΩ per Ah of storage-driven loss), not kept at PyBaMM's value.
 - Exit criterion 5 now reads against the film **plus** the fast mechanism.
+
+## Addendum 2026-10-09 (later) — slice A done; the film only
+
+The fast part was spiked (`phase-10-slice-a-fit.md` §"The fast part, spiked"): a one-time step
+fits the cells as well as an anode overhang and predicts the held-out 0 °C cells better, so the
+owner chose **the film only**, with the step recorded as unexplained. That replaces the first
+bullet of the addendum above (no second mechanism). Fitted on Chen2020 by
+`tools/reference/fit_sei_wmg.py`: `D_li` 5.93e-19 m²/s, 96.9 kJ/mol, `ρ_sei` 5.47e4 Ω·m. Exit
+criterion 5 therefore reads against the film with the step set aside (0.85 % RMS on 25 + 45 °C,
+0.48 % on 0 °C). The next slice is B (`AgingModel`, unchanged physics), and C carries the
+`[sei]` section with its loader.
