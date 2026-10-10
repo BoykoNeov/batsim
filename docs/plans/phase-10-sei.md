@@ -208,3 +208,67 @@ capacity changes the hash (`W:/temp/claude/phase10-slice-b/`, not kept).
   the coulomb count divided by.
 - With the film off, the model must add **exactly** zero — not the initial 5 nm film's ≈ 0.08 mΩ
   — or every `Spm` golden moves. An `Option` in `SpmState`, `None` unless selected.
+
+## Addendum 2026-10-10 (later) — slice C designed, not started; exit 5 split out
+
+No code was written. Designed against the code at `cd08db2`, reviewed once, and recorded here so
+the slice can start from it.
+
+**Owner, 2026-10-10: exit criterion 5 gets a slice of its own, right after C.** The engine
+reports capacity read off its electrodes, a slow-rate figure; the fit converted lithium into
+WMG's capacity with 1.567, a ratio that belongs to WMG's own steps (1.67 A CC to 4.2 V, no hold,
+1.67 A down to 2.5 V) and depends on `ρ_sei`. Pinning exit 5 as lithium × 1.567 would re-run the
+fit's closed form, which is circular. The honest check runs those steps **in the engine** against
+a small committed table of the cells' growth after the first post-storage test, written by
+`fit_sei_wmg.py` from the CC-BY data (cite Kuzhiyil et al. 2025 beside it). That is the new
+slice; C delivers exits 1–4.
+
+**The design C starts from:**
+
+- **Constants** in `[spm.sei]` (inside `SpmParams`, so only `[spm]` chemistries change bytes),
+  every field required, unknown keys rejected, `[spm]` implied. From the last fit run
+  (`W:/temp/claude/phase10-spike/fit_repo_run3.txt`): `D_li` 1.4795e-18 m²/s, `E` 42.54 kJ/mol,
+  `ρ_sei` 5.594e4 Ω·m; Chen2020 defaults, labelled: 5 nm, `V̄` 9.585e-5 m³/mol, `c_li0`
+  15 mol/m³, Li:SEI 2. The reference temperature is `spm.t_ref_k`; check it is the fit's 298.15.
+- **Selector**: `AgingConfig` gains a calendar choice (drawn curve, the default, or film),
+  `serde(default)` so scenario TOMLs, JSON setups and Godot's `[pack.aging]` still parse. Under
+  the film `CellAging::tick` skips `q_cal`; cycle, plating and reversal are unchanged.
+  `Pack::new` refuses the film on the ECM, the `Dfn`, the many-particle cell, and a chemistry
+  without `[spm.sei]`.
+- **State**: `SpmState` gains the film thickness as an `Option`, `None` unless the film is
+  selected. Bump 25 → 26, with the stale-blob route of each new field measured in
+  `snapshot_version.rs` as v22–v25 were.
+- **Tick** (one `CellModel` hook, on the aging sub-clock): freeze the negative's potential and the
+  temperature over the tick and grow the film in closed form, written **rationalised**,
+  `δL = 2·k·e·dt / (L′ + L)` (`calendar_increment`'s precedent; a difference of square roots
+  cancels at 10 s ticks). The potential is `Δφ = U_n(surface) + η_n` at `i_last` — PyBaMM's —
+  which at rest is the bulk value the fit used; the golden cannot tell them apart. The lithium
+  `Z·δL·A_neg/V̄` leaves every negative shell uniformly, so a resting profile stays flat.
+- **Resistance**: `ρ_sei·(L − L0)/A_neg`, growth only (how `ρ` was fitted), added to the lumped
+  series resistance at every `Working` built from a state, outside the handed multiplier. So a
+  fresh film cell is bit-identical to a film-off one until its first tick, which slice E needs.
+  The pack's resistance ratio divides it out with the unworn conductance `mult/(r − r_film)`.
+  Per-cell `CellView::soh_resistance` needs a reference resistance; any new `CellView` field is
+  a wire change.
+- **Capacity and SOC**: today's full is the fresh full moved down by the lithium lost,
+  `δx = 3·Z·(L − L0)/(V̄·c_max·R_p)`; empty and the reversal edge stay at `stoich_min`. `soc` reads
+  `(x − x_min)/(x_max − δx − x_min)`, so a filmed cell reads 1 at full and `SOC_CLAMPED_HIGH`
+  still means the positive passed its limit. Reported `soh_capacity` = multiplier × `(1 − δx/Δx)`;
+  `soc_true` weights by it. The plating C-rate keeps the handed capacity (stated, not changed).
+- **Energy**: the lithium leaves the cell's chemistry rather than crossing to the positive, so it
+  is an explicit sink at the graphite's potential, `F·U_n·δN` — **not** heat at the cell voltage
+  (30–40× larger), and not a tick's energy dumped into one step's `q_gen_w`, which would spike
+  the client's heat plot every tick. The SEI reaction's own heat is not in the data (order
+  1e-5 W) and is stated as such. The existing ledger helpers tie both electrodes to one SOC
+  coordinate; a film ledger needs per-electrode stored energy.
+- **Film off moves nothing**: every new expression branches on `None` (no `+ 0.0`;
+  `mult/(r − 0.0)` and `mult·(1/r)` round differently). Re-run slice B's hash harness in a
+  worktree under `W:/temp/claude`, stripping the fields that legitimately change from the final
+  snapshot rather than dropping it, and re-check that a 1e-15 perturbation still moves the hash.
+- **Golden** (exits 1–4): PyBaMM SPM, interstitial law, fitted constants, a year at rest at 85
+  and 30 % and 25 and 45 °C, compared on film thickness or moles. Start PyBaMM at the
+  engine's stoichiometry rather than `get_initial_stoichiometries(soc)`. **The tolerance floor
+  is the engine's graphite table, not the closed form**: the rate goes as `exp(−F·U_n/RT)`, so
+  the table's 1.90 mV interpolation error is ≈ 7–8 % in rate and ≈ 4 % in growth. Measure that
+  table-versus-function ratio at the golden's stoichiometries before choosing a tolerance; the
+  fit's "within 0.04 % of PyBaMM" used PyBaMM's own OCP function and says nothing about it.
