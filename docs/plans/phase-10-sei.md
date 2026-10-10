@@ -162,7 +162,8 @@ not in `aging.rs`. Everything the film touches is inside the model already — t
 surface's potential, which sets its rate; the negative's lithium, which it consumes; and a
 series resistance `ρ_sei·L/A_neg`. Inside, that resistance joins the model's own lumped
 resistance and no signature moves. Outside, an absolute resistance would have to be threaded
-through the eleven model calls in `Pack::step` and the `SourceCache` invariant. Aging stays the
+through the eleven model calls in `pack.rs` (nine of them in `Pack::step`) and the
+`SourceCache` invariant. Aging stays the
 **driver**: the film grows only on the aging sub-clock, through one hook on `CellModel`, so a
 pack with `aging: None` grows none. `CellAging`'s reason for living outside the model — a porous
 model must not inherit the ECM's bookkeeping — still holds: only the film moves in; calendar's
