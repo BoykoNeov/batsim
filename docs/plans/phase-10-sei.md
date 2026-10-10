@@ -154,3 +154,56 @@ resistance per 1 % capacity across the per-temperature fits). **Exit criterion 5
 the engine's film reproduces the WMG cells' storage-driven fade *growth after the first
 post-storage test* within 0.62 % RMS at 25 + 45 °C and predicts the held-out 0 °C cells within
 0.41 %; the early step is not modelled and the criterion does not score it.
+
+## Addendum 2026-10-10 — slice B: the film lives in the cell model, and health has two doors
+
+**Owner, 2026-10-10: the film's state lives inside the porous cell model** (`SpmState` first),
+not in `aging.rs`. Everything the film touches is inside the model already — the negative
+surface's potential, which sets its rate; the negative's lithium, which it consumes; and a
+series resistance `ρ_sei·L/A_neg`. Inside, that resistance joins the model's own lumped
+resistance and no signature moves. Outside, an absolute resistance would have to be threaded
+through the eleven model calls in `Pack::step` and the `SourceCache` invariant. Aging stays the
+**driver**: the film grows only on the aging sub-clock, through one hook on `CellModel`, so a
+pack with `aging: None` grows none. `CellAging`'s reason for living outside the model — a porous
+model must not inherit the ECM's bookkeeping — still holds: only the film moves in; calendar's
+drawn curve, cycle, plating and reversal stay where they are.
+
+**Slice B was reshaped; it has no enum.** The selector between the drawn calendar curve and
+the film must be per pack (slice E ages the same cell both ways), so it belongs in
+`AgingConfig`. Snapshots are `bincode`, which is positional: even a one-variant enum there
+writes new bytes into every aging pack's snapshot and would cost a bump of its own. It lands in
+C beside the film's state, so Phase 10 still bumps once, 25 → 26.
+
+**What B did.** One pair of numbers per cell had two jobs: what the cell model is *handed*
+and what the pack *reports*. The film answers them differently — its loss is real lithium gone
+from the negative, already inside the model, so multiplying it in again would bill it twice —
+so B split them, bit-identically:
+
+- handed to the model: `CellAging::capacity_multiplier` / `resistance_multiplier` (seven reads:
+  the two `Cell::eff_*` products; the RC decays in the split and in the advance; `advance`'s
+  capacity, which also feeds the plating C-rate and the reversal amp-hours; and in the report,
+  `soc_true`'s weight and the resistance ratio's divisor, both listed below);
+- reported: `Cell::soh_capacity_reported` / `soh_resistance_reported` (`CellView`, and
+  `Telemetry::soh_capacity` through an accumulator of its own);
+- calendar fade is marked in `CellAging::tick` as the one mechanism the film replaces.
+
+**Measured bit-identical**, beyond the suite (whose tolerances could hide a last-bit move): a
+harness ran aged packs of all five cell models — 2S3P and 1S2P ECM, `Spm`, `Dfn`,
+`SpmEnsemble` — through cycling, a voltage hold, a power demand, 200 h hot at rest, a cold
+charge and an over-discharge, hashing every telemetry frame, every `CellView` and the final
+snapshot; HEAD and B hash identically, and a one-part-in-10¹⁵ perturbation of the reported
+capacity changes the hash (`W:/temp/claude/phase10-slice-b/`, not kept).
+
+**Found while sorting, for C to decide** (none is a B defect; each is where the two doors part):
+
+- `soc_true` weights by the capacity the model is handed. Under the film, what it weights by is
+  the note's call (the plan's open question on `soc_true`).
+- The pack's `Telemetry::soh_resistance` divides each cell's conductance by exactly the
+  multiplier the model was handed. A film resistance in series is not divided out, so the model
+  must supply its unworn conductance before the ratio can report the film.
+- The plating C-rate divides by the handed capacity, which under the film omits the lithium the
+  film took. Whether a filmed cell plates at a lower current is C's call.
+- The reversal amp-hours use the handed capacity and stay right as they are: they must be what
+  the coulomb count divided by.
+- With the film off, the model must add **exactly** zero — not the initial 5 nm film's ≈ 0.08 mΩ
+  — or every `Spm` golden moves. An `Option` in `SpmState`, `None` unless selected.

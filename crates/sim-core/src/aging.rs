@@ -210,17 +210,30 @@ pub(crate) struct FadeParams<'a> {
 /// inheriting the ECM's aging bookkeeping.
 ///
 /// `soh_capacity` and `soh_resistance` are **derived**: they are recomputed from
-/// `q_cal + q_cyc` at the end of every update and are never written independently.
+/// the four losses at the end of every update and are never written independently.
 /// They are stored rather than recomputed on read because they are consumed twice
 /// per cell per step on the hot path.
+///
+/// # Two roles, read through two doors
+///
+/// The pair is what this type hands the cell model — [`Self::capacity_multiplier`],
+/// [`Self::resistance_multiplier`] — and today it is also what the pack *reports* as the
+/// cell's health. Those are separate questions, and the pack asks them separately (the
+/// `soh_*_reported` methods on its `Cell`), because Phase 10's film will answer them
+/// differently: a film takes real lithium out of the negative electrode, so the capacity
+/// it costs is already inside the cell model, and multiplying it in again here would bill
+/// it twice. Under that model the multipliers carry only the wear that has no electrode to
+/// live in, and the reported health is read from the electrodes. Until then the two doors
+/// open on the same two numbers, which is why splitting them moved no result. See
+/// `docs/plans/phase-10-sei.md`, slice B.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct CellAging {
     /// Capacity state of health in (0, 1\]: effective capacity = nominal × factor ×
     /// this. Starts at exactly `1.0`.
-    pub(crate) soh_capacity: f64,
+    soh_capacity: f64,
     /// Resistance growth factor, `>= 1`: effective `R0` = nominal × factor × this.
     /// Starts at exactly `1.0`.
-    pub(crate) soh_resistance: f64,
+    soh_resistance: f64,
     /// Capacity fraction lost to calendar fade so far. Inverted to an equivalent age
     /// on every update, which is what makes `√t` fade path-independent.
     q_cal: f64,
@@ -281,6 +294,28 @@ impl CellAging {
             // place (it is already anchored at its initial SOC).
             discharging: true,
         }
+    }
+
+    /// The capacity multiplier the cell model is handed, in (0, 1\]: the model's
+    /// effective capacity is nominal × manufacturing factor × this. Exactly `1.0` on a
+    /// cell that has not aged.
+    ///
+    /// What the model is *told*, not what the pack *reports* — see the type's docs for
+    /// why the two are asked separately.
+    #[inline]
+    pub(crate) fn capacity_multiplier(&self) -> f64 {
+        self.soh_capacity
+    }
+
+    /// The resistance multiplier the cell model is handed, `>= 1`: every resistance the
+    /// model scales with health is nominal × manufacturing factor × this (see
+    /// `docs/plans/rc-resistance-growth.md` for which ones). Exactly `1.0` on a cell that
+    /// has not aged.
+    ///
+    /// What the model is *told*, not what the pack *reports* — see the type's docs.
+    #[inline]
+    pub(crate) fn resistance_multiplier(&self) -> f64 {
+        self.soh_resistance
     }
 
     /// Fold one step's current into the cycle-fade accumulators.
@@ -400,6 +435,9 @@ impl CellAging {
         soc: f64,
         rng: &mut ChaCha8Rng,
     ) -> bool {
+        // Calendar fade: the drawn `√t` curve, and the one mechanism of the four that
+        // Phase 10's film replaces rather than sits beside — the film is what a cell on a
+        // shelf does, in the electrodes. Cycle, plating and reversal stay here under either.
         let k = calendar_rate(fade.aging, temp_k, soc);
         self.q_cal += calendar_increment(k, self.q_cal, dt_age);
 

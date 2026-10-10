@@ -1109,7 +1109,7 @@ impl Cell {
     /// [`SourceCache`] staleness assert — the memo's invariant is stated in terms of
     /// *this* product, not of `r0_factor` alone.
     fn eff_r0_factor(&self) -> f64 {
-        self.r0_factor * self.aging.soh_resistance
+        self.r0_factor * self.aging.resistance_multiplier()
     }
 
     /// The capacity \[Ah\] the electrical solve actually uses: the chemistry's
@@ -1127,7 +1127,26 @@ impl Cell {
     /// cell has today"; a Thévenin source has no SOC scale to preserve, so folding
     /// them is not a shortcut here, it is the whole of what the source needs.
     fn eff_capacity_ah(&self, cap_ah: f64) -> f64 {
-        cap_ah * self.capacity_factor * self.aging.soh_capacity
+        cap_ah * self.capacity_factor * self.aging.capacity_multiplier()
+    }
+
+    /// The capacity state of health this cell **reports**, in (0, 1\]: what
+    /// [`CellView::soh_capacity`] shows and what [`Telemetry::soh_capacity`] weights.
+    ///
+    /// Not [`Self::eff_capacity_ah`]'s multiplier, though today it is the same number.
+    /// That one is what the cell model is *told*; this is what the cell *has*. Phase 10's
+    /// film takes lithium out of the negative electrode, so its loss is inside the model
+    /// and only a read of the electrodes can report it — see [`CellAging`].
+    fn soh_capacity_reported(&self) -> f64 {
+        self.aging.capacity_multiplier()
+    }
+
+    /// The resistance growth factor this cell **reports**, `>= 1`: what
+    /// [`CellView::soh_resistance`] shows. The sibling of [`Self::soh_capacity_reported`],
+    /// split from [`Self::eff_r0_factor`]'s multiplier for the same reason: a film adds its
+    /// resistance in series, not through the multiplier.
+    fn soh_resistance_reported(&self) -> f64 {
+        self.aging.resistance_multiplier()
     }
 }
 
@@ -1945,8 +1964,8 @@ impl Pack {
             ),
             capacity_factor: cell.capacity_factor,
             r0_factor: cell.r0_factor,
-            soh_capacity: cell.aging.soh_capacity,
-            soh_resistance: cell.aging.soh_resistance,
+            soh_capacity: cell.soh_capacity_reported(),
+            soh_resistance: cell.soh_resistance_reported(),
             internal_short_conductance_s: cell.shunt_g,
             runaway_energy_remaining_j: cell.runaway.energy_remaining_j,
             vented: cell.runaway.vented,
@@ -2478,7 +2497,7 @@ impl Pack {
                         cell_src.push(fresh);
                         fresh
                     };
-                    let soh_r = cell.aging.soh_resistance;
+                    let soh_r = cell.aging.resistance_multiplier();
                     if soh_r.to_bits() != decay_for.to_bits() {
                         decays = rc_decays(&self.chem, soh_r, dt);
                         decay_for = soh_r;
@@ -2499,7 +2518,7 @@ impl Pack {
                         &self.chem,
                         &decays,
                         soh_r,
-                        cap_ah * cell.capacity_factor * cell.aging.soh_capacity,
+                        cell.eff_capacity_ah(cap_ah),
                         dt,
                         &mut hints[g_idx * parallel + k],
                     );
@@ -3423,7 +3442,7 @@ impl Pack {
                 };
                 let temp_before = cell.model.temp_k();
                 let eff_cap = cap_ah * cell.capacity_factor;
-                let soh_cap = cell.aging.soh_capacity;
+                let soh_cap = cell.aging.capacity_multiplier();
                 let eff_r0 = cell.eff_r0_factor();
                 // Plating: cold, charging, and above the C-rate threshold, judged from
                 // the same start-of-step state that produced `i_k`. This is an
@@ -3436,7 +3455,7 @@ impl Pack {
                 if plating {
                     flags |= EventFlags::PLATING_RISK;
                 }
-                let soh_r = cell.aging.soh_resistance;
+                let soh_r = cell.aging.resistance_multiplier();
                 if soh_r.to_bits() != adv_decay_for.to_bits() {
                     adv_decays = rc_decays(&self.chem, soh_r, dt);
                     adv_decay_for = soh_r;
@@ -3779,6 +3798,7 @@ impl Pack {
                               // a number that is supposed to be about health.
         let aging_live = self.aging.is_some();
         let mut cap_nominal_ah = 0.0; // Σ cap·factor, SOH excluded
+        let mut rep_ah = 0.0; // Σ cap·factor·soh_reported
         let mut r_pack_cells = 0.0; // Σ_g 1/Σ_k G_k
         let mut r_pack_nominal = 0.0; // Σ_g 1/Σ_k soh_k·G_k
                                       // Group voltages are gathered only when something will sense them.
@@ -3839,14 +3859,24 @@ impl Pack {
                 t_min = t_min.min(cell.model.temp_k());
                 t_max = t_max.max(cell.model.temp_k());
                 let cap_nominal = cap_ah * cell.capacity_factor;
-                let eff_cap = cap_nominal * cell.aging.soh_capacity;
+                // The capacity the model was told — what its `soc` is a fraction of, so
+                // what `soc_true` must weight by.
+                let eff_cap = cap_nominal * cell.aging.capacity_multiplier();
                 rem_ah += cell.model.soc(&self.chem) * eff_cap;
                 nom_ah += eff_cap;
                 if aging_live {
                     cap_nominal_ah += cap_nominal;
+                    // The capacity the cell reports having. The same product as
+                    // `eff_cap` today, summed in the same order, so the ratio it feeds
+                    // did not move when the two were split; see `Cell::soh_capacity_reported`.
+                    rep_ah += cap_nominal * cell.soh_capacity_reported();
                     sum_g_cells += g;
-                    // 1/r_nominal = soh_resistance/r, since r already carries it.
-                    sum_g_nominal += cell.aging.soh_resistance * g;
+                    // 1/r_nominal = multiplier/r, since r already carries it. This divides
+                    // out exactly what the model was handed, which is why it reads the
+                    // *applied* multiplier: a resistance added outside it (Phase 10's film,
+                    // in series) is not divided out, so the model must supply the unworn
+                    // conductance itself before the reported ratio can include one.
+                    sum_g_nominal += cell.aging.resistance_multiplier() * g;
                 }
             }
             if aging_live {
@@ -3914,7 +3944,7 @@ impl Pack {
             // Without aging these are exactly 1.0 by construction, not by rounding:
             // every cell's SOH is the literal 1.0 the pack was built with.
             soh_capacity: if aging_live {
-                nom_ah / cap_nominal_ah
+                rep_ah / cap_nominal_ah
             } else {
                 1.0
             },
