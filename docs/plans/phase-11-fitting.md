@@ -234,3 +234,60 @@ conductivity derivative, Nyman's part included — stays green on **every** Jaco
 repo: the row-relative comparison at 1e-5 cannot see entries that small. That is older than
 this slice, and it bounds what is at stake: the Jacobian steers Newton's convergence, not where
 it converges, and the residual's conductivity is pinned.
+
+## Addendum 2026-10-15 (later) — slice A: the fit with the RC rule, and the replay bar, set before the run
+
+**The fit**, re-run with `fit_ecm.py` simulating the engine's rule exactly (each sample's pairs
+scaled by `R0(soc, T)/R0(soc, 298.15)` at the **start-of-step** charge, as the engine reads
+`R0`; the cold and warm columns fitted with the coupling inside the least squares). The first
+measurement put to the owner (11.6 mV, 67 mV at −10 °C) used one mean factor per temperature;
+measured per sample, time-weighted RMS above 5 % charge:
+
+| run | rule off | **rule on (shipped)** | free pairs per temperature (unrepresentable) |
+| --- | --- | --- | --- |
+| 1C, 25 °C | — | **4.85 mV** (pulses 14.58, moves 8.16, rests 2.70) | — |
+| 3C, 25 °C (scored, not fitted) | — | **18.81 mV** | — |
+| 1C, −10 °C | 22.50 mV (pulses 128.3) | **11.16 mV** (pulses 68.6) | 10.74 mV |
+| 1C, +45 °C | 5.85 mV | **3.53 mV** | 3.71 mV |
+
+Pairs 14.735 mΩ / 36.8 s and 9.102 mΩ / 329.6 s; `λ = 0.003` by the corrected rule. The cold
+column is rougher than the warm (largest second difference 8.4 against 4.1 mΩ) but falls
+monotonically to its 30 % node and is flat within ±3 mΩ above it.
+
+**The replay bar, written before `ecm_fit.rs` first ran.** The engine replays each committed
+reference (`ecm_hppc_*.csv`) on the shipped file, at the CSVs' own 1–30 s steps, through its
+`[ocv]` table (re-gridded to 0.92 mV) rather than the reference's own OCV. Its time-weighted
+RMS above 5 % charge must be within **1.0 mV** of the fit's figure in the table above, on each
+of the four runs — the table's error is the one thing the fit did not see, and 1.0 mV is a
+little above its worst case.
+
+## Addendum 2026-10-15 (last) — slice A done: the circuit fitted, the pulse lessons reworded
+
+**The replay passed its bar** (`ecm_fit.rs`): the engine on the shipped file, through its own
+`[ocv]` table and step, against the four references — 4.818 mV (fit 4.85), 18.796 (18.81),
+11.104 (11.16), 3.512 (3.53); every gap under 0.06 mV against a 1.0 mV bar. Deleting
+`rc_t_ref_k` from the shipped file reddens it (−10 °C 28.8 mV, +45 °C 8.9). The circuit's
+30 s resistance at 50 %, 0.5C, 25 °C is **37.5 mΩ against LG's 30 ± 6** — just outside, as the
+spike predicted: it is fitted to Chen2020's DFN, whose cell is stronger than the real one
+(slice-E measurement: 55 A for 10 s where the sheet gives 37). Reported, not pinned.
+`fit_ecm.py --fit` prints the shipped block identically on a rerun; numpy 2.4.6 and scipy
+1.17.1 are pinned beside PyBaMM.
+
+**The lesson cost, measured on the final file, and the owner's choice.** Only `path_claims`
+reads these values (the whole workspace otherwise green). 25 claims moved; the ×3.42 the
+spike feared was its zig-zag `R0` — on the smoothed fit step 14's ratios are ×2.99 and ×3.00,
+the numbers its prose already printed. What broke **in words** was steps 12–13: with the slow
+pair at 330 s against a 600 s rest the circuit's rebounds go 67.6, 68.5, 68.6, 68.6, 68.6 mV —
+not "identical to four decimal places" — and step 13's "a linear system has no way to carry
+anything from one pulse to the next" is false of it. **Owner, 2026-10-15: reword, same train**
+(a longer rest was the alternative, at the cost of every single-particle number in steps
+13–14). Step 12 now teaches that a linear circuit's only memory is a fixed fade that identical
+pulses settle; step 13 contrasts the circuit's "rose and stopped" with the particle's doubling;
+its "9 s and 72 s because someone picked round numbers" became the fitted 37 s and 330 s; the
+"two levels" of sag, an artefact of the old table's node at 85 %, became the depth creeping
+220.5 → 228.4 mV. Step 2 and step 14 are re-measured numbers only. One rule was **closed** by
+the rewrite rather than moved: step 13 used to compare the particle's fifth rest with the
+circuit's first and its rule admitted the frame gap was safe only while the circuit's teeth
+were identical; the sentence now says "the circuit's first". Scenario headers
+(`pulse_train_*`, `cc_discharge_lgm50`, `cc_discharge_3c_*`) rewritten to match; the
+lgm50 header's old ECM-against-SPM figures are labelled history, not re-measured.

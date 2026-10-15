@@ -12,8 +12,9 @@
 #   * `[ocv]` and `capacity_ah` are fitted from Chen2020 by tools/reference/fit_ocv.py.
 #     The 5.153 Ah is the usable stoichiometry window, not the 5.0 Ah label on the cell.
 #     The voltage curve you see here is therefore a real fit to a real parameter set.
-#   * `[r0]` and `[[rc]]` are labelled placeholders. Every ohmic drop and every RC sag
-#     in this trace is order-of-magnitude only.
+#   * `[r0]` and `[[rc]]` are fitted to the same set's DFN by tools/reference/fit_ecm.py
+#     (Phase 11; 4.85 mV RMS at 1 C and 25 degC against the pulse train they were fitted
+#     on). They were labelled placeholders until then.
 #
 # The chemistry file says the two halves "are not equally trustworthy and this comment
 # is where that is written down". A scenario against it inherits the obligation, which
@@ -21,7 +22,7 @@
 #
 # ## What it shows next to the other two
 #
-# Measured at 0.5 C and 25 degC: 618 mV of terminal-voltage fall between 90 % and 20 %
+# Measured at 0.5 C and 25 degC: 616 mV of terminal-voltage fall between 90 % and 20 %
 # SOC, against 481 mV for the 18650 NMC and 168 mV for LFP. Sloped chemistries are easy
 # to read a charge level off; LFP is not, and that is the lesson the guided path builds
 # on. See docs/plans/scenario-catalog.md for the table.
@@ -32,12 +33,14 @@
 # `pulse_train_spm.toml` for the SPM and the `cc_discharge_3c_*` pair for the DFN, which
 # are the slices this paragraph used to say were still owed — but neither is reachable
 # from *here*, and the reason is measured rather than assumed:
-# at 0.5 C the ECM and the SPM agree to within the ECM's own table error through the
-# whole middle of the discharge. Remeasured for docs/plans/spm-scenario.md, the difference
-# oscillates and **changes sign** — -21.6, +1.8, -8.0, +9.2, -24.3 mV — against the
-# 13.91 mV maximum interpolation error [ocv] documents for itself. There is nothing here
-# that is not the grid, and a scenario that flipped `cell_model` would cost 6.7x the step
-# time (0.80 us against 0.12 us per step at 12 shells) to show a reader that.
+# at 0.5 C, measured for docs/plans/spm-scenario.md BEFORE Phase 11 — against the
+# placeholder circuit and an [ocv] table with 13.91 mV of interpolation error — the ECM
+# and the SPM agreed to within that table error through the whole middle of the
+# discharge: the difference oscillated and **changed sign**, -21.6, +1.8, -8.0, +9.2,
+# -24.3 mV. That comparison has not been repeated on the fitted circuit and the re-gridded
+# table (0.92 mV), so those five figures are history, not this file's behaviour. The
+# decision does not rest on them alone: a scenario that flipped `cell_model` would cost
+# 6.7x the step time (0.80 us against 0.12 us per step at 12 shells).
 #
 # The same holds for the DFN, and there the statement is sharper because the boundary has
 # since been measured: at 1 C the SPM and the DFN reach their cut-offs 12 s apart in 3484
@@ -59,7 +62,7 @@ description = """
 A 1S1P pack at 100 % SOC and 25 degC, isothermal, no BMS, no aging, no faults. 5.153 Ah \
 of usable capacity, 4.20 V full, 2.50 V cutoff. Runs the equivalent-circuit half of a \
 chemistry file that also carries extracted single-particle parameters: the voltage \
-curve is fitted from PyBaMM's Chen2020, the resistances are placeholders."""
+curve is fitted from PyBaMM's Chen2020, and the resistances to its DFN."""
 
 [pack]
 series = 1

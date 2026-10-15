@@ -13,9 +13,9 @@
 # Both halves of the porous-electrode description: the [spm] electrodes *plus* the [dfn]
 # electrolyte and separator, both extracted from PyBaMM's Chen2020 by
 # tools/reference/extract_spm.py and extract_dfn.py, neither fitted. So unlike
-# `cc_discharge_lgm50.toml`, which reads the placeholder [r0] and [[rc]] tables, **this
-# pair reads no placeholder** and the two arms can be compared in volts rather than only
-# in ratios.
+# `cc_discharge_lgm50.toml`, which reads the [r0] and [[rc]] tables — fitted since Phase
+# 11, but a circuit's description of the cell — **this pair reads no circuit at all** and
+# the two arms can be compared in volts rather than only in ratios.
 #
 # ## What it shows, measured at dt = 2 s
 #

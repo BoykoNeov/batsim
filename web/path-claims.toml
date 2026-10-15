@@ -148,7 +148,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled 356 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled 350 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  40 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -208,7 +208,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 40 claims.
 #
-#   same 365 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same 359 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude 11. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -254,7 +254,7 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 385 of the 454 numbers the
+#   spelled  a claim on this sentence names it in `spells` — 382 of the 451 numbers the
 #            255 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
@@ -497,7 +497,7 @@ to read in order to make it checkable. See docs/plans/path-ledger-bare-curve.md.
 step = "same-discharge-other-chemistry"
 name = "the third cell"
 scenario = "cc_discharge_lgm50.toml"
-instruction = "Load `cc_discharge_lgm50` from the picker for a third — 620 mV, a 5.153198 Ah cell fitted from PyBaMM's Chen2020, but only if you also put the demand box up to 4.47 A"
+instruction = "Load `cc_discharge_lgm50` from the picker for a third — 626 mV, a 5.153198 Ah cell fitted from PyBaMM's Chen2020, but only if you also put the demand box up to 4.47 A"
 start = "restart"
 demand_a = 4.47
 actions = [{ do = "run", to_s = 4200.0 }]
@@ -521,12 +521,12 @@ reasoned — see docs/plans/path-third-cell.md.
 step = "same-discharge-other-chemistry"
 name = "the third cell at this step's own current"
 scenario = "cc_discharge_lgm50.toml"
-instruction = "Leave `cc_discharge_lgm50` loaded, put the box back to 2.6 A, and the fall is much the same (618 mV) — but this cell takes 5708.5 s to get there"
+instruction = "Leave `cc_discharge_lgm50` loaded, put the box back to 2.6 A, and the fall is much the same (616 mV) — but this cell takes 5708.5 s to get there"
 start = "restart"
 actions = [{ do = "run", to_s = 5708.5 }]
 note = """
 The same file under the step's OWN demand box, which is the arm that makes the paragraph's
-point: the fall barely moves (618 mV against 620) because it is a property of the chemistry,
+point: the fall barely moves (616 mV against 626) because it is a property of the chemistry,
 while the time to get there does move, because 2.6 A of a 5.153198 Ah cell is half a C rather
 than 0.867.
 
@@ -701,13 +701,13 @@ and a shifted trajectory would leave the row rendering something else.
 
 [[claim]]
 step = "same-discharge-other-chemistry"
-literal = "for a third — 620 mV"
+literal = "for a third — 626 mV"
 quantity = "v_fall_mv_soc:0.90:0.20"
 arm = "the third cell"
-value = 620.0709
+value = 625.6777
 tol = 0.5
 tol_from = "spelled"
-spells = "620"
+spells = "626"
 states = "same"
 read_at_s = 3320.5
 note = """
@@ -724,13 +724,13 @@ same convention `deficit_crossing_spread_s` and `delivered_ah` follow.
 
 [[claim]]
 step = "same-discharge-other-chemistry"
-literal = "the fall is much the same (618 mV)"
+literal = "the fall is much the same (616 mV)"
 quantity = "v_fall_mv_soc:0.90:0.20"
 arm = "the third cell at this step's own current"
-value = 618.0763
+value = 616.0456
 tol = 0.5
 tol_from = "spelled"
-spells = "618"
+spells = "616"
 states = "same"
 read_at_s = 5708.5
 note = """
@@ -4673,7 +4673,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # claimed — all of them.
 #
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: forty
-# steps, 889 numerals, and no longer all of them scenario constants. This count is NOT
+# steps, 887 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -7363,292 +7363,159 @@ does not, which costs nothing here because nothing reads past it.
 #     prints the five sags themselves, one claim each, and the reader gets the numbers the
 #     plot actually shows instead of a summary of them. The ordinals went with it.
 #
-# WHAT IS NOT CLAIMED ON STEP 13 (which is not ledgered):
-#   * Its 9 s and 72 s RC time constants and its 20 shells: chemistry and scenario
-#     constants.
-#   * Its comparisons against the circuit — "where the circuit's was 74.8" and "against the
-#     circuit's 0.5 %" — which are a second pack.
+# WHAT IS NOT CLAIMED ON STEP 13 (accounted by ledger rules instead):
+#   * Its RC time constants (37 s and 330 s since Phase 11's fit) and its 20 shells:
+#     chemistry and scenario constants.
+#   * Its comparisons against the circuit — "where the circuit's was 67.6", "it rose from
+#     67.6 mV to 68.6 mV" and "2.8 % of the circuit's first" — which quote step 12's claims.
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "It is 74.8 mV on the first pulse and 74.8 mV on all four after it, identical to four decimal places"
+literal = "It is 67.6 mV on the first pulse and 68.6 mV on the last"
 quantity = "pulse_rebound_mv:1"
-value = 74.767
+value = 67.589
 tol = 0.05
 tol_from = "spelled"
-spells = "74.8"
+spells = "67.6"
 states = "same"
 read_at_s = 660.0
 note = """
-The first tooth's rebound, and the number the next two steps are both about. 4.016661 V the
-instant the current stops, 4.091428 V ten minutes later.
-
-The sentence claims five teeth are identical to four decimal places and this file pins all
-five separately rather than asserting the equality, for the same reason step 11's "at the
-same instant" is two claims: nothing here compares one measurement against another. Five
-pins at one number is what an equality looks like when the instrument cannot say "equal".
+The first tooth's rebound. Phase 11 slice A fitted this circuit to the DFN; its slow pair's
+time constant (330 s) is now over half the 600 s rest, so the teeth are no longer identical
+— they were 74.767 to 74.770 mV on the placeholder circuit, whose slow pair was 72 s.
 """
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "It is 74.8 mV on the first pulse and 74.8 mV on all four after it, identical to four decimal places"
-quantity = "pulse_rebound_mv:2"
-value = 74.769
-tol = 0.05
-tol_from = "spelled"
-spells = "74.8"
-states = "same"
-read_at_s = 1320.0
-note = """
-Second tooth. The stored values differ in the fourth decimal of a millivolt across the five
-— 74.767 to 74.770 — which is what "identical to four decimal places" means in volts.
-"""
-
-[[claim]]
-step = "circuit-repeats-itself"
-literal = "It is 74.8 mV on the first pulse and 74.8 mV on all four after it, identical to four decimal places"
-quantity = "pulse_rebound_mv:3"
-value = 74.769
-tol = 0.05
-tol_from = "spelled"
-spells = "74.8"
-states = "same"
-read_at_s = 1980.0
-note = "Third tooth."
-
-[[claim]]
-step = "circuit-repeats-itself"
-literal = "It is 74.8 mV on the first pulse and 74.8 mV on all four after it, identical to four decimal places"
-quantity = "pulse_rebound_mv:4"
-value = 74.769
-tol = 0.05
-tol_from = "spelled"
-spells = "74.8"
-states = "same"
-read_at_s = 2640.0
-note = """
-Fourth tooth — and worth noting that its SAG is 9 mV deeper than the first three, because
-the OCV table's node at 85 % charge has passed under the pulse by now. The rebound does not
-move: a linear time-invariant circuit answers the same pulse the same way wherever it sits
-on the curve, which is exactly why the sentence tells the reader to watch this and not the
-depth.
-"""
-
-[[claim]]
-step = "circuit-repeats-itself"
-literal = "It is 74.8 mV on the first pulse and 74.8 mV on all four after it, identical to four decimal places"
+literal = "It is 67.6 mV on the first pulse and 68.6 mV on the last"
 quantity = "pulse_rebound_mv:5"
-value = 74.770
+value = 68.610
 tol = 0.05
 tol_from = "spelled"
-spells = "74.8"
+spells = "68.6"
 states = "same"
 read_at_s = 3300.0
 note = """
-Fifth tooth, read at the step's own mark — the last instant the page reaches on its own.
+The fifth, read at the step's own mark. Measured across the five: 67.589, 68.472, 68.591,
+68.608, 68.610 mV — a geometric approach to a periodic steady state, the fade the sentence
+names, settled to 0.02 mV by the third tooth.
 """
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "and 99.5 % of it has arrived within the first 300 s"
+literal = "97.2 % of the first rebound has arrived within the first 300 s"
 quantity = "pulse_rebound_arrived:1"
-value = 0.995238
+value = 0.971964
 tol = 5e-4
 tol_from = "spelled"
-spells = "99.5"
+spells = "97.2"
 spells_pow10 = 2
 states = "same"
 read_at_s = 360.0
 note = """
-How much of the first rebound has happened 300 s into the 600 s rest: nearly all of it, so
-the second half of every rest is a flat line. Two RC time constants of 9 s and 72 s put
-five of the longer one inside 300 s, which is what makes the fraction this close to one.
-
-The literal used to stop before "within the first 300 s", because `300` is a duration since
-the current stopped where this claim is read at an absolute 360 s, and nothing converted
-between them. The ledger has no use for a fragment — it scans the whole sentence either
-way — so the frame now exists: a rest is a leg with an origin of its own, exactly as a
-continuation is, and `Accounted::ReadAt` reads a `pulse_rebound_arrived` claim's instant
-from the moment its tooth's current went off. 360 − 60 = 300, and the sentence is claimed
-whole.
+How much of the first rebound has happened 300 s into the 600 s rest. 99.5 % on the
+placeholder pairs (9 s and 72 s); the fitted slow pair is 330 s, so what is still to come is
+mostly its tail.
 """
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops (pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
+literal = "220.5 mV of sag, of which 147.6 mV returns the instant the current stops (pure resistance), 67.6 mV climbs back slowly (the RC pairs), and the last 5.4 mV never returns at all"
 quantity = "pulse_sag_mv:1"
-value = 212.815
+value = 220.513
 tol = 0.05
 tol_from = "spelled"
-spells = "212.8"
+spells = "220.5"
 states = "same"
 read_at_s = 60.0
-note = """
-The whole drop, from the open-circuit voltage the tooth starts at (4.096700 V, the probe's
-zero-length rest read at t = 0) to the bottom of the loaded leg (3.883885 V at 60 s).
-"""
+note = "The whole drop, from the tooth's opening open-circuit voltage to the bottom of its loaded leg."
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops (pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
+literal = "220.5 mV of sag, of which 147.6 mV returns the instant the current stops (pure resistance), 67.6 mV climbs back slowly (the RC pairs), and the last 5.4 mV never returns at all"
 quantity = "pulse_jump_mv:1"
-value = 132.776
+value = 147.551
 tol = 0.05
 tol_from = "spelled"
-spells = "132.8"
+spells = "147.6"
 states = "same"
 read_at_s = 60.0
 note = """
-`I·R0` and nothing else, which is what makes it instant. 5.153 A times this cell's series
-resistance at 88 % charge and 25 °C.
-
-This is the claim the zero-length read exists for. The nearest thing a stepped trajectory
-offers is v(60.5) − v(60) = 135.7 mV, which is the jump PLUS half a second of RC relaxation
-— and 135.7 is, by coincidence, the number step 13's sentence gives for a different
-quantity on a different model. Two ways to be wrong that print the same digits.
+`I·R0` and nothing else, read by the zero-length probe at the instant the current stops:
+5.153 A times the fitted series resistance at that instant's charge and 25 °C.
 """
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops (pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
+literal = "220.5 mV of sag, of which 147.6 mV returns the instant the current stops (pure resistance), 67.6 mV climbs back slowly (the RC pairs), and the last 5.4 mV never returns at all"
 quantity = "pulse_rebound_mv:1"
-value = 74.767
+value = 67.589
 tol = 0.05
 tol_from = "spelled"
-spells = "74.8"
+spells = "67.6"
 states = "same"
 read_at_s = 660.0
-note = """
-The same measurement as the first claim in this section, on a second sentence — the rebound
-is stated once as the thing to watch and again as one part of the tooth, and check 6 groups
-by `(step, literal)`, so each sentence has to account for its own numbers.
-
-This decomposition WAS two literals, split around `I·R0` because the `0` in it was a numeral
-no arm could tie to anything. The symbol is gone from the prose and the halves are one
-sentence again, which is what a claim on the whole of it looks like: four claims, four
-numbers, nothing between them unaccounted.
-"""
+note = "The same rebound as the first claim, on the sentence that breaks the tooth into parts."
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "212.8 mV of sag, of which 132.8 mV returns the instant the current stops (pure resistance), 74.8 mV climbs back slowly (the RC pairs), and the last 5.3 mV never returns at all"
+literal = "220.5 mV of sag, of which 147.6 mV returns the instant the current stops (pure resistance), 67.6 mV climbs back slowly (the RC pairs), and the last 5.4 mV never returns at all"
 quantity = "pulse_lost_mv:1"
-value = 5.272
+value = 5.373
 tol = 0.05
 tol_from = "spelled"
-spells = "5.3"
+spells = "5.4"
 states = "same"
 read_at_s = 660.0
 note = """
-The open-circuit voltage itself stepping down: 1.667 points of charge left the cell during
-the pulse and this is what that cost on the OCV curve. It is the only part of the tooth that
-is not a relaxation.
-
-MEASURED, not derived from the other three. 212.8 − 132.8 − 74.8 is 5.2, and the sentence
-says 5.3 — so this number came off the engine (5.272) rather than out of the sentence's own
-arithmetic, which is the right way round and is not true of its twin on step 13. See that
-claim's note.
+The open-circuit voltage stepping down, MEASURED rather than derived from the other three
+(220.5 − 147.6 − 67.6 is 5.3; the measurement is 5.373). On the fitted circuit it also holds
+the slow pair's sliver still standing at the end of the rest.
 """
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
+literal = "from 220.5 mV on the first tooth to 228.4 on the fifth"
 quantity = "pulse_sag_mv:1"
-value = 212.815
+value = 220.513
 tol = 0.05
 tol_from = "spelled"
-spells = "212.8"
+spells = "220.5"
 states = "same"
 read_at_s = 60.0
 note = """
-Tooth 1, and the shallowest of the first three. The same measurement as the decomposition
-above, on the sentence that compares the five: `sag` is the drop from the open-circuit
-voltage the tooth starts at to the bottom of its loaded leg, so a tooth sitting lower on the
-OCV curve than its predecessor sags further for the same current.
+The depth creeping, tooth 1. Measured across the five: 220.513, 221.360, 222.770, 226.399,
+228.420 mV. Until Phase 11 this sentence said the teeth sat at two levels with the `[ocv]`
+table's node at 85 % between them; the re-gridded table (1 mV) has no such step, and what is
+left is the fitted resistance and the curve's slope moving with the charge taken out.
 """
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
-quantity = "pulse_sag_mv:2"
-value = 212.64
-tol = 0.05
-tol_from = "spelled"
-spells = "212.6"
-states = "same"
-read_at_s = 720.0
-note = """
-Tooth 2. The first three fall by about 0.17 mV each, which is the OCV curve's own slope
-between nodes and is what the reader should NOT mistake for the step below.
-"""
-
-[[claim]]
-step = "circuit-repeats-itself"
-literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
-quantity = "pulse_sag_mv:3"
-value = 212.468
-tol = 0.05
-tol_from = "spelled"
-spells = "212.5"
-states = "same"
-read_at_s = 1380.0
-note = """
-Tooth 3, the last one above the node. It ends at soc 0.850002 — two millionths of a point
-clear of the `[ocv]` table's node at 0.85, which is why this tooth is still on the shallow
-level and the next one is not. Rounds up to 212.5 from 212.468.
-"""
-
-[[claim]]
-step = "circuit-repeats-itself"
-literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
-quantity = "pulse_sag_mv:4"
-value = 221.462
-tol = 0.05
-tol_from = "spelled"
-spells = "221.5"
-states = "same"
-read_at_s = 2040.0
-note = """
-Tooth 4, the first one BELOW the node, and the whole point of the sentence: 9 mV deeper than
-its predecessor for no change in the current, the model or the coefficients. The OCV table
-is steeper below 0.85 than above it, so the same 1.667 points of charge cost more volts.
-"""
-
-[[claim]]
-step = "circuit-repeats-itself"
-literal = "the teeth sit at two levels: 212.8, 212.6 and 212.5 mV for the first three, then 221.5 and 221.3 for the last two"
+literal = "from 220.5 mV on the first tooth to 228.4 on the fifth"
 quantity = "pulse_sag_mv:5"
-value = 221.291
+value = 228.420
 tol = 0.05
 tol_from = "spelled"
-spells = "221.3"
+spells = "228.4"
 states = "same"
 read_at_s = 2700.0
-note = """
-Tooth 5, on the deep level with tooth 4 and shallower than it by the same ordinary slope
-that separates teeth 1, 2 and 3 from each other.
-
-The five together are what replaced "teeth 4 and 5 are 9 mV deeper than teeth 1 to 3": that
-figure was 8.48, 8.74 or 8.99 mV depending on which pair of teeth you compared, and a
-tolerance spelled by `9` admits two of the three. See this section's header.
-"""
+note = "Tooth 5, read at the instant its current stops."
 
 [[claim]]
 step = "circuit-repeats-itself"
-literal = "Hold onto 74.8 mV"
-quantity = "pulse_rebound_mv:1"
-value = 74.767
+literal = "Hold onto 68.6 mV"
+quantity = "pulse_rebound_mv:5"
+value = 68.610
 tol = 0.05
 tol_from = "spelled"
-spells = "74.8"
+spells = "68.6"
 states = "same"
-read_at_s = 660.0
+read_at_s = 3300.0
 note = """
-The step's closing line, and the third sentence to state this one measurement -- it is
-said as the thing to watch, again as one part of the tooth, and here as the number the
-next two steps are about. A claim rather than nothing, because the ledger scans the whole
-of a ledgered step: an unclaimed sentence is not a smaller claim, it is a number tied to
-nothing at all.
+The settled rebound, the number the next two steps are about. Until Phase 11 this was the
+first tooth's, which equalled every other tooth's; on the fitted circuit the settled value is
+the one a reader can still see at the end of the run.
 """
 
 [[claim]]
@@ -7843,7 +7710,7 @@ gone", one unit over: 1 − 0.9171 = 0.0829, which the sentence rounds to 8 %.
 #     instant, and the `−0.45` / `−0.66 V` teeth below empty — `pulse_train_ecm`, a second
 #     scenario file. `pack_from` was that override and existed already; what was missing was
 #     a THIRD current box on `[[arm]]`, because the page hides the simple demand field on a
-#     pulse step. The two teeth are `−0.442` and `−0.657` now, at named instants.
+#     pulse step. The two teeth are `−0.568` and `−0.771` now (Phase 11's fitted circuit), at named instants.
 #   * `2.50 V` and `12.02 %` (it was `11.67 %` until `docs/plans/porous-reversal.md`) —
 #     step 15's numbers, quoted here. Both are rules: the cut-off
 #     off the chemistry, the charge left through `Tie::Quoted` at step 15's own claim.
@@ -8069,13 +7936,13 @@ longer than the thing they are asserting about.
 
 [[claim]]
 step = "three-times-the-current"
-literal = "\u2192 397.3 mV"
+literal = "\u2192 441.3 mV"
 quantity = "pulse_jump_mv:1"
 arm = "the circuit at 3 C"
-value = 397.296359
+value = 441.323609
 tol = 0.05
 tol_from = "spelled"
-spells = "397.3"
+spells = "441.3"
 states = "same"
 read_at_s = 60.0
 note = """
@@ -8091,13 +7958,13 @@ separately, by a vocabulary rule that quotes step 12's claim.
 
 [[claim]]
 step = "three-times-the-current"
-literal = "\u2192 224.3 mV"
+literal = "\u2192 202.8 mV"
 quantity = "pulse_rebound_mv:1"
 arm = "the circuit at 3 C"
-value = 224.300826
+value = 202.767304
 tol = 0.05
 tol_from = "spelled"
-spells = "224.3"
+spells = "202.8"
 states = "same"
 read_at_s = 660.0
 note = """
@@ -8134,17 +8001,17 @@ between them is now two pinned measurements rather than a figure worked out once
 
 [[claim]]
 step = "three-times-the-current"
-literal = "the circuit is still at **1.84 V**"
+literal = "the circuit is still at **1.73 V**"
 quantity = "v_at:11280"
 arm = "the circuit at 3 C"
-value = 1.843653
+value = 1.730091
 tol = 5e-3
 tol_from = "spelled"
-spells = "1.84"
+spells = "1.73"
 states = "same"
 read_at_s = 11280.0
 display = "terminal"
-shows = "1.844 V"
+shows = "1.730 V"
 note = """
 The other half of the sentence its single-particle sibling already carried. At the end of
 the tooth the particle clamped in, the particle is at 0.015 V and the circuit, which has
@@ -8174,17 +8041,17 @@ this pack's own trajectory, not the particle's.
 """
 [[claim]]
 step = "three-times-the-current"
-literal = "each one starts at **\u22120.442 V**"
+literal = "each one starts at **\u22120.568 V**"
 quantity = "v_at:12540.5"
 arm = "the circuit at 3 C"
-value = -0.442079
+value = -0.568192
 tol = 5e-4
 tol_from = "spelled"
-spells = "-0.442"
+spells = "-0.568"
 states = "same"
 read_at_s = 12540.5
 display = "terminal"
-shows = "-0.442 V"
+shows = "-0.568 V"
 quoted = true
 note = """
 THE FIRST FRAME OF THE FIRST WHOLE TOOTH BELOW EMPTY -- the current comes on at 12 540 s
@@ -8208,17 +8075,17 @@ sign in a WORD.
 
 [[claim]]
 step = "three-times-the-current"
-literal = "each one starts at **\u22120.442 V**"
+literal = "each one starts at **\u22120.568 V**"
 quantity = "v_at:13200.5"
 arm = "the circuit at 3 C"
-value = -0.442079
+value = -0.568192
 tol = 5e-4
 tol_from = "spelled"
-spells = "-0.442"
+spells = "-0.568"
 states = "same"
 read_at_s = 13200.5
 display = "terminal"
-shows = "-0.442 V"
+shows = "-0.568 V"
 quoted = true
 note = """
 "EVERY LATER TOOTH REPEATS THOSE TWO NUMBERS EXACTLY", half of it: the same reading one
@@ -8233,17 +8100,17 @@ asserted at two instants.
 
 [[claim]]
 step = "three-times-the-current"
-literal = "reaches **\u22120.657 V** by the end of its sixty seconds"
+literal = "reaches **\u22120.771 V** by the end of its sixty seconds"
 quantity = "v_at:12600"
 arm = "the circuit at 3 C"
-value = -0.657177
+value = -0.770743
 tol = 5e-4
 tol_from = "spelled"
-spells = "-0.657"
+spells = "-0.771"
 states = "same"
 read_at_s = 12600.0
 display = "terminal"
-shows = "-0.657 V"
+shows = "-0.771 V"
 quoted = true
 note = """
 The bottom of the same tooth, sixty seconds later. The 215 mV between this and the frame it
@@ -8256,17 +8123,17 @@ finer figure is what the `terminal` row actually prints, so it is what the sente
 
 [[claim]]
 step = "three-times-the-current"
-literal = "reaches **\u22120.657 V** by the end of its sixty seconds"
+literal = "reaches **\u22120.771 V** by the end of its sixty seconds"
 quantity = "v_at:13260"
 arm = "the circuit at 3 C"
-value = -0.657177
+value = -0.770743
 tol = 5e-4
 tol_from = "spelled"
-spells = "-0.657"
+spells = "-0.771"
 states = "same"
 read_at_s = 13260.0
 display = "terminal"
-shows = "-0.657 V"
+shows = "-0.771 V"
 quoted = true
 note = """
 The other half of "repeats those two numbers exactly", one period on. Bit for bit the same
@@ -8425,8 +8292,10 @@ phrase = "half-point"
 step = "belief-drifts"
 phrase = "ten minutes"
 
-# particle-remembers — 4: the pulse program's two legs, said in words, and a count of the pulses in the
-# run. The legs are a control each; the count is the run length over the period.
+# particle-remembers — 3: the pulse program's two legs, said in words. The legs are a control each.
+# It was 4 until Phase 11: the fourth was "five times", a count of the pulses in the run, in a
+# sentence the circuit's fit made false; the rewrite says the circuit's rebound "rose and
+# stopped" instead, and has no count to spell.
 [[english]]
 step = "particle-remembers"
 phrase = "ten minutes"
@@ -8438,10 +8307,6 @@ phrase = "Ten minutes"
 [[english]]
 step = "particle-remembers"
 phrase = "sixty seconds"
-
-[[english]]
-step = "particle-remembers"
-phrase = "five times"
 
 # three-times-the-current — 2: the pulse program again, and a cost ratio between two cell models that nothing in
 # this repo measures - "about ten times the circuit's arithmetic per step" is a
@@ -11359,10 +11224,11 @@ steps = [
   "lying-sensor",    # 7: the two scheduled faults, read straight off the file
   "protection-on",   # 8: the pack, the cell's rating, the demand — and the clamped
                      # current, which is the first ledgered numeral a CLAIM decides
-  "circuit-repeats-itself", # 21 (20 before the digits rule): the pulse program, the cell's own name, the step it was
-                     # introduced in, the charge it starts at, a node of the OCV table —
-                     # six of the twenty. The other fourteen are measurements, which
-                     # makes this the first ledgered step that is mostly claims
+  "circuit-repeats-itself", # 18 (21 before Phase 11's fit, 20 before the digits rule): the pulse program, the cell's
+                     # own name, the step it was introduced in, the charge it starts at,
+                     # the slow RC pair's time constant — six of the eighteen. The other
+                     # twelve are measurements, which makes this the first ledgered step
+                     # that is mostly claims
   "sixty-times-the-current", # 25 (23 before the digits rule): the demand box and the box it replaces, the rating, the
                      # topology, the slider, two clocks, two amp-hour figures and the
                      # difference between them, three ordinals — and four numbers on the
@@ -11373,11 +11239,11 @@ steps = [
                      # scanned. The last of them arrived with the WORD scan: the step's own
                      # span in hours, which had been "four and a quarter hours" and is a
                      # figure no arm can hold at a quarter of an hour
-  "particle-remembers", # 20 (19 before the digits rule): the charge it starts at, its shell count, two digit runs
-                     # inside the chemistry's own provenance string, its two RC time
-                     # constants — which that file states as a resistance and a
-                     # capacitance and never as a time — and three numbers the step NEXT
-                     # DOOR measured. Ten of the nineteen are claimed measurements, and
+  "particle-remembers", # 21 (20 before Phase 11's fit, 19 before the digits rule): the charge it starts at, its shell
+                     # count, two digit runs inside the chemistry's own provenance string,
+                     # its two RC time constants — which that file states as a resistance
+                     # and a capacitance and never as a time — and four numbers the step
+                     # NEXT DOOR measured. Ten of the nineteen are claimed measurements, and
                      # not one of the other nine is a measurement at all, which is why
                      # this step needed no new claim
   "the-electrolyte-starves", # 38: the densest step in the path by a wide margin. Fifteen
@@ -11751,7 +11617,7 @@ unledgered = [
 # before this list existed.
 #
 # THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the two batches after it were one
-# step and then two. The seven steps that read something carry thirty-one spelled quantities
+# step and then two. The seven steps that read something carry thirty spelled quantities
 # between them, and they are the first this vocabulary has ever accounted for:
 # until the third batch landed, every rule in the table read a token written in digits, so
 # the spelled branch of `ledger_numbers` was wired up path-wide and reading nothing. A green
@@ -11798,8 +11664,7 @@ spelled = [
                                  #     it stopped being ten seconds
   "looks-fine-from-outside",     # 2 - the continuation's clock in minutes, and the rate
                                  #     as a multiple of the hour rate rather than in C
-  "particle-remembers",          # 4 - the pulse program three times over, and how many
-                                 #     teeth the mark holds
+  "particle-remembers",          # 3 - the pulse program three times over
   "what-it-cost",                # 7 - the knee twice, the control arm's residue, the gap
                                  #     between two instants, the sampler's own period, how
                                  #     far empty would be from a full cell, and the slow

@@ -9,3 +9,8 @@
 # (Python 3.11 chosen for the widest PyBaMM wheel coverage; 3.12/3.13 also work.
 # The default CasADi solver ships in the wheel — no SUNDIALS/IDAKLU build needed.)
 pybamm==26.6.2.0
+# fit_ecm.py's least squares (Phase 11): pinned beside PyBaMM so a re-run prints the shipped
+# [r0]/[[rc]] block identically. These are the versions PyBaMM 26.6.2.0 resolved to when the
+# block was fitted.
+numpy==2.4.6
+scipy==1.17.1

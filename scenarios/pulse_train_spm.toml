@@ -19,10 +19,11 @@
 #
 # The [spm] half — every value a key of PyBaMM's Chen2020, a literal inside one of its
 # functions, or a stated product of two keys, regenerable by tools/reference/extract_spm.py.
-# Nothing in it is fitted. The sibling ECM run reads [r0] and [[rc]], which that file
-# labels as placeholders. **The two arms are therefore not equally trustworthy**, and
-# the comparison is written in ratios rather than millivolts for that reason: a ratio
-# survives a placeholder that a magnitude does not.
+# Nothing in it is fitted. The sibling ECM run reads [r0] and [[rc]], which Phase 11
+# fitted to the electrolyte (DFN) model rather than to this one. **The two arms are
+# therefore not describing the same model**, and the comparison is written in ratios
+# rather than millivolts for that reason: a ratio survives a difference of reference
+# that a magnitude does not.
 #
 # ## What the pulse train shows, measured at 1 C = 5.153 A, 25 degC
 #
@@ -37,13 +38,14 @@
 #     subtracted from the three ROUNDED parts instead of measured. The engine says 4.559.
 #     Corrected in both places by crates/sim-data/tests/path_claims.rs, which now pins it.)
 #     That last figure is NOT the clean open-circuit
-#     step its sibling file's 5.3 mV is: this rest is still climbing at 600 s, so it is
+#     step its sibling file's 5.4 mV mostly is: this rest is still climbing at 600 s, so it is
 #     charge that has left *and* gradient that has not finished flattening, mixed. Which
 #     is the whole point of the next line;
 #   * that slow rebound is 17.3 mV on the first pulse and **37.2 mV on the fifth**, and
 #     still growing. 600 s of rest does not undo 60 s of diffusion, so gradient carries
 #     over from one pulse to the next. The cell remembers the earlier pulses. The
-#     circuit's rebound is 74.8 mV on all five, identical to four decimals.
+#     circuit's rebound creeps from 67.6 to 68.6 mV and settles: a linear circuit's
+#     carry-over is a fixed fade, which identical pulses settle.
 #   * ask for 3 C and the two parts scale in **opposite directions**: the fast part
 #     saturates at x1.87 (Butler-Volmer's asinh), the slow part accelerates to x6.02
 #     (the OCP is a nonlinear function of surface stoichiometry). They sum to x2.48,
@@ -68,8 +70,8 @@
 #
 #   The CIRCUIT does something different and not worse: its open-circuit voltage falls
 #   through the [reversal] ramp its chemistry file declares and stops on the floor the
-#   same file declares, so its teeth settle at -0.442 V at the start of each loaded leg
-#   and -0.657 V at the end. This paragraph said "stops at 1.79 V" until 2026-08-25,
+#   same file declares, so its teeth settle at -0.568 V at the start of each loaded leg
+#   and -0.771 V at the end (-0.442 and -0.657 on the placeholder circuit before Phase 11). This paragraph said "stops at 1.79 V" until 2026-08-25,
 #   which was true before `[reversal]` existed (v13->14) and had not been re-measured
 #   since; the guided path's step 14 now pins all four of these figures.
 # * `shells = 20` is `spm::DEFAULT_SHELLS`, chosen in Phase 6 by the accuracy curve

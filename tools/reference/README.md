@@ -192,6 +192,29 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
      experiment-driven pulse scenario, a per-step output `period`) fixes it and
      changes the integration not at all.
 
+5. **`fit_ecm.py`** (Phase 11) — fits the LG M50's equivalent circuit, `[r0]` and
+   `[[rc]]`, to PyBaMM's DFN, in two stages:
+
+   ```bash
+   python tools/reference/fit_ecm.py --generate   # the DFN pulse trains -> ecm_hppc_*.csv
+   python tools/reference/fit_ecm.py --fit        # the fit, from the committed CSVs
+   ```
+
+   The reference is an HPPC-style train at 1C (25, −10 and +45 °C) and 3C (25 °C), solved
+   converged. Away from 25 °C it is Chen2020 with ORegan2022's solid-diffusion and
+   electrolyte temperature terms added — the cell the engine's three models describe, and
+   exactly Chen2020 at 25 °C. The circuit is simulated the engine's way (start-of-step
+   `R0`, the `[r0] rc_t_ref_k` rule per sample, exact RC update) against the reference's
+   **own** OCV, residuals weighted by time, so the `[ocv]` table's error stays out of the
+   resistances; it prints the TOML block and every residual. The fit reads only the
+   committed CSVs, so `--fit` reproduces the shipped block without re-running the DFN;
+   numpy and scipy are pinned for that reason. `crates/sim-data/tests/ecm_fit.rs` replays
+   the same CSVs through the engine.
+
+   The same phase gave `fit_ocv.py` an adaptive grid for this chemistry only
+   (`common.OCV_ADAPTIVE_TOL_V`, 1 mV): the hand-tuned grid below suits LFP's knees and
+   left 13.91 mV on the NMC curve. The LFP files keep their grid byte for byte.
+
 `common.py` holds the shared extraction/simulation helpers and the
 `batsim chemistry id → PyBaMM parameter set` map.
 

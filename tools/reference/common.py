@@ -133,6 +133,15 @@ DFN_CONVERGED = Reference(
 )
 
 
+# Chemistries whose `[ocv]` grid is refined adaptively to a stated tolerance [V] instead of
+# laid on the hand-tuned knee grid below. The knee grid was shaped for LFP's flat plateau and
+# sharp ends, and on the LG M50's sloped NMC curve it left 13.91 mV in the middle, where the
+# curve is steepest; Phase 11 slice A gave that file a circuit reference to be measured
+# against, which is the condition its own TODO named for re-gridding. Every other chemistry
+# stays on the knee grid byte for byte, because their committed goldens depend on it.
+OCV_ADAPTIVE_TOL_V = {"nmc_21700_lgm50": 1.0e-3}
+
+
 @dataclass
 class ChemFit:
     """OCV table + usable capacity extracted from a PyBaMM parameter set."""
@@ -183,6 +192,9 @@ def fit_chemistry(chem_id: str, n_dense: int = 2001) -> ChemFit:
     q_use = q_n * (xmax - xmin)  # == q_p*(ymax-ymin) by SOH construction
 
     ocv_of_z = _ocv_of_z(pv, xmin, xmax, ymin, ymax)
+
+    if chem_id in OCV_ADAPTIVE_TOL_V:
+        return _fit_adaptive(chem_id, param_set, pv, ocv_of_z, q_use, n_dense)
 
     # Table grid: much denser at the ends, where LFP is steep and convex, so the
     # piecewise-linear table tracks the continuous OCV to a few mV even through
@@ -390,3 +402,47 @@ def run_pulse_relax(
         3600.0 * fit.capacity_ah
     )
     return t, current, v, soc
+
+
+def _fit_adaptive(chem_id, param_set, pv, ocv_of_z, q_use, n_dense):
+    """`fit_chemistry` on a grid refined greedily to `OCV_ADAPTIVE_TOL_V[chem_id]`.
+
+    The rule is `extract_spm._ocp_table`'s: start from nine even points and repeatedly
+    split whichever interval carries the largest error against a dense reference, at the
+    worst point itself. Breakpoints are rounded to the 4 places the table prints, and the
+    error stated is the rounded table's, so the number in the file is the table's own.
+    """
+    tol = OCV_ADAPTIVE_TOL_V[chem_id]
+    z_dense = np.linspace(0.0, 1.0, n_dense)
+    ocv_dense = np.array([ocv_of_z(z) for z in z_dense])
+
+    def table(grid):
+        g = np.unique(np.round(np.asarray(grid), 4))
+        return g, np.round(np.array([ocv_of_z(z) for z in g]), 4)
+
+    def err(grid):
+        g, v = table(grid)
+        return np.abs(ocv_dense - np.interp(z_dense, g, v))
+
+    grid = list(np.linspace(0.0, 1.0, 9))
+    while True:
+        e = err(grid)
+        if float(np.max(e)) <= tol or len(grid) > 400:
+            break
+        worst = z_dense[int(np.argmax(e))]
+        idx = min(max(int(np.searchsorted(grid, worst)), 1), len(grid) - 1)
+        new = worst if grid[idx - 1] < worst < grid[idx] else 0.5 * (grid[idx - 1] + grid[idx])
+        if np.round(new, 4) in np.round(np.asarray(grid), 4):
+            break  # the 4-place grid cannot resolve this interval any further
+        grid.insert(idx, new)
+    soc, ocv = table(grid)
+    return ChemFit(
+        param_set=param_set,
+        pybamm_version=pybamm.__version__,
+        soc=soc,
+        ocv=ocv,
+        capacity_ah=float(q_use),
+        v_min=float(pv["Lower voltage cut-off [V]"]),
+        v_max=float(pv["Upper voltage cut-off [V]"]),
+        max_lin_err_v=float(np.max(err(grid))),
+    )

@@ -121,7 +121,7 @@
 //! header, which is where a number describing that list belongs.
 //!
 //! **What is still spelled in English is named phrase by phrase**, in `[[english]]` in
-//! `web/path-claims.toml` — 43 of them across eleven steps, matched both ways so
+//! `web/path-claims.toml` — 42 of them across eleven steps, matched both ways so
 //! that the list can only get shorter. They are the half that was tied to nothing: rewriting
 //! one into digits makes the ledger see it, and the ledger has no waiver, so each is a rule
 //! or a claim rather than an edit. Two shapes stay out of the ban and are declared rather
@@ -134,7 +134,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is forty steps and 889 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is forty steps and 887 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -3338,7 +3338,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 356 of 403 claims.
+    /// number's last printed place. The default shape: 350 of 397 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3349,12 +3349,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 40 of 403.
+    /// the number was always right and only the declaration was wrong. 40 of 397.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 403, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 397, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -3394,7 +3394,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 365 of 403, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 359 of 397, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -9714,9 +9714,15 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 2,
     },
     LedgerRule {
-        phrase: "table's node at {n} % charge",
-        ties: &[Tie::Member("ocv.soc.*")],
-        pow10: 2,
+        // The slow RC pair's time constant, which the chemistry states as a resistance and a
+        // capacitance and never as a time — the product, on `Tie::Product`'s terms. Phase 11
+        // fitted the pair; at 330 s it is over half the rest, which is why the teeth creep.
+        phrase: "whose time constant is {n} s",
+        ties: &[Tie::Product(&[
+            Tie::Chemistry("rc.1.r_ohms"),
+            Tie::Chemistry("rc.1.c_farad"),
+        ])],
+        pow10: 0,
     },
     // Step 13 — the same train on the single-particle model. Ten of its twenty numerals are
     // claimed measurements; not one of the other ten is a measurement at all. Two are the
@@ -9756,7 +9762,7 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         // field to point at: the chemistry's provenance is where those blocks are CALLED
         // placeholders, which is exactly what the sentence is telling the reader. `[[rc]]`
         // in the same string contains `[r` too, and the digit run after it is empty.
-        phrase: "file's `[r{n}]` and `[[rc]]` are labelled placeholders",
+        phrase: "file's `[r{n}]` and `[[rc]]` are fitted to the electrolyte model",
         ties: &[Tie::Name {
             field: "meta.provenance",
             prefix: "[r",
@@ -9776,32 +9782,34 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
-        // The same figure again, and the sentence is about the FIFTH this time — "was the
-        // same five times" — so the tie is to step 12's fifth rebound and not to its first.
-        // The two claims are 74.767 and 74.770, which is the sentence's own point.
-        phrase: "its {n} mV was the same five times",
-        ties: &[Tie::Quoted {
-            step: "circuit-repeats-itself",
-            arm: None,
-            quantity: "pulse_rebound_mv:5",
-            states: QuotedAs::Same,
-        }],
+        // The circuit's first and settled rebounds, both step 12's claims. Until Phase 11 the
+        // sentence said the circuit's rebound "was the same five times"; the fitted slow pair
+        // carries a little of each pulse into the next, so it creeps and settles instead —
+        // and the contrast with the particle's doubling is what is left of the argument.
+        phrase: "it rose from {n} mV to {n} mV and stopped there",
+        ties: &[
+            Tie::Quoted {
+                step: "circuit-repeats-itself",
+                arm: None,
+                quantity: "pulse_rebound_mv:1",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "circuit-repeats-itself",
+                arm: None,
+                quantity: "pulse_rebound_mv:5",
+                states: QuotedAs::Same,
+            },
+        ],
         pow10: 0,
     },
     LedgerRule {
-        // The circuit's tail, which step 12 prints from the other end: it claims 99.5 % has
-        // ARRIVED by the half-way point of the rest, and this sentence prints the 0.5 % that
-        // has not. Hence the complement.
-        //
-        // THE FRAME GAP IS STATED RATHER THAN HIDDEN: step 12's claim is on its FIRST rest
-        // and this sentence is about the fifth. They are the same number only because the
-        // circuit is linear and time-invariant — step 12's whole lesson, and separately
-        // claimed there as five rebounds identical to four decimal places. A re-fit that
-        // made the circuit's late rests differ from its early ones would leave this green.
-        // The alternative, a claim on step 12's fifth rest, has no admissible `tol_from`:
-        // `spelled` and `tighter` both need a spelled number and step 12 prints none for it,
-        // and `grid` is fenced to step-grid times.
-        phrase: "against the circuit's {n} %",
+        // The circuit's tail on its FIRST rest, which step 12 prints from the other end (97.2 %
+        // arrived by the half-way point); this sentence prints the 2.8 % that has not. Hence
+        // the complement. Until Phase 11 the sentence compared it against the particle's FIFTH
+        // rest and the rule's note admitted the frame gap, safe only while the circuit's teeth
+        // were identical; the fitted circuit's are not, so the sentence now says "first".
+        phrase: "against {n} % of the circuit's first",
         ties: &[Tie::Quoted {
             step: "circuit-repeats-itself",
             arm: None,
@@ -9844,32 +9852,6 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
             Tie::Setting(Control::PulseOff),
             Tie::Setting(Control::PulseOn),
         ],
-        pow10: 0,
-    },
-    LedgerRule {
-        // How many teeth the run holds — the mark over one tooth, and a tooth is the two
-        // legs together. Not a setting: no field of the lesson block says `5`, and the
-        // sentence's whole point is that the circuit gave the same answer on every one of
-        // them, so a rule that read the count off anything but the program would stop
-        // meaning that the day the mark moved.
-        //
-        // **A second reading of the same sentence exists and this rule does not distinguish
-        // it.** *"was the same five times"* counts rebounds OBSERVED, and the step next door
-        // files exactly five of them as `pulse_rebound_mv:1` through `:5`. The two readings
-        // agree at five only because this mark lands on a whole tooth: 3300 over 660. A
-        // train whose mark fell mid-tooth would leave this arm green and the sentence about
-        // something else, and the perturbation that moved `until_s` cannot tell them apart
-        // because both move together. The program is the reading taken here — it is what
-        // the reader can check on the page — and the alternative is written down rather
-        // than left to be rediscovered.
-        phrase: "was the same {n} because a linear system",
-        ties: &[Tie::Ratio(&[
-            Tie::Setting(Control::Until),
-            Tie::Sum(&[
-                Tie::Setting(Control::PulseOn),
-                Tie::Setting(Control::PulseOff),
-            ]),
-        ])],
         pow10: 0,
     },
     // Step 14 — three times the current, and the last of the three pulse steps. Nineteen of

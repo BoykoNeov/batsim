@@ -12,7 +12,7 @@
 # Nothing in it is fitted and nothing in it is a placeholder. The twin adds the [dfn]
 # electrolyte section, extracted the same way from the same source. So unlike the ECM
 # scenarios on this chemistry, **this pair's millivolts are comparable to each other** —
-# neither arm reads a placeholder, which is why the comparison can be stated in volts
+# neither arm reads a circuit, which is why the comparison can be stated in volts
 # rather than in the ratios `pulse_train_spm.toml` had to fall back on.
 #
 # ## The asymmetry, stated rather than avoided

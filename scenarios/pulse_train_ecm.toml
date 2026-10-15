@@ -15,38 +15,39 @@
 # current stops from the part that has to diffuse away, and those two parts are where
 # the two models disagree.
 #
-# Measured on this file at 1 C = 5.153 A, 25 degC, first pulse:
+# Measured on this file at 1 C = 5.153 A, 25 degC, first pulse, on the circuit Phase 11
+# fitted to the DFN (docs/plans/phase-11-fitting.md):
 #
-#   * the terminal drops 212.8 mV under load;
-#   * 132.8 mV of that comes back instantly when the current goes off — that is
-#     `I*R0`, and this file's [r0] is a labelled placeholder;
-#   * 74.8 mV climbs back over the following 600 s as the RC pairs discharge, and
-#     99.5 % of it has arrived within 300 s;
-#   * and the last 5.3 mV does not come back at all, because it is not polarisation:
-#     60 s at 1 C is 1.67 % of the cell, and that is the open-circuit voltage itself
-#     stepping down. The three add to the sag, and only the first two are the tooth.
+#   * the terminal drops 220.5 mV under load;
+#   * 147.6 mV of that comes back instantly when the current goes off — that is `I*R0`;
+#   * 67.6 mV climbs back over the following 600 s as the RC pairs discharge, and
+#     97.2 % of it has arrived within 300 s — the slow pair's time constant is 330 s;
+#   * and the last 5.4 mV does not come back at all: 60 s at 1 C is 1.67 % of the cell,
+#     the open-circuit voltage stepping down, plus the slow pair's sliver still standing.
 #
-# Measure the tooth's *depth* rather than its rebound and the [ocv] table intrudes: the
-# sag reads 212.8 / 212.6 / 212.5 / 221.5 / 221.3 mV across five pulses, and the 9 mV
-# step is the table's node at soc 0.85 passing under the pulse, not the circuit changing.
-# The rebound has no OCV term in it, which is why it is the number the lesson uses.
+# Measure the tooth's *depth* rather than its rebound and it creeps: 220.5 / 221.4 /
+# 222.8 / 226.4 / 228.4 mV across five pulses, as the fitted resistance and the OCV
+# slope move with the charge taken out. The rebound has no OCV term in it, which is why
+# it is the number the lesson uses.
 #
-# And then it does exactly the same thing again. The 74.8 mV rebound is identical to
-# four decimals on all five pulses of the guided path's run, because a linear
-# time-invariant circuit answers an identical pulse identically. Ask it for 3 C instead
-# and every part of the answer triples: 397.3 mV instantly, 224.3 mV slowly, x2.99 and
-# x3.00 against the 1 C run. That is not a property of these coefficients — it is what
-# "linear" means, and no choice of R0 and RC can escape it.
+# The rebound creeps too, and then stops: 67.6, 68.5, 68.6, 68.6, 68.6 mV. The slow pair
+# carries a sliver of each pulse into the next, and what a linear time-invariant circuit
+# carries over is a fixed fade, so identical pulses settle into identical teeth within
+# a few of them. (On the placeholder pairs, 9 s and 72 s, the teeth were identical to
+# four decimals from the first.) Ask it for 3 C instead and every part of the answer
+# triples: 441.3 mV instantly, 202.8 mV slowly, x2.99 and x3.00 against the 1 C run.
+# That is what "linear" means, and no choice of R0 and RC can escape it.
 #
 # See `pulse_train_spm.toml` for a model that answers x1.87 and x6.02 to the same
 # question, and docs/plans/spm-scenario.md for the whole table.
 #
-# ## What is a placeholder here
+# ## What is fitted here
 #
-# [r0] and [[rc]] both, as the chemistry file says of itself. So the *magnitudes* above
-# are order-of-magnitude only, and the guided path leads with ratios rather than
-# millivolts for exactly that reason. What no placeholder can move is that the ratios
-# are 3.00.
+# [r0] and [[rc]] both, to Chen2020's DFN at 1 C (tools/reference/fit_ecm.py; 4.85 mV RMS
+# at 25 degC, 18.8 mV when the same circuit is scored at 3 C — a linear circuit cannot hold
+# both rates). The magnitudes above are therefore the DFN's to a few millivolts, not the
+# single-particle model's, which is why the guided path still leads with ratios when it
+# compares the two. What no fit can move is that the circuit's ratios are 3.00.
 
 chemistry = "nmc_21700_lgm50"
 
@@ -55,8 +56,8 @@ name = "Pulse train, equivalent circuit"
 description = """
 A 1S1P LG M50 cell at 90 % SOC and 25 degC, isothermal, no BMS, no aging, no faults, \
 running the equivalent-circuit model. Drive it with the client's pulse mode (60 s on, \
-600 s off) and every tooth is the same tooth: the rebound after each pulse is 74.8 mV \
-at 1 C, five times running, and exactly three times that at 3 C. Compare with \
+600 s off) and the rebound after each pulse creeps from 67.6 mV to 68.6 mV at 1 C and \
+settles there, and is three times that at 3 C. Compare with \
 `pulse_train_spm.toml`, which is this file with one field added."""
 
 [pack]
