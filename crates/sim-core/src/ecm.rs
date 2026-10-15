@@ -419,67 +419,72 @@ impl CellModel {
         }
     }
 
-    /// Thickness \[m\] of this cell's SEI film, or `None` on a cell that grows none — every
-    /// model but an `Spm` whose pack selected [`crate::CalendarModel::Film`]. See
-    /// [`crate::SpmState::film_thickness_m`].
+    /// Thickness \[m\] of this cell's SEI film — on a `Dfn`, its mean across the negative
+    /// electrode's nodes — or `None` on a cell that grows none: every cell but an `Spm` or a
+    /// `Dfn` whose pack selected [`crate::CalendarModel::Film`]. See
+    /// [`crate::SpmState::film_thickness_m`] and [`crate::DfnState::film_thickness_m`].
     #[must_use]
     pub fn film_thickness_m(&self) -> Option<f64> {
         match self {
             CellModel::Spm(s) => s.film_thickness_m,
-            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::Dfn(_) => None,
-            CellModel::SpmEnsemble(_) => None,
+            CellModel::Dfn(s) => dfn::film_thickness_mean_m(s),
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::SpmEnsemble(_) => None,
         }
     }
 
-    /// Give this cell a fresh SEI film `l0_m` thick \[m\]. Returns whether the model can
-    /// carry one; only the `Spm` can, and [`crate::Pack::new`] refuses the film before it
-    /// would ask any other.
+    /// Give this cell a fresh SEI film `l0_m` thick \[m\] (on a `Dfn`, at every negative
+    /// node). Returns whether the model can carry one; only the `Spm` and the `Dfn` can, and
+    /// [`crate::Pack::new`] refuses the film before it would ask any other.
     pub(crate) fn start_film(&mut self, l0_m: f64) -> bool {
         match self {
             CellModel::Spm(s) => {
                 s.film_thickness_m = Some(l0_m);
                 true
             }
-            CellModel::Ecm1Rc(_)
-            | CellModel::Ecm2Rc(_)
-            | CellModel::Dfn(_)
-            | CellModel::SpmEnsemble(_) => false,
+            CellModel::Dfn(s) => {
+                dfn::start_film(s, l0_m);
+                true
+            }
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::SpmEnsemble(_) => false,
         }
     }
 
     /// Grow this cell's SEI film over one aging tick and take its lithium from the negative
-    /// electrode. Returns the lithium's charge-equivalent \[C\] and the graphite potential
-    /// \[V\] it left at; `(0, 0)` on a cell with no film. See [`crate::spm::grow_film`].
+    /// electrode. Returns the energy \[J\] that lithium carried, read against lithium metal
+    /// (see [`crate::FilmView::energy_last_step_j`]); `0.0` on a cell with no film. See
+    /// [`crate::spm::grow_film`] and [`crate::dfn::grow_film`].
     pub(crate) fn grow_film(
         &mut self,
         chem: &ChemistryParams,
         eff_r0_factor: f64,
         eff_capacity_ah: f64,
         dt_age: f64,
-    ) -> (f64, f64) {
+    ) -> f64 {
         match self {
-            CellModel::Spm(s) => Self::spm_params(chem).map_or((0.0, 0.0), |spm| {
-                spm::grow_film(s, spm, eff_r0_factor, eff_capacity_ah, dt_age)
+            CellModel::Spm(s) => Self::spm_params(chem).map_or(0.0, |spm| {
+                let (q, u_n) = spm::grow_film(s, spm, eff_r0_factor, eff_capacity_ah, dt_age);
+                q * u_n
             }),
-            CellModel::Ecm1Rc(_)
-            | CellModel::Ecm2Rc(_)
-            | CellModel::Dfn(_)
-            | CellModel::SpmEnsemble(_) => (0.0, 0.0),
+            CellModel::Dfn(s) => Self::dfn_params(chem).map_or(0.0, |(spm, d)| {
+                dfn::grow_film(s, spm, d, eff_r0_factor, eff_capacity_ah, dt_age)
+            }),
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::SpmEnsemble(_) => 0.0,
         }
     }
 
-    /// The resistance \[ohms\] this cell's SEI film has added in series by growing, or
-    /// `None` on a cell with no film. See [`crate::spm::film_resistance_ohm`].
+    /// The resistance \[ohms\] this cell's SEI film has added by growing, or `None` on a
+    /// cell with no film. See [`crate::spm::film_resistance_ohm`] and, for the `Dfn`'s
+    /// per-node films taken in parallel, [`crate::dfn::film_resistance_ohm`].
     #[must_use]
     pub(crate) fn film_resistance_ohm(&self, chem: &ChemistryParams) -> Option<f64> {
         match self {
             CellModel::Spm(s) => {
                 Self::spm_params(chem).and_then(|spm| spm::film_resistance_ohm(s, spm))
             }
-            CellModel::Ecm1Rc(_)
-            | CellModel::Ecm2Rc(_)
-            | CellModel::Dfn(_)
-            | CellModel::SpmEnsemble(_) => None,
+            CellModel::Dfn(s) => {
+                Self::spm_params(chem).and_then(|spm| dfn::film_resistance_ohm(s, spm))
+            }
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::SpmEnsemble(_) => None,
         }
     }
 
@@ -491,10 +496,10 @@ impl CellModel {
             CellModel::Spm(s) => {
                 Self::spm_params(chem).and_then(|spm| spm::film_lithium_mol(s, spm))
             }
-            CellModel::Ecm1Rc(_)
-            | CellModel::Ecm2Rc(_)
-            | CellModel::Dfn(_)
-            | CellModel::SpmEnsemble(_) => None,
+            CellModel::Dfn(s) => {
+                Self::spm_params(chem).and_then(|spm| dfn::film_lithium_mol(s, spm))
+            }
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::SpmEnsemble(_) => None,
         }
     }
 
@@ -507,10 +512,10 @@ impl CellModel {
             CellModel::Spm(s) => {
                 Self::spm_params(chem).and_then(|spm| spm::film_capacity_fraction(s, spm))
             }
-            CellModel::Ecm1Rc(_)
-            | CellModel::Ecm2Rc(_)
-            | CellModel::Dfn(_)
-            | CellModel::SpmEnsemble(_) => None,
+            CellModel::Dfn(s) => {
+                Self::spm_params(chem).and_then(|spm| dfn::film_capacity_fraction(s, spm))
+            }
+            CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::SpmEnsemble(_) => None,
         }
     }
 

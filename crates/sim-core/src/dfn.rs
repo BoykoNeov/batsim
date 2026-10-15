@@ -89,12 +89,14 @@
 use serde::{Deserialize, Serialize};
 
 use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
-use crate::chem::{DfnElectrode, DfnParams, ElectrodeParams, PowerTerm, ReversalParams, SpmParams};
+use crate::chem::{
+    DfnElectrode, DfnParams, ElectrodeParams, PowerTerm, ReversalParams, SeiParams, SpmParams,
+};
 use crate::flags::EventFlags;
 use crate::math;
 use crate::spm::{
-    c_surface, diffuse, geometric_capacity_ah, mean_concentration, ocp_lookup, ocp_slope,
-    window_fraction_neg, window_fraction_pos, Geometry, FARADAY_C_PER_MOL,
+    c_surface, diffuse, film_growth_m, geometric_capacity_ah, mean_concentration, ocp_lookup,
+    ocp_slope, window_fraction_neg, window_fraction_pos, Geometry, FARADAY_C_PER_MOL,
 };
 
 /// Smallest number of finite volumes a region may be discretised into.
@@ -362,6 +364,21 @@ pub struct DfnState {
     /// a charge repays it first. See `docs/plans/porous-reversal.md`.
     #[serde(default)]
     pub soc_deficit: f64,
+    /// Thickness \[m\] of the SEI film on each **negative**-electrode node's particle, in
+    /// [`Self::c_neg`]'s order, or `None` on a cell whose pack does not grow one
+    /// ([`crate::CalendarModel::Film`] is not selected).
+    ///
+    /// One per node because the reaction is not spread evenly through the electrode: under
+    /// load it crowds toward the separator, so the film grows unevenly, and a thicker film at
+    /// one node pushes the reaction to the others — its resistance sits inside that node's
+    /// Butler–Volmer row (see [`System::kinetics`]). At rest every node grows alike.
+    ///
+    /// **`None` is not a zero-thickness film**, as on [`crate::SpmState::film_thickness_m`]:
+    /// a fresh film is the chemistry's `[spm.sei].initial_thickness_m` at every node, and only
+    /// growth past it costs lithium and adds resistance. See [`grow_film`] and
+    /// `docs/plans/phase-10-sei.md` (slice D).
+    #[serde(default)]
+    pub film_thickness_m: Option<Vec<f64>>,
 }
 
 impl DfnState {
@@ -406,6 +423,7 @@ impl DfnState {
             i_last: 0.0,
             tangent: None,
             soc_deficit: 0.0,
+            film_thickness_m: None,
         }
     }
 }
@@ -561,6 +579,9 @@ struct Sides<'a> {
     area_m2: f64,
     /// Cell temperature \[K\].
     temp_k: f64,
+    /// The chemistry's SEI film constants, if it has any. Read only where the cell's own
+    /// [`DfnState::film_thickness_m`] is `Some` too (see [`Film::of`]).
+    sei: Option<&'a SeiParams>,
 }
 
 impl<'a> Sides<'a> {
@@ -605,6 +626,7 @@ impl<'a> Sides<'a> {
             r_contact: spm.contact_resistance_ohm * eff_r0_factor,
             area_m2: spm.electrode_area_m2,
             temp_k,
+            sei: spm.sei.as_ref(),
         }
     }
 
@@ -765,6 +787,43 @@ struct System<'a> {
     /// `2·R·T/F·(1 − t₊)·(1 + ∂ln f/∂ln c)`, the coefficient of the diffusional
     /// conductivity. Pulled out because it is the same at every node.
     kd_coef: f64,
+    /// The negative's SEI film, on a cell that grows one.
+    film: Option<Film<'a>>,
+}
+
+/// One cell's SEI film as a solve sees it: a resistance per unit interface at each negative
+/// node, in series with that node's reaction.
+#[derive(Clone, Copy)]
+struct Film<'a> {
+    /// Thickness per negative node \[m\] — [`DfnState::film_thickness_m`].
+    l_m: &'a [f64],
+    /// The fresh film's thickness \[m\]; only growth past it adds resistance.
+    l0_m: f64,
+    /// The film's resistivity \[Ω·m\].
+    rho_ohm_m: f64,
+}
+
+impl<'a> Film<'a> {
+    /// The film of the cell `s`, or `None` on a cell that grows none or a chemistry without
+    /// `[spm.sei]` (which [`crate::Pack::new`] refuses together).
+    fn of(s: &'a DfnState, sides: &Sides<'a>) -> Option<Film<'a>> {
+        let (l_m, sei) = (s.film_thickness_m.as_deref()?, sides.sei?);
+        Some(Film {
+            l_m,
+            l0_m: sei.initial_thickness_m,
+            rho_ohm_m: sei.resistivity_ohm_m,
+        })
+    }
+
+    /// Resistance \[Ω·m², per unit of particle interface\] the film's growth has put in front
+    /// of negative node `node`, `ρ·(L − L0)`: growth only, for the reason
+    /// [`crate::spm::film_resistance_ohm`] gives. `0.0` past the end of a corrupt state's
+    /// list, so a hand-edited snapshot cannot index off it.
+    fn r_area(&self, node: usize) -> f64 {
+        self.l_m
+            .get(node)
+            .map_or(0.0, |l| self.rho_ohm_m * (l - self.l0_m))
+    }
 }
 
 /// `2·R·T/F·(1 − t₊)·(1 + ∂ln f/∂ln c)`: the coefficient turning an ionic conductivity
@@ -874,12 +933,24 @@ impl<'a> System<'a> {
         let prod = cs * (c_max - cs);
         let i0 = side.m_ref * (t.ce * prod).sqrt();
         let eta = u[NVAR * i + PHIS] - u[NVAR * i + PHIE] - ocp_lookup(&side.p.ocp, cs / c_max);
+        // The SEI film's ohmic drop, `j·ρ·(L − L0)`, between the solid and the reaction — at a
+        // negative node of a cell that grows a film, and nowhere else. PyBaMM's DFN puts it
+        // here too. Branched rather than added as a zero, so a film-less cell's arithmetic is
+        // untouched.
+        let (eta, r_film) = match self.film.filter(|_| self.grid.region(i) == Region::Neg) {
+            Some(f) => {
+                let r = f.r_area(i);
+                (eta - j * r, r)
+            }
+            None => (eta, 0.0),
+        };
         let scale = side.p.charge_transfer_alpha * FARADAY_C_PER_MOL
             / (GAS_CONSTANT_J_PER_MOL_K * self.sides.temp_k);
         Kinetics {
             i0,
             arg: scale * eta,
             scale,
+            r_film,
             // A clamped surface no longer moves with `j`, so every derivative through it
             // is zero — the branch the analytic Jacobian takes and a central difference
             // straddles.
@@ -1091,7 +1162,9 @@ impl<'a> System<'a> {
             band.add(row_j, NVAR * i + PHIS, -2.0 * k.i0 * ch * k.scale);
             band.add(row_j, NVAR * i + PHIE, 2.0 * k.i0 * ch * k.scale);
             band.add(row_j, NVAR * i + CE, -2.0 * k.di0_dce * sh);
-            let deta_dj = -k.docp_dcs * k.dcs_dj;
+            // The film's drop `−j·r_film` is in `η` too; `r_film` is exactly `0.0` on a node
+            // with no film, so the subtraction leaves a film-less cell's entry as it was.
+            let deta_dj = -k.docp_dcs * k.dcs_dj - k.r_film;
             band.add(
                 row_j,
                 NVAR * i + JJ,
@@ -1109,6 +1182,9 @@ struct Kinetics {
     arg: f64,
     /// `α·F/(R·T)`.
     scale: f64,
+    /// The SEI film's resistance at this node \[Ω·m²\] — `−∂η/∂j` beyond the OCP's share —
+    /// and `0.0` wherever there is no film.
+    r_film: f64,
     /// `∂c_s/∂j`, exactly `0` past the surface clamp.
     dcs_dj: f64,
     /// `∂i₀/∂c_s`.
@@ -1442,6 +1518,7 @@ fn solve_from(
         dt,
         i_app,
         kd_coef: kd_coef(setup.dfn, sides.temp_k),
+        film: Film::of(s, sides),
     };
 
     // Start from the previous step's converged vector, but re-seed the concentration slots
@@ -1614,7 +1691,173 @@ pub(crate) fn soc(s: &DfnState, spm: &SpmParams) -> f64 {
 #[must_use]
 fn raw_soc(s: &DfnState, spm: &SpmParams) -> f64 {
     let e = &spm.negative;
-    window_fraction_neg(bulk_stoich(&s.c_neg, e.c_max_mol_per_m3), e)
+    cell_window_fraction_neg(s, spm, bulk_stoich(&s.c_neg, e.c_max_mol_per_m3))
+}
+
+/// The mean over the negative's nodes of the film's growth past its fresh thickness \[m\],
+/// `mean(L_i − L0)`, or `None` on a cell with no film.
+///
+/// A plain mean is the volume weighting for the reason [`bulk_stoich`]'s is: every node in
+/// the negative has the same width. The film's lithium count and [`soc`] both read the
+/// electrode through that one reduction, which is what keeps them on one scale.
+#[must_use]
+fn film_growth_mean_m(s: &DfnState, spm: &SpmParams) -> Option<f64> {
+    let (l, sei) = (s.film_thickness_m.as_deref()?, spm.sei.as_ref()?);
+    if l.is_empty() {
+        return Some(0.0);
+    }
+    let sum: f64 = l.iter().map(|x| x - sei.initial_thickness_m).sum();
+    Some(sum / l.len() as f64)
+}
+
+/// The film's mean thickness across the negative \[m\], or `None` on a cell with no film:
+/// what [`crate::FilmView::thickness_m`] reports for a `Dfn` cell.
+#[must_use]
+pub(crate) fn film_thickness_mean_m(s: &DfnState) -> Option<f64> {
+    let l = s.film_thickness_m.as_deref()?;
+    if l.is_empty() {
+        return Some(0.0);
+    }
+    Some(l.iter().sum::<f64>() / l.len() as f64)
+}
+
+/// How far the film has moved the negative's **full** down, as a stoichiometry — the
+/// `Spm`'s [`crate::spm::film_shift`] on the mean growth across the nodes, since each node's
+/// particles lose `3·Z·δL/(V̄·R_p)` in concentration and the electrode's stoichiometry is
+/// their mean. `None` on a cell with no film.
+#[must_use]
+fn film_shift(s: &DfnState, spm: &SpmParams) -> Option<f64> {
+    let dl = film_growth_mean_m(s, spm)?;
+    let (sei, e) = (spm.sei.as_ref()?, &spm.negative);
+    Some(
+        3.0 * sei.li_per_sei * dl
+            / (sei.partial_molar_volume_m3_per_mol * e.c_max_mol_per_m3 * e.particle_radius_m),
+    )
+}
+
+/// Where a negative stoichiometry sits on the usable window this cell has today; exactly
+/// [`window_fraction_neg`] on a cell with no film. The `Spm`'s twin, for the same reason.
+#[must_use]
+fn cell_window_fraction_neg(s: &DfnState, spm: &SpmParams, stoich: f64) -> f64 {
+    let e = &spm.negative;
+    match film_shift(s, spm) {
+        Some(dx) => (stoich - e.stoich_min) / (e.stoich_max - dx - e.stoich_min),
+        None => window_fraction_neg(stoich, e),
+    }
+}
+
+/// The share of the fresh cell's capacity this cell's electrodes still hold, `1 − δx/Δx`,
+/// or `None` on a cell with no film. See [`crate::spm::film_capacity_fraction`].
+#[must_use]
+pub(crate) fn film_capacity_fraction(s: &DfnState, spm: &SpmParams) -> Option<f64> {
+    let e = &spm.negative;
+    film_shift(s, spm).map(|dx| 1.0 - dx / (e.stoich_max - e.stoich_min))
+}
+
+/// The lithium \[mol\] the film has taken from the negative since the cell was built,
+/// `Z·mean(L_i − L0)·A_neg/V̄`, or `None` on a cell with no film.
+#[must_use]
+pub(crate) fn film_lithium_mol(s: &DfnState, spm: &SpmParams) -> Option<f64> {
+    let dl = film_growth_mean_m(s, spm)?;
+    let sei = spm.sei.as_ref()?;
+    let area = Geometry::of(spm, &spm.negative).area_m2;
+    Some(sei.li_per_sei * dl * area / sei.partial_molar_volume_m3_per_mol)
+}
+
+/// The resistance \[ohms\] the film's growth has added, as one number for the pack's
+/// resistance ratio and [`crate::FilmView::resistance_ohm`], or `None` on a cell with no
+/// film.
+///
+/// # The nodes' films in parallel, not in series
+/// Each node's film sits in front of that node's share of the interface,
+/// `A_neg/n` of it, as `ρ·(L_i − L0)` per unit area; the nodes carry the current side by
+/// side, so the electrode's film resistance is their parallel combination,
+/// `ρ·n / (A_neg·Σ 1/(L_i − L0))`. On an even film that is the `Spm`'s `ρ·(L − L0)/A_neg`
+/// exactly. A node that has not grown (`L_i = L0`) shorts the rest, so the answer is `0.0`
+/// there — which is a fresh cell's.
+///
+/// The film is **not** in series with the rest of the cell the way this number suggests:
+/// it sits inside each node's reaction, so the reaction moves away from a thicker node, and
+/// the pack's `mult·r/(r − r_film)` (see `Cell::soh_resistance_reported`) is exact only at
+/// an even film. Under the uneven film a current makes, it is that ratio's approximation.
+#[must_use]
+pub(crate) fn film_resistance_ohm(s: &DfnState, spm: &SpmParams) -> Option<f64> {
+    let (l, sei) = (s.film_thickness_m.as_deref()?, spm.sei.as_ref()?);
+    let area = Geometry::of(spm, &spm.negative).area_m2;
+    if l.is_empty() || l.iter().any(|x| *x <= sei.initial_thickness_m) {
+        return Some(0.0);
+    }
+    let conductance: f64 = l.iter().map(|x| 1.0 / (x - sei.initial_thickness_m)).sum();
+    Some(sei.resistivity_ohm_m * l.len() as f64 / (area * conductance))
+}
+
+/// Give this cell a fresh SEI film `l0_m` thick \[m\] at every negative node.
+pub(crate) fn start_film(s: &mut DfnState, l0_m: f64) {
+    s.film_thickness_m = Some(vec![l0_m; s.c_neg.len()]);
+}
+
+/// Grow the SEI film at every negative node over one aging tick of `dt_age` seconds and
+/// take the lithium each node's film consumes out of that node's particle. Returns the
+/// energy \[J\] that lithium carried, read against lithium metal (see
+/// [`crate::FilmView::energy_last_step_j`]); `0.0` on a cell with no film.
+///
+/// # Per node, at that node's own potential
+/// The law and its closed form are the `Spm`'s ([`crate::spm::grow_film`],
+/// [`film_growth_m`]). The potential is `Δφ_i = φ_s − φ_e` at node `i` in the stored field
+/// [`DfnState::u`] — the last solve's, at [`DfnState::i_last`], so it costs no solve. That
+/// is PyBaMM's DFN's surface potential difference, the film's own drop included. At rest it
+/// is the node's surface OCP, as on the `Spm`; under current the two models part, because
+/// the `Spm` reads `U_n + η_n` with its film lumped outside (recorded in the slice D note).
+///
+/// # Where the lithium comes from
+/// Node `i`'s film takes `Z·δL_i·A_neg/(n·V̄)` moles, from every shell of that node's
+/// particle alike — the `Spm`'s rule, node by node. Each node's lithium is booked at that
+/// node's bulk potential after the tick, in the engine's charge units (`δn·F/κ`).
+pub(crate) fn grow_film(
+    s: &mut DfnState,
+    spm: &SpmParams,
+    dfn: &DfnParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    dt_age: f64,
+) -> f64 {
+    let Some(sei) = spm.sei.as_ref() else {
+        return 0.0;
+    };
+    let temp_k = s.temp_k;
+    let domain = dt_age > 0.0 && temp_k > 0.0 && temp_k.is_finite();
+    let n_n = s.c_neg.len();
+    // A state whose film or unknowns do not span its negative is reachable only from a
+    // hand-edited snapshot; `step` may not panic, so it grows nothing rather than indexing
+    // off the end.
+    let spans =
+        s.film_thickness_m.as_ref().is_some_and(|l| l.len() == n_n) && s.u.len() >= NVAR * n_n;
+    if !domain || !spans || n_n == 0 {
+        return 0.0;
+    }
+    let sides = Sides::new(spm, dfn, temp_k, eff_r0_factor, eff_capacity_ah);
+    let e = &spm.negative;
+    let c_max = e.c_max_mol_per_m3;
+    let geo = Geometry::of(spm, e);
+    let (area, volume) = (geo.area_m2 / n_n as f64, geo.volume_m3 / n_n as f64);
+    let mut energy = 0.0;
+    for node in 0..n_n {
+        let dphi = s.u[NVAR * node + PHIS] - s.u[NVAR * node + PHIE];
+        let Some(l) = s.film_thickness_m.as_mut().and_then(|l| l.get_mut(node)) else {
+            continue;
+        };
+        let dl = film_growth_m(sei, spm.t_ref_k, temp_k, *l, dphi, dt_age);
+        *l += dl;
+        let moles = sei.li_per_sei * dl * area / sei.partial_molar_volume_m3_per_mol;
+        let dc = moles / volume;
+        let prof = &mut s.c_neg[node];
+        for c in prof.iter_mut() {
+            *c -= dc;
+        }
+        let x = mean_concentration(prof) / c_max;
+        energy += moles * FARADAY_C_PER_MOL / sides.kappa * ocp_lookup(&e.ocp, x);
+    }
+    energy
 }
 
 /// The cell's equilibrium voltage \[V\] at the chemistry's declared empty — where the
@@ -2112,10 +2355,11 @@ pub(crate) fn surface_gap(
     let n = &spm.negative;
     let p = &spm.positive;
     (
-        window_fraction_neg(bulk_stoich(&s.c_neg, n.c_max_mol_per_m3), n)
-            - window_fraction_neg(
+        cell_window_fraction_neg(s, spm, bulk_stoich(&s.c_neg, n.c_max_mol_per_m3))
+            - cell_window_fraction_neg(
+                s,
+                spm,
                 surface_stoich(&s.c_neg, n, sides.neg.d_s, &s.u, 0, sides.kappa),
-                n,
             ),
         window_fraction_pos(bulk_stoich(&s.c_pos, p.c_max_mol_per_m3), p)
             - window_fraction_pos(
@@ -2406,6 +2650,7 @@ pub mod probe {
             dt,
             i_app: i / sides.area_m2,
             kd_coef: super::kd_coef(dfn, sides.temp_k),
+            film: super::Film::of(s, &sides),
         };
         let m = NVAR * grid.n();
         let mut u = s.u.clone();

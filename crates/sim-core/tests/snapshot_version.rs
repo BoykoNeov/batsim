@@ -302,36 +302,35 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v25-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v26 restore.
+/// A v26-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v27 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in, for the eighth time running — the fixture
-/// has `aging: None` and `spm: None`.** v26's three new fields live in `AgingConfig`, in
-/// `SpmState` and in `[spm]`, so an equivalent-circuit pack that does not age, on a
-/// chemistry with no `[spm]` section, is byte-for-byte what a v25 build wrote. The
-/// `a_v25_shaped_*` siblings answer the cases whose bytes do change, and each answer depends
-/// on a value, which is why they exist.
+/// **At this bump the retag is not a stand-in, for the ninth time running — the fixture is
+/// an equivalent-circuit pack.** v27's one new field lives in `DfnState`, so a pack with no
+/// `Dfn` cell is byte-for-byte what a v26 build wrote. The `a_v26_shaped_*` sibling answers
+/// the case whose bytes do change, and its answer depends on a value. (v26's three, in
+/// `AgingConfig`, `SpmState` and `[spm]`, have their own `a_v25_shaped_*` siblings.)
 #[test]
-fn the_version_field_is_what_rejects_a_v25_snapshot() {
+fn the_version_field_is_what_rejects_a_v26_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 26,
-        "this test is written against the v25 -> v26 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v23 'for this fixture it parses fine and the version field is all there is',          v24 the same for this fixture and 'it depends on the next value' for a pack          with a BMS, v25 the same for this fixture and 'it fails, by a route the positive          particle's radius chooses' for a chemistry with an [spm] section, and v26 the same          for this fixture and 'by the next value' for each of its three fields. A          renumbered assertion cannot inherit any of them."
+        SNAPSHOT_VERSION, 27,
+        "this test is written against the v26 -> v27 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v23 'for this fixture it parses fine and the version field is all there is',          v24 the same for this fixture and 'it depends on the next value' for a pack          with a BMS, v25 the same for this fixture and 'it fails, by a route the positive          particle's radius chooses' for a chemistry with an [spm] section, and v26 the same          for this fixture and 'by the next value' for each of its three fields, and v27 the          same for this fixture and 'by the capacity factor's low byte' for a Dfn cell. A          renumbered assertion cannot inherit any of them."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 25);
+    let stale = retagged(&bytes, 26);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 25,
+            found: 26,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v25-tagged snapshot must be refused"
+        "a v26-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -861,6 +860,9 @@ fn a_v22_shaped_dfn_state_misparses_at_v23() {
         2.5_f64,
         tangent,
         1.0_f64, // capacity_factor
+        // Today's reader closes the state on v27's `film_thickness_m`, which postdates this
+        // test's question: a `None` tag, so what is read here is the v23 reader's answer.
+        0_u8,
     ))
     .expect("a v22-shaped state and the cell field after it serialize");
     let read: sim_core::DfnState = bincode::deserialize(&v22_then_cell).expect(
@@ -1038,6 +1040,57 @@ fn a_v25_shaped_spm_state_reads_its_capacity_factor_as_a_film_tag() {
         bincode::deserialize::<sim_core::SpmState>(&v25_then(scattered)).is_err(),
         "a scattered factor's low byte is not a tag, so the v26 note says this fails"
     );
+}
+
+/// A v26 `Dfn` cell state at v27 reads the next byte as its film's tag — and what that byte
+/// is decides whether it fails.
+///
+/// v27 closes `DfnState` on `film_thickness_m: Option<Vec<f64>>`. In a `Cell` the state is
+/// followed by `capacity_factor`, so a v27 reader takes that factor's **low byte** as the
+/// tag, exactly as v26 did to an `Spm` cell: a scatter-free cell's `1.0` reads `None` and
+/// parses quietly, one byte out of step; a scattered factor's low byte is almost never 0 or
+/// 1, and bincode refuses any other tag. The field, not a snapshot, on its siblings' terms.
+#[test]
+fn a_v26_shaped_dfn_state_reads_its_capacity_factor_as_a_film_tag() {
+    let state = sim_core::DfnState {
+        c_e: vec![1000.0; 3],
+        c_neg: vec![vec![10_000.0; 2]; 2],
+        c_pos: vec![vec![30_000.0; 2]; 2],
+        u: vec![0.5; 4],
+        temp_k: 298.15,
+        i_last: 2.5,
+        tangent: Some((3.7, 0.02)),
+        soc_deficit: 0.0,
+        film_thickness_m: None,
+    };
+    let v26_then = |factor: f64| {
+        let mut b = bincode::serialize(&state).expect("a state serializes");
+        assert_eq!(b.pop(), Some(0), "a `None` tag closes the v27 state");
+        b.extend(bincode::serialize(&(factor, 1.0_f64)).expect("the cell's factors"));
+        b
+    };
+    let quiet: sim_core::DfnState = bincode::deserialize(&v26_then(1.0))
+        .expect("a scatter-free cell's factor has a zero low byte, so the v27 note says it parses");
+    assert_eq!(quiet.film_thickness_m, None);
+    assert_eq!(quiet.c_neg, state.c_neg);
+    let scattered = 0.97_f64;
+    assert!(
+        !matches!(scattered.to_bits() & 0xff, 0 | 1),
+        "the fixture needs a factor whose low byte is not a valid tag"
+    );
+    assert!(
+        bincode::deserialize::<sim_core::DfnState>(&v26_then(scattered)).is_err(),
+        "a scattered factor's low byte is not a tag, so the v27 note says this fails"
+    );
+
+    // The positive control: a filmed v27 state round-trips to itself.
+    let filmed = sim_core::DfnState {
+        film_thickness_m: Some(vec![5.0e-9, 6.0e-9]),
+        ..state.clone()
+    };
+    let bytes = bincode::serialize(&filmed).expect("a v27 state serializes");
+    let back: sim_core::DfnState = bincode::deserialize(&bytes).expect("that is a v27 state");
+    assert_eq!(back, filmed);
 }
 
 /// A v25 aging config at v26 reads the sub-clock's accumulator as its calendar selector.

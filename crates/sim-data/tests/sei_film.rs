@@ -324,28 +324,35 @@ fn a_filmed_pack_survives_a_snapshot() {
     );
 }
 
-/// `Pack::new` refuses the film where it cannot grow: every model but the `Spm`, and a
-/// chemistry with no `[spm.sei]`. Each refusal is its own error, so a client learns which.
+/// `Pack::new` refuses the film where it cannot grow: every model but the `Spm` and the
+/// `Dfn` (since Phase 10 slice D), and a chemistry with no `[spm.sei]`. Each refusal is its
+/// own error, so a client learns which.
 #[test]
 fn the_film_is_refused_where_it_cannot_grow() {
     let film = |model| config(0.5, 298.15, CalendarModel::Film, model);
-    for (model, name) in [
-        (CellModelConfig::Ecm, "Ecm"),
-        (
-            CellModelConfig::Dfn {
-                shells: 6,
-                nodes_negative: 5,
-                nodes_separator: 3,
-                nodes_positive: 5,
-            },
-            "Dfn",
-        ),
-    ] {
-        assert_eq!(
-            Pack::new(&film(model), lgm50()).err(),
-            Some(BuildError::FilmNeedsSpm { model: name })
-        );
-    }
+    assert_eq!(
+        Pack::new(&film(CellModelConfig::Ecm), lgm50()).err(),
+        Some(BuildError::FilmUnsupportedModel { model: "Ecm" })
+    );
+    let dfn = CellModelConfig::Dfn {
+        shells: 6,
+        nodes_negative: 5,
+        nodes_separator: 3,
+        nodes_positive: 5,
+    };
+    assert!(
+        Pack::new(&film(dfn), lgm50()).is_ok(),
+        "the Dfn grows the film since slice D"
+    );
+    let mut bare = lgm50();
+    bare.spm.as_mut().expect("[spm]").sei = None;
+    assert_eq!(
+        Pack::new(&film(dfn), bare).err(),
+        Some(BuildError::MissingSeiParams {
+            chem_id: "nmc_21700_lgm50".into()
+        }),
+        "a Dfn on a chemistry with no [spm.sei] is refused as the Spm is"
+    );
     let prada = parse_chemistry(PRADA).expect("parses");
     assert_eq!(
         Pack::new(
@@ -357,7 +364,7 @@ fn the_film_is_refused_where_it_cannot_grow() {
             prada.clone()
         )
         .err(),
-        Some(BuildError::FilmNeedsSpm {
+        Some(BuildError::FilmUnsupportedModel {
             model: "SpmEnsemble"
         })
     );

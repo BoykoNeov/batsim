@@ -581,7 +581,14 @@ use crate::{Demand, Env, Telemetry};
 /// field of a config the wire already carries, `serde(default)` so an older client's setup
 /// still parses and still means the drawn curve, and no telemetry field moves — the film
 /// is read through [`Pack::cell_film`], not through [`CellView`].
-pub const SNAPSHOT_VERSION: u32 = 26;
+///
+/// v27 (the SEI film on the `Dfn`, Phase 10 slice D): [`crate::DfnState`] gains
+/// `film_thickness_m`, an `Option<Vec<f64>>` appended after `soc_deficit`, one thickness per
+/// negative node. See `docs/plans/phase-10-sei.md` (slice D addendum) and, for what a v26
+/// blob does at v27, `snapshot_version.rs`. Neither API version moves: the film is still
+/// read through [`Pack::cell_film`], and a `Dfn` selecting it is one more value of fields
+/// the wire already carries.
+pub const SNAPSHOT_VERSION: u32 = 27;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -1033,11 +1040,12 @@ pub enum BuildError {
         model: &'static str,
     },
     /// [`crate::CalendarModel::Film`] was selected on a cell model that cannot grow the
-    /// film. Only the `Spm` can: the film takes lithium out of a negative particle, which the
-    /// equivalent circuit does not have, and the `Dfn` and the many-particle cell do not carry
-    /// it yet (`docs/plans/phase-10-sei.md`, slice D).
-    #[error("aging.calendar = Film needs cell_model Spm; {model} cannot grow the SEI film")]
-    FilmNeedsSpm {
+    /// film. Only the `Spm` and the `Dfn` can: the film takes lithium out of a negative
+    /// particle, which the equivalent circuit does not have, and the many-particle cell does
+    /// not carry it. Named `FilmNeedsSpm` until the `Dfn` grew one
+    /// (`docs/plans/phase-10-sei.md`, slice D).
+    #[error("aging.calendar = Film needs cell_model Spm or Dfn; {model} cannot grow the SEI film")]
+    FilmUnsupportedModel {
         /// The model that was selected.
         model: &'static str,
     },
@@ -1199,11 +1207,14 @@ impl Cell {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FilmView {
     /// Film thickness \[m\], the chemistry's `[spm.sei].initial_thickness_m` on a fresh cell.
+    /// On a `Dfn` cell, whose film grows node by node, the mean across the negative electrode.
     pub thickness_m: f64,
     /// Lithium \[mol\] the film has taken from the negative electrode since the cell was
     /// built — the initial film's own lithium not counted.
     pub lithium_lost_mol: f64,
-    /// Resistance \[ohms\] the film's growth has added in series; `0.0` on a fresh cell.
+    /// Resistance \[ohms\] the film's growth has added; `0.0` on a fresh cell. On a `Dfn`
+    /// cell the nodes' films taken in parallel, which is the `Spm`'s series value when the
+    /// film is even (see `dfn::film_resistance_ohm`).
     pub resistance_ohm: f64,
     /// Energy \[J\] the lithium the film took on the last time-advancing step carried, at the
     /// graphite's potential against lithium metal; `None` until a step has advanced time
@@ -1779,13 +1790,12 @@ impl Pack {
             }
             if aging.calendar == CalendarModel::Film {
                 let model = match config.cell_model {
-                    CellModelConfig::Spm { .. } => None,
+                    CellModelConfig::Spm { .. } | CellModelConfig::Dfn { .. } => None,
                     CellModelConfig::Ecm => Some("Ecm"),
-                    CellModelConfig::Dfn { .. } => Some("Dfn"),
                     CellModelConfig::SpmEnsemble { .. } => Some("SpmEnsemble"),
                 };
                 if let Some(model) = model {
-                    return Err(BuildError::FilmNeedsSpm { model });
+                    return Err(BuildError::FilmUnsupportedModel { model });
                 }
                 // A missing `[spm]` is refused below, by the model's own check.
                 if chem.spm.as_ref().is_some_and(|spm| spm.sei.is_none()) {
@@ -1970,7 +1980,8 @@ impl Pack {
         }
 
         // Every cell starts with the chemistry's own film when the pack grows one. Validated
-        // above: the model is an `Spm` and the chemistry has `[spm.sei]`. Draws nothing.
+        // above: the model is an `Spm` or a `Dfn` and the chemistry has `[spm.sei]`. Draws
+        // nothing.
         let film_l0 = config
             .aging
             .filter(|a| a.calendar == CalendarModel::Film)
@@ -3911,13 +3922,12 @@ impl Pack {
                         // stressed at. Its lithium leaves the particle here; the reporting
                         // pass below recomputes every source from the state it leaves.
                         if film {
-                            let (q, u_n) = cell.model.grow_film(
+                            film_energy[cell_idx] = cell.model.grow_film(
                                 &self.chem,
                                 cell.eff_r0_factor(),
                                 cell.eff_capacity_ah(cap_ah),
                                 dt_age,
                             );
-                            film_energy[cell_idx] = q * u_n;
                         }
                         cell_idx += 1;
                         if shorted {
@@ -4724,7 +4734,10 @@ mod cell_footprint {
         // Paid by every `Spm` cell, filmed or not, on the heap block alone.
         assert_eq!(size_of::<SpmState>(), 96, "SpmState");
         // `DfnState` is 144 since SNAPSHOT_VERSION 23: `soc_deficit`, the `Dfn`'s half of
-        // `docs/plans/porous-reversal.md`. Boxed, like `SpmState`.
-        assert_eq!(size_of::<DfnState>(), 144, "DfnState");
+        // `docs/plans/porous-reversal.md`. Boxed, like `SpmState`. 168 since
+        // SNAPSHOT_VERSION 27: `film_thickness_m`, an `Option<Vec<f64>>` (24 B, the `Vec`'s
+        // own pointer is the `None`), one film per negative node (`docs/plans/phase-10-sei.md`,
+        // slice D). Paid by every `Dfn` cell, on the heap block alone.
+        assert_eq!(size_of::<DfnState>(), 168, "DfnState");
     }
 }

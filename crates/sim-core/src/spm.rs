@@ -42,7 +42,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
-use crate::chem::{ElectrodeParams, OcpTable, ReversalParams, SpmParams};
+use crate::chem::{ElectrodeParams, OcpTable, ReversalParams, SeiParams, SpmParams};
 use crate::ecm::interp1;
 use crate::flags::EventFlags;
 use crate::math;
@@ -509,12 +509,7 @@ pub(crate) fn grow_film(
     );
     let dphi = ocp_lookup(&neg.p.ocp, c_s / c_max)
         + overpotential(neg, temp_k, spm.c_e_mol_per_m3, c_s, i / neg.g.area_m2);
-    let k = sei.partial_molar_volume_m3_per_mol * sei.d_li_m2_per_s * sei.c_li0_mol_per_m3
-        / sei.li_per_sei
-        * arrhenius(sei.growth_ea_j_per_mol, spm.t_ref_k, temp_k);
-    let e = math::exp(-FARADAY_C_PER_MOL * dphi / (GAS_CONSTANT_J_PER_MOL_K * temp_k));
-    let two_ke_dt = 2.0 * k * e * dt_age;
-    let dl = two_ke_dt / ((l * l + two_ke_dt).sqrt() + l);
+    let dl = film_growth_m(sei, spm.t_ref_k, temp_k, l, dphi, dt_age);
     s.film_thickness_m = Some(l + dl);
     let moles = sei.li_per_sei * dl * neg.g.area_m2 / sei.partial_molar_volume_m3_per_mol;
     let dc = moles / neg.g.volume_m3;
@@ -528,6 +523,27 @@ pub(crate) fn grow_film(
         moles * FARADAY_C_PER_MOL / w.kappa,
         ocp_lookup(&neg.p.ocp, x),
     )
+}
+
+/// How much a film `l` thick \[m\] grows \[m\] over `dt_age` seconds at the potential `dphi`
+/// \[V, against lithium\] and temperature `temp_k`, in [`grow_film`]'s rationalised closed
+/// form. Shared with [`crate::dfn`]'s film, which calls it once per negative node, so the
+/// two models grow the same law with the same arithmetic.
+#[must_use]
+pub(crate) fn film_growth_m(
+    sei: &SeiParams,
+    t_ref_k: f64,
+    temp_k: f64,
+    l: f64,
+    dphi: f64,
+    dt_age: f64,
+) -> f64 {
+    let k = sei.partial_molar_volume_m3_per_mol * sei.d_li_m2_per_s * sei.c_li0_mol_per_m3
+        / sei.li_per_sei
+        * arrhenius(sei.growth_ea_j_per_mol, t_ref_k, temp_k);
+    let e = math::exp(-FARADAY_C_PER_MOL * dphi / (GAS_CONSTANT_J_PER_MOL_K * temp_k));
+    let two_ke_dt = 2.0 * k * e * dt_age;
+    two_ke_dt / ((l * l + two_ke_dt).sqrt() + l)
 }
 
 /// Open-circuit potential \[V\] of one electrode against lithium metal, by clamped
