@@ -3,10 +3,12 @@
 **Status: RUN 2026-10-15. No Rust.** PyBaMM 26.6.2.0, DFN, isothermal, `Chen2020` and
 `ORegan2022` (both the LG M50 cell). **Scouting precision**: 50 radial points and `rtol = atol
 = 1e-8`, not the converged 200 / 1e-10 the committed goldens use (`common.Reference`), so every
-millivolt below is good to about a millivolt and no more. Harness and raw output:
-`W:/temp/claude/phase11-spike/` (`hppc_gen2.py`, `fit_spike.py`, `rdc.py`, `imax10.py`, `entropic.py`, `apply_fit.py`, the
-`*.npz` runs, `fit*.txt`); kept until slice A rebuilds it as `tools/reference/fit_ecm.py`. The
-plan this feeds is not written yet: it waits on the owner's decisions at the foot.
+millivolt below is good to about a millivolt and no more. The harness and its raw output
+(`hppc_gen2.py`, `fit_spike.py`, `rdc.py`, `imax10.py`, `entropic.py`, `apply_fit.py`, the `*.npz`
+runs) lived outside the tree and were **deleted on 2026-10-15** once the phase rebuilt them at the
+converged precision: `tools/reference/fit_ecm.py` (slice A), `extract_oregan.py` and
+`dfn_cold_golden.py` (slice C). The scouting figures below are therefore not reproducible from the
+tree; the committed tools' are. The plan this fed is `phase-11-fitting.md`.
 
 ## The question
 

@@ -1,7 +1,9 @@
 # Phase 11 — the LG M50 file, fitted where anything can fit it
 
-**Status: COMPLETE 2026-10-15** (all six exit criteria; exit 5 against a bar set after
-measurement, which its addendum says). Written after the spike (`phase-11-spike.md`), which found the
+**Status: BUILT 2026-10-15; exit 5 awaits the owner.** Five of the six exit criteria are met as
+written. Exit 5 (the cold `Dfn`) failed the bar set before its run and passes only a bar set
+after measurement (slice C addendum); whether that closes it is the owner's call, with the
+placeholder list's nineteenth entry (slice D addendum). Written after the spike (`phase-11-spike.md`), which found the
 roadmap's exit unreachable and the fit's lesson cost larger in kind than a re-measure. The
 owner's decisions below supersede `docs/ROADMAP.md` §Phase 11's slices and exit.
 
@@ -367,7 +369,7 @@ extended); `load.rs`'s pre-v18 rule (LG M50 exempted by name); slice E's own fix
   set before it ran on 20/10/20, failed on its first step (16.3 mV — the radial first-step
   error, larger cold). **The final bar was set after measurement and says so**: on 20/10/20,
   12 mV from the second step while the reference reads ≥ 2.75 V (9.15 mV measured, then 1–4),
-  the first step under 20 mV (16.3), the cut-off within 1 % (2784 s against 2785). The
+  the first step under 20 mV (16.3), the cut-off within 1 % (2784 s against the reference's 2787.3, −0.12 %). The
   recommended grid's cold cut-off, 4.4 % early, is pinned as a recorded limit.
 
 Two more, found by the slice's full suite after the reversible-mean change:
@@ -384,7 +386,7 @@ Two more, found by the slice's full suite after the reversible-mean change:
   deficit. Within eight ulps of the edge, from no deficit, the current is now the edge — the
   same "rounding hair either side" convention `pack_current_window` already applies at zero.
 
-## Addendum 2026-10-15 — slice D: the list, the documents; PHASE 11 COMPLETE
+## Addendum 2026-10-15 — slice D: the list, the documents; exit 5 put to the owner
 
 **`crates/sim-data/tests/lgm50_provenance.rs`.** A key's *label* is its inline comment and the
 comment block directly above it, so section prose ("All placeholders, scaled from …") labels
@@ -426,8 +428,10 @@ pre-set bar named, two closed rows, `SNAPSHOT_VERSION` 28, the note count).
 
 **Exit, criterion by criterion.**
 
-1. `fit_ecm.py` reprints the shipped block identically; the provenance carries the residuals —
-   slice A, and pinned by `lgm50_provenance.rs`.
+1. `fit_ecm.py` reprints the shipped block identically — **checked by hand** after slice C's
+   change to it: two `--fit` runs byte-identical, and every TOML line they print found verbatim
+   in the shipped file (its report lines aside, whose residuals match the provenance). No test
+   reruns Python; `lgm50_provenance.rs` pins only that the residuals are stated.
 2. The circuit replays the DFN within the bar recorded before the run (`ecm_fit.rs`).
 3. The placeholders are exactly the fixed list (`lgm50_provenance.rs`; nineteen, above).
 4. Entropic heat and the potential's shift in all three models, every energy ledger closing with

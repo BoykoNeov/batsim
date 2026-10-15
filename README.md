@@ -29,7 +29,8 @@ Key invariants:
 
 ## Status
 
-Phases 0–11 are complete. Each phase's exit criterion is a committed test rather than a
+Phases 0–10 are complete, and Phase 11 is built with one exit criterion awaiting the owner's
+acceptance (its cold bar was set after measurement; see the plan). Each phase's exit criterion is a committed test rather than a
 judgement call, so the right-hand column is the thing to run if you doubt a row.
 
 | phase | what landed | exit criterion pinned by |

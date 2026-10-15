@@ -21,7 +21,7 @@
 //! 5 s. That is the first-step radial error the 25 °C test documents (5.83 mV there, 23.4 mV
 //! with fewer shells), larger cold because the solid diffuses slower. From the second step it
 //! is 9.15 mV (at 10 s, the same opening transient) and then 1–4 mV to the knee; the cut-off
-//! comes at 2784 s against 2785. **The bar as it stands was therefore set after measurement**,
+//! comes at 2784 s against 2787.3. **The bar as it stands was therefore set after measurement**,
 //! and says so: 12 mV from the second step while the reference reads at least 2.75 V, the
 //! first step recorded at its measured 16.3 mV (held under 20), and the cut-off within 1 %.
 //! The recommended grid's figure stays visible in
@@ -33,6 +33,9 @@ const LGM50: &str = include_str!("../../../chemistries/nmc_21700_lgm50.toml");
 const CC_1C_COLD: &str = include_str!("../../../tests/golden/nmc_21700_lgm50/dfn_cc_1c_m10c.csv");
 const TEMP_K: f64 = 263.15;
 const V_CUT: f64 = 2.5;
+/// The reference's cut-off \[s\]: the event time `dfn_cold_golden.py` reported. The CSV is
+/// sampled every 5 s, and its last row (2785 s) still reads 2.537 V.
+const REF_CUTOFF_S: f64 = 2787.3;
 
 struct Row {
     t: f64,
@@ -121,10 +124,10 @@ fn a_cold_dfn_tracks_the_cold_reference() {
             at = w[1].t;
         }
     }
-    let t_ref = rows.last().expect("rows").t;
+    let t_ref = REF_CUTOFF_S;
     let t_eng = cutoff_s((20, 10, 20));
     eprintln!(
-        "cold 1C on 20/10/20: first step {:.2} mV; then worst {:.2} mV (at {at} s) above 2.75 V;          cut-off {t_eng} s against {t_ref} s",
+        "cold 1C on 20/10/20: first step {:.2} mV; then worst {:.2} mV (at {at} s) above 2.75 V; cut-off {t_eng} s against {t_ref} s",
         first * 1e3,
         worst * 1e3
     );
@@ -155,7 +158,7 @@ fn the_recommended_grid_is_the_recorded_cold_limit() {
             sim_core::dfn::DEFAULT_NODES_NEGATIVE,
             sim_core::dfn::DEFAULT_NODES_SEPARATOR,
             sim_core::dfn::DEFAULT_NODES_POSITIVE,
-        )) / 2787.3;
+        )) / REF_CUTOFF_S;
     assert!(
         (0.03..0.06).contains(&early),
         "the recommended grid's cold cut-off is {:.2} % early: the recorded limit moved",

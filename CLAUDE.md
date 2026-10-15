@@ -572,12 +572,13 @@ the previous one's tests pass.
   the `Dfn` node by node (D, v27, `sei_dfn.rs`), and the lesson (E, guided-path steps 38–40,
   `docs/plans/phase-10-slice-e-lesson.md`). Plan and the other slice notes in
   `docs/plans/phase-10-sei.md`.
-- **Phase 11 — the LG M50 file, fitted where anything can fit it.** **Complete** 2026-10-15:
+- **Phase 11 — the LG M50 file, fitted where anything can fit it.** **Built** 2026-10-15, exit 5
+  awaiting the owner (its cold bar was set after measurement, the one set before failed):
   its circuit fitted to the DFN (`tools/reference/fit_ecm.py`, 4.85 mV RMS at 1C 25 °C, the
   residuals per temperature in its provenance), its limits and mass from LG's specification
   sheet (cited with its CONFIDENTIAL / Tentative marking), ORegan2022's entropy and cold data in
   all three models (v28: entropic tables and the potential's temperature shift, Landesfeind 2019
-  electrolyte forms, the opt-in RC temperature rule), and the 19 constants nothing can source on
+  electrolyte forms, the opt-in RC temperature rule), and the 19 constants nothing can fit on
   a fixed list `crates/sim-data/tests/lgm50_provenance.rs` holds. **Recorded limits:** a `Dfn`
   under a thermal network wants steps of at most 15 min now its transport depends on temperature
   (a half-hour 1C step books 10.5 % too much heat); at −10 °C its recommended 10/5/10 grid cuts

@@ -25,7 +25,7 @@
 #   and the cell's mass from LG's specification sheet; [thermal] from ORegan2022's measured
 #   specific heats. [reversal], most of [aging] and [safety] are labelled placeholders, as in
 #   the other shipped chemistries — exactly the list crates/sim-data/tests/lgm50_provenance.rs
-#   holds, each with no source the project has.
+#   holds, each with nothing the project holds that can fit it.
 #
 # So a terminal voltage read out of either half of this file is a fitted or extracted one;
 # what is still guessed is what the cell does when it is abused or aged. A cell may carry
