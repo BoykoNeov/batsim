@@ -25,8 +25,8 @@ Asked and answered on 2026-10-15, before any lesson prose (full text in `phase-1
   isothermal at 298.15 K, no BMS, no scatter, no faults. The headers carry the table below.
 * **Guided-path steps 38–40** (`drawn-on-the-shelf`, `grown-on-the-shelf`, `stored-low`) in a
   ninth chapter, "Aging, drawn and grown". `Rest`, `dt = 3600`, `speed_x = 1000000`,
-  `until_s = 31536000`. Every numeral is tied: 20 claims (on the steps and the one arm), 25
-  ledger rules; all three steps are in the ledger whole (16, 11 and 21 numbers) and in
+  `until_s = 31536000`. Every numeral is tied: 17 claims (2 of them on the one arm), 24 ledger
+  rules; all three steps are in the ledger whole (16, 11 and 21 numbers) and in
   `spelled` at 0. The word "year" is in `BANNED_UNITS`, so the prose says "365 days", and the
   harness gained `Tie::Days` (`Tie::Hours` with 86 400) to tie it to the mark.
 * **`crates/sim-data/tests/shelf_lesson.rs`**, for the sentences with no number: the four files
@@ -45,10 +45,14 @@ Asked and answered on 2026-10-15, before any lesson prose (full text in `phase-1
     step 1 at 10 s steps while every number on it was measured at 0.5, and from the shelf it
     would have run at an hour. A length the reader typed is theirs and stays (walked: typed 3,
     Next, still 3).
-  * **Load and Restart re-arm the step's mark** (`rearmMark`). The prose sends readers to "run
-    it to the same mark" and nothing stopped them there; at 1 000 000× the control arm ran on
-    to 374.5 days before a hand could pause it, and the 90.66 % the prose quotes was out of
-    reach. Older steps were already written as if it stopped — step 19 says "Press Run at the
+  * **On a step that opts in (`rearm: true`), Load, Restart and the BMS toggle re-arm the
+    step's mark** (`rearmMark`). The prose sends readers to "run it to the same mark" and
+    nothing stopped them there; at 1 000 000× the control arm ran on to 374.5 days before a
+    hand could pause it, and the 90.66 % the prose quotes was out of reach. **Opt-in, after a
+    review caught the first version re-arming every step**: an audit of all 33 arms that
+    rebuild the pack found nine that run past their step's mark, and four of those (steps 2,
+    14, 16 and 25 — to a cut-off or a second leg) are written for a run that carries on, so a
+    stop there would be a pause the prose never mentions. Steps 40, 11 and 19 opt in. Older steps were already written as if it stopped — step 19 says "Press Run at the
     mark" after a BMS restart, and step 11 "press Run again when the mark passes" after one.
     Re-arming makes both sentences true where they were not; no claim moved, because the
     harness has always run an arm to its stated `to_s`.
@@ -129,7 +133,8 @@ what the browser walk below measures.
   lists nine chapters and lands on step 38. Each step reaches 365.0 d in 30 s of wall clock with
   `dt` 3600 and the label `1000000×`, and reads: step 38 `84.14 %` / `1.2378 ×`; step 39
   `98.60 %` / `1.0140 ×`; step 40 `99.79 %` / `1.0033 ×`. The picker offers the four files;
-  `shelf_drawn_low` loaded and run stops at 365.0 d and reads `90.66 %`. Jumping to chapter 1
+  `shelf_drawn_low` loaded and run stops at 365.0 d and reads `90.66 %`; on step 39, which does
+  not opt in, Restart then Run carries on past the mark (463 d after 40 s), as every older step does. Jumping to chapter 1
   puts `dt` back to 0.5; the slider at its top then reads `1000000×, held to 10000× at this dt,`;
   a typed `dt` of 3 survives Next. No console errors. Chrome closed through CDP, the server
   stopped by the PID recorded at launch.

@@ -3998,6 +3998,8 @@ $("restore-file").onchange = async (ev) => {
 //   until_s    absolute simulation time the step runs to, then pauses
 //   reload     true for a step that must start from t = 0 whichever direction it is
 //              entered from; omitted means "reload only when you must" (see applyStep)
+//   rearm      true for a step whose arms rebuild the pack and run to the step's own
+//              mark: Load, Restart and the BMS toggle stop there again (see rearmMark)
 //   watch      element ids to outline
 //   prose      paragraphs; backticks become <code>
 //   expect     what the reader should end up seeing. Prose, never an assertion — a page
@@ -4205,6 +4207,7 @@ const LESSONS = [
     bms: true,
     speed_x: 800,
     until_s: 4100,
+    rearm: true,
     watch: ["flags", "plot-cv", "pack"],
     prose: [
       "A 4S2P NMC pack with 2 % capacity and 3 % resistance scatter, protection on, passive balancing above 4.10 V per group. 3 A is 0.5 C. Everything the BMS does here, it does because the pack is being charged — a discharging pack in this repo raises none of these flags, which is why none of them have appeared in eight steps.",
@@ -4421,6 +4424,7 @@ const LESSONS = [
     dt: 0.5,
     speed_x: 20,
     until_s: 200,
+    rearm: true,
     watch: ["flags", "plot-t", "plot-soc"],
     prose: [
       "The twin file. Same pack, same seed, same fault at the same second, and the only difference is that the short is 100 milliohms instead of 30. 3 times the resistance is a third of the sag — and a third of the sag does not reach the margin that saved the pack a moment ago.",
@@ -5042,6 +5046,7 @@ const LESSONS = [
     dt: 3600,
     speed_x: 1000000,
     until_s: 31536000,
+    rearm: true,
     watch: ["plot-soh", "readouts"],
     prose: [
       "The film again, on the same cell at the same 25 °C for the same 365 days, stored at 30 % instead of full. Nothing else in the file is different.",
@@ -5299,20 +5304,21 @@ async function applyStep(L, fresh = false) {
 }
 
 /**
- * A run rebuilt from t = 0 during a guided step — the reader loading the step's control
- * file from the picker, or pressing Restart, or toggling the BMS — stops at the step's
- * mark again.
+ * On a step that sets `rearm: true`, a run rebuilt from t = 0 — the reader loading the
+ * step's control file from the picker, or pressing Restart, or toggling the BMS — stops at
+ * the step's mark again.
  *
- * The prose sends readers to "run it to the same mark", and before this nothing stopped
- * them there: the mark was spent on the step's own run, so the pause was the reader's to
- * time by hand. At 10 000× on a resting cell that cost a digit nobody could see; at the
- * shelf steps' 1 000 000× it is eleven simulated days a second of wall clock, and the
- * reading the prose quotes was out of reach. Several older steps were already written as
- * if it stopped ("Press Run at the mark", "press Run again when the mark passes").
- * Skipped while `applyStep` is setting a step up, which arms the mark itself.
+ * Opt-in, per step. Step 40 needs it: its control arm is "run it to the same mark" at
+ * 1 000 000×, eleven simulated days a second of wall clock, and without a stop the reading
+ * the prose quotes is out of reach. Steps 11 and 19 were already written as if it stopped
+ * ("press Run again when the mark passes", "Press Run at the mark"). Every other step's
+ * arms are written for a run that carries on — several run a rebuilt pack well past their
+ * step's mark, to a cut-off or a second leg (steps 2, 14, 16, 25) — so there a stop would
+ * be a pause the prose never mentions. Skipped while `applyStep` is setting a step up,
+ * which arms the mark itself.
  */
 function rearmMark() {
-  if (!path.on || path.busy) return;
+  if (!path.on || path.busy || !LESSONS[path.i].rearm) return;
   path.until = LESSONS[path.i].until_s;
   renderStep();
 }

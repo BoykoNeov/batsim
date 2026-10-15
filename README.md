@@ -343,8 +343,9 @@ halfway, they switch in turn, and the voltage a half-charged cell rests at depen
 which way it arrived — by a gap that in the cold is a throw of the dice. The last three
 leave one LG M50 cell on a shelf for 365 days, at a million times real time: aged along
 a curve someone drew, then by a film that grows on its graphite and was fitted to lab
-cells — which loses about a tenth as much, follows the square root of time without being
-told to, and cares far more whether the cell was stored full or at 30 %. Each
+cells — which loses about a tenth as much, stored full grows roughly as the square root of
+time without being told to, and cares far more whether the cell was stored full or at
+30 %. Each
 step sets the controls for itself and outlines the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step's whole control set,
 so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when
