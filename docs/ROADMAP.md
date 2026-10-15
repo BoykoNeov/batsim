@@ -594,12 +594,13 @@ reports (about 1–3) — mostly because slice A refitted the film's resistivity
 ### Phase 11 — the fitting pipeline (H3)
 
 *Spike ran 2026-10-15* (`phase-11-spike.md`): the exit below is **not reachable** by this phase —
-about 13 of the LG M50 file's labelled constants (runaway, plating, over-discharge, cycle fade,
+fifteen of the LG M50 file's labelled constants (runaway, plating, over-discharge, cycle fade,
 the film's initial thickness) have no source the project holds. The circuit fit cuts the error
-against the DFN from 10.3 to 4.0 mV RMS at 25 °C, but Chen2020 is ~1.7× too mild at −10 °C
-against LG's specification sheet (ORegan2022 matches it), entropic heat can reach only the
-circuit without Rust, and a fit moves 23 lesson claims in steps 2, 12 and 14 and falsifies one
-sentence of step 13. Four owner decisions are listed at the foot of that note; the slices and
+against the DFN from 10.3 to 4.0 mV RMS at 25 °C, but Chen2020 barely gets colder at pulse currents
+(54 A for 10 s at −10 °C where LG's specification sheet gives 14; ORegan2022 gives 22), entropic heat can reach only the
+circuit without Rust, and the fitted circuit moves 25 lesson claims in steps 2, 12 and 14 —
+two of those lessons (identical teeth; "×3 because linear") need redesigning, not re-measuring —
+and falsifies one sentence of step 13. Four owner decisions are listed at the foot of that note; the slices and
 exit below stand until they are taken.
 
 *Framing.* Retire placeholders by measurement, one file at a time, without touching Rust.

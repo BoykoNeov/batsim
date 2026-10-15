@@ -4,7 +4,7 @@
 `ORegan2022` (both the LG M50 cell). **Scouting precision**: 50 radial points and `rtol = atol
 = 1e-8`, not the converged 200 / 1e-10 the committed goldens use (`common.Reference`), so every
 millivolt below is good to about a millivolt and no more. Harness and raw output:
-`W:/temp/claude/phase11-spike/` (`hppc_gen2.py`, `fit_spike.py`, `rdc.py`, `entropic.py`, the
+`W:/temp/claude/phase11-spike/` (`hppc_gen2.py`, `fit_spike.py`, `rdc.py`, `imax10.py`, `entropic.py`, `apply_fit.py`, the
 `*.npz` runs, `fit*.txt`); kept until slice A rebuilds it as `tools/reference/fit_ecm.py`. The
 plan this feeds is not written yet: it waits on the owner's decisions at the foot.
 
@@ -76,16 +76,29 @@ at about 50 % charge, 1C (`rdc.py`):
 | --- | --- | --- | --- |
 | Chen2020 DFN | 35 mΩ | 52 mΩ | **1.5×** |
 | ORegan2022 DFN | 29 mΩ | 72 mΩ | **2.5×** |
-| LG specification sheet | 30 ± 6 mΩ (0.5C) | ≈ 89 mΩ implied | **≈ 2.6×** |
+| LG specification sheet | 30 ± 6 mΩ (0.5C) | — | — |
 
-The sheet's last row is read off its table of the largest current that reaches 2.50 V in 10 s
-at 50 % charge — 37 A at 24 °C, 14 A at −10 °C — as `(OCV(0.5) − 2.50 V) / I` with OCV(0.5) ≈
-3.75 V; it is an estimate at a far higher current, so the ratio is the usable part. A circuit
-fitted to Chen2020 at −10 °C is **milder than the real cell** by about 1.7×; the shipped
-placeholder (2.2×) happens to be closer. ORegan2022 agrees with the sheet. Fitting the circuit
-to ORegan2022 outright was tried and is messy (its own stoichiometry window, 5.048 Ah against
-Chen2020's 5.153, puts `R0` nodes at zero); taking only its *temperature ratio* is clean.
-ORegan2022 and OKane2022 also give the activation energy `[spm]`'s TODO asks for, which would
+That compares the models with each other at one current; LG's sheet does not give the cold
+resistance directly. What it does give is a table of the largest current that reaches 2.50 V in
+10 s from each state of charge — so the like-for-like check is to find that current in each
+model (`imax10.py`: bisection on a 10 s constant-current DFN run from 50 %, isothermal):
+
+| largest 10 s current from 50 % to 2.50 V | 24–25 °C | −10 °C |
+| --- | --- | --- |
+| LG specification sheet | 37 A | 14 A |
+| ORegan2022 DFN | 40.9 A | 22.1 A |
+| Chen2020 DFN | 55.2 A | **54.1 A** |
+
+**At pulse-power currents Chen2020 has almost no cold penalty** (55 → 54 A): what limits a
+7–10C pulse in it is transport it does not make temperature-dependent, so the colder kinetics
+barely show. It is also 1.5× too generous at room temperature. ORegan2022 is close at room
+temperature (41 against 37 A) and still too generous cold (22 against 14 A). The models run
+isothermal and the real cell warms during such a pulse, so this is a comparison of the sheet's
+own measure, not of resistances. Summary for decision 2: **Chen2020 is the wrong source for
+the circuit's temperature behaviour; ORegan2022 is much closer but not a match.** Fitting the
+circuit to ORegan2022 outright was tried and is messy (its own stoichiometry window, 5.048 Ah
+against Chen2020's 5.153, puts `R0` nodes at zero); taking its *temperature ratio* onto the
+Chen2020 fit is clean. ORegan2022 and OKane2022 also give the activation energy `[spm]`'s TODO asks for, which would
 make the porous halves colder too — no golden moves (they run at the reference temperature),
 but every cold porous test would.
 
@@ -104,7 +117,10 @@ sets costs little numerically. It is not small physically: at 1C near empty, `I�
 W against `I²R` ≈ 0.9 W. **Only the circuit can take it without Rust**: `[ocv]
 docv_dt_v_per_k` is a column on the state-of-charge grid, while `[spm] docp_dt_v_per_k` is one
 number per electrode. Shipping it on the circuit alone makes "the same cell" generate reversible
-heat in one model and none in the other two.
+heat in one model and none in the other two. **Its cost was not measured**: it moves every LG
+M50 circuit run that is not isothermal, and it has a sub-choice — heat only, or heat plus the
+voltage correction `OCV + dU/dT·(T − t_ref_k)` that a stated `[ocv] t_ref_k` switches on, which
+moves voltages away from 25 °C too.
 
 ## 5. What each labelled constant could be replaced by
 
@@ -120,15 +136,16 @@ Every line of `nmc_21700_lgm50.toml` the file itself labels placeholder or TODO 
 | `[ocv]` entropic | absent (Chen2020's 0) | ORegan2022, §4 | B |
 | `[spm]` | diffusion activation energy (TODO) | ORegan2022 / OKane2022 | B or none |
 | `[aging]` calendar | `cal_pre_exp`, `cal_ea_j_per_mol`, `cal_soc_stress` | **the WMG storage data already in the repo** (`tests/golden/nmc_21700_lgm50/wmg_storage_growth.csv`) | new |
-| `[aging]` | `r_growth_per_capacity_loss` | the same WMG set's pulse-resistance rise (Phase 10 slice A read it) | new |
+| `[aging]` | `r_growth_per_capacity_loss` | the same WMG set's pulse-resistance rise — a **weak** source: Phase 10 slice A's fit to it left a 1.13 mΩ residual against a 1.29 mΩ signal | new |
 | `[aging]` cycle | `cyc_fade_per_ah`, `cyc_dod_stress_exp` | LG sheet bounds it only (≥ 80 % energy after 500 cycles at 0.33C); no data to fit an exponent | none |
 | `[reversal]` | 3 | none in hand | none |
 | `[safety]` runaway | `t_onset_k`, `t_vent_k`, `runaway_energy_j`, `runaway_power_w_at_onset`, `runaway_ea_j_per_mol` | none in hand (ARC studies of this cell exist in the literature; not read) | none |
 | `[safety]` plating | `plating_c_threshold`, `plating_fade_per_ah`, `plating_short_hazard_per_ah`, `plating_short_ohms` | none in hand (OKane2022 has a plating *model*, not these constants) | none |
 | `[spm.sei]` | `initial_thickness_m` (Chen2020's own placeholder) | none | none |
 
-**The roadmap's exit is not reachable by this phase.** About 13 constants have no source the
-project holds, and the fit pipeline cannot make one. Two further points for the exit's test:
+**The roadmap's exit is not reachable by this phase.** Fifteen constants have no source the
+project holds (cycle 2, reversal 3, runaway 5, plating 4, the film's starting thickness 1;
+sixteen if the porous activation energy is declined), and the fit pipeline cannot make one. Two further points for the exit's test:
 a grep for the word passes if someone deletes the word, so the test has to check what replaced
 it (each fitted value's provenance names its fit and its residual); and "placeholder" also sits
 in prose a grep must not count.
@@ -136,8 +153,10 @@ in prose a grep must not count.
 **The LG specification sheet**: LG Chem, *Product Specification, Rechargeable Lithium Ion
 Battery, Model INR21700 M50 18.2Wh*, document LRB-PS-CY18.2Wh-M50, 2017-09-22, revision 0
 ("Tentative"), fetched from a distributor's copy
-(`asset.conrad.com/media10/add/160267/c1/-/en/002114679DS01/…`). A draft revision, so each value
-cited from it says so.
+(`asset.conrad.com/media10/add/160267/c1/-/en/002114679DS01/…`). It is stamped **"CONFIDENTIAL"**
+and **"Tentative"** (revision 0, a draft) on every page; whether a document marked so, obtained
+from a retailer, is a citable source under the provenance rule is the owner's call (decision 1).
+Each value cited from it would say all of this.
 
 ## 6. What a fit costs the guided path
 
@@ -155,8 +174,27 @@ its claim check switched (in the worktree only) from first-failure to report-all
 Plus one sentence whose **words** go false, caught by the numeral check: step 13 says "the RC
 pairs are 9 s and 72 s because someone picked round numbers". A fitted circuit has 40 s and
 333 s, picked by nobody, and the step's comparison ("a comparison against placeholders") has to
-be rewritten, not re-measured. A 10 % nudge is the floor: the fit moves the pairs 2–4× and every
-one of these numbers with them. If the `[aging]` calendar is fitted too, steps 38–39 (the shelf)
+be rewritten, not re-measured.
+
+**Then with the spike's own fit in the file** (its 11 × 3 `R0` grid and the two shared pairs,
+`c_farad = τ/R`), the same run: again only `path_claims` red, now **25 claims** (step 12: 16,
+step 2: 2, step 14: 7). A nudge understated what kind of cost it is — **two lessons need
+redesigning, not re-measuring**:
+
+* **Step 12's teeth stop being identical.** Its rest is 600 s; the fitted slow pair's 333 s
+  leaves `e^(−600/333)` ≈ 16 % of it standing when the next pulse starts (the placeholders' 72 s
+  left 2 × 10⁻⁴). The five rebounds read 75.35, 76.23, 76.35, 76.37, 76.37 mV, so "identical to
+  four decimal places" is false in words; "99.5 % within 300 s" becomes 97.5 %; and the sag's
+  "two levels" (212.8 … 221.3 mV, the `[ocv]` node passing under the train) become a staircase,
+  195.6 → 236.5 mV, mostly the fitted `R0`'s zig-zag between 80 and 90 % (§1).
+* **Step 14's "×3, because that is what linear means" breaks.** The instant drop goes 113.75 →
+  389.15 mV between the 1C and 3C runs, **×3.42**, not ×2.99 (the rebound stays ×3.00). A 3C
+  pulse travels three times as far along the state of charge, and a fitted `R0` that varies with
+  state of charge reads a different resistance at the end of it. The scenario file's "no choice
+  of R0 and RC can escape it" is true only of an `R0` that is flat over the pulse — which the
+  placeholders were, between 50 and 100 %, and a fit is not. Smoothing `R0` would shrink the
+  ×3.42, not remove it.
+* Step 2's two numbers (620 → 640 mV, 618 → 626 mV) are a re-measure. If the `[aging]` calendar is fitted too, steps 38–39 (the shelf)
 lose their contrast — "15.86 points … the unfitted placeholder" against the film's 1.40 — and
 need rewriting rather than re-measuring. Slice C (lead-acid) was not measured here.
 
@@ -166,9 +204,10 @@ need rewriting rather than re-measuring. Slice C (lead-acid) was not measured he
    and — if 4 says so — `[aging]`'s calendar and resistance growth), with the remaining
    placeholders on a named list the test holds fixed; or keep it whole and add a literature
    search for runaway, plating and over-discharge data.
-2. **Cold.** Fit the circuit's temperature behaviour to Chen2020 (one parameter set, too mild by
-   ~1.7× at −10 °C), or take the temperature ratio from ORegan2022 (matches LG's sheet; two sets
-   named in one file). Separately: give the porous models ORegan2022's diffusion activation
+2. **Cold.** Fit the circuit's temperature behaviour to Chen2020 (one parameter set; almost no
+   cold penalty at pulse currents, 54 A at −10 °C where the real cell gives 14), or take the
+   temperature ratio from ORegan2022 (22 A — much closer, not a match; two sets named in one
+   file). Separately: give the porous models ORegan2022's diffusion activation
    energy (colder porous cells; every cold porous test moves).
 3. **Entropic heat.** On the circuit only (no Rust; the models disagree about heat), on all three
    (a Rust change: `[spm]`'s coefficient becomes a table), or not this phase.
@@ -178,4 +217,7 @@ need rewriting rather than re-measuring. Slice C (lead-acid) was not measured he
 
 Not asked, a default unless overruled: the circuit is fitted at **1C**, the lessons' first rate,
 with the 3C residual in its provenance; and the `[ocv]` grid is re-shaped for this file in the
-same slice, since the fit makes its own TODO's condition true.
+same slice, since the fit makes its own TODO's condition true. The re-grid's own cost was not
+measured: the 4.0 mV above is the circuit's error with the table taken out, and an engine run
+adds the table's error back unless the grid changes — step 2's 620 mV / 5708.5 s sentence reads
+that table directly.
