@@ -37,7 +37,16 @@ owner's decisions below supersede `docs/ROADMAP.md` §Phase 11's slices and exit
 4. **The drawn calendar curve stays the placeholder it is**, deliberately: steps 38–39 teach
    against it. It goes on decision 1's list with that reason.
 
-One snapshot bump covers both engine changes (`SNAPSHOT_VERSION` 27 → 28): the chemistry is part
+6. **The circuit's RC pairs take `R0`'s temperature factor** (owner, asked after slice A's first
+   fit). Fitted to the cold reference with pairs that cannot change with temperature, the
+   circuit's 1C pulses at −10 °C were 128 mV RMS off (15 mV at 25 °C). With each pair's
+   resistance multiplied by `R0(soc, T) / R0(soc, T_ref)` and its capacitance held — the shape
+   aging already gives them — that falls to 67 mV (whole run 22.5 → 11.6 mV; free pairs per
+   temperature, which the schema cannot hold, 11.2 mV), and at 45 °C 5.85 → 3.78 mV. No new
+   number: an opt-in switch naming `T_ref`, on in the LG M50 file only, so every other chemistry
+   is bit-identical.
+
+One snapshot bump covers all three engine changes (`SNAPSHOT_VERSION` 27 → 28): the chemistry is part
 of the snapshot, and both change its shape.
 
 5. **The `[cell]` limits are the strictest across temperatures** (owner): `max_charge_c = 0.3`
@@ -65,18 +74,51 @@ H3. The exit is about one file.
 
 ## Slices
 
+The order changed once the RC rule was added: every engine change lands first, as one bump with
+nothing moving, so each later slice is data and lessons against a fixed engine.
+
+### E — the engine, v27 → v28, nothing moves
+
+Three opt-in additions, each `None` / absent on every shipped file, so the suite is bit-identical:
+
+* **The RC temperature rule** (decision 6): `[r0] rc_t_ref_k`, when stated, multiplies each RC
+  resistance by `R0(soc, T) / R0(soc, rc_t_ref_k)` (capacitance held). The pack-level RC decay a
+  cell reuses today assumes one `τ` per pair across the pack; with the rule on, `τ` is per cell,
+  so the decay is computed per cell on those packs only.
+* **Entropic tables and the potential's temperature shift** (decision 3): `[spm.*]
+  docp_dt_v_per_k` as a table over stoichiometry (a scalar still loads), read at each particle's
+  surface for heat **and** `U(T) = U(T_ref) + (T − T_ref)·∂U/∂T` in the `Spm`, `Dfn` and
+  `SpmEnsemble`; the energy ledgers checked first (the reversible heat closes against
+  `U − T·∂U/∂T`).
+* **The electrolyte's temperature dependence** (decision 2): measured, one activation energy per
+  property is not enough — up to 22 % off for diffusivity and 35 % for conductivity across
+  0.2–2 kmol/m³ and 263–318 K, because Landesfeind 2019's diffusivity has an activation energy
+  linear in concentration (exactly) and its conductivity is not Arrhenius at all (a linear `T`
+  prefactor and `exp(1000/T)` terms). So `[dfn]` carries **Landesfeind 2019's published forms as
+  data** — the form's name and its 4 + 6 coefficients — applied as the ratio
+  `LF(c, T) / LF(c, t_ref_k)` to the existing Nyman 2008 base: exactly the combined reference's
+  construction, so engine and reference agree by construction rather than within a fit.
+
 ### A — the circuit (Python + data + lessons; no Rust)
 
 * `tools/reference/fit_ecm.py`: the HPPC train on the **converged** Chen2020 DFN (200 radial
   points, `rtol = atol = 1e-10`, `common.DFN_CONVERGED`), the fit against the reference's own OCV
   in the engine's update, printing a TOML block whose provenance names the design rate and the
   residuals (1C per temperature and per segment, and 3C). Run twice → identical output.
+* **Weighting and smoothness, as measured.** Residuals are weighted by time (each second of the
+  reference counts once): per-row weighting made the fit depend on how densely the CSV is sampled
+  (pairs 16/115 s per row, 36/325 s per second). `R0` sits at the ten pulse levels, 10–100 %
+  (nothing is measured below; the grid holds its 10 % value there), with a second-difference
+  penalty `λ`: the largest `λ` whose 25 °C discharge-pulse RMS is within 10 % of **the best fit
+  found** — not of `λ = 0`, which the measurement showed lands in a worse optimum (16.1 mV against
+  13.7 at `λ = 0.001`). Chosen: `λ = 0.003`, 14.55 mV.
 * **Cold** (decision 2): the HPPC train at 263.15 and 318.15 K on the **combined reference**
   (Chen2020 + ORegan2022's solid-diffusion and electrolyte temperature terms; the same PyBaMM
   construction slice C's cold golden uses, and entropic terms off in both, or on in both —
   whichever matches the engine at that commit). The RC pairs are shared across temperatures
-  (the schema), so the temperature lives in `R0` alone: the 263 and 318 K columns are fitted
-  with the 298 K pairs held, and the residual that costs is stated per temperature. Not ORegan2022's
+  (the schema), so the temperature lives in `R0` and, through decision 6, in the pairs'
+  resistances by `R0`'s own ratio: the 263 and 318 K columns are fitted with the 298 K pairs held
+  and scaled, to a fixed point, and the residual is stated per temperature. Not ORegan2022's
   own fits: the spike's were broken (nodes at 0 Ω, 941 mΩ at empty) by its different window.
 * `[ocv]`: a per-chemistry grid in `fit_ocv.py` for this file (the TODO's condition comes true:
   this file now carries a circuit reference). The other chemistries' grids are untouched, byte for
@@ -106,34 +148,27 @@ the sheet against 55.8 g in Chen2020's layers), at a specific heat stated with i
 labelled an assumption — measured both ways before choosing. Every LG M50 lesson and test that
 reads these re-measured.
 
-### C — entropic heat and the cold, in the engine (v27 → v28)
+### C — entropic heat and the cold, as data (against slice E's engine)
 
-* **Measured before the design, no Rust needed** (both scalar fields exist): in a worktree, a
-  representative non-zero `[spm.*] docp_dt_v_per_k` and the two activation energies, the suite run
-  with `path_claims` reporting every mismatch — the count of what moves. Not only cold tests:
+* **Measured before slice E's design, no Rust needed** (both scalar fields exist): in a worktree,
+  a representative non-zero `[spm.*] docp_dt_v_per_k` and the two activation energies, the suite
+  run with `path_claims` reporting every mismatch — the count of what moves. Not only cold tests:
   everything whose temperature is not bit-for-bit `t_ref_k` (hot runs, thermal networks, the WMG
   and film tests' storage temperatures) moves, and the reported heat moves on isothermal runs too.
-* **The energy ledger first**: no shipped porous chemistry has had a non-zero entropic term, so
-  that path is untested. The reversible heat closes against `U − T·∂U/∂T`, not `U`; check how the
-  circuit's ledger already handles NiMH's column, and whether the porous ledgers' stored-energy
-  term carries the `T·∂U/∂T` part. If not, the ledger change is part of this slice.
-* `[spm.*] docp_dt_v_per_k` accepts a table over stoichiometry (a scalar file still loads, as a
-  one-value table or by an explicit migration — decided in the slice's design addendum); the
-  `Spm`, `Dfn` and `SpmEnsemble` read it at each particle's surface (PyBaMM's convention) for heat
-  **and** for the potential's temperature shift (decision 3).
-  ORegan2022's two curves extracted by `extract_spm.py`, cross-checked against PyBaMM at 7 points;
-  the circuit's `[ocv] docv_dt_v_per_k` is the same pair on the cell's window.
-* `[dfn]` electrolyte transport gains a temperature dependence; its form (an activation energy
-  per property, fitted to Landesfeind 2019's ratio with a stated residual, or the published form
-  itself) chosen by measurement over 0.2–2 kmol/m³ and 263–318 K.
+* ORegan2022's two entropic curves extracted by `extract_spm.py` into slice E's tables,
+  cross-checked against PyBaMM at 7 points; the circuit's `[ocv] docv_dt_v_per_k` is the same pair
+  on the cell's window, with `t_ref_k` stated so the voltage shift is on (decision 3).
+* Landesfeind 2019's EC:EMC 3:7 coefficients into slice E's `[dfn]` section, read out of PyBaMM's
+  function source by `extract_dfn.py` (the way it already reads Nyman 2008's).
 * `[spm.*] diffusivity_ea_j_per_mol` from ORegan2022 (`d·R`: 17.39 kJ/mol negative, 12.05
-  positive) — data; the field exists.
-* The snapshot pair test and an explicit refusal of v27 blobs. Goldens at the reference
-  temperature unmoved (predicted: bit-identical, since every Arrhenius factor is exactly 1 there —
-  measured, not assumed); the energy ledger tests now run with a non-zero entropic term; cold
-  `Spm`/`Dfn` tests re-measured.
-* A cold reference: PyBaMM's Chen2020 DFN with ORegan2022's solid-diffusion and electrolyte
-  temperature terms at 263.15 K, and the engine's `Dfn` against it within a bar set before the run.
+  positive) — the field exists.
+* Goldens at the reference temperature unmoved (predicted: bit-identical, since every factor is
+  exactly 1 there — measured, not assumed); the energy-ledger tests run with a non-zero entropic
+  term; every test the measurement above names re-measured.
+* A cold reference: PyBaMM's combined DFN at 263.15 K (entropic on, as the engine then is), and
+  the engine's `Dfn` against it within a bar set before the run. The circuit's cold columns are
+  re-fitted against the same construction if entropic-on moves them (slice A fitted entropic-off,
+  matching the engine at that commit).
 
 ### D — the list, and the documents
 
