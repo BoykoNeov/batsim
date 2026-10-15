@@ -95,6 +95,9 @@ live (next bullet), so B is written after A's fit lands, not before.
 
 ### D — the same on the `Dfn`
 
+Designed 2026-10-15 against `70ffca0`; see the addendum "slice D designed" at the end of this
+note. Not started.
+
 ### E — the lesson
 
 A new aging chapter in the guided path (`path-chapters.md`): the same cell aged by the drawn
@@ -441,3 +444,119 @@ not scored separately):
 
 Exit criteria 1–5 now all pass on the `Spm`. Next is slice D (the film on the `Dfn`), then E
 (the lesson).
+
+## Addendum 2026-10-15 — slice D designed: the film on the `Dfn`
+
+No code written. Designed against `70ffca0`, reviewed once. Two forks are the owner's and are
+marked **open** below; nothing that depends on them starts before they are answered.
+
+**What is different about the `Dfn`.** It has one particle per negative-electrode node, a
+reaction current that varies across the electrode, and a stored Thévenin line (`tangent`) that
+the pack reads as the cell's source instead of rebuilding one from state. The `Spm`'s film is
+one thickness on one particle, its resistance one lump in series, its source rebuilt by the
+reporting pass after every tick (`pack.rs`, the comment above the aging tick). None of those
+three carries over as it stands.
+
+**State.** `DfnState::film_thickness_m: Option<Vec<f64>>`, one thickness per negative node
+(`c_neg.len()`), `None` unless the pack selects the film. bincode is positional, so the field
+costs a bump, **26 → 27**, with its stale-blob route measured in `snapshot_version.rs` as v22–v26
+were. `Pack::new` stops refusing `Film` on the `Dfn` (it still needs `[spm.sei]`, which the LG M50
+file has); `FilmNeedsSpm` becomes false as named and as worded, so it is renamed (its two uses
+are in `sei_film.rs`; it is a public enum variant, so the rename is an API change, stated in the
+commit).
+
+**Growth, per node.** On the aging tick each node grows in the `Spm`'s rationalised closed form
+at its own `Δφ_i`, read off the stored field `u` — the last converged solve, at `i_last`, so it
+costs no solve. Node `i` loses `Z·δL_i·a_s/V̄` moles per unit electrode volume, spread evenly over
+its own shells, i.e. `3·Z·δL_i/(V̄·R_p)` in concentration, independent of the node's width.
+`bulk_stoich` is an unweighted mean over nodes, which is the volume-weighted mean only because
+the negative's grid is uniform (its doc says so); the film's lithium count and `soc` reconcile
+on that same assumption, and the note on `bulk_stoich` gains the film as a second reader of it.
+At rest every node sits at one potential and the film grows uniformly.
+
+**Open — fork 1: where the film's resistance goes.**
+
+- **(a) One lump in series**, `ρ·(L̄ − L0)/A_neg` on `L̄` the node mean, added to
+  `Sides::r_contact` — what the `Spm` does. No change to the solve or its Jacobian. Right while
+  the reaction is spread evenly; under load the `Dfn`'s reaction crowds toward the separator, and
+  the lump cannot follow it. The rate's `Δφ_i = φ_s − φ_e` then excludes the film's own drop,
+  which is the `Spm`'s choice.
+- **(b) Per node, inside the Butler–Volmer row**: `η_i = φ_s − φ_e − U − j_i·ρ·(L_i − L0)`, as
+  PyBaMM's DFN does. A thicker film at one node pushes the reaction to others, and the rate's
+  `Δφ_i` includes the drop, as PyBaMM's does. It changes the analytic Jacobian, which this model
+  needs (`phase-7-dfn.md`): `∂η/∂j` gains `−ρ·(L_i − L0)`. So `jacobian_pair`'s
+  finite-difference check is extended to a filmed cell with **uneven** thicknesses, and that one
+  term is perturbed once to show the check reddens.
+
+Recommended: **(b)**. The `Dfn` exists to show what the electrode's thickness does; a film that
+cannot follow the reaction across it is the `Spm`'s film on a slower model. (a) is roughly the
+`Spm`'s work again; (b) adds the Jacobian term and its check. Either way the pack still needs one
+number for the film's resistance (`mult/(r − r_film)`, `FilmView::resistance_ohm`): under (b) it
+is the nodes' films **in parallel**, `ρ/(a_s·A·Σ h_i/(L_i − L0))`, which equals the `Spm`'s
+`ρ·(L − L0)/A_neg` when the film is even. The pack's division treats it as series, which is
+exact for (a) and, for (b), exact at an even film and approximate otherwise — stated on the
+function.
+
+**Whether the rate includes the film's drop, recorded.** Under (b) the `Dfn` reads PyBaMM's
+`Δφ`; the `Spm` reads `U_n(surface) + η_n` with the film lumped outside it. Identical at rest
+(the golden and exit 5 cannot tell them apart). Under current they part: an 80 nm film at about
+1 A/m² of interface drops a few millivolts, and the rate is exponential in it (one thermal voltage
+is 25.7 mV). The `Spm` is not reopened; the difference is recorded beside the cycling result.
+
+**The stored line after a tick.** The tick runs before the reporting pass so that the pass
+rebuilds every source from the aged state. The `Dfn`'s `source` returns its stored `tangent`
+instead, so after a tick the reported line — and a zero-length step, which reads it — still
+describes the cell before the film took its lithium and added its resistance. Decided:
+**measure first** (the gap a zero-length probe reads after a 1 h tick at 45 °C / 85 %, and after
+a 10 s one). If it is below a microvolt it is stated and left; otherwise the tick shifts the
+stored line by what it changed (`E` by the equilibrium voltage's move, `R` by the film's added
+resistance) rather than clearing it, because clearing it would put every filmed cell on the
+first-order seed after every tick and move the next step's first pass.
+
+**Mirrored from the `Spm`.** The window shortened at the top by `δx = mean_i 3·Z·(L_i −
+L0)/(V̄·c_max·R_p)` in `raw_soc`, `surface_gap` and `soc_flags`; reported capacity
+`multiplier × (1 − δx/Δx)`, which `soc_true` weights by. `current_window` and
+`surfaces_in_range` keep the negative's edge at `stoich_max`: under the film the positive reaches
+its full first, so the positive's edge binds on a charge, which is the `Spm`'s behaviour (checked
+in the build, not assumed). The energy sink is per node, each node's lithium at that node's bulk
+`U_n` after the tick, over `κ`, summed into `FilmView::energy_last_step_j`; there is no
+per-electrode ledger helper for the `Dfn` (`dfn_reversal.rs`'s ledger test is a terminal one), so
+the film's ledger test reads the snapshot's per-node profiles as `sei_film.rs` reads the `Spm`'s.
+`empty_voltage`'s reading at `stoich_max` on an aged cell, recorded for the `Spm` in slice C, is
+the same here; recorded, not fixed.
+
+**Film off moves nothing.** Every new expression branches on `None`. Slice C's hash harness
+(six models, cycling, a voltage hold, a power demand, 200 h hot at rest, a cold charge, an
+over-discharge) re-runs in a worktree under `W:/temp/claude`, with the new key stripped from the
+final snapshot, and the 1e-15 perturbation re-checked to move each hash.
+
+**Exit for slice D, set before the first run.** Pinned in a new `crates/sim-data/tests/sei_dfn.rs`.
+
+1. **At rest the `Dfn` is the `Spm`.** At rest the electrolyte is uniform and the reaction zero,
+   so a filmed `Dfn` and a filmed `Spm` held a year at the golden's five conditions must agree on
+   lithium lost, and the `Dfn` must replay `sei_rest_year.csv`'s table column within the `Spm`'s
+   own tolerance (0.01 %). The bar for `Dfn` against `Spm` is set from the first day's reading of
+   the two **before** the year is run, not after. This runs first; if it fails nothing else
+   proceeds. It cannot see fork 1.
+2. **Under current, against PyBaMM.** A PyBaMM DFN with the interstitial law, on the engine's
+   node counts (10/5/10, `N_r` 10), the fitted constants, cycling at 1 C or below (clear of the
+   3 C electrolyte limit, H8), isothermal, drawn cycle fade off — compared on total lithium lost
+   and on the film's spread across the negative (thickest node over thinnest). Solved at 1e-10
+   (slice C: the default under-grew the film). Under (b) the bar is what the frozen-potential tick
+   costs, measured as the engine at 10 s against 60 s ticks on the same run, plus 0.01 %. Under (a)
+   the lithium total is held to that bar and the spread is **not** asserted — the lump makes the
+   reaction, and so the film, more even than PyBaMM's — and the test records by how much. This is
+   the only exit that sees anything the `Dfn` does that the `Spm` does not.
+3. **Resistance from the film alone**, as exit 4 on the `Spm`: with `r_growth_per_capacity_loss`
+   at zero, ninety days hot add resistance and a reported ratio above 1, both read through
+   `FilmView` and `Telemetry::soh_resistance`.
+4. **The ledger closes** at rest over a hot year, per node, to the `Spm`'s 1e-6.
+5. **Snapshot round trip** of a filmed `Dfn` mid-year, bit-identical continuation.
+
+**Open — fork 2: the WMG cells on the `Dfn`.** Exit 5 ran WMG's own capacity steps on a filmed
+`Spm`. On the `Dfn` the same film gives the same lithium at rest (exit 1), but the capacity the
+steps read differs through the electrolyte, so the score will move. The plan's exits do not
+require it. Recommended: **report it, not gate on it** — run it once, write both scores and the
+per-condition largest gap beside the `Spm`'s, and treat a result past the `Spm`'s bar as a finding
+for the owner. The `Spm` run took 12 s in a debug build; a `Dfn` cell costs on the order of a
+hundred times more per step, so **one condition is timed in release before the 36 are run**.
