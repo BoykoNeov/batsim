@@ -291,3 +291,17 @@ circuit's first and its rule admitted the frame gap was safe only while the circ
 were identical; the sentence now says "the circuit's first". Scenario headers
 (`pulse_train_*`, `cc_discharge_lgm50`, `cc_discharge_3c_*`) rewritten to match; the
 lgm50 header's old ECM-against-SPM figures are labelled history, not re-measured.
+
+## Addendum 2026-10-15 — slice B done: the specification sheet, and a heat capacity
+
+`[cell]` takes the sheet's strictest rows (decision 5): 0.3C charge, 0.5C discharge, 45 °C.
+`[thermal]` was measured both ways, as planned: Chen2020's layer sum scaled to the sheet's
+68.5 g is 44.75 J/K (an assumption covering 12.7 g of can, header and electrolyte), and
+**ORegan2022's** — its component specific heats measured on this cell — is 51.622 J/K over
+64.10 g, 55.16 J/K at 68.5 g with the remaining 4.4 g at its mean. The second rests on the
+smaller assumption and a source the owner had already taken, so the file ships 55.16. The
+runaway placeholders are tuned as a pair with the heat capacity (an 818 K adiabatic rise,
+about a minute onset-to-vent), so they were scaled with it (×1.513: 29.8 → 45.1 kJ,
+8.0 → 12.1 W) and stay labelled placeholders. **Nothing in the workspace moved**: the whole
+suite, the guided path's claims checker run in report-all mode included, is green with no
+claim moved — no LG M50 lesson runs with a battery manager or a thermal network.

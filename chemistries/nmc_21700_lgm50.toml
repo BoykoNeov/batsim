@@ -32,7 +32,7 @@
 [meta]
 id         = "nmc_21700_lgm50"
 name       = "LG M50 21700 (NMC811/graphite)"
-provenance = "SPM parameters extracted verbatim from PyBaMM's Chen2020 parameter set (Chang-Hui Chen et al., 'Development of Experimental Techniques for Parameterization of Multi-scale Lithium-ion Battery Models', J. Electrochem. Soc. 167 (2020) 080534) by tools/reference/extract_spm.py; [dfn] extracted from the same set by tools/reference/extract_dfn.py, its two electrolyte transport fits being Nyman 2008 (A. Nyman, M. Behm, G. Lindbergh, 'Electrochemical characterisation and modelling of the mass transport phenomena in LiPF6-EC-EMC electrolyte', Electrochim. Acta 53 (2008) 6356) stored as published coefficients rather than sampled; [ocv] and capacity fitted from the same set by tools/reference/fit_ocv.py; [thermal] derived from its keys; [r0]/[[rc]] fitted to the same set's DFN by tools/reference/fit_ecm.py (residuals in their comments); [reversal]/[aging]/[safety] are labelled placeholders."
+provenance = "SPM parameters extracted verbatim from PyBaMM's Chen2020 parameter set (Chang-Hui Chen et al., 'Development of Experimental Techniques for Parameterization of Multi-scale Lithium-ion Battery Models', J. Electrochem. Soc. 167 (2020) 080534) by tools/reference/extract_spm.py; [dfn] extracted from the same set by tools/reference/extract_dfn.py, its two electrolyte transport fits being Nyman 2008 (A. Nyman, M. Behm, G. Lindbergh, 'Electrochemical characterisation and modelling of the mass transport phenomena in LiPF6-EC-EMC electrolyte', Electrochim. Acta 53 (2008) 6356) stored as published coefficients rather than sampled; [ocv] and capacity fitted from the same set by tools/reference/fit_ocv.py; [thermal] from ORegan2022's measured component heat capacities and LG's specification sheet mass; [cell] current and temperature limits from LG's specification sheet (strictest rows); [r0]/[[rc]] fitted to the same set's DFN by tools/reference/fit_ecm.py (residuals in their comments); [reversal]/[aging]/[safety] are labelled placeholders."
 
 [cell]
 # provenance: usable capacity between the Chen2020 stoichiometry limits, as reported by
@@ -42,10 +42,15 @@ provenance = "SPM parameters extracted verbatim from PyBaMM's Chen2020 parameter
 capacity_ah     = 5.153198
 v_max           = 4.20     # provenance: Chen2020 "Upper voltage cut-off [V]"
 v_min           = 2.50     # provenance: Chen2020 "Lower voltage cut-off [V]"
-max_charge_c    = 0.5      # provenance: placeholder for a 21700 energy cell (~0.3-0.7C standard charge); TODO cite a datasheet
-max_discharge_c = 1.5      # provenance: placeholder continuous discharge rating for a 21700 energy cell; TODO cite a datasheet
+# The three limits below are LG's specification sheet (LG Chem, Product Specification INR21700 M50 18.2Wh, LRB-PS-CY18.2Wh-M50, 2017-09-22, revision 0, marked CONFIDENTIAL and Tentative (a draft; a retailer's copy)), and each is the STRICTEST
+# of the sheet's temperature rows (owner, Phase 11): this file has one number per limit, and
+# the battery manager must never permit what the sheet forbids at any temperature. What the
+# one-number schema cannot say: 0.7C charge is allowed at 25-45 degC, 1.5C discharge at
+# 25-55 degC (3.0C at 10-25 degC), and discharge is allowed up to 55 degC.
+max_charge_c    = 0.3      # provenance: LG sheet 4.2.7, max continuous charge, 0-25 degC row (1,455 mA)
+max_discharge_c = 0.5      # provenance: LG sheet 4.2.9, max continuous discharge, -20-10 degC row (2,425 mA)
 t_charge_min_k  = 273.15   # provenance: charge inhibit below 0 degC (Li plating guard), same convention as the other shipped chemistries
-t_max_k         = 333.15   # provenance: 60 degC operating ceiling, datasheet class placeholder
+t_max_k         = 318.15   # provenance: LG sheet 2.7, charge operating ceiling 45 degC (the lower of its two)
 
 # --- fitted from PyBaMM Chen2020 (pybamm 26.6.2.0) by tools/reference/fit_ocv.py ---
 # Thermodynamic cell OCV U_p(y(soc)) - U_n(x(soc)) over the usable stoichiometry window.
@@ -129,16 +134,16 @@ floor_v   = 0.0
 fade_per_ah = 1.0e-1
 
 [thermal]
-# provenance: sum over Chen2020's five sandwich domains of (electrode area x thickness x
-# density x specific heat capacity), with area = 0.065 m x 1.58 m = 0.1027 m2:
-#   neg. current collector 4.251 + neg. electrode 10.149 + separator 0.342
-#   + pos. electrode 17.729 + pos. current collector 3.980  =  36.451 J/K
-# This is a LOWER BOUND on the real cell, and knowingly so: the sum masses 55.8 g of
-# jelly roll while an LG M50 weighs closer to 68-70 g, because Chen2020 gives no mass for
-# the electrolyte, the can or the header. A cell with too little heat capacity heats too
-# fast, so this errs toward alarming rather than reassuring — the safe direction for a
-# teaching model, but still an error. TODO: add the missing masses from a datasheet.
-heat_capacity_j_per_k = 36.451
+# provenance: ORegan2022 (PyBaMM's thermal parameterisation of this same cell, its component
+# specific heats MEASURED, evaluated at 298.15 K), summed over the five sandwich domains as
+# (area x thickness x density x specific heat), area 0.1027 m2: 64.10 g of jelly roll,
+# 51.622 J/K, a mean of 805 J/(kg K). Scaled to the cell's 68.5 g (LG sheet 2.9, "68.5 +/-
+# 1.0 g") at that mean — the one assumption, for the 4.4 g of can and header neither source
+# itemises: 51.622 x 68.5 / 64.101 = 55.16 J/K. Until Phase 11 this was Chen2020's own sum,
+# 36.451 J/K over 55.8 g, a stated lower bound (Chen2020 gives no electrolyte, can or header
+# mass, and its specific heats are round 700s). Measured both ways for Phase 11 slice B: the
+# Chen2020 sum scaled to 68.5 g is 44.75 J/K, resting on a 12.7 g assumption instead of 4.4.
+heat_capacity_j_per_k = 55.16
 # provenance: Chen2020 "Total heat transfer coefficient [W.m-2.K-1]" (10.0) x "Cell
 # cooling surface area [m2]" (0.00531) = 0.0531 W/K. The area is the bare cylinder's
 # (pi*d*h + 2*pi*r^2 for a 21 x 70 mm can), so this is already the fully-exposed value
@@ -171,12 +176,13 @@ r_growth_per_capacity_loss = 1.5      # provenance: placeholder — resistance g
 # because these numbers are only meaningful in pairs (the trap the sibling NMC file
 # documents at length).
 #
-#   - adiabatic ceiling = 29.8 kJ / 36.451 J/K = 818 K rise, so a fully-reacted cell
-#     peaks near 1261 K (988 degC), the ~1000 degC ARC tests report for NMC cells. Note
-#     this budget is SMALLER than the 18650 file's 45 kJ despite the cell being larger:
-#     both scale with the [thermal] heat capacity above, which is a lower bound. The pair
-#     is what is calibrated, not either number alone.
-#   - onset -> vent = 30 K x 36.451 J/K = 1.09 kJ, released at 8 W rising to ~45 W across
+#   - adiabatic ceiling = 45.1 kJ / 55.16 J/K = 818 K rise, so a fully-reacted cell
+#     peaks near 1261 K (988 degC), the ~1000 degC ARC tests report for NMC cells. The pair
+#     is what is calibrated, not either number alone: when Phase 11 replaced the heat
+#     capacity (36.451 -> 55.16 J/K, x1.513) the energy and the onset power were scaled by
+#     the same factor so the calibration held (29.8 -> 45.1 kJ, 8.0 -> 12.1 W). Both remain
+#     placeholders.
+#   - onset -> vent = 30 K x 55.16 J/K = 1.65 kJ, released at 12.1 W rising to ~68 W across
 #     that span, so an adiabatic cell at onset vents in roughly a minute.
 #
 # Plating placeholders are scaled from the 18650 NMC file the same way [aging] was, so
@@ -185,8 +191,8 @@ r_growth_per_capacity_loss = 1.5      # provenance: placeholder — resistance g
 [safety]
 t_onset_k           = 443.15   # provenance: ~170 degC exothermic onset (NMC class); placeholder
 t_vent_k            = 473.15   # provenance: ~200 degC vent placeholder
-runaway_energy_j    = 29.8e3   # provenance: placeholder set for an 818 K adiabatic rise on this cell's derived heat capacity; TODO fit
-runaway_power_w_at_onset = 8.0 # provenance: placeholder amplitude, as the 18650 set; with the Ea below gives a ~1 min adiabatic onset-to-vent; TODO fit
+runaway_energy_j    = 45.1e3   # provenance: placeholder set for an 818 K adiabatic rise on this cell's heat capacity (x1.513 with it in Phase 11); TODO fit
+runaway_power_w_at_onset = 12.1 # provenance: placeholder amplitude, 8.0 as the 18650 set x1.513 with the heat capacity (Phase 11); with the Ea below gives a ~1 min adiabatic onset-to-vent; TODO fit
 runaway_ea_j_per_mol     = 1.0e5 # provenance: placeholder activation energy for the decomposition exotherm, order-of-magnitude typical for Li-ion ARC fits; TODO fit
 t_plating_min_k     = 273.15   # provenance: plating risk below 0 degC
 plating_c_threshold = 0.4      # provenance: placeholder C-rate above which cold-charge plating risk flags
