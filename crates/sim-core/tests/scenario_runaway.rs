@@ -179,6 +179,7 @@ fn lfp(runaway_power_w_at_onset: f64) -> ChemistryParams {
                 vec![0.048, 0.020, 0.016],
                 vec![0.050, 0.021, 0.017],
             ],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.010,

@@ -83,6 +83,7 @@ fn synthetic_chem(ocv: OcvTable) -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![298.15],
             ohms: vec![vec![R0], vec![R0]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: R1,
@@ -289,6 +290,7 @@ fn r0_lookup_bilinear_and_axis_orientation() {
         soc: vec![0.0, 1.0],
         temp_k: vec![280.0, 320.0],
         ohms: vec![vec![0.05, 0.03], vec![0.04, 0.02]],
+        rc_t_ref_k: None,
     };
     // Corners pin the axis orientation (a transposed grid would fail these).
     assert!((r0_lookup(&table, 0.0, 280.0) - 0.05).abs() < 1e-12);

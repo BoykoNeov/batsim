@@ -117,6 +117,7 @@ fn sloped_chem() -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![298.15],
             ohms: vec![vec![R0_OHMS], vec![R0_OHMS]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.010,

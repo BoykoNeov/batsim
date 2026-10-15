@@ -75,6 +75,7 @@ fn flat_chem(v0: f64) -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![298.15],
             ohms: vec![vec![R0], vec![R0]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.01,

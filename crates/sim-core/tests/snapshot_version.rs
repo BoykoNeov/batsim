@@ -250,6 +250,7 @@ fn chem() -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![298.15],
             ohms: vec![vec![0.02], vec![0.02]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.010,
@@ -302,35 +303,35 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v26-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v27 restore.
+/// A v27-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v28 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in, for the ninth time running — the fixture is
-/// an equivalent-circuit pack.** v27's one new field lives in `DfnState`, so a pack with no
-/// `Dfn` cell is byte-for-byte what a v26 build wrote. The `a_v26_shaped_*` sibling answers
-/// the case whose bytes do change, and its answer depends on a value. (v26's three, in
-/// `AgingConfig`, `SpmState` and `[spm]`, have their own `a_v25_shaped_*` siblings.)
+/// **At this bump the retag is a stand-in again**, for the first time in ten: v28 appends
+/// `rc_t_ref_k` to every chemistry's `[r0]` table, so this equivalent-circuit fixture's
+/// bytes move too, and a real v27 blob does not reach the version check at all —
+/// [`a_v27_shaped_chemistry_fails_at_its_r0_table`] measures where it stops instead. What
+/// this pair still proves is that the check is live for bytes that *do* parse.
 #[test]
-fn the_version_field_is_what_rejects_a_v26_snapshot() {
+fn the_version_field_is_what_rejects_a_v27_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 27,
-        "this test is written against the v26 -> v27 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v23 'for this fixture it parses fine and the version field is all there is',          v24 the same for this fixture and 'it depends on the next value' for a pack          with a BMS, v25 the same for this fixture and 'it fails, by a route the positive          particle's radius chooses' for a chemistry with an [spm] section, and v26 the same          for this fixture and 'by the next value' for each of its three fields, and v27 the          same for this fixture and 'by the capacity factor's low byte' for a Dfn cell. A          renumbered assertion cannot inherit any of them."
+        SNAPSHOT_VERSION, 28,
+        "this test is written against the v27 -> v28 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v27 'for this fixture it parses fine and the version field is all there is' with          a model-specific sibling for each, and v28 'it does not parse at all, at the r0          table, for every chemistry'. A renumbered assertion cannot inherit any of them."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 26);
+    let stale = retagged(&bytes, 27);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 26,
+            found: 27,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v26-tagged snapshot must be refused"
+        "a v27-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -339,6 +340,40 @@ fn the_version_field_is_what_rejects_a_v26_snapshot() {
     );
     assert_eq!(restored.series(), 2);
     assert_eq!(restored.parallel(), 2);
+}
+
+/// A v27 chemistry at v28 fails at its `[r0]` table, with one RC pair or two.
+///
+/// v28 closes [`sim_core::chem`]'s `R0Table` on `rc_t_ref_k: Option<f64>`, and `[[rc]]`
+/// follows it in `ChemistryParams`, so a v27 reader's next bytes are the pair list's `u64`
+/// length. Predicted before the run: with two pairs its low byte `2` is not an `Option`
+/// tag and the read fails at the field; with one, `1` reads as `Some`, the next eight bytes
+/// (seven zero length bytes and the first pair's first byte) as a temperature, and the
+/// pair list's length then comes out of the first pair's remaining bytes, far past the
+/// end. Every chemistry has an `[r0]` table, and it precedes `[spm]` and `[dfn]`, so the
+/// slice's other two fields are never reached by a stale blob.
+#[test]
+fn a_v27_shaped_chemistry_fails_at_its_r0_table() {
+    for pairs in [1usize, 2] {
+        let mut c = chem();
+        c.rc.truncate(1);
+        if pairs == 2 {
+            c.rc.push(c.rc[0]);
+        }
+        let full = bincode::serialize(&c).expect("the chemistry serializes");
+        let r0 = bincode::serialize(&c.r0).expect("the table serializes");
+        assert_eq!(r0.last(), Some(&0), "a v28 table ends on its `None` tag");
+        let at = full
+            .windows(r0.len())
+            .position(|w| w == r0.as_slice())
+            .expect("the table's bytes appear inside the chemistry's");
+        let mut v27 = full.clone();
+        v27.remove(at + r0.len() - 1);
+        assert!(
+            bincode::deserialize::<ChemistryParams>(&v27).is_err(),
+            "a v27-shaped chemistry with {pairs} RC pair(s) parsed at v28"
+        );
+    }
 }
 
 /// A v15 `v_rc` field does not fail to parse at v16 — it parses into the wrong numbers.
@@ -955,6 +990,7 @@ fn a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length() {
             volts: vec![4.4, 3.5],
         },
         regular_solution: None,
+        entropic: None,
     };
     let spm = |r_pos: f64| SpmParams {
         t_ref_k: 298.15,
@@ -1185,5 +1221,6 @@ fn electrode() -> sim_core::ElectrodeParams {
             volts: vec![4.4, 3.5],
         },
         regular_solution: None,
+        entropic: None,
     }
 }

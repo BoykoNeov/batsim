@@ -1534,6 +1534,7 @@ mod tests {
                     ],
                 },
                 regular_solution: None,
+                entropic: None,
             },
             positive: ElectrodeParams {
                 particle_radius_m: 5e-8,
@@ -1556,6 +1557,7 @@ mod tests {
                     u0_v: 3.42,
                     omega_ev: 0.075_917_388_974_677_12,
                 }),
+                entropic: None,
             },
             sei: None,
         }

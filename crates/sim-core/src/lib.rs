@@ -44,7 +44,8 @@ pub use bms::{
 };
 pub use chem::{
     AgingParams, ChargeAcceptanceParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams,
-    DfnSeparator, DiffusionParams, ElectrodeParams, HysteresisParams, HysteresisWidth, OcpTable,
+    DfnSeparator, DiffusionParams, ElectrodeParams, ElectrolyteTemperature,
+    ElectrolyteTemperatureForm, EntropicTable, HysteresisParams, HysteresisWidth, OcpTable,
     PowerTerm, RegularSolutionParams, ReversalParams, SafetyParams, SeiParams, SpmParams,
     ThermalParams,
 };

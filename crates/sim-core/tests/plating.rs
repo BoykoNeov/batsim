@@ -125,6 +125,7 @@ fn chem(aging: Option<AgingParams>, safety: Option<SafetyParams>) -> ChemistryPa
             soc: vec![0.0, 1.0],
             temp_k: vec![253.15, 298.15],
             ohms: vec![vec![0.05, 0.02], vec![0.05, 0.02]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.01,

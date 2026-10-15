@@ -505,6 +505,34 @@ pub struct ElectrodeParams {
     /// it.
     #[serde(default)]
     pub regular_solution: Option<RegularSolutionParams>,
+    /// The entropy coefficient as a function of stoichiometry (`[spm.*.entropic]`), in
+    /// place of the scalar [`Self::docp_dt_v_per_k`]. Optional; `None` on every chemistry
+    /// written before Phase 11.
+    ///
+    /// A parameter set that measures `∂U/∂T` publishes it as a curve — ORegan2022's for
+    /// the LG M50 runs from −0.4 to +0.1 mV/K across the cell's window — and a scalar can
+    /// only hold its mean. Where this table is present the scalar must be `0`: one
+    /// electrode with two coefficients would be a file saying two things.
+    ///
+    /// Read at each particle's **surface** stoichiometry, PyBaMM's convention, for the
+    /// reversible heat and for the potential's temperature shift
+    /// `U(sto, T) = U(sto) + (T − t_ref_k)·∂U/∂T(sto)` (`docs/plans/phase-11-fitting.md`,
+    /// decision 3).
+    #[serde(default)]
+    pub entropic: Option<EntropicTable>,
+}
+
+/// An electrode's entropy coefficient `∂U/∂T` over stoichiometry (`[spm.*.entropic]`),
+/// linear interpolation, clamped at the ends.
+///
+/// Not an [`OcpTable`]: an entropy coefficient changes sign across a window (it does on
+/// both LG M50 electrodes), so it has no monotonicity to check.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EntropicTable {
+    /// Stoichiometry breakpoints, strictly ascending, in \[0, 1\]; at least two.
+    pub stoich: Vec<f64>,
+    /// `∂U/∂T` at each breakpoint \[V/K\], finite, same length as `stoich`.
+    pub v_per_k: Vec<f64>,
 }
 
 /// The regular-solution open-circuit potential of a two-phase electrode
@@ -624,6 +652,53 @@ pub struct DfnParams {
     pub separator: DfnSeparator,
     /// The positive electrode's porous-phase parameters (`[dfn.positive]`).
     pub positive: DfnElectrode,
+    /// How the electrolyte's transport changes with temperature
+    /// (`[dfn.electrolyte_temperature]`). Optional; `None` — every chemistry shipped
+    /// before Phase 11, and Chen2020's own fits — leaves both properties
+    /// temperature-independent, by a path that evaluates no ratio.
+    #[serde(default)]
+    pub electrolyte_temperature: Option<ElectrolyteTemperature>,
+}
+
+/// The electrolyte's temperature dependence, applied as a **ratio** to the
+/// concentration fits above: `D_e(c, T) = D_e(c) · F_D(c, T) / F_D(c, t_ref_k)`, and the
+/// same for `κ_e` with `F_κ`.
+///
+/// # Why a published form and not an activation energy
+/// Measured for Phase 11 (`docs/plans/phase-11-fitting.md`, slice E): one activation
+/// energy per property misses Landesfeind 2019's EC:EMC 3:7 fits by up to 22 % (diffusivity)
+/// and 35 % (conductivity) over 0.2–2 kmol/m³ and 263–318 K, because the diffusivity's
+/// activation energy rises linearly with concentration and the conductivity is not
+/// Arrhenius at all. So the section names the form and carries its coefficients, the way
+/// [`DfnParams::electrolyte_diffusivity_terms`] carries Nyman 2008's: data, not code, and
+/// the same construction PyBaMM's reference evaluates, so the two agree by construction.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ElectrolyteTemperature {
+    /// Which published form the coefficients belong to.
+    pub form: ElectrolyteTemperatureForm,
+    /// The temperature \[K\] at which the concentration fits hold as written; the ratio is
+    /// exactly 1 there. Must be finite and `> 0`.
+    pub t_ref_k: f64,
+    /// The diffusivity form's coefficients, in the publication's order and units.
+    pub diffusivity: Vec<f64>,
+    /// The conductivity form's coefficients, in the publication's order and units.
+    pub conductivity: Vec<f64>,
+}
+
+/// A published temperature form for an electrolyte's transport (`form = "..."`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ElectrolyteTemperatureForm {
+    /// Landesfeind & Gasteiger 2019, J. Electrochem. Soc. 166 (14) A3079, eqs. as PyBaMM
+    /// writes them, with `c` in mol/L:
+    ///
+    /// ```text
+    /// D_e:  p1·exp(p2·c) · exp(p3/T) · exp(p4·c/T)                        (4 coefficients)
+    /// κ_e:  p1·(1 + (T − p2)) · c · (1 + p3·√c + p4·(1 + p5·e^(1000/T))·c)
+    ///           / (1 + c⁴·p6·e^(1000/T))                                  (6 coefficients)
+    /// ```
+    ///
+    /// Only the ratio to `t_ref_k` is used, so the forms' own scale factors cancel.
+    Landesfeind2019,
 }
 
 /// One term `coefficient · x^exponent` of a transport-property fit.
@@ -874,6 +949,30 @@ pub struct R0Table {
     pub temp_k: Vec<f64>,
     /// Resistance grid \[ohms\]: outer index = soc, inner index = temperature.
     pub ohms: Vec<Vec<f64>>,
+    /// Optional temperature \[K\] at which the `[[rc]]` resistances were fitted, and the
+    /// switch that makes them follow this grid's temperature dependence:
+    ///
+    /// ```text
+    /// R_rc,k(soc, T) = r_ohms,k · R0(soc, T) / R0(soc, rc_t_ref_k)
+    /// ```
+    ///
+    /// with each pair's capacitance held, so its time constant scales with it — the
+    /// same shape aging gives the pairs through `soh_resistance` (`docs/plans/
+    /// rc-resistance-growth.md`). `None` (every chemistry shipped before Phase 11) leaves
+    /// the pairs at their table values at every temperature, by a path that does not
+    /// evaluate the ratio at all, so no trajectory moves by a ULP.
+    ///
+    /// # Why a ratio of this grid and not a new table
+    /// Measured on the LG M50 (`docs/plans/phase-11-fitting.md`, decision 6): a circuit
+    /// fitted to a cold DFN with pairs that cannot change with temperature missed its 1C
+    /// pulses at −10 °C by 128 mV RMS; taking `R0`'s own ratio cut that to 67 mV, close to
+    /// what free per-temperature pairs reach — with no new number to source.
+    ///
+    /// The battery manager's model-based estimator does **not** apply it: its prediction
+    /// is exact because its pairs are constants, and it already takes what the tables do
+    /// not state as numbers (aging, a weak cell) as model error.
+    #[serde(default)]
+    pub rc_t_ref_k: Option<f64>,
 }
 
 /// Lumped thermal properties of a single cell (`[thermal]`).
@@ -1518,6 +1617,17 @@ impl ChemistryParams {
                 }
             }
         }
+        // A reference temperature the ratio is divided at. Positive entries make the
+        // divisor positive at any temperature (bilinear interpolation, clamped), so only
+        // the temperature itself needs checking.
+        if let Some(t) = self.r0.rc_t_ref_k {
+            if !is_positive(t) || !t.is_finite() {
+                return Err(ChemistryError::NotPositive {
+                    what: "r0.rc_t_ref_k",
+                    value: t,
+                });
+            }
+        }
 
         // --- RC pairs ---
         // The upper bound is `EcmState::v_rc`'s slot count, read from there rather than
@@ -1951,7 +2061,53 @@ fn check_dfn(dfn: &DfnParams) -> Result<(), ChemistryError> {
         "dfn.separator.bruggeman_electrolyte",
         sep.bruggeman_electrolyte,
     )?;
+    if let Some(et) = &dfn.electrolyte_temperature {
+        check_electrolyte_temperature(et)?;
+    }
     Ok(())
+}
+
+/// `[dfn.electrolyte_temperature]`: a positive reference temperature and each form's
+/// coefficient count, all finite.
+fn check_electrolyte_temperature(et: &ElectrolyteTemperature) -> Result<(), ChemistryError> {
+    if !is_positive(et.t_ref_k) || !et.t_ref_k.is_finite() {
+        return Err(ChemistryError::NotPositive {
+            what: "dfn.electrolyte_temperature.t_ref_k",
+            value: et.t_ref_k,
+        });
+    }
+    let (n_d, n_k) = match et.form {
+        ElectrolyteTemperatureForm::Landesfeind2019 => (4, 6),
+    };
+    if et.diffusivity.len() != n_d {
+        return Err(ChemistryError::LengthMismatch {
+            table: "dfn.electrolyte_temperature.diffusivity (coefficients of the form)",
+            a: et.diffusivity.len(),
+            b: n_d,
+        });
+    }
+    if et.conductivity.len() != n_k {
+        return Err(ChemistryError::LengthMismatch {
+            table: "dfn.electrolyte_temperature.conductivity (coefficients of the form)",
+            a: et.conductivity.len(),
+            b: n_k,
+        });
+    }
+    let finite = et
+        .diffusivity
+        .iter()
+        .chain(&et.conductivity)
+        .all(|v| v.is_finite());
+    if !finite {
+        return Err(ChemistryError::BadRange {
+            what: "dfn.electrolyte_temperature coefficients must be finite",
+        });
+    }
+    // As `check_entropic`: the schema lands with the slice's one snapshot bump, before the
+    // `Dfn` reads it.
+    Err(ChemistryError::BadRange {
+        what: "dfn.electrolyte_temperature is not read by this build yet",
+    })
 }
 
 /// Validate one transport-property fit: a non-empty sum of finite power terms whose
@@ -2296,8 +2452,76 @@ fn check_electrode(side: &'static str, e: &ElectrodeParams) -> Result<(), Chemis
                 what: "spm.positive.docp_dt_v_per_k must be 0 beside a regular_solution,                        which carries its own temperature dependence",
             });
         }
+        if e.entropic.is_some() {
+            return Err(ChemistryError::BadRange {
+                what: "spm.positive.entropic must be absent beside a regular_solution, which \
+                       carries its own temperature dependence",
+            });
+        }
+    }
+    if let Some(t) = &e.entropic {
+        check_entropic(side, e.docp_dt_v_per_k, t)?;
     }
     Ok(())
+}
+
+/// `[spm.*.entropic]`: at least two breakpoints, strictly ascending in \[0, 1\], finite
+/// coefficients of the same count, and no scalar beside it.
+fn check_entropic(
+    side: &'static str,
+    scalar: f64,
+    t: &EntropicTable,
+) -> Result<(), ChemistryError> {
+    let neg = side == "spm.negative";
+    let pick = |n: &'static str, p: &'static str| if neg { n } else { p };
+    if scalar != 0.0 {
+        return Err(ChemistryError::BadRange {
+            what: pick(
+                "spm.negative.docp_dt_v_per_k must be 0 beside spm.negative.entropic",
+                "spm.positive.docp_dt_v_per_k must be 0 beside spm.positive.entropic",
+            ),
+        });
+    }
+    if t.stoich.len() < 2 {
+        return Err(ChemistryError::BadRange {
+            what: pick(
+                "spm.negative.entropic needs at least two breakpoints",
+                "spm.positive.entropic needs at least two breakpoints",
+            ),
+        });
+    }
+    if t.stoich.len() != t.v_per_k.len() {
+        return Err(ChemistryError::LengthMismatch {
+            table: pick("spm.negative.entropic", "spm.positive.entropic"),
+            a: t.stoich.len(),
+            b: t.v_per_k.len(),
+        });
+    }
+    check_strictly_ascending(
+        pick(
+            "spm.negative.entropic.stoich",
+            "spm.positive.entropic.stoich",
+        ),
+        &t.stoich,
+    )?;
+    let in_unit = t.stoich.iter().all(|s| (0.0..=1.0).contains(s));
+    if !in_unit || !t.v_per_k.iter().all(|v| v.is_finite()) {
+        return Err(ChemistryError::BadRange {
+            what: pick(
+                "spm.negative.entropic needs stoich in [0, 1] and finite v_per_k",
+                "spm.positive.entropic needs stoich in [0, 1] and finite v_per_k",
+            ),
+        });
+    }
+    // Phase 11 slice E lands the schema before the physics that reads it, so that one
+    // snapshot bump covers all three of the slice's fields; until the porous models read
+    // this table, a file carrying one would be saying something the engine ignores.
+    Err(ChemistryError::BadRange {
+        what: pick(
+            "spm.negative.entropic is not read by this build yet",
+            "spm.positive.entropic is not read by this build yet",
+        ),
+    })
 }
 
 fn check_strictly_ascending(what: &'static str, xs: &[f64]) -> Result<(), ChemistryError> {

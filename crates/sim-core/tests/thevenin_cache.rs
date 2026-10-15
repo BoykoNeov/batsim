@@ -84,6 +84,7 @@ fn rich_chem() -> ChemistryParams {
                 vec![0.028, 0.020, 0.016],
                 vec![0.029, 0.021, 0.017],
             ],
+            rc_t_ref_k: None,
         },
         rc: vec![
             RcPair {

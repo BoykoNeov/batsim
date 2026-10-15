@@ -66,6 +66,7 @@ fn steep_chem() -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![298.15],
             ohms: vec![vec![0.02], vec![0.02]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.01,
@@ -178,6 +179,7 @@ fn the_filter_reads_its_tables_at_the_probe_temperature() {
         soc: vec![0.0, 1.0],
         temp_k: vec![263.15, 298.15],
         ohms: vec![vec![0.06, 0.02], vec![0.06, 0.02]],
+        rc_t_ref_k: None,
     };
     chem.ocv.docv_dt_v_per_k = Some(vec![0.0005, 0.0005]);
     chem.ocv.t_ref_k = Some(298.15);

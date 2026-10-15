@@ -128,6 +128,7 @@ fn chem(safety: Option<SafetyParams>, h_area_w_per_k: f64) -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![273.15, 373.15],
             ohms: vec![vec![0.02, 0.02], vec![0.02, 0.02]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.01,

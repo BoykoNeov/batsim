@@ -864,6 +864,31 @@ impl CellModel {
         }
     }
 
+    /// What this step multiplies each RC pair's resistance by: the cell's
+    /// `soh_resistance`, times [`rc_temperature_factor`] on an equivalent circuit whose
+    /// chemistry states `[r0] rc_t_ref_k`.
+    ///
+    /// Every function downstream that takes a `soh_resistance` uses it for the RC pairs
+    /// alone (`R0` arrives separately, as `eff_r0_factor`), so this is the one place the
+    /// rule enters: the pack passes the answer wherever it passed `soh_resistance`, and
+    /// the decay memo — keyed on the multiplier's bits — refreshes per cell exactly when
+    /// the multiplier differs. With the rule off it returns `soh_resistance` itself, not
+    /// `soh_resistance · 1.0`, and the porous models, which have no pairs, always do.
+    #[must_use]
+    pub(crate) fn rc_resistance_multiplier(
+        &self,
+        chem: &ChemistryParams,
+        soh_resistance: f64,
+    ) -> f64 {
+        match self {
+            CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => {
+                rc_temperature_factor(&chem.r0, s.soc, s.temp_k)
+                    .map_or(soh_resistance, |f| soh_resistance * f)
+            }
+            CellModel::Spm(_) | CellModel::Dfn(_) | CellModel::SpmEnsemble(_) => soh_resistance,
+        }
+    }
+
     /// How this cell's source moves when read at the end of a `dt`-second step rather
     /// than its start. See [`step_source_shift`]; the pack calls this only for a linear
     /// pack and only when `dt > 0`.
@@ -1914,6 +1939,21 @@ pub(crate) fn cell_source_hinted(
     (e, r)
 }
 
+/// `R0(soc, T) / R0(soc, rc_t_ref_k)`, the factor the RC pairs' resistances follow the
+/// grid's temperature dependence by — or `None` when the chemistry states no
+/// `rc_t_ref_k`, which is the rule being off. See [`crate::chem::R0Table::rc_t_ref_k`].
+///
+/// Read at the same start-of-step `(soc, temp_k)` [`cell_source`] reads `R0` at, through
+/// the unhinted lookup: the rule is opt-in, and the hints belong to the hot path it is
+/// not on. Both lookups are of positive entries (validation), so the ratio is finite
+/// and positive.
+#[must_use]
+pub(crate) fn rc_temperature_factor(table: &R0Table, soc: f64, temp_k: f64) -> Option<f64> {
+    table
+        .rc_t_ref_k
+        .map(|t_ref| r0_lookup(table, soc, temp_k) / r0_lookup(table, soc, t_ref))
+}
+
 /// The per-pair decay `exp(−dt/τ)` that [`rc_update`] will apply this step, with
 /// `τ = r·soh_resistance·c` — the same expression, so the same bits.
 ///
@@ -2434,11 +2474,13 @@ mod hinted_bracket {
                     vec![0.048, 0.020, 0.016],
                     vec![0.050, 0.021, 0.017],
                 ],
+                rc_t_ref_k: None,
             },
             crate::chem::R0Table {
                 soc: vec![0.5],
                 temp_k: vec![298.15],
                 ohms: vec![vec![0.02]],
+                rc_t_ref_k: None,
             },
             crate::chem::R0Table {
                 soc: vec![0.0, 0.1, 0.3, 0.7, 1.0],
@@ -2450,6 +2492,7 @@ mod hinted_bracket {
                     vec![0.071, 0.041, 0.026],
                     vec![0.075, 0.043, 0.027],
                 ],
+                rc_t_ref_k: None,
             },
         ];
         for table in &tables {

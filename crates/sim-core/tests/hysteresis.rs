@@ -91,6 +91,7 @@ fn base_chem() -> ChemistryParams {
             // cannot move with temperature at all.
             temp_k: vec![ROOM_K],
             ohms: vec![vec![0.020], vec![0.020]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.010,

@@ -78,6 +78,7 @@ fn chem() -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![T_ENV],
             ohms: vec![vec![0.016], vec![0.016]],
+            rc_t_ref_k: None,
         },
         rc: vec![
             RcPair {

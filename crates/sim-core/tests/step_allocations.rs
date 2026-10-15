@@ -139,6 +139,7 @@ fn rich_chem() -> ChemistryParams {
                 vec![0.028, 0.020, 0.016],
                 vec![0.029, 0.021, 0.017],
             ],
+            rc_t_ref_k: None,
         },
         rc: vec![
             RcPair {
@@ -179,6 +180,7 @@ fn ensemble_chem() -> ChemistryParams {
                 volts: vec![0.0, 0.0],
             },
             regular_solution: None,
+            entropic: None,
         };
     let mut neg = electrode(5e-6, 3e-15, 30555.0, 0.58, 3.4e-5, 6.48e-7, 35000.0);
     neg.stoich_min = 0.017_617_931_791_027_094;

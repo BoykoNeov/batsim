@@ -59,6 +59,7 @@ fn chem(n_rc: usize) -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![298.15],
             ohms: vec![vec![0.02], vec![0.02]],
+            rc_t_ref_k: None,
         },
         rc: (0..n_rc)
             .map(|k| RcPair {

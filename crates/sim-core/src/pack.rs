@@ -588,7 +588,19 @@ use crate::{Demand, Env, Telemetry};
 /// blob does at v27, `snapshot_version.rs`. Neither API version moves: the film is still
 /// read through [`Pack::cell_film`], and a `Dfn` selecting it is one more value of fields
 /// the wire already carries.
-pub const SNAPSHOT_VERSION: u32 = 27;
+///
+/// v28 (Phase 11 slice E, `docs/plans/phase-11-fitting.md`): three optional chemistry
+/// fields, appended — [`crate::chem::R0Table`] gains `rc_t_ref_k` (the RC pairs follow
+/// `R0`'s temperature ratio), [`crate::chem::ElectrodeParams`] gains `entropic` (the entropy
+/// coefficient as a table over stoichiometry), and [`crate::chem::DfnParams`] gains
+/// `electrolyte_temperature` (Landesfeind 2019's forms). **Unlike the last nine bumps, every
+/// snapshot's bytes change**, because every chemistry has an `[r0]` table: a v27 blob at
+/// v28 reads the start of its `[[rc]]` count as the new field's `Option` tag and fails
+/// there, whatever its model — measured at the field by
+/// `snapshot_version.rs::a_v27_shaped_chemistry_fails_at_its_r0_table`. Neither API version
+/// moves: no telemetry field changes, and the chemistry on the wire is the TOML a client
+/// already sends.
+pub const SNAPSHOT_VERSION: u32 = 28;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -2659,7 +2671,13 @@ impl Pack {
                         cell_src.push(fresh);
                         fresh
                     };
-                    let soh_r = cell.aging.resistance_multiplier();
+                    // The RC pairs' resistance multiplier: `soh_resistance`, and on a chemistry
+                    // that opts in, `R0`'s temperature ratio at this cell's start-of-step
+                    // state (`[r0] rc_t_ref_k`). The memo below keys on its bits, so a pack
+                    // whose cells sit at different temperatures recomputes per cell.
+                    let soh_r = cell
+                        .model
+                        .rc_resistance_multiplier(&self.chem, cell.aging.resistance_multiplier());
                     if soh_r.to_bits() != decay_for.to_bits() {
                         decays = rc_decays(&self.chem, soh_r, dt);
                         decay_for = soh_r;
@@ -3617,7 +3635,11 @@ impl Pack {
                 if plating {
                     flags |= EventFlags::PLATING_RISK;
                 }
-                let soh_r = cell.aging.resistance_multiplier();
+                // The same multiplier the split above used, from the same start-of-step
+                // state: `advance` has not run yet.
+                let soh_r = cell
+                    .model
+                    .rc_resistance_multiplier(&self.chem, cell.aging.resistance_multiplier());
                 if soh_r.to_bits() != adv_decay_for.to_bits() {
                     adv_decays = rc_decays(&self.chem, soh_r, dt);
                     adv_decay_for = soh_r;

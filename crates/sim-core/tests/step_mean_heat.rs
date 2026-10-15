@@ -104,6 +104,7 @@ fn chem(pairs: &[RcPair]) -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![298.15],
             ohms: vec![vec![R0], vec![R0]],
+            rc_t_ref_k: None,
         },
         rc: pairs.to_vec(),
         thermal: ThermalParams {

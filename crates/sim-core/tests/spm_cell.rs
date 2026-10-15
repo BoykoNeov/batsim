@@ -83,6 +83,7 @@ fn spm_chem() -> ChemistryParams {
                     ],
                 },
                 regular_solution: None,
+                entropic: None,
             },
             positive: ElectrodeParams {
                 particle_radius_m: 5.22e-6,
@@ -102,6 +103,7 @@ fn spm_chem() -> ChemistryParams {
                     volts: vec![4.439085, 4.205249, 4.060738, 3.884181, 3.704691, 3.564985],
                 },
                 regular_solution: None,
+                entropic: None,
             },
             sei: None,
         }),
@@ -136,6 +138,7 @@ fn spm_chem() -> ChemistryParams {
             soc: vec![0.0, 1.0],
             temp_k: vec![298.15],
             ohms: vec![vec![0.02], vec![0.02]],
+            rc_t_ref_k: None,
         },
         rc: vec![RcPair {
             r_ohms: 0.010,
