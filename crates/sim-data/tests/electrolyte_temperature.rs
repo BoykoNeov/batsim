@@ -38,8 +38,12 @@ fn section() -> ElectrolyteTemperature {
     }
 }
 
+/// The shipped LG M50 WITHOUT its electrolyte section — since Phase 11 slice C it ships
+/// Landesfeind 2019's, and this file's comparisons are against a cell with none.
 fn plain() -> ChemistryParams {
-    sim_data::parse_chemistry(LGM50).expect("the shipped LG M50 parses")
+    let mut c = sim_data::parse_chemistry(LGM50).expect("the shipped LG M50 parses");
+    c.dfn.as_mut().expect("[dfn]").electrolyte_temperature = None;
+    c
 }
 
 fn with_section() -> ChemistryParams {

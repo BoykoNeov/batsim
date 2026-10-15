@@ -158,10 +158,16 @@ fn no_chemistry_predating_v18_carries_the_v18_sections() {
             chem.hysteresis.is_none(),
             "{id} gained a [hysteresis] section, which moves its trajectories"
         );
-        assert!(
-            chem.ocv.t_ref_k.is_none(),
-            "{id} gained an ocv.t_ref_k, which moves its trajectories"
-        );
+        // The one deliberate exception: Phase 11 gave the LG M50 ORegan2022's entropy
+        // coefficients and its OCV temperature correction (owner decision 3).
+        if id != "nmc_21700_lgm50" {
+            assert!(
+                chem.ocv.t_ref_k.is_none(),
+                "{id} gained an ocv.t_ref_k, which moves its trajectories"
+            );
+        } else {
+            assert_eq!(chem.ocv.t_ref_k, Some(298.15));
+        }
     }
 }
 

@@ -28,8 +28,14 @@ const T_REF: f64 = 298.15;
 const NEG: [f64; 2] = [-3.0e-4, 1.0e-4];
 const POS: [f64; 2] = [2.0e-4, -1.0e-4];
 
+/// The shipped LG M50 WITHOUT its entropy tables — since Phase 11 slice C it ships
+/// ORegan2022's, and this file's comparisons are against a cell with none.
 fn plain() -> ChemistryParams {
-    sim_data::parse_chemistry(LGM50).expect("the shipped LG M50 parses")
+    let mut c = sim_data::parse_chemistry(LGM50).expect("the shipped LG M50 parses");
+    let spm = c.spm.as_mut().expect("[spm]");
+    spm.negative.entropic = None;
+    spm.positive.entropic = None;
+    c
 }
 
 fn with_tables() -> ChemistryParams {
@@ -206,4 +212,66 @@ fn the_energy_ledger_closes_with_the_term() {
             heat - plain_heat
         );
     }
+}
+
+/// The CIRCUIT's reversible heat over one hour-long step is the exact integral of its
+/// `[ocv] docv_dt_v_per_k` column along the step's charge path (Phase 11 slice C). Before
+/// the fix it was read at the start-of-step charge: an hour at 1 A from 30 % booked 0.57 K
+/// where one-minute steps booked 2.17 K (adiabatic, measured). Adiabatic, one cell, and the
+/// two runs differ only by the column — at 298.15 K, its `t_ref_k`, the OCV does not shift —
+/// so their difference is `−T·I·∫c dt / C_th`, computed here from the file's own table.
+#[test]
+fn the_circuits_long_step_reversible_heat_is_the_exact_integral() {
+    let rise = |column: bool| {
+        let mut chem = sim_data::parse_chemistry(LGM50).expect("parses");
+        chem.thermal.h_area_w_per_k = 1.0e-12;
+        if !column {
+            chem.ocv.docv_dt_v_per_k = None;
+            chem.ocv.t_ref_k = None;
+        }
+        let config = PackConfig {
+            aging: None,
+            bms: None,
+            thermal: ThermalConfig::Network {
+                k_neighbor_w_per_k: 1.0,
+            },
+            series: 1,
+            parallel: 1,
+            initial_soc: 0.3,
+            initial_temp_k: T_REF,
+            seed: 3,
+            scatter: Scatter::default(),
+            cell_model: CellModelConfig::Ecm,
+        };
+        let mut p = Pack::new(&config, chem).expect("builds");
+        p.step(3600.0, Demand::Current(1.0), &env(T_REF)).t_max - T_REF
+    };
+    let got = rise(true) - rise(false);
+    let chem = plain();
+    let (xs, col) = (
+        &chem.ocv.soc,
+        chem.ocv
+            .docv_dt_v_per_k
+            .as_ref()
+            .expect("the file's column"),
+    );
+    let at = |z: f64| {
+        let k = xs
+            .iter()
+            .position(|&v| v >= z)
+            .unwrap_or(xs.len() - 1)
+            .max(1);
+        col[k - 1] + (z - xs[k - 1]) / (xs[k] - xs[k - 1]) * (col[k] - col[k - 1])
+    };
+    let k = 200_000;
+    let dz = (1.0 / chem.cell.capacity_ah) / f64::from(k);
+    let c_mean = (0..k)
+        .map(|j| at(0.3 - (f64::from(j) + 0.5) * dz))
+        .sum::<f64>()
+        / f64::from(k);
+    let want = -T_REF * 1.0 * 3600.0 * c_mean / chem.thermal.heat_capacity_j_per_k;
+    assert!(
+        (got / want - 1.0).abs() < 1e-3,
+        "the hour's reversible heat raised the circuit {got:.6} K; its column integrates to {want:.6} K"
+    );
 }

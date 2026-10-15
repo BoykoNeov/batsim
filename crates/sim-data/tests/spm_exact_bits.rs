@@ -88,6 +88,12 @@ fn electrode_values(e: &ElectrodeParams) -> Vec<f64> {
     ];
     v.extend(e.ocp.stoich.iter().copied());
     v.extend(e.ocp.volts.iter().copied());
+    // The entropy table (Phase 11), which the count below did NOT catch when it arrived —
+    // it sits in an `Option` this list never read. Included now so the hash covers it.
+    if let Some(t) = &e.entropic {
+        v.extend(t.stoich.iter().copied());
+        v.extend(t.v_per_k.iter().copied());
+    }
     v
 }
 
@@ -113,15 +119,17 @@ fn the_shipped_spm_parameters_are_pinned_bit_for_bit() {
     // every pre-existing breakpoint and potential is bit-identical and no point was
     // inserted inside the old spans, verified mechanically rather than assumed. The
     // hash below moves anyway, because it hashes the whole table.
+    // Phase 11 slice C added each electrode's entropy table (28 and 22 breakpoints, from
+    // ORegan2022) and two activation energies; the hash moved for both reasons.
     assert_eq!(
         values.len(),
-        4 + 2 * 12 + (47 + 47) + (27 + 27),
+        4 + 2 * 12 + (47 + 47) + (27 + 27) + (28 + 28) + (22 + 22),
         "the [spm] value count changed — extend electrode_values() before repinning"
     );
 
     assert_eq!(
         fnv1a(values),
-        0x2410_32c7_99f2_e883,
+        0xff33_aa42_8c82_705d, // Phase 11 slice C: ORegan2022 activation energies and entropy tables
         "a number in chemistries/nmc_21700_lgm50.toml's [spm] section changed. \
          That is allowed — re-extraction from a newer parameter set is exactly the \
          case — but it must be deliberate: say which number and why, then update \

@@ -53,6 +53,17 @@ const DFN: CellModelConfig = CellModelConfig::Dfn {
 /// A single filmed cell of `model` at `soc`, at `temp_k`, on a live thermal network so it can
 /// be brought to the test chamber's temperature for each test and back.
 fn stored(model: CellModelConfig, soc: f64, temp_k: f64) -> Pack {
+    stored_with(
+        model,
+        soc,
+        temp_k,
+        ThermalConfig::Network {
+            k_neighbor_w_per_k: 0.0,
+        },
+    )
+}
+
+fn stored_with(model: CellModelConfig, soc: f64, temp_k: f64, thermal: ThermalConfig) -> Pack {
     let config = PackConfig {
         series: 1,
         parallel: 1,
@@ -60,9 +71,7 @@ fn stored(model: CellModelConfig, soc: f64, temp_k: f64) -> Pack {
         initial_temp_k: temp_k,
         seed: 1,
         scatter: Scatter::default(),
-        thermal: ThermalConfig::Network {
-            k_neighbor_w_per_k: 0.0,
-        },
+        thermal,
         bms: None,
         aging: Some(AgingConfig {
             calendar: CalendarModel::Film,
@@ -197,10 +206,17 @@ fn lithium_mol(chem: &ChemistryParams, soc: f64) -> f64 {
 /// 1.5632, 0.24 % under PyBaMM's. Held within 0.5 %: past that the engine reads capacity
 /// differently from the reference the fit converted with, and exit 5's agreement would be
 /// luck rather than the same physics.
+///
+/// **Isothermal since Phase 11**, as PyBaMM's figure is. The cell used to carry a thermal
+/// node here too, which changed nothing while its potentials did not move with
+/// temperature; with ORegan2022's entropy coefficients the capacity legs warm it off
+/// 298.15 K and shift its voltage, and the ratio read 1.5500 — a comparison of a warming
+/// cell with an isothermal reference, not of two readings of capacity. Exit 5 below keeps
+/// its thermal node: it is compared with real cells, which do warm.
 #[test]
 fn capacity_lost_per_lithium_lost_on_wmg_steps() {
     let chem = chem();
-    let fresh = stored(SPM, 0.85, 298.15);
+    let fresh = stored_with(SPM, 0.85, 298.15, ThermalConfig::Isothermal);
     let q0 = capacity(&fresh);
     let mut aged = fresh;
     store(&mut aged, 0.0, 365.0, 298.15);

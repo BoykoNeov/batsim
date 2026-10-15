@@ -5702,7 +5702,7 @@ harness meets.
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "v_at:0"
 value = 3.926673
 tol = 5e-4
@@ -5726,7 +5726,7 @@ already in it and nothing else is. One step later the same pack reads 3.918.
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "v_at:2"
 value = 3.918015
 tol = 5e-4
@@ -5745,7 +5745,7 @@ keep separate from the ohmic drop.
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "v_at:400"
 value = 3.470594
 tol = 5e-4
@@ -5764,7 +5764,7 @@ five fragments.
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "v_at:440"
 value = 3.449121
 tol = 5e-4
@@ -5782,7 +5782,7 @@ First of the two readings that establish the plateau: 21 mV over the 40 s before
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "v_at:460"
 value = 3.438645
 tol = 5e-4
@@ -5801,7 +5801,7 @@ distinction `quoted` exists to make.
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "v_at:464"
 value = 3.436554
 tol = 5e-4
@@ -5835,7 +5835,7 @@ what step 16's comparison rests on.
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "v_at:500"
 value = 3.417777
 tol = 5e-4
@@ -5854,7 +5854,7 @@ number is half of the path's sharpest comparison.
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "soc_at:500"
 value = 0.583333
 tol = 5e-4
@@ -5874,16 +5874,16 @@ at three times the rated rate, so half the charge minus the sixth already gone.
 
 [[claim]]
 step = "looks-fine-from-outside"
-literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.33 W of heat."
+literal = "The panel reads 3.927 V at rest; the first step under load drops it to **3.918 V**, and from there it falls steadily to 3.471 V by 400 s and then *flattens* — 3.449 V at 440 s, 3.439 at 460, 3.437 at 464, **3.418 V when the run stops at 500 s** with 58.3 % still showing and 6.19 W of heat."
 quantity = "q_gen_at"
-value = 6.330133
+value = 6.190333
 tol = 5e-3
 tol_from = "spelled"
-spells = "6.33"
+spells = "6.19"
 states = "same"
 read_at_s = 500.0
 display = "heat"
-shows = "6.33 W"
+shows = "6.19 W"
 quoted = true
 note = """
 The last number in the sentence, and the one that makes the trace look most ordinary: 6.3 W
@@ -6558,7 +6558,7 @@ the prose states.
 # EVERY CLAIM HERE IS MEASURED ON THIS STEP'S OWN PACK, and that has not changed — `run`
 # builds one pack per (step, arm), so nothing here can read the twin. What changed is that
 # the twin's numbers no longer have to be claimable to be checked: the step is written as
-# one half of a pair and quotes its twin constantly — `3.918`, `3.471`, `3.437`, `6.33 W` —
+# one half of a pair and quotes its twin constantly — `3.918`, `3.471`, `3.437`, `6.19 W` —
 # and the LEDGER quotes those off step 15's own claims (`Tie::Quoted`), which check 7 checks
 # where they live. The literals below still stop short of the fragments naming the twin, and
 # that is now a division of labour rather than a dodge: this file's claims are about this
@@ -6796,24 +6796,24 @@ of it is a chemistry constant nothing can account for yet.
 
 [[claim]]
 step = "the-electrolyte-starves"
-literal = "22.39 W here"
+literal = "22.26 W here"
 quantity = "q_gen_at"
-value = 22.3922
+value = 22.2560
 tol = 5e-3
 tol_from = "spelled"
-spells = "22.39"
+spells = "22.26"
 states = "same"
 read_at_s = 500.0
 display = "heat"
-shows = "22.39 W"
+shows = "22.26 W"
 quoted = true
 note = """
 "at the mark" — 500 s, this step's `until_s`, and the one number in the sentence that is
-read there rather than at the collapse. Against the twin's 6.33 W from the identical
+read there rather than at the collapse. Against the twin's 6.19 W from the identical
 current, which is not claimed here.
 
 Worth knowing what it is and is not: heat is reported and never integrated on this scenario,
-which is isothermal. 22.39 W is the current times the gap between equilibrium and the
+which is isothermal. 22.26 W is the current times the gap between equilibrium and the
 terminal, and that gap is where the whole disagreement between the two models lives — which
 is why the sentence points at it.
 

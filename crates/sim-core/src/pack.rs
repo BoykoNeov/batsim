@@ -3755,6 +3755,14 @@ impl Pack {
                     let excess = advanced.rc_mean_excess_v;
                     let rev = advanced.reversal_mean_w;
                     let q_mean = if excess == 0.0 { q } else { q + i_k * excess };
+                    // A porous cell's exact reversible mean (Phase 11): `0.0` on every cell
+                    // whose chemistry has no entropy coefficient, guarded as above.
+                    let entropic = advanced.entropic_mean_w;
+                    let q_mean = if entropic == 0.0 {
+                        q_mean
+                    } else {
+                        q_mean + entropic
+                    };
                     // Series-major, parallel-minor — the index order `thermal`
                     // expects.
                     heat_w.push(if rev == 0.0 { q_mean } else { q_mean + rev });

@@ -586,11 +586,46 @@ pub(crate) fn entropic_v_per_k(e: &ElectrodeParams, stoich: f64) -> f64 {
     }
 }
 
+/// The mean of [`entropic_v_per_k`] \[V/K\] over the stoichiometry path `a → b` — exact for
+/// the piecewise-linear table (its antiderivative, clamped flat past either end, as the
+/// lookup is), and the scalar itself for an electrode with no table.
+///
+/// Why it exists: under a step's constant current a particle's bulk stoichiometry moves in
+/// a straight line, so the reversible heat's step mean is `−I·T` times this — exact at any
+/// step length. The two-point rules the heat corrections use for the irreversible part
+/// cannot follow it: the coefficient changes with the charge passed, and on the LG M50 it
+/// changes sign across the window (Phase 11 slice C measured an hour-long `Spm` step at
+/// 0.54 K against 0.81 K in one-minute steps with the endpoint rule).
+#[must_use]
+pub(crate) fn entropic_mean(e: &ElectrodeParams, a: f64, b: f64) -> f64 {
+    let Some(t) = &e.entropic else {
+        return e.docp_dt_v_per_k;
+    };
+    crate::ecm::interp1_mean(&t.stoich, &t.v_per_k, a, b)
+}
+
+/// The cell's reversible heat as a step MEAN \[W\]: `−T·i_p·c̄`, with `c̄` the cell
+/// coefficient's exact mean over the bulk path from `(x0, y0)` to `(x1, y1)` that a step at
+/// the particles' current `i_p` traces. Exactly `0.0`-valued arithmetic on electrodes with
+/// no coefficient (the scalars' difference, both zero on every shipped file but one).
+#[must_use]
+pub(crate) fn entropic_mean_w(
+    neg: &ElectrodeParams,
+    pos: &ElectrodeParams,
+    temp_k: f64,
+    i_p: f64,
+    (x0, x1): (f64, f64),
+    (y0, y1): (f64, f64),
+) -> f64 {
+    let c = entropic_mean(pos, y0, y1) - entropic_mean(neg, x0, x1);
+    -temp_k * i_p * c
+}
+
 /// Whether this electrode's potential moves with temperature at all. `false` for an
 /// electrode with no table and a zero scalar, which is what keeps [`ocp_at`] and its
 /// siblings on the exact arithmetic they had before Phase 11 for every shipped chemistry
 /// but the one that opts in.
-fn has_entropic(e: &ElectrodeParams) -> bool {
+pub(crate) fn has_entropic(e: &ElectrodeParams) -> bool {
     e.entropic.is_some() || e.docp_dt_v_per_k != 0.0
 }
 
@@ -1723,7 +1758,7 @@ pub(crate) fn advance(
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     v_node: f64,
-) -> (EventFlags, f64, f64, (f64, f64)) {
+) -> (EventFlags, f64, f64, (f64, f64), f64) {
     let moves = !dt.is_nan() && dt > 0.0;
     // The heat terms read the kinetics, so they need the real resistance factor; the
     // diffusion below does not, which is the note on its own `Working`.
@@ -1744,6 +1779,21 @@ pub(crate) fn advance(
         )
     } else {
         (0.0, 0.0)
+    };
+    // The step-mean path's own start: the equilibrium voltage at the cell's temperature and
+    // the bulk stoichiometries the reversible mean integrates from. Read only where a
+    // coefficient exists; elsewhere `equilibrium_voltage` IS `energy_voltage`'s arithmetic.
+    let entropic = has_entropic(wk.neg.p) || has_entropic(wk.pos.p);
+    let bulk = |s: &SpmState| {
+        (
+            mean_concentration(&s.c_neg) / spm.negative.c_max_mol_per_m3,
+            mean_concentration(&s.c_pos) / spm.positive.c_max_mol_per_m3,
+        )
+    };
+    let (u_start_t, bulk_start) = if moves && entropic {
+        (equilibrium_voltage(&wk, s), bulk(s))
+    } else {
+        (start.0, (0.0, 0.0))
     };
     // The resistance factor is passed as `1.0` and it is not a placeholder: it
     // reaches only `m_ref` and `r_contact`, and diffusion uses neither. Handing the
@@ -1779,7 +1829,7 @@ pub(crate) fn advance(
         flags |= EventFlags::SOC_CLAMPED_LOW;
     }
     if !moves {
-        return (flags, 0.0, 0.0, (0.0, 0.0));
+        return (flags, 0.0, 0.0, (0.0, 0.0), 0.0);
     }
     let (u_start, v_start) = start;
     if !surfaces_in_range(&wk, s, i_p) {
@@ -1802,10 +1852,33 @@ pub(crate) fn advance(
     // What the pack's estimate already holds, and so what each correction takes back out.
     let estimate = u_start - v_node;
     let at_end = u_end - v_end;
+    if !entropic {
+        return (
+            flags,
+            at_end - estimate,
+            0.5 * ((u_start - v_start) + at_end) - estimate,
+            (rev_end, 0.5 * (rev_start + rev_end)),
+            0.0,
+        );
+    }
+    // With an entropy coefficient the step mean splits: the irreversible part on the same
+    // trapezoid, but of `U(T) − V`, and the reversible part exactly, from the bulk path.
+    // The end instant above keeps the stored-energy form, which closes the ledger there.
+    let u_end_t = equilibrium_voltage(&wk, s);
+    let bulk_end = bulk(s);
+    let rev_mean = 0.5 * (rev_at(u_start_t, d_start) + rev_at(u_end_t, s.soc_deficit));
     (
         flags,
         at_end - estimate,
-        0.5 * ((u_start - v_start) + at_end) - estimate,
-        (rev_end, 0.5 * (rev_start + rev_end)),
+        0.5 * ((u_start_t - v_start) + (u_end_t - v_end)) - estimate,
+        (rev_end, rev_mean),
+        entropic_mean_w(
+            wk.neg.p,
+            wk.pos.p,
+            s.temp_k,
+            i_p,
+            (bulk_start.0, bulk_end.0),
+            (bulk_start.1, bulk_end.1),
+        ),
     )
 }

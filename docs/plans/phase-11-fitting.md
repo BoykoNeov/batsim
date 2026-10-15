@@ -305,3 +305,80 @@ about a minute onset-to-vent), so they were scaled with it (×1.513: 29.8 → 45
 8.0 → 12.1 W) and stay labelled placeholders. **Nothing in the workspace moved**: the whole
 suite, the guided path's claims checker run in report-all mode included, is green with no
 claim moved — no LG M50 lesson runs with a battery manager or a thermal network.
+
+## Addendum 2026-10-15 — slice C: the entropy and cold data, and what they surfaced
+
+**The data**, printed by `tools/reference/extract_oregan.py` (new): ORegan2022's entropy
+curves as `[spm.*.entropic]` tables (28 and 22 breakpoints, ≤ 1.7 µV/K, cross-checked at 7
+points), the circuit's `[ocv] docv_dt_v_per_k` column on the same window with `t_ref_k =
+298.15`, the solid-diffusion activation energies (17 393.9 and 12 047.7 J/mol, `d·R`), and
+`[dfn.electrolyte_temperature]` with Landesfeind 2019's coefficients read from PyBaMM's
+source. At 298.15 K none of it moves a voltage (the circuit's 25 °C references regenerated
+byte-identical in their data), but reversible heat is non-zero at any temperature.
+
+**Sorted before anything was re-pinned** (the reviewer's rule: at exactly 298.15 K only heat
+may move). Of the ~20 reds: two lesson numbers, both heat (`q_gen_at` — 6.33 → 6.19 W and 22.39
+→ 22.26 W, re-measured); value pins (the `[dfn]` count with the new values pinned by name, the
+activation energies, the `[spm]` hash — whose value list had never read the new table, now
+extended); `load.rs`'s pre-v18 rule (LG M50 exempted by name); slice E's own fixtures, whose
+"plain" cell is now the shipped one stripped; the reversal ledgers, whose stored energy is now
+`U − t_ref·∂U/∂T`; and the film tests. Each of the rest was a finding:
+
+* **The circuit and both porous models read the reversible heat at one point of a long step.**
+  Folding it into the stored-energy potential (slice E) was right for the instant and the
+  ledger, but handed it to the two-point rules, and a coefficient that changes sign across the
+  window does not follow an endpoint. Fixed exactly: the charge (circuit) or bulk stoichiometry
+  (porous) moves linearly under the step's current and the tables are piecewise linear, so the
+  reversible mean is the table's exact mean over the path — `ecm::interp1_mean`, carried as
+  `Advanced::entropic_mean_w` into the network's heat; the reported instant is unchanged; NiMH's
+  constant column is skipped so it runs bit-identically. Measured adiabatic: the circuit's
+  hour-long 1 A step from 30 % booked 0.57 K of reversible heat against 2.17 K in one-minute
+  steps and now 2.234 K against the tables' integral; the `Spm`'s hour matches the integral to
+  four decimals (−1.0399 K). `spm_long_step.rs`'s ratio test was split, since its ratio of
+  totals mixed the two: the resistive part on its old bar (0.827, as recorded), the reversible
+  part against the integral. `entropic.rs` holds the circuit's.
+* **The `Dfn`'s long steps under a thermal network.** With temperature-dependent transport a
+  step solved at its starting temperature over-heats when the cell warms 15 K across it: a
+  half-hour 1C step +10.5 % against a 10 % bar, an hour's C/2 charge's REPORTED heat +22 %
+  (reversible heat moving under an end-instant report). 15-minute steps: −1.3 % and +4.1 %.
+  **Owner: a recorded 15-minute limit**, no engine change; `dfn_long_step_heat.rs` runs those
+  two cases at 15 minutes and pins the half-hour +10.5 % between 5 and 15 %.
+* **The SEI film's potential now shifts with temperature**, so its PyBaMM references (made
+  without entropy) disagreed away from 25 °C (2.96 % at 45 °C). Regenerated with the file's
+  tables and activation energies as PyBaMM inputs (`sei_golden.py::with_temperature_terms`; the
+  25 °C rows byte-identical), the tests are back at their old precision. The film-energy ledger
+  needed `U − t_ref·∂U/∂T` too; its "touches no positive lithium" check became a comparison with
+  a film-less control (bit-exact on the `Spm`; on the `Dfn` the TOTAL, since the film moves
+  lithium between positive nodes at rest), because the diffusion solve's own rounding drift grew
+  from 4e-15 to 3.75e-11 with the Arrhenius factor. The WMG conversion-ratio test now runs
+  isothermal like the PyBaMM figure it compares with: its capacity legs used to warm the cell,
+  harmless until the potentials moved with temperature (it read 1.5500 against 1.567).
+  Phase 10's exit 5 against the real cells still passes — no owner question was needed.
+* **The circuit's cold references** regenerated with the entropy terms and the cold columns
+  refitted: −10 °C 11.15 mV, +45 °C 3.51 mV; the replay within 0.06 mV again.
+* **Exit 5, the cold `Dfn`** (`dfn_cold.rs`, reference `dfn_cold_golden.py`). The bar set
+  before the run — 12 mV, whole run, recommended 10/5/10 grid — **failed at 415 mV**.
+  Single-term references put the whole gap on the electrolyte's diffusivity (conductivity
+  alone 3 mV, solid diffusion 5, entropy 3), and refining the x-grid closes it (41 → 5 → 1.5 mV
+  at 2500 s for 10/5/10, 20/10/20, 30/15/30): at −10 °C the electrolyte diffuses 0.4× as fast,
+  its profile steepens, and the recommended grid is too coarse — the same limit the 25 °C 3C
+  test records. The engine's ratios equal PyBaMM's own evaluation to six digits. A second bar,
+  set before it ran on 20/10/20, failed on its first step (16.3 mV — the radial first-step
+  error, larger cold). **The final bar was set after measurement and says so**: on 20/10/20,
+  12 mV from the second step while the reference reads ≥ 2.75 V (9.15 mV measured, then 1–4),
+  the first step under 20 mV (16.3), the cut-off within 1 % (2784 s against 2785). The
+  recommended grid's cold cut-off, 4.4 % early, is pinned as a recorded limit.
+
+Two more, found by the slice's full suite after the reversible-mean change:
+
+* **The many-particle cell** had been left on the endpoint rule, and its one-particle case is
+  pinned bit for bit to the `Spm` — on the LG M50 (now with entropy tables) it parted in the
+  last bits. It takes the same split now (each positive particle's exact path mean, averaged;
+  a regular-solution positive has no table and keeps its own `reversible_w`), and one particle
+  is the `Spm` bit for bit again.
+* **A rounding hair past the `Dfn`'s empty edge.** A scattered 1S1P held at an unmeetable 10 W
+  for hours, one kelvin warmer than before because of the new reversible heat, was flagged
+  `SOC_CLAMPED_LOW` at hour 1: the pack's range reaches a cell through its line, the mapped
+  current landed 2.6e-17 A past the cell's own 0.2065 A edge, and `split` booked a 5.1e-18
+  deficit. Within eight ulps of the edge, from no deficit, the current is now the edge — the
+  same "rounding hair either side" convention `pack_current_window` already applies at zero.

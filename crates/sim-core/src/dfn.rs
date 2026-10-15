@@ -1947,6 +1947,17 @@ fn split(s: &DfnState, edge: f64, i: f64, dt: f64, eff_capacity_ah: f64) -> (f64
     if !i_p.is_finite() {
         return (i, d0);
     }
+    // A current a rounding hair past the edge IS the edge. The pack's range reaches a cell
+    // through that cell's line (`pack_current_window`), and the mapped current can land a
+    // few ulps either side of the edge the cell computes for itself; booking the excess as a
+    // deficit flags `SOC_CLAMPED_LOW` on a cell nothing drove past empty. Measured, Phase 11:
+    // 2.6e-17 A past a 0.2065 A edge, a deficit of 5.1e-18, once the entropy tables moved the
+    // cell's temperature by a kelvin. Eight ulps of the edge, and only from no deficit.
+    let i_p = if d0 == 0.0 && i > i_p && i - i_p <= 8.0 * f64::EPSILON * i_p.abs() {
+        i
+    } else {
+        i_p
+    };
     let d_end = d0 + (i - i_p) * per_amp;
     if d_end < 0.0 {
         (i + d0 / per_amp, 0.0)
@@ -2514,10 +2525,10 @@ pub(crate) fn advance(
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     v_node: f64,
-) -> (EventFlags, f64, f64) {
+) -> (EventFlags, f64, f64, (f64, f64), f64) {
     let mut flags = EventFlags::empty();
     if dt.is_nan() || dt <= 0.0 {
-        return (flags | soc_flags(s, spm), 0.0, 0.0);
+        return (flags | soc_flags(s, spm), 0.0, 0.0, (0.0, 0.0), 0.0);
     }
     let sides = Sides::new(spm, dfn, s.temp_k, eff_r0_factor, eff_capacity_ah);
     let grid = Grid::of(spm, dfn, &sides, s);
@@ -2525,7 +2536,7 @@ pub(crate) fn advance(
         // Only reachable from a hand-edited snapshot; `step` may not panic, so a grid that
         // does not describe the state it came from does nothing rather than indexing off
         // the end of it.
-        return (flags | soc_flags(s, spm), 0.0, 0.0);
+        return (flags | soc_flags(s, spm), 0.0, 0.0, (0.0, 0.0), 0.0);
     }
     let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
     // The same division [`probe_at`] read the curve with: `(i, 0.0)` inside the window.
@@ -2535,6 +2546,18 @@ pub(crate) fn advance(
     // What the pack's heat estimate reads as the equilibrium voltage, and so what the
     // correction below has to take back out: the start of the step, before `commit`.
     let u_start = energy_voltage(s, spm);
+    // The bulk path the reversible mean integrates along, on a chemistry with an entropy
+    // coefficient (Phase 11); nothing is read without one.
+    let entropic =
+        crate::spm::has_entropic(&spm.negative) || crate::spm::has_entropic(&spm.positive);
+    let bulk_start = if entropic {
+        (
+            bulk_stoich(&s.c_neg, spm.negative.c_max_mol_per_m3),
+            bulk_stoich(&s.c_pos, spm.positive.c_max_mol_per_m3),
+        )
+    } else {
+        (0.0, 0.0)
+    };
     let solved = solve(s, &setup, i_p, dt);
     if !solved.converged {
         flags |= EventFlags::SOLVE_UNCONVERGED;
@@ -2583,15 +2606,47 @@ pub(crate) fn advance(
     // The reversal channel's share of the heat: what `i·(U_eq − V)` misbooks when part of
     // the current is not the solid's. See [`crate::spm::advance`].
     let i_d = i - i_p;
-    let rev_w = if i_d == 0.0 {
-        0.0
-    } else {
-        i_d * (empty_voltage(spm, s.temp_k) - reversal_drop(spm, rev, d_end, s.temp_k) - u_end)
+    let rev_at = |u: f64| {
+        if i_d == 0.0 {
+            0.0
+        } else {
+            i_d * (empty_voltage(spm, s.temp_k) - reversal_drop(spm, rev, d_end, s.temp_k) - u)
+        }
     };
+    let rev_w = rev_at(u_end);
+    let flags = flags | soc_flags(s, spm);
+    if !entropic {
+        // The end alone, for the instant and for the step (`docs/plans/dfn-end-of-step-heat.md`).
+        return (
+            flags,
+            at_end - (u_start - v_node),
+            at_end - (u_start - v_node),
+            (rev_w, rev_w),
+            0.0,
+        );
+    }
+    // With an entropy coefficient the step's heat splits: the irreversible part still read at
+    // the end (its overpotential builds within seconds), but of `U(T) − V`; the reversible
+    // part exactly, from the bulk path — it moves with the charge passed, and no endpoint
+    // follows it over a long step. The instant keeps the stored-energy form.
+    let u_end_t = equilibrium_voltage(s, spm);
+    let bulk_end = (
+        bulk_stoich(&s.c_neg, spm.negative.c_max_mol_per_m3),
+        bulk_stoich(&s.c_pos, spm.positive.c_max_mol_per_m3),
+    );
     (
-        flags | soc_flags(s, spm),
+        flags,
         at_end - (u_start - v_node),
-        rev_w,
+        (u_end_t - v_end) - (u_start - v_node),
+        (rev_w, rev_at(u_end_t)),
+        crate::spm::entropic_mean_w(
+            &spm.negative,
+            &spm.positive,
+            s.temp_k,
+            i_p,
+            (bulk_start.0, bulk_end.0),
+            (bulk_start.1, bulk_end.1),
+        ),
     )
 }
 

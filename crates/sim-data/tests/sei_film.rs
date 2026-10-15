@@ -199,20 +199,43 @@ fn the_film_closes_the_energy_ledger() {
             .expect("a filmed cell reports its film's energy every step");
     }
     let (neg1, pos1) = particles(&pack);
-    // Not bit-equal: the diffusion solve rounds a uniform profile, film or no film — by
-    // 4e-15 of its lithium over this year (measured). The film takes nothing from it.
-    let (p0, p1) = (mean(&pos0), mean(&pos1));
+    // The positive particle against a control cell with no film, bit for bit. The diffusion
+    // solve rounds a uniform profile either way — 4e-15 of its lithium over this year until
+    // Phase 11, 3.75e-11 since its diffusivity took an Arrhenius factor (measured) — so the
+    // claim that the film takes nothing from it is a comparison with the same solve, not a
+    // bar on the solve's own drift.
+    let mut control = Pack::new(
+        &config(0.85, 318.15, CalendarModel::Curve, SPM),
+        chem.clone(),
+    )
+    .expect("a control pack builds");
+    for _ in 0..365 * 24 {
+        control.step(3600.0, Demand::Rest, &env(318.15));
+    }
+    let (_, pos_control) = particles(&control);
     assert!(
-        (p1 / p0 - 1.0).abs() < 1e-12,
-        "a resting film touches no positive lithium: {p0} -> {p1}"
+        pos1.iter()
+            .zip(&pos_control)
+            .all(|(a, b)| a.to_bits() == b.to_bits()),
+        "a resting film touches no positive lithium: {} against {} without a film",
+        mean(&pos1),
+        mean(&pos_control)
     );
+    let _ = pos0;
     let (x0, x1) = (
         mean(&neg0) / n.c_max_mol_per_m3,
         mean(&neg1) / n.c_max_mol_per_m3,
     );
     // Coulombs of the engine's charge per unit of negative stoichiometry.
     let per_stoich = chem.cell.capacity_ah * 3600.0 / (n.stoich_max - n.stoich_min);
-    let stored = per_stoich * integral(&n.ocp.stoich, &n.ocp.volts, x1, x0);
+    // At each electrode's `U − t_ref·∂U/∂T` (Phase 11): the potential the engine books the
+    // film's lithium at, and the one the ledger closes against with an entropy coefficient.
+    let entropic = n
+        .entropic
+        .as_ref()
+        .map_or(0.0, |t| integral(&t.stoich, &t.v_per_k, x1, x0));
+    let stored =
+        per_stoich * (integral(&n.ocp.stoich, &n.ocp.volts, x1, x0) - spm.t_ref_k * entropic);
     assert!(
         stored > 0.0,
         "the film took lithium and the ledger saw none"

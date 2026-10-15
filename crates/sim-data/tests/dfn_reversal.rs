@@ -301,9 +301,19 @@ fn stored_j(c: &ChemistryParams, raw: f64, deficit: f64) -> f64 {
         ocp_lookup(&p.ocp, p.stoich_max - z * (p.stoich_max - p.stoich_min))
             - ocp_lookup(&n.ocp, n.stoich_min + z * (n.stoich_max - n.stoich_min))
     };
+    // Stored energy is counted at each electrode's `U − t_ref·∂U/∂T` (Phase 11): with an
+    // entropy coefficient the heat is `I·(that − V)`, so the ledger closes against it. The
+    // reversal ramp still starts from the plain `U` at empty, as the engine's does.
+    let h = |z: f64| {
+        let (x, y) = (
+            n.stoich_min + z * (n.stoich_max - n.stoich_min),
+            p.stoich_max - z * (p.stoich_max - p.stoich_min),
+        );
+        u(z) - spm.t_ref_k * (entropic(p, y) - entropic(n, x))
+    };
     let u_empty = u(0.0);
     let ramp = |d: f64| (u_empty - c.reversal.v_per_soc * d).max(c.reversal.floor_v);
-    let extended = |z: f64| if z >= 0.0 { u(z) } else { ramp(-z) };
+    let extended = |z: f64| if z >= 0.0 { h(z) } else { ramp(-z) };
     let integrate = |f: &dyn Fn(f64) -> f64, a: f64, b: f64| {
         let k = 100_000;
         let h = (b - a) / k as f64;
@@ -408,4 +418,21 @@ fn over_discharge_damages_an_aging_dfn() {
         lost >= fade * ah_past * 0.8 && lost <= fade * ah_past * 1.05,
         "lost {lost} over {ah_past} Ah past empty at {fade} per Ah"
     );
+}
+
+/// An electrode's entropy coefficient \[V/K\] at `sto`: its table by clamped linear
+/// interpolation, else its scalar — written here so the ledger owes the engine nothing.
+fn entropic(e: &sim_core::ElectrodeParams, sto: f64) -> f64 {
+    let Some(t) = &e.entropic else {
+        return e.docp_dt_v_per_k;
+    };
+    let (xs, ys) = (&t.stoich, &t.v_per_k);
+    if sto <= xs[0] {
+        return ys[0];
+    }
+    let k = xs.iter().position(|&v| v >= sto).unwrap_or(xs.len() - 1);
+    if k == 0 || sto >= xs[xs.len() - 1] {
+        return ys[k];
+    }
+    ys[k - 1] + (sto - xs[k - 1]) / (xs[k] - xs[k - 1]) * (ys[k] - ys[k - 1])
 }

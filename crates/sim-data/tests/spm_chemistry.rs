@@ -101,13 +101,15 @@ fn spm_section_carries_the_extracted_chen2020_values() {
     assert_eq!(spm.positive.reaction_ea_j_per_mol, 17800.0);
 
     // Chen2020 fits solid diffusivity as a constant and publishes no activation energy
-    // for it. The zero is the documented absence, not an oversight — see the field's
-    // doc comment and the note in the TOML.
-    assert_eq!(spm.negative.diffusivity_ea_j_per_mol, 0.0);
-    assert_eq!(spm.positive.diffusivity_ea_j_per_mol, 0.0);
-    // Likewise both entropic-change keys are literally 0.0 in Chen2020.
+    // for it; since Phase 11 the file carries ORegan2022's (E_D_s = d * R, d = 2092 and
+    // 1449), printed by tools/reference/extract_oregan.py.
+    assert_eq!(spm.negative.diffusivity_ea_j_per_mol, 17393.9);
+    assert_eq!(spm.positive.diffusivity_ea_j_per_mol, 12047.7);
+    // Both entropic-change keys are literally 0.0 in Chen2020, and must stay 0 beside the
+    // ORegan2022 tables the file now carries in [spm.*.entropic].
     assert_eq!(spm.negative.docp_dt_v_per_k, 0.0);
     assert_eq!(spm.positive.docp_dt_v_per_k, 0.0);
+    assert!(spm.negative.entropic.is_some() && spm.positive.entropic.is_some());
 }
 
 /// The half-cell OCP tables run **downhill**, and cover the window the cell works in.

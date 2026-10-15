@@ -32,7 +32,7 @@
 [meta]
 id         = "nmc_21700_lgm50"
 name       = "LG M50 21700 (NMC811/graphite)"
-provenance = "SPM parameters extracted verbatim from PyBaMM's Chen2020 parameter set (Chang-Hui Chen et al., 'Development of Experimental Techniques for Parameterization of Multi-scale Lithium-ion Battery Models', J. Electrochem. Soc. 167 (2020) 080534) by tools/reference/extract_spm.py; [dfn] extracted from the same set by tools/reference/extract_dfn.py, its two electrolyte transport fits being Nyman 2008 (A. Nyman, M. Behm, G. Lindbergh, 'Electrochemical characterisation and modelling of the mass transport phenomena in LiPF6-EC-EMC electrolyte', Electrochim. Acta 53 (2008) 6356) stored as published coefficients rather than sampled; [ocv] and capacity fitted from the same set by tools/reference/fit_ocv.py; [thermal] from ORegan2022's measured component heat capacities and LG's specification sheet mass; [cell] current and temperature limits from LG's specification sheet (strictest rows); [r0]/[[rc]] fitted to the same set's DFN by tools/reference/fit_ecm.py (residuals in their comments); [reversal]/[aging]/[safety] are labelled placeholders."
+provenance = "SPM parameters extracted verbatim from PyBaMM's Chen2020 parameter set (Chang-Hui Chen et al., 'Development of Experimental Techniques for Parameterization of Multi-scale Lithium-ion Battery Models', J. Electrochem. Soc. 167 (2020) 080534) by tools/reference/extract_spm.py; [dfn] extracted from the same set by tools/reference/extract_dfn.py, its two electrolyte transport fits being Nyman 2008 (A. Nyman, M. Behm, G. Lindbergh, 'Electrochemical characterisation and modelling of the mass transport phenomena in LiPF6-EC-EMC electrolyte', Electrochim. Acta 53 (2008) 6356) stored as published coefficients rather than sampled; [ocv] and capacity fitted from the same set by tools/reference/fit_ocv.py; [thermal] from ORegan2022's measured component heat capacities and LG's specification sheet mass; [cell] current and temperature limits from LG's specification sheet (strictest rows); [r0]/[[rc]] fitted to the same set's DFN by tools/reference/fit_ecm.py (residuals in their comments); ORegan2022's entropy tables, solid-diffusion activation energies and Landesfeind 2019 electrolyte temperature forms added by tools/reference/extract_oregan.py; [reversal]/[aging]/[safety] are labelled placeholders."
 
 [cell]
 # provenance: usable capacity between the Chen2020 stoichiometry limits, as reported by
@@ -62,6 +62,12 @@ t_max_k         = 318.15   # provenance: LG sheet 2.7, charge operating ceiling 
 [ocv]
 soc   = [0.0000, 0.0020, 0.0040, 0.0060, 0.0085, 0.0105, 0.0130, 0.0150, 0.0175, 0.0200, 0.0225, 0.0250, 0.0275, 0.0300, 0.0330, 0.0360, 0.0390, 0.0445, 0.0500, 0.0560, 0.0630, 0.0725, 0.1110, 0.1250, 0.1335, 0.1420, 0.1510, 0.1615, 0.1795, 0.2250, 0.2500, 0.3240, 0.3475, 0.3750, 0.4450, 0.4705, 0.5000, 0.5530, 0.6250, 0.6440, 0.6755, 0.6910, 0.7500, 0.8030, 0.8275, 0.8515, 0.8750, 0.9180, 0.9310, 0.9430, 0.9555, 0.9690, 0.9835, 1.0000]
 volts = [2.5000, 2.5482, 2.5932, 2.6353, 2.6841, 2.7202, 2.7621, 2.7932, 2.8293, 2.8625, 2.8931, 2.9212, 2.9472, 2.9712, 2.9976, 3.0216, 3.0435, 3.0790, 3.1094, 3.1382, 3.1673, 3.2021, 3.3342, 3.3787, 3.4012, 3.4197, 3.4355, 3.4498, 3.4682, 3.5056, 3.5286, 3.6058, 3.6270, 3.6487, 3.7013, 3.7232, 3.7509, 3.8010, 3.8624, 3.8825, 3.9212, 3.9387, 3.9943, 4.0449, 4.0660, 4.0817, 4.0911, 4.1017, 4.1080, 4.1169, 4.1296, 4.1473, 4.1704, 4.2000]
+# Entropy coefficient on the same nodes: ORegan2022's dU_p/dT(y) - dU_n/dT(x) on this
+# file's stoichiometry window, by tools/reference/extract_oregan.py (Phase 11). With
+# t_ref_k stated, the circuit's OCV shifts by (T - t_ref_k)*dU/dT away from 25 degC as
+# well as generating reversible heat — the same as the porous models (owner decision 3).
+docv_dt_v_per_k = [-2.626106e-04, -2.704887e-04, -2.784385e-04, -2.864413e-04, -2.964898e-04, -3.045396e-04, -3.145801e-04, -3.225679e-04, -3.324591e-04, -3.422031e-04, -3.517527e-04, -3.610602e-04, -3.700773e-04, -3.787565e-04, -3.886589e-04, -3.979270e-04, -4.064845e-04, -4.200921e-04, -4.306771e-04, -4.384065e-04, -4.420305e-04, -4.373859e-04, -3.268009e-04, -2.691460e-04, -2.350364e-04, -2.031836e-04, -1.728735e-04, -1.426579e-04, -1.038627e-04, -5.742466e-05, -4.596648e-05, -2.128140e-05, -1.436193e-05, -6.861085e-06, 9.058110e-06, 1.378442e-05, 1.865206e-05, 2.612633e-05, 3.460535e-05, 3.665530e-05, 3.995438e-05, 4.154457e-05, 4.747997e-05, 5.273420e-05, 5.518632e-05, 5.784710e-05, 6.172622e-05, 8.068575e-05, 9.010755e-05, 9.870441e-05, 1.056926e-04, 1.091145e-04, 1.072490e-04, 9.994211e-05]
+t_ref_k = 298.15
 
 # The equivalent circuit below is FITTED to PyBaMM's DFN by tools/reference/fit_ecm.py
 # (Phase 11 slice A, docs/plans/phase-11-fitting.md): an HPPC-style train — at each 10 % of
@@ -72,8 +78,10 @@ volts = [2.5000, 2.5482, 2.5932, 2.6353, 2.6841, 2.7202, 2.7621, 2.7932, 2.8293,
 # simulated the engine's way against the reference's own OCV, residuals weighted by time;
 # design rate 1C. Time-weighted RMS above 5 % charge:
 #   1C 25 degC 4.85 mV (pulses 14.58, moves 8.16, rests 2.70); 3C 25 degC (scored, not
-#   fitted) 18.81 mV — a linear circuit cannot hold both rates; 1C -10 degC 11.16 mV
-#   (pulses 68.6); 1C +45 degC 3.53 mV.
+#   fitted) 18.81 mV — a linear circuit cannot hold both rates; 1C -10 degC 11.15 mV
+#   (pulses 67.9); 1C +45 degC 3.51 mV. Since slice C the cold and warm
+#   references carry ORegan2022's entropy terms, as the engine does; the 25 degC ones are
+#   byte-identical to before (the shift is exactly zero there).
 
 # Ohmic series resistance R0[soc][temp_k], ohms. Bilinear interpolation, clamped.
 # provenance: FITTED (above). Nodes at the train's ten pulse levels; below 10 % nothing was
@@ -87,18 +95,18 @@ soc    = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 temp_k = [263.15, 298.15, 318.15]
 # The [[rc]] pairs were fitted at 298.15 K and follow this grid's temperature ratio there,
 # R_rc(soc, T) = r_ohms * R0(soc, T) / R0(soc, 298.15), capacitance held (owner decision 6):
-# measured, it halves the cold residual (1C -10 degC 22.50 -> 11.16 mV; +45 degC 5.85 -> 3.53).
+# measured, it halves the cold residual (1C -10 degC 22.38 -> 11.15 mV; +45 degC 5.81 -> 3.51).
 rc_t_ref_k = 298.15
-ohms   = [[0.081267, 0.036259, 0.023383],
-          [0.065648, 0.029096, 0.018004],
-          [0.058404, 0.025572, 0.015747],
-          [0.058071, 0.025375, 0.016079],
-          [0.060287, 0.027017, 0.017729],
-          [0.061947, 0.027908, 0.018249],
-          [0.063357, 0.028319, 0.018620],
-          [0.062963, 0.028419, 0.018465],
-          [0.060545, 0.028677, 0.017825],
-          [0.063127, 0.033054, 0.021873]]
+ohms   = [[0.080795, 0.036259, 0.023478],
+          [0.065273, 0.029096, 0.018073],
+          [0.058210, 0.025572, 0.015787],
+          [0.057992, 0.025375, 0.016100],
+          [0.060230, 0.027017, 0.017743],
+          [0.061891, 0.027908, 0.018251],
+          [0.063332, 0.028319, 0.018604],
+          [0.062934, 0.028419, 0.018463],
+          [0.060425, 0.028677, 0.017861],
+          [0.062924, 0.033054, 0.021927]]
 
 # Fast pair. provenance: FITTED (above), tau = 36.8 s at 25 degC.
 [[rc]]
@@ -150,9 +158,10 @@ heat_capacity_j_per_k = 55.16
 # the engine expects and scales down per cell by neighbour occlusion.
 h_area_w_per_k        = 0.0531
 
-# No docv_dt_v_per_k column: Chen2020's entropic-change keys are both literally 0.0 (see
-# docp_dt_v_per_k in [spm] below), so this chemistry generates no reversible heat in
-# either model. That is the parameter set's own value, not a missing measurement.
+# Reversible heat: Chen2020's entropic-change keys are both literally 0.0; since Phase 11 the
+# file carries ORegan2022's curves instead ([ocv] docv_dt_v_per_k for the circuit,
+# [spm.*.entropic] for the porous models), so all three models generate it and shift their
+# potentials with temperature.
 
 # Semi-empirical aging. All placeholders, scaled from nmc_18650_generic.toml — the same
 # NMC class, a different format — with the one rescale that capacity forces.
@@ -204,16 +213,15 @@ plating_short_ohms         = 25.0    # provenance: placeholder soft short, ~1000
 # Every value below is a key of the Chen2020 parameter set, a literal inside one of its
 # functions, or a stated product of two keys. Nothing here is fitted or invented.
 #
-# ## One field is deliberately absent, in both electrodes: diffusivity_ea_j_per_mol
+# ## Two additions from ORegan2022, the same cell's thermal parameterisation (Phase 11)
 #
 # Chen2020 fits solid-phase diffusivity as a CONSTANT at 298.15 K and publishes no
-# activation energy for it, while it does publish one for the kinetics (E_r, inside the
-# exchange-current-density functions, extracted below). So this cell's kinetics respond to
-# temperature and its solid diffusion does not. That is a real limitation of the parameter
-# set, and it is left visible rather than papered over with a plausible number, which is
-# what the provenance rule forbids. The schema field exists and defaults to zero
-# (= temperature-independent); a parameter set that publishes one will fill it.
-# TODO: source an activation energy for D_s from a set that measures it.
+# activation energy for it, and its entropy coefficients are literally 0. Until Phase 11 both
+# were left visible as limitations. ORegan2022 measures both on the LG M50, so the file now
+# carries its diffusivity activation energies (diffusivity_ea_j_per_mol, applied to
+# Chen2020's constant diffusivities) and its entropy-coefficient curves ([spm.*.entropic]),
+# printed by tools/reference/extract_oregan.py. Every OTHER value in [spm] is still a
+# Chen2020 key, literal or stated product, and extract_spm.py still prints exactly them.
 [spm]
 t_ref_k                = 298.15   # Chen2020 "Reference temperature [K]"
 c_e_mol_per_m3         = 1000     # Chen2020 "Initial concentration in electrolyte [mol.m-3]"; constant, per the single-particle approximation
@@ -231,7 +239,8 @@ reaction_ea_j_per_mol   = 35000      # E_r, literal inside the same function
 charge_transfer_alpha   = 0.5        # Chen2020 "Negative electrode charge transfer coefficient"
 stoich_min              = 0.02634579027064577  # pybamm.lithium_ion.get_min_max_stoichiometries
 stoich_max              = 0.910618046652409    # ditto
-docp_dt_v_per_k         = 0          # Chen2020 "Negative electrode OCP entropic change [V.K-1]" — literally zero
+diffusivity_ea_j_per_mol = 17393.9   # ORegan2022: E_D_s = d * R inside graphite_LGM50_diffusivity_ORegan2022, d = 2092 (Phase 11)
+docp_dt_v_per_k         = 0          # Chen2020's key is literally zero; ORegan2022's curve is [spm.negative.entropic] below, which requires this 0
 # OCP table over the FULL stoichiometry range [0, 1]: 45 adaptively-placed core points
 # over [0.0000, 0.9606] (margin 0.05 either side of the usable window), plus 2 appended
 # above. Max piecewise-linear interpolation error = 1.90 mV in the core, 0.00 mV in the
@@ -251,6 +260,11 @@ docp_dt_v_per_k         = 0          # Chen2020 "Negative electrode OCP entropic
 stoich = [0.000000, 0.001921, 0.003842, 0.005764, 0.008165, 0.010086, 0.012488, 0.014409, 0.016811, 0.019212, 0.021614, 0.024015, 0.026897, 0.029779, 0.032661, 0.035543, 0.038905, 0.041787, 0.044669, 0.048031, 0.051393, 0.054755, 0.058598, 0.066283, 0.073968, 0.082613, 0.120077, 0.131605, 0.141211, 0.150817, 0.160904, 0.182037, 0.240155, 0.313161, 0.360232, 0.405381, 0.480309, 0.562442, 0.582615, 0.600386, 0.627284, 0.646976, 0.720464, 0.840541, 0.960618, 0.980309, 1.000000]
 volts  = [2.383542, 2.239361, 2.105678, 1.981729, 1.839406, 1.734843, 1.614777, 1.526564, 1.425269, 1.333101, 1.249234, 1.172918, 1.090348, 1.016606, 0.950740, 0.891900, 0.831122, 0.785002, 0.743763, 0.701109, 0.663619, 0.630624, 0.597669, 0.544080, 0.502793, 0.466069, 0.339172, 0.301626, 0.275332, 0.255382, 0.240870, 0.224442, 0.200475, 0.155705, 0.139904, 0.134918, 0.133212, 0.130928, 0.126620, 0.118532, 0.102776, 0.095991, 0.092070, 0.092020, 0.092020, 0.092020, 0.092020]
 
+# [spm.negative.entropic]: ORegan2022 "Negative electrode OCP entropic change [V.K-1]" over the full range, 28 breakpoints, max interpolation error 1.72 uV/K (cross-checked at 7 points)
+[spm.negative.entropic]
+stoich  = [0.000000, 0.008750, 0.018000, 0.045750, 0.055250, 0.065250, 0.074500, 0.080250, 0.086000, 0.091750, 0.097500, 0.103500, 0.109750, 0.125000, 0.143500, 0.155750, 0.168000, 0.180250, 0.193500, 0.208250, 0.225750, 0.250000, 0.375000, 0.500000, 0.625000, 0.750000, 0.875000, 1.000000]
+v_per_k = [1.089426e-04, 1.357193e-04, 1.693592e-04, 2.873170e-04, 3.240542e-04, 3.542590e-04, 3.713085e-04, 3.756945e-04, 3.750241e-04, 3.692986e-04, 3.587340e-04, 3.430022e-04, 3.222175e-04, 2.586381e-04, 1.747014e-04, 1.252837e-04, 8.514617e-05, 5.516504e-05, 3.301183e-05, 1.794269e-05, 8.369454e-06, 2.192068e-06, -1.256000e-05, -2.646000e-05, -4.036000e-05, -5.426000e-05, -6.816000e-05, -8.206000e-05]
+
 [spm.positive]
 particle_radius_m       = 5.22e-06   # Chen2020 "Positive particle radius [m]"
 diffusivity_m2_per_s    = 4e-15      # Chen2020 "Positive particle diffusivity [m2.s-1]", constant at t_ref_k
@@ -262,7 +276,8 @@ reaction_ea_j_per_mol   = 17800      # E_r, literal inside the same function
 charge_transfer_alpha   = 0.5        # Chen2020 "Positive electrode charge transfer coefficient"
 stoich_min              = 0.2638452245913301   # pybamm.lithium_ion.get_min_max_stoichiometries
 stoich_max              = 0.853974674630047    # ditto
-docp_dt_v_per_k         = 0          # Chen2020 "Positive electrode OCP entropic change [V.K-1]" — literally zero
+diffusivity_ea_j_per_mol = 12047.7   # ORegan2022: E_D_s = d * R inside nmc_LGM50_diffusivity_ORegan2022, d = 1449 (Phase 11)
+docp_dt_v_per_k         = 0          # Chen2020's key is literally zero; ORegan2022's curve is [spm.positive.entropic] below, which requires this 0
 # OCP table over the FULL stoichiometry range [0, 1]: 20 adaptively-placed core points
 # over [0.2138, 0.9040] (same margin rule as above), plus 5 appended below and 2 above.
 # Max piecewise-linear interpolation error = 1.88 mV in the core, 1.37 mV in the
@@ -288,6 +303,11 @@ docp_dt_v_per_k         = 0          # Chen2020 "Positive electrode OCP entropic
 [spm.positive.ocp]
 stoich = [0.000000, 0.106923, 0.142421, 0.170007, 0.193209, 0.213845, 0.235239, 0.277682, 0.289069, 0.300111, 0.312879, 0.339104, 0.351871, 0.367054, 0.386378, 0.428821, 0.472644, 0.517157, 0.558910, 0.580304, 0.599283, 0.645176, 0.731442, 0.817708, 0.903975, 0.951987, 1.000000]
 volts  = [4.678510, 4.588174, 4.552776, 4.518795, 4.481868, 4.439085, 4.382325, 4.250906, 4.223702, 4.205249, 4.193330, 4.182349, 4.173384, 4.156102, 4.126908, 4.060738, 4.005020, 3.949186, 3.884181, 3.850953, 3.825361, 3.777287, 3.704691, 3.634779, 3.564985, 3.526142, 3.487300]
+
+# [spm.positive.entropic]: ORegan2022 "Positive electrode OCP entropic change [V.K-1]" over the full range, 22 breakpoints, max interpolation error 1.56 uV/K (cross-checked at 7 points)
+[spm.positive.entropic]
+stoich  = [0.000000, 0.125000, 0.221250, 0.236750, 0.250000, 0.272000, 0.284250, 0.293750, 0.316000, 0.328750, 0.344750, 0.375000, 0.500000, 0.569250, 0.625000, 0.750000, 0.781500, 0.811000, 0.841000, 0.875000, 0.951500, 1.000000]
+v_per_k = [-9.229580e-18, -4.485217e-14, 8.574623e-07, 4.657920e-06, 1.344632e-05, 3.558833e-05, 3.997434e-05, 3.547042e-05, 1.308971e-05, 4.699462e-06, 8.112439e-07, -7.562890e-09, -9.794002e-07, -5.399367e-06, -1.549896e-05, -5.845263e-05, -6.513704e-05, -6.637442e-05, -6.233547e-05, -5.253693e-05, -2.425912e-05, -1.125342e-05]
 
 # The SEI film (Phase 10): a film on the graphite that grows by consuming the cell's lithium,
 # PyBaMM's "interstitial-diffusion limited" law (Marquis thesis eq. 5.96),
@@ -378,6 +398,13 @@ solid_conductivity_s_per_m = 0.18
 thickness_m           = 1.2e-05   # "Separator thickness [m]"
 porosity              = 0.47   # "Separator porosity"
 bruggeman_electrolyte = 1.5
+
+# Landesfeind 2019 (J. Electrochem. Soc. 166 (14) A3079), EC:EMC 3:7, as ORegan2022 uses them; read out of the function source and checked against PyBaMM's own evaluation
+[dfn.electrolyte_temperature]
+form         = "Landesfeind2019"
+t_ref_k      = 298.15
+diffusivity  = [1010.0, 1.01, -1560.0, -487.0]
+conductivity = [0.521, 228.0, -1.06, 0.353, -0.00359, 0.00148]
 
 # For reference, the initial electrolyte concentration is 1000 mol/m3 and is NOT
 # repeated here: it is [spm].c_e_mol_per_m3, which an SPM holds CONSTANT and a DFN takes

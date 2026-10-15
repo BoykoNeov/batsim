@@ -1362,7 +1362,7 @@ pub(crate) fn advance(
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     v_node: f64,
-) -> (EventFlags, f64, f64, (f64, f64), f64) {
+) -> (EventFlags, f64, f64, (f64, f64), f64, f64) {
     let moves = !dt.is_nan() && dt > 0.0;
     let wk = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
     let pp = Particles::of(&wk, s);
@@ -1372,6 +1372,22 @@ pub(crate) fn advance(
         None => (i, s.soc_deficit),
     };
     let d_start = s.soc_deficit;
+    // The bulk path the reversible mean integrates along, on a chemistry with an entropy
+    // coefficient (Phase 11), exactly as `spm::advance` reads it — the positive per particle,
+    // so that one particle is that model's arithmetic bit for bit.
+    let entropic = spm::has_entropic(wk.neg.p) || spm::has_entropic(wk.pos.p);
+    let mut y_start = [0.0_f64; MAX_PARTICLES];
+    let (u_start_t, x_neg_start) = if moves && entropic {
+        for (k, y) in y_start.iter_mut().enumerate().take(pp.n) {
+            *y = mean_concentration(pp.profile(&s.c_pos, k)) / spm.positive.c_max_mol_per_m3;
+        }
+        (
+            equilibrium_voltage(&wk, &pp, s),
+            mean_concentration(&s.c_neg) / spm.negative.c_max_mol_per_m3,
+        )
+    } else {
+        (0.0, 0.0)
+    };
     let mut x_start = [0.0_f64; MAX_PARTICLES];
     let start = if moves {
         let u = energy_voltage(&wk, &pp, s);
@@ -1432,7 +1448,7 @@ pub(crate) fn advance(
         flags |= EventFlags::SOC_CLAMPED_LOW;
     }
     if !moves {
-        return (flags, 0.0, 0.0, (0.0, 0.0), f64::NAN);
+        return (flags, 0.0, 0.0, (0.0, 0.0), f64::NAN, 0.0);
     }
     if !split_ok {
         flags |= EventFlags::SOLVE_UNCONVERGED;
@@ -1472,12 +1488,38 @@ pub(crate) fn advance(
     }
     let estimate = u_start - v_node;
     let at_end = u_end - v_end;
+    if !entropic {
+        return (
+            flags,
+            at_end - estimate,
+            0.5 * ((u_start - v_start) + at_end) - estimate,
+            (w_end, w_mean),
+            v_end,
+            0.0,
+        );
+    }
+    // As `spm::advance`: the irreversible mean on the trapezoid of `U(T) − V`, the reversible
+    // mean exactly from the bulk path. The instant keeps the stored-energy form.
+    let u_end_t = equilibrium_voltage(&wk, &pp, s);
+    let mut w_mean = 0.5 * (rev_at(u_start_t, d_start) + rev_at(u_end_t, s.soc_deficit));
+    if pp.n > 1 || wk.pos.p.regular_solution.is_some() {
+        let ex_end = exchange_w(&wk, &pp, s, &x) + reversible_w(&wk, &pp, s, &x);
+        w_mean += 0.5 * (ex_start + ex_end);
+    }
+    let mut c_pos = 0.0;
+    for (k, &y0) in y_start.iter().enumerate().take(pp.n) {
+        let y1 = mean_concentration(pp.profile(&s.c_pos, k)) / spm.positive.c_max_mol_per_m3;
+        c_pos += spm::entropic_mean(wk.pos.p, y0, y1);
+    }
+    let x_neg_end = mean_concentration(&s.c_neg) / spm.negative.c_max_mol_per_m3;
+    let c = c_pos / pp.n as f64 - spm::entropic_mean(wk.neg.p, x_neg_start, x_neg_end);
     (
         flags,
         at_end - estimate,
-        0.5 * ((u_start - v_start) + at_end) - estimate,
+        0.5 * ((u_start_t - v_start) + (u_end_t - v_end)) - estimate,
         (w_end, w_mean),
         v_end,
+        -s.temp_k * i_p * c,
     )
 }
 
@@ -1618,7 +1660,8 @@ mod tests {
             for i in [-2.0 * CAP_AH, 0.0, 0.3 * CAP_AH, 2.0 * CAP_AH] {
                 let probed = probe_at(&s0, &spm, &rev(), 1.0, CAP_AH, i, dt, false).0;
                 let mut s = s0.clone();
-                let (flags, .., v_end) = advance(&mut s, &spm, &rev(), i, dt, 1.0, CAP_AH, probed);
+                let (flags, _, _, _, v_end, _) =
+                    advance(&mut s, &spm, &rev(), i, dt, 1.0, CAP_AH, probed);
                 assert!(!flags.contains(EventFlags::SOLVE_UNCONVERGED));
                 assert_eq!(
                     probed.to_bits(),

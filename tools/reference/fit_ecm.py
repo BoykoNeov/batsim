@@ -13,7 +13,9 @@ move of 10 % and a 1800 s rest (the spike measured the voltage still moving at m
 over the last 60 s of those). Solved converged, as every LG M50 golden is (`DFN_CONVERGED`:
 200 radial points, `rtol = atol = 1e-10`).
 
-The parameter set is **Chen2020 with two of ORegan2022's temperature dependences added**,
+The parameter set is **Chen2020 with three of ORegan2022's temperature dependences added**
+(the third, since slice C, its entropy coefficients, which shift each OCP by
+`(T − 298.15)·dU/dT`),
 `combined_parameter_values`: solid diffusion's Arrhenius factor (ORegan2022's activation
 energies, applied to Chen2020's constant diffusivities) and the electrolyte's (Chen2020's
 Nyman 2008 fits times Landesfeind 2019's ratio to its own value at 298.15 K). At 298.15 K both
@@ -141,6 +143,12 @@ def combined_parameter_values(temp_k: float):
         # level, and an experiment that stops there drops every level after it.
         "Lower voltage cut-off [V]": 2.0,
         "Upper voltage cut-off [V]": 4.4,
+        # ORegan2022's entropy coefficients (slice C): PyBaMM shifts each OCP by
+        # (T - T_ref)*dU/dT, which the engine now does too. Zero at 298.15 K.
+        "Negative electrode OCP entropic change [V.K-1]":
+            orv["Negative electrode OCP entropic change [V.K-1]"],
+        "Positive electrode OCP entropic change [V.K-1]":
+            orv["Positive electrode OCP entropic change [V.K-1]"],
     })
     return pv
 
@@ -197,8 +205,8 @@ def generate(only=None):
             f.write(f"# batsim golden reference - {CHEM_ID} - {name}\n")
             f.write(f"# scenario: HPPC-style pulse train at {pulse_c:g}C, isothermal "
                     f"{temp_k - 273.15:.2f} degC (Phase 11 slice A: the circuit fit)\n")
-            f.write("# source: PyBaMM Chen2020 DFN + ORegan2022 solid-diffusion and "
-                    "electrolyte temperature factors (identically 1 at 298.15 K), "
+            f.write("# source: PyBaMM Chen2020 DFN + ORegan2022 solid-diffusion, "
+                    "electrolyte and entropy terms (no effect at 298.15 K), "
                     f"pybamm {pybamm.__version__}; tools/reference/fit_ecm.py\n")
             f.write(f"# grid: r_n = r_p = {DFN_CONVERGED.r_pts}; solver: IDAKLU, rtol = "
                     f"atol = {DFN_CONVERGED.rtol:g}\n")
@@ -226,20 +234,26 @@ class Run:
 
 
 def reference_ocv():
-    """The reference cell's OCV(soc) on a dense grid: U_p(y) - U_n(x), Chen2020's windows."""
+    """The reference cell's OCV(soc) at T_REF_K on a dense grid, U_p(y) - U_n(x) on
+    Chen2020's windows, and its entropy coefficient dU_p/dT(y) - dU_n/dT(x) from ORegan2022:
+    the reference's own OCV at T is `ocv + (T - T_REF_K) * docv_dt`."""
     import pybamm
 
     pv = pybamm.ParameterValues("Chen2020")
+    orv = pybamm.ParameterValues("ORegan2022")
     xmin, xmax, ymin, ymax = pybamm.lithium_ion.get_min_max_stoichiometries(pv)
     u_n = pv["Negative electrode OCP [V]"]
     u_p = pv["Positive electrode OCP [V]"]
+    d_n = orv["Negative electrode OCP entropic change [V.K-1]"]
+    d_p = orv["Positive electrode OCP entropic change [V.K-1]"]
     z = np.linspace(0.0, 1.0, 4001)
-    ocv = np.array([
-        float(pv.evaluate(u_p(pybamm.Scalar(ymax + s * (ymin - ymax))))
-              - pv.evaluate(u_n(pybamm.Scalar(xmin + s * (xmax - xmin)))))
-        for s in z
-    ])
-    return z, ocv
+    xs = xmin + z * (xmax - xmin)
+    ys = ymax + z * (ymin - ymax)
+    ocv = np.array([float(pv.evaluate(u_p(pybamm.Scalar(y))) - pv.evaluate(u_n(pybamm.Scalar(x))))
+                    for x, y in zip(xs, ys)])
+    docv_dt = np.array([float(orv.evaluate(d_p(pybamm.Scalar(y))) - orv.evaluate(d_n(pybamm.Scalar(x))))
+                        for x, y in zip(xs, ys)])
+    return z, (ocv, docv_dt)
 
 
 def load(name, temp_k, pulse_c, zg, og):
@@ -253,7 +267,9 @@ def load(name, temp_k, pulse_c, zg, og):
     seg[np.isclose(c, 0.5, atol=1e-6)] = 1
     seg[c > 0.5 + 1e-6] = 2
     seg[c < -1e-6] = 3
-    return Run(name, temp_k, pulse_c, t, i, v, soc, np.interp(soc, zg, og), seg)
+    ocv0, docv_dt = og
+    ocv = np.interp(soc, zg, ocv0) + (temp_k - T_REF_K) * np.interp(soc, zg, docv_dt)
+    return Run(name, temp_k, pulse_c, t, i, v, soc, ocv, seg)
 
 
 def simulate(run: Run, nodes, pairs, ref_nodes=None):

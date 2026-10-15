@@ -332,10 +332,26 @@ fn the_film_closes_the_energy_ledger() {
             .expect("a filmed cell reports its film's energy every step");
     }
     let s1 = dfn_state(&pack);
+    // Against a control cell with no film. The TOTAL, not node by node: the film sits inside
+    // each negative node's reaction, so at rest it moves lithium between positive nodes
+    // through the electrolyte while conserving the sum. The solve's own rounding of a resting
+    // profile grew when Phase 11 gave the diffusivity an Arrhenius factor (the old bar here
+    // was on that drift); the claim is about the film, so the control carries the same drift.
+    let mut cfg = config(dfn_model(), 0.85, 318.15);
+    cfg.aging = Some(AgingConfig {
+        calendar: CalendarModel::Curve,
+        ..AgingConfig::default()
+    });
+    let mut control = Pack::new(&cfg, chem.clone()).expect("a control pack builds");
+    for _ in 0..365 * 24 {
+        control.step(3600.0, Demand::Rest, &env(318.15));
+    }
     let pos = |s: &sim_core::DfnState| s.c_pos.iter().map(|p| mean(p)).sum::<f64>();
+    let (filmed_pos, control_pos) = (pos(&s1), pos(&dfn_state(&control)));
+    println!("positive lithium: {filmed_pos} filmed, {control_pos} without a film");
     assert!(
-        (pos(&s1) / pos(&s0) - 1.0).abs() < 1e-12,
-        "a resting film touches no positive lithium"
+        (filmed_pos / control_pos - 1.0).abs() < 1e-12,
+        "a resting film touches no positive lithium: {filmed_pos} against {control_pos}"
     );
     #[allow(clippy::cast_precision_loss)]
     let nodes = s0.c_neg.len() as f64;
@@ -347,7 +363,14 @@ fn the_film_closes_the_energy_ledger() {
         .zip(&s1.c_neg)
         .map(|(a, b)| {
             let (x0, x1) = (mean(a) / n.c_max_mol_per_m3, mean(b) / n.c_max_mol_per_m3);
-            per_stoich * integral(&n.ocp.stoich, &n.ocp.volts, x1, x0)
+            // At `U − t_ref·∂U/∂T`, as `sei_film.rs` and the engine book it (Phase 11).
+            let entropic = n
+                .entropic
+                .as_ref()
+                .map_or(0.0, |t| integral(&t.stoich, &t.v_per_k, x1, x0));
+            per_stoich
+                * (integral(&n.ocp.stoich, &n.ocp.volts, x1, x0)
+                    - chem.spm.as_ref().expect("[spm]").t_ref_k * entropic)
         })
         .sum();
     println!("booked {booked} J, stored rose by {stored} J");

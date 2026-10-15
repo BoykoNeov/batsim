@@ -251,26 +251,124 @@ fn an_unreachable_power_lands_at_the_most_the_cell_can_give() {
     );
 }
 
-/// One hour-long step heats a cell about as much as sixty one-minute steps do. The heat is
-/// now read off the cell's own curve, at the step's first and last instants, and averaged.
-/// Taken instead as the start-of-step equilibrium minus the end-of-step terminal, it
-/// booked the equilibrium voltage's fall across the hour as heat: a 1S3P group then read
-/// 303.3 K where sixty short steps read 299.5 K. The average of two instants runs a little
-/// low (measured 0.82 of the short-step rise here), and the bound says so.
+/// The shipped chemistry, optionally without its entropy-coefficient tables, and optionally
+/// with its heat loss to the surroundings switched off.
+fn chem_variant(entropic: bool, adiabatic: bool) -> sim_core::ChemistryParams {
+    let mut c = sim_data::parse_chemistry(LGM50).expect("the shipped LG M50 parses");
+    if !entropic {
+        let spm = c.spm.as_mut().expect("[spm]");
+        spm.negative.entropic = None;
+        spm.positive.entropic = None;
+    }
+    if adiabatic {
+        c.thermal.h_area_w_per_k = 1.0e-12;
+    }
+    c
+}
+
+/// The hottest cell's rise \[K\] after `n` steps of `dt` at 1 A per cell from 90 %.
+fn rise_on(chem: sim_core::ChemistryParams, parallel: u16, sigma: f64, dt: f64, n: usize) -> f64 {
+    let config = PackConfig {
+        aging: None,
+        bms: None,
+        thermal: ThermalConfig::Network {
+            k_neighbor_w_per_k: 1.0,
+        },
+        series: 1,
+        parallel,
+        initial_soc: 0.9,
+        initial_temp_k: 298.15,
+        seed: 7,
+        scatter: Scatter {
+            capacity_sigma: sigma,
+            r0_sigma: sigma,
+        },
+        cell_model: CellModelConfig::Spm { shells: SHELLS },
+    };
+    let mut p = Pack::new(&config, chem).expect("builds");
+    let mut t = 0.0;
+    for _ in 0..n {
+        t = p
+            .step(dt, Demand::Current(f64::from(parallel)), &env())
+            .t_max;
+    }
+    t - 298.15
+}
+
+/// One hour-long step heats a cell about as much as sixty one-minute steps do — **its
+/// resistive heat**. The heat is read off the cell's own curve, at the step's first and last
+/// instants, and averaged. Taken instead as the start-of-step equilibrium minus the
+/// end-of-step terminal, it booked the equilibrium voltage's fall across the hour as heat: a
+/// 1S3P group then read 303.3 K where sixty short steps read 299.5 K. The average of two
+/// instants runs a little low (measured 0.82 of the short-step rise here), and the bound
+/// says so.
+///
+/// Held on the chemistry WITHOUT its entropy tables since Phase 11. With them, this cell's
+/// reversible heat is cooling and nearly half the size of the resistive heat on this run, so
+/// the long step's unchanged resistive shortfall (0.24 K) sits on a much smaller net rise and
+/// the ratio fell to 0.70 — a fact about the ratio, not about either term. The reversible
+/// term is held separately, exactly, by
+/// [`an_hour_long_steps_reversible_heat_is_the_exact_integral`].
 #[test]
 fn an_hour_long_step_heats_like_sixty_short_ones() {
-    let rise = |dt: f64, n: usize| {
-        let mut p = pack(3, 0.9, 0.05);
-        let mut t = 0.0;
-        for _ in 0..n {
-            t = p.step(dt, Demand::Current(3.0), &env()).t_max;
-        }
-        t - 298.15
-    };
-    let (long, short) = (rise(3600.0, 1), rise(60.0, 60));
+    let rise = |dt: f64, n: usize| rise_on(chem_variant(false, false), 3, 0.05, dt, n);
+    let (long, short) = (rise(HOUR_S, 1), rise(60.0, 60));
     assert!(
         (0.75 * short..1.05 * short).contains(&long),
         "one hour-long step rose {long} K, sixty one-minute steps {short} K"
+    );
+}
+
+/// The reversible heat of one hour-long step is the exact integral of the chemistry's
+/// entropy tables along the step's bulk path (Phase 11 slice C). Adiabatic, so a rise is a
+/// heat; one cell, so there is no split; and the two hour-long runs differ ONLY by the
+/// tables — at 298.15 K, the tables' reference temperature, the potentials do not shift — so
+/// their difference is `−T·I·∫c dt / C_th` and nothing else. Computed here independently of
+/// the engine from the file's own tables; measured to 4 decimals of a kelvin before this
+/// test was written (−1.0399 K both ways).
+///
+/// Sixty one-minute steps land 4 % off it (−0.998 K), and that is a coupling, not an
+/// integration error: the run with the tables is ~1 K cooler, so its resistive heat is
+/// larger, and the subtraction books that as reversible.
+#[test]
+fn an_hour_long_steps_reversible_heat_is_the_exact_integral() {
+    let c = chem_variant(true, true);
+    let with = rise_on(c.clone(), 1, 0.0, HOUR_S, 1);
+    let without = rise_on(chem_variant(false, true), 1, 0.0, HOUR_S, 1);
+    let spm = c.spm.as_ref().expect("[spm]");
+    let (n, p) = (&spm.negative, &spm.positive);
+    // Clamped linear interpolation, written here so the check owes the engine nothing.
+    let tab = |t: &sim_core::chem::EntropicTable, x: f64| {
+        let (xs, ys) = (&t.stoich, &t.v_per_k);
+        if x <= xs[0] {
+            return ys[0];
+        }
+        let k = xs.iter().position(|&v| v >= x).unwrap_or(xs.len() - 1);
+        if k == 0 || x >= xs[xs.len() - 1] {
+            return ys[k];
+        }
+        ys[k - 1] + (x - xs[k - 1]) / (xs[k] - xs[k - 1]) * (ys[k] - ys[k - 1])
+    };
+    let (tn, tp) = (
+        n.entropic.as_ref().expect("a negative table"),
+        p.entropic.as_ref().expect("a positive table"),
+    );
+    // The bulk path one hour at 1 A takes from 90 %, integrated by a fine midpoint rule.
+    let k = 200_000;
+    let dz = (1.0 / c.cell.capacity_ah) / f64::from(k);
+    let mut sum = 0.0;
+    for j in 0..k {
+        let z = 0.9 - (f64::from(j) + 0.5) * dz;
+        let x = n.stoich_min + z * (n.stoich_max - n.stoich_min);
+        let y = p.stoich_max - z * (p.stoich_max - p.stoich_min);
+        sum += tab(tp, y) - tab(tn, x);
+    }
+    let c_mean = sum / f64::from(k);
+    let want = -298.15 * 1.0 * HOUR_S * c_mean / c.thermal.heat_capacity_j_per_k;
+    let got = with - without;
+    assert!(
+        (got / want - 1.0).abs() < 1e-3,
+        "the hour's reversible heat raised the cell {got:.6} K; the tables integrate to {want:.6} K"
     );
 }
 

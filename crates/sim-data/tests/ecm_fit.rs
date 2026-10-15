@@ -31,13 +31,13 @@ const RUNS: [(&str, &str, f64, f64); 4] = [
         "1C, -10 degC",
         include_str!("../../../tests/golden/nmc_21700_lgm50/ecm_hppc_1c_m10c.csv"),
         263.15,
-        11.16,
+        11.15,
     ),
     (
         "1C, +45 degC",
         include_str!("../../../tests/golden/nmc_21700_lgm50/ecm_hppc_1c_45c.csv"),
         318.15,
-        3.53,
+        3.51,
     ),
 ];
 

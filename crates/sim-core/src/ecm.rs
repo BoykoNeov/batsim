@@ -1017,6 +1017,7 @@ impl CellModel {
             rc_delta_v: 0.0,
             reversal_w: 0.0,
             reversal_mean_w: 0.0,
+            entropic_mean_w: 0.0,
         };
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => advance_cell(
@@ -1037,7 +1038,7 @@ impl CellModel {
                 chem.spm
                     .as_ref()
                     .map_or(no_rejection(EventFlags::empty()), |spm| {
-                        let (flags, delta_v, mean_excess_v, rev_w) = spm::advance(
+                        let (flags, delta_v, mean_excess_v, rev_w, entropic_w) = spm::advance(
                             s,
                             spm,
                             &chem.reversal,
@@ -1052,13 +1053,14 @@ impl CellModel {
                             rc_delta_v: delta_v,
                             reversal_w: rev_w.0,
                             reversal_mean_w: rev_w.1,
+                            entropic_mean_w: entropic_w,
                             ..no_rejection(flags)
                         }
                     })
             }
             CellModel::Dfn(s) => {
                 Self::dfn_params(chem).map_or(no_rejection(EventFlags::empty()), |(spm, d)| {
-                    let (flags, delta_v, rev_w) = dfn::advance(
+                    let (flags, delta_v, mean_excess_v, rev_w, entropic_w) = dfn::advance(
                         s,
                         spm,
                         d,
@@ -1072,10 +1074,11 @@ impl CellModel {
                     // One correction in both slots: the network integrates the end-of-step
                     // overpotential too, which is what measured closest (see `dfn::advance`).
                     Advanced {
-                        rc_mean_excess_v: delta_v,
+                        rc_mean_excess_v: mean_excess_v,
                         rc_delta_v: delta_v,
-                        reversal_w: rev_w,
-                        reversal_mean_w: rev_w,
+                        reversal_w: rev_w.0,
+                        reversal_mean_w: rev_w.1,
+                        entropic_mean_w: entropic_w,
                         ..no_rejection(flags)
                     }
                 })
@@ -1086,21 +1089,23 @@ impl CellModel {
                 chem.spm
                     .as_ref()
                     .map_or(no_rejection(EventFlags::empty()), |spm| {
-                        let (flags, delta_v, mean_excess_v, watts, _v_end) = ensemble::advance(
-                            s,
-                            spm,
-                            &chem.reversal,
-                            i,
-                            dt,
-                            eff_r0_factor,
-                            eff_capacity_ah * soh_capacity,
-                            v_node,
-                        );
+                        let (flags, delta_v, mean_excess_v, watts, _v_end, entropic_w) =
+                            ensemble::advance(
+                                s,
+                                spm,
+                                &chem.reversal,
+                                i,
+                                dt,
+                                eff_r0_factor,
+                                eff_capacity_ah * soh_capacity,
+                                v_node,
+                            );
                         Advanced {
                             rc_mean_excess_v: mean_excess_v,
                             rc_delta_v: delta_v,
                             reversal_w: watts.0,
                             reversal_mean_w: watts.1,
+                            entropic_mean_w: entropic_w,
                             ..no_rejection(flags)
                         }
                     })
@@ -1230,6 +1235,35 @@ fn lerp_at(ys: &[f64], (lo, hi, frac): (usize, usize, f64)) -> f64 {
 pub(crate) fn interp1(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     debug_assert!(!xs.is_empty() && xs.len() == ys.len());
     lerp_at(ys, bracket(xs, x))
+}
+
+/// The mean of [`interp1`] over `a → b`, exact: the clamped piecewise-linear interpolant's
+/// antiderivative at both ends. `interp1(xs, ys, a)` itself when `a == b`. Phase 11: what
+/// the reversible heat's step mean is built from, in every model that has a table of `∂U/∂T`.
+#[must_use]
+pub(crate) fn interp1_mean(xs: &[f64], ys: &[f64], a: f64, b: f64) -> f64 {
+    if a == b {
+        return interp1(xs, ys, a);
+    }
+    (interp1_integral(xs, ys, b) - interp1_integral(xs, ys, a)) / (b - a)
+}
+
+/// `∫_{xs[0]}^{x}` of the clamped piecewise-linear interpolant through `(xs, ys)`.
+fn interp1_integral(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+    let n = xs.len();
+    if x <= xs[0] {
+        return (x - xs[0]) * ys[0];
+    }
+    let mut area = 0.0;
+    for k in 0..n - 1 {
+        let (x0, x1, y0, y1) = (xs[k], xs[k + 1], ys[k], ys[k + 1]);
+        if x <= x1 {
+            let y = y0 + (x - x0) / (x1 - x0) * (y1 - y0);
+            return area + 0.5 * (x - x0) * (y0 + y);
+        }
+        area += 0.5 * (x1 - x0) * (y0 + y1);
+    }
+    area + (x - xs[n - 1]) * ys[n - 1]
 }
 
 /// `d(ys)/d(xs)` of [`interp1`] at `x`: the slope of the segment the lookup lands in, and
@@ -2226,6 +2260,12 @@ pub(crate) struct Advanced {
     /// [`Self::reversal_w`] as the thermal network integrates it: the mean of the step's
     /// two ends, the `Spm`'s trapezoid.
     pub reversal_mean_w: f64,
+    /// The reversible heat's step MEAN \[W\], exact over the step's bulk path, on a porous
+    /// cell whose chemistry has an entropy coefficient: `−T·i_p·c̄` (see
+    /// [`crate::spm::entropic_mean_w`]). The irreversible mean then travels in
+    /// `rc_mean_excess_v` as `U(T) − V` rather than as the stored-energy form. Exactly `0.0`
+    /// everywhere else, and the pack adds it behind a guard.
+    pub entropic_mean_w: f64,
 }
 
 /// Advance one cell's internal state by `dt` seconds under the current `i`
@@ -2340,6 +2380,7 @@ pub(crate) fn advance_cell(
     // such competition on the way down. A `match` with the ordinary call in its other arm,
     // rather than a taper through a neutral onset, for the reason every other optional
     // section here gives - a chemistry without the section must not execute a line of it.
+    let soc_start = state.soc;
     let step = match &chem.charge_acceptance {
         Some(ca) if i < 0.0 => coulomb_step_tapered(
             state.soc,
@@ -2361,6 +2402,21 @@ pub(crate) fn advance_cell(
     };
     state.soc = step.soc;
     state.soc_deficit = step.soc_deficit;
+    // The reversible heat's step MEAN (Phase 11). The pack's estimate books `−i·T·∂U/∂T` at
+    // the start-of-step charge, which a long step cannot afford: on the LG M50 the
+    // coefficient changes sign across the window, and an hour-long 1 A step from 30 % booked
+    // 0.57 K of reversible heat against 2.17 K in one-minute steps (measured, adiabatic).
+    // The charge moves linearly under the step's current, so the mean over its path is the
+    // column's exact mean. Skipped for a constant column — NiMH's — whose mean IS its start
+    // value, so that file runs bit-identically rather than through a rounding of it.
+    let entropic_mean_w = match &chem.ocv.docv_dt_v_per_k {
+        Some(col) if dt > 0.0 && i != 0.0 && col.iter().any(|&c| c != col[0]) => {
+            let c0 = interp1(&chem.ocv.soc, col, soc_start);
+            let c_mean = interp1_mean(&chem.ocv.soc, col, soc_start, state.soc);
+            -i * state.temp_k * (c_mean - c0)
+        }
+        _ => 0.0,
+    };
     Advanced {
         flags: step.flags,
         rejected_as: step.rejected_as,
@@ -2368,6 +2424,7 @@ pub(crate) fn advance_cell(
         rc_delta_v,
         reversal_w: 0.0,
         reversal_mean_w: 0.0,
+        entropic_mean_w,
     }
 }
 

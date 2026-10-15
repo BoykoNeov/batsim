@@ -111,6 +111,29 @@ fn dfn_section_carries_the_extracted_chen2020_values() {
 /// to 1. So the arithmetic alone cannot catch it here, and the assertion is written as
 /// the *independence* claim instead — the two fields are separate reads of separate
 /// keys, and this test exists to fail the day someone "simplifies" one away.
+/// `[dfn.electrolyte_temperature]` (Phase 11 slice C): Landesfeind 2019's EC:EMC 3:7
+/// coefficients as ORegan2022 uses them, read out of PyBaMM's function source by
+/// `tools/reference/extract_oregan.py`, each pinned by name.
+#[test]
+fn the_electrolyte_temperature_section_is_landesfeinds() {
+    let chem = parse_chemistry(LGM50).expect("loads");
+    let et = chem
+        .dfn
+        .as_ref()
+        .and_then(|d| d.electrolyte_temperature.as_ref())
+        .expect("[dfn.electrolyte_temperature]");
+    assert_eq!(
+        et.form,
+        sim_core::ElectrolyteTemperatureForm::Landesfeind2019
+    );
+    assert_eq!(et.t_ref_k, 298.15);
+    assert_eq!(et.diffusivity, vec![1010.0, 1.01, -1560.0, -487.0]);
+    assert_eq!(
+        et.conductivity,
+        vec![0.521, 228.0, -1.06, 0.353, -0.00359, 0.00148]
+    );
+}
+
 #[test]
 fn porosity_and_active_volume_fraction_are_independent_reads() {
     let chem = parse_chemistry(LGM50).expect("loads");
@@ -232,10 +255,11 @@ fn the_dfn_block_has_exactly_the_values_pinned_above() {
     }
 
     // 2 shared scalars + 3 diffusivity terms + 3 conductivity terms, each a pair
-    // + 4 per electrode x 2 + 3 for the separator.
+    // + 4 per electrode x 2 + 3 for the separator + the electrolyte temperature section's
+    // reference temperature and 4 + 6 coefficients (Phase 11, pinned by name above).
     assert_eq!(
         count_numbers(&value),
-        2 + 2 * (3 + 3) + 4 * 2 + 3,
+        2 + 2 * (3 + 3) + 4 * 2 + 3 + (1 + 4 + 6),
         "the [dfn] value count changed — a field was added or removed. Pin the new \
          value by name in this file before repinning this count; do not just move the \
          number."

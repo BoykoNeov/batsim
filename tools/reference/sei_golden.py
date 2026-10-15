@@ -99,6 +99,35 @@ def params(c: dict, soc: float, temp_k: float, table: bool) -> pybamm.ParameterV
             return pybamm.Interpolant(xs, vs, sto, name="engine graphite table", interpolator="linear")
 
         p.update({"Negative electrode OCP [V]": u_neg})
+    return with_temperature_terms(p, c)
+
+
+def with_temperature_terms(p: pybamm.ParameterValues, c: dict) -> pybamm.ParameterValues:
+    """The file's Phase 11 temperature terms, so the reference is the cell the engine runs:
+    each electrode's `[spm.*.entropic]` table as a linear Interpolant (PyBaMM shifts its OCP
+    by (T - T_ref)*dU/dT, as the engine does), and `diffusivity_ea_j_per_mol` as an Arrhenius
+    factor on Chen2020's constant diffusivity. Both are exactly no change at T_ref."""
+    spm = c["spm"]
+    t_ref = spm["t_ref_k"]
+    for key, side in (("negative", "Negative"), ("positive", "Positive")):
+        e = spm[key]
+        if "entropic" in e:
+            xs = np.array(e["entropic"]["stoich"])
+            ys = np.array(e["entropic"]["v_per_k"])
+
+            def d_u(sto, xs=xs, ys=ys, side=side):
+                return pybamm.Interpolant(xs, ys, sto, name=f"engine {side} entropic table",
+                                          interpolator="linear")
+
+            p.update({f"{side} electrode OCP entropic change [V.K-1]": d_u})
+        ea = e.get("diffusivity_ea_j_per_mol", 0.0)
+        if ea:
+            d0 = e["diffusivity_m2_per_s"]
+
+            def diff(sto, T, d0=d0, ea=ea):
+                return d0 * np.exp(ea / pybamm.constants.R * (1.0 / t_ref - 1.0 / T))
+
+            p.update({f"{side} particle diffusivity [m2.s-1]": diff})
     return p
 
 
@@ -158,6 +187,8 @@ def main() -> int:
         f.write("# stoichiometries the engine's (x_min + soc*(x_max-x_min)). 'function' = Chen2020's\n")
         f.write("# graphite OCP; 'table' = the engine's [spm.negative.ocp] as a linear Interpolant.\n")
         f.write("# li_lost_mol = lithium in film grown since day 0 [mol]; l = film thickness [m].\n")
+        f.write("# Since Phase 11 both runs carry the file's entropic tables and diffusion activation\n")
+        f.write("# energies (with_temperature_terms): no change at 298.15 K.\n")
         f.write("soc,temp_k,day,li_lost_mol_function,li_lost_mol_table,l_function_m,l_table_m\n")
         for r in rows:
             f.write(",".join(f"{v:.10g}" if isinstance(v, float) else str(v) for v in r) + "\n")
