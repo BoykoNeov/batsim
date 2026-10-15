@@ -155,6 +155,17 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
    python tools/reference/fit_sei_wmg.py wmg --table tests/golden/nmc_21700_lgm50/wmg_storage_growth.csv
    ```
 
+7. **`sei_dfn_golden.py`** — the SEI film under cycling (Phase 10, slice D): PyBaMM's DFN with
+   the interstitial law on the engine's grid (10/5/10, 20 shells) and both of the engine's OCP
+   tables, from one even 50 nm film, eight ±0.25-capacity cycles from 50 % at 1C and 2C, each
+   run with the film frozen (the floor) and growing. Writes
+   `tests/golden/nmc_21700_lgm50/sei_dfn_cycling.csv`, which `crates/sim-data/tests/sei_dfn.rs`
+   reads. Solved at 1e-10.
+
+   ```bash
+   python tools/reference/sei_dfn_golden.py
+   ```
+
    Prefer the **target-scoped** form. A bare run regenerates every chemistry,
    including the committed LFP goldens that four phases of ECM tests are toleranced
    against, and a golden that drifts under you is a bad afternoon. After any run,

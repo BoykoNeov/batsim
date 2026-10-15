@@ -308,13 +308,15 @@ and double as the scenario file format.
   fourth mechanism beside calendar, cycle, and plating fade. Billed from the deficit, so it
   applies to every cell model. See
   `docs/plans/reversal-damage.md` and `docs/plans/porous-reversal.md`.
-- **The SEI film** (Phase 10, `Spm` only, opt-in with `AgingConfig::calendar = Film`)
+- **The SEI film** (Phase 10, `Spm` and `Dfn`, opt-in with `AgingConfig::calendar = Film`)
   replaces the drawn calendar curve with physics: a film on the graphite grows by PyBaMM's
   interstitial-diffusion law (`[spm.sei]`, rate fitted to the WMG LG M50 storage data), takes
-  real lithium out of the negative particle and adds `ρ·(L − L0)/A_neg` in series. Its loss is
+  real lithium out of the negative particle and adds `ρ·(L − L0)/A_neg` in series — on the `Dfn`
+  one film per negative node, its resistance inside that node's reaction, so it grows unevenly
+  under load (several times faster at the separator). Its loss is
   read off the electrodes — the negative's window shortens at the top — not applied as a
   multiplier, and its resistance does not go through `r_growth_per_capacity_loss`. Cycle,
-  plating and reversal stay drawn. `Pack::new` refuses it on every other model. See
+  plating and reversal stay drawn. `Pack::new` refuses it on the ECM and the many-particle cell. See
   `docs/plans/phase-10-sei.md`.
 - All mechanisms reduce `soh_capacity` **and** increase `soh_resistance`
   (roughly: each % capacity lost adds a configurable % resistance). Resistance
@@ -422,7 +424,7 @@ soc_onset = 0.985            # above this the accepted share falls linearly to 0
 #   [spm.positive.regular_solution]  u0_v, omega_ev: a two-phase (non-monotone) positive
 #                 potential. Read ONLY by the many-particle cell, which reads it instead of
 #                 [spm.positive.ocp]; Pack::new refuses it under Spm and Dfn
-#   [spm.sei]     the SEI film's constants (Phase 10). Read ONLY by an Spm pack whose
+#   [spm.sei]     the SEI film's constants (Phase 10). Read ONLY by an Spm or Dfn pack whose
 #                 AgingConfig::calendar is Film; every key required, unknown keys refused
 #   [diagram]     what the cell is made of, for the client's carrier diagram. Read by NO
 #                 engine code (sim_data::parse_chemistry_facts); its captions are tied to
@@ -553,11 +555,11 @@ the previous one's tests pass.
   2026-10-08: the engine (slice B), the chemistry and its golden (C), and the guided-path
   lesson (D, `docs/plans/phase-9-slice-d-lesson.md`). Plan, owner decisions and exit
   criteria in `docs/plans/phase-9-lfp-ensemble.md`; slice notes beside it.
-- **Phase 10 — degradation physics.** An SEI film that ages the `Spm` instead of a drawn
-  curve (ROADMAP H2). **In progress**: the fit (A), the health split (B) and the film in the
-  engine (C, v26, 2026-10-15) are done, and the WMG cells run in the engine on their own capacity
-  steps (exit 5, `sei_wmg.rs`, 2026-10-15) — every exit passes on the `Spm`; next is the `Dfn` (D),
-  then the lesson (E). Plan and every slice note in `docs/plans/phase-10-sei.md`.
+- **Phase 10 — degradation physics.** An SEI film that ages the porous models instead of a
+  drawn curve (ROADMAP H2). **In progress**: the fit (A), the health split (B), the film on the
+  `Spm` (C, v26) with the WMG cells run in the engine (exit 5, `sei_wmg.rs`), and the film on the
+  `Dfn` node by node (D, v27, `sei_dfn.rs`, against a PyBaMM DFN under cycling) are done, all
+  2026-10-15; next is the lesson (E). Plan and every slice note in `docs/plans/phase-10-sei.md`.
 - **Phases 11 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

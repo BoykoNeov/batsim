@@ -575,6 +575,15 @@ final snapshot, and the 1e-15 perturbation re-checked to move each hash.
    from 50 % grow the node at the separator 4.14× the node at the collector at 1C and 30.3×
    at 2C. PyBaMM runs on the engine's grid with **`N_r` 20** (`DEFAULT_SHELLS`; "10" above was
    wrong) and the engine's OCP tables as interpolants.
+   **Floor and bar, measured and written before the growing comparison was looked at
+   (2026-10-15).** Reference `tests/golden/nmc_21700_lgm50/sei_dfn_cycling.csv` from
+   `tools/reference/sei_dfn_golden.py`. With the film frozen at 50 nm on both sides the negative's
+   `φ_s − φ_e` differs by at most **0.167 mV at 1C** (node 0, t = 12 660 s) and **0.531 mV at 2C**
+   (node 9, t = 450 s), a rate floor of 0.65 % and 2.09 %. The frozen-potential tick, engine
+   against itself (10 s sub-clock against one tick per step), costs 0.76 % of lithium (0.80 % on the
+   worst node) at 1C and 0.14 % (0.15 %) at 2C. **Bar: 2.0 % at 1C, 3.0 % at 2C** — floor plus
+   tick plus about half a point — on the lithium grown and on every node's growth at every sample
+   from the end of the first cycle, and the thickest-over-thinnest ratio within twice that.
 3. **Resistance from the film alone**, as exit 4 on the `Spm`: with `r_growth_per_capacity_loss`
    at zero, ninety days hot add resistance and a reported ratio above 1, both read through
    `FilmView` and `Telemetry::soh_resistance`.
@@ -588,3 +597,77 @@ require it. Recommended: **report it, not gate on it** — run it once, write bo
 per-condition largest gap beside the `Spm`'s, and treat a result past the `Spm`'s bar as a finding
 for the owner. The `Spm` run took 12 s in a debug build; a `Dfn` cell costs on the order of a
 hundred times more per step, so **one condition is timed in release before the 36 are run**.
+
+## Addendum 2026-10-15 (later) — slice D done: the film on the `Dfn`, v26 → v27
+
+Built from the design above, with the owner's fork 1 (the film's resistance per node, inside the
+reaction) and fork 2 (the WMG cells on the `Dfn` reported, not gated). Pinned by
+`crates/sim-data/tests/sei_dfn.rs`; the reference under current is
+`tests/golden/nmc_21700_lgm50/sei_dfn_cycling.csv` from `tools/reference/sei_dfn_golden.py`.
+
+**What landed.** `DfnState::film_thickness_m: Option<Vec<f64>>`, one per negative node, `None`
+unless the film is selected; `SNAPSHOT_VERSION` 27 (a v26 `Dfn` cell reads its capacity factor's
+low byte as the film's tag: a scatter-free cell parses quietly, a scattered one fails —
+`snapshot_version.rs`). `dfn::grow_film` grows each node at its own `φ_s − φ_e` off the stored
+field, through `spm::film_growth_m`, the `Spm`'s closed form pulled out with its arithmetic
+unchanged. `System::kinetics` subtracts `j·ρ·(L_i − L0)` from each negative node's `η` and the
+Jacobian's `∂η/∂j` gains `−ρ·(L_i − L0)`, both branched on the film so a film-less cell's
+arithmetic is untouched. The readouts mirror the `Spm`'s on the node mean; `FilmView` reports the
+mean thickness and the nodes' films in parallel. `BuildError::FilmNeedsSpm` is renamed
+`FilmUnsupportedModel` (an API change; its message names both models).
+
+**Measured, against bars written before each run.**
+
+| | result | bar |
+| --- | --- | --- |
+| exit 1, a year at rest, `Dfn` vs `Spm`, five conditions | 6.5e-9 worst (85 % / 25 °C) | 1e-9 **missed**, re-set to 1e-7 from the Newton tolerance (above) |
+| exit 1, `Dfn` vs PyBaMM table reference, from day 7 | 0.00155 % worst | 0.01 % |
+| exit 2, frozen film, `φ_s − φ_e` gap 1C / 2C | 0.167 / 0.531 mV | the floor itself, re-checked each run |
+| exit 2, lithium grown 1C / 2C | 1.16 / 1.84 % | 2.0 / 3.0 % |
+| exit 2, worst node's growth 1C / 2C | 1.24 / 2.19 % | 2.0 / 3.0 % |
+| exit 2, spread, engine / PyBaMM, 1C | 4.137 / 4.132 | within 4 % |
+| exit 2, spread, engine / PyBaMM, 2C | 30.06 / 29.92 | within 6 % |
+| exit 3, ninety hot days, film resistance `Dfn` / `Spm` | 6.0709e-4 Ω both, ratio 1.0035 | equal to 1e-7, ratio > 1 |
+| exit 4, the ledger over a hot year at rest | 2.3e-9 | 1e-6 |
+| exit 5, a mid-run snapshot round trip | bit-identical | bit-identical |
+
+Also pinned: the film's Jacobian term on a hand-set uneven film (5 → 245 nm) matches a central
+difference to 1.2e-9 (dropping the term reads 1.3e-2); a fresh film moves nothing until its first
+tick; state of charge counts against the reported capacity after a hot year to 1e-4; and an aged
+cell charged past full raises `SOC_CLAMPED_HIGH` on the step its positive passes `stoich_min`
+(0.2643367 → 0.2638449 against 0.2638452), so the positive's edge binds as designed.
+
+**Exit 2 sees fork 1.** With the film's drop taken out of the reaction for one run, the frozen-film
+gap to PyBaMM is 5.16 mV, thirty times the floor, and the test fails there. The 50 nm start is what
+makes the drop large enough to see; at the fresh 5 nm it would be about a tenth of a millivolt.
+
+**The stored line after a tick** (the design's "measure first"): a zero-length read after a 1 h
+tick at 45 °C / 85 % reads 2.2 nV from a re-solve, nothing measurable after a 10 s tick. Below the
+microvolt the design set, so it is stated and left.
+
+**The WMG cells on the `Dfn`** (`sei_wmg.rs::the_film_on_the_dfn_against_the_wmg_cells`, ignored,
+run on request, about 2 min in release): **0.6231 % RMS at 25 + 45 °C and 0.4051 % on the held-out
+0 °C cells**, against the `Spm`'s 0.6241 and 0.4046; the two models' growths differ by at most
+0.044 points (45 °C / 85 %, day 770). Both inside the `Spm`'s bars, though nothing gates on it.
+
+**Film off moves nothing**, beyond the suite: an out-of-tree harness (`W:/temp/claude/phase10-sliceD`,
+not kept) built against `c651f23` and against this slice ran aged packs — `Ecm` 4S2P with a BMS
+(the `cc_cv_charge_pack` scenario's pack) and 1S2P, `Spm` 1S2P and 2S1P, `Dfn` 1S1P, `SpmEnsemble` —
+through cycling, a voltage hold, a power demand, 200 h hot at rest, a cold charge and an
+over-discharge, hashing every telemetry frame, every `CellView` and the final snapshot (version and
+null film keys stripped). All six identical; a 1e-15 perturbation of the initial SOC moves each.
+A **filmed** `Spm` 1S2P is identical too, so pulling out `film_growth_m` moved nothing.
+
+**Recorded, not fixed.**
+
+- The past-empty continuation (`spm::kinetics_at_empty_v`, on both porous models) reads the
+  chemistry, not the cell, so it does not see the film's resistance; nor does the `Dfn`'s
+  first-step seed resistance. Neither is reached by any exit.
+- The pack's `mult·r/(r − r_film)` resistance ratio treats the `Dfn`'s film as series, which is
+  exact at an even film and approximate under the uneven one a current leaves.
+- The `Spm` reads the film's rate at `U_n + η_n` with its film outside; the `Dfn` at `φ_s − φ_e`,
+  the film's drop included (PyBaMM's). Identical at rest; under current they part, which is
+  in neither model's exits.
+- `empty_voltage` on an aged cell, recorded for the `Spm` in slice C, holds here unchanged.
+
+Next is slice E, the lesson.

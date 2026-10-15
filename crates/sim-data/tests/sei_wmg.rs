@@ -37,9 +37,22 @@ fn chem() -> ChemistryParams {
     chem
 }
 
-/// A single filmed `Spm` cell at `soc`, at `temp_k`, on a live thermal network so it can be
-/// brought to the test chamber's temperature for each test and back.
-fn stored(soc: f64, temp_k: f64) -> Pack {
+/// The `Spm` exit 5 is about.
+const SPM: CellModelConfig = CellModelConfig::Spm {
+    shells: sim_core::spm::DEFAULT_SHELLS,
+};
+
+/// The `Dfn` the same film runs on since slice D, at its recommended grid.
+const DFN: CellModelConfig = CellModelConfig::Dfn {
+    shells: sim_core::spm::DEFAULT_SHELLS,
+    nodes_negative: sim_core::dfn::DEFAULT_NODES_NEGATIVE,
+    nodes_separator: sim_core::dfn::DEFAULT_NODES_SEPARATOR,
+    nodes_positive: sim_core::dfn::DEFAULT_NODES_POSITIVE,
+};
+
+/// A single filmed cell of `model` at `soc`, at `temp_k`, on a live thermal network so it can
+/// be brought to the test chamber's temperature for each test and back.
+fn stored(model: CellModelConfig, soc: f64, temp_k: f64) -> Pack {
     let config = PackConfig {
         series: 1,
         parallel: 1,
@@ -55,11 +68,9 @@ fn stored(soc: f64, temp_k: f64) -> Pack {
             calendar: CalendarModel::Film,
             ..AgingConfig::default()
         }),
-        cell_model: CellModelConfig::Spm {
-            shells: sim_core::spm::DEFAULT_SHELLS,
-        },
+        cell_model: model,
     };
-    Pack::new(&config, chem()).expect("a filmed Spm pack builds")
+    Pack::new(&config, chem()).expect("a filmed pack builds")
 }
 
 fn env(temp_k: f64) -> Env {
@@ -189,7 +200,7 @@ fn lithium_mol(chem: &ChemistryParams, soc: f64) -> f64 {
 #[test]
 fn capacity_lost_per_lithium_lost_on_wmg_steps() {
     let chem = chem();
-    let fresh = stored(0.85, 298.15);
+    let fresh = stored(SPM, 0.85, 298.15);
     let q0 = capacity(&fresh);
     let mut aged = fresh;
     store(&mut aged, 0.0, 365.0, 298.15);
@@ -235,9 +246,9 @@ fn conditions() -> Vec<Condition> {
 
 /// The engine's growth \[%\] at each of the condition's test days: its capacity fade on
 /// WMG's steps, against its own day-0 test, less that fade at the first post-storage test.
-fn engine_growth(c: &Condition) -> Vec<f64> {
+fn engine_growth(model: CellModelConfig, c: &Condition) -> Vec<f64> {
     let temp_k = c.temp_c + 273.15;
-    let mut pack = stored(c.soc_pct / 100.0, temp_k);
+    let mut pack = stored(model, c.soc_pct / 100.0, temp_k);
     let q0 = capacity(&pack);
     let mut day = 0.0;
     let mut fade = Vec::with_capacity(c.rows.len());
@@ -284,7 +295,8 @@ fn growth_rms(results: &[(&Condition, Vec<f64>)]) -> f64 {
 #[test]
 fn the_film_reproduces_the_wmg_cells() {
     let all = conditions();
-    let results: Vec<(&Condition, Vec<f64>)> = all.iter().map(|c| (c, engine_growth(c))).collect();
+    let results: Vec<(&Condition, Vec<f64>)> =
+        all.iter().map(|c| (c, engine_growth(SPM, c))).collect();
     for (c, e) in &results {
         let (last_day, g) = *c.rows.last().expect("rows");
         println!(
@@ -318,4 +330,47 @@ fn the_film_reproduces_the_wmg_cells() {
         rms_held < 0.425,
         "growth RMS on the held-out 0 C cells: {rms_held:.4} %, against the fit's 0.405 %"
     );
+}
+
+/// The same film on the `Dfn`, against the same cells: **a report, not a gate** (the owner's
+/// choice, `docs/plans/phase-10-sei.md`, slice D). At rest the `Dfn` grows the `Spm`'s film
+/// (`sei_dfn.rs`), so what moves is how WMG's steps read capacity through the electrolyte.
+/// Run with `--ignored`; it prints both scores beside the `Spm`'s and the largest per-condition
+/// gap between the two models, and asserts only what every capacity test asserts (no
+/// unconverged solve, no surface out of range). About 90 s in a release build.
+#[test]
+#[ignore = "report: the WMG cells on the Dfn; run with --ignored, recorded in the plan"]
+fn the_film_on_the_dfn_against_the_wmg_cells() {
+    let all = conditions();
+    let mut gap = (0.0_f64, String::new());
+    let (mut dfn, mut spm) = (Vec::new(), Vec::new());
+    for c in &all {
+        let (d, s) = (engine_growth(DFN, c), engine_growth(SPM, c));
+        for ((day, _), (a, b)) in c.rows.iter().zip(d.iter().zip(&s)) {
+            if (a - b).abs() > gap.0 {
+                gap = (
+                    (a - b).abs(),
+                    format!("{} C {} % day {day}", c.temp_c, c.soc_pct),
+                );
+            }
+        }
+        dfn.push((c, d));
+        spm.push((c, s));
+    }
+    let score = |r: &[(&Condition, Vec<f64>)], held: bool| {
+        let pick: Vec<_> = r
+            .iter()
+            .filter(|(c, _)| (c.temp_c == 0.0) == held)
+            .map(|(c, e)| (*c, e.clone()))
+            .collect();
+        growth_rms(&pick)
+    };
+    println!(
+        "growth RMS at 25 + 45 C: Dfn {:.4} %, Spm {:.4} %; held-out 0 C: Dfn {:.4} %, Spm {:.4} %",
+        score(&dfn, false),
+        score(&spm, false),
+        score(&dfn, true),
+        score(&spm, true)
+    );
+    println!("largest Dfn - Spm gap: {:.4} points at {}", gap.0, gap.1);
 }

@@ -392,3 +392,306 @@ fn a_filmed_dfn_survives_a_snapshot() {
     }
     assert_eq!(dfn_state(&continued), dfn_state(&straight));
 }
+
+/// A fresh film on a `Dfn` is the chemistry's initial film, which adds nothing, so until the
+/// first aging tick a filmed `Dfn` is bit for bit the `Dfn` with the drawn curve — the
+/// per-node term in each reaction is `j·0.0` until a node grows. After the tick they part.
+#[test]
+fn a_fresh_film_moves_nothing_until_it_grows() {
+    let mut curve_config = config(dfn_model(), 0.6, 298.15);
+    curve_config.aging = Some(AgingConfig::default());
+    let mut a = Pack::new(&curve_config, chem()).expect("builds");
+    let mut b = filmed(dfn_model(), 0.6, 298.15);
+    let demands = [Demand::Current(3.0), Demand::Rest, Demand::Current(-2.0)];
+    // Nine one-second steps: the 10 s sub-clock has not ticked.
+    for k in 0..9 {
+        let ta = a.step(1.0, demands[k % 3], &env(298.15));
+        let tb = b.step(1.0, demands[k % 3], &env(298.15));
+        assert_eq!(
+            serde_json::to_string(&ta).expect("telemetry"),
+            serde_json::to_string(&tb).expect("telemetry"),
+            "step {k}: a fresh film moved the Dfn"
+        );
+    }
+    let ta = a.step(1.0, Demand::Rest, &env(298.15));
+    let tb = b.step(1.0, Demand::Rest, &env(298.15));
+    assert_ne!(
+        ta.soh_capacity, tb.soh_capacity,
+        "after the first tick the curve and the film are different mechanisms"
+    );
+}
+
+/// A filmed `Dfn`'s state of charge is a fraction of the capacity it reports, as the `Spm`'s
+/// is (`sei_film.rs`): after a hot year at 85 % a slow discharge moves the reported state of
+/// charge times the reported capacity by the amp-hours it delivers, to 1e-4.
+#[test]
+fn state_of_charge_counts_against_the_capacity_the_cell_has() {
+    let mut pack = filmed(dfn_model(), 0.85, 318.15);
+    for _ in 0..365 * 24 {
+        pack.step(3600.0, Demand::Rest, &env(318.15));
+    }
+    let before = pack.step(0.0, Demand::Rest, &env(318.15));
+    let cap_ah = chem().cell.capacity_ah;
+    let i = cap_ah / 20.0;
+    let mut ah = 0.0;
+    let mut after = before;
+    for _ in 0..4 * 60 {
+        after = pack.step(60.0, Demand::Current(i), &env(318.15));
+        ah += after.i_actual * 60.0 / 3600.0;
+    }
+    assert!(
+        before.soh_capacity < 0.98,
+        "the year should have cost a few percent of capacity: {}",
+        before.soh_capacity
+    );
+    let counted = (before.soc_true - after.soc_true) * before.soh_capacity * cap_ah;
+    assert!(
+        (counted / ah - 1.0).abs() < 1e-4,
+        "delivered {ah} Ah, the reported state of charge and capacity count {counted} Ah"
+    );
+}
+
+/// The film shortens the negative's window at the top by the lithium it took, so a filmed
+/// cell is full when its **positive** is: charged past it, a hot-year-aged `Dfn` raises
+/// `SOC_CLAMPED_HIGH` on the step its positive electrode's bulk passes the chemistry's full
+/// (`stoich_min`), not before and not one step late. The plan's "the positive's edge binds on
+/// a charge", checked rather than assumed.
+#[test]
+fn an_aged_dfn_is_full_when_its_positive_is() {
+    let chem = chem();
+    let p_min = chem.spm.as_ref().expect("[spm]").positive.stoich_min;
+    let p_cmax = chem.spm.as_ref().expect("[spm]").positive.c_max_mol_per_m3;
+    let mut pack = filmed(dfn_model(), 0.85, 318.15);
+    for _ in 0..365 * 24 {
+        pack.step(3600.0, Demand::Rest, &env(318.15));
+    }
+    let i = -chem.cell.capacity_ah / 20.0;
+    let y = |p: &Pack| {
+        let s = dfn_state(p);
+        s.c_pos.iter().map(|c| mean(c)).sum::<f64>() / s.c_pos.len() as f64 / p_cmax
+    };
+    let mut flagged = None;
+    for k in 0..40 * 60 {
+        let y0 = y(&pack);
+        let t = pack.step(60.0, Demand::Current(i), &env(298.15));
+        if t.flags.contains(sim_core::EventFlags::SOC_CLAMPED_HIGH) {
+            flagged = Some((k, y0, y(&pack)));
+            break;
+        }
+    }
+    let (k, y0, y1) = flagged.expect("a charge past full raises SOC_CLAMPED_HIGH");
+    println!("flagged at step {k}: positive bulk {y0:.7} -> {y1:.7}, full {p_min}");
+    assert!(
+        y0 >= p_min && y1 < p_min,
+        "the flag rose on step {k}, where the positive went {y0} -> {y1}; it should be the \
+         step it passed its full, {p_min}"
+    );
+}
+
+const CYCLING: &str = include_str!("../../../tests/golden/nmc_21700_lgm50/sei_dfn_cycling.csv");
+
+/// One row of `sei_dfn_cycling.csv`.
+struct CycRow {
+    rate: f64,
+    growing: bool,
+    t_s: f64,
+    li_mol: f64,
+    dphi: Vec<f64>,
+    dl: Vec<f64>,
+}
+
+fn cycling_rows() -> Vec<CycRow> {
+    CYCLING
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("rate_c") && !l.is_empty())
+        .map(|l| {
+            let v: Vec<f64> = l.split(',').map(|x| x.parse().expect("a number")).collect();
+            let n = (v.len() - 4) / 2;
+            CycRow {
+                rate: v[0],
+                growing: v[1] == 1.0,
+                t_s: v[2],
+                li_mol: v[3],
+                dphi: v[4..4 + n].to_vec(),
+                dl: v[4 + n..].to_vec(),
+            }
+        })
+        .collect()
+}
+
+/// The engine's side of one cycling case: the chemistry with the fresh film at 1e-12 and, when
+/// not `growing`, `D_li` at 1e-300 (the loader refuses zero); a filmed `Dfn` started from an
+/// even 50 nm. Eight cycles of ±0.25 of capacity from 50 %, in steps of a sixtieth of the
+/// reference's sample spacing (1 s at 1C, 0.9375 s at 2C), sampled at the reference's times:
+/// `(t_s, lithium grown [mol], φ_s − φ_e per node [V], film grown per node [m])`.
+fn engine_cycling(
+    rate: f64,
+    growing: bool,
+    times: &[f64],
+    sub_clock_s: f64,
+) -> Vec<(f64, f64, Vec<f64>, Vec<f64>)> {
+    let mut chem = chem();
+    {
+        let sei = chem
+            .spm
+            .as_mut()
+            .expect("[spm]")
+            .sei
+            .as_mut()
+            .expect("[spm.sei]");
+        sei.initial_thickness_m = 1e-12;
+        if !growing {
+            sei.d_li_m2_per_s = 1e-300;
+        }
+    }
+    let cap = chem.cell.capacity_ah;
+    let mut cfg = config(dfn_model(), 0.5, 298.15);
+    cfg.aging = Some(AgingConfig {
+        calendar: CalendarModel::Film,
+        sub_clock_period_s: sub_clock_s,
+    });
+    let fresh = Pack::new(&cfg, chem).expect("builds");
+    let mut v = serde_json::to_value(fresh.snapshot()).expect("a snapshot is JSON");
+    let n = dfn_state(&fresh).c_neg.len();
+    v["pack"]["groups"][0]["cells"][0]["model"]["Dfn"]["film_thickness_m"] =
+        serde_json::json!(vec![50e-9; n]);
+    let snap: sim_core::Snapshot = serde_json::from_value(v).expect("a snapshot");
+    let mut p = Pack::restore(&snap).expect("restores");
+    let read = |p: &Pack| {
+        let s = dfn_state(p);
+        let dphi: Vec<f64> = (0..n).map(|i| s.u[4 * i + 2] - s.u[4 * i + 1]).collect();
+        let l = s.film_thickness_m.expect("a film");
+        let li = p.cell_film(0, 0).expect("a film").lithium_lost_mol;
+        (dphi, l, li)
+    };
+    let (_, l0, li0) = read(&p);
+    let dt = times[0] / 60.0;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let leg = (900.0 / rate / dt).round() as usize;
+    let mut out = Vec::new();
+    let mut t = 0_usize;
+    let mut next = times.iter().peekable();
+    for _ in 0..8 {
+        for sign in [1.0, -1.0] {
+            for _ in 0..leg {
+                p.step(dt, Demand::Current(sign * rate * cap), &env(298.15));
+                t += 1;
+                #[allow(clippy::cast_precision_loss)]
+                let now = t as f64 * dt;
+                if next.peek().is_some_and(|&&x| (x - now).abs() < 1e-6) {
+                    next.next();
+                    let (dphi, l, li) = read(&p);
+                    let dl = l.iter().zip(&l0).map(|(a, b)| a - b).collect();
+                    out.push((now, li - li0, dphi, dl));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Exit 2 of slice D: **under current, the film grows across the electrode as PyBaMM's DFN
+/// grows it.** PyBaMM's DFN with the interstitial law, on the engine's grid and OCP tables, from
+/// one even 50 nm film (both sides' film resistance is then the whole film's), eight cycles of
+/// ±0.25 of capacity from 50 % at 25 °C, at 1C and 2C. The only exit that sees what the `Dfn`
+/// does and the `Spm` cannot: the reaction crowds toward the separator, the film there grows
+/// several times faster, and a thicker film at a node — its resistance inside that node's
+/// reaction — pushes the reaction away from it.
+///
+/// # The bar, set before this comparison was looked at
+/// The two DFNs are not one discretisation, and the film's rate is exponential in the
+/// potential, so the bar is measured: with the film **frozen** on both sides (`D_li` 0 in
+/// PyBaMM, 1e-300 here), their negative `φ_s − φ_e` differ by at most 0.167 mV at 1C and
+/// 0.531 mV at 2C — rate floors of 0.65 % and 2.09 % — and the engine's 10 s frozen-potential
+/// tick costs 0.80 % and 0.15 % on the worst node against one tick per step. The bar is 2.0 %
+/// at 1C and 3.0 % at 2C on the lithium grown and on every node's growth, from the end of the
+/// first cycle, and twice that on the thickest-over-thinnest ratio. The floor is re-measured
+/// here each run and must stay under what the bar was built from.
+#[test]
+fn under_current_the_film_grows_as_pybamm_grows_it() {
+    let rows = cycling_rows();
+    let f_rt = 96_485.332_12 / (8.314_462_618 * 298.15);
+    for (rate, bar, floor_mv) in [(1.0, 0.02, 0.167), (2.0, 0.03, 0.532)] {
+        let frozen: Vec<&CycRow> = rows
+            .iter()
+            .filter(|r| r.rate == rate && !r.growing && r.t_s > 0.0)
+            .collect();
+        let times: Vec<f64> = frozen.iter().map(|r| r.t_s).collect();
+        let engine = engine_cycling(rate, false, &times, 10.0);
+        assert_eq!(
+            engine.len(),
+            frozen.len(),
+            "{rate}C: every reference time sampled"
+        );
+        let gap = engine
+            .iter()
+            .zip(&frozen)
+            .flat_map(|(e, r)| e.2.iter().zip(&r.dphi).map(|(a, b)| (a - b).abs()))
+            .fold(0.0_f64, f64::max);
+        assert!(
+            gap * 1e3 < floor_mv,
+            "{rate}C: with the film frozen the two DFNs' potentials now part by {:.4} mV, past \
+             the {floor_mv} mV the bar was built from",
+            gap * 1e3
+        );
+
+        let growing: Vec<&CycRow> = rows
+            .iter()
+            .filter(|r| r.rate == rate && r.growing && r.t_s > 0.0)
+            .collect();
+        let times: Vec<f64> = growing.iter().map(|r| r.t_s).collect();
+        let engine = engine_cycling(rate, true, &times, 10.0);
+        assert_eq!(
+            engine.len(),
+            growing.len(),
+            "{rate}C: every reference time sampled"
+        );
+        let first_cycle = 1800.0 / rate;
+        let (mut worst_li, mut worst_node) = (0.0_f64, 0.0_f64);
+        for (e, r) in engine.iter().zip(&growing) {
+            if r.t_s < first_cycle - 1e-6 {
+                continue;
+            }
+            worst_li = worst_li.max((e.1 / r.li_mol - 1.0).abs());
+            for (a, b) in e.3.iter().zip(&r.dl) {
+                worst_node = worst_node.max((a / b - 1.0).abs());
+            }
+        }
+        let (e, r) = (
+            engine.last().expect("sampled"),
+            growing.last().expect("rows"),
+        );
+        let spread = |dl: &[f64]| {
+            let hi = dl.iter().copied().fold(0.0_f64, f64::max);
+            let lo = dl.iter().copied().fold(f64::INFINITY, f64::min);
+            hi / lo
+        };
+        let (s_e, s_r) = (spread(&e.3), spread(&r.dl));
+        println!(
+            "{rate}C: floor {:.4} mV ({:.3} % rate); lithium {:.4} %, worst node {:.4} %, spread \
+             engine {s_e:.4} PyBaMM {s_r:.4} ({:.4} %)",
+            gap * 1e3,
+            ((f_rt * gap).exp() - 1.0) * 100.0,
+            worst_li * 100.0,
+            worst_node * 100.0,
+            (s_e / s_r - 1.0) * 100.0
+        );
+        assert!(
+            worst_li < bar,
+            "{rate}C: the lithium the film took is {:.3} % from PyBaMM's, past the {:.1} % bar",
+            worst_li * 100.0,
+            bar * 100.0
+        );
+        assert!(
+            worst_node < bar,
+            "{rate}C: a node's film growth is {:.3} % from PyBaMM's, past the {:.1} % bar",
+            worst_node * 100.0,
+            bar * 100.0
+        );
+        assert!(
+            (s_e / s_r - 1.0).abs() < 2.0 * bar,
+            "{rate}C: the film's spread across the negative is {s_e:.4} here and {s_r:.4} in \
+             PyBaMM"
+        );
+    }
+}

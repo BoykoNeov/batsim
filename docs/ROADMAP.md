@@ -572,6 +572,15 @@ stated + 0.02 set before the run (`sei_wmg.rs`); the `Dfn` (D) is next. Recorded
 voltage on an aged filmed cell (heat booking, not a voltage step), and that the law stores 85 %
 exactly like full (flat graphite potential), so the lesson cannot teach "store at 80 %".
 
+*Slice D done 2026-10-15* (v27, `phase-10-sei.md` slice D addenda): the film grows on the `Dfn`,
+one thickness per negative node, its resistance inside each node's reaction (owner's choice).
+At rest it is the `Spm`'s film (to 6.5e-9, the `Dfn`'s Newton tolerance); under ±0.25-capacity
+cycling against a PyBaMM DFN on the engine's grid it grows the same lithium to 1.2 % at 1C and
+1.8 % at 2C and the same spread across the electrode (4.14× and 30.1× at the separator against
+PyBaMM's 4.13× and 29.9×), inside bars set from a measured floor before the comparison
+(`sei_dfn.rs`). The WMG cells on the `Dfn`, reported only by owner choice, score 0.6231 % and
+0.4051 % (the `Spm`: 0.6241 / 0.4046). The lesson (E) is next.
+
 ### Phase 11 — the fitting pipeline (H3)
 
 *Framing.* Retire placeholders by measurement, one file at a time, without touching Rust.

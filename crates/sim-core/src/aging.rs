@@ -159,7 +159,8 @@ pub enum CalendarModel {
     /// the cell's lithium, at a rate set by the electrode's own potential and temperature,
     /// and that adds its own resistance in series. Its loss is real lithium gone from the
     /// particle, so it is read off the electrodes rather than applied as a multiplier.
-    /// `Spm` only; [`crate::Pack::new`] refuses it elsewhere.
+    /// `Spm` and `Dfn` (one film per negative node there); [`crate::Pack::new`] refuses it on
+    /// the equivalent circuit and the many-particle cell.
     Film,
 }
 
