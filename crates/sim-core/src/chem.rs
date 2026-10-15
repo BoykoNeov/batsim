@@ -2513,15 +2513,7 @@ fn check_entropic(
             ),
         });
     }
-    // Phase 11 slice E lands the schema before the physics that reads it, so that one
-    // snapshot bump covers all three of the slice's fields; until the porous models read
-    // this table, a file carrying one would be saying something the engine ignores.
-    Err(ChemistryError::BadRange {
-        what: pick(
-            "spm.negative.entropic is not read by this build yet",
-            "spm.positive.entropic is not read by this build yet",
-        ),
-    })
+    Ok(())
 }
 
 fn check_strictly_ascending(what: &'static str, xs: &[f64]) -> Result<(), ChemistryError> {

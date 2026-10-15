@@ -49,9 +49,9 @@ use crate::flags::EventFlags;
 use crate::math;
 use crate::noise;
 use crate::spm::{
-    self, clamp_surface, diffuse, forward_sweep, mean_concentration, ocp_lookup, overpotential,
-    surface_from_outer, window_fraction_neg, window_fraction_pos, Geometry, OuterShell, Side,
-    Working, FARADAY_C_PER_MOL, MAX_SHELLS, SURFACE_EDGE,
+    self, clamp_surface, diffuse, energy_potential, forward_sweep, mean_concentration, ocp_at,
+    overpotential, surface_from_outer, window_fraction_neg, window_fraction_pos, Geometry,
+    OuterShell, Side, Working, FARADAY_C_PER_MOL, MAX_SHELLS, SURFACE_EDGE,
 };
 
 /// Fewest particles a positive electrode may be split into. One is the single-particle
@@ -217,16 +217,18 @@ pub fn substeps(n: usize, dt: f64) -> usize {
     }
 }
 
-/// The positive electrode's open-circuit potential \[V\] at stoichiometry `y`: the
-/// regular-solution form where the chemistry gives one, the table otherwise.
+/// The positive electrode's open-circuit potential \[V\] at stoichiometry `y` and
+/// temperature `temp_k`: the regular-solution form where the chemistry gives one, the table
+/// otherwise — shifted by its entropy coefficient from `t_ref_k` where it has one
+/// ([`spm::ocp_at`]).
 ///
 /// The regular-solution form is read with `y` held inside `[SURFACE_EDGE, 1 − SURFACE_EDGE]`
 /// — the band the surface clamp already keeps every surface in — because its logarithm is
 /// infinite at both ends.
 #[must_use]
-pub fn positive_ocp(p: &ElectrodeParams, temp_k: f64, y: f64) -> f64 {
+pub fn positive_ocp(p: &ElectrodeParams, temp_k: f64, t_ref_k: f64, y: f64) -> f64 {
     match &p.regular_solution {
-        None => ocp_lookup(&p.ocp, y),
+        None => ocp_at(p, y, temp_k, t_ref_k),
         Some(rs) => {
             let y = y.clamp(SURFACE_EDGE, 1.0 - SURFACE_EDGE);
             let kt_v = GAS_CONSTANT_J_PER_MOL_K * temp_k / FARADAY_C_PER_MOL;
@@ -323,7 +325,7 @@ fn pos_half(
         surface_from_outer(c_outer, shells, radius_m, side.d_s, j_surf),
         c_max,
     );
-    positive_ocp(side.p, w.temp_k, c_s / c_max)
+    positive_ocp(side.p, w.temp_k, w.spm.t_ref_k, c_s / c_max)
         + overpotential(side, w.temp_k, w.spm.c_e_mol_per_m3, c_s, i_s)
 }
 
@@ -784,9 +786,29 @@ fn equilibrium_voltage(w: &Working<'_>, pp: &Particles, s: &EnsembleState) -> f6
     let mut sum = 0.0;
     for k in 0..pp.n {
         let y = mean_concentration(pp.profile(&s.c_pos, k)) / w.pos.p.c_max_mol_per_m3;
-        sum += positive_ocp(w.pos.p, w.temp_k, y);
+        sum += positive_ocp(w.pos.p, w.temp_k, w.spm.t_ref_k, y);
     }
-    sum / pp.n as f64 - ocp_lookup(&w.neg.p.ocp, x)
+    sum / pp.n as f64 - ocp_at(w.neg.p, x, w.temp_k, w.spm.t_ref_k)
+}
+
+/// [`equilibrium_voltage`] with each potential at its **stored-energy** value
+/// ([`spm::energy_potential`]): what the heat estimate and its corrections read, so the
+/// table electrodes' entropic heat needs no separate term (`spm::energy_voltage` gives the
+/// identity). A regular-solution positive keeps its own potential here — its entropy
+/// travels in [`reversible_w`] — so this differs from [`equilibrium_voltage`] only on an
+/// electrode with an entropy coefficient, and is its exact arithmetic otherwise.
+#[must_use]
+fn energy_voltage(w: &Working<'_>, pp: &Particles, s: &EnsembleState) -> f64 {
+    let x = mean_concentration(&s.c_neg) / w.neg.p.c_max_mol_per_m3;
+    let mut sum = 0.0;
+    for k in 0..pp.n {
+        let y = mean_concentration(pp.profile(&s.c_pos, k)) / w.pos.p.c_max_mol_per_m3;
+        sum += match &w.pos.p.regular_solution {
+            None => energy_potential(w.pos.p, y, w.spm.t_ref_k),
+            Some(_) => positive_ocp(w.pos.p, w.temp_k, w.spm.t_ref_k, y),
+        };
+    }
+    sum / pp.n as f64 - energy_potential(w.neg.p, x, w.spm.t_ref_k)
 }
 
 /// Heat \[W\] the particles make trading lithium among themselves: `Σ x_k·(U_k − Ū)`, each
@@ -805,7 +827,7 @@ fn exchange_w(w: &Working<'_>, pp: &Particles, s: &EnsembleState, x: &[f64]) -> 
     let mut mean = 0.0;
     for (k, uk) in u.iter_mut().enumerate().take(pp.n) {
         let y = mean_concentration(pp.profile(&s.c_pos, k)) / w.pos.p.c_max_mol_per_m3;
-        *uk = positive_ocp(w.pos.p, w.temp_k, y);
+        *uk = positive_ocp(w.pos.p, w.temp_k, w.spm.t_ref_k, y);
         mean += *uk;
     }
     mean /= pp.n as f64;
@@ -846,8 +868,8 @@ fn reversible_w(w: &Working<'_>, pp: &Particles, s: &EnsembleState, x: &[f64]) -
 /// through [`positive_ocp`].
 #[must_use]
 fn empty_voltage(w: &Working<'_>) -> f64 {
-    positive_ocp(w.pos.p, w.temp_k, w.pos.p.stoich_max)
-        - ocp_lookup(&w.neg.p.ocp, w.neg.p.stoich_min)
+    positive_ocp(w.pos.p, w.temp_k, w.spm.t_ref_k, w.pos.p.stoich_max)
+        - ocp_at(w.neg.p, w.neg.p.stoich_min, w.temp_k, w.spm.t_ref_k)
 }
 
 /// [`spm::reversal_drop`] from [`empty_voltage`].
@@ -1173,7 +1195,7 @@ pub(crate) fn positive_stoichiometry(s: &EnsembleState, spm: &SpmParams) -> Vec<
 }
 
 /// Heat \[W\] estimate at current `i` given the node voltage `v_terminal`: `i·(U_eq − V)` plus
-/// the entropic term, [`crate::spm`]'s `heat_w`. The particles' exchange and the end-of-step
+/// the entropic term, as [`crate::spm`]'s `heat_w` — one expression, `i·(energy_voltage − V)`. The particles' exchange and the end-of-step
 /// corrections arrive from [`advance`].
 #[must_use]
 pub(crate) fn heat_w(
@@ -1186,10 +1208,7 @@ pub(crate) fn heat_w(
 ) -> f64 {
     let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
     let pp = Particles::of(&w, s);
-    let q_irrev = i * (equilibrium_voltage(&w, &pp, s) - v_terminal);
-    let docv_dt = spm.positive.docp_dt_v_per_k - spm.negative.docp_dt_v_per_k;
-    let q_rev = -i * s.temp_k * docv_dt;
-    q_irrev + q_rev
+    i * (energy_voltage(&w, &pp, s) - v_terminal)
 }
 
 /// This cell's tangent `(E, R)` at [`EnsembleState::i_last`] on the start-of-step curve: a
@@ -1355,7 +1374,7 @@ pub(crate) fn advance(
     let d_start = s.soc_deficit;
     let mut x_start = [0.0_f64; MAX_PARTICLES];
     let start = if moves {
-        let u = equilibrium_voltage(&wk, &pp, s);
+        let u = energy_voltage(&wk, &pp, s);
         let v = read_now(&wk, &pp, s, i_p, i, &mut x_start).0 - reversal_drop(&wk, rev, d_start);
         (
             u,
@@ -1422,7 +1441,7 @@ pub(crate) fn advance(
         flags |= EventFlags::SURFACE_OUT_OF_RANGE;
     }
     let (u_start, v_start, ex_start) = start;
-    let u_end = equilibrium_voltage(&wk, &pp, s);
+    let u_end = energy_voltage(&wk, &pp, s);
     let n_half = spm::half(
         &wk,
         s.c_neg[s.c_neg.len() - 1],

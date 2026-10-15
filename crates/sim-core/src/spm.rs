@@ -507,7 +507,7 @@ pub(crate) fn grow_film(
         ),
         c_max,
     );
-    let dphi = ocp_lookup(&neg.p.ocp, c_s / c_max)
+    let dphi = ocp_at(neg.p, c_s / c_max, temp_k, spm.t_ref_k)
         + overpotential(neg, temp_k, spm.c_e_mol_per_m3, c_s, i / neg.g.area_m2);
     let dl = film_growth_m(sei, spm.t_ref_k, temp_k, l, dphi, dt_age);
     s.film_thickness_m = Some(l + dl);
@@ -521,7 +521,7 @@ pub(crate) fn grow_film(
     let x = mean_concentration(&s.c_neg) / c_max;
     (
         moles * FARADAY_C_PER_MOL / w.kappa,
-        ocp_lookup(&neg.p.ocp, x),
+        energy_potential(neg.p, x, spm.t_ref_k),
     )
 }
 
@@ -572,6 +572,73 @@ pub fn ocp_lookup(table: &OcpTable, stoich: f64) -> f64 {
 #[must_use]
 pub fn ocp_slope(table: &OcpTable, stoich: f64) -> f64 {
     crate::ecm::interp1_slope(&table.stoich, &table.volts, stoich)
+}
+
+/// One electrode's entropy coefficient `∂U/∂T` \[V/K\] at `stoich`: its
+/// `[spm.*.entropic]` table where the chemistry gives one (clamped linear interpolation),
+/// else its scalar `docp_dt_v_per_k` — which is `0` on every chemistry shipped before
+/// Phase 11, and must be `0` beside a table.
+#[must_use]
+pub(crate) fn entropic_v_per_k(e: &ElectrodeParams, stoich: f64) -> f64 {
+    match &e.entropic {
+        Some(t) => interp1(&t.stoich, &t.v_per_k, stoich),
+        None => e.docp_dt_v_per_k,
+    }
+}
+
+/// Whether this electrode's potential moves with temperature at all. `false` for an
+/// electrode with no table and a zero scalar, which is what keeps [`ocp_at`] and its
+/// siblings on the exact arithmetic they had before Phase 11 for every shipped chemistry
+/// but the one that opts in.
+fn has_entropic(e: &ElectrodeParams) -> bool {
+    e.entropic.is_some() || e.docp_dt_v_per_k != 0.0
+}
+
+/// One electrode's open-circuit potential \[V\] at `stoich` and **temperature**:
+/// `U(stoich) + (temp_k − t_ref_k)·∂U/∂T(stoich)`, PyBaMM's form, with the table read as
+/// the potential at `t_ref_k` (`docs/plans/phase-11-fitting.md`, decision 3).
+///
+/// Exactly [`ocp_lookup`] on an electrode with no entropy coefficient — a branch, not an
+/// added zero.
+#[must_use]
+pub(crate) fn ocp_at(e: &ElectrodeParams, stoich: f64, temp_k: f64, t_ref_k: f64) -> f64 {
+    let u = ocp_lookup(&e.ocp, stoich);
+    if has_entropic(e) {
+        u + (temp_k - t_ref_k) * entropic_v_per_k(e, stoich)
+    } else {
+        u
+    }
+}
+
+/// `∂/∂stoich` of [`ocp_at`] \[V\]: the table's segment slope, plus the temperature
+/// shift's own slope on an electrode with an entropic table (a scalar's is zero).
+#[must_use]
+pub(crate) fn ocp_at_slope(e: &ElectrodeParams, stoich: f64, temp_k: f64, t_ref_k: f64) -> f64 {
+    let s = ocp_slope(&e.ocp, stoich);
+    match &e.entropic {
+        Some(t) => {
+            s + (temp_k - t_ref_k) * crate::ecm::interp1_slope(&t.stoich, &t.v_per_k, stoich)
+        }
+        None => s,
+    }
+}
+
+/// The potential \[V\] one electrode's **stored energy** is counted at:
+/// `U(stoich) − t_ref_k·∂U/∂T(stoich)`, which is `U(stoich, T) − T·∂U/∂T` at any `T`.
+///
+/// Why not [`ocp_at`]: with an entropy coefficient the heat is `I·(U − V) − I·T·∂U/∂T`,
+/// so electrical work plus heat is `I·(U − T·∂U/∂T)`, and an energy ledger closes against
+/// that potential, not against `U`. It does not depend on the temperature, which is what
+/// lets a lithium inventory carry one stored energy whatever the cell's temperature does.
+/// Exactly [`ocp_lookup`] with no coefficient.
+#[must_use]
+pub(crate) fn energy_potential(e: &ElectrodeParams, stoich: f64, t_ref_k: f64) -> f64 {
+    let u = ocp_lookup(&e.ocp, stoich);
+    if has_entropic(e) {
+        u - t_ref_k * entropic_v_per_k(e, stoich)
+    } else {
+        u
+    }
 }
 
 /// Volume-weighted mean concentration \[mol/m³\] of a particle's shells.
@@ -688,8 +755,12 @@ pub(crate) fn half(
         surface_from_outer(c_outer, shells, side.p.particle_radius_m, side.d_s, j_surf),
         side.p.c_max_mol_per_m3,
     );
-    ocp_lookup(&side.p.ocp, c_s / side.p.c_max_mol_per_m3)
-        + overpotential(side, w.temp_k, w.spm.c_e_mol_per_m3, c_s, i_s)
+    ocp_at(
+        side.p,
+        c_s / side.p.c_max_mol_per_m3,
+        w.temp_k,
+        w.spm.t_ref_k,
+    ) + overpotential(side, w.temp_k, w.spm.c_e_mol_per_m3, c_s, i_s)
 }
 
 /// The kinetic part of the terminal voltage \[V\] at cell current `i` \[A,
@@ -775,7 +846,8 @@ fn voltage_split(w: &Working<'_>, neg: (f64, usize), pos: (f64, usize), i_p: f64
 /// circuit's `OCV(0)`.
 #[must_use]
 pub(crate) fn empty_voltage(w: &Working<'_>) -> f64 {
-    ocp_lookup(&w.pos.p.ocp, w.pos.p.stoich_max) - ocp_lookup(&w.neg.p.ocp, w.neg.p.stoich_min)
+    ocp_at(w.pos.p, w.pos.p.stoich_max, w.temp_k, w.spm.t_ref_k)
+        - ocp_at(w.neg.p, w.neg.p.stoich_min, w.temp_k, w.spm.t_ref_k)
 }
 
 /// How far below [`empty_voltage`] the reversal ramp has taken the cell at deficit `d`
@@ -869,6 +941,23 @@ fn stored_split(s: &SpmState, i: f64) -> f64 {
     i - s.i_reversal_last
 }
 
+/// The potential \[V\] the cell's heat and stored energy are counted against: each
+/// electrode's [`energy_potential`] at the particles' bulk stoichiometries.
+///
+/// With an entropy coefficient the heat is `I·(U(T) − V) − I·T·∂U/∂T`, which is
+/// `I·(this − V)` exactly, so [`heat_w`] and [`advance`]'s heat corrections read this in
+/// place of [`equilibrium_voltage`] and need no separate reversible term — and the energy
+/// ledger closes against the same potential, as it did before Phase 11. Read at the bulk,
+/// where the irreversible heat always was; PyBaMM reads the entropy coefficient at each
+/// particle's surface, and the two part only by its change across the surface-to-bulk gap.
+/// Exactly [`equilibrium_voltage`]'s arithmetic on an electrode pair with no coefficient.
+#[must_use]
+fn energy_voltage(w: &Working<'_>, s: &SpmState) -> f64 {
+    let x = mean_concentration(&s.c_neg) / w.neg.p.c_max_mol_per_m3;
+    let y = mean_concentration(&s.c_pos) / w.pos.p.c_max_mol_per_m3;
+    energy_potential(w.pos.p, y, w.spm.t_ref_k) - energy_potential(w.neg.p, x, w.spm.t_ref_k)
+}
+
 /// Equilibrium (open-circuit) voltage \[V\] at the particles' **mean** — bulk —
 /// stoichiometry.
 ///
@@ -880,7 +969,7 @@ fn stored_split(s: &SpmState, i: f64) -> f64 {
 fn equilibrium_voltage(w: &Working<'_>, s: &SpmState) -> f64 {
     let x = mean_concentration(&s.c_neg) / w.neg.p.c_max_mol_per_m3;
     let y = mean_concentration(&s.c_pos) / w.pos.p.c_max_mol_per_m3;
-    ocp_lookup(&w.pos.p.ocp, y) - ocp_lookup(&w.neg.p.ocp, x)
+    ocp_at(w.pos.p, y, w.temp_k, w.spm.t_ref_k) - ocp_at(w.neg.p, x, w.temp_k, w.spm.t_ref_k)
 }
 
 /// The range of cell current \[A, discharge-positive\], `(lo, hi)`, over which both
@@ -1245,8 +1334,12 @@ pub(crate) fn surface_gap(s: &SpmState, spm: &SpmParams, eff_capacity_ah: f64) -
 ///   here because there is no `R0` and no RC pair; the general form is the only one
 ///   available, and it is the one that keeps the pack energy balance closing.
 /// * **Reversible (entropic)** `−I·T·∂U/∂T`, with the cell's `∂U/∂T` assembled from
-///   the two half-cell entropy coefficients as `∂U_p/∂T − ∂U_n/∂T`. Zero for the
-///   shipped chemistry, whose set publishes both as literally zero.
+///   the two half-cell entropy coefficients as `∂U_p/∂T − ∂U_n/∂T`.
+///
+/// Computed as their sum in one expression, `I·(energy_voltage − V)`: with `U` read at
+/// the cell's temperature the two terms are exactly that (see [`energy_voltage`]), and an
+/// electrode pair with no entropy coefficient gets the irreversible term's arithmetic
+/// alone, as it did before Phase 11.
 ///
 /// An **estimate**, read at the start-of-step equilibrium voltage against the end-of-step
 /// node, and so wrong at a long step by the equilibrium voltage's fall across it.
@@ -1262,10 +1355,7 @@ pub(crate) fn heat_w(
     v_terminal: f64,
 ) -> f64 {
     let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
-    let q_irrev = i * (equilibrium_voltage(&w, s) - v_terminal);
-    let docv_dt = spm.positive.docp_dt_v_per_k - spm.negative.docp_dt_v_per_k;
-    let q_rev = -i * s.temp_k * docv_dt;
-    q_irrev + q_rev
+    i * (energy_voltage(&w, s) - v_terminal)
 }
 
 /// This cell's Thévenin **tangent** `(E, R)` at [`SpmState::i_last`]: the linear
@@ -1649,7 +1739,7 @@ pub(crate) fn advance(
     let d_start = s.soc_deficit;
     let start = if moves {
         (
-            equilibrium_voltage(&wk, s),
+            energy_voltage(&wk, s),
             voltage(&wk, s, i_p, i) - reversal_drop(&wk, rev, d_start),
         )
     } else {
@@ -1695,7 +1785,7 @@ pub(crate) fn advance(
     if !surfaces_in_range(&wk, s, i_p) {
         flags |= EventFlags::SURFACE_OUT_OF_RANGE;
     }
-    let u_end = equilibrium_voltage(&wk, s);
+    let u_end = energy_voltage(&wk, s);
     let v_end = voltage(&wk, s, i_p, i) - reversal_drop(&wk, rev, s.soc_deficit);
     // The reversal channel's share of the heat, `i_d·(OCV_d − U_eq)` at each end: what
     // `i·(U_eq − V)` misbooks when part of the current is not the particles'. Exactly

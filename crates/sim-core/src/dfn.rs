@@ -95,8 +95,9 @@ use crate::chem::{
 use crate::flags::EventFlags;
 use crate::math;
 use crate::spm::{
-    c_surface, diffuse, film_growth_m, geometric_capacity_ah, mean_concentration, ocp_lookup,
-    ocp_slope, window_fraction_neg, window_fraction_pos, Geometry, FARADAY_C_PER_MOL,
+    c_surface, diffuse, energy_potential, film_growth_m, geometric_capacity_ah, mean_concentration,
+    ocp_at, ocp_at_slope, ocp_lookup, window_fraction_neg, window_fraction_pos, Geometry,
+    FARADAY_C_PER_MOL,
 };
 
 /// Smallest number of finite volumes a region may be discretised into.
@@ -579,6 +580,9 @@ struct Sides<'a> {
     area_m2: f64,
     /// Cell temperature \[K\].
     temp_k: f64,
+    /// The temperature \[K\] the `[spm]` tables hold at (`SpmParams::t_ref_k`): where an
+    /// electrode's entropy coefficient shifts its potential from (`spm::ocp_at`).
+    t_ref_k: f64,
     /// The chemistry's SEI film constants, if it has any. Read only where the cell's own
     /// [`DfnState::film_thickness_m`] is `Some` too (see [`Film::of`]).
     sei: Option<&'a SeiParams>,
@@ -626,6 +630,7 @@ impl<'a> Sides<'a> {
             r_contact: spm.contact_resistance_ohm * eff_r0_factor,
             area_m2: spm.electrode_area_m2,
             temp_k,
+            t_ref_k: spm.t_ref_k,
             sei: spm.sei.as_ref(),
         }
     }
@@ -932,7 +937,9 @@ impl<'a> System<'a> {
         let cs = cs_raw.clamp(lo, hi);
         let prod = cs * (c_max - cs);
         let i0 = side.m_ref * (t.ce * prod).sqrt();
-        let eta = u[NVAR * i + PHIS] - u[NVAR * i + PHIE] - ocp_lookup(&side.p.ocp, cs / c_max);
+        let eta = u[NVAR * i + PHIS]
+            - u[NVAR * i + PHIE]
+            - ocp_at(side.p, cs / c_max, self.sides.temp_k, self.sides.t_ref_k);
         // The SEI film's ohmic drop, `j·ρ·(L − L0)`, between the solid and the reaction — at a
         // negative node of a cell that grows a film, and nowhere else. PyBaMM's DFN puts it
         // here too. Branched rather than added as a zero, so a film-less cell's arithmetic is
@@ -966,7 +973,8 @@ impl<'a> System<'a> {
             } else {
                 0.0
             },
-            docp_dcs: ocp_slope(&side.p.ocp, cs / c_max) / c_max,
+            docp_dcs: ocp_at_slope(side.p, cs / c_max, self.sides.temp_k, self.sides.t_ref_k)
+                / c_max,
         }
     }
 
@@ -1855,7 +1863,7 @@ pub(crate) fn grow_film(
             *c -= dc;
         }
         let x = mean_concentration(prof) / c_max;
-        energy += moles * FARADAY_C_PER_MOL / sides.kappa * ocp_lookup(&e.ocp, x);
+        energy += moles * FARADAY_C_PER_MOL / sides.kappa * energy_potential(e, x, spm.t_ref_k);
     }
     energy
 }
@@ -1864,18 +1872,18 @@ pub(crate) fn grow_film(
 /// reversal ramp starts. The same point as [`crate::spm`]'s: both models read their OCPs
 /// from `[spm]`.
 #[must_use]
-fn empty_voltage(spm: &SpmParams) -> f64 {
-    ocp_lookup(&spm.positive.ocp, spm.positive.stoich_max)
-        - ocp_lookup(&spm.negative.ocp, spm.negative.stoich_min)
+fn empty_voltage(spm: &SpmParams, temp_k: f64) -> f64 {
+    ocp_at(&spm.positive, spm.positive.stoich_max, temp_k, spm.t_ref_k)
+        - ocp_at(&spm.negative, spm.negative.stoich_min, temp_k, spm.t_ref_k)
 }
 
 /// How far below [`empty_voltage`] the ramp has taken the reversal at deficit `d` \[V\].
 /// Exactly `0.0` at `d <= 0`.
 #[must_use]
-fn reversal_drop(spm: &SpmParams, rev: &ReversalParams, d: f64) -> f64 {
+fn reversal_drop(spm: &SpmParams, rev: &ReversalParams, d: f64, temp_k: f64) -> f64 {
     if d > 0.0 {
         (rev.v_per_soc * d)
-            .min(empty_voltage(spm) - rev.floor_v)
+            .min(empty_voltage(spm, temp_k) - rev.floor_v)
             .max(0.0)
     } else {
         0.0
@@ -1930,9 +1938,9 @@ fn past_edge(
     if i_p == i && d_end == 0.0 {
         return (solved.v_terminal, solved.r_tangent);
     }
-    let drop = reversal_drop(spm, rev, d_end);
+    let drop = reversal_drop(spm, rev, d_end, temp_k);
     let per_amp = dt / (3600.0 * eff_capacity_ah);
-    let ramp = if d_end > 0.0 && rev.v_per_soc * d_end < empty_voltage(spm) - rev.floor_v {
+    let ramp = if d_end > 0.0 && rev.v_per_soc * d_end < empty_voltage(spm, temp_k) - rev.floor_v {
         rev.v_per_soc * per_amp
     } else {
         0.0
@@ -1957,7 +1965,20 @@ fn past_edge(
 fn equilibrium_voltage(s: &DfnState, spm: &SpmParams) -> f64 {
     let x = bulk_stoich(&s.c_neg, spm.negative.c_max_mol_per_m3);
     let y = bulk_stoich(&s.c_pos, spm.positive.c_max_mol_per_m3);
-    ocp_lookup(&spm.positive.ocp, y) - ocp_lookup(&spm.negative.ocp, x)
+    ocp_at(&spm.positive, y, s.temp_k, spm.t_ref_k)
+        - ocp_at(&spm.negative, x, s.temp_k, spm.t_ref_k)
+}
+
+/// [`equilibrium_voltage`] at each electrode's **stored-energy** potential
+/// (`spm::energy_potential`): what the heat estimate and its correction read, so the
+/// entropic heat needs no separate term — `I·(U(T) − V) − I·T·∂U/∂T` is `I·(this − V)`
+/// exactly. Its exact arithmetic on an electrode pair with no entropy coefficient.
+#[must_use]
+fn energy_voltage(s: &DfnState, spm: &SpmParams) -> f64 {
+    let x = bulk_stoich(&s.c_neg, spm.negative.c_max_mol_per_m3);
+    let y = bulk_stoich(&s.c_pos, spm.positive.c_max_mol_per_m3);
+    energy_potential(&spm.positive, y, spm.t_ref_k)
+        - energy_potential(&spm.negative, x, spm.t_ref_k)
 }
 
 /// A first-order Thévenin resistance \[ohms\] for a cell that has never been solved.
@@ -2389,9 +2410,7 @@ pub(crate) fn surface_gap(
 /// [`advance`] returns the correction the pack adds to it; see its heat section.
 #[must_use]
 pub(crate) fn heat_w(s: &DfnState, spm: &SpmParams, i: f64, v_terminal: f64) -> f64 {
-    let q_irrev = i * (equilibrium_voltage(s, spm) - v_terminal);
-    let docv_dt = spm.positive.docp_dt_v_per_k - spm.negative.docp_dt_v_per_k;
-    q_irrev - i * s.temp_k * docv_dt
+    i * (energy_voltage(s, spm) - v_terminal)
 }
 
 /// Advance the whole cell by `dt` seconds under the current `i` the pack assigned it, and
@@ -2470,7 +2489,7 @@ pub(crate) fn advance(
 
     // What the pack's heat estimate reads as the equilibrium voltage, and so what the
     // correction below has to take back out: the start of the step, before `commit`.
-    let u_start = equilibrium_voltage(s, spm);
+    let u_start = energy_voltage(s, spm);
     let solved = solve(s, &setup, i_p, dt);
     if !solved.converged {
         flags |= EventFlags::SOLVE_UNCONVERGED;
@@ -2514,7 +2533,7 @@ pub(crate) fn advance(
     s.i_last = i;
     s.soc_deficit = d_end;
     s.tangent = Some((v_end + i * r_end, r_end));
-    let u_end = equilibrium_voltage(s, spm);
+    let u_end = energy_voltage(s, spm);
     let at_end = u_end - v_end;
     // The reversal channel's share of the heat: what `i·(U_eq − V)` misbooks when part of
     // the current is not the solid's. See [`crate::spm::advance`].
@@ -2522,7 +2541,7 @@ pub(crate) fn advance(
     let rev_w = if i_d == 0.0 {
         0.0
     } else {
-        i_d * (empty_voltage(spm) - reversal_drop(spm, rev, d_end) - u_end)
+        i_d * (empty_voltage(spm, s.temp_k) - reversal_drop(spm, rev, d_end, s.temp_k) - u_end)
     };
     (
         flags | soc_flags(s, spm),
