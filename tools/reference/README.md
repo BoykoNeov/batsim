@@ -145,6 +145,16 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
    python tools/reference/sei_golden.py
    ```
 
+6. **`fit_sei_wmg.py`** — fits `[spm.sei]` to the WMG LG M50 calendar-ageing data (Phase 10,
+   slice A; how to fetch the data is in its docstring). With `--table` it skips the fit and
+   writes `tests/golden/nmc_21700_lgm50/wmg_storage_growth.csv`: the cells' storage-driven fade
+   growth after the first post-storage test, data only (CC-BY-4.0, Kuzhiyil et al. 2025), which
+   `crates/sim-data/tests/sei_wmg.rs` holds the engine to (exit 5).
+
+   ```bash
+   python tools/reference/fit_sei_wmg.py wmg --table tests/golden/nmc_21700_lgm50/wmg_storage_growth.csv
+   ```
+
    Prefer the **target-scoped** form. A bare run regenerates every chemistry,
    including the committed LFP goldens that four phases of ECM tests are toleranced
    against, and a golden that drifts under you is a bad afternoon. After any run,

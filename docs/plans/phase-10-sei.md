@@ -405,9 +405,13 @@ asserted separately. Past it is a finding for the owner, not a tolerance to wide
 
 Run once against the bar above, unchanged after it: **0.6241 % RMS at 25 + 45 °C** over 24
 conditions (bar 0.642, the fit's closed form 0.622) and **0.4046 % on the held-out 0 °C cells**
-over 12 (bar 0.425, closed form 0.405). The engine, measured on WMG's own steps, lands within
-0.002 points of the closed form that was converted to capacity with 1.567 — the conversion did
-not hide anything the engine does differently. Pinned by
+over 12 (bar 0.425, closed form 0.405). That the two scores sit 0.002 apart says little on its
+own (the score is coarse, below), so the predictions were compared condition by condition, at
+every test day, the closed form at the fitted constants times 1.567 against the engine on WMG's
+steps: the largest gap is **0.031 points** (45 °C / 95 %, of a 3.7-point growth), and the engine
+is within 2.3 % of the closed form at every condition whose growth exceeds 0.2 points — 1.1 %
+low on the 0 °C plateau, 6.4 % low at 0 °C / 30 % where the graphite table costs most. The
+conversion through 1.567 did not hide anything the engine does differently. Pinned by
 `crates/sim-data/tests/sei_wmg.rs::the_film_reproduces_the_wmg_cells`, with the ratio pinned
 beside it (`capacity_lost_per_lithium_lost_on_wmg_steps`, 1.5632 within 0.5 % of 1.567). No
 capacity test raised an unconverged solve or a surface out of range. 12 s in a debug build.
@@ -430,7 +434,8 @@ not scored separately):
   1.94, 95 / 100 % only 0.84 / 0.98. **Slice E's lesson should claim only what this model shows
   (full against 30 %), and not present "stored full ages fastest" as a fact about these cells**,
   whose fullest rows grew about half as much as their 85–90 % ones after the first test (what
-  they did before it, the early step, is not scored here and was not looked at).
+  they did before it, the early step, is not scored here and was not looked at). Not a dropout:
+  each of those rows averages 3 cells at 25 °C and 3–6 at 45 °C, the same as its neighbours.
 - **0 °C**: the engine is flat at 0.67–0.68 from 80 % up; the cells scatter between 0.33 and
   1.19 with no order in SOC above 70 %.
 

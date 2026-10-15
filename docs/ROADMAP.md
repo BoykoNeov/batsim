@@ -566,8 +566,9 @@ supersedes the list above: (A) the fit, (B) `AgingModel`, (C) the film on the `S
 
 *Slice C done 2026-10-15* (v26, `phase-10-sei.md` last addendum): the film grows on the `Spm`
 when `AgingConfig::calendar = Film`; exits 1–4 pass in `sei_golden.rs` and `sei_film.rs`. *Exit 5
-done 2026-10-15*: the WMG cells, run in the engine on their own capacity steps, within the fit's
-stated residuals (`sei_wmg.rs`); the `Dfn` (D) is next. Recorded there and open: the reversal channel's
+done 2026-10-15*: the WMG cells, run in the engine on their own capacity steps, score 0.6241 % RMS at 25 + 45 °C
+(the fit stated 0.622) and 0.4046 % on held-out 0 °C cells (stated 0.405), inside a bar of
+stated + 0.02 set before the run (`sei_wmg.rs`); the `Dfn` (D) is next. Recorded there and open: the reversal channel's
 voltage on an aged filmed cell (heat booking, not a voltage step), and that the law stores 85 %
 exactly like full (flat graphite potential), so the lesson cannot teach "store at 80 %".
 

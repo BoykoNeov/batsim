@@ -69,11 +69,10 @@ fn env(temp_k: f64) -> Env {
     }
 }
 
-/// The flags a capacity test must not raise.
+/// The flags a capacity test must not raise. Not the operating-point window: [`leg`] treats
+/// that flag as the cut-off, so no step it keeps can carry it.
 fn bad() -> EventFlags {
-    EventFlags::SOLVE_UNCONVERGED
-        | EventFlags::SURFACE_OUT_OF_RANGE
-        | EventFlags::OPERATING_POINT_OUT_OF_WINDOW
+    EventFlags::SOLVE_UNCONVERGED | EventFlags::SURFACE_OUT_OF_RANGE
 }
 
 /// One constant-current leg at `i` \[A, discharge positive\] until the terminal voltage
@@ -269,8 +268,9 @@ fn growth_rms(results: &[(&Condition, Vec<f64>)]) -> f64 {
 }
 
 /// Exit 5: the fitted film, run in the engine and measured on WMG's own capacity steps,
-/// reproduces the cells' storage-driven fade growth at 25 and 45 °C within the residual the
-/// provenance line states, and predicts the held-out 0 °C cells within theirs.
+/// reproduces the cells' storage-driven fade growth at 25 and 45 °C, and predicts the held-out
+/// 0 °C cells, to the residuals the provenance line states — 0.6241 % against its 0.622 %, and
+/// 0.4046 % against its 0.405 % — inside a bar of each plus 0.02 points.
 ///
 /// # The bar, set before the first full run
 /// The `[spm.sei]` provenance states 0.622 % RMS at 25 + 45 °C and 0.405 % on the held-out
