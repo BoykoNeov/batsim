@@ -637,9 +637,16 @@ tick; state of charge counts against the reported capacity after a hot year to 1
 cell charged past full raises `SOC_CLAMPED_HIGH` on the step its positive passes `stoich_min`
 (0.2643367 → 0.2638449 against 0.2638452), so the positive's edge binds as designed.
 
-**Exit 2 sees fork 1.** With the film's drop taken out of the reaction for one run, the frozen-film
-gap to PyBaMM is 5.16 mV, thirty times the floor, and the test fails there. The 50 nm start is what
-makes the drop large enough to see; at the fresh 5 nm it would be about a tenth of a millivolt.
+**What exit 2 catches of fork 1.** With the film's drop taken out of the reaction for one run, the
+test fails first on its floor re-check: the frozen-film gap to PyBaMM is 5.16 mV, thirty times the
+floor. Run again with that check disabled, the lithium grown fails on its own, 15.9 % from PyBaMM at
+1C against the 2 % bar; the spread moved only 1.8 %, inside its 4 %, so the spread assertion alone
+would not catch it. The 50 nm start is what makes the drop large enough to see; at the fresh 5 nm
+it would be about a tenth of a millivolt. The tick's cost (0.80 / 0.15 %) was measured once at build
+time and is not re-checked by the test; the floor is, every run.
+
+**Debug cost.** `sei_dfn.rs` takes 219 s in a debug build (about 15 s in release), set by its
+year-long `Dfn` tests (exits 1 and 4, the state-of-charge count and the aged-full check).
 
 **The stored line after a tick** (the design's "measure first"): a zero-length read after a 1 h
 tick at 45 °C / 85 % reads 2.2 nV from a re-solve, nothing measurable after a 10 s tick. Below the

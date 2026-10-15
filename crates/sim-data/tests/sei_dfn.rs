@@ -524,12 +524,7 @@ fn cycling_rows() -> Vec<CycRow> {
 /// even 50 nm. Eight cycles of ±0.25 of capacity from 50 %, in steps of a sixtieth of the
 /// reference's sample spacing (1 s at 1C, 0.9375 s at 2C), sampled at the reference's times:
 /// `(t_s, lithium grown [mol], φ_s − φ_e per node [V], film grown per node [m])`.
-fn engine_cycling(
-    rate: f64,
-    growing: bool,
-    times: &[f64],
-    sub_clock_s: f64,
-) -> Vec<(f64, f64, Vec<f64>, Vec<f64>)> {
+fn engine_cycling(rate: f64, growing: bool, times: &[f64]) -> Vec<(f64, f64, Vec<f64>, Vec<f64>)> {
     let mut chem = chem();
     {
         let sei = chem
@@ -545,12 +540,7 @@ fn engine_cycling(
         }
     }
     let cap = chem.cell.capacity_ah;
-    let mut cfg = config(dfn_model(), 0.5, 298.15);
-    cfg.aging = Some(AgingConfig {
-        calendar: CalendarModel::Film,
-        sub_clock_period_s: sub_clock_s,
-    });
-    let fresh = Pack::new(&cfg, chem).expect("builds");
+    let fresh = Pack::new(&config(dfn_model(), 0.5, 298.15), chem).expect("builds");
     let mut v = serde_json::to_value(fresh.snapshot()).expect("a snapshot is JSON");
     let n = dfn_state(&fresh).c_neg.len();
     v["pack"]["groups"][0]["cells"][0]["model"]["Dfn"]["film_thickness_m"] =
@@ -606,7 +596,14 @@ fn engine_cycling(
 /// tick costs 0.80 % and 0.15 % on the worst node against one tick per step. The bar is 2.0 %
 /// at 1C and 3.0 % at 2C on the lithium grown and on every node's growth, from the end of the
 /// first cycle, and twice that on the thickest-over-thinnest ratio. The floor is re-measured
-/// here each run and must stay under what the bar was built from.
+/// here each run and must stay under what the bar was built from; the tick's cost was measured
+/// once, at build time, and is not.
+///
+/// # What a broken film resistance does here, measured
+/// With the film's drop taken out of the reaction for one run, the floor check fails first
+/// (5.16 mV). With that check also disabled, the lithium grown fails on its own (15.9 % at 1C,
+/// against 2 %); the spread does **not** (it moved 1.8 %, inside its 4 %), so the spread
+/// assertion alone would not catch a misplaced film resistance.
 #[test]
 fn under_current_the_film_grows_as_pybamm_grows_it() {
     let rows = cycling_rows();
@@ -617,7 +614,7 @@ fn under_current_the_film_grows_as_pybamm_grows_it() {
             .filter(|r| r.rate == rate && !r.growing && r.t_s > 0.0)
             .collect();
         let times: Vec<f64> = frozen.iter().map(|r| r.t_s).collect();
-        let engine = engine_cycling(rate, false, &times, 10.0);
+        let engine = engine_cycling(rate, false, &times);
         assert_eq!(
             engine.len(),
             frozen.len(),
@@ -640,7 +637,7 @@ fn under_current_the_film_grows_as_pybamm_grows_it() {
             .filter(|r| r.rate == rate && r.growing && r.t_s > 0.0)
             .collect();
         let times: Vec<f64> = growing.iter().map(|r| r.t_s).collect();
-        let engine = engine_cycling(rate, true, &times, 10.0);
+        let engine = engine_cycling(rate, true, &times);
         assert_eq!(
             engine.len(),
             growing.len(),
