@@ -306,7 +306,7 @@ unprotected one is two runs, not one run with the rules changed halfway.
 If you do not already know what to look at, press **Start** under *Guided path*
 instead. The steps are grouped into chapters, and a menu beside Back and Next jumps to
 the start of any chapter on a freshly built pack; the steps keep one numbering from
-start to end, because the lessons point at each other by step number. It walks thirty-seven steps — one cell on its own, the same discharge on a
+start to end, because the lessons point at each other by step number. It walks forty steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
 with protection on and then off, a pack that wears out while doing nothing at all,
@@ -337,10 +337,14 @@ taken at sixty times that current it reaches the same cutoff voltage with **more
 third still in it**, and left alone for four hours it recovers enough to do it again —
 with the charge readout flat at that same third for the whole rest, because nothing is
 being put back and the recovery is the acid finding its way to the plate. Later steps
-add an LTO cell, a NiMH cell, a sodium-ion cell and two lessons on fuel gauges, and the
-last three build LFP out of twenty particles: halfway through a charge no particle is
+add an LTO cell, a NiMH cell, a sodium-ion cell and two lessons on fuel gauges, and
+three that build LFP out of twenty particles: halfway through a charge no particle is
 halfway, they switch in turn, and the voltage a half-charged cell rests at depends on
-which way it arrived — by a gap that in the cold is a throw of the dice. Each
+which way it arrived — by a gap that in the cold is a throw of the dice. The last three
+leave one LG M50 cell on a shelf for 365 days, at a million times real time: aged along
+a curve someone drew, then by a film that grows on its graphite and was fitted to lab
+cells — which loses about a tenth as much, follows the square root of time without being
+told to, and cares far more whether the cell was stored full or at 30 %. Each
 step sets the controls for itself and outlines the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step's whole control set,
 so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when
@@ -348,7 +352,8 @@ it needs to start from t = 0 and otherwise keeps the run going, which is why ste
 to 17 and the last two — whose claims are about a *first* pulse, a discharge from full,
 or a cell that has to start part-charged — ask for the reload explicitly rather than
 inheriting whatever the neighbouring step left behind. Every step from 12 on also pins
-the timestep, for the same class of reason: steps 15 to 17 run at the 2 s step their
+the timestep (and a step that does not goes back to the default, unless you typed the
+one in the box yourself), for the same class of reason: steps 15 to 17 run at the 2 s step their
 golden asserts at, and without a pin that setting would leak back into the pulse steps
 on the way and quietly move every millivolt they quote. Step 18 then does the opposite
 and asks you to *change* it, which is why the three steps after it state theirs — one

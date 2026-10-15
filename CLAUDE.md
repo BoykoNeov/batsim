@@ -556,10 +556,11 @@ the previous one's tests pass.
   lesson (D, `docs/plans/phase-9-slice-d-lesson.md`). Plan, owner decisions and exit
   criteria in `docs/plans/phase-9-lfp-ensemble.md`; slice notes beside it.
 - **Phase 10 — degradation physics.** An SEI film that ages the porous models instead of a
-  drawn curve (ROADMAP H2). **In progress**: the fit (A), the health split (B), the film on the
-  `Spm` (C, v26) with the WMG cells run in the engine (exit 5, `sei_wmg.rs`), and the film on the
-  `Dfn` node by node (D, v27, `sei_dfn.rs`, against a PyBaMM DFN under cycling) are done, all
-  2026-10-15; next is the lesson (E). Plan and every slice note in `docs/plans/phase-10-sei.md`.
+  drawn curve (ROADMAP H2). **Complete** 2026-10-15: the fit (A), the health split (B), the film
+  on the `Spm` (C, v26) with the WMG cells run in the engine (exit 5, `sei_wmg.rs`), the film on
+  the `Dfn` node by node (D, v27, `sei_dfn.rs`), and the lesson (E, guided-path steps 38–40,
+  `docs/plans/phase-10-slice-e-lesson.md`). Plan and the other slice notes in
+  `docs/plans/phase-10-sei.md`.
 - **Phases 11 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

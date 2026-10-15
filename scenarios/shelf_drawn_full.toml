@@ -1,0 +1,82 @@
+# One LG M50 cell on a shelf for a year, full, aged by the DRAWN calendar curve.
+#
+# Phase 10's lesson (docs/plans/phase-10-sei.md, slice E) ages the same cell two ways and
+# stores it two ways. Four files, identical except where their names say:
+#
+#   shelf_drawn_full.toml   this file: the drawn sqrt(t) curve, stored at 100 %
+#   shelf_film_full.toml    `[pack.aging] calendar = "Film"`, nothing else changed
+#   shelf_film_low.toml     the film, `initial_soc = 0.3`
+#   shelf_drawn_low.toml    the drawn curve, `initial_soc = 0.3`
+#
+# `shelf_files_differ_only_where_their_headers_say` (crates/sim-data/tests/shelf_lesson.rs)
+# holds that sentence over the whole PackConfig.
+#
+# ## Why each section is here
+#
+# The single-particle model, not the equivalent circuit: the film lives in the negative
+# particle, and `Pack::new` refuses it on any other model. The two drawn-curve files could
+# run the circuit (the curve does not care), but then each would differ from its film twin
+# in two things at once.
+#
+# Isothermal at 25 degC, no BMS, no faults, no scatter, one cell. Nothing is demanded: the
+# lesson is what a cell loses by existing. The ambient slider does nothing here on purpose —
+# temperature is step 8's lesson, and a pinned temperature keeps every number below exact.
+#
+# ## What it does, measured (1 h steps, the lesson's)
+#
+# Capacity lost, in points, resting at 25 degC (365 days at an hour a step; 600 s and 60 s
+# steps agree to seven digits, and no solve goes unconverged):
+#
+#   file                quarter mark (91.25 d)   mark (365 d)   soh res at the mark
+#   shelf_drawn_full        7.93                    15.86          1.2378
+#   shelf_film_full         0.63                     1.40          1.0140
+#   shelf_film_low          0.07                     0.21          1.0033
+#   shelf_drawn_low         4.67                     9.34          1.1401
+#
+# The drawn curve is sqrt(t) to the digit (twice the loss for four times the time), and
+# stored full it loses 1.70 times what it loses at 30 %: `cal_soc_stress` read at 1.0 and
+# 0.3. The film is near sqrt(t) stored full (2.24 times) and near a straight line stored
+# low (2.98), because it started at PyBaMM's 5 nm and stored low has barely outgrown that;
+# full against 30 % is 6.65 times over the 365 days and wider over a shorter span (11.7 at
+# 30 days). At 85 % the film loses what it loses full, to 0.06 % of itself: the graphite's
+# potential is flat up there. The lesson's claims and `shelf_lesson.rs` hold this paragraph.
+#
+# Stored at 30 % the film's lithium comes out of the stored charge too: `soc (true)` reads
+# 29.85 % at the mark and the terminal 1.1 mV lower. Stored full it reads 100 % throughout,
+# because the film's loss is counted off the top of the cell's range.
+#
+# ## What these numbers are and are not
+#
+# The drawn curve's coefficients in the LG M50 file are carried over from the 18650 set and
+# labelled placeholders ("roughly 16 % in a year at 25 degC and full SOC. TODO fit"): its
+# rows above are that placeholder integrated honestly, not a claim about how fast an LG M50
+# dies on a shelf. The film's rate is fitted to WMG's stored LG M50 cells (`[spm.sei]`, with
+# its residual), and its resistivity to the same cells' pulse-resistance rise, a fit the file
+# flags as weak. Its rows are a fitted model's, and the cells it was fitted to do not all agree with it near
+# full (docs/plans/phase-10-sei.md, exit 5).
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "a year on the shelf, full, drawn curve"
+description = """
+One LG M50 cell (single-particle model) stored full at 25 degC for 365 days, aged by \
+the drawn square-root-of-time calendar curve. Its coefficients are placeholders \
+carried over from another cell. Compare shelf_film_full, the same cell aged by a film \
+fitted to lab data."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 1.0
+initial_temp_k = 298.15
+seed = 1
+
+[pack.cell_model.Spm]
+shells = 20
+
+# One aging update per 10 s of simulation; at the lesson's 1 h step that is one update per
+# step, since the sub-clock fires once a step when the step is longer than its period.
+[pack.aging]
+sub_clock_period_s = 10.0
+calendar = "Curve"

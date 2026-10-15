@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 37 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 40 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -134,11 +134,11 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is thirty-seven steps and 841 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is forty steps and 889 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
-//! Twenty-eight arms exist — a scenario field, a chemistry field, a control on the lesson
+//! Twenty-nine arms exist — a scenario field, a chemistry field, a control on the lesson
 //! block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, one that comes out in hours read back in seconds
@@ -255,10 +255,10 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed thirty-seven whole steps — but only thirty-seven. Steps here carrying
+//!   has now closed forty whole steps — but only forty. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
 //!   of the prose free: none. `[ledger].unledgered`
-//!   names what is left — none of the thirty-seven — one line each, so this list cannot go
+//!   names what is left — none of the forty — one line each, so this list cannot go
 //!   quietly out of date; it is empty, and it stays in the file so that the next lesson
 //!   added to the path has somewhere to say it is not checked.
 //!   **What that closes is one axis and not the gap.** Every numeral in every step of the
@@ -3338,7 +3338,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 339 of 386 claims.
+    /// number's last printed place. The default shape: 356 of 403 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3349,12 +3349,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 40 of 386.
+    /// the number was always right and only the declaration was wrong. 40 of 403.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 386, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 403, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -3394,7 +3394,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 357 of 386, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 365 of 403, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -8488,6 +8488,11 @@ enum Tie {
     /// shape: a note about what nothing does is falsified by the thing that starts doing it,
     /// and nothing points the author of that thing at the note.
     Hours(&'static Tie),
+    /// A duration in seconds stated in **days**: [`Tie::Hours`] with 86 400 in place of
+    /// 3600, compared the same way. Phase 10's shelf steps run to a mark of 31 536 000 s and
+    /// say so as "365 days", because the unit a reader would reach for is banned
+    /// (`BANNED_UNITS` refuses the year whether or not a tie could answer it).
+    Days(&'static Tie),
     /// The **span of a table** the chemistry declares: its largest value minus its
     /// smallest, at this path.
     ///
@@ -13754,6 +13759,299 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         }],
         pow10: 0,
     },
+    // --- steps 38 to 40: the shelf, drawn and grown (Phase 10 slice E) ---------------
+    //
+    // docs/plans/phase-10-sei.md, slice E. One LG M50 `Spm` cell at rest for 365 days at
+    // an hour a step, in four files that differ only where their names say
+    // (`shelf_lesson.rs`). Every reading is a claim; what is left here is the cell's name,
+    // the controls, the files' charge level, and the arithmetic the prose does on claims.
+    LedgerRule {
+        phrase: "One LG M{n} cell, the single-particle model",
+        ties: &[Tie::Name {
+            field: "meta.name",
+            prefix: "M",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The file is isothermal at 298.15 K and the step sets the slider to match it, so the
+        // page and the file say the same thing; `shelf_lesson.rs` holds the file's half.
+        phrase: "stored full at {n} \u{b0}C with nothing connected",
+        ties: &[Tie::Setting(Control::Ambient)],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "it is the kind step {n} showed you",
+        ties: &[Tie::Ordinal("wearing-out-while-idle")],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "The step length is {n} s and the speed slider is at {n}\u{d7}",
+        ties: &[
+            Tie::Setting(Control::Dt),
+            Tie::Setting(Control::Speed),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The mark, said in days because the year is a banned unit, and how long it takes to
+        // watch at the speed the step sets.
+        phrase: "so the {n} days this step runs to pass in about {n} s of watching",
+        ties: &[
+            Tie::Days(&Tie::Setting(Control::Until)),
+            Tie::Ratio(&[Tie::Setting(Control::Until), Tie::Setting(Control::Speed)]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Four times the time, three times over: each step's own two instants, the quarter mark
+        // and the mark. One phrase per step, so each multiple names the run it is read on.
+        phrase: "for {n} times the time: `\u{221a}t` to the digit",
+        ties: &[Tie::Ratio(&[
+            Tie::Instant {
+                step: "drawn-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:31536000",
+            },
+            Tie::Instant {
+                step: "drawn-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:7884000",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "points in {n} days on a shelf",
+        ties: &[Tie::Days(&Tie::Setting(Control::Until))],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "is not a claim about an LG M{n}.",
+        ties: &[Tie::Name {
+            field: "meta.name",
+            prefix: "M",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Steps 39 and 40 open on the same sentence about the same conditions.
+        phrase: "at the same {n} \u{b0}C for the same {n} days",
+        ties: &[
+            Tie::Setting(Control::Ambient),
+            Tie::Days(&Tie::Setting(Control::Until)),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "fitted to LG M{n} cells",
+        ties: &[Tie::Name {
+            field: "meta.name",
+            prefix: "M",
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The drawn curve's loss, quoted from the step that ran it. A loss in points of a
+        // fraction, so the percent scale; every multiple below is unitless and has none.
+        phrase: "against the drawn curve's {n} on the same cell",
+        ties: &[Tie::Quoted {
+            step: "drawn-on-the-shelf",
+            arm: None,
+            quantity: "soh_cap_at:31536000",
+            states: QuotedAs::Complement,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        phrase: "The film lost {n} times the first quarter's",
+        ties: &[Tie::Ratio(&[
+            Tie::Quoted {
+                step: "grown-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:31536000",
+                states: QuotedAs::Complement,
+            },
+            Tie::Quoted {
+                step: "grown-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:7884000",
+                states: QuotedAs::Complement,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "for {n} times the time, nearly `\u{221a}t`",
+        ties: &[Tie::Ratio(&[
+            Tie::Instant {
+                step: "grown-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:31536000",
+            },
+            Tie::Instant {
+                step: "grown-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:7884000",
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Step 40: the film stored at 30 %, the file's `initial_soc`.
+        phrase: "stored at {n} % instead of full",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        phrase: "At {n} % the graphite sits higher",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The film stored full, quoted from step 39 ...
+        phrase: "against {n} stored full,",
+        ties: &[Tie::Quoted {
+            step: "grown-on-the-shelf",
+            arm: None,
+            quantity: "soh_cap_at:31536000",
+            states: QuotedAs::Complement,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // ... and what it is as a multiple of this step's loss.
+        phrase: "stored full, {n} times less",
+        ties: &[Tie::Ratio(&[
+            Tie::Quoted {
+                step: "grown-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:31536000",
+                states: QuotedAs::Complement,
+            },
+            Tie::Quoted {
+                step: "stored-low",
+                arm: None,
+                quantity: "soh_cap_at:31536000",
+                states: QuotedAs::Complement,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the drawn curve stored at {n} %, and run it",
+        ties: &[Tie::OnArm {
+            arm: "drawn low",
+            tie: &Tie::Scenario("pack.initial_soc"),
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // The drawn curve stored full is step 38's run ...
+        phrase: "against the {n} it lost stored full,",
+        ties: &[Tie::Quoted {
+            step: "drawn-on-the-shelf",
+            arm: None,
+            quantity: "soh_cap_at:31536000",
+            states: QuotedAs::Complement,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        // ... and stored low is this step's arm.
+        phrase: "stored full, only {n} times less",
+        ties: &[Tie::Ratio(&[
+            Tie::Quoted {
+                step: "drawn-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:31536000",
+                states: QuotedAs::Complement,
+            },
+            Tie::Quoted {
+                step: "stored-low",
+                arm: Some("drawn low"),
+                quantity: "soh_cap_at:31536000",
+                states: QuotedAs::Complement,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the {n} belongs to this span",
+        ties: &[Tie::Ratio(&[
+            Tie::Quoted {
+                step: "grown-on-the-shelf",
+                arm: None,
+                quantity: "soh_cap_at:31536000",
+                states: QuotedAs::Complement,
+            },
+            Tie::Quoted {
+                step: "stored-low",
+                arm: None,
+                quantity: "soh_cap_at:31536000",
+                states: QuotedAs::Complement,
+            },
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // This step's own mark against its quarter, the four times between them, and step
+        // 39's same multiple beside it.
+        phrase: "{n} times as much for {n} times the time, where stored full it was {n}",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Quoted {
+                    step: "stored-low",
+                    arm: None,
+                    quantity: "soh_cap_at:31536000",
+                    states: QuotedAs::Complement,
+                },
+                Tie::Quoted {
+                    step: "stored-low",
+                    arm: None,
+                    quantity: "soh_cap_at:7884000",
+                    states: QuotedAs::Complement,
+                },
+            ]),
+            Tie::Ratio(&[
+                Tie::Instant {
+                    step: "stored-low",
+                    arm: None,
+                    quantity: "soh_cap_at:31536000",
+                },
+                Tie::Instant {
+                    step: "stored-low",
+                    arm: None,
+                    quantity: "soh_cap_at:7884000",
+                },
+            ]),
+            Tie::Ratio(&[
+                Tie::Quoted {
+                    step: "grown-on-the-shelf",
+                    arm: None,
+                    quantity: "soh_cap_at:31536000",
+                    states: QuotedAs::Complement,
+                },
+                Tie::Quoted {
+                    step: "grown-on-the-shelf",
+                    arm: None,
+                    quantity: "soh_cap_at:7884000",
+                    states: QuotedAs::Complement,
+                },
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "the gap between full and {n} % is wider",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
+    LedgerRule {
+        phrase: "Full against {n} % is what this model can show",
+        ties: &[Tie::Scenario("pack.initial_soc")],
+        pow10: 2,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -14260,6 +14558,13 @@ fn tie_values(
             };
             vec![seconds / 3600.0]
         }
+        Tie::Days(seconds) => {
+            let seconds = tie_values(seconds, lesson, lessons, scenario, chemistry, ctx);
+            let [seconds] = &seconds[..] else {
+                return Vec::new();
+            };
+            vec![seconds / 86400.0]
+        }
         Tie::Seconds(hours) => {
             let hours = tie_values(hours, lesson, lessons, scenario, chemistry, ctx);
             let [hours] = &hours[..] else {
@@ -14648,6 +14953,7 @@ fn tie_describe(tie: &Tie) -> String {
             .collect::<Vec<_>>()
             .join(" plus "),
         Tie::Hours(seconds) => format!("{}, in hours", tie_describe(seconds)),
+        Tie::Days(seconds) => format!("{}, in days", tie_describe(seconds)),
         Tie::Instant {
             step,
             arm,
@@ -14734,6 +15040,7 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Difference(_) => "difference",
         Tie::Sum(_) => "sum",
         Tie::Hours(_) => "duration in hours",
+        Tie::Days(_) => "duration in days",
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
         Tie::Page(_) => "page constant",
@@ -14778,6 +15085,7 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32, unit: f64) -> 
         | Tie::Difference(_)
         | Tie::Sum(_)
         | Tie::Hours(_)
+        | Tie::Days(_)
         | Tie::Seconds(_)
         | Tie::PerSecond(_)
         | Tie::Span(_)
@@ -16747,6 +17055,8 @@ const HEADER_WORDS: &[(usize, &str)] = &[
     (35, "thirty-five"),
     (36, "thirty-six"),
     (37, "thirty-seven"),
+    (38, "thirty-eight"),
+    (39, "thirty-nine"),
     // The ledger's numeral count passed twenty-five with its fifth step and will keep
     // going; the tens are here so the next one does not have to stop and add a word.
     (30, "thirty"),

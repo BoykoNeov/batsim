@@ -1,6 +1,6 @@
 # Phase 10 — a film that ages the cell, instead of a curve that was drawn
 
-**Status: PLANNED 2026-10-09.** Written after the spike (`phase-10-spike.md`), which is the
+**Status: COMPLETE 2026-10-15** (planned 2026-10-09). Written after the spike (`phase-10-spike.md`), which is the
 measurement this plan stands on; where a later slice note contradicts this text, the slice
 note is the measurement and wins. When written the repo was at `SNAPSHOT_VERSION` 25 and
 `WASM_API_VERSION` 9.
@@ -678,3 +678,52 @@ A **filmed** `Spm` 1S2P is identical too, so pulling out `film_growth_m` moved n
 - `empty_voltage` on an aged cell, recorded for the `Spm` in slice C, holds here unchanged.
 
 Next is slice E, the lesson.
+
+## Addendum 2026-10-15 (slice E) — the lesson designed; the owner's decisions
+
+Measured before asking (one LG M50 `Spm` cell at rest, isothermal, 1 h steps; out-of-tree
+harness, not kept). Capacity lost, in points:
+
+| 25 °C | 1 d | 7 d | 30 d | 90 d | 365 d |
+| --- | --- | --- | --- | --- | --- |
+| drawn curve, full | 0.830 | 2.196 | 4.546 | 7.874 | 15.856 |
+| drawn curve, 30 % | 0.489 | 1.293 | 2.677 | 4.637 | 9.338 |
+| film, full | 0.018 | 0.102 | 0.305 | 0.621 | 1.404 |
+| film, 30 % | 0.001 | 0.006 | 0.026 | 0.070 | 0.211 |
+
+At 45 °C a year: curve 49.6 / 29.2, film 2.85 / 0.56. A step costs about 3 µs native.
+
+What the numbers mean for a lesson, recorded so the prose does not forget them:
+
+- **The size gap is the placeholder's.** The LG M50 file's `[aging]` calendar pair is carried over
+  from the 18650 set and labelled "TODO fit"; the film is fitted to the WMG cells. A year apart
+  by eleven times is that, not "curves against physics".
+- **The full-against-30 % ratio depends on the span**: 11.7× at 30 days, 8.9× at 90, 6.65× at a
+  year (25 °C); 5.1× over a year at 45 °C. Quote it at the step's own mark.
+- **`soh res` is not comparable across storage levels.** At full and at 85 % the film is the same
+  to three decimals of capacity, and the readout says 1.0140 against 1.0205: the reference
+  resistance moves with SOC. The lesson compares resistance only at one SOC.
+- **The spike's "about 14 % resistance per 1 % capacity" is not what the engine reports** (about
+  1.0 at full and 25 °C, up to about 3 at 85 % and 45 °C; `sei_film.rs` says 1.039 at 1.3 % lost).
+  Most of the gap is that the spike used PyBaMM's resistivity, 2e5 Ω·m, and slice A refitted it to
+  the WMG pulse resistance at 5.594e4 (3.6× less), so decision 3 below no longer describes the
+  shipped value; the rest is the divisor — the spike divided by a 22.28 mΩ 10 s pulse resistance,
+  the engine by the `Spm`'s own lumped resistance at the cell's state. The lesson quotes the
+  readout, not the spike's ratio.
+- **At the page's top speed, 10 000×, a year takes 53 minutes to watch**; over the days a reader
+  will wait, the film moves 0.02–0.1 points.
+
+**The owner's decisions, asked and answered 2026-10-15:**
+
+1. **A new chapter at the end; step 8 stays where it is.** Nothing renumbers. Step 8 runs the
+   equivalent circuit, which `Pack::new` refuses the film on, so it could not be one arm of the
+   comparison anyway; the new steps point back to it.
+2. **Raise the page's top speed** to 1 000 000×, the new steps using 1 h steps so a year plays in
+   about half a minute, with a guard so a fast setting never asks for more steps a second than
+   today's fastest lesson (10 000× at 0.5 s, 20 000 a second). Client-only.
+3. **Three steps**, all the LG M50 `Spm` at rest at 25 °C for a year: stored full under the drawn
+   curve; stored full under the film; stored at 30 % under the film, with the drawn curve's same
+   comparison beside it. No "store at 80 %", and no "real cells age fastest full".
+
+**Slice E done 2026-10-15** (`phase-10-slice-e-lesson.md`): guided-path steps 38–40. **Phase 10 is
+complete.**

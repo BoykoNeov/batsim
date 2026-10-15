@@ -369,7 +369,7 @@
        checked instead: the claims test's self-count tally reads this file and fails when
        the number here is not `LESSONS.length`. It said 24 while the path had 26 before
        that tally existed. -->
-  <button id="path-start">Start — 37 steps</button>
+  <button id="path-start">Start — 40 steps</button>
   <div class="note">From one cell to a pack with nothing watching it, then inside the cell,
     across other chemistries and their gauges — in chapters, which the menu beside Back
     and Next jumps between. Each step sets the
@@ -404,6 +404,7 @@
     <option value="na_ion_gauge_low.toml">na_ion_gauge_low — 1S1P, BMS</option>
     <option value="nimh_memory_discharged.toml">nimh_memory_discharged — 1S1P, BMS</option>
     <option value="nimh_overcharge_isothermal.toml">nimh_overcharge_isothermal — 1S1P, nothing on</option>
+    <option value="shelf_drawn_low.toml">shelf_drawn_low — 1S1P, aging</option>
     <option value="soft_short_under_a_lying_sensor.toml" selected>soft_short_under_a_lying_sensor — 4S2P, BMS, faults</option>
   </select>
   <div class="row" style="margin-top:8px">
@@ -465,7 +466,7 @@
   <label for="dt">timestep dt [s] — fixed, never the frame rate</label>
   <input type="number" id="dt" value="0.5" min="0.001" step="0.1">
   <label for="speed">speed <span id="speed-label">10×</span> real time</label>
-  <input type="range" id="speed" min="0" max="4" step="0.02" value="1">
+  <input type="range" id="speed" min="0" max="6" step="0.02" value="1">
   <div class="row" style="margin-top:8px">
     <button id="run">Run</button>
     <button id="stepone">Step 1</button>

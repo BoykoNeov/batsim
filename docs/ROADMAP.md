@@ -579,7 +579,17 @@ cycling against a PyBaMM DFN on the engine's grid it grows the same lithium to 1
 1.8 % at 2C and the same spread across the electrode (4.14× and 30.1× at the separator against
 PyBaMM's 4.13× and 29.9×), inside bars set from a measured floor before the comparison
 (`sei_dfn.rs`). The WMG cells on the `Dfn`, reported only by owner choice, score 0.6231 % and
-0.4051 % (the `Spm`: 0.6241 / 0.4046). The lesson (E) is next.
+0.4051 % (the `Spm`: 0.6241 / 0.4046).
+
+*Slice E done 2026-10-15 — **Phase 10 complete*** (`phase-10-slice-e-lesson.md`): guided-path
+steps 38–40, a ninth chapter, one LG M50 cell on a shelf for 365 days — full under the drawn
+curve (15.86 points, the unfitted placeholder), full under the film (1.40), at 30 % under the
+film (0.21, 6.65× less, where the drawn curve's same comparison is 1.70×). Step 8 stayed where it
+was (owner's choice). The page's speed slider reaches 10⁶×, held to 20 000 steps a second; a step
+without its own `dt` no longer inherits another step's; Load and Restart re-arm the step's mark.
+Recorded: the spike's "14 % resistance per 1 % capacity" is not what the engine's `soh res`
+reports (about 1–3) — mostly because slice A refitted the film's resistivity 3.6× below PyBaMM's
+— and `soh res` is not comparable across storage levels.
 
 ### Phase 11 — the fitting pipeline (H3)
 
@@ -623,7 +633,8 @@ predicted re-pinning cost did not exist: no test moved.
   with a menu that jumps to a chapter's first step on a freshly built pack. Steps keep one
   numbering across the path because the prose cites them by number; themed tracks were
   declined for the rewrite they cost. A new lesson goes into a chapter (Phase 10's aging
-  lessons into a new one, which is also the natural home for the idle-wear step), and
+  lessons went into a new ninth one; the idle-wear step stayed in the third by owner choice,
+  so nothing renumbered), and
   `sim-data/tests/path_chapters.rs` holds every chapter to opening on a step that builds its
   own pack.
 * **The out-of-tree trajectory instrument** (`ANCHORS.md`, not in this repo) is stale by at

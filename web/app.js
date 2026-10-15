@@ -3165,7 +3165,7 @@ const state = {
  *
  * `until` is a simulation time in seconds, or null when no step is running to a mark.
  */
-const path = { on: false, i: 0, until: null, busy: false };
+const path = { on: false, i: 0, until: null, busy: false, dtWritten: null };
 
 /**
  * Steps this frame, from wall-clock elapsed and the speed multiplier.
@@ -3175,6 +3175,23 @@ const path = { on: false, i: 0, until: null, busy: false };
  * is fixed and configured; only the number of steps varies with how long the last
  * frame took. A stall makes the next frame take more steps, not a longer step.
  */
+/**
+ * The most steps a second the page asks for once the slider is past 10 000×: 10 000× at
+ * the default 0.5 s step, which is what the fastest lesson asked for before the slider
+ * went further. Above 10 000× the multiplier is held to this many steps a second, so a
+ * million times real time is reachable at an hour-long step (the shelf steps' year in
+ * about half a minute) and never asks a half-second step for two million steps a second.
+ * At or below 10 000× nothing is held: every multiplier the page offered before runs as
+ * it did.
+ */
+const SPEED_UNHELD_X = 1e4;
+const STEPS_PER_S_HELD = 2e4;
+
+/** The multiplier the page actually runs at, from the slider's and the step length. */
+function heldSpeed(sliderX, dt) {
+  return Math.min(sliderX, Math.max(SPEED_UNHELD_X, dt * STEPS_PER_S_HELD));
+}
+
 function stepsForFrame(nowMs, dt, speed) {
   if (state.lastWallMs === null) {
     state.lastWallMs = nowMs;
@@ -3477,7 +3494,7 @@ async function frame(nowMs) {
 
   if (state.running && !state.busy) {
     const dt = Math.max(1e-6, Number($("dt").value) || 0.5);
-    const speed = 10 ** Number($("speed").value);
+    const speed = heldSpeed(10 ** Number($("speed").value), dt);
     let n = stepsForFrame(nowMs, dt, speed);
     // A guided step runs to a stated simulation time. At 800x one frame is thousands of
     // steps, so without this clamp a step would sail past its own mark by most of a
@@ -3660,6 +3677,7 @@ async function loadScenario() {
     applyEnv();
     afterFactsChange(Backend.label);
     await readNow();
+    rearmMark();
   } catch (e) {
     // A stale load's failure is not this page's news — the pack it was about is not the
     // pack on screen, and the banner belongs to whatever loaded last.
@@ -3748,6 +3766,7 @@ $("reset").onclick = async () => {
     );
     applyEnv();
     await readNow();
+    rearmMark();
     clearBanner();
   } catch (e) {
     showBanner(String(e.message ?? e));
@@ -3904,10 +3923,16 @@ $("fault-clear-bms").onclick = async () => {
 };
 
 $("speed").oninput = () => {
-  const speed = 10 ** Number($("speed").value);
-  $("speed-label").textContent = speed >= 100 ? `${speed.toFixed(0)}×` : `${speed.toFixed(1)}×`;
+  const fmt = (x) => (x >= 100 ? `${x.toFixed(0)}×` : `${x.toFixed(1)}×`);
+  const slider = 10 ** Number($("speed").value);
+  const held = heldSpeed(slider, Math.max(1e-6, Number($("dt").value) || 0.5));
+  // Say so when the step length holds the slider back, rather than print a speed the page
+  // is not running at.
+  $("speed-label").textContent =
+    held < slider ? `${fmt(slider)}, held to ${fmt(held)} at this dt,` : fmt(slider);
 };
 $("speed").oninput();
+$("dt").addEventListener("input", () => $("speed").oninput());
 
 $("save").onclick = async () => {
   if (!state.backend) return;
@@ -4964,6 +4989,67 @@ const LESSONS = [
     expect:
       "At the mark `terminal` reads **`3.299 V`** and the `particles` row reads **`8 of 20 full`**. Load `lfp_particles_cold_discharged` from the picker, take the minus sign off so the pulse current reads `0.11517255`, and run it to the mark. It rests at **`3.271 V`** against this file's **`3.299 V`** — 28 mV apart, wider than at room temperature — and the `particles` row there reads **`5 of 20 full`**. Nothing was fitted to make it wider: the file's constant was set against a room-temperature measurement, so the widening in the cold is the model's own. Now roll the dice. Load `lfp_particles_cold_discharged_seed3` — the same file with its `seed` changed and nothing else; the seed decides how big each particle is — and run it with the pulse current still at `0.11517255`. It rests at **`3.275 V`** against this file's **`3.299 V`** — 24 mV apart — with **`6 of 20 full`**. Same cell, same charge, same cold, same road, and a different answer. Then load `lfp_particles_cold_charged_seed3`, the charge arm on that new seed, keep the minus sign, and run it. It reads **`3.299 V`** with **`8 of 20 full`**, where this file is. The dice moved one arm and left the other alone, and on the arm they moved some particles switched during the rest, after the current had stopped — in the cold the rest is part of the experiment. `another_draw_in_the_cold_moves_only_the_discharge_arm` checks all of it. So in the cold the gap is not a number the cell has. It is one of a few values, each set by how many particles end full on either side, and which one a given cell lands on is a draw: `the_cold_rest_gap_is_set_by_how_many_particles_end_full` checks that every gap it sees is the value its two counts predict. The slice that built this cell ran many more seeds and found a few more such values, the one this file shows the most common, and the header of `lfp_particles_cold_charged` lists them. At room temperature it is a draw as well, only a rarer one.",
   },
+  {
+    id: "drawn-on-the-shelf",
+    title: "On the shelf, along a curve someone drew",
+    // Phase 10's lesson (docs/plans/phase-10-sei.md, slice E). Four files that differ only
+    // where their names say (`shelf_lesson.rs` holds that): the drawn curve or the film,
+    // stored full or at 30 %. Isothermal, so the ambient field matches the file and the
+    // slider moves nothing. An hour per step because the subject is a year: measured, the
+    // readings agree to seven digits with 600 s and 60 s steps, and 1 000 000× is the page's
+    // top speed, which the slider only reaches unheld at a step this long.
+    scenario: "shelf_drawn_full.toml",
+    demand: { mode: "Rest", value: 0 },
+    ambient_c: 25,
+    bms: null,
+    dt: 3600,
+    speed_x: 1000000,
+    until_s: 31536000,
+    watch: ["plot-soh", "readouts"],
+    prose: [
+      "A new chapter, about what a cell loses by sitting still. One LG M50 cell, the single-particle model, stored full at 25 °C with nothing connected. The demand is `Rest`, and this file holds the temperature where it is, so the ambient slider does nothing here: the only thing on the page that moves is the state-of-health plot.",
+      "Aging is on, and it is the kind step 8 showed you: a curve drawn as the square root of time, made steeper by heat and by charge. The step length is 3600 s and the speed slider is at 1 000 000×, so the 365 days this step runs to pass in about 32 s of watching.",
+    ],
+    expect:
+      "Two lines moving apart, fast at first and slower after. A quarter of the way in, `soh cap` reads **`92.07 %`**; at the mark, **`84.14 %`**, with `soh res` at **`1.2378 ×`**. That is 15.86 points gone, twice the first quarter's 7.93 for 4 times the time: `√t` to the digit, because `√t` is what was drawn. Every coefficient behind this curve is a placeholder carried over from another cell, as the chemistry file's `[aging]` section says, and 15.86 points in 365 days on a shelf at room temperature is not a claim about an LG M50. The next step ages the same cell a way that was fitted to real ones.",
+  },
+  {
+    id: "grown-on-the-shelf",
+    title: "The same shelf, and a film that grows",
+    scenario: "shelf_film_full.toml",
+    demand: { mode: "Rest", value: 0 },
+    ambient_c: 25,
+    bms: null,
+    dt: 3600,
+    speed_x: 1000000,
+    until_s: 31536000,
+    watch: ["plot-soh", "readouts"],
+    prose: [
+      "The same cell, full, at the same 25 °C for the same 365 days. One line of the scenario file is different: under `[pack.aging]` it says `calendar = \"Film\"`, and the drawn calendar curve is switched off.",
+      "In its place a film grows on the graphite of the negative electrode: the solid-electrolyte interphase, built from the electrolyte and from the cell's own lithium. The growth law is one of PyBaMM's, and in it lithium has to cross the film to build more of it, so the thicker the film, the slower it grows. Lithium in the film can never be cycled again, so `soh cap` here is read off what the electrodes have left; and the film is in the current's way, so its resistance is added to the cell's.",
+      "Its rate was fitted to LG M50 cells stored for many months at several temperatures and charge levels, measured at WMG. The `[spm.sei]` section of the chemistry file names the data and says where each constant came from.",
+    ],
+    expect:
+      "A quarter of the way in, `soh cap` reads **`99.37 %`**; at the mark, **`98.60 %`**, with `soh res` at **`1.0140 ×`**. That is 1.40 points against the drawn curve's 15.86 on the same cell, and most of that gap is the placeholder, not the method: the drawn curve was never fitted to this cell and the film was. What the method changes is where the shape comes from. The film lost 2.24 times the first quarter's 0.63 for 4 times the time, nearly `√t`, and nobody wrote `√t` into its law: the film slows itself down as it thickens. It is not exactly `√t` because the film began at a thickness of its own, and while it is still close to that thickness it grows more nearly in a straight line. The resistance is the film's alone here: at rest nothing else wears the cell, and no coefficient ties it to the capacity the way the drawn curve's does.",
+  },
+  {
+    id: "stored-low",
+    title: "Stored low, the film hardly grows",
+    scenario: "shelf_film_low.toml",
+    demand: { mode: "Rest", value: 0 },
+    ambient_c: 25,
+    bms: null,
+    dt: 3600,
+    speed_x: 1000000,
+    until_s: 31536000,
+    watch: ["plot-soh", "readouts"],
+    prose: [
+      "The film again, on the same cell at the same 25 °C for the same 365 days, stored at 30 % instead of full. Nothing else in the file is different.",
+      "The film grows faster the lower the potential of the graphite it sits on, and that potential is at its lowest when the cell is full. At 30 % the graphite sits higher, and the reaction that builds the film runs far more slowly.",
+    ],
+    expect:
+      "At the mark `soh cap` reads **`99.79 %`**: 0.21 points, against 1.40 stored full, 6.65 times less. Now load `shelf_drawn_low` from the picker, the drawn curve stored at 30 %, and run it to the same mark. `soh cap` reads **`90.66 %`** there: 9.34 points against the 15.86 it lost stored full, only 1.70 times less. The drawn curve was told how much charge matters, by a stress factor in the chemistry file; the film works it out from the graphite. Two things this does not show, so do not take them from it. First, the 6.65 belongs to this span. Stored low, the film has barely outgrown its starting thickness and still grows nearly in a straight line: 0.21 points against 0.07 in the first quarter, 2.98 times as much for 4 times the time, where stored full it was 2.24. So over a shorter span the gap between full and 30 % is wider, and over a longer one narrower. Second, this law grows the film at much the same rate anywhere near the top of the charge range, where the graphite's potential is flat, so it cannot say that storing a little below full is kinder than storing full. The cells it was fitted to do not settle that either: near the top, over the same later months, some stored full lost less than some stored a little lower. Full against 30 % is what this model can show, and it shows it plainly.",
+  },
 ];
 
 // The path's chapters: headings over the lessons above, in the order they already run.
@@ -4993,6 +5079,7 @@ const CHAPTERS = [
   { first: "slow-and-patient", title: "Other chemistries" },
   { first: "a-curve-worth-reading", title: "Gauges that read the curve" },
   { first: "no-particle-is-halfway", title: "LFP's particles" },
+  { first: "drawn-on-the-shelf", title: "Aging, drawn and grown" },
 ];
 
 /** Each chapter's first lesson as an index into `LESSONS`; a bad id fails at load. */
@@ -5166,7 +5253,20 @@ async function applyStep(L, fresh = false) {
     // leaves the box where the reader left it — the same treatment the CC-CV and pulse
     // fields get, and for the same reason: a step should not silently undo fiddling it
     // does not depend on.
-    if (L.dt !== undefined) $("dt").value = String(L.dt);
+    //
+    // The exception is a length an earlier *step* wrote. Left in the box, it would run a
+    // step that never asked for it at another step's length — a chapter jump from the
+    // shelf steps' hour to step 1 would discharge that cell in hour-long steps — and every
+    // number a step without `dt` quotes was measured at the box's default. So such a
+    // length goes back to the default; one the reader typed (the box no longer holds what
+    // the step wrote) is theirs and stays.
+    if (L.dt !== undefined) {
+      $("dt").value = String(L.dt);
+      path.dtWritten = $("dt").value;
+    } else if (path.dtWritten !== null) {
+      if ($("dt").value === path.dtWritten) $("dt").value = $("dt").defaultValue;
+      path.dtWritten = null;
+    }
     $("ambient").value = String(L.ambient_c);
     applyEnv();
     $("speed").value = String(Math.log10(L.speed_x));
@@ -5196,6 +5296,25 @@ async function applyStep(L, fresh = false) {
     path.busy = false;
     renderStep();
   }
+}
+
+/**
+ * A run rebuilt from t = 0 during a guided step — the reader loading the step's control
+ * file from the picker, or pressing Restart, or toggling the BMS — stops at the step's
+ * mark again.
+ *
+ * The prose sends readers to "run it to the same mark", and before this nothing stopped
+ * them there: the mark was spent on the step's own run, so the pause was the reader's to
+ * time by hand. At 10 000× on a resting cell that cost a digit nobody could see; at the
+ * shelf steps' 1 000 000× it is eleven simulated days a second of wall clock, and the
+ * reading the prose quotes was out of reach. Several older steps were already written as
+ * if it stopped ("Press Run at the mark", "press Run again when the mark passes").
+ * Skipped while `applyStep` is setting a step up, which arms the mark itself.
+ */
+function rearmMark() {
+  if (!path.on || path.busy) return;
+  path.until = LESSONS[path.i].until_s;
+  renderStep();
 }
 
 /** Called from `frame` when a step reaches its mark. */

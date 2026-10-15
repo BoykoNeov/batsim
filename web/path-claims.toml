@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Thirty-seven steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Forty steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -129,7 +129,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 163 claims below that set
+#              Be clear about what this buys TODAY: in all 171 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -148,7 +148,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled 339 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled 356 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  40 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -208,13 +208,13 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 40 claims.
 #
-#   same 357 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same 365 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude 11. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
 #               −1.31397. Fenced to negative values; on a positive one it is a silent
 #               alias for `same`.
-#   complement   6. The sentence prints how far below one the value is — `0.53 points
+#   complement   15. The sentence prints how far below one the value is — `0.53 points
 #               are gone` of a `soh cap` of 0.9947106.
 #   since_mark   3. A duration since the step's mark — `**383.0 s later**` of an
 #               absolute 983.0 s on a step marking at 600. Fenced to claims read on an
@@ -254,8 +254,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 368 of the 437 numbers the
-#            246 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 385 of the 454 numbers the
+#            255 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -286,7 +286,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 246 claimed sentences need none. A future literal printing a chemistry constant will
+# the 255 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -301,7 +301,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — thirty-seven steps of the thirty-seven so far, which is all of them.
+# of this file — forty steps of the forty so far, which is all of them.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -4672,8 +4672,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: thirty-seven
-# steps, 841 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: forty
+# steps, 889 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -4720,7 +4720,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # and "all but three points of what it holds" is tied to that step's own charge claim.
 #
 # So "digits-closed is less than closed" is no longer a fact about the whole path — it is a
-# fact about the steps in `word_blind` below, which is nine of thirty-seven. The sentence
+# fact about the steps in `word_blind` below, which is nine of forty. The sentence
 # stays because the gap it names is real for every one of them, and because the pairing of
 # `spelled` and `word_blind` is what keeps it honest: a step is now one or the other by
 # declaration, never by silence.
@@ -4746,7 +4746,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are twenty-eight of them. An arm says what decides a number:
+# THE ARMS THEMSELVES, and there are twenty-nine of them. An arm says what decides a number:
 # a NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, one of theirs
@@ -11043,6 +11043,313 @@ The same count as seed 9's charge arm.
 """
 
 
+# --- steps 38 to 40: the shelf, drawn and grown (Phase 10 slice E) --------------------
+#
+# docs/plans/phase-10-sei.md, slice E. One LG M50 `Spm` cell resting for 365 days at 25 degC,
+# an hour a step, in four files that differ only where their names say
+# (`shelf_files_differ_only_where_their_headers_say`). Read at the quarter mark (7884000 s)
+# and the mark (31536000 s). The sentences with no number in them -- the film's law, the
+# span the full-against-low ratio belongs to -- are pinned in `shelf_lesson.rs`.
+
+[[claim]]
+step = "drawn-on-the-shelf"
+literal = "A quarter of the way in, `soh cap` reads **`92.07 %`**; at the mark, **`84.14 %`**, with `soh res` at **`1.2378 ×`**."
+quantity = "soh_cap_at:7884000"
+value = 0.920719178
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "92.07"
+spells_pow10 = 2
+states = "same"
+read_at_s = 7884000.0
+display = "soh cap"
+shows = "92.07 %"
+quoted = true
+note = """
+The drawn curve a quarter of the way to the mark.
+"""
+
+[[claim]]
+step = "drawn-on-the-shelf"
+literal = "A quarter of the way in, `soh cap` reads **`92.07 %`**; at the mark, **`84.14 %`**, with `soh res` at **`1.2378 ×`**."
+quantity = "soh_cap_at:31536000"
+value = 0.841438356
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "84.14"
+spells_pow10 = 2
+states = "same"
+read_at_s = 31536000.0
+display = "soh cap"
+shows = "84.14 %"
+quoted = true
+note = """
+The drawn curve at the mark: the LG M50 file's placeholder calendar pair, carried
+over from the 18650 set, at full and 25 degC.
+"""
+
+[[claim]]
+step = "drawn-on-the-shelf"
+literal = "A quarter of the way in, `soh cap` reads **`92.07 %`**; at the mark, **`84.14 %`**, with `soh res` at **`1.2378 ×`**."
+quantity = "soh_res_at:31536000"
+value = 1.237842
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.2378"
+states = "same"
+read_at_s = 31536000.0
+display = "soh res"
+shows = "1.2378 ×"
+quoted = true
+note = """
+`r_growth_per_capacity_loss` = 1.5 times the capacity lost, which is the drawn
+curve's coupling.
+"""
+
+[[claim]]
+step = "drawn-on-the-shelf"
+literal = "That is 15.86 points gone, twice the first quarter's 7.93"
+quantity = "soh_cap_at:31536000"
+value = 0.841438356
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "15.86"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 31536000.0
+note = """
+The loss at the mark, `100.00 - 84.14` done by the reader.
+"""
+
+[[claim]]
+step = "drawn-on-the-shelf"
+literal = "That is 15.86 points gone, twice the first quarter's 7.93"
+quantity = "soh_cap_at:7884000"
+value = 0.920719178
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "7.93"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 7884000.0
+note = """
+The loss at the quarter mark. Twice it is the loss at the mark to the digit,
+because sqrt(t) is the curve's own shape (`calendar_increment`).
+"""
+
+[[claim]]
+step = "drawn-on-the-shelf"
+literal = "and 15.86 points in"
+quantity = "soh_cap_at:31536000"
+value = 0.841438356
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "15.86"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 31536000.0
+note = """
+The same loss, said again in the sentence that disowns it.
+"""
+
+[[claim]]
+step = "grown-on-the-shelf"
+literal = "A quarter of the way in, `soh cap` reads **`99.37 %`**; at the mark, **`98.60 %`**, with `soh res` at **`1.0140 ×`**."
+quantity = "soh_cap_at:7884000"
+value = 0.993737857
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.37"
+spells_pow10 = 2
+states = "same"
+read_at_s = 7884000.0
+display = "soh cap"
+shows = "99.37 %"
+quoted = true
+note = """
+The film a quarter of the way to the mark.
+"""
+
+[[claim]]
+step = "grown-on-the-shelf"
+literal = "A quarter of the way in, `soh cap` reads **`99.37 %`**; at the mark, **`98.60 %`**, with `soh res` at **`1.0140 ×`**."
+quantity = "soh_cap_at:31536000"
+value = 0.985963997
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "98.60"
+spells_pow10 = 2
+states = "same"
+read_at_s = 31536000.0
+display = "soh cap"
+shows = "98.60 %"
+quoted = true
+note = """
+The film at the mark, full at 25 degC: `sei_golden.rs` holds the same law against
+PyBaMM, and `sei_wmg.rs` the fitted rate against the WMG cells.
+"""
+
+[[claim]]
+step = "grown-on-the-shelf"
+literal = "A quarter of the way in, `soh cap` reads **`99.37 %`**; at the mark, **`98.60 %`**, with `soh res` at **`1.0140 ×`**."
+quantity = "soh_res_at:31536000"
+value = 1.01402
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.0140"
+states = "same"
+read_at_s = 31536000.0
+display = "soh res"
+shows = "1.0140 ×"
+quoted = true
+note = """
+The film's own ohms over the cell's unworn resistance at this state; at rest no
+other mechanism moves (`resistance_rises_from_the_film_alone`).
+"""
+
+[[claim]]
+step = "grown-on-the-shelf"
+literal = "That is 1.40 points"
+quantity = "soh_cap_at:31536000"
+value = 0.985963997
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "1.40"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 31536000.0
+note = """
+The film's loss at the mark.
+"""
+
+[[claim]]
+step = "grown-on-the-shelf"
+literal = "the first quarter's 0.63"
+quantity = "soh_cap_at:7884000"
+value = 0.993737857
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "0.63"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 7884000.0
+note = """
+The film's loss at the quarter mark. 2.24 times it is the loss at the mark: between
+sqrt(t)'s 2 and a straight line's 4, because the film started at PyBaMM's 5 nm.
+"""
+
+[[claim]]
+step = "stored-low"
+literal = "At the mark `soh cap` reads **`99.79 %`**: 0.21 points"
+quantity = "soh_cap_at:31536000"
+value = 0.997890786
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.79"
+spells_pow10 = 2
+states = "same"
+read_at_s = 31536000.0
+display = "soh cap"
+shows = "99.79 %"
+quoted = true
+note = """
+The film stored at 30 %, at the mark.
+"""
+
+[[claim]]
+step = "stored-low"
+literal = "At the mark `soh cap` reads **`99.79 %`**: 0.21 points"
+quantity = "soh_cap_at:31536000"
+value = 0.997890786
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "0.21"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 31536000.0
+note = """
+Its loss.
+"""
+
+[[arm]]
+step = "stored-low"
+name = "drawn low"
+instruction = "load `shelf_drawn_low` from the picker, the drawn curve stored at 30 %, and run it to the same mark"
+start = "restart"
+scenario = "shelf_drawn_low.toml"
+actions = [{ do = "run", to_s = 31536000.0 }]
+note = """
+The control: the drawn curve at the same 30 %, so the two models' charge-level effects sit
+side by side. `shelf_drawn_full` is step 38's own file, so its year is quoted from there.
+"""
+
+[[claim]]
+step = "stored-low"
+literal = "`soh cap` reads **`90.66 %`** there: 9.34 points"
+quantity = "soh_cap_at:31536000"
+arm = "drawn low"
+value = 0.90662481
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "90.66"
+spells_pow10 = 2
+states = "same"
+read_at_s = 31536000.0
+display = "soh cap"
+shows = "90.66 %"
+quoted = true
+note = """
+The drawn curve stored at 30 %, at the mark.
+"""
+
+[[claim]]
+step = "stored-low"
+literal = "`soh cap` reads **`90.66 %`** there: 9.34 points"
+quantity = "soh_cap_at:31536000"
+arm = "drawn low"
+value = 0.90662481
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "9.34"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 31536000.0
+note = """
+Its loss. Against step 38's 15.86, 1.70 times: the file's `cal_soc_stress` table
+read at 1.0 and 0.3.
+"""
+
+[[claim]]
+step = "stored-low"
+literal = "0.21 points against 0.07 in the first quarter"
+quantity = "soh_cap_at:31536000"
+value = 0.997890786
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "0.21"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 31536000.0
+note = """
+The loss at the mark again, in the sentence about the span.
+"""
+
+[[claim]]
+step = "stored-low"
+literal = "0.21 points against 0.07 in the first quarter"
+quantity = "soh_cap_at:7884000"
+value = 0.999291083
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "0.07"
+spells_pow10 = 2
+states = "complement"
+read_at_s = 7884000.0
+note = """
+The loss at the quarter mark: nearly a third of the mark's, nearly a straight line.
+"""
+
+
 [ledger]
 steps = [
   "pack-disagrees",  # 4 numbers: the topology and the scatter
@@ -11389,9 +11696,12 @@ steps = [
   "no-particle-is-halfway", # 7 numbers: the particle count and the pulse, and the panel at the mark
   "which-way-it-arrived",   # 13 numbers: the panel on this file, the twin and the two circuit arms
   "a-throw-of-the-dice",    # 21 numbers: the cold, four panels, two subtractions, two file names
+  "drawn-on-the-shelf",     # 16 numbers: the cell, the controls, the mark in days, four panel rows and the arithmetic on them
+  "grown-on-the-shelf",     # 11 numbers: the conditions, the cell, three panel rows and the arithmetic on them
+  "stored-low",             # 21 numbers: the charge level, the conditions, two runs at the mark and the multiples between them
 ]
 # Not scanned, and why. THIS LIST IS EMPTY for the first time, which is what the
-# thirty-seven entries above amount to: every step of the guided path now has its whole
+# forty entries above amount to: every step of the guided path now has its whole
 # prose scanned, not only the sentences a claim quotes. Of the steps below, those that
 # carry claims: none of them. Unchecked entirely: none. Both sentences are derived and
 # both now say the same thing.
@@ -11427,17 +11737,17 @@ unledgered = [
 # unit noun, and thirteen vocabulary rules — almost all of them for an instant stated
 # RELATIVE to another one, which the first batch never met. The third batch needed no shape
 # at all and the fourth needed one UNIT NOUN — the volt — which is what let the last two
-# steps holding one join the scan. The list holds twenty-eight steps now.
+# steps holding one join the scan. The list holds thirty-one steps now.
 #
 # THE ENTRIES DO NOT ALL SAY THE SAME THING, and the split is a result rather than a gap:
-# twenty-one of them read nothing at all. Fifteen are the steps whose English quantities had
+# twenty-four of them read nothing at all. Fifteen are the steps whose English quantities had
 # been read and tied to something; the digits rule rewrote all twenty-nine of them into
 # digits, so the word scan ran over those steps and found nothing left to account for. The
 # sixteenth is `protection-off`, whose one spelled quantity — "ten seconds" between its two
 # flags — stopped being true when `docs/plans/end-of-step-split.md` moved the first flag
 # half a step earlier, and was dropped rather than respelled. The rest are steps written
 # under the ban, which never held one. What ties those
-# quantities today is the ordinary digit ledger, which has covered all thirty-seven steps since
+# quantities today is the ordinary digit ledger, which has covered all forty steps since
 # before this list existed.
 #
 # THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the two batches after it were one
@@ -11472,6 +11782,9 @@ spelled = [
   "no-particle-is-halfway",          # 0, written under the ban
   "which-way-it-arrived",            # 0, written under the ban
   "a-throw-of-the-dice",             # 0, written under the ban
+  "drawn-on-the-shelf",              # 0, written under the ban
+  "grown-on-the-shelf",              # 0, written under the ban
+  "stored-low",                      # 0, written under the ban
   "the-loop-is-wider-down-here",     # 0, and it was written under the ban rather than
                                      # cleaned up afterwards: the phrase "for an hour" was
                                      # in the first draft of its opening sentence, which is
