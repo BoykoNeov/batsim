@@ -302,37 +302,36 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v24-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v25 restore.
+/// A v25-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v26 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is not a stand-in, for the seventh time running — and this
-/// time the reason is the fixture's `spm: None`.** v25's one new field lives inside every
-/// `[spm.*]` electrode, and its two new variants close their enums, so an
-/// equivalent-circuit pack on a chemistry with no `[spm]` section is byte-for-byte what a
-/// v24 build wrote. The sibling [`a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length`]
-/// answers the case whose bytes do change, and its answer depends on a value, which is why
-/// both exist.
+/// **At this bump the retag is not a stand-in, for the eighth time running — the fixture
+/// has `aging: None` and `spm: None`.** v26's three new fields live in `AgingConfig`, in
+/// `SpmState` and in `[spm]`, so an equivalent-circuit pack that does not age, on a
+/// chemistry with no `[spm]` section, is byte-for-byte what a v25 build wrote. The
+/// `a_v25_shaped_*` siblings answer the cases whose bytes do change, and each answer depends
+/// on a value, which is why they exist.
 #[test]
-fn the_version_field_is_what_rejects_a_v24_snapshot() {
+fn the_version_field_is_what_rejects_a_v25_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 25,
-        "this test is written against the v24 -> v25 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v23 'for this fixture it parses fine and the version field is all there is',          v24 the same for this fixture and 'it depends on the next value' for a pack          with a BMS, and v25 the same for this fixture and 'it fails, by a route the positive          particle's radius chooses' for a chemistry with an [spm] section. A renumbered assertion          cannot inherit any of them."
+        SNAPSHOT_VERSION, 26,
+        "this test is written against the v25 -> v26 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v23 'for this fixture it parses fine and the version field is all there is',          v24 the same for this fixture and 'it depends on the next value' for a pack          with a BMS, v25 the same for this fixture and 'it fails, by a route the positive          particle's radius chooses' for a chemistry with an [spm] section, and v26 the same          for this fixture and 'by the next value' for each of its three fields. A          renumbered assertion cannot inherit any of them."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 24);
+    let stale = retagged(&bytes, 25);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 24,
+            found: 25,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v24-tagged snapshot must be refused"
+        "a v25-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -806,6 +805,9 @@ fn a_v21_shaped_spm_state_misparses_at_v22() {
         2.5_f64,
         1.0_f64, // capacity_factor
         1.0_f64, // r0_factor
+        // Today's reader closes the state on v26's `film_thickness_m`, which postdates this
+        // test's question: a `None` tag, so what is read here is the v22 reader's answer.
+        0_u8,
     ))
     .expect("a v21-shaped state and the cell fields after it serialize");
     let read: sim_core::SpmState = bincode::deserialize(&v21_then_cell).expect(
@@ -830,6 +832,7 @@ fn a_v21_shaped_spm_state_misparses_at_v22() {
         i_last: 2.5,
         soc_deficit: 0.25,
         i_reversal_last: 0.5,
+        film_thickness_m: None,
     };
     let bytes = bincode::serialize(&v22).expect("a v22 state serializes");
     let back: sim_core::SpmState = bincode::deserialize(&bytes).expect("that is a v22 state");
@@ -958,6 +961,7 @@ fn a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length() {
         contact_resistance_ohm: 0.0,
         negative: electrode(5.86e-6),
         positive: electrode(r_pos),
+        sei: None,
     };
     // A v24 writer's bytes: each electrode's v25 bytes without the new field's tag, which a
     // `None` writes as one zero byte at the electrode's end. Then the `f64` that follows.
@@ -993,4 +997,140 @@ fn a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length() {
     let bytes = bincode::serialize(&v25).expect("a v25 section serializes");
     let back: SpmParams = bincode::deserialize(&bytes).expect("that is a v25 section");
     assert_eq!(back, v25);
+}
+
+/// A v25 single-particle cell state at v26 reads the next byte as its film's tag — and what
+/// that byte is decides whether it fails.
+///
+/// v26 closes `SpmState` on `film_thickness_m: Option<f64>`. In a `Cell` the state is
+/// followed by `capacity_factor`, so a v26 reader takes that factor's **low byte** as the
+/// tag. A scatter-free cell's factor is `1.0`, whose low byte is zero: the tag reads `None`
+/// and the cell parses quietly, one byte out of step with everything after it. A scattered
+/// factor's low byte is almost never 0 or 1, and bincode refuses any other tag. The field,
+/// not a snapshot, on its siblings' terms.
+#[test]
+fn a_v25_shaped_spm_state_reads_its_capacity_factor_as_a_film_tag() {
+    let state = sim_core::SpmState {
+        c_neg: vec![10_000.0; 3],
+        c_pos: vec![30_000.0; 3],
+        temp_k: 298.15,
+        i_last: 2.5,
+        soc_deficit: 0.0,
+        i_reversal_last: 0.0,
+        film_thickness_m: None,
+    };
+    let v25_then = |factor: f64| {
+        let mut b = bincode::serialize(&state).expect("a state serializes");
+        assert_eq!(b.pop(), Some(0), "a `None` tag closes the v26 state");
+        b.extend(bincode::serialize(&(factor, 1.0_f64)).expect("the cell's factors"));
+        b
+    };
+    let quiet: sim_core::SpmState = bincode::deserialize(&v25_then(1.0))
+        .expect("a scatter-free cell's factor has a zero low byte, so the v26 note says it parses");
+    assert_eq!(quiet.film_thickness_m, None);
+    assert_eq!(quiet.c_neg, state.c_neg);
+    let scattered = 0.97_f64;
+    assert!(
+        !matches!(scattered.to_bits() & 0xff, 0 | 1),
+        "the fixture needs a factor whose low byte is not a valid tag"
+    );
+    assert!(
+        bincode::deserialize::<sim_core::SpmState>(&v25_then(scattered)).is_err(),
+        "a scattered factor's low byte is not a tag, so the v26 note says this fails"
+    );
+}
+
+/// A v25 aging config at v26 reads the sub-clock's accumulator as its calendar selector.
+///
+/// v26 appends `calendar`, a unit enum bincode writes as a `u32` variant index, after
+/// `sub_clock_period_s`. In `Aging` the config is followed by the accumulated time, an `f64`,
+/// so a v26 reader takes its low four bytes as the variant. An accumulator of `0.0` — every
+/// pack snapshot on a tick — or any round number reads as variant 0, the drawn curve, and the
+/// pack parses on four bytes out of step; `0.1 s` reads as an unknown variant and fails.
+#[test]
+fn a_v25_shaped_aging_config_reads_its_accumulator_as_the_calendar() {
+    let v25_then = |accum_s: f64| {
+        bincode::serialize(&(10.0_f64, accum_s, 7.0_f64)).expect("a v25 config and accumulator")
+    };
+    for accum in [0.0, 3.0] {
+        let read: sim_core::AgingConfig = bincode::deserialize(&v25_then(accum))
+            .expect("an accumulator with zero low bytes reads as variant 0");
+        assert_eq!(
+            read.calendar,
+            sim_core::CalendarModel::Curve,
+            "accum {accum}"
+        );
+    }
+    assert!(
+        bincode::deserialize::<sim_core::AgingConfig>(&v25_then(0.1)).is_err(),
+        "0.1's low four bytes are no variant, so the v26 note says this fails"
+    );
+}
+
+/// A v25 `[spm]` section at v26 reads the chemistry's next byte — the `[dfn]` section's tag —
+/// as its film's.
+///
+/// v26 appends `sei: Option<SeiParams>` to `SpmParams`, which a chemistry follows with
+/// `dfn: Option<DfnParams>`. On the shipped LG M50 that is `Some`: the tag reads as a film and
+/// the electrolyte section's next fifty-six bytes become its seven constants, quietly. A
+/// chemistry with no `[dfn]` reads `None` and goes on one byte short. Either way the field
+/// parses; only what comes after it, or the version check, can refuse the blob.
+#[test]
+fn a_v25_shaped_spm_section_reads_the_dfn_tag_as_a_film() {
+    let section = || sim_core::SpmParams {
+        t_ref_k: 298.15,
+        c_e_mol_per_m3: 1000.0,
+        electrode_area_m2: 0.1027,
+        contact_resistance_ohm: 0.0,
+        negative: electrode(),
+        positive: electrode(),
+        sei: None,
+    };
+    let v25 = {
+        let mut b = bincode::serialize(&section()).expect("a section serializes");
+        assert_eq!(b.pop(), Some(0), "a `None` tag closes the v26 section");
+        b
+    };
+    let mut with_dfn = v25.clone();
+    with_dfn.push(1);
+    with_dfn.extend(
+        bincode::serialize(&(
+            0.25_f64, 0.335_f64, 0.47_f64, 1.5_f64, 1.5_f64, 215.0_f64, 0.18_f64,
+        ))
+        .expect("seven numbers"),
+    );
+    let read: sim_core::SpmParams =
+        bincode::deserialize(&with_dfn).expect("any seven numbers are a film's constants");
+    let film = read.sei.expect("the [dfn] tag became a film");
+    assert_eq!(
+        film.d_li_m2_per_s, 0.25,
+        "the electrolyte's first number became D_li"
+    );
+    let mut without = v25;
+    without.push(0);
+    let read: sim_core::SpmParams =
+        bincode::deserialize(&without).expect("a `None` [dfn] tag reads as no film");
+    assert_eq!(read.sei, None);
+}
+
+fn electrode() -> sim_core::ElectrodeParams {
+    sim_core::ElectrodeParams {
+        particle_radius_m: 5.22e-6,
+        diffusivity_m2_per_s: 4.0e-15,
+        c_max_mol_per_m3: 63104.0,
+        active_volume_fraction: 0.665,
+        thickness_m: 7.56e-5,
+        m_ref: 3.42e-6,
+        reaction_ea_j_per_mol: 17800.0,
+        diffusivity_ea_j_per_mol: 0.0,
+        charge_transfer_alpha: 0.5,
+        stoich_min: 0.26,
+        stoich_max: 0.85,
+        docp_dt_v_per_k: 0.0,
+        ocp: sim_core::OcpTable {
+            stoich: vec![0.2, 0.9],
+            volts: vec![4.4, 3.5],
+        },
+        regular_solution: None,
+    }
 }

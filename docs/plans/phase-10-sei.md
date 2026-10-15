@@ -272,3 +272,86 @@ slice; C delivers exits 1–4.
   the table's 1.90 mV interpolation error is ≈ 7–8 % in rate and ≈ 4 % in growth. Measure that
   table-versus-function ratio at the golden's stoichiometries before choosing a tolerance; the
   fit's "within 0.04 % of PyBaMM" used PyBaMM's own OCP function and says nothing about it.
+
+## Addendum 2026-10-15 — slice C done: the film on the `Spm`, v25 → v26
+
+Built from the design above; exits 1–4 pass, pinned by `crates/sim-data/tests/sei_golden.rs`
+(PyBaMM) and `crates/sim-data/tests/sei_film.rs` (the engine's own contracts). Exit 5 (the WMG
+cells, run on WMG's own capacity steps in the engine) is the next slice, as decided.
+
+**What landed.**
+
+- `[spm.sei]` in `chemistries/nmc_21700_lgm50.toml` (`sim_core::SeiParams`, every key required,
+  unknown keys refused, each value with its provenance). Read by nothing unless a pack selects
+  the film; a `Dfn` pack on the same file ignores it (the bit-identity run below includes one).
+- `AgingConfig::calendar: CalendarModel` (`Curve`, the default, or `Film`), `serde(default)`.
+  Under `Film`, `CellAging::tick` adds no drawn calendar fade; cycle, plating and reversal are
+  unchanged. `Pack::new` refuses `Film` on `Ecm`, `Dfn` and `SpmEnsemble` (`FilmNeedsSpm`) and
+  on a chemistry without `[spm.sei]` (`MissingSeiParams`).
+- `SpmState::film_thickness_m: Option<f64>`; `spm::grow_film` grows it on the aging tick in the
+  rationalised closed form at `Δφ = U_n(surface) + η_n` at `i_last`, and takes `Z·δL·A_neg/V̄`
+  moles uniformly from every negative shell.
+- Readouts: the negative's window shortened at the top by `δx` for `soc` and `surface_gap`;
+  reported `soh_capacity` = multiplier × `(1 − δx/Δx)`, which `soc_true` now weights by;
+  `ρ·(L − L0)/A_neg` added to the lumped resistance of every voltage read; the pack's resistance
+  ratio divides with `mult/(r − r_film)`, and `CellView::soh_resistance` is the same ratio per
+  cell (equal to the pack's on a single cell, pinned).
+- `Pack::cell_film(s, p) -> Option<FilmView>`: thickness, lithium lost, film resistance, and the
+  energy the last step's film took. Not a `CellView` field, so no wire change; neither API
+  version moved.
+- `SNAPSHOT_VERSION` 26. What a v25 blob does at v26, by field (`snapshot_version.rs`): a cell
+  state parses quietly when the cell's capacity factor has a zero low byte (an unscattered cell)
+  and fails otherwise; an aging config reads the accumulator's low four bytes as the selector,
+  so a round accumulator parses as `Curve` and `0.1 s` fails; an `[spm]` section reads the
+  `[dfn]` tag after it as its film's, and on the LG M50 takes the electrolyte's next 56 bytes as
+  film constants. The version check is what stands in front of all three.
+
+**Measured.**
+
+| | 85 %, 25 °C | 85 %, 45 °C | 30 %, 25 °C | 30 %, 45 °C | 100 %, 25 °C |
+| --- | --- | --- | --- | --- | --- |
+| table vs function, PyBaMM, a year (the floor) | 0.06 % | 0.05 % | 2.02 % | 1.44 % | 0 |
+| engine vs PyBaMM on the table, worst day ≥ 7 | 0.047 % | 0.031 % | 0.22 % | 0.47 % | 0.047 % |
+| engine vs PyBaMM on Chen2020's curve | 0.09 % | 0.09 % | 2.89 % | 2.32 % | 0.05 % |
+
+The plan's "≈ 4 % in growth" for the table floor was an estimate; measured it is at most 2 %, and
+nothing on the 85 % and 100 % plateau. The tolerances are 0.6 % against the table reference and
+each condition's own floor + 1 % against the function one. Also measured: the log-log slope over
+days 30–365 at 45 °C / 85 % is 0.559 with the film at 4.9× its start by day 30 (24.3 nm) and
+16.6× by a year (83.0 nm); full-to-30 % after a year at 25 °C is 6.655 (PyBaMM on the table 6.658,
+on the function 6.524); 10 s and 1 h ticks agree to 1.2e-7 over two days; the film's energy
+closes the per-electrode ledger to 2.3e-9 over a hot year (48.6 J); ninety days at 45 °C / 85 %
+add 0.61 mΩ and a reported resistance ratio of 1.039, bit-identically with
+`r_growth_per_capacity_loss` at zero.
+
+**Film off moves nothing**, measured beyond the suite: an out-of-tree harness ran aged packs of
+every model — `Ecm` 2S3P with a BMS and 1S2P, `Spm` 1S2P and 2S1P, `Dfn`, `SpmEnsemble` — through
+cycling, a voltage hold, a power demand, 200 h hot at rest, a cold charge and an over-discharge,
+hashing every telemetry frame, every `CellView` and the final snapshot (as JSON, with the version
+and the three new keys stripped). HEAD and slice C hash identically on all six; a 1e-15
+perturbation of the initial SOC moves each hash. A fresh film is the curve's cell bit for bit
+until its first tick (`a_fresh_film_moves_nothing_until_it_grows`).
+
+**Decisions the design left open, as taken.**
+
+- **The energy sink's sign.** Read per electrode against lithium metal (lithium in the negative
+  worth `−U_n` per coulomb), withdrawing lithium into the film *raises* the electrodes' stored
+  energy by `U_n·dq`; `FilmView::energy_last_step_j` is that, in the engine's charge units
+  (`δn·F/κ`), booked at the bulk potential after the tick. It is not heat and not in `q_gen_w`.
+  The SEI reaction's own heat is not in the parameter set and is not modelled.
+- **The plating C-rate** keeps dividing by the handed capacity, as the design said.
+- **`r_growth_per_capacity_loss`** still couples cycle, plating and reversal loss to the
+  multiplier under the film; the film's own loss never enters it.
+
+**Recorded, not fixed.**
+
+- **The reversal edge on an aged filmed cell.** `empty_voltage` and `kinetics_at_empty_v` read the
+  positive at `stoich_max`, which a filmed cell no longer reaches when its negative empties (the
+  lost lithium leaves the positive short of full lithiation). Over-discharging an aged filmed cell
+  will show a small step in voltage at the edge. Not reached by exits 1–4.
+- **85 % stores like 100 %.** The graphite potential is flat at about 0.092 V above roughly 70 %
+  SOC, so the film grows at the same rate from there to full: PyBaMM's year at 25 °C loses
+  0.002699 mol at both, to 0.01 %. The real cells disagree (WMG's high-SOC fade keeps rising),
+  and that is this law's, not this implementation's. **Slice E's lesson must not teach "store at
+  80 %, not full"; full against 30 % (6.7×) is the contrast this model can show.** Noted by a side
+  review of the golden, 2026-10-15.

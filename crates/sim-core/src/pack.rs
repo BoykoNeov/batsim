@@ -34,7 +34,7 @@ use rand_core::SeedableRng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::aging::{Aging, AgingConfig, CellAging, FadeParams};
+use crate::aging::{Aging, AgingConfig, CalendarModel, CellAging, FadeParams};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::dfn;
@@ -571,7 +571,17 @@ use crate::{Demand, Env, Telemetry};
 /// field is all there is. `sim_server::API_VERSION` and `sim-wasm`'s constant stay put: the
 /// new model is one more value of a config field the wire already carries, and no telemetry
 /// field moves.
-pub const SNAPSHOT_VERSION: u32 = 25;
+///
+/// v26 (the SEI film, Phase 10 slice C): [`crate::chem::SpmParams`] gains `sei`, an
+/// `Option` appended after `positive`; [`crate::SpmState`] gains `film_thickness_m`, an
+/// `Option` appended after `i_reversal_last`; [`AgingConfig`] gains `calendar`, a unit enum
+/// appended after `sub_clock_period_s`. See `docs/plans/phase-10-sei.md` (slice C addendum)
+/// and, for what a v25 blob does at v26, the `a_v25_shaped_*` tests in `snapshot_version.rs`.
+/// `sim_server::API_VERSION` and `sim-wasm`'s constant stay put: the selector is one more
+/// field of a config the wire already carries, `serde(default)` so an older client's setup
+/// still parses and still means the drawn curve, and no telemetry field moves — the film
+/// is read through [`Pack::cell_film`], not through [`CellView`].
+pub const SNAPSHOT_VERSION: u32 = 26;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -1022,6 +1032,22 @@ pub enum BuildError {
         /// The model that was selected.
         model: &'static str,
     },
+    /// [`crate::CalendarModel::Film`] was selected on a cell model that cannot grow the
+    /// film. Only the `Spm` can: the film takes lithium out of a negative particle, which the
+    /// equivalent circuit does not have, and the `Dfn` and the many-particle cell do not carry
+    /// it yet (`docs/plans/phase-10-sei.md`, slice D).
+    #[error("aging.calendar = Film needs cell_model Spm; {model} cannot grow the SEI film")]
+    FilmNeedsSpm {
+        /// The model that was selected.
+        model: &'static str,
+    },
+    /// [`crate::CalendarModel::Film`] was selected against a chemistry with no `[spm.sei]`
+    /// section. Running at zero growth would look exactly like a very stable cell.
+    #[error("aging.calendar = Film but chemistry '{chem_id}' has no [spm.sei] section")]
+    MissingSeiParams {
+        /// Identifier of the chemistry.
+        chem_id: String,
+    },
 }
 
 /// Reasons [`Pack::restore`] can reject a [`Snapshot`].
@@ -1133,21 +1159,67 @@ impl Cell {
     /// The capacity state of health this cell **reports**, in (0, 1\]: what
     /// [`CellView::soh_capacity`] shows and what [`Telemetry::soh_capacity`] weights.
     ///
-    /// Not [`Self::eff_capacity_ah`]'s multiplier, though today it is the same number.
-    /// That one is what the cell model is *told*; this is what the cell *has*. Phase 10's
-    /// film takes lithium out of the negative electrode, so its loss is inside the model
-    /// and only a read of the electrodes can report it — see [`CellAging`].
-    fn soh_capacity_reported(&self) -> f64 {
-        self.aging.capacity_multiplier()
+    /// Not [`Self::eff_capacity_ah`]'s multiplier, though without a film it is the same
+    /// number. That one is what the cell model is *told*; this is what the cell *has*. The
+    /// SEI film takes lithium out of the negative electrode, so its loss is inside the model
+    /// and only a read of the electrodes can report it: the multiplier times the share of
+    /// its fresh window the cell's electrodes still span — see [`CellAging`].
+    fn soh_capacity_reported(&self, chem: &ChemistryParams) -> f64 {
+        match self.model.film_capacity_fraction(chem) {
+            Some(held) => self.aging.capacity_multiplier() * held,
+            None => self.aging.capacity_multiplier(),
+        }
     }
 
     /// The resistance growth factor this cell **reports**, `>= 1`: what
     /// [`CellView::soh_resistance`] shows. The sibling of [`Self::soh_capacity_reported`],
     /// split from [`Self::eff_r0_factor`]'s multiplier for the same reason: a film adds its
     /// resistance in series, not through the multiplier.
-    fn soh_resistance_reported(&self) -> f64 {
-        self.aging.resistance_multiplier()
+    ///
+    /// With a film the answer is `multiplier·r/(r − r_film)`, `r` the cell's Thévenin
+    /// resistance \[ohms\] from its memoisable source: what the cell presents over what an
+    /// unworn one would, the film taken out before the multiplier is divided out. The
+    /// per-cell sibling of the ratio [`Telemetry::soh_resistance`] reports, and equal to it
+    /// on a single cell. `cap_ah` is the chemistry's nominal capacity \[Ah\], which the
+    /// source needs.
+    fn soh_resistance_reported(&self, chem: &ChemistryParams, cap_ah: f64) -> f64 {
+        match self.model.film_resistance_ohm(chem) {
+            Some(r_film) => {
+                let (_, r) =
+                    self.model
+                        .source(chem, self.eff_r0_factor(), self.eff_capacity_ah(cap_ah));
+                self.aging.resistance_multiplier() * r / (r - r_film)
+            }
+            None => self.aging.resistance_multiplier(),
+        }
     }
+}
+
+/// One cell's SEI film, returned by [`Pack::cell_film`]. Ground truth.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FilmView {
+    /// Film thickness \[m\], the chemistry's `[spm.sei].initial_thickness_m` on a fresh cell.
+    pub thickness_m: f64,
+    /// Lithium \[mol\] the film has taken from the negative electrode since the cell was
+    /// built — the initial film's own lithium not counted.
+    pub lithium_lost_mol: f64,
+    /// Resistance \[ohms\] the film's growth has added in series; `0.0` on a fresh cell.
+    pub resistance_ohm: f64,
+    /// Energy \[J\] the lithium the film took on the last time-advancing step carried, at the
+    /// graphite's potential against lithium metal; `None` until a step has advanced time
+    /// (and after a restore), `0.0` on a step with no aging tick.
+    ///
+    /// # What it is in the energy ledger
+    /// Read the cell's stored energy per electrode, each against lithium metal: lithium in
+    /// the negative is worth `−U_n` per coulomb and in the positive `−U_p`, so a discharge
+    /// of `dq` changes it by `−(U_p − U_n)·dq` as it must. Withdrawing lithium from the
+    /// negative into the film then **raises** that stored energy by `U_n·dq` — the lithium
+    /// is booked out of the graphite at its potential, not at the cell's voltage, which
+    /// would be 30–40 times larger. Over any stretch,
+    /// `ΔW = −∫V·I·dt − ∫Q·dt + Σ energy_last_step_j`. The SEI reaction's own heat (the
+    /// lithium and the electrolyte going into the film) is not in the parameter set and is
+    /// not modelled.
+    pub energy_last_step_j: Option<f64>,
 }
 
 /// A parallel group: the cells wired in parallel that share one terminal node.
@@ -1505,6 +1577,26 @@ impl std::fmt::Debug for OcvHints {
 #[derive(Clone, Default)]
 struct CellCurrents(Vec<f64>);
 
+/// The energy \[J\] each cell's SEI film took on the last time-advancing step,
+/// series-major: the lithium it consumed, at the graphite's potential against lithium
+/// metal. Empty on a pack that grows no film. A report, like [`CellCurrents`] and on its
+/// terms — `#[serde(skip)]`, empty after a restore, and read by no physics. See
+/// [`FilmView::energy_last_step_j`].
+#[derive(Clone, Default)]
+struct FilmEnergy(Vec<f64>);
+
+impl PartialEq for FilmEnergy {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for FilmEnergy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FilmEnergy({} cells)", self.0.len())
+    }
+}
+
 impl PartialEq for CellCurrents {
     fn eq(&self, _other: &Self) -> bool {
         true
@@ -1632,6 +1724,9 @@ pub struct Pack {
     /// A report, not state — no physics reads it.
     #[serde(skip)]
     cell_currents: CellCurrents,
+    /// What each cell's SEI film took on the last time-advancing step; see [`FilmEnergy`].
+    #[serde(skip)]
+    film_energy: FilmEnergy,
     /// Each cell's last table segments; see [`OcvHints`]. Speed only — changes no bit.
     #[serde(skip)]
     ocv_hints: OcvHints,
@@ -1680,6 +1775,23 @@ impl Pack {
                 return Err(BuildError::MissingAgingParams {
                     chem_id: chem.meta.id.clone(),
                 });
+            }
+            if aging.calendar == CalendarModel::Film {
+                let model = match config.cell_model {
+                    CellModelConfig::Spm { .. } => None,
+                    CellModelConfig::Ecm => Some("Ecm"),
+                    CellModelConfig::Dfn { .. } => Some("Dfn"),
+                    CellModelConfig::SpmEnsemble { .. } => Some("SpmEnsemble"),
+                };
+                if let Some(model) = model {
+                    return Err(BuildError::FilmNeedsSpm { model });
+                }
+                // A missing `[spm]` is refused below, by the model's own check.
+                if chem.spm.as_ref().is_some_and(|spm| spm.sei.is_none()) {
+                    return Err(BuildError::MissingSeiParams {
+                        chem_id: chem.meta.id.clone(),
+                    });
+                }
             }
         }
         // Same refusal as aging's, for the same reason: a pack configured for
@@ -1856,6 +1968,21 @@ impl Pack {
             }
         }
 
+        // Every cell starts with the chemistry's own film when the pack grows one. Validated
+        // above: the model is an `Spm` and the chemistry has `[spm.sei]`. Draws nothing.
+        let film_l0 = config
+            .aging
+            .filter(|a| a.calendar == CalendarModel::Film)
+            .and_then(|_| chem.spm.as_ref()?.sei.as_ref())
+            .map(|sei| sei.initial_thickness_m);
+        if let Some(l0) = film_l0 {
+            for group in &mut groups {
+                for cell in &mut group.cells {
+                    cell.model.start_film(l0);
+                }
+            }
+        }
+
         // Built after the scatter draws so that adding a BMS cannot shift the
         // per-cell factors a seed produces; `Bms::new` itself draws nothing.
         let bms = config.bms.clone().map(|bms_config| {
@@ -1889,6 +2016,7 @@ impl Pack {
             // Empty: no step has run, so there is no current to report. See
             // [`CellCurrents`] — this is why `CellView::current_a` is an `Option`.
             cell_currents: CellCurrents::default(),
+            film_energy: FilmEnergy::default(),
         })
     }
 
@@ -1964,8 +2092,8 @@ impl Pack {
             ),
             capacity_factor: cell.capacity_factor,
             r0_factor: cell.r0_factor,
-            soh_capacity: cell.soh_capacity_reported(),
-            soh_resistance: cell.soh_resistance_reported(),
+            soh_capacity: cell.soh_capacity_reported(&self.chem),
+            soh_resistance: cell.soh_resistance_reported(&self.chem, self.chem.cell.capacity_ah),
             internal_short_conductance_s: cell.shunt_g,
             runaway_energy_remaining_j: cell.runaway.energy_remaining_j,
             vented: cell.runaway.vented,
@@ -1976,6 +2104,28 @@ impl Pack {
             // `None` the field documents — not a length check, so the two cannot drift.
             current_a: self
                 .cell_currents
+                .0
+                .get(s * self.parallel as usize + p)
+                .copied(),
+        })
+    }
+
+    /// Ground truth for the SEI film of the cell at series position `s`, parallel position
+    /// `p`, or `None` if either index is out of range or the cell grows no film (see
+    /// [`crate::CalendarModel::Film`]).
+    ///
+    /// Not a [`CellView`] field, so no client's wire format changed for it. A pure
+    /// function of stored state except [`FilmView::energy_last_step_j`], which is a report
+    /// of the last step on [`CellView::current_a`]'s terms.
+    #[must_use]
+    pub fn cell_film(&self, s: usize, p: usize) -> Option<FilmView> {
+        let cell = self.groups.get(s)?.cells.get(p)?;
+        Some(FilmView {
+            thickness_m: cell.model.film_thickness_m()?,
+            lithium_lost_mol: cell.model.film_lithium_mol(&self.chem)?,
+            resistance_ohm: cell.model.film_resistance_ohm(&self.chem)?,
+            energy_last_step_j: self
+                .film_energy
                 .0
                 .get(s * self.parallel as usize + p)
                 .copied(),
@@ -3706,6 +3856,17 @@ impl Pack {
         // memoises it. Running aging after that pass would leave the memo describing
         // pre-aging resistances, poisoning the next step with no invalidation point
         // to catch it. Running it here costs nothing and needs no invalidation at all.
+        let film = self
+            .aging
+            .as_ref()
+            .is_some_and(|a| a.calendar() == CalendarModel::Film);
+        // The film's report covers this step, so every step that advances time starts it
+        // at zero, tick or no tick. No allocation after the first step: `clear` keeps the
+        // capacity `resize` then refills.
+        if film && aging_accumulates {
+            self.film_energy.0.clear();
+            self.film_energy.0.resize(n_cells, 0.0);
+        }
         if aging_accumulates {
             // Both `expect`s are structural, not hopeful: `aging_accumulates` implies
             // `self.aging.is_some()`, and `Pack::new` rejects that configuration
@@ -3728,11 +3889,14 @@ impl Pack {
                         ),
                         safety: self.chem.safety.as_ref(),
                         reversal: &self.chem.reversal,
+                        film,
                     };
                 // Borrow the two mutable fields once, up front: `groups` and `rng` are
                 // disjoint, and naming them here keeps the plating roll below from
                 // looking like a second mutable borrow of `self`.
                 let rng = &mut self.rng;
+                let film_energy = &mut self.film_energy.0;
+                let mut cell_idx = 0;
                 // Series-major, parallel-minor — the same order the scatter draws use,
                 // and the order the plating short roll's determinism depends on. Any
                 // reordering here silently changes which cell gets which draw and
@@ -3741,6 +3905,20 @@ impl Pack {
                     for cell in &mut group.cells {
                         let (temp_k, soc) = (cell.model.temp_k(), cell.model.soc(&self.chem));
                         let shorted = cell.aging.tick(&fade, dt_age, temp_k, soc, rng);
+                        // The film grows on the same tick, at this cell's own potential and
+                        // temperature, after the bookkeeping above read the state it was
+                        // stressed at. Its lithium leaves the particle here; the reporting
+                        // pass below recomputes every source from the state it leaves.
+                        if film {
+                            let (q, u_n) = cell.model.grow_film(
+                                &self.chem,
+                                cell.eff_r0_factor(),
+                                cell.eff_capacity_ah(cap_ah),
+                                dt_age,
+                            );
+                            film_energy[cell_idx] = q * u_n;
+                        }
+                        cell_idx += 1;
                         if shorted {
                             // A plating short is physically the same object an injected
                             // `SoftInternalShort` creates, so it lands the same way:
@@ -3861,7 +4039,7 @@ impl Pack {
                 let cap_nominal = cap_ah * cell.capacity_factor;
                 // The capacity the model was told — what its `soc` is a fraction of, so
                 // what `soc_true` must weight by.
-                let eff_cap = cap_nominal * cell.aging.capacity_multiplier();
+                let eff_cap = cap_nominal * cell.soh_capacity_reported(&self.chem);
                 rem_ah += cell.model.soc(&self.chem) * eff_cap;
                 nom_ah += eff_cap;
                 if aging_live {
@@ -3869,14 +4047,17 @@ impl Pack {
                     // The capacity the cell reports having. The same product as
                     // `eff_cap` today, summed in the same order, so the ratio it feeds
                     // did not move when the two were split; see `Cell::soh_capacity_reported`.
-                    rep_ah += cap_nominal * cell.soh_capacity_reported();
+                    rep_ah += cap_nominal * cell.soh_capacity_reported(&self.chem);
                     sum_g_cells += g;
                     // 1/r_nominal = multiplier/r, since r already carries it. This divides
                     // out exactly what the model was handed, which is why it reads the
                     // *applied* multiplier: a resistance added outside it (Phase 10's film,
                     // in series) is not divided out, so the model must supply the unworn
                     // conductance itself before the reported ratio can include one.
-                    sum_g_nominal += cell.aging.resistance_multiplier() * g;
+                    sum_g_nominal += match cell.model.film_resistance_ohm(&self.chem) {
+                        Some(r_film) => cell.aging.resistance_multiplier() / (r - r_film),
+                        None => cell.aging.resistance_multiplier() * g,
+                    };
                 }
             }
             if aging_live {
@@ -4536,8 +4717,11 @@ mod cell_footprint {
         // `SpmState` is 80 since SNAPSHOT_VERSION 22: `soc_deficit` and `i_reversal_last`,
         // the charge a single-particle cell carries past its edge and the share of its last
         // current that went there (`docs/plans/porous-reversal.md`). Boxed, so the 16 B
-        // land on the heap block of the cells that have the model and on no `Cell`.
-        assert_eq!(size_of::<SpmState>(), 80, "SpmState");
+        // land on the heap block of the cells that have the model and on no `Cell`. 96 since
+        // SNAPSHOT_VERSION 26: `film_thickness_m`, an `Option<f64>` (16 B, a tag and its
+        // padding before the value), the SEI film's state (`docs/plans/phase-10-sei.md`).
+        // Paid by every `Spm` cell, filmed or not, on the heap block alone.
+        assert_eq!(size_of::<SpmState>(), 96, "SpmState");
         // `DfnState` is 144 since SNAPSHOT_VERSION 23: `soc_deficit`, the `Dfn`'s half of
         // `docs/plans/porous-reversal.md`. Boxed, like `SpmState`.
         assert_eq!(size_of::<DfnState>(), 144, "DfnState");

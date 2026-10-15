@@ -124,14 +124,43 @@ pub struct AgingConfig {
     /// integral is exact over any interval at fixed stress), it only samples the
     /// temperature and SOC that set the stress less often.
     pub sub_clock_period_s: f64,
+    /// What a cell on a shelf does: the drawn `√t` curve ([`CalendarModel::Curve`], the
+    /// default) or the SEI film grown in the cell's own negative electrode
+    /// ([`CalendarModel::Film`]). Cycle, plating and reversal fade are the same under
+    /// either.
+    ///
+    /// `serde(default)`, so every scenario, JSON setup and Godot `[pack.aging]` written
+    /// before Phase 10 still parses and still means the curve.
+    #[serde(default)]
+    pub calendar: CalendarModel,
 }
 
 impl Default for AgingConfig {
     fn default() -> Self {
         Self {
             sub_clock_period_s: 10.0,
+            calendar: CalendarModel::Curve,
         }
     }
+}
+
+/// Which mechanism carries calendar fade — what a cell loses by existing.
+///
+/// Per pack rather than per chemistry, because the point of having both is to age the
+/// same cell each way and compare (Phase 10's lesson). See `docs/plans/phase-10-sei.md`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CalendarModel {
+    /// The semi-empirical curve: `[aging]`'s `cal_*` coefficients, `√t` by construction,
+    /// a multiplier on capacity and resistance like every other mechanism here. Runs on
+    /// every cell model.
+    #[default]
+    Curve,
+    /// The SEI film (`[spm.sei]`): a film on the negative electrode that grows by taking
+    /// the cell's lithium, at a rate set by the electrode's own potential and temperature,
+    /// and that adds its own resistance in series. Its loss is real lithium gone from the
+    /// particle, so it is read off the electrodes rather than applied as a multiplier.
+    /// `Spm` only; [`crate::Pack::new`] refuses it elsewhere.
+    Film,
 }
 
 /// Pack-level aging state: the config plus the sub-clock accumulator.
@@ -175,6 +204,12 @@ impl Aging {
         self.config.sub_clock_period_s
     }
 
+    /// The configured calendar mechanism.
+    #[must_use]
+    pub fn calendar(&self) -> CalendarModel {
+        self.config.calendar
+    }
+
     /// Simulation time accumulated since the last aging update \[s\].
     #[must_use]
     pub fn pending_s(&self) -> f64 {
@@ -198,6 +233,9 @@ pub(crate) struct FadeParams<'a> {
     /// is required of every chemistry, so "costs nothing" is a zero coefficient rather than
     /// an absent section.
     pub(crate) reversal: &'a ReversalParams,
+    /// Whether the SEI film carries calendar fade, in which case [`CellAging::tick`] adds
+    /// none of the drawn curve's: the film grows in the cell model instead.
+    pub(crate) film: bool,
 }
 
 /// One cell's aging state: its two states of health and the accumulators behind
@@ -438,8 +476,11 @@ impl CellAging {
         // Calendar fade: the drawn `√t` curve, and the one mechanism of the four that
         // Phase 10's film replaces rather than sits beside — the film is what a cell on a
         // shelf does, in the electrodes. Cycle, plating and reversal stay here under either.
-        let k = calendar_rate(fade.aging, temp_k, soc);
-        self.q_cal += calendar_increment(k, self.q_cal, dt_age);
+        // Under the film `q_cal` stays at exactly zero, so it adds nothing to the loss below.
+        if !fade.film {
+            let k = calendar_rate(fade.aging, temp_k, soc);
+            self.q_cal += calendar_increment(k, self.q_cal, dt_age);
+        }
 
         // Depth of the half-cycle in progress: how far SOC has travelled since the
         // last reversal. See `cycle_increment` for what it weights.

@@ -157,6 +157,18 @@ pub struct SpmState {
     /// the step never had. Exactly `0.0` on every cell never driven past its edge.
     #[serde(default)]
     pub i_reversal_last: f64,
+    /// Thickness \[m\] of the SEI film on the negative particle, or `None` on a cell whose
+    /// pack does not grow one ([`crate::CalendarModel::Film`] is not selected).
+    ///
+    /// **`None` is not a zero-thickness film.** A fresh film is the chemistry's
+    /// `[spm.sei].initial_thickness_m`; only its growth past that costs lithium and adds
+    /// resistance, so a fresh filmed cell answers bit for bit what a film-less one does
+    /// until its first aging tick. `None` is the cell model without the mechanism, and every
+    /// expression the film enters branches on it rather than adding a zero — `x + 0.0` and
+    /// `x` are the same number, but `m/(r − 0.0)` and `m·(1/r)` need not be. See
+    /// [`grow_film`] and `docs/plans/phase-10-sei.md`.
+    #[serde(default)]
+    pub film_thickness_m: Option<f64>,
 }
 
 impl SpmState {
@@ -176,6 +188,7 @@ impl SpmState {
             i_last: 0.0,
             soc_deficit: 0.0,
             i_reversal_last: 0.0,
+            film_thickness_m: None,
         }
     }
 }
@@ -348,6 +361,173 @@ impl<'a> Working<'a> {
     pub(crate) fn j_pos(&self, i: f64) -> f64 {
         -self.kappa * i / (self.pos.g.area_m2 * FARADAY_C_PER_MOL)
     }
+}
+
+/// [`Working::new`] for this cell's own state: the chemistry at its temperature, with the
+/// SEI film's resistance added in series when it has one. Every read of this cell's
+/// terminal voltage builds its `Working` here, so the film reaches the solve, the probe and
+/// the report alike.
+///
+/// The film's resistance joins the lumped one **outside** the handed resistance multiplier:
+/// it is a resistance in ohms that the film's own growth set, not a factor on the
+/// chemistry's. With no film the `Working` is [`Working::new`]'s, untouched.
+fn working_at<'a>(
+    s: &SpmState,
+    spm: &'a SpmParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+) -> Working<'a> {
+    let mut w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    if let Some(r) = film_resistance_ohm(s, spm) {
+        w.r_contact += r;
+    }
+    w
+}
+
+/// The resistance \[ohms\] the SEI film has added by growing, `ρ·(L − L0)/A_neg`, or `None`
+/// on a cell with no film.
+///
+/// Growth only, not the whole film: `ρ` was fitted to the cells' resistance **rise**
+/// (`docs/plans/phase-10-slice-a-fit.md`), and the fresh cell's resistance is already the
+/// parameter set's. `A_neg` is the negative's whole interfacial area, the area the current
+/// crosses the film through.
+#[must_use]
+pub(crate) fn film_resistance_ohm(s: &SpmState, spm: &SpmParams) -> Option<f64> {
+    let (l, sei) = (s.film_thickness_m?, spm.sei.as_ref()?);
+    let area = Geometry::of(spm, &spm.negative).area_m2;
+    Some(sei.resistivity_ohm_m * (l - sei.initial_thickness_m) / area)
+}
+
+/// How far the film has moved the negative's **full** down, as a stoichiometry: the lithium
+/// it took, `Z·(L − L0)·A_neg/V̄` moles, over the negative's `c_max·V_active`. `None` on a
+/// cell with no film.
+///
+/// The film takes cyclable lithium, so the positive reaches its own full while the negative
+/// is still `δx` short of its old one: the cell's usable window on the negative is
+/// `[stoich_min, stoich_max − δx]`. Empty does not move — the negative still empties at
+/// `stoich_min`. Closed form in `L` alone, since `A_neg/V_active = 3/R_p`.
+#[must_use]
+pub(crate) fn film_shift(s: &SpmState, spm: &SpmParams) -> Option<f64> {
+    let (l, sei) = (s.film_thickness_m?, spm.sei.as_ref()?);
+    let e = &spm.negative;
+    Some(
+        3.0 * sei.li_per_sei * (l - sei.initial_thickness_m)
+            / (sei.partial_molar_volume_m3_per_mol * e.c_max_mol_per_m3 * e.particle_radius_m),
+    )
+}
+
+/// The lithium \[mol\] the SEI film has taken from the negative since the cell was built,
+/// `Z·(L − L0)·A_neg/V̄`, or `None` on a cell with no film.
+#[must_use]
+pub(crate) fn film_lithium_mol(s: &SpmState, spm: &SpmParams) -> Option<f64> {
+    let (l, sei) = (s.film_thickness_m?, spm.sei.as_ref()?);
+    let area = Geometry::of(spm, &spm.negative).area_m2;
+    Some(
+        sei.li_per_sei * (l - sei.initial_thickness_m) * area / sei.partial_molar_volume_m3_per_mol,
+    )
+}
+
+/// Where a negative stoichiometry sits on the usable window **this cell** has today: the
+/// chemistry's, shortened at the top by the film's [`film_shift`]. Exactly
+/// [`window_fraction_neg`] on a cell with no film. Unclamped, for the reason that one is.
+#[must_use]
+fn cell_window_fraction_neg(s: &SpmState, spm: &SpmParams, stoich: f64) -> f64 {
+    let e = &spm.negative;
+    match film_shift(s, spm) {
+        Some(dx) => (stoich - e.stoich_min) / (e.stoich_max - dx - e.stoich_min),
+        None => window_fraction_neg(stoich, e),
+    }
+}
+
+/// The share of the fresh cell's capacity this cell's electrodes still hold, `1 − δx/Δx` —
+/// what a slow discharge between its limits delivers, over what it delivered new — or
+/// `None` on a cell with no film. The pack multiplies it onto the handed capacity multiplier
+/// to report the cell's health.
+#[must_use]
+pub(crate) fn film_capacity_fraction(s: &SpmState, spm: &SpmParams) -> Option<f64> {
+    let e = &spm.negative;
+    film_shift(s, spm).map(|dx| 1.0 - dx / (e.stoich_max - e.stoich_min))
+}
+
+/// Grow the SEI film over one aging tick of `dt_age` seconds and take the lithium it
+/// consumes out of the negative particle. Returns `(q, u_n)`: that lithium's
+/// charge-equivalent \[C\], and the graphite's potential against lithium \[V\] it left at.
+/// `(0, 0)` on a cell with no film.
+///
+/// # The law, and the closed form
+/// PyBaMM's interstitial-diffusion limited growth, `L·dL/dt = k·e` with
+/// `k = V̄·D_li·c_li0·arrhenius/Z` and `e = exp(−F·Δφ/(R·T))`. Frozen over the tick — the
+/// potential and the temperature are this cell's at the tick — it integrates exactly to
+/// `L'² = L² + 2·k·e·dt`, and the increment is written **rationalised**,
+/// `δL = 2·k·e·dt / (√(L² + 2·k·e·dt) + L)`, which subtracts no two nearly-equal numbers:
+/// at a 10 s tick the growth is ten orders of magnitude below `L`, and the difference
+/// `√(L² + …) − L` would be rounding. [`crate::aging::calendar_increment`] is the precedent.
+///
+/// `Δφ` is the negative's potential against lithium, `U_n(surface) + η_n`, at the current
+/// this cell last carried — PyBaMM's — which at rest is the bulk value the fit used.
+///
+/// # Where the lithium comes from
+/// Every shell of the negative particle loses the same concentration, so a resting particle
+/// stays uniform. The film draws on the surface, but diffusion across the particle is many
+/// orders of magnitude faster than the film grows, so the gradient that would leave relaxes
+/// within the tick.
+///
+/// # Why the charge is in the engine's units
+/// `q` is what moving that lithium through the terminals would have counted, `δn·F/κ`
+/// (see [`Working::kappa`]). Every other charge in the cell's energy ledger is counted that
+/// way, so the film's share closes the ledger on a scattered or cycle-aged cell as well as
+/// on a nominal one, where `κ = 1` and it is plain `δn·F`.
+pub(crate) fn grow_film(
+    s: &mut SpmState,
+    spm: &SpmParams,
+    eff_r0_factor: f64,
+    eff_capacity_ah: f64,
+    dt_age: f64,
+) -> (f64, f64) {
+    let (Some(l), Some(sei)) = (s.film_thickness_m, spm.sei.as_ref()) else {
+        return (0.0, 0.0);
+    };
+    let temp_k = s.temp_k;
+    // `step` may not panic, and a cell outside the physical domain is not rewarded with an
+    // infinite rate: the guard `aging::calendar_rate` takes.
+    let domain = dt_age > 0.0 && temp_k > 0.0 && temp_k.is_finite();
+    if !domain {
+        return (0.0, 0.0);
+    }
+    let w = working_at(s, spm, eff_r0_factor, eff_capacity_ah);
+    let neg = &w.neg;
+    let c_max = neg.p.c_max_mol_per_m3;
+    let i = s.i_last;
+    let c_s = clamp_surface(
+        c_surface(
+            &s.c_neg,
+            neg.p.particle_radius_m,
+            neg.d_s,
+            w.j_neg(stored_split(s, i)),
+        ),
+        c_max,
+    );
+    let dphi = ocp_lookup(&neg.p.ocp, c_s / c_max)
+        + overpotential(neg, temp_k, spm.c_e_mol_per_m3, c_s, i / neg.g.area_m2);
+    let k = sei.partial_molar_volume_m3_per_mol * sei.d_li_m2_per_s * sei.c_li0_mol_per_m3
+        / sei.li_per_sei
+        * arrhenius(sei.growth_ea_j_per_mol, spm.t_ref_k, temp_k);
+    let e = math::exp(-FARADAY_C_PER_MOL * dphi / (GAS_CONSTANT_J_PER_MOL_K * temp_k));
+    let two_ke_dt = 2.0 * k * e * dt_age;
+    let dl = two_ke_dt / ((l * l + two_ke_dt).sqrt() + l);
+    s.film_thickness_m = Some(l + dl);
+    let moles = sei.li_per_sei * dl * neg.g.area_m2 / sei.partial_molar_volume_m3_per_mol;
+    let dc = moles / neg.g.volume_m3;
+    for c in &mut s.c_neg {
+        *c -= dc;
+    }
+    // Booked at the bulk's potential after the tick, the stoichiometry the per-electrode
+    // stored energy is read at.
+    let x = mean_concentration(&s.c_neg) / c_max;
+    (
+        moles * FARADAY_C_PER_MOL / w.kappa,
+        ocp_lookup(&neg.p.ocp, x),
+    )
 }
 
 /// Open-circuit potential \[V\] of one electrode against lithium metal, by clamped
@@ -916,9 +1096,12 @@ pub(crate) fn forward_sweep(
 /// same identity is a *result* — and only an approximate one under load, because
 /// the voltage cut-off arrives while the surface runs ahead of the bulk. The
 /// meaning is unchanged from the one [`crate::Telemetry::soc_true`] fixed at v6:
-/// the fraction of the capacity this cell has **today**. Aging does not move the
-/// window, so a faded cell still reads `1.0` when full; it simply holds fewer
-/// amp-hours between the same two readings.
+/// the fraction of the capacity this cell has **today**. The multiplier aging does not
+/// move the window, so a faded cell still reads `1.0` when full; it simply holds fewer
+/// amp-hours between the same two readings. The SEI film does move it — its lithium is
+/// gone from the negative, which now fills only to `stoich_max − δx` (see [`film_shift`])
+/// — and the window is read short at the top by exactly that, so a filmed cell reads
+/// `1.0` at its own full too.
 ///
 /// Clamped, because the window is the *usable* range rather than a physical bound —
 /// an overcharged particle really can sit past `stoich_max`, and [`advance`] flags
@@ -932,7 +1115,7 @@ pub(crate) fn soc(s: &SpmState, spm: &SpmParams) -> f64 {
 #[must_use]
 fn raw_soc(s: &SpmState, spm: &SpmParams) -> f64 {
     let e = &spm.negative;
-    window_fraction_neg(mean_concentration(&s.c_neg) / e.c_max_mol_per_m3, e)
+    cell_window_fraction_neg(s, spm, mean_concentration(&s.c_neg) / e.c_max_mol_per_m3)
 }
 
 /// Where a **negative**-electrode stoichiometry sits on its usable window, as a
@@ -990,7 +1173,7 @@ pub(crate) fn overpotential_v(
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
 ) -> f64 {
-    let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    let w = working_at(s, spm, eff_r0_factor, eff_capacity_ah);
     let i = s.i_last;
     // The particles' own: the reversal ramp is a separate channel's voltage, not theirs.
     equilibrium_voltage(&w, s) - voltage(&w, s, stored_split(s, i), i) - i * w.r_contact
@@ -1028,8 +1211,8 @@ pub(crate) fn surface_gap(s: &SpmState, spm: &SpmParams, eff_capacity_ah: f64) -
     let cs_n = c_surface(&s.c_neg, n.particle_radius_m, w.neg.d_s, w.j_neg(s.i_last));
     let cs_p = c_surface(&s.c_pos, p.particle_radius_m, w.pos.d_s, w.j_pos(s.i_last));
     (
-        window_fraction_neg(mean_concentration(&s.c_neg) / n.c_max_mol_per_m3, n)
-            - window_fraction_neg(cs_n / n.c_max_mol_per_m3, n),
+        cell_window_fraction_neg(s, spm, mean_concentration(&s.c_neg) / n.c_max_mol_per_m3)
+            - cell_window_fraction_neg(s, spm, cs_n / n.c_max_mol_per_m3),
         window_fraction_pos(mean_concentration(&s.c_pos) / p.c_max_mol_per_m3, p)
             - window_fraction_pos(cs_p / p.c_max_mol_per_m3, p),
     )
@@ -1191,7 +1374,7 @@ pub(crate) fn probe_at(
     dt: f64,
     hold: bool,
 ) -> (f64, (f64, f64)) {
-    let w = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    let w = working_at(s, spm, eff_r0_factor, eff_capacity_ah);
     let end = if dt.is_nan() || dt <= 0.0 {
         None
     } else {
@@ -1438,7 +1621,7 @@ pub(crate) fn advance(
     let moves = !dt.is_nan() && dt > 0.0;
     // The heat terms read the kinetics, so they need the real resistance factor; the
     // diffusion below does not, which is the note on its own `Working`.
-    let wk = Working::new(spm, s.temp_k, eff_r0_factor, eff_capacity_ah);
+    let wk = working_at(s, spm, eff_r0_factor, eff_capacity_ah);
     // What the particles carry and what goes down the reversal ramp — the same division
     // [`probe_at`] read the curve with. `(i, 0.0)` everywhere inside the window.
     let (i_p, d_end) = if moves {

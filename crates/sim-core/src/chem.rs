@@ -361,6 +361,51 @@ pub struct SpmParams {
     pub negative: ElectrodeParams,
     /// The positive electrode.
     pub positive: ElectrodeParams,
+    /// The SEI film's constants (`[spm.sei]`), or `None` on a chemistry that has none.
+    ///
+    /// Read only when a pack selects the film for its calendar aging
+    /// ([`crate::CalendarModel::Film`]), and then only by the `Spm`: [`crate::Pack::new`]
+    /// refuses the film on every other cell model and on a chemistry without this section.
+    /// A pack that does not select the film never reads it, so adding the section to a
+    /// chemistry moves none of its trajectories. See `docs/plans/phase-10-sei.md`.
+    #[serde(default)]
+    pub sei: Option<SeiParams>,
+}
+
+/// The SEI film on the negative electrode (`[spm.sei]`): PyBaMM's "interstitial-diffusion
+/// limited" growth law (Marquis thesis eq. 5.96),
+///
+/// `dL/dt = (V̄·D_li·c_li0 / Z) · exp(−F·Δφ/(R·T)) · arrhenius(T) / L`,
+///
+/// with `Δφ` the negative's potential against lithium. The film takes `Z` moles of lithium
+/// per mole of film out of the negative particle, and adds `ρ·(L − L0)/A_neg` in series.
+///
+/// Every field is required and an unknown key is refused: a misspelt constant that silently
+/// fell back to a default would be the unlabeled number `CLAUDE.md` forbids, in the one
+/// section whose numbers were fitted. See `chemistries/nmc_21700_lgm50.toml` for each one's
+/// provenance.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SeiParams {
+    /// Lithium interstitial diffusivity in the film `D_li` \[m²/s\] at
+    /// [`SpmParams::t_ref_k`]. Must be finite and `> 0`.
+    pub d_li_m2_per_s: f64,
+    /// Arrhenius activation energy \[J/mol\] of the growth, applied as
+    /// `exp(Ea/R · (1/t_ref − 1/T))`. Must be finite and `>= 0`.
+    pub growth_ea_j_per_mol: f64,
+    /// Film resistivity `ρ` \[Ω·m\]: the film's growth adds `ρ·(L − L0)/A_neg` in series.
+    /// Must be finite and `>= 0`.
+    pub resistivity_ohm_m: f64,
+    /// The film a fresh cell is built with, `L0` \[m\]. Must be finite and `> 0`, because the
+    /// growth rate divides by the thickness.
+    pub initial_thickness_m: f64,
+    /// Partial molar volume of the film `V̄` \[m³/mol\]. Must be finite and `> 0`.
+    pub partial_molar_volume_m3_per_mol: f64,
+    /// Lithium interstitial reference concentration `c_li0` \[mol/m³\]. Must be finite and
+    /// `> 0`. Only its product with [`Self::d_li_m2_per_s`] enters the law.
+    pub c_li0_mol_per_m3: f64,
+    /// Moles of lithium per mole of film, `Z` \[–\]. Must be finite and `> 0`.
+    pub li_per_sei: f64,
 }
 
 /// One half-cell electrode of a [`SpmParams`] (`[spm.negative]` / `[spm.positive]`).
@@ -2043,6 +2088,38 @@ fn check_spm(spm: &SpmParams) -> Result<(), ChemistryError> {
     }
     check_electrode("spm.negative", &spm.negative)?;
     check_electrode("spm.positive", &spm.positive)?;
+    if let Some(sei) = &spm.sei {
+        check_sei(sei)?;
+    }
+    Ok(())
+}
+
+/// Validate a `[spm.sei]` block.
+fn check_sei(sei: &SeiParams) -> Result<(), ChemistryError> {
+    let positive: [(&'static str, f64); 5] = [
+        ("spm.sei.d_li_m2_per_s", sei.d_li_m2_per_s),
+        ("spm.sei.initial_thickness_m", sei.initial_thickness_m),
+        (
+            "spm.sei.partial_molar_volume_m3_per_mol",
+            sei.partial_molar_volume_m3_per_mol,
+        ),
+        ("spm.sei.c_li0_mol_per_m3", sei.c_li0_mol_per_m3),
+        ("spm.sei.li_per_sei", sei.li_per_sei),
+    ];
+    for (what, value) in positive {
+        if !is_positive(value) || !value.is_finite() {
+            return Err(ChemistryError::NotPositive { what, value });
+        }
+    }
+    let non_negative: [(&'static str, f64); 2] = [
+        ("spm.sei.growth_ea_j_per_mol", sei.growth_ea_j_per_mol),
+        ("spm.sei.resistivity_ohm_m", sei.resistivity_ohm_m),
+    ];
+    for (what, value) in non_negative {
+        if !is_non_negative(value) || !value.is_finite() {
+            return Err(ChemistryError::Negative { what, value });
+        }
+    }
     Ok(())
 }
 

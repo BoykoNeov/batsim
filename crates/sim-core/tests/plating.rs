@@ -162,6 +162,7 @@ fn cfg(
 fn every_step() -> Option<AgingConfig> {
     Some(AgingConfig {
         sub_clock_period_s: 0.0,
+        ..AgingConfig::default()
     })
 }
 

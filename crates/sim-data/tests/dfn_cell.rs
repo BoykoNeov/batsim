@@ -1235,6 +1235,7 @@ fn a_configured_dfn_pack_actually_fades() {
         config.initial_temp_k = t_k;
         config.aging = Some(AgingConfig {
             sub_clock_period_s: 10.0,
+            ..AgingConfig::default()
         });
         let e = Env {
             t_ambient: t_k,

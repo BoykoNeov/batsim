@@ -158,6 +158,7 @@ fn config(temp_k: f64, initial_soc: f64) -> PackConfig {
     PackConfig {
         aging: Some(AgingConfig {
             sub_clock_period_s: 10.0,
+            ..AgingConfig::default()
         }),
         bms: None,
         thermal: ThermalConfig::Isothermal,

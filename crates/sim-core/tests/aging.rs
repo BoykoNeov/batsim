@@ -127,6 +127,7 @@ fn rest_and_age(initial_soc: f64, temp_k: f64, dt: f64, steps: usize, period_s: 
         temp_k,
         Some(AgingConfig {
             sub_clock_period_s: period_s,
+            ..AgingConfig::default()
         }),
     );
     let mut pack = Pack::new(&cfg, chem(Some(aging_params()))).expect("pack builds");
@@ -201,6 +202,7 @@ fn a_negative_sub_clock_period_is_a_build_error() {
         298.15,
         Some(AgingConfig {
             sub_clock_period_s: -1.0,
+            ..AgingConfig::default()
         }),
     );
     let err = Pack::new(&cfg, chem(Some(aging_params()))).expect_err("must reject");
@@ -219,6 +221,7 @@ fn calendar_fade_is_monotone_and_decelerates() {
         313.15,
         Some(AgingConfig {
             sub_clock_period_s: 0.0,
+            ..AgingConfig::default()
         }),
     );
     let mut pack = Pack::new(&cfg, chem(Some(aging_params()))).expect("pack builds");
@@ -314,6 +317,7 @@ fn cycle_fade_scales_with_throughput() {
             298.15,
             Some(AgingConfig {
                 sub_clock_period_s: 10.0,
+                ..AgingConfig::default()
             }),
         );
         let mut params = aging_params();
@@ -363,6 +367,7 @@ fn resistance_grows_in_step_with_capacity_loss() {
         318.15,
         Some(AgingConfig {
             sub_clock_period_s: 10.0,
+            ..AgingConfig::default()
         }),
     );
     let mut pack = Pack::new(&cfg, chem(Some(params.clone()))).expect("pack builds");
@@ -425,6 +430,7 @@ fn aging_grows_the_rc_resistance_of_an_ecm_cell() {
         318.15,
         Some(AgingConfig {
             sub_clock_period_s: PERIOD_S,
+            ..AgingConfig::default()
         }),
     );
     let mut pack = Pack::new(&cfg, chem(Some(aging_params()))).expect("pack builds");
@@ -499,6 +505,7 @@ fn soc_is_a_fraction_of_present_capacity() {
         318.15,
         Some(AgingConfig {
             sub_clock_period_s: 10.0,
+            ..AgingConfig::default()
         }),
     );
     let mut pack = Pack::new(&cfg, chem(Some(aging_params()))).expect("pack builds");
@@ -561,6 +568,7 @@ fn a_zero_length_step_does_not_age_anything() {
         313.15,
         Some(AgingConfig {
             sub_clock_period_s: 100.0,
+            ..AgingConfig::default()
         }),
     );
     let mut pack = Pack::new(&cfg, chem(Some(aging_params()))).expect("pack builds");
@@ -590,6 +598,7 @@ fn snapshot_mid_period_replays_bit_identically() {
         313.15,
         Some(AgingConfig {
             sub_clock_period_s: 250.0,
+            ..AgingConfig::default()
         }),
     );
     let mut pack = Pack::new(&cfg, chem(Some(aging_params()))).expect("pack builds");
@@ -746,6 +755,7 @@ fn resting_mid_discharge_does_not_split_the_cycle() {
         298.15,
         Some(AgingConfig {
             sub_clock_period_s: 10.0,
+            ..AgingConfig::default()
         }),
     );
     c.parallel = 2;

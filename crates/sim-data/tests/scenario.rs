@@ -129,6 +129,7 @@ fn soft_short_example_matches_a_hand_built_config() {
             },
             aging: Some(AgingConfig {
                 sub_clock_period_s: 10.0,
+                ..AgingConfig::default()
             }),
             bms: Some(BmsConfig {
                 balancing: Some(BalancingConfig {

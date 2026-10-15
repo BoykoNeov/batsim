@@ -261,6 +261,23 @@ docp_dt_v_per_k         = 0          # Chen2020 "Positive electrode OCP entropic
 stoich = [0.000000, 0.106923, 0.142421, 0.170007, 0.193209, 0.213845, 0.235239, 0.277682, 0.289069, 0.300111, 0.312879, 0.339104, 0.351871, 0.367054, 0.386378, 0.428821, 0.472644, 0.517157, 0.558910, 0.580304, 0.599283, 0.645176, 0.731442, 0.817708, 0.903975, 0.951987, 1.000000]
 volts  = [4.678510, 4.588174, 4.552776, 4.518795, 4.481868, 4.439085, 4.382325, 4.250906, 4.223702, 4.205249, 4.193330, 4.182349, 4.173384, 4.156102, 4.126908, 4.060738, 4.005020, 3.949186, 3.884181, 3.850953, 3.825361, 3.777287, 3.704691, 3.634779, 3.564985, 3.526142, 3.487300]
 
+# The SEI film (Phase 10): a film on the graphite that grows by consuming the cell's lithium,
+# PyBaMM's "interstitial-diffusion limited" law (Marquis thesis eq. 5.96),
+#   dL/dt = (V_bar * D_li * c_li0 / Z) * exp(-F * U_n / RT) * arrhenius(growth_ea) / L,
+# grown on the aging sub-clock when `AgingConfig::calendar = "Film"` selects it. Read only by
+# the `Spm`; the drawn calendar curve in [aging] is not used when it is selected. FITTED values
+# are from tools/reference/fit_sei_wmg.py on the WMG LG M50 calendar-ageing set (Kuzhiyil et
+# al. 2025, CC-BY), scored on growth after the first post-storage test with the early step set
+# aside; see docs/plans/phase-10-slice-a-fit.md (last addendum) for every residual.
+[spm.sei]
+d_li_m2_per_s                    = 1.4795e-18 # FITTED, 148 x Chen2020's; growth RMS 0.622 % (25 + 45 C), 0.405 % on held-out 0 C cells
+growth_ea_j_per_mol              = 42540      # FITTED, same fit (25 against 45 C)
+resistivity_ohm_m                = 5.594e4    # FITTED, joint 25 + 45 C least squares on the pulse-resistance rise; residual 1.13 mOhm vs a 1.29 mOhm signal (weak); 25 C alone 1.56e4, 45 C alone 7.33e4
+initial_thickness_m              = 5.0e-9     # Chen2020 "Initial SEI thickness [m]" — placeholder, not fitted
+partial_molar_volume_m3_per_mol  = 9.585e-5   # Chen2020 "SEI partial molar volume [m3.mol-1]" — not fitted
+c_li0_mol_per_m3                 = 15         # Chen2020 "Lithium interstitial reference concentration [mol.m-3]" — not fitted; only D_li*c_li0 enters
+li_per_sei                       = 2          # Chen2020 "Ratio of lithium moles to SEI moles" — not fitted
+
 # --- extracted from PyBaMM Chen2020 (pybamm 26.6.2.0) by tools/reference/extract_dfn.py ---
 # Every value below is a key of the parameter set or a coefficient of one of its published
 # closed-form electrolyte fits, read out of the function source and cross-checked against

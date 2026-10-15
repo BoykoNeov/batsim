@@ -133,6 +133,18 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
    python tools/reference/generate.py lfp_26650_generic
    ```
 
+5. **`sei_golden.py`** — the SEI film's reference (Phase 10): PyBaMM's SPM with the
+   interstitial-diffusion limited SEI law, the `[spm.sei]` constants of
+   `chemistries/nmc_21700_lgm50.toml`, a year at rest at five SOC/temperature conditions,
+   each started at the engine's own stoichiometry and each run twice — on Chen2020's graphite
+   curve and on the engine's piecewise-linear table — so the table's own cost is measured in
+   the CSV. Writes `tests/golden/nmc_21700_lgm50/sei_rest_year.csv`, which
+   `crates/sim-data/tests/sei_golden.rs` reads.
+
+   ```bash
+   python tools/reference/sei_golden.py
+   ```
+
    Prefer the **target-scoped** form. A bare run regenerates every chemistry,
    including the committed LFP goldens that four phases of ECM tests are toleranced
    against, and a golden that drifts under you is a bad afternoon. After any run,

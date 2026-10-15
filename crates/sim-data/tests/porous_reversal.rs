@@ -407,6 +407,7 @@ fn over_discharge_damages_an_aging_single_particle_cell() {
             c,
             Some(AgingConfig {
                 sub_clock_period_s: 0.0,
+                ..AgingConfig::default()
             }),
         );
         for _ in 0..40 {

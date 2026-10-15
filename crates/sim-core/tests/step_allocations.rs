@@ -207,6 +207,7 @@ fn ensemble_chem() -> ChemistryParams {
         contact_resistance_ohm: 0.0,
         negative: neg,
         positive: pos,
+        sei: None,
     });
     c
 }
@@ -299,6 +300,7 @@ fn cases() -> Vec<(&'static str, PackConfig)> {
     c.bms = Some(bms());
     c.aging = Some(AgingConfig {
         sub_clock_period_s: 0.0, // age on every step: the most expensive arm
+        ..AgingConfig::default()
     });
     out.push(("thermal + BMS + aging", c));
 

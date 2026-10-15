@@ -103,6 +103,7 @@ fn spm_chem() -> ChemistryParams {
                 },
                 regular_solution: None,
             },
+            sei: None,
         }),
         thermal: ThermalParams {
             heat_capacity_j_per_k: 95.0,

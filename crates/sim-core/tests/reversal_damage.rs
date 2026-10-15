@@ -146,6 +146,7 @@ fn pack(initial_soc: f64, fade_per_ah: f64, aging: bool) -> Pack {
     let cfg = PackConfig {
         aging: aging.then_some(AgingConfig {
             sub_clock_period_s: 0.0,
+            ..AgingConfig::default()
         }),
         bms: None,
         thermal: ThermalConfig::Isothermal,

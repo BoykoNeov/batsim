@@ -902,7 +902,7 @@ proptest! {
         seed in any::<u64>(),
     ) {
         let mut config = cfg(series, parallel, soc0, seed, Scatter::default());
-        config.aging = Some(AgingConfig { sub_clock_period_s: 0.0 });
+        config.aging = Some(AgingConfig { sub_clock_period_s: 0.0, ..AgingConfig::default() });
         // Warm, so this stays a pure aging property: below `t_plating_min_k` a charging
         // step would also plate, and a plating short would drain one series group faster
         // than the others and re-sort the resistance weights the doc comment warns about.
@@ -981,7 +981,7 @@ proptest! {
         dt in 0.5f64..3.0,
     ) {
         let mut config = cfg(series, parallel, soc0, seed, Scatter { capacity_sigma: 0.03, r0_sigma: 0.03 });
-        config.aging = Some(AgingConfig { sub_clock_period_s: 10.0 });
+        config.aging = Some(AgingConfig { sub_clock_period_s: 10.0, ..AgingConfig::default() });
         config.initial_temp_k = 263.15; // below t_plating_min_k, so charging plates
         config.bms = Some(BmsConfig {
             balancing: None,

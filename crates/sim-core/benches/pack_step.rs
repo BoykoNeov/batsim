@@ -564,6 +564,7 @@ fn bench_aging_pack(c: &mut Criterion) {
             10,
             Some(AgingConfig {
                 sub_clock_period_s: period_s,
+                ..AgingConfig::default()
             }),
         );
         let warm = pack.step(DT, Demand::Current(i_1c), &env);

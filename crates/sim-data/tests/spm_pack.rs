@@ -238,6 +238,7 @@ fn a_configured_spm_pack_actually_fades() {
     let mut config = cfg(0.9);
     config.aging = Some(AgingConfig {
         sub_clock_period_s: 10.0,
+        ..AgingConfig::default()
     });
     let mut pack = Pack::new(&config, chem).expect("pack builds");
 

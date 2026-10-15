@@ -365,6 +365,7 @@ fn over_discharge_scars_the_nmc_cell_and_costs_the_lto_cell_nothing() {
         let cfg = PackConfig {
             aging: Some(AgingConfig {
                 sub_clock_period_s: 10.0,
+                ..AgingConfig::default()
             }),
             ..config(298.15, 1.0)
         };

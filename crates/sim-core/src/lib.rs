@@ -38,14 +38,15 @@ pub mod runaway;
 pub mod spm;
 pub mod thermal;
 
-pub use aging::{Aging, AgingConfig};
+pub use aging::{Aging, AgingConfig, CalendarModel};
 pub use bms::{
     BalancingConfig, Bms, BmsConfig, EkfConfig, EstimatorConfig, ProtectionConfig, SensorFrame,
 };
 pub use chem::{
     AgingParams, ChargeAcceptanceParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams,
     DfnSeparator, DiffusionParams, ElectrodeParams, HysteresisParams, HysteresisWidth, OcpTable,
-    PowerTerm, RegularSolutionParams, ReversalParams, SafetyParams, SpmParams, ThermalParams,
+    PowerTerm, RegularSolutionParams, ReversalParams, SafetyParams, SeiParams, SpmParams,
+    ThermalParams,
 };
 pub use dfn::DfnState;
 pub use ecm::{CellModel, EcmState};
@@ -53,8 +54,8 @@ pub use ensemble::EnsembleState;
 pub use faults::{Fault, FaultError, FaultState, ScheduledFault, SensorFault, SensorId};
 pub use flags::EventFlags;
 pub use pack::{
-    BuildError, CellIndexError, CellModelConfig, CellView, Pack, PackConfig, RestoreError, Scatter,
-    Snapshot, SNAPSHOT_VERSION,
+    BuildError, CellIndexError, CellModelConfig, CellView, FilmView, Pack, PackConfig,
+    RestoreError, Scatter, Snapshot, SNAPSHOT_VERSION,
 };
 pub use runaway::CellRunaway;
 pub use spm::SpmState;
