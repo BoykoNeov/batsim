@@ -555,8 +555,9 @@ the previous one's tests pass.
   criteria in `docs/plans/phase-9-lfp-ensemble.md`; slice notes beside it.
 - **Phase 10 — degradation physics.** An SEI film that ages the `Spm` instead of a drawn
   curve (ROADMAP H2). **In progress**: the fit (A), the health split (B) and the film in the
-  engine (C, v26, 2026-10-15) are done; next is the WMG cells run in the engine (exit 5), then
-  the `Dfn` (D) and the lesson (E). Plan and every slice note in `docs/plans/phase-10-sei.md`.
+  engine (C, v26, 2026-10-15) are done, and the WMG cells run in the engine on their own capacity
+  steps (exit 5, `sei_wmg.rs`, 2026-10-15) — every exit passes on the `Spm`; next is the `Dfn` (D),
+  then the lesson (E). Plan and every slice note in `docs/plans/phase-10-sei.md`.
 - **Phases 11 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

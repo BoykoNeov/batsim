@@ -369,3 +369,70 @@ until its first tick (`a_fresh_film_moves_nothing_until_it_grows`).
   cells show the same plateau is not checked here. **Slice E's lesson must not teach "store at
   80 %, not full"; full against 30 % (6.7×) is the contrast this model can show.** Noted by a side
   review of the golden, 2026-10-15.
+
+## Addendum 2026-10-15 (later) — exit 5 started; its pass bar, written before the full run
+
+**What the WMG cells' capacity test was, read off the raw files.** Cells stored at 0 °C log
+23.7–29 °C on the cell during their tests (`LogTemp001`, three cells, both test types), so the
+tests ran in a ~25 °C chamber whatever the storage temperature; the fit's 25 °C ratio assumed
+this without checking it. The capacity steps are as the fit ran them: 1.67 A to 2.5 V, 30 min,
+1.67 A to 4.2 V with no hold, 30 min, 1.67 A to 2.5 V, the last discharge being the capacity.
+
+**The check** (`crates/sim-data/tests/sei_wmg.rs`): a filmed `Spm` cell rests at the storage
+condition on a live thermal network; at each test day a copy of it settles 3 h at 25 °C and runs
+those steps, cut-offs found by bisecting the last step's length. The copy is thrown away, so the
+stored cell never cycles — as in the fit's model, where the stored cell's state of charge is
+never reset either; the drawn cycle fade is switched off on the test's chemistry so the copy
+does not wear during its own test (the data's 0 % subtraction removes that wear from the cells).
+Scored exactly as `growth_rms`: per condition the mean square of the cells' growth after the
+first post-storage test against the engine's, averaged over conditions, square-rooted. The
+reference is `tests/golden/nmc_21700_lgm50/wmg_storage_growth.csv`, data only, written by
+`fit_sei_wmg.py --table`; the engine's own 0 % cell is **not** subtracted (the fit did not; a
+film on near-empty graphite grows under a thousandth of the high-SOC rate).
+
+**Measured first, one condition**: a year at 85 % / 25 °C costs 1.4847 % of capacity on those
+steps for 0.9498 % of lithium (PyBaMM: 0.9505 %), a ratio of **1.5632** against the fit's 1.567,
+0.24 % apart. No unconverged solve and no surface out of range in either test.
+
+**The bar, set now.** The constants minimise the fit's closed form's residual, not the engine's,
+and the two differ by what separates them measurably: the graphite table (at most 2.9 % of
+growth, at 30 % SOC where growth is smallest; 0.08 % on the plateau) and the ratio (0.24 %). On
+growths of at most ~3 points either moves a residual by under 0.01 points. The bar is the stated
+residual plus 0.02 points: **0.642 % RMS at 25 + 45 °C, 0.425 % on the held-out 0 °C cells**,
+asserted separately. Past it is a finding for the owner, not a tolerance to widen.
+
+## Addendum 2026-10-15 (last) — exit 5 passes: the film reproduces the WMG cells in the engine
+
+Run once against the bar above, unchanged after it: **0.6241 % RMS at 25 + 45 °C** over 24
+conditions (bar 0.642, the fit's closed form 0.622) and **0.4046 % on the held-out 0 °C cells**
+over 12 (bar 0.425, closed form 0.405). The engine, measured on WMG's own steps, lands within
+0.002 points of the closed form that was converted to capacity with 1.567 — the conversion did
+not hide anything the engine does differently. Pinned by
+`crates/sim-data/tests/sei_wmg.rs::the_film_reproduces_the_wmg_cells`, with the ratio pinned
+beside it (`capacity_lost_per_lithium_lost_on_wmg_steps`, 1.5632 within 0.5 % of 1.567). No
+capacity test raised an unconverged solve or a surface out of range. 12 s in a debug build.
+
+**What the check can and cannot see.** The residual is mostly the cells' own scatter, so the bar
+is coarse: `D_li` raised 30 % (growth about 14 % faster) reads 0.6493 % at 25 + 45 °C and fails;
+a change much smaller than that would pass. The ratio test is not moved by `D_li`, as it should
+not be. Perturbed once, restored, green again.
+
+**Where the engine and the cells part, per condition** (last test day, growth in points; recorded,
+not scored separately):
+
+- **Mid charge at 45 °C runs ahead of the film**: 30 / 50 / 60 % grew 1.72 / 2.64 / 2.61 in the
+  cells against 0.61 / 1.56 / 1.35 in the engine. The same rows at 25 °C are closer (0.57 / 0.84 /
+  1.10 against 0.31 / 0.81 / 0.78).
+- **The top of the charge range is not flat in the cells.** The engine grows the film at the
+  same rate from about 80 % to full (the graphite plateau), so its 85–100 % rows agree to 0.01
+  points. The cells do not. At the same test, 25 °C day 483–496: 85 / 90 / 95 % grew 1.41 / 1.38
+  / 1.35, 100 % only 0.71 (engine 1.44 at day 496). At 45 °C day 363–367: 85 / 90 % grew 1.96 /
+  1.94, 95 / 100 % only 0.84 / 0.98. **Slice E's lesson should claim only what this model shows
+  (full against 30 %), and not present "stored full ages fastest" as a fact about these cells**,
+  whose fullest rows grew about half as much as their 85–90 % ones after the first test (what
+  they did before it, the early step, is not scored here and was not looked at).
+- **0 °C**: the engine is flat at 0.67–0.68 from 80 % up; the cells scatter between 0.33 and
+  1.19 with no order in SOC above 70 %.
+
+Exit criteria 1–5 now all pass on the `Spm`. Next is slice D (the film on the `Dfn`), then E
+(the lesson).

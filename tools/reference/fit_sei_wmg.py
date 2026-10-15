@@ -40,6 +40,7 @@ the 39 members over HTTP range requests with the `zipfile-deflate64` package:
             open(os.path.join("wmg", os.path.basename(i.filename)), "wb").write(z.read(i))
     EOF
     python tools/reference/fit_sei_wmg.py wmg
+    python tools/reference/fit_sei_wmg.py wmg --table tests/golden/nmc_21700_lgm50/wmg_storage_growth.csv
 
 Each file holds `calResults` with per-cell C/3 capacity (`Capacity.indCap`, one row per
 reference test), 10 s pulse resistance at five SOCs (`Resistance`, means only) and the
@@ -393,7 +394,43 @@ def main(directory: str):
         print(f"  SOC {soc:.2f}, {tc} C: closed form {cf:.4f}  PyBaMM {ref:.4f}  ({(cf / ref - 1) * 100:+.2f} %)")
 
 
+def write_growth_table(data, path: str):
+    """The cells' storage-driven fade growth after the first post-storage test, per condition.
+
+    What `crates/sim-data/tests/sei_wmg.rs` (exit 5 of `docs/plans/phase-10-sei.md`) holds the
+    engine to: the quantity `growth_rms` scores, `excess(t) - excess(t1)`, at every test from
+    `t1` on, for every storage SOC above 0 % at all three temperatures (0 C included, scored
+    there as the held-out prediction). Data only -- no fit, no model -- so the engine's check
+    does not lean on the 1.567 ratio the fit converted lithium to capacity with.
+    """
+    lines = [
+        "# Storage-driven capacity fade of LG M50 cells, growth after the first post-storage test.",
+        "# Source: WMG Calendar Ageing Dataset - LGM50 Commercial Cells (39 Storage Conditions),",
+        "# J. A. Kuzhiyil and W. D. Widanage, zenodo.org/record/14577286, CC-BY-4.0; article:",
+        "# Kuzhiyil et al., Applied Energy 382 (2025) 125221, doi:10.1016/j.apenergy.2024.125221.",
+        "# Derived by tools/reference/fit_sei_wmg.py --table from the 39 calAnal files: per-cell",
+        "# C/3 capacity (1.67 A to 4.2 V, no hold; 1.67 A to 2.5 V; tests at ~25 C whatever the",
+        "# storage temperature), each cell normalised to its own day-0 capacity, averaged over",
+        "# the cells present; minus the 0 %-SOC cells' fade at the same temperature (interpolated",
+        "# to the same day); minus that difference at the condition's first post-storage test.",
+        "# Excluded: 45 C / 90 % from day 400 (only its weakest cell remains).",
+        "# temp_c: storage temperature [C]; soc_pct: storage SOC [%]; day: storage day of the test;",
+        "# growth_pct: storage-driven fade growth since the first post-storage test [% of capacity]",
+        "temp_c,soc_pct,day,growth_pct",
+    ]
+    for tc, s in conditions(data, (0, 25, 45)):
+        t, ex = excess(data, tc, s)
+        t, ex = t[1:], ex[1:]
+        lines += [f"{tc},{s},{day:.4f},{g - ex[0]:.6f}" for day, g in zip(t, ex)]
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"wrote {len(lines)} lines to {path}")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) == 4 and sys.argv[2] == "--table":
+        write_growth_table(load(sys.argv[1]), sys.argv[3])
+    elif len(sys.argv) == 2:
+        main(sys.argv[1])
+    else:
         sys.exit(__doc__)
-    main(sys.argv[1])
