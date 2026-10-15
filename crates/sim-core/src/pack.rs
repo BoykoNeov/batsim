@@ -1215,8 +1215,9 @@ pub struct FilmView {
     /// of `dq` changes it by `−(U_p − U_n)·dq` as it must. Withdrawing lithium from the
     /// negative into the film then **raises** that stored energy by `U_n·dq` — the lithium
     /// is booked out of the graphite at its potential, not at the cell's voltage, which
-    /// would be 30–40 times larger. Over any stretch,
-    /// `ΔW = −∫V·I·dt − ∫Q·dt + Σ energy_last_step_j`. The SEI reaction's own heat (the
+    /// would be 30–40 times larger. So `ΔW = −∫V·I·dt − ∫Q·dt + Σ energy_last_step_j`,
+    /// measured to 2.3e-9 over a hot year **at rest** (`sei_film.rs`); under current it holds
+    /// to the accuracy of the heat integral, which is not exact. The SEI reaction's own heat (the
     /// lithium and the electrolyte going into the film) is not in the parameter set and is
     /// not modelled.
     pub energy_last_step_j: Option<f64>,

@@ -566,9 +566,9 @@ supersedes the list above: (A) the fit, (B) `AgingModel`, (C) the film on the `S
 
 *Slice C done 2026-10-15* (v26, `phase-10-sei.md` last addendum): the film grows on the `Spm`
 when `AgingConfig::calendar = Film`; exits 1–4 pass in `sei_golden.rs` and `sei_film.rs`. Exit 5
-(the WMG cells in the engine) is the next slice. Recorded there and open: the reversal edge of an
-aged filmed cell, and that the law stores 85 % exactly like full (flat graphite potential), so
-the lesson cannot teach "store at 80 %".
+(the WMG cells in the engine) is the next slice. Recorded there and open: the reversal channel's
+voltage on an aged filmed cell (heat booking, not a voltage step), and that the law stores 85 %
+exactly like full (flat graphite potential), so the lesson cannot teach "store at 80 %".
 
 ### Phase 11 — the fitting pipeline (H3)
 

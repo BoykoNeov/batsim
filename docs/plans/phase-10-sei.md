@@ -310,16 +310,23 @@ cells, run on WMG's own capacity steps in the engine) is the next slice, as deci
 
 | | 85 %, 25 °C | 85 %, 45 °C | 30 %, 25 °C | 30 %, 45 °C | 100 %, 25 °C |
 | --- | --- | --- | --- | --- | --- |
-| table vs function, PyBaMM, a year (the floor) | 0.06 % | 0.05 % | 2.02 % | 1.44 % | 0 |
-| engine vs PyBaMM on the table, worst day ≥ 7 | 0.047 % | 0.031 % | 0.22 % | 0.47 % | 0.047 % |
-| engine vs PyBaMM on Chen2020's curve | 0.09 % | 0.09 % | 2.89 % | 2.32 % | 0.05 % |
+| table vs function, PyBaMM, after a year | 0.06 % | 0.05 % | 2.03 % | 1.44 % | 0 |
+| table vs function, PyBaMM, worst day ≥ 7 (the floor) | 0.08 % | 0.06 % | 2.87 % | 2.55 % | 0 |
+| engine vs PyBaMM on the table, worst day ≥ 7 | 0.00002 % | 0.00001 % | 0.0004 % | 0.0016 % | ≈ 0 |
+| engine vs PyBaMM on Chen2020's curve, worst day ≥ 7 | 0.08 % | 0.06 % | 2.87 % | 2.55 % | ≈ 0 |
 
-The plan's "≈ 4 % in growth" for the table floor was an estimate; measured it is at most 2 %, and
-nothing on the 85 % and 100 % plateau. The tolerances are 0.6 % against the table reference and
-each condition's own floor + 1 % against the function one. Also measured: the log-log slope over
-days 30–365 at 45 °C / 85 % is 0.559 with the film at 4.9× its start by day 30 (24.3 nm) and
-16.6× by a year (83.0 nm); full-to-30 % after a year at 25 °C is 6.655 (PyBaMM on the table 6.658,
-on the function 6.524); 10 s and 1 h ticks agree to 1.2e-7 over two days; the film's energy
+**PyBaMM is solved at 1e-10 for this.** At its default tolerance (1e-6) the reference itself
+under-grew the film in the first days — 0.82 % at day 3 at 30 % / 45 °C, mostly gone by day 30 —
+and the engine first read 0.47 % off it. It was not the engine: 10-minute and 1-hour engine steps
+agreed to 0.001 %, 5 and 20 shells identically, and PyBaMM's own particle surface sat 3e-8 in
+stoichiometry from its bulk, too little to matter; at 1e-10 PyBaMM moved onto the engine to about
+0.002 % on every day checked. The plan's "≈ 4 % in growth" for the table floor was an estimate;
+measured it is at most 2.9 %, and nothing on the 85 % and 100 % plateau. The tolerances are
+0.01 % against the table reference and each condition's worst-day floor + 0.01 % against the
+function one. Also measured: the log-log slope over days 30–365 at 45 °C / 85 % is 0.559 with the
+film at 4.9× its start by day 30 (24.3 nm) and 16.6× by a year (83.0 nm); full-to-30 % after a year
+at 25 °C is 6.6546 in both the engine and PyBaMM on the table (3e-6 apart; on the function
+6.520); 10 s and 1 h ticks agree to 1.2e-7 over two days; the film's energy
 closes the per-electrode ledger to 2.3e-9 over a hot year (48.6 J); ninety days at 45 °C / 85 %
 add 0.61 mΩ and a reported resistance ratio of 1.039, bit-identically with
 `r_growth_per_capacity_loss` at zero.
@@ -345,13 +352,20 @@ until its first tick (`a_fresh_film_moves_nothing_until_it_grows`).
 
 **Recorded, not fixed.**
 
-- **The reversal edge on an aged filmed cell.** `empty_voltage` and `kinetics_at_empty_v` read the
-  positive at `stoich_max`, which a filmed cell no longer reaches when its negative empties (the
-  lost lithium leaves the positive short of full lithiation). Over-discharging an aged filmed cell
-  will show a small step in voltage at the edge. Not reached by exits 1–4.
+- **The reversal channel's voltage on an aged filmed cell.** `empty_voltage` reads the positive at
+  `stoich_max`, which a filmed cell no longer reaches when its negative empties (the lost lithium
+  leaves the positive short of full lithiation). It does **not** put a step in the terminal
+  voltage — measured, a cell aged a hot year at 85 % passes through empty at C/20 as smoothly as a
+  fresh one (5.8 against 5.2 mV over the first 10 s past the edge, both the ramp itself), because
+  past the edge the curve is the particles' own minus the ramp. What reads it is the reversal
+  channel's open-circuit voltage, which books that channel's heat and sets where the ramp stops:
+  on the aged cell it is low by `U_p(y) − U_p(stoich_max)`, of the order of the 12.5 mV by which
+  that cell reaches empty higher than the fresh one (measured at C/20). Not reached by exits 1–4.
+- **`soc_deficit` on a filmed cell** is a fraction of the handed (fresh-window) capacity, while
+  `soc` is a fraction of today's: the two are no longer on one scale. Stated, not changed.
 - **85 % stores like 100 %.** The graphite potential is flat at about 0.092 V above roughly 70 %
   SOC, so the film grows at the same rate from there to full: PyBaMM's year at 25 °C loses
-  0.002699 mol at both, to 0.01 %. The real cells disagree (WMG's high-SOC fade keeps rising),
-  and that is this law's, not this implementation's. **Slice E's lesson must not teach "store at
+  0.002699 mol at both, to 0.01 %. That is the law's, not this implementation's; whether WMG's
+  cells show the same plateau is not checked here. **Slice E's lesson must not teach "store at
   80 %, not full"; full against 30 % (6.7×) is the contrast this model can show.** Noted by a side
   review of the golden, 2026-10-15.

@@ -10,12 +10,14 @@
 //! * **`table`** runs PyBaMM on the engine's piecewise-linear graphite table. The engine and
 //!   that reference integrate the same law on the same potential, so what separates them is
 //!   the integrator — the potential frozen over each tick, PyBaMM's adaptive steps — and the
-//!   tolerance against it is tight.
+//!   tolerance against it is tight. PyBaMM is solved at 1e-10 for it; at its default 1e-6 it
+//!   was itself 0.8 % off in the first days.
 //! * **`function`** runs PyBaMM on Chen2020's own graphite curve, which the table
 //!   approximates to 1.90 mV. The rate goes as `exp(−F·U_n/RT)`, so that error is measured in
-//!   the CSV itself: 0.06 % of the year's lithium at 85 %, 2.0 % at 30 % and 25 °C, 1.4 % at
-//!   30 % and 45 °C, none on the flat top at 100 %. The tolerance against it is that floor
-//!   plus the integrator's, not a number chosen to pass.
+//!   the CSV itself: after a year 0.06 % of the lithium at 85 %, 2.0 % at 30 % and 25 °C,
+//!   1.4 % at 30 % and 45 °C, none on the flat top at 100 % — and on its worst day from day 7,
+//!   0.08 / 0.06 / 2.87 / 2.55 / 0 %. The tolerance against it is that worst day, not a
+//!   number chosen to pass.
 //!
 //! Compared on the lithium the film took — PyBaMM's "Loss of lithium to negative SEI", less
 //! its day-0 value — read two ways on the engine's side: [`sim_core::FilmView`]'s own count,
@@ -145,40 +147,48 @@ fn worst(
     (film, cap)
 }
 
+/// What the table costs on its worst day, from day 7: `|table/function − 1|`, from the CSV.
+fn table_floor(r: &Reference) -> f64 {
+    r.rows
+        .iter()
+        .filter(|row| row.0 >= 7.0)
+        .map(|row| (row.2 / row.1 - 1.0).abs())
+        .fold(0.0, f64::max)
+}
+
 /// Exit 1: a year at rest matches PyBaMM at two SOCs and two temperatures (and the full
-/// cell exit 3 needs), held tightly to the table reference and within the table's measured
-/// floor of the function one.
+/// cell exit 3 needs), held tightly to the table reference and, against the function one,
+/// to the table's own measured cost.
 ///
 /// # The two tolerances, measured
-/// Against the **table** reference the worst disagreement over the year, from day 7, was
-/// 0.047 / 0.031 / 0.22 / 0.47 / 0.047 % at 85 % 25 °C / 85 % 45 °C / 30 % 25 °C / 30 % 45 °C
-/// / 100 % 25 °C: the integrator's own error, the potential frozen over each one-hour tick
-/// against PyBaMM's adaptive steps, largest where the graphite curve is steepest. 0.6 %.
+/// Against the **table** reference the worst disagreement over the year, from day 7, is
+/// 0.00002 / 0.00001 / 0.0004 / 0.0016 % at 85 % 25 °C / 85 % 45 °C / 30 % 25 °C / 30 % 45 °C,
+/// the same law integrated two ways. Held to 0.01 %. Against a reference solved at PyBaMM's
+/// default tolerance it had read 0.47 % at 30 % and 45 °C, which was PyBaMM's error, not the
+/// engine's (see `tools/reference/sei_golden.py`).
 ///
-/// Against the **function** reference it was 0.09 / 0.09 / 2.89 / 2.32 / 0.05 %, against the
-/// table floors 0.06 / 0.05 / 2.02 / 1.44 / 0 % that the CSV itself measures. The bound is
-/// each condition's own floor plus 1 %, so it widens only where the table is known to be
-/// wrong, and by how wrong.
+/// Against the **function** reference it is whatever the table costs: 0.08 / 0.06 / 2.87 /
+/// 2.55 %. Held to the table's own worst day in the CSV plus 0.01 %, so the bound is the
+/// table's error measured, not a number chosen to pass.
 #[test]
 fn a_year_at_rest_matches_pybamm() {
     for r in references() {
         let engine = engine_year(&r);
         let (film_t, cap_t) = worst(&engine, &r, |row| row.2);
         let (film_f, cap_f) = worst(&engine, &r, |row| row.1);
-        let year = r.rows.last().expect("rows");
-        let floor = (year.2 / year.1 - 1.0).abs();
+        let floor = table_floor(&r);
         let what = format!("SOC {:.2} at {:.2} K", r.soc, r.temp_k);
         assert!(
-            film_t < 0.006 && cap_t < 0.006,
-            "{what}: the film is {:.3} % and the reported capacity {:.3} % from PyBaMM run on \
-             the engine's own graphite table; the integrator was measured at 0.47 % at worst",
+            film_t < 1e-4 && cap_t < 1e-4,
+            "{what}: the film is {:.5} % and the reported capacity {:.5} % from PyBaMM run on \
+             the engine's own graphite table; measured at 0.0016 % at worst",
             film_t * 100.0,
             cap_t * 100.0
         );
         assert!(
-            film_f < floor + 0.01 && cap_f < floor + 0.01,
-            "{what}: the film is {:.3} % and the reported capacity {:.3} % from PyBaMM on \
-             Chen2020's graphite curve, past the table's measured {:.3} % plus 1 %",
+            film_f < floor + 1e-4 && cap_f < floor + 1e-4,
+            "{what}: the film is {:.4} % and the reported capacity {:.4} % from PyBaMM on \
+             Chen2020's graphite curve, past the table's own worst day, {:.4} %",
             film_f * 100.0,
             cap_f * 100.0,
             floor * 100.0
@@ -249,9 +259,9 @@ fn fade_goes_as_root_time_once_the_film_has_grown() {
 /// at the fitted constants — the law's whole claim, that the film grows faster where the
 /// graphite potential is lower.
 ///
-/// The ratio after a year at 25 °C, PyBaMM on the engine's table, is 6.658 (on Chen2020's own
-/// curve 6.524, the difference being the table's 2 % at 30 %); the engine's is 6.655. The
-/// engine is held within 1 % of the table reference's ratio.
+/// The ratio after a year at 25 °C, PyBaMM on the engine's table, is 6.6546 (on Chen2020's own
+/// curve 6.520, the difference being the table's 2 % at 30 %); the engine's is 6.6546 too, to
+/// 3e-6. Held within 1e-4 of the table reference's ratio.
 #[test]
 fn stored_full_loses_more_than_stored_at_thirty_percent() {
     let refs = references();
@@ -274,7 +284,7 @@ fn stored_full_loses_more_than_stored_at_thirty_percent() {
         "stored full must cost measurably more than stored at 30 %: ratio {ratio:.3}"
     );
     assert!(
-        (ratio / ratio_ref - 1.0).abs() < 0.01,
+        (ratio / ratio_ref - 1.0).abs() < 1e-4,
         "full-to-30 % ratio after a year: engine {ratio:.4}, PyBaMM on the table {ratio_ref:.4}"
     );
 }
