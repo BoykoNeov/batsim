@@ -44,6 +44,7 @@ One per phase, the slice notes under it. Each records what was measured, what wa
 | [`phase-10-sei.md`](phase-10-sei.md) | Phase 10 — the plan: an interstitial-diffusion SEI film on the `Spm`, its rate fitted to the WMG LG M50 calendar data; slice C (the film in the engine, v26), exit 5 (the WMG cells run in the engine) and slice D (the film on the `Dfn`, node by node, v27) in its last addenda |
 | [`phase-10-slice-e-lesson.md`](phase-10-slice-e-lesson.md) | Phase 10, slice E — the film taught: guided-path steps 38–40 in a ninth chapter, one cell on a shelf for 365 days by the drawn curve and by the film; the speed slider to 10⁶× (held), marks re-armed on Load and Restart; Phase 10 complete |
 | [`phase-10-slice-a-fit.md`](phase-10-slice-a-fit.md) | Phase 10, slice A — the film fitted to the WMG cells: right where, wrong when (the storage effect is front-loaded), resistance 15–25× too high; the owner's re-decision |
+| [`phase-11-spike.md`](phase-11-spike.md) | Phase 11, the spike — the LG M50 circuit fitted to the DFN (10.3 → 4.0 mV RMS), why Chen2020 is too mild when cold, which placeholders have any source at all, and the 23 lesson claims a fit moves; the owner's four decisions |
 
 ## Engine physics slices
 
