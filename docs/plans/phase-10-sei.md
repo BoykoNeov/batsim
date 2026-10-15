@@ -447,8 +447,9 @@ Exit criteria 1–5 now all pass on the `Spm`. Next is slice D (the film on the 
 
 ## Addendum 2026-10-15 — slice D designed: the film on the `Dfn`
 
-No code written. Designed against `70ffca0`, reviewed once. Two forks are the owner's and are
-marked **open** below; nothing that depends on them starts before they are answered.
+No code written. Designed against `70ffca0`, reviewed once. Two forks were the owner's.
+**Owner, 2026-10-15: fork 1 is (b), the film's resistance per node inside the reaction; fork 2
+is report only.** Both are recorded where they are argued below.
 
 **What is different about the `Dfn`.** It has one particle per negative-electrode node, a
 reaction current that varies across the electrode, and a stored Thévenin line (`tangent`) that
@@ -474,7 +475,7 @@ the negative's grid is uniform (its doc says so); the film's lithium count and `
 on that same assumption, and the note on `bulk_stoich` gains the film as a second reader of it.
 At rest every node sits at one potential and the film grows uniformly.
 
-**Open — fork 1: where the film's resistance goes.**
+**Fork 1: where the film's resistance goes — decided (b).**
 
 - **(a) One lump in series**, `ρ·(L̄ − L0)/A_neg` on `L̄` the node mean, added to
   `Sides::r_contact` — what the `Spm` does. No change to the solve or its Jacobian. Right while
@@ -553,7 +554,7 @@ final snapshot, and the 1e-15 perturbation re-checked to move each hash.
 4. **The ledger closes** at rest over a hot year, per node, to the `Spm`'s 1e-6.
 5. **Snapshot round trip** of a filmed `Dfn` mid-year, bit-identical continuation.
 
-**Open — fork 2: the WMG cells on the `Dfn`.** Exit 5 ran WMG's own capacity steps on a filmed
+**Fork 2: the WMG cells on the `Dfn` — decided, report only.** Exit 5 ran WMG's own capacity steps on a filmed
 `Spm`. On the `Dfn` the same film gives the same lithium at rest (exit 1), but the capacity the
 steps read differs through the electrolyte, so the score will move. The plan's exits do not
 require it. Recommended: **report it, not gate on it** — run it once, write both scores and the
