@@ -308,6 +308,8 @@ fn growth_rms(results: &[(&Condition, Vec<f64>)]) -> f64 {
 /// plus 0.02 points (`docs/plans/phase-10-sei.md`, exit 5 addendum).
 ///
 /// Measured: **0.6241 %** at 25 + 45 °C over 24 conditions, **0.4046 %** at 0 °C over 12.
+/// Since Phase 11 slice C (the potentials shift with temperature, the solid diffuses by
+/// ORegan2022's activation energies): **0.6275 %** and **0.4015 %**, still inside the bar.
 #[test]
 fn the_film_reproduces_the_wmg_cells() {
     let all = conditions();

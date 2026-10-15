@@ -1,6 +1,7 @@
 # Phase 11 — the LG M50 file, fitted where anything can fit it
 
-**Status: PLANNED 2026-10-15.** Written after the spike (`phase-11-spike.md`), which found the
+**Status: COMPLETE 2026-10-15** (all six exit criteria; exit 5 against a bar set after
+measurement, which its addendum says). Written after the spike (`phase-11-spike.md`), which found the
 roadmap's exit unreachable and the fit's lesson cost larger in kind than a re-measure. The
 owner's decisions below supersede `docs/ROADMAP.md` §Phase 11's slices and exit.
 
@@ -382,3 +383,55 @@ Two more, found by the slice's full suite after the reversible-mean change:
   current landed 2.6e-17 A past the cell's own 0.2065 A edge, and `split` booked a 5.1e-18
   deficit. Within eight ulps of the edge, from no deficit, the current is now the edge — the
   same "rounding hair either side" convention `pack_current_window` already applies at zero.
+
+## Addendum 2026-10-15 — slice D: the list, the documents; PHASE 11 COMPLETE
+
+**`crates/sim-data/tests/lgm50_provenance.rs`.** A key's *label* is its inline comment and the
+comment block directly above it, so section prose ("All placeholders, scaled from …") labels
+nothing; the labelled set must equal the fixed list. Every constant the phase replaced must name
+its source (and, for the fit, the residual per temperature) in its paragraph or its section's
+preamble; every constant whose paragraph uses LG's sheet must carry its marking. The scanner's
+keys are checked against the `toml` crate's, so a key it cannot read is a failure, not a silence.
+Each rule is broken once in a copy of the file and must fail **for its own reason** (a fragment of
+the expected message): writing those cases found two holes in the first draft — the second `[[rc]]`
+pair was never checked (both pairs share key names; the check took the first), and the
+"must fail" test passed while the shipped file itself failed (it now checks the shipped file
+first).
+
+**The list is nineteen, one more than decision 1 named.** `r_growth_per_capacity_loss` was in
+neither the fifteen nor the calendar curve, and was never put to the owner. The WMG cells
+**bound** it — resistance rise per 1 % of capacity lost spans 0.5–2.9 %, and 1.5 lies inside —
+but Phase 10's fit to that data left a residual the size of the signal, and its own note withdrew
+"the cells and the guess agree". A bound is not a fit — the reason cycle fade stays listed
+although LG's sheet bounds it — so it stays labelled (now with the bound in its provenance) and
+on the list. Decision 1 forbids only shrinking the list without a note. Recorded for the owner to
+overrule; fitting it would need the resistance data committed and would likely move the shelf
+lessons decision 4 protected.
+
+**The file's own prose was false in four places** and was corrected before the test could pass
+honestly: the header still called the circuit's resistance a placeholder, `[thermal]`
+"derived from Chen2020's keys" and `[spm]`/`[dfn]` Chen2020-only; `[reversal] fade_per_ah` said
+the porous models never pay it (false since `porous-reversal.md`); and `[thermal]` cited LG's sheet
+without its marking.
+
+**Scores re-measured after slice C** (the potentials now shift with temperature): Phase 10's exit 5
+on the `Spm`, **0.6275 %** RMS at 25 + 45 °C and **0.4015 %** held-out at 0 °C (were 0.6241 and
+0.4046; bars 0.642 and 0.425); the report on the `Dfn` (`--ignored`), 0.6289 and 0.4021 (were
+0.6231 and 0.4051), the two models within 0.043 points (45 °C / 95 %, day 752).
+
+**Documents.** `CLAUDE.md` (Phase 11's entry with its recorded limits, the entropic heat's exact
+mean, the new optional sections, the list), the README's status table (Phases 8–11 added — it
+had stopped at 7), `docs/ROADMAP.md` (H3's LG M50 half done, §Phase 11 complete with the failed
+pre-set bar named, two closed rows, `SNAPSHOT_VERSION` 28, the note count).
+
+**Exit, criterion by criterion.**
+
+1. `fit_ecm.py` reprints the shipped block identically; the provenance carries the residuals —
+   slice A, and pinned by `lgm50_provenance.rs`.
+2. The circuit replays the DFN within the bar recorded before the run (`ecm_fit.rs`).
+3. The placeholders are exactly the fixed list (`lgm50_provenance.rs`; nineteen, above).
+4. Entropic heat and the potential's shift in all three models, every energy ledger closing with
+   it (`entropic.rs`, `spm_long_step.rs`, `porous_reversal.rs`, `dfn_reversal.rs`, `sei_*.rs`).
+5. The cold `Dfn` (`dfn_cold.rs`) — **not within the bar set before the run**: that bar failed at
+   415 mV, and the bar now pinned was set after measurement, as the slice C addendum records.
+6. Suite, clippy and the guided path's claims green; steps 12 and 14 redesigned (slice A).

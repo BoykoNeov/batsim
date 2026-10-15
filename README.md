@@ -29,7 +29,7 @@ Key invariants:
 
 ## Status
 
-Phases 0–7 are complete. Each phase's exit criterion is a committed test rather than a
+Phases 0–11 are complete. Each phase's exit criterion is a committed test rather than a
 judgement call, so the right-hand column is the thing to run if you doubt a row.
 
 | phase | what landed | exit criterion pinned by |
@@ -42,13 +42,26 @@ judgement call, so the right-hand column is the thing to run if you doubt a row.
 | 5 | `sim-godot` — a `BatteryPack` GDExtension node, exported properties, fixed-`dt` accumulator, signals, and a Godot demo scene | `sim-godot/tests/godot_gate.rs` (needs Godot — see below) |
 | 6 | the `Spm` porous-electrode cell model — radial solid diffusion, Butler–Volmer kinetics, a nonlinear pack solve, and an extracted LG M50 parameter set | `sim-data/tests/spm_golden.rs`, `spm_exact_bits.rs`, `sim-core/tests/spm_cell.rs` |
 | 7 | the `Dfn` cell model — electrolyte transport solved rather than assumed, an analytic banded Jacobian, and a pack tangent taken as a sensitivity solve | `sim-data/tests/dfn_golden.rs`, `dfn_cell.rs`, `dfn_chemistry.rs` |
+| 8 | new chemistries as data — LTO with no Rust changed, NiMH's resting-voltage hysteresis — each taught in the guided path | `sim-data/tests/lto_chemistry.rs`, `nimh_chemistry.rs`, `path_claims.rs` |
+| 9 | the LFP many-particle cell (`SpmEnsemble`): a flat plateau and rest hysteresis from particles filling one at a time | `sim-data/tests/ensemble.rs`, `lfp_ensemble.rs` |
+| 10 | an SEI film that ages the `Spm` and `Dfn` by physics, fitted to the WMG LG M50 storage data | `sim-data/tests/sei_golden.rs`, `sei_film.rs`, `sei_wmg.rs`, `sei_dfn.rs` |
+| 11 | the LG M50 file fitted where anything can fit it: its circuit fitted to the DFN, its limits from LG's sheet, entropic heat and the cold in all three models, the rest on a fixed placeholder list | `sim-data/tests/ecm_fit.rs`, `entropic.rs`, `dfn_cold.rs`, `lgm50_provenance.rs` |
 
 Work continues past the phase plan, and [`docs/ROADMAP.md`](docs/ROADMAP.md) is where it
 is planned: every scientific hurdle the design notes record as open, what each costs, and
-the phases proposed after 8. [`docs/plans/README.md`](docs/plans/README.md) indexes the
+the phases proposed after 8 (Phases 9–11 since built). [`docs/plans/README.md`](docs/plans/README.md) indexes the
 notes themselves.
 
-The most recent slice is the third mechanism Phase 8's spike measured the need for and
+The most recent phase, 11, fitted the LG M50 file where anything can fit it. Its
+equivalent circuit is now fitted to the DFN rather than guessed (4.85 mV RMS at 1C and
+25 °C, residuals per temperature in the file); the cell's limits and mass come from LG's
+specification sheet; all three models carry ORegan2022's measured entropy — reversible heat,
+and a potential that shifts with temperature — and its cold behaviour. What nothing can source
+(abuse and aging constants) is on a fixed list a test holds. The two pulse lessons a fitted
+circuit broke were rewritten rather than re-numbered. See
+[`docs/plans/phase-11-fitting.md`](docs/plans/phase-11-fitting.md).
+
+An earlier slice added the third mechanism Phase 8's spike measured the need for and
 twice cut: a **charge-acceptance taper**. A nickel cell stops storing charge gradually as
 it fills — oxygen evolution takes a growing share of the current — and the engine used to
 model that as a hard clamp at full, which made the top of every NiMH charge a one-timestep
@@ -120,10 +133,10 @@ that every number is fitted.
 
 The LG M50 file is the first with an `[spm]` section, and the first whose parts have
 genuinely different provenance: its porous-electrode parameters are **extracted** verbatim
-from PyBaMM's Chen2020 set (so each has a literal citation), while its equivalent-circuit
-resistances remain labelled placeholders. Reading a voltage out of one half is reading
-Chen2020; out of the other, a placeholder — and running the *same* cell through both
-models is the comparison Phase 6 exists for. The NMC 18650 set is hand-fit to datasheet
+from PyBaMM's Chen2020 set (so each has a literal citation), and since Phase 11 its
+equivalent-circuit resistances are **fitted** to that set's DFN, with the residuals in their
+provenance. Running the *same* cell through both models is the comparison Phase 6 exists
+for, and since the fit, where they part is the circuit's own limit rather than a guess. The NMC 18650 set is hand-fit to datasheet
 curves and has no PyBaMM source; see its provenance line for why it cannot honestly
 acquire one.
 

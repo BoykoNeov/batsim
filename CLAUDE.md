@@ -264,7 +264,12 @@ and double as the scenario file format.
 
 - One lumped node per cell: `C_th·dT/dt = Q_gen + Σ_j k_ij·(T_j − T_i)
   + h·A·(T_env − T_i)` where `T_env` is ambient or coolant.
-- `Q_gen = I²·(R0 + Σ R_rc)` plus optional entropic term `I·T·dOCV/dT`.
+- `Q_gen = I²·(R0 + Σ R_rc)` plus optional entropic term `I·T·dOCV/dT` — on the porous models
+  a per-stoichiometry table (`[spm.*.entropic]`), and on every model the same coefficient also
+  shifts the potential, `U(T) = U(t_ref) + (T − t_ref)·dU/dT`, when `t_ref_k` is stated. Its step
+  mean is exact: the charge (circuit) or bulk stoichiometry (porous) moves linearly over a step
+  and the tables are piecewise linear, so the reversible heat integrates in closed form
+  (`docs/plans/phase-11-fitting.md`, slice C).
 - **What the network integrates is the step *mean* of that, not its first instant.**
   The electrical solve runs once per step, so the RC overpotentials it froze are the
   one thing in the heat that moves within the step — and they have an exact mean,
@@ -373,7 +378,9 @@ Eight ship: LFP 26650, NMC 18650, LG M50 21700 (`[spm]`, the only `[spm.sei]` an
 `[spm.positive.regular_solution]`, which the plain `Spm` and the `Dfn` refuse),
 LTO 20 Ah, sodium-ion 18650, NiMH sub-C (`[hysteresis]`, `[charge_acceptance]`, an OCV
 temperature correction) and a 2 V AGM lead-acid cell (`[diffusion]`). Every constant carries
-a provenance note, and many of those notes say "placeholder"; `docs/ROADMAP.md` lists which.
+a provenance note, and many of those notes say "placeholder"; `docs/ROADMAP.md` lists which. The
+LG M50 file's are a fixed list `crates/sim-data/tests/lgm50_provenance.rs` holds (Phase 11): it
+may shrink only by a note that says what replaced each constant.
 
 ```toml
 [meta]
@@ -420,7 +427,11 @@ soc_onset = 0.985            # above this the accepted share falls linearly to 0
 # Also optional, each documented on its params struct in sim-core::chem:
 #   [hysteresis]  resting-voltage memory (scale_v, gamma, [hysteresis.width_over_soc])
 #   [diffusion]   a Peukert-shaped rate penalty (lead-acid)
-#   [spm], [dfn]  porous-electrode parameters, extracted from a PyBaMM set
+#   [spm], [dfn]  porous-electrode parameters, extracted from a PyBaMM set; with
+#                 [spm.*.entropic] (entropy tables) and [dfn.electrolyte_temperature]
+#                 (Landesfeind 2019's forms) since Phase 11
+#   [r0] rc_t_ref_k  the RC resistances follow R0's temperature ratio from this reference,
+#                 capacitance held (Phase 11; on the LG M50 file only)
 #   [spm.positive.regular_solution]  u0_v, omega_ev: a two-phase (non-monotone) positive
 #                 potential. Read ONLY by the many-particle cell, which reads it instead of
 #                 [spm.positive.ocp]; Pack::new refuses it under Spm and Dfn
@@ -561,7 +572,18 @@ the previous one's tests pass.
   the `Dfn` node by node (D, v27, `sei_dfn.rs`), and the lesson (E, guided-path steps 38–40,
   `docs/plans/phase-10-slice-e-lesson.md`). Plan and the other slice notes in
   `docs/plans/phase-10-sei.md`.
-- **Phases 11 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
+- **Phase 11 — the LG M50 file, fitted where anything can fit it.** **Complete** 2026-10-15:
+  its circuit fitted to the DFN (`tools/reference/fit_ecm.py`, 4.85 mV RMS at 1C 25 °C, the
+  residuals per temperature in its provenance), its limits and mass from LG's specification
+  sheet (cited with its CONFIDENTIAL / Tentative marking), ORegan2022's entropy and cold data in
+  all three models (v28: entropic tables and the potential's temperature shift, Landesfeind 2019
+  electrolyte forms, the opt-in RC temperature rule), and the 19 constants nothing can source on
+  a fixed list `crates/sim-data/tests/lgm50_provenance.rs` holds. **Recorded limits:** a `Dfn`
+  under a thermal network wants steps of at most 15 min now its transport depends on temperature
+  (a half-hour 1C step books 10.5 % too much heat); at −10 °C its recommended 10/5/10 grid cuts
+  off 4.4 % early (20/10/20 within a second). Plan, owner decisions and slice addenda in
+  `docs/plans/phase-11-fitting.md`.
+- **Phases 12 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.
 - **Phase 8 — new chemistries.** One cheap-tier lithium parameter set added with

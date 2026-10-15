@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
-Phases 0–10 are complete and each is pinned by a committed test (see the README's status
-table). A hundred and twenty-six design notes under `docs/plans/` record what each slice measured,
+Phases 0–11 are complete and each is pinned by a committed test (see the README's status
+table). A hundred and twenty-seven design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -21,7 +21,7 @@ test passes — not when the list of interesting things runs out.
 Four cell models behind one API (`Ecm`, `Spm`, `Dfn`, and since Phase 9 slice B the
 many-particle `SpmEnsemble`), eight chemistries, a thermal
 network, a sensor-limited BMS, four capacity-fade mechanisms with matching resistance
-growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 27,
+growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 28,
 and four clients (server, browser, Godot, an example script). Against grid-converged
 PyBaMM references the SPM tracks to 2–7 mV over a discharge and the DFN to 5.8 mV at 1 C.
 
@@ -169,6 +169,17 @@ through both models" comparison an honest one.
 **Cost.** Python, no engine change, one file at a time; but every fitted number moves a
 trajectory, and on LG M50 the ECM pulse-train lessons (steps 12–14) quote numbers that
 would move with it. Budget the claims re-measurement into the slice.
+
+**LG M50 done (Phase 11, 2026-10-15; `phase-11-fitting.md`).** Its circuit is fitted to the DFN
+(`fit_ecm.py`, residuals per temperature in the provenance), its `[cell]` limits and mass are
+cited from LG's sheet, and it carries ORegan2022's entropy tables in all three models, with the
+potential's temperature shift and the electrolyte's cold. Its remaining placeholders (19:
+cycle fade, reversal, runaway, plating, the film's starting thickness, the drawn calendar
+curve, and `r_growth_per_capacity_loss`, which the WMG cells bound but cannot fit) are a fixed
+list `lgm50_provenance.rs` holds. **Still open under H3:** every other file — the `[aging]` and
+`[reversal]` constants everywhere, NiMH's `gamma`, RC split and `dU/dT`, lead-acid's `[r0]` and
+`[diffusion]` refit (Phase 11's deferred slice), sodium-ion's plating gate, and entropic
+coefficients on the other lithium files.
 
 ### H4. Charge acceptance is one number, and the knee it competes with was placed by hand
 
@@ -616,6 +627,17 @@ capacity table; (D) the claims re-measurement each of those forces.
 pulse lessons quote numbers from a fitted circuit; every fit's residual is in its
 provenance line. Pinned by a test that greps the shipped files for the label.
 
+*Complete 2026-10-15* against the re-planned exit (`phase-11-fitting.md`, all six criteria):
+the circuit fitted and its rerun identical; its replay of the DFN within the bar set before the
+run; the placeholders exactly a fixed list (`lgm50_provenance.rs`, 19 — one more than the plan
+named: resistance growth is bounded by the WMG cells, not fitted); entropic heat and the
+potential's shift in all three models, every energy ledger closing; the cold `Dfn`
+(`dfn_cold.rs`) — **whose bar set before the run failed** (415 mV on the recommended grid, the
+electrolyte's diffusivity under-resolved cold), and whose final bar was set after measurement
+and says so; and the suite green with steps 12 and 14 redesigned. Recorded limits: a `Dfn`
+under a thermal network wants steps of at most 15 min; the recommended grid cuts off 4.4 %
+early at −10 °C. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
+
 ### Not phases: ~~H5 (determinism across platforms)~~ and ~~H6 (the thermal integrator)~~
 
 Each is one slice with a perturbation table and belongs before Phase 9 rather than after
@@ -687,3 +709,5 @@ Recorded so the inventory above is not re-derived from stale "Still open" sectio
 | over-discharge damage is ECM-only | `reversal-damage.md` | `porous-reversal.md` (the `Spm` at v22, the `Dfn` at v23) |
 | a `Dfn` driven past empty runs to 1e74 A under a short, inf at 20 A, −1.6 of a stoichiometry at 1 C | `dfn-long-step-holds.md` | `porous-reversal.md` (bulk-edge reversal, kinetics-at-empty continuation; v23; the electrolyte limit stays open under H8) |
 | the BMS can only coulomb-count (H7, engine half) | `ROADMAP.md` | `model-based-estimator.md` (`EstimatorConfig::Ekf`, four scenario twins; v24) |
+| the LG M50 circuit is a placeholder beside extracted porous models (H3, that file) | `phase-6-porous-electrodes.md` | `phase-11-fitting.md` (fitted to the DFN by `fit_ecm.py`, slice A) |
+| reversible heat is off on every lithium file, and read at one instant of a long step (H3) | `ROADMAP.md` | `phase-11-fitting.md` (ORegan2022's tables on LG M50 in all three models, v28; the exact step mean, slice C) |
