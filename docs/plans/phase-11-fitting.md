@@ -190,3 +190,47 @@ constant this phase replaced carries a provenance naming its fit and residual or
 5. The `Dfn` at −10 °C tracks the cold reference within its pre-set bar.
 6. The workspace suite, `clippy -D warnings` and the guided path's claims are green, with steps
    12 and 14 redesigned rather than re-numbered.
+
+## Addendum 2026-10-15 — slice E done: the engine, v27 → v28, nothing shipped moves
+
+Three commits, each green on the whole suite and `clippy -D warnings`:
+
+1. **The schema and the RC rule** (6ec73b2). All three fields land with the one bump; a
+   present entropic table or electrolyte section was refused until the commit that reads it.
+   The RC rule enters through one per-cell multiplier, `soh_resistance · R0(soc, T) /
+   R0(soc, rc_t_ref_k)`, passed wherever `soh_resistance` reached the pairs (it reached
+   nothing else), so the decay memo keys on it unchanged. **Every snapshot's bytes move this
+   time** — every chemistry has an `[r0]` table — and a v27 blob fails at that table with one
+   pair or two (`snapshot_version.rs`). The model-based estimator keeps the table's pairs and
+   takes the rule as model error, as it does aging. `rc_temperature.rs`: bit-identical at the
+   reference temperature, the scaled closed form to 1e-9 V away from it.
+2. **Entropic tables and the potential's temperature shift** (472f2f6), in the `Spm`, the
+   `Dfn` and the many-particle cell. **A design point the plan did not have**: with
+   `U(T) = U + (T − t_ref)·∂U/∂T`, the heat `I·(U(T) − V) − I·T·∂U/∂T` is exactly
+   `I·(U − t_ref·∂U/∂T − V)`, so every heat path reads that **stored-energy potential** in place
+   of `U` and needs no separate reversible term — and the energy ledger closes against the
+   same potential the film's lithium is booked at. Read at the bulk, where the irreversible
+   heat always was; PyBaMM reads `∂U/∂T` at the surface, and the two part only by its change
+   across the surface-to-bulk gap. A non-zero scalar `docp_dt_v_per_k` now shifts the potential
+   too (none ships). `entropic.rs`, on the LG M50 with a synthetic table: no move at `t_ref` to
+   the bit; a rested `Spm` and `Dfn` shift by `(T − t_ref)·(∂U_p/∂T − ∂U_n/∂T)` to 1e-12 V; the
+   ledger over a 1C half hour closes to 1.25 J with the tables against 1.19 J without, at −10
+   and +45 °C, while the tables move the heat by 337 and 399 J (bar 5 J, set before the run).
+3. **The electrolyte** (this commit). Landesfeind 2019's ratios, precomputed per step, times
+   the Nyman fits, product rule in the derivatives; exactly `(1, 0)` at `t_ref`.
+   `electrolyte_temperature.rs`: the ratios are the published forms to 1e-12 (their
+   derivatives to 1e-6 — **the first bar missed**, 1.0e-6 at one point, by the test's own
+   central difference at a step of 0.1 % of `c`; at 0.01 % it passes, so the instrument, not
+   the engine); bit-identical at `t_ref`; at −10 °C under 1C the whole section lowers the
+   voltage 136.9 mV and the conductivity alone 26.7 mV.
+
+**Perturbations**, each restored: dropping the RC factor, the stored-energy term, the `Spm`
+terminal's shift, the `Dfn` residual's shift, the diffusivity ratio's derivative term, or the
+conductivity ratio each reddens the test aimed at it. **Two blind spots, recorded.** The first
+version of the electrolyte test could not see the conductivity at all (its ratio dropped, still
+green — the diffusivity lowers a cold cell on its own); a conductivity-only chemistry fixed
+that. And dropping the conductivity ratio's derivative term — or zeroing the whole
+conductivity derivative, Nyman's part included — stays green on **every** Jacobian check in the
+repo: the row-relative comparison at 1e-5 cannot see entries that small. That is older than
+this slice, and it bounds what is at stake: the Jacobian steers Newton's convergence, not where
+it converges, and the residual's conductivity is pinned.

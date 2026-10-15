@@ -90,7 +90,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
 use crate::chem::{
-    DfnElectrode, DfnParams, ElectrodeParams, PowerTerm, ReversalParams, SeiParams, SpmParams,
+    DfnElectrode, DfnParams, ElectrodeParams, ElectrolyteRatio, PowerTerm, ReversalParams,
+    SeiParams, SpmParams,
 };
 use crate::flags::EventFlags;
 use crate::math;
@@ -794,6 +795,10 @@ struct System<'a> {
     kd_coef: f64,
     /// The negative's SEI film, on a cell that grows one.
     film: Option<Film<'a>>,
+    /// The electrolyte's temperature ratios at this step's temperature, on a chemistry
+    /// that states `[dfn.electrolyte_temperature]`; `None` leaves [`Self::transport`] on
+    /// the concentration fits alone, by the arithmetic it had before Phase 11.
+    electrolyte: Option<ElectrolyteRatio>,
 }
 
 /// One cell's SEI film as a solve sees it: a resistance per unit interface at each negative
@@ -831,6 +836,13 @@ impl<'a> Film<'a> {
     }
 }
 
+/// The chemistry's electrolyte temperature ratios at `temp_k`, or `None` without the section.
+fn electrolyte_ratio(dfn: &DfnParams, temp_k: f64) -> Option<ElectrolyteRatio> {
+    dfn.electrolyte_temperature
+        .as_ref()
+        .map(|et| ElectrolyteRatio::at(et, temp_k))
+}
+
 /// `2·R·T/F·(1 − t₊)·(1 + ∂ln f/∂ln c)`: the coefficient turning an ionic conductivity
 /// into a diffusional one. The same at every node, so it is computed once per step.
 #[must_use]
@@ -858,9 +870,35 @@ impl<'a> System<'a> {
         let bg = self.grid.bg[i];
         let x = ce / 1000.0;
         // The fits are in `x = c_e/1000`, so every derivative picks up a 1/1000.
-        let d = eval_terms(&self.dfn.electrolyte_diffusivity_terms, x) * bg;
-        let dd = eval_terms_d(&self.dfn.electrolyte_diffusivity_terms, x) * bg * live / 1000.0;
-        let k_raw = eval_terms(&self.dfn.electrolyte_conductivity_terms, x) * bg;
+        //
+        // With a temperature section each fit is multiplied by its ratio, `F(x, T)`, and its
+        // derivative takes the product rule: `(f·F)' = f'·F + f·F'`.
+        let (d, dd, k_raw, dk_raw) = match &self.electrolyte {
+            None => (
+                eval_terms(&self.dfn.electrolyte_diffusivity_terms, x) * bg,
+                eval_terms_d(&self.dfn.electrolyte_diffusivity_terms, x) * bg * live / 1000.0,
+                eval_terms(&self.dfn.electrolyte_conductivity_terms, x) * bg,
+                eval_terms_d(&self.dfn.electrolyte_conductivity_terms, x),
+            ),
+            Some(r) => {
+                let (fd, fd_x) = r.diffusivity(x);
+                let (fk, fk_x) = r.conductivity(x);
+                let (d0, d0_x) = (
+                    eval_terms(&self.dfn.electrolyte_diffusivity_terms, x),
+                    eval_terms_d(&self.dfn.electrolyte_diffusivity_terms, x),
+                );
+                let (k0, k0_x) = (
+                    eval_terms(&self.dfn.electrolyte_conductivity_terms, x),
+                    eval_terms_d(&self.dfn.electrolyte_conductivity_terms, x),
+                );
+                (
+                    d0 * fd * bg,
+                    (d0_x * fd + d0 * fd_x) * bg * live / 1000.0,
+                    k0 * fk * bg,
+                    k0_x * fk + k0 * fk_x,
+                )
+            }
+        };
         let k_floored = k_raw < KAPPA_FLOOR_S_PER_M;
         let k = if k_floored {
             KAPPA_FLOOR_S_PER_M
@@ -870,7 +908,7 @@ impl<'a> System<'a> {
         let dk = if k_floored {
             0.0
         } else {
-            eval_terms_d(&self.dfn.electrolyte_conductivity_terms, x) * bg * live / 1000.0
+            dk_raw * bg * live / 1000.0
         };
         Transport {
             ce,
@@ -1527,6 +1565,7 @@ fn solve_from(
         i_app,
         kd_coef: kd_coef(setup.dfn, sides.temp_k),
         film: Film::of(s, sides),
+        electrolyte: electrolyte_ratio(setup.dfn, sides.temp_k),
     };
 
     // Start from the previous step's converged vector, but re-seed the concentration slots
@@ -2001,6 +2040,10 @@ fn seed_resistance(s: &DfnState, spm: &SpmParams, dfn: &DfnParams, sides: &Sides
     let area = sides.area_m2;
     let rt_over_f = GAS_CONSTANT_J_PER_MOL_K * sides.temp_k / FARADAY_C_PER_MOL;
     let ce = spm.c_e_mol_per_m3;
+    // The conductivity's temperature ratio at the reference concentration; exactly `1.0`
+    // without the section (and at its reference temperature).
+    let kappa_ratio =
+        electrolyte_ratio(dfn, sides.temp_k).map_or(1.0, |r| r.conductivity(ce / 1000.0).0);
     let bulk = |profiles: &[Vec<f64>], c_max: f64| bulk_stoich(profiles, c_max) * c_max;
     for (side, dfn_e, profiles) in [
         (&sides.neg, &dfn.negative, &s.c_neg),
@@ -2015,6 +2058,7 @@ fn seed_resistance(s: &DfnState, spm: &SpmParams, dfn: &DfnParams, sides: &Sides
         }
         // Electrolyte and solid ohmic paths, both with the uniform-reaction `L/3`.
         let kappa_e = eval_terms(&dfn.electrolyte_conductivity_terms, ce / 1000.0)
+            * kappa_ratio
             * powx(dfn_e.porosity, dfn_e.bruggeman_electrolyte);
         if kappa_e > 0.0 {
             r += side.p.thickness_m / (3.0 * kappa_e * area);
@@ -2024,6 +2068,7 @@ fn seed_resistance(s: &DfnState, spm: &SpmParams, dfn: &DfnParams, sides: &Sides
         }
     }
     let kappa_sep = eval_terms(&dfn.electrolyte_conductivity_terms, ce / 1000.0)
+        * kappa_ratio
         * powx(dfn.separator.porosity, dfn.separator.bruggeman_electrolyte);
     if kappa_sep > 0.0 {
         r += dfn.separator.thickness_m / (kappa_sep * area);
@@ -2670,6 +2715,7 @@ pub mod probe {
             i_app: i / sides.area_m2,
             kd_coef: super::kd_coef(dfn, sides.temp_k),
             film: super::Film::of(s, &sides),
+            electrolyte: super::electrolyte_ratio(dfn, sides.temp_k),
         };
         let m = NVAR * grid.n();
         let mut u = s.u.clone();

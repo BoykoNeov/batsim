@@ -685,6 +685,93 @@ pub struct ElectrolyteTemperature {
     pub conductivity: Vec<f64>,
 }
 
+impl ElectrolyteTemperature {
+    /// The two ratios at concentration `c_e` \[mol/m³\] and temperature `temp_k` \[K\], each
+    /// with its derivative in `c_e`: `((F_D, ∂F_D/∂c_e), (F_κ, ∂F_κ/∂c_e))`, the factors the
+    /// `Dfn` multiplies its concentration fits by. Exactly `((1, 0), (1, 0))` at
+    /// [`Self::t_ref_k`].
+    ///
+    /// Public so a test can hold the engine's arithmetic against the published forms
+    /// evaluated independently; the `Dfn` reaches the same code through a per-step
+    /// precomputation.
+    #[must_use]
+    pub fn ratios(&self, c_e: f64, temp_k: f64) -> ((f64, f64), (f64, f64)) {
+        let r = ElectrolyteRatio::at(self, temp_k);
+        let x = c_e / 1000.0;
+        let ((fd, fd_x), (fk, fk_x)) = (r.diffusivity(x), r.conductivity(x));
+        ((fd, fd_x / 1000.0), (fk, fk_x / 1000.0))
+    }
+}
+
+/// [`ElectrolyteTemperature`] at one temperature, with everything that does not depend on
+/// concentration evaluated once per step. Concentrations here are the forms' own `x =
+/// c_e/1000` \[mol/L\], and derivatives are in `x`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ElectrolyteRatio {
+    /// `1/T − 1/T_ref` \[1/K\].
+    inv: f64,
+    /// Diffusivity `p3`, `p4`.
+    d3: f64,
+    d4: f64,
+    /// Conductivity `p3..p6`.
+    k3: f64,
+    k4: f64,
+    k5: f64,
+    k6: f64,
+    /// `(1 + T − p2) / (1 + T_ref − p2)`.
+    a: f64,
+    /// `e^(1000/T)`, `e^(1000/T_ref)`.
+    e_t: f64,
+    e_r: f64,
+}
+
+impl ElectrolyteRatio {
+    pub(crate) fn at(et: &ElectrolyteTemperature, temp_k: f64) -> Self {
+        match et.form {
+            ElectrolyteTemperatureForm::Landesfeind2019 => {
+                let (d, k) = (&et.diffusivity, &et.conductivity);
+                let t_r = et.t_ref_k;
+                Self {
+                    inv: 1.0 / temp_k - 1.0 / t_r,
+                    d3: d[2],
+                    d4: d[3],
+                    k3: k[2],
+                    k4: k[3],
+                    k5: k[4],
+                    k6: k[5],
+                    a: (1.0 + (temp_k - k[1])) / (1.0 + (t_r - k[1])),
+                    e_t: crate::math::exp(1000.0 / temp_k),
+                    e_r: crate::math::exp(1000.0 / t_r),
+                }
+            }
+        }
+    }
+
+    /// `(F_D, ∂F_D/∂x)`: `exp((p3 + p4·x)·(1/T − 1/T_ref))`, the published form's ratio —
+    /// its `p1·exp(p2·x)` cancels.
+    pub(crate) fn diffusivity(&self, x: f64) -> (f64, f64) {
+        let f = crate::math::exp((self.d3 + self.d4 * x) * self.inv);
+        (f, f * self.d4 * self.inv)
+    }
+
+    /// `(F_κ, ∂F_κ/∂x)`: `[A·B/C](T) / [A·B/C](T_ref)` with `A = 1 + (T − p2)`,
+    /// `B = 1 + p3·√x + p4·(1 + p5·e^(1000/T))·x`, `C = 1 + x⁴·p6·e^(1000/T)`; the form's
+    /// `p1·x` cancels. Each log-derivative difference is formed between like terms, so at
+    /// `T_ref` it is exactly `0`.
+    pub(crate) fn conductivity(&self, x: f64) -> (f64, f64) {
+        let sq = x.sqrt();
+        let b = |e: f64| 1.0 + self.k3 * sq + self.k4 * (1.0 + self.k5 * e) * x;
+        let b_x = |e: f64| self.k3 / (2.0 * sq) + self.k4 * (1.0 + self.k5 * e);
+        let c = |e: f64| 1.0 + x.powi(4) * self.k6 * e;
+        let c_x = |e: f64| 4.0 * x.powi(3) * self.k6 * e;
+        let (bt, br, ct, cr) = (b(self.e_t), b(self.e_r), c(self.e_t), c(self.e_r));
+        let f = self.a * ((bt / ct) / (br / cr));
+        let dln =
+            (b_x(self.e_t) / bt - b_x(self.e_r) / br) - (c_x(self.e_t) / ct - c_x(self.e_r) / cr);
+        (f, f * dln)
+    }
+}
+
 /// A published temperature form for an electrolyte's transport (`form = "..."`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ElectrolyteTemperatureForm {
@@ -2103,11 +2190,7 @@ fn check_electrolyte_temperature(et: &ElectrolyteTemperature) -> Result<(), Chem
             what: "dfn.electrolyte_temperature coefficients must be finite",
         });
     }
-    // As `check_entropic`: the schema lands with the slice's one snapshot bump, before the
-    // `Dfn` reads it.
-    Err(ChemistryError::BadRange {
-        what: "dfn.electrolyte_temperature is not read by this build yet",
-    })
+    Ok(())
 }
 
 /// Validate one transport-property fit: a non-empty sum of finite power terms whose
