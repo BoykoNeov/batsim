@@ -200,6 +200,9 @@ need rewriting rather than re-measuring. Slice C (lead-acid) was not measured he
 
 ## Decisions for the owner
 
+**Taken 2026-10-15** — recorded, with three follow-ups the measurements forced, in
+`phase-11-fitting.md` §"The owner's decisions". The list below is as it was put.
+
 1. **The exit.** Narrow it to what has a source (the circuit, `[cell]`, `[thermal]`, entropic,
    and — if 4 says so — `[aging]`'s calendar and resistance growth), with the remaining
    placeholders on a named list the test holds fixed; or keep it whole and add a literature

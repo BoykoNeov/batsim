@@ -600,8 +600,10 @@ against the DFN from 10.3 to 4.0 mV RMS at 25 °C, but Chen2020 barely gets cold
 (54 A for 10 s at −10 °C where LG's specification sheet gives 14; ORegan2022 gives 22), entropic heat can reach only the
 circuit without Rust, and the fitted circuit moves 25 lesson claims in steps 2, 12 and 14 —
 two of those lessons (identical teeth; "×3 because linear") need redesigning, not re-measuring —
-and falsifies one sentence of step 13. Four owner decisions are listed at the foot of that note; the slices and
-exit below stand until they are taken.
+and falsifies one sentence of step 13. **The slices and exit are re-planned in
+`phase-11-fitting.md`**, which supersedes the list below: the owner narrowed the exit to what has
+a source, cited LG's sheet, and chose entropic heat and the electrolyte's cold in all three
+models, one cell across them (v28).
 
 *Framing.* Retire placeholders by measurement, one file at a time, without touching Rust.
 
