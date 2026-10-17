@@ -222,6 +222,38 @@ one misnamed file per condition, each run overwriting the last, and those files 
 survives in `out\` is the main batch's summary log (`pybamm_log.txt`) and the per-step CSVs of the
 reversible and 100-fold runs. Any trace a plan needs is regenerated from the sources.
 
+## A1b — does the chosen law separate what the sheet allows from what it forbids?
+
+*Predictions registered 2026-10-18, before the run.*
+
+The owner chose plating only past the line (A2 below) on the promise that the sheet's allowed charges
+come out nearly free and its forbidden ones costly. PyBaMM's form failed exactly that test, so the
+chosen one is measured before any engine code. No engine change: the A1 runs are repeated, saving
+every step's potential, and the plated lithium is integrated outside the engine.
+
+* **The law.** Plating current density `i_pl = i0·[exp(−α·f·η) − exp((1 − α)·f·η)]`, `f = F/RT`,
+  `η = φ_s − φ_e` (no film), `α = 0.65` and `i0 = F·k·c_e` — OKane2022's transfer coefficient and
+  exchange-current form, **with no temperature dependence in `k`** (OKane2022 has none; the only
+  temperature in the law is `f`'s). Positive `i_pl` plates; negative strips, and only while lithium is
+  plated, so a fresh graphite above 0 V plates nothing.
+* **Read open-loop.** The potential is the plating-free model's; plating's feedback on it is ignored,
+  which holds while plating takes a small share of the current — what "nearly free" asks for anyway.
+* **Summed over the electrode.** On the `Dfn` 40/20/40, every negative node, by its interfacial area
+  and its own `c_e`; on the `Spm`, the one particle at the nominal `c_e`.
+* **Reported** as plated lithium per unit `k`, and the ratio of the mildest forbidden charge to the
+  worst allowed one. That ratio is the whole sizing problem: the placeholder `k` can put the allowed
+  charges at any cost, and the ratio says what the forbidden ones then cost.
+
+Allowed: 25 °C 0.3C, 45 °C 0.7C, 0 °C 0.3C, 25 °C 0.7C. Forbidden: −10 °C 0.3C, 0 °C 1C and 2C, −10 °C
+1C and 2C.
+
+Predictions:
+
+8. The two warm allowed charges plate exactly nothing on either model (they never cross).
+9. On the `Dfn`, the worst allowed charge is 0 °C 0.3C, and the mildest forbidden one is −10 °C 0.3C;
+   the ratio between them is between 3 and 30.
+10. On the `Spm`, every allowed charge plates exactly nothing, and every forbidden one plates something.
+
 ## Stop-point A2
 
 Asked of the owner on 2026-10-17, before any plan is written:
