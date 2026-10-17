@@ -25,7 +25,11 @@
 //!   Chen2020's fitted functions. Their documented interpolation error is 1.90 mV
 //!   (graphite) and 1.88 mV (NMC), a floor no grid can get under.
 //! * **The grids.** batsim runs the recommended x-grid and shell count named below; the
-//!   reference runs 200 radial points on PyBaMM's own converged x-grid.
+//!   reference runs 200 radial points, across the cell on PyBaMM's default 20/20/20 at 1C
+//!   (where the x-grid is worth nothing) and on 160/80/160 at 3C. Until 2026-10-17 the 3C
+//!   golden too was on 20/20/20, which is not converged where the electrolyte depletes: its
+//!   cut-off moved 488.65 → 494.85 → 496.33 s on 20/20/20, 40/40/40, 80/40/80, and the bars
+//!   below were re-judged once on the regenerated golden (`docs/plans/dfn-fine-grid.md`).
 //! * **The timestep.** batsim takes one backward-Euler step per CSV row; the reference is
 //!   adaptive at `rtol = atol = 1e-10`. As in the SPM goldens this shows up as the largest
 //!   single-row disagreement sitting at the **first** step, where the gradients establish
@@ -40,7 +44,10 @@
 //! docs and does nothing else will get. A reader who wants the tighter number is told where
 //! it is and what it costs.
 
-use sim_core::dfn::{DEFAULT_NODES_NEGATIVE, DEFAULT_NODES_POSITIVE, DEFAULT_NODES_SEPARATOR};
+use sim_core::dfn::{
+    DEFAULT_NODES_NEGATIVE, DEFAULT_NODES_POSITIVE, DEFAULT_NODES_SEPARATOR, FINE_NODES_NEGATIVE,
+    FINE_NODES_POSITIVE, FINE_NODES_SEPARATOR, FINE_SHELLS,
+};
 use sim_core::spm::DEFAULT_SHELLS;
 use sim_core::{
     CellModelConfig, ChemistryParams, Demand, Env, EventFlags, Pack, PackConfig, Scatter,
@@ -264,9 +271,10 @@ fn ref_3c_duration(rows: &[Row]) -> f64 {
 #[test]
 fn dfn_cc_3c_tracks_the_reference_into_depletion() {
     // 3C from full, sampled every 2 s. The reference reaches **complete electrolyte
-    // depletion** (its minimum `c_e` touches zero and 89.8 % of the run has some node below
-    // 100 mol/m³) and cuts off after 488.7 s having delivered 2.098 of 5.153 A·h. That is
-    // the regime this phase exists for.
+    // depletion** (on the first, unconverged golden its minimum `c_e` touched zero and 89.8 %
+    // of the run had some node below 100 mol/m³; not re-measured on the converged one) and
+    // its last row is at 496 s, 2.130 of 5.153 A·h delivered. That is the regime this phase
+    // exists for.
     let rows = parse_csv(CC_3C);
     assert!(
         rows.len() > 100,
@@ -278,8 +286,8 @@ fn dfn_cc_3c_tracks_the_reference_into_depletion() {
     //
     // A replay is driven by the *reference's* clock: it applies the reference's current at
     // the reference's timestamps regardless of what batsim's own cell is doing. At the
-    // recommended grid batsim's 3C cell reaches its cut-off at 464 s, ~5 % before the
-    // reference's 488.7 s, so the last handful of rows drive a cell that has already
+    // recommended grid batsim's 3C cell reaches its cut-off at 464 s, 6.5 % before the
+    // reference's 496 s, so the last handful of rows drive a cell that has already
     // collapsed. Comparing voltages there compares a dead cell to a live one and measures
     // nothing but the 5 % timing difference, magnified by the steepest part of the curve.
     //
@@ -289,12 +297,14 @@ fn dfn_cc_3c_tracks_the_reference_into_depletion() {
     let window = 0.90 * ref_3c_duration(&rows);
     let (worst, at) = worst_v_error(&rows, &v, window);
 
-    // Measured **62.1 mV** at the recommended 10/5/10 grid. An order of magnitude looser
-    // than the 1C bound, and the reason is the grid rather than the model: at 20/10/20 the
-    // same window measures 21.8 mV and everything after the first step is under 10.5 mV.
-    // See `refining_the_x_grid_converges_toward_the_reference`.
+    // Measured **92.07 mV** at the recommended 10/5/10 grid against the converged golden
+    // (62.1 mV against the first, unconverged one). An order of magnitude looser than the 1C
+    // bound, and the reason is the grid rather than the model: at 20/10/20 the same window
+    // measures 20.52 mV, and on the fine grid 4.04 mV. See
+    // `refining_the_x_grid_converges_toward_the_reference`.
     //
-    // 100 mV is that measurement with room. It is deliberately not tightened to 65 mV: a
+    // 100 mV was the first measurement with room, set before the golden was regenerated and
+    // kept unchanged when it was, so the room is now 8 %. It is deliberately not tightened to 65 mV: a
     // bound sitting on its measurement turns every ordinary grid or solver change into a
     // failure that reads as a physics regression, which is the trap the 3C cliff assertion
     // in `dfn_cell.rs` fell into and that slice D had to undo.
@@ -312,7 +322,7 @@ fn dfn_cc_3c_tracks_the_reference_into_depletion() {
 #[test]
 fn dfn_cc_3c_lands_on_the_references_cut_off() {
     // The depletion claim that a replay cannot make: run batsim's own cell at 3C and ask
-    // when *it* stops and how much it delivers. Reference: 488.7 s, 2.098 A·h.
+    // when *it* stops and how much it delivers. Reference: 496 s, 2.130 A·h (its last row).
     //
     // # This is the assertion slice D was written around
     // Before slice D the shipped cell answered **726 s / 3.118 A·h** here — 49 % long, and
@@ -326,21 +336,25 @@ fn dfn_cc_3c_lands_on_the_references_cut_off() {
         2.0,
     );
 
-    // Measured 464 s / 1.993 A·h: 5.1 % short of the reference on both, in the direction a
+    // Measured 464 s / 1.993 A·h: 6.5 % short of the reference on both, in the direction a
     // coarse x-grid predicts (an under-resolved reaction front saturates its most-loaded
-    // node slightly early). Refining moves it onto the reference and then 1.5 % past —
-    // 490 s at 20/10/20, 496 s at 40/20/40 — i.e. it *converges*, which is the property the
-    // pre-slice-D model did not have.
+    // node slightly early). Refining moves it onto the reference — 490 s at 20/10/20, 496 s
+    // at 40/20/40 against its 496 — i.e. it *converges*, which is the property the
+    // pre-slice-D model did not have. (Against the first, unconverged golden, 488.7 s, the
+    // refined grids looked 1.5 % past it; they were right and the golden was short.)
     //
-    // ±12 % brackets the recommended grid and every refinement of it, and is far tighter
-    // than the 49 % the defect was worth.
+    // ±12 % of the reference brackets the recommended grid and every refinement of it, and
+    // is far tighter than the 49 % the defect was worth. Re-centred on the converged golden,
+    // not widened (`docs/plans/dfn-fine-grid.md`).
+    let t_ref = ref_3c_duration(&parse_csv(CC_3C));
+    let ah_ref = 3.0 * CAPACITY_AH * t_ref / 3600.0;
     assert!(
-        (430.0..=548.0).contains(&t),
-        "3C cut-off at {t} s is outside ±12 % of the reference's 488.7 s"
+        (t / t_ref - 1.0).abs() <= 0.12,
+        "3C cut-off at {t} s is outside ±12 % of the reference's {t_ref} s"
     );
     assert!(
-        (1.85..=2.35).contains(&ah),
-        "3C delivered {ah} A·h against the reference's 2.098"
+        (ah / ah_ref - 1.0).abs() <= 0.12,
+        "3C delivered {ah} A·h, outside ±12 % of the reference's {ah_ref:.3}"
     );
 }
 
@@ -362,8 +376,9 @@ fn the_spm_cannot_follow_the_reference_into_depletion() {
     let (dfn_err, _) = worst_v_error(&rows, &v_dfn, window);
     let (spm_err, _) = worst_v_error(&rows, &v_spm, window);
 
-    // Measured 62.1 mV (DFN) against 521.0 mV (SPM) — 8.4×. At the end of the replay the
-    // SPM reads 3.42 V where the reference is at 2.59: it does not know the cell is dying,
+    // Measured 92.07 mV (DFN) against 520.59 mV (SPM) — 5.7× (8.4× against the first,
+    // unconverged golden, which flattered the coarse DFN). At the end of the replay the SPM
+    // reads 3.42 V where the reference is at 2.58: it does not know the cell is dying,
     // because the quantity that is killing it is the one an SPM holds constant.
     assert!(
         spm_err > 4.0 * dfn_err,
@@ -381,6 +396,58 @@ fn the_spm_cannot_follow_the_reference_into_depletion() {
     );
 }
 
+/// The opt-in fine grid (`dfn::FINE_*`) against the 3C golden, judged once on the cold
+/// test's bar, set before it ran (`docs/plans/dfn-fine-grid.md`): 12 mV worst over the whole
+/// replay, the first step included, and the own cut-off within 1 % of the reference's.
+///
+/// **It failed, at the knee, as the cold one did.** The cut-off lands on the reference's
+/// (496 s against 496 s), and over the first 90 % of the run the fine grid is within
+/// 4.04 mV; but the whole replay's worst is **109.73 mV at the last row** (496 s, the
+/// reference at 2.576 V and falling ~40 mV a second), 14.00 mV while the reference reads
+/// ≥ 2.75 V, 48.40 at ≥ 2.60. Pinned as that record, with windows that notice a move
+/// either way; none of them is a bar the engine passed.
+#[test]
+fn the_fine_grid_misses_the_bar_at_3c_at_the_knee() {
+    let rows = parse_csv(CC_3C);
+    let fine = dfn(
+        (
+            FINE_NODES_NEGATIVE,
+            FINE_NODES_SEPARATOR,
+            FINE_NODES_POSITIVE,
+        ),
+        FINE_SHELLS,
+    );
+    let (v, _) = replay(&rows, fine);
+    let t_ref = ref_3c_duration(&rows);
+    let (worst, at) = worst_v_error(&rows, &v, f64::INFINITY);
+    let (in_window, _) = worst_v_error(&rows, &v, 0.90 * t_ref);
+    let (t, _) = run_to_cutoff(fine, 3.0 * CAPACITY_AH, 2.0);
+    eprintln!(
+        "3C on the fine grid: worst {:.2} mV (at soc {at:.4}) over the whole replay, {:.2} mV over the first 90 %; cut-off {t} s against {t_ref} s",
+        worst * 1e3,
+        in_window * 1e3
+    );
+    assert!(
+        (0.050..0.250).contains(&worst),
+        "the whole-replay worst moved from its recorded 109.73 mV to {:.2} mV at soc {at:.4}{}",
+        worst * 1e3,
+        if worst < 0.012 {
+            " — inside the 12 mV bar: the fine grid may now pass at 3C"
+        } else {
+            ""
+        }
+    );
+    assert!(
+        (0.002..0.008).contains(&in_window),
+        "the first 90 % moved from its recorded 4.04 mV to {:.2} mV",
+        in_window * 1e3
+    );
+    assert!(
+        (t / t_ref - 1.0).abs() < 0.01,
+        "3C on the fine grid cut off at {t} s against the reference's {t_ref} s"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The grid recommendation, measured rather than assumed
 // ---------------------------------------------------------------------------
@@ -395,10 +462,13 @@ fn refining_the_x_grid_converges_toward_the_reference() {
     // Measured at `DEFAULT_SHELLS`, 3C, over the first 90 % of the reference's run:
     //
     //   grid        cut-off      |err|       worst dV in window
-    //   10/5/10     464 s        24.7 s      62.1 mV
-    //   20/10/20    490 s         1.3 s      21.8 mV
-    //   30/15/30    494 s         5.3 s
-    //   40/20/40    496 s         7.3 s
+    //   10/5/10     464 s        32 s        92.07 mV
+    //   20/10/20    490 s         6 s        20.52 mV
+    //   40/20/40    496 s         0 s        21.19 mV
+    //
+    // against the converged golden's 496 s (2026-10-17; `docs/plans/dfn-fine-grid.md`). On
+    // the first, unconverged golden (488.7 s) the same runs read 24.7 / 1.3 / 7.3 s off and
+    // 62.1 / 21.8 mV, which made refining past 20/10/20 look like overshoot.
     //
     // At 1C the picture inverts: the x-grid is worth nothing (5.83 mV at 10/5/10 against
     // 6.22 mV at 20/10/20 — refining is very slightly *worse*) and the shell count is the
@@ -417,10 +487,10 @@ fn refining_the_x_grid_converges_toward_the_reference() {
     // would be buying back and what they would be giving up.
     let rows = parse_csv(CC_3C);
     let window = 0.90 * ref_3c_duration(&rows);
-    // Read from the CSV, not written as 488.7: regenerating the golden at a different
-    // solver tolerance moves the reference's own cut-off, and a hardcoded constant would
-    // quietly keep comparing against the old one. (The CSV's last sample is 488.0 s, the
-    // last 2 s row before the solver's 488.7 s event.)
+    // Read from the CSV, not written as a number: regenerating the golden moves the
+    // reference's own cut-off, and a hardcoded constant would quietly keep comparing against
+    // the old one — which is what happened when the x-grid was refined on 2026-10-17
+    // (488.0 s → 496.0 s, the last 2 s rows before the solver's event).
     let t_ref = ref_3c_duration(&rows);
 
     let coarse = dfn(RECOMMENDED_NODES, DEFAULT_SHELLS);

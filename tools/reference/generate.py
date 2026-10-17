@@ -42,6 +42,7 @@ import numpy as np
 
 from common import (
     DFN_CONVERGED,
+    DFN_CONVERGED_X,
     DFN_DEFAULT,
     PARAM_SETS,
     SPM_CONVERGED,
@@ -120,7 +121,7 @@ SCENARIOS = {
             "3C constant-current discharge from full, isothermal 25 degC "
             "(DFN; the electrolyte depletes — an SPM cannot represent this at all)",
             run_cc_discharge,
-            DFN_CONVERGED,
+            DFN_CONVERGED_X,
             {"c_rate": 3.0, "dt_s": 2.0},
         ),
     ],
@@ -169,6 +170,11 @@ def generate_for(chem_id: str) -> None:
             header.append(
                 f"particle grid: r_n = r_p = {ref.r_pts} points "
                 "(converged; see common.Reference for the measurement)"
+            )
+        if ref.x_pts is not None:
+            header.append(
+                f"cell grid: x_n/x_s/x_p = {ref.x_pts[0]}/{ref.x_pts[1]}/{ref.x_pts[2]} "
+                "(converged; PyBaMM's default 20/20/20 is not where the electrolyte depletes)"
             )
         if ref.rtol is not None:
             header.append(

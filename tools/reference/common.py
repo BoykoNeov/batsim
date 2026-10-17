@@ -118,6 +118,12 @@ class Reference:
     rtol: Optional[float] = None  # None = PyBaMM's default solver and tolerances
     atol: Optional[float] = None
     dense_output: bool = False  # request output on the sample grid, not the solver's
+    # Across-the-cell points (x_n, x_s, x_p); None = the model's default, 20/20/20. That
+    # default is NOT converged where the electrolyte profile is steep: at 25 degC 3C the
+    # cut-off moves 488.65 -> 494.85 -> 496.33 s on 20/20/20, 40/40/40, 80/40/80, and the
+    # 20/20/20 voltage is up to 88.7 mV off (docs/plans/dfn-fine-grid.md). Set only where a
+    # scenario needs it, so the goldens made on the default stay byte-identical.
+    x_pts: Optional[tuple] = None
 
 
 # The Phase 1 reference, spelled out: PyBaMM's own defaults for grid and solver.
@@ -130,6 +136,11 @@ SPM_CONVERGED = Reference(
 )
 DFN_CONVERGED = Reference(
     kind="DFN", r_pts=200, rtol=1e-10, atol=1e-10, dense_output=True
+)
+# The same, converged across the cell too: for a scenario whose electrolyte depletes. The
+# cold golden (`dfn_cold_golden.py`) uses the same 160/80/160.
+DFN_CONVERGED_X = Reference(
+    kind="DFN", r_pts=200, rtol=1e-10, atol=1e-10, dense_output=True, x_pts=(160, 80, 160)
 )
 
 
@@ -261,6 +272,8 @@ def _isothermal(param_set: str, ref: Reference, initial_soc: float = 1.0):
         var_pts = dict(model.default_var_pts)
         var_pts["r_n"] = ref.r_pts
         var_pts["r_p"] = ref.r_pts
+        if ref.x_pts is not None:
+            var_pts["x_n"], var_pts["x_s"], var_pts["x_p"] = ref.x_pts
         kwargs["var_pts"] = var_pts
     if ref.rtol is not None:
         kwargs["solver"] = pybamm.IDAKLUSolver(rtol=ref.rtol, atol=ref.atol)

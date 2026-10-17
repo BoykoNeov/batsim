@@ -315,7 +315,11 @@ Then start the server and open <http://127.0.0.1:8080/app/>. Pick a scenario, pr
 Run, and watch pack voltage, cell-voltage spread, current, SOC (true *and* as the BMS
 estimates it), and temperature. There is a BMS on/off toggle — flipping it restarts
 the run from t = 0, because the honest way to compare a protected pack with an
-unprotected one is two runs, not one run with the rules changed halfway.
+unprotected one is two runs, not one run with the rules changed halfway. On a scenario
+whose cell is the full porous-electrode model there is a **Fine grid (DFN)** toggle too:
+it rebuilds the cell on a finer grid (closer to a converged model cold or at high current,
+about six times the cost per step), and it is off again on every load, because the guided
+path's numbers are read on each scenario's own grid.
 
 If you do not already know what to look at, press **Start** under *Guided path*
 instead. The steps are grouped into chapters, and a menu beside Back and Next jumps to

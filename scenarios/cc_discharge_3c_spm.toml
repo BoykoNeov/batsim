@@ -23,7 +23,8 @@
 # against PyBaMM's SPM at C/5, 1 C and GITT, and 3 C is outside that set. What is committed
 # about the SPM at 3 C is one thing only, and it is a negative result:
 # `the_spm_cannot_follow_the_reference_into_depletion` measures it tracking the DFN
-# reference to 521.0 mV where the DFN tracks to 62.1 — 8.4x worse.
+# reference to 520.59 mV where the DFN tracks to 92.07 — 5.7x worse (8.4x against the
+# first, unconverged reference; docs/plans/dfn-fine-grid.md).
 #
 # Generating a 3 C SPM golden was considered and declined for this slice: it costs a PyBaMM
 # run, a committed CSV and a test, and the asymmetry is one paragraph. See

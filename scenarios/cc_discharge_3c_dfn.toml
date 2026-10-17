@@ -42,14 +42,16 @@
 #
 # 10/5/10 x-nodes and 20 shells are `dfn::DEFAULT_NODES_*` and `spm::DEFAULT_SHELLS` — the
 # shipped recommendation, and what `crates/sim-data/tests/dfn_golden.rs` asserts at. They
-# are **known to be coarse at exactly this rate**: batsim's 464 s sits 5.1 % short of the
-# PyBaMM DFN reference's 488.7 s, and the in-window voltage error is 62.1 mV where
-# 20/10/20 gives 490 s and 21.8 mV. `refining_the_x_grid_converges_toward_the_reference`
-# is that price as a committed number.
+# are **known to be coarse at exactly this rate**: batsim's 464 s sits 6.5 % short of the
+# PyBaMM DFN reference's 496 s (converged across the cell since 2026-10-17; the first
+# reference, on PyBaMM's default grid, said 488.7), and the voltage error over the first
+# 90 % is 92.07 mV where 20/10/20 gives 490 s and 20.52 mV.
+# `refining_the_x_grid_converges_toward_the_reference` is that price as a committed number.
 #
-# Shipping the finer grid would be a better number with no reference behind it. This file
-# ships the configuration the golden runs and writes the 5.1 % down, which is the weaker
-# number and the stronger document.
+# This file ships the recommended grid, and the guided path's numbers are read on it. The
+# browser page offers the `Dfn`'s opt-in fine grid (`dfn::FINE_*`) as a toggle that
+# rebuilds this file's pack on it — 496 s, about six times the cost per step — and turns it
+# off again on every load (docs/plans/dfn-fine-grid.md).
 #
 # ## Three limitations, named rather than avoided
 #

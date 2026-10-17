@@ -122,6 +122,14 @@ pub struct PackFacts {
     /// surface this — see [`SimEngine::restart`] for why the alternative was neither
     /// "fail" nor "drop silently".
     pub sensor_faults_dropped: u32,
+    /// Whether the **scenario's** cell is a `Dfn`, the one model with a fine grid to switch
+    /// to. When this is false the page's fine-grid toggle has nothing to do and is hidden.
+    pub scenario_is_dfn: bool,
+    /// Whether the last [`SimEngine::restart`] asked for the `Dfn`'s fine grid
+    /// (`sim_core::dfn::FINE_*`) in place of the scenario's own. Like
+    /// [`SimEngine::bms_enabled`], what was **asked for**: a snapshot restored since carries
+    /// its own grid.
+    pub fine_grid: bool,
 }
 
 /// Ground truth for every cell, in the engine's own order.
@@ -288,6 +296,8 @@ pub struct SimEngine {
     scenario: Scenario,
     chem: ChemistryParams,
     bms_enabled: bool,
+    /// See [`PackFacts::fine_grid`].
+    fine_grid: bool,
     pack: Pack,
     /// See [`PackFacts::sensor_faults_dropped`].
     sensor_faults_dropped: u32,
@@ -336,6 +346,7 @@ impl SimEngine {
             scenario,
             chem,
             bms_enabled,
+            fine_grid: false,
             pack,
             sensor_faults_dropped,
             env,
@@ -396,6 +407,8 @@ impl SimEngine {
             has_bms: self.pack.bms().is_some(),
             scenario_has_bms: self.scenario.pack.bms.is_some(),
             sensor_faults_dropped: self.sensor_faults_dropped,
+            scenario_is_dfn: self.scenario.with_fine_dfn_grid().is_some(),
+            fine_grid: self.fine_grid,
         }
     }
 
@@ -416,7 +429,8 @@ impl SimEngine {
         Ok(())
     }
 
-    /// Rebuild the pack from the scenario, with or without its BMS.
+    /// Rebuild the pack from the scenario, with or without its BMS, and — on a `Dfn` cell —
+    /// on the scenario's own grid or the fine one.
     ///
     /// **This restarts the run**: simulation time returns to zero, every cell returns
     /// to the scenario's initial SOC and temperature, the RNG returns to its seed, and
@@ -451,14 +465,28 @@ impl SimEngine {
     /// authoring error — and is left to fail loudly at construction. Only the removal
     /// of a BMS the scenario actually configured triggers the filter.
     ///
+    /// # The fine grid
+    /// `fine_grid = true` builds the scenario through
+    /// `sim_data::Scenario::with_fine_dfn_grid`: the same file with its `Dfn` counts
+    /// replaced by `sim_core::dfn::FINE_*` — closer to a converged model cold and at high
+    /// rate, about six times the cost per step. A restart, not a switch on a running pack,
+    /// because the grid is the shape of the cell's state. On any other cell model it is
+    /// ignored, and [`PackFacts::fine_grid`] reports `false`. See
+    /// `docs/plans/dfn-fine-grid.md`.
+    ///
     /// # Errors
     /// [`EngineError::Data`] if the rebuild fails, which given the same inputs
     /// succeeded once already means something is wrong with this crate, not the input.
-    pub fn restart(&mut self, enabled: bool) -> Result<(), EngineError> {
-        let (pack, dropped) = build(&self.scenario, self.chem.clone(), enabled)?;
+    pub fn restart(&mut self, enabled: bool, fine_grid: bool) -> Result<(), EngineError> {
+        let fine = fine_grid
+            .then(|| self.scenario.with_fine_dfn_grid())
+            .flatten();
+        let scenario = fine.as_ref().unwrap_or(&self.scenario);
+        let (pack, dropped) = build(scenario, self.chem.clone(), enabled)?;
         self.pack = pack;
         self.sensor_faults_dropped = dropped;
         self.bms_enabled = enabled;
+        self.fine_grid = fine.is_some();
         self.env = Env {
             t_ambient: self.scenario.pack.initial_temp_k,
             t_coolant: None,

@@ -30,7 +30,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sim_core::{ChemistryParams, Fault, Pack, PackConfig, ScheduledFault};
+use sim_core::{dfn, CellModelConfig, ChemistryParams, Fault, Pack, PackConfig, ScheduledFault};
 
 use crate::{parse_chemistry, DataError};
 
@@ -270,6 +270,29 @@ impl Scenario {
         // Truncation is unreachable: a `Vec` this long would not have been parsed.
         let dropped = u32::try_from(before - without.faults.len()).unwrap_or(u32::MAX);
         Ok((without.build_pack(chem)?, dropped))
+    }
+
+    /// This scenario on the `Dfn`'s opt-in **fine** grid — `sim_core::dfn::FINE_*` in place
+    /// of whatever counts the file wrote — or `None` if its cell is not a `Dfn`.
+    ///
+    /// A clone, for the reason [`Self::build_pack_with_bms`] gives: the caller's scenario
+    /// keeps saying what the file said. Everything else is the file's, so a run on the fine
+    /// grid differs from the authored one in its discretisation and nothing else. What the
+    /// fine grid buys and costs is on `sim_core::dfn::FINE_NODES_NEGATIVE`; see
+    /// `docs/plans/dfn-fine-grid.md`.
+    #[must_use]
+    pub fn with_fine_dfn_grid(&self) -> Option<Scenario> {
+        if !matches!(self.pack.cell_model, CellModelConfig::Dfn { .. }) {
+            return None;
+        }
+        let mut fine = self.clone();
+        fine.pack.cell_model = CellModelConfig::Dfn {
+            shells: dfn::FINE_SHELLS,
+            nodes_negative: dfn::FINE_NODES_NEGATIVE,
+            nodes_separator: dfn::FINE_NODES_SEPARATOR,
+            nodes_positive: dfn::FINE_NODES_POSITIVE,
+        };
+        Some(fine)
     }
 }
 

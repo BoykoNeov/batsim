@@ -137,12 +137,11 @@ pub const MAX_NODES: usize = 128;
 ///   that matters (23.4 mV at `N_r = 10` against 5.8 at 20);
 /// * at **3C**, where a sharp reaction front is the physics, refining is worth a great
 ///   deal — the cut-off lands at 464 s here against 490 s at 20/10/20 and a reference of
-///   488.7 s, and the in-window voltage error falls from 62 mV to 22 mV.
+///   496 s, and the voltage error over the first 90 % falls from 92 mV to 21 mV.
 ///
-/// The 3C figures were measured against a golden made on PyBaMM's default x-grid, which
-/// 2026-10-17 found is not converged at 3C either (its cut-off moves 488.7 → 496.3 s on
-/// refinement); they are not re-measured, pending the owner (`docs/plans/phase-11-fitting.md`,
-/// last addendum).
+/// The 3C reference is converged across the cell since 2026-10-17; against the first one,
+/// on PyBaMM's default 20/20/20 (488.7 s), the same runs read 62 and 22 mV, and refining
+/// past 20/10/20 looked like overshoot (`docs/plans/dfn-fine-grid.md`).
 ///
 /// Two knobs, each decisive on a different scenario, which is why neither moved on one
 /// measurement. `dfn_golden.rs`'s `refining_the_x_grid_converges_toward_the_reference` is
@@ -177,6 +176,12 @@ pub const DEFAULT_NODES_POSITIVE: usize = 10;
 /// Per step at 1C 25 °C, 0.1 s steps, best of six alternating rounds, against the
 /// recommendation's 158 µs: 20/10/20 1.8×, 40/20/40 with 20 shells 4.1×, **this grid with
 /// [`FINE_SHELLS`] 6.2×**, 80/40/80 9.3×.
+///
+/// # What it does not buy
+/// Judged on a 12 mV whole-run bar set before each run, it **fails at the knee** both cold
+/// and at 3C — 67 mV and 110 mV on the last row before the cut-off, the reference falling
+/// steeply there — while its cut-off lands within 0.2 % and the run before the knee is
+/// within 5 mV. The records are pinned in `dfn_cold.rs` and `dfn_golden.rs`.
 pub const FINE_NODES_NEGATIVE: usize = 40;
 
 /// Separator nodes for the fine grid. See [`FINE_NODES_NEGATIVE`].

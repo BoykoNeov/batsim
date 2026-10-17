@@ -87,7 +87,7 @@ function clearBanner() {
  * dots where the particles are. A wrong sentence rather than a blank, which is the case
  * this rule moves for.
  */
-const WASM_API_MIN = 9;
+const WASM_API_MIN = 10;
 
 let wasm = null;
 try {
@@ -363,8 +363,8 @@ class WasmBackend {
     return JSON.parse(this.sim.step_many(dt, nSteps, demand, reportEvery));
   }
 
-  restart(bmsEnabled) {
-    this.sim.restart(bmsEnabled);
+  restart(bmsEnabled, fineGrid) {
+    this.sim.restart(bmsEnabled, fineGrid);
   }
 
   /** Ground truth for every cell: `{series, parallel, cells}`, series-major. */
@@ -3722,6 +3722,19 @@ function afterFactsChange(label) {
       ? "this scenario ships no BMS, so there is nothing to switch back on"
       : "toggling rebuilds the pack from the scenario — the run restarts at t = 0";
 
+  // The `Dfn`'s opt-in fine grid (`sim_core::dfn::FINE_*`; docs/plans/dfn-fine-grid.md).
+  // Shown only on a scenario whose cell is a `Dfn` — the socket's facts carry no
+  // `scenario_is_dfn`, so it stays hidden there, where the server builds the pack the
+  // scenario asked for. Read back from the facts, so a freshly loaded scenario always
+  // shows it off: the guided path's numbers were measured on the scenarios' own grids.
+  $("fine-grid-row").hidden = socket || f.scenario_is_dfn !== true;
+  $("fine-grid").checked = f.fine_grid === true;
+  $("fine-grid-note").textContent =
+    "a finer grid across the cell and in each particle: closer to a fully converged model " +
+    "when the cell is cold or the current is high (at 3C here the cut-off comes about half a " +
+    "minute later), at about six times the cost per step. Off on every load, because the " +
+    "guided path's numbers are the scenario's own grid; ticking it restarts the run at t = 0";
+
   // Whether a sensor fault is even injectable is a property of the pack that just
   // loaded, so the hint is re-evaluated here rather than only when the variant changes.
   sensorHint();
@@ -3755,7 +3768,7 @@ $("reset").onclick = async () => {
     return;
   }
   try {
-    state.backend.restart($("bms").checked);
+    state.backend.restart($("bms").checked, $("fine-grid").checked);
     resetHistory();
     state.latest = null;
     state.accumulator = 0;
@@ -3774,6 +3787,7 @@ $("reset").onclick = async () => {
 };
 
 $("bms").onchange = () => $("reset").click();
+$("fine-grid").onchange = () => $("reset").click();
 
 $("run").onclick = () => {
   state.running = !state.running;
@@ -4345,7 +4359,7 @@ const LESSONS = [
       "That is the quantity a single-particle model holds constant by construction. Watch what happens when it is allowed to move.",
     ],
     expect:
-      "It disagrees before you even press Run: the panel reads **2.808 V** where the twin read 3.927. That is not the cell's resting voltage — it is a zero-length probe of the demand you just dialled in, the answer with no time for anything to move at all, and the three models give three of them (3.927 for the particle, 2.808 here, and the circuit's somewhere between the two). Now run it. The two traces are the same shape until they are not. This one starts lower — **3.839 V** against the twin's 3.918 on the first step — and falls faster all the way down: 2.957 V at 400 s where the other reads 3.471. Then, over the minute that ends at 464 s, it drops **535 mV** while the single-particle arm falls 34 mV, and it is finished: **2.422 V at t = 464 s, past the 2.50 V cut-off, with 61.3 % of the capacity still showing on the readout.** 15.459594 A for 464 s is 1.99 A·h of this cell's 5.153198. The twin, at that same instant, reads 3.437 V — **a full volt higher** — and has 592 seconds still to run. Same cell, same current: one model says the cell is empty and the other has not noticed. Look at the heat, too: 22.26 W here against the twin's 6.19 W at the mark, from the identical current, because heat is what the current times the gap between equilibrium and the terminal buys you and that gap is where the whole disagreement lives. The mechanism is not on the screen but the shape is its signature: as the current pulls lithium out faster than it can diffuse back through the liquid, the electrolyte in the positive electrode starves, its conductivity falls with it, and the collapse feeds itself. An SPM holds that concentration constant by construction, so it cannot represent any of it and reports a cell that is fine. **Two things to be honest about.** The voltage plot autoscales to whatever it is showing, and these two runs cover very different ranges — so the traces will look more alike in shape than they are. Compare the numbers, not the slopes. And `SOLVE_UNCONVERGED` appears at **466 s**, one step after the cut-off, and stays: past that point the Newton solve is hitting its iteration cap, and the flat shelf that carries the run from 2.414 V down to 2.379 V at the mark is the solver, not the cell. That the flag arrives one step *after* the collapse and not before it is the useful part — the solve stops being able to answer at almost exactly the moment there is nothing left to answer about. A different flag gets there sooner, though: `SURFACE_OUT_OF_RANGE` is up on the cut-off step itself. That step's solve *did* converge — but on a particle beside the separator holding more lithium than any particle can, so the reading the cell is finished on is the model past its own edge as well. The verdict stands; the last decimals do not. Now the thing that makes this a boundary rather than a verdict: **set the current to 5.153198 A — the current that would empty this cell in an hour — press Restart, and run this file to its cut-off; then press Back and do the same on the twin** (press Run again each time the mark passes; a full discharge is about an hour of simulation). This model crosses at **3484 s** and the twin at **3496 s** — the same `58m` on the clock, 12 s apart, which is 0.34 %. The disagreement is not a property of the DFN, it is a property of the rate. Below that boundary the cheap model is right and costs a small fraction of what this one does per step; above it, it is wrong by a factor of 2.28 on how much charge the cell holds, and it gives you no sign of it until the moment it stops. (At 3 C the cost gap is wider still, because a solve that has to work harder is the same solve run more times.)",
+      "It disagrees before you even press Run: the panel reads **2.808 V** where the twin read 3.927. That is not the cell's resting voltage — it is a zero-length probe of the demand you just dialled in, the answer with no time for anything to move at all, and the three models give three of them (3.927 for the particle, 2.808 here, and the circuit's somewhere between the two). Now run it. The two traces are the same shape until they are not. This one starts lower — **3.839 V** against the twin's 3.918 on the first step — and falls faster all the way down: 2.957 V at 400 s where the other reads 3.471. Then, over the minute that ends at 464 s, it drops **535 mV** while the single-particle arm falls 34 mV, and it is finished: **2.422 V at t = 464 s, past the 2.50 V cut-off, with 61.3 % of the capacity still showing on the readout.** 15.459594 A for 464 s is 1.99 A·h of this cell's 5.153198. The twin, at that same instant, reads 3.437 V — **a full volt higher** — and has 592 seconds still to run. Same cell, same current: one model says the cell is empty and the other has not noticed. Look at the heat, too: 22.26 W here against the twin's 6.19 W at the mark, from the identical current, because heat is what the current times the gap between equilibrium and the terminal buys you and that gap is where the whole disagreement lives. The mechanism is not on the screen but the shape is its signature: as the current pulls lithium out faster than it can diffuse back through the liquid, the electrolyte in the positive electrode starves, its conductivity falls with it, and the collapse feeds itself. An SPM holds that concentration constant by construction, so it cannot represent any of it and reports a cell that is fine. **Two things to be honest about.** The voltage plot autoscales to whatever it is showing, and these two runs cover very different ranges — so the traces will look more alike in shape than they are. Compare the numbers, not the slopes. And `SOLVE_UNCONVERGED` appears at **466 s**, one step after the cut-off, and stays: past that point the Newton solve is hitting its iteration cap, and the flat shelf that carries the run from 2.414 V down to 2.379 V at the mark is the solver, not the cell. That the flag arrives one step *after* the collapse and not before it is the useful part — the solve stops being able to answer at almost exactly the moment there is nothing left to answer about. A different flag gets there sooner, though: `SURFACE_OUT_OF_RANGE` is up on the cut-off step itself. That step's solve *did* converge — but on a particle beside the separator holding more lithium than any particle can, so the reading the cell is finished on is the model past its own edge as well. The verdict stands; the last decimals do not. Now the thing that makes this a boundary rather than a verdict: **set the current to 5.153198 A — the current that would empty this cell in an hour — press Restart, and run this file to its cut-off; then press Back and do the same on the twin** (press Run again each time the mark passes; a full discharge is about an hour of simulation). This model crosses at **3484 s** and the twin at **3496 s** — the same `58m` on the clock, 12 s apart, which is 0.34 %. The disagreement is not a property of the DFN, it is a property of the rate. Below that boundary the cheap model is right and costs a small fraction of what this one does per step; above it, it is wrong by a factor of 2.28 on how much charge the cell holds, and it gives you no sign of it until the moment it stops. (At 3 C the cost gap is wider still, because a solve that has to work harder is the same solve run more times.) Every number above is read on the coarse grid this scenario ships with, and at this rate that grid runs out early. Tick **Fine grid (DFN)** in the Pack panel and run it again to watch the collapse come later, closer to a fully converged model, at a far higher price per step. The box turns itself off whenever a step loads, so the numbers above stay the ones you can reproduce.",
   },
   {
     id: "the-gradient-itself",
@@ -5233,6 +5247,12 @@ async function applyStep(L, fresh = false) {
     // a side effect being routed around.
     if (L.bms !== null && !$("bms").disabled && $("bms").checked !== L.bms) {
       $("bms").checked = L.bms;
+      await $("reset").onclick();
+    }
+    // A step on the same scenario need not reload, and the fine grid would then outlive
+    // it; every step's numbers were measured on the scenario's own grid, so it goes off.
+    if ($("fine-grid").checked) {
+      $("fine-grid").checked = false;
       await $("reset").onclick();
     }
 

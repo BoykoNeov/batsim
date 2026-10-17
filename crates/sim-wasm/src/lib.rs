@@ -230,7 +230,14 @@ use wasm_bindgen::prelude::*;
 /// "one per electrode" about a cell with twenty — a wrong sentence, quieter than a throw.
 /// `sim_core::SNAPSHOT_VERSION` stays at 25: the stoichiometries are a pure function of the
 /// stored shell concentrations. See `docs/plans/phase-9-slice-d-lesson.md`.
-pub const WASM_API_VERSION: u32 = 9;
+///
+/// v10 (the `Dfn`'s fine grid): [`Sim::restart`] takes a second argument, `fine_grid`, and
+/// the facts gain `scenario_is_dfn` and `fine_grid`. A changed signature, so `WASM_API_MIN`
+/// in `web/app.js` moves with it: against a v9 bundle the page's second argument would be
+/// dropped without a word and the toggle would rebuild the pack on the coarse grid while
+/// saying it had not. `sim_core::SNAPSHOT_VERSION` stays at 28: the grid is already the shape
+/// of the stored state. See `docs/plans/dfn-fine-grid.md`.
+pub const WASM_API_VERSION: u32 = 10;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///
@@ -415,16 +422,17 @@ impl Sim {
         Ok(self.inner.restore_json(snapshot_json)?)
     }
 
-    /// Rebuild the pack from the scenario, with or without its BMS.
+    /// Rebuild the pack from the scenario, with or without its BMS, and on a `Dfn` cell on
+    /// its own grid or the fine one.
     ///
     /// **Restarts the run.** See [`SimEngine::restart`] for why growing a BMS onto a
-    /// running pack is not on offer.
+    /// running pack is not on offer, and why the grid is not switched on one either.
     ///
     /// # Errors
     /// A rebuild failure, which given inputs that built once means a bug here rather
     /// than in the input.
-    pub fn restart(&mut self, bms_enabled: bool) -> Result<(), JsError> {
-        Ok(self.inner.restart(bms_enabled)?)
+    pub fn restart(&mut self, bms_enabled: bool, fine_grid: bool) -> Result<(), JsError> {
+        Ok(self.inner.restart(bms_enabled, fine_grid)?)
     }
 
     /// Whether the last [`Sim::restart`] asked for the scenario's BMS.

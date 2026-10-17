@@ -499,7 +499,7 @@ fn the_bms_toggle_is_the_difference_between_protected_and_not() {
         .expect("charging with protection");
 
     let mut bare = scattered();
-    bare.restart(false).expect("rebuild without the BMS");
+    bare.restart(false, false).expect("rebuild without the BMS");
     assert!(
         !bare.facts().has_bms,
         "restart(false) must actually remove it"
@@ -599,7 +599,7 @@ fn the_bms_toggle_is_the_difference_between_protected_and_not() {
 
     // Toggling back gives the scenario's own pack again, from t = 0 — including the
     // fault that had nowhere to land a moment ago.
-    bare.restart(true).expect("rebuild with the BMS");
+    bare.restart(true, false).expect("rebuild with the BMS");
     assert!(bare.facts().has_bms);
     assert_eq!(bare.facts().sim_time_s, 0.0);
     assert_eq!(bare.facts().sensor_faults_dropped, 0);
@@ -633,7 +633,7 @@ fn a_scenario_with_no_bms_reports_that_the_toggle_has_nothing_to_offer() {
     assert!(!engine.facts().scenario_has_bms);
     assert!(!engine.facts().has_bms);
 
-    engine.restart(true).expect("rebuild");
+    engine.restart(true, false).expect("rebuild");
     assert!(
         !engine.facts().has_bms,
         "restart(true) restores what the scenario configured, which here is nothing"
@@ -825,7 +825,9 @@ fn a_pack_with_no_bms_has_no_sensor_frame() {
     let mut engine = scattered();
     assert!(engine.sensors().is_some(), "the scenario configures a BMS");
 
-    engine.restart(false).expect("the same pack, unprotected");
+    engine
+        .restart(false, false)
+        .expect("the same pack, unprotected");
     assert!(
         engine.sensors().is_none(),
         "there is nothing to measure with, so the payload is absent rather than empty"
@@ -900,4 +902,81 @@ fn chemistry_facts_cross_the_boundary_as_json_with_the_diagram_inside() {
     // And a broken file is `EngineError::Data`, the same arm `Sim::new` reports through.
     let err = SimEngine::chemistry_facts_json_of("[meta]\nid = \"x\"").unwrap_err();
     assert!(matches!(err, EngineError::Data(_)), "{err}");
+}
+
+// ---------------------------------------------------------------------------
+// The `Dfn`'s fine grid
+// ---------------------------------------------------------------------------
+
+const LGM50_TOML: &str = include_str!("../../../chemistries/nmc_21700_lgm50.toml");
+const CC_3C_DFN: &str = include_str!("../../../scenarios/cc_discharge_3c_dfn.toml");
+
+/// The length of the first `c_e` array anywhere in a snapshot: the `Dfn`'s x-node count.
+fn dfn_nodes(engine: &SimEngine) -> Option<usize> {
+    fn find(v: &serde_json::Value) -> Option<usize> {
+        match v {
+            serde_json::Value::Object(m) => m
+                .get("c_e")
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::len)
+                .or_else(|| m.values().find_map(find)),
+            serde_json::Value::Array(a) => a.iter().find_map(find),
+            _ => None,
+        }
+    }
+    find(&serde_json::from_str(&engine.snapshot_json().expect("serializes")).expect("json"))
+}
+
+/// The fine grid is a restart onto `sim_core::dfn::FINE_*`, and back again is the
+/// scenario's own pack bit for bit — so the toggle changes the discretisation and nothing
+/// else, and turning it off leaves no trace.
+#[test]
+fn the_fine_grid_rebuilds_a_dfn_cell_and_turning_it_off_leaves_no_trace() {
+    use sim_core::dfn::{FINE_NODES_NEGATIVE, FINE_NODES_POSITIVE, FINE_NODES_SEPARATOR};
+    let mut engine = SimEngine::new(CC_3C_DFN, Some(LGM50_TOML)).expect("builds");
+    assert!(engine.facts().scenario_is_dfn);
+    assert!(!engine.facts().fine_grid, "off until asked for");
+    assert_eq!(dfn_nodes(&engine), Some(25), "the scenario's own 10/5/10");
+    let authored = engine
+        .step_many(1.0, 30, Demand::Current(15.459594), 1)
+        .expect("steps");
+
+    engine.restart(true, true).expect("fine");
+    assert!(engine.facts().fine_grid);
+    assert_eq!(engine.facts().sim_time_s, 0.0, "a restart, from t = 0");
+    assert_eq!(
+        dfn_nodes(&engine),
+        Some(FINE_NODES_NEGATIVE + FINE_NODES_SEPARATOR + FINE_NODES_POSITIVE)
+    );
+    let fine = engine
+        .step_many(1.0, 30, Demand::Current(15.459594), 1)
+        .expect("steps");
+    assert_ne!(
+        frame_bits(&fine[29]),
+        frame_bits(&authored[29]),
+        "a different grid must give a different answer, or the toggle is not wired"
+    );
+
+    engine.restart(true, false).expect("coarse again");
+    assert!(!engine.facts().fine_grid);
+    let again = engine
+        .step_many(1.0, 30, Demand::Current(15.459594), 1)
+        .expect("steps");
+    for (a, b) in authored.iter().zip(&again) {
+        assert_eq!(
+            frame_bits(a),
+            frame_bits(b),
+            "back off is the authored pack"
+        );
+    }
+}
+
+/// On any other cell model the fine grid has nothing to refine: asked for, it is ignored
+/// and reported as off, and the page hides the toggle on `scenario_is_dfn`.
+#[test]
+fn the_fine_grid_is_ignored_off_the_dfn() {
+    let mut engine = SimEngine::new(CC_DISCHARGE, Some(LFP_TOML)).expect("builds");
+    assert!(!engine.facts().scenario_is_dfn);
+    engine.restart(true, true).expect("rebuild");
+    assert!(!engine.facts().fine_grid);
 }
