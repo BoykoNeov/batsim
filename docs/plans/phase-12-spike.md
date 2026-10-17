@@ -236,3 +236,8 @@ Asked of the owner on 2026-10-17, before any plan is written:
 2. **The constant.** Any source for this cell's plating rate — a paper, a dataset, a measured cold-charge
    fade — or a placeholder, labelled so, sized against the sheet: nearly free at its allowed rates, costly
    past them.
+   **Answered 2026-10-18: no source; a placeholder, labelled, sized against the sheet.**
+3. **How much plated lithium is lost for good** (raised by answer 1: if all of it dissolves back, a
+   cold charge costs nothing). A fixed share lost, the rest free to strip back; or a share that grows
+   with time spent plated (O'Kane's, a second unsourced number); or all of it.
+   **Answered 2026-10-18: a fixed share lost**, one labelled number.
