@@ -1,12 +1,12 @@
 # Phase 11 — the LG M50 file, fitted where anything can fit it
 
-**Status: BUILT 2026-10-15; exit 5 OPEN.** Five of the six exit criteria are met as
+**Status: COMPLETE 2026-10-17** (built 2026-10-15). Five of the six exit criteria are met as
 written. Exit 5 (the cold `Dfn`) failed the bar set before its run and passes only a bar set
 after measurement (slice C addendum); on 2026-10-17 the owner did not accept that bar and asked
 for more, and accepted the placeholder list's nineteenth entry. Re-judged the same day on the
 original bar, against a reference converged across the cell and on an opt-in fine grid, it
-**failed at the knee** (67 mV; within 5 mV for 97 % of the run, cut-off −0.18 %) and is with the
-owner (last addendum). Written after the spike (`phase-11-spike.md`), which found the
+**failed at the knee** (67 mV; within 5 mV for 97 % of the run, cut-off −0.18 %); the owner
+**accepted that record as the exit** on 2026-10-17 (last addendum). Written after the spike (`phase-11-spike.md`), which found the
 roadmap's exit unreachable and the fit's lesson cost larger in kind than a re-measure. The
 owner's decisions below supersede `docs/ROADMAP.md` §Phase 11's slices and exit.
 
@@ -524,3 +524,11 @@ by 0.5 mV, ~2× the cost again); or keep exit 5 open for an electrolyte discreti
 converges faster at the collectors, where the cold profile is steep. Separately, the 25 °C 3C
 golden has the same unconverged x-grid (PyBaMM 488.7 → 496.3 s on refinement, 89 mV above
 2.75 V) and its regeneration, which moves `dfn_golden.rs`'s bars, is the owner's to schedule.
+
+## Addendum 2026-10-17 — the owner's answers; Phase 11 complete
+
+1. **Exit 5 is closed on the record**: the fine grid's miss at the knee (67 mV whole run, the
+   cut-off −0.18 %, 4.97 mV above 2.75 V), pinned by `dfn_cold.rs`, is accepted as the exit.
+2. **The fine grid stays**, as an opt-in toggle with a note in the client (`docs/plans/dfn-fine-grid.md`).
+3. **The 25 °C 3C golden is regenerated now, in the same style** — bar committed before the
+   judging run (`docs/plans/dfn-fine-grid.md`).

@@ -1,6 +1,6 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
-Phases 0–10 are complete and Phase 11 is built (one exit open); each is pinned by a committed test (see the README's status
+Phases 0–11 are complete; each is pinned by a committed test (see the README's status
 table). A hundred and twenty-seven design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
@@ -628,8 +628,8 @@ pulse lessons quote numbers from a fitted circuit; every fit's residual is in it
 provenance line. Pinned by a test that greps the shipped files for the label.
 
 *Built 2026-10-15* against the re-planned exit (`phase-11-fitting.md`); five of six criteria met
-as written, exit 5 open (the owner did not accept its after-measurement bar; re-judged on the original
-bar 2026-10-17, it failed at the knee — with the owner):
+as written, exit 5 closed 2026-10-17 on a recorded miss the owner accepted (re-judged on its
+original bar against a converged reference, it failed only at the knee):
 the circuit fitted and its rerun identical; its replay of the DFN within the bar set before the
 run; the placeholders exactly a fixed list (`lgm50_provenance.rs`, 19 — one more than the plan
 named: resistance growth is bounded by the WMG cells, not fitted); entropic heat and the
