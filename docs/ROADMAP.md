@@ -146,6 +146,11 @@ owner chose it. And the "published" LG M50 SEI constants are PyBaMM's shared def
 0.03 % of the lithium a year. **It is a fit, not an extraction**: the owner chose to fit the
 rate to the WMG LG M50 calendar data. Plan: `phase-10-sei.md`.
 
+**Still drawn after Phase 10:** cycle fade, reversal damage and **plating**. Plating is a
+threshold (`plating::plating_risk`: below `t_plating_min_k`, above `plating_c_threshold`, a
+fixed fade per amp-hour), so a cell at 0.499 C plates nothing and one at 0.501 C plates fully.
+Proposed as **Phase 12** (§3, 2026-10-17): plating as a side reaction on the porous models.
+
 ### H3. Nearly every constant that is not extracted from PyBaMM is a labelled placeholder, and there is no fitting pipeline
 
 **Gap.** `tools/reference/` generates goldens and *extracts* parameters; it never fits
@@ -642,6 +647,75 @@ early at −10 °C against a converged reference. Re-judged 2026-10-17 (the firs
 was not converged across the cell; nor was the 25 °C 3C one, regenerated the same day,
 `dfn-fine-grid.md`): the opt-in fine grid meets the cut-off but misses the 12 mV whole-run bar
 at the knee, 67 mV, a record the owner accepted as the exit. It ships as a toggle in the page. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
+
+### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner, not yet spiked*
+
+*Framing.* Make cold-charge damage come out of the electrode instead of a threshold: lithium
+deposits as metal wherever the negative electrode's potential against lithium falls below zero,
+at a rate set by Butler–Volmer kinetics — PyBaMM's `"lithium plating"` option (O'Kane 2020,
+2022). Onset becomes a smooth function of temperature, rate, state of charge and position in
+the electrode, and the lost lithium leaves the negative particle, so capacity is read off the
+electrodes as the Phase 10 film's is.
+
+*How this differs from Phase 10.* The film grows on the aging sub-clock and never touches the
+electrical solve. Plating is a **fast** side reaction: part of a charging cell's current goes to
+it within the step, so it lives inside the per-step solve, and it can break three things the
+film could not — (i) the pack's bracketed search assumes each cell's end-of-step curve falls
+with current, and a current diverted into plating changes that curve; (ii) the charge and
+energy ledgers, now that lithium can leave the particle as metal; (iii) convergence and
+boundedness at long steps (`dt` of 15 min and 1 h) on a parallel group and under a voltage
+hold, which is where every past long-step regression was found.
+
+*Slices (to be re-planned after the spike, as Phases 9–11 were).*
+
+- **(A) Spike, predictions registered before each run.** In order, each one able to stop the
+  phase:
+  1. **Is there anything to emerge?** Run the v28 `Spm` and `Dfn` on LG M50 through a cold
+     fast charge (0 and −10 °C, 1C and 2C) and read the negative electrode's surface potential
+     against lithium. If it never goes below zero, Chen2020's cold kinetics and diffusion are
+     not slowing enough (Phase 11: Chen2020 "barely gets colder"), and the real slice is the
+     negative electrode's temperature dependence, not plating. Compare the onset against a
+     PyBaMM run with plating on, at `rtol` 1e-10 and an explicit `x_pts` (the default x-grid is
+     not converged in the cold, `dfn-fine-grid.md`).
+  2. **Is there a source?** `phase-11-spike.md` found none in hand for the plating constants;
+     `OKane2022`'s plating block (rate constant 1e-9 m/s, transfer coefficient 0.65, dead-lithium
+     decay 1e-6 /s) sits in a set that "does not claim to be representative". Search for
+     LG M50 (or any graphite) cold-charge data. **Stop and ask** before planning: with no source,
+     the exit can promise only "the mechanism, labelled placeholders, matching PyBaMM".
+  3. **Does the solve survive it?** A toy side-reaction branch on the `Spm`: does the end-of-step
+     curve still fall with current, do the charge and energy ledgers close, and does a 1S2P
+     cold charge and a voltage hold converge at 15 min and 1 h.
+  4. **LTO sanity:** a negative electrode ~1.55 V above lithium plates nothing from the
+     physics, with no gate.
+- **(B) Plating on the first porous model** — which one is owner decision 2. Plated lithium
+  per cell (`Spm`) or per negative node (`Dfn`); one snapshot bump (28 → 29) with its pair test.
+- **(C) The other porous model**, if the owner wants both.
+- **(D) The lesson:** the same cold fast charge on the threshold cell and on the side-reaction
+  cell, in the ninth chapter or a new one.
+
+*Owner decisions the spike will bring back, in plain terms.*
+
+1. **Can plated lithium come back?** PyBaMM offers irreversible, reversible and partially
+   reversible (some re-dissolves on the next discharge, the rest becomes "dead" lithium). The
+   partial option gives a short voltage plateau at the start of the next discharge — the
+   signature labs use to detect plating, and the most teachable one.
+2. **Which models.** The `Spm` has no electrolyte, so its whole negative electrode plates at once
+   and onset comes late; the `Dfn` plates first at the separator, as real cells do. `Dfn` first,
+   or both with the `Spm`'s limit recorded.
+3. **What happens to the threshold.** The equivalent circuit keeps `t_plating_min_k` /
+   `plating_c_threshold` either way (it has no electrode potential). On a porous cell running
+   the side reaction, `PLATING_RISK` would mean "plating current above zero", and
+   `plating_fade_per_ah` would be replaced by lithium actually leaving the particle — opt-in,
+   as `AgingConfig::calendar = Film` was.
+4. **The dendrite short.** Keep the seeded random roll, with its hazard tied to the lithium
+   actually plated rather than to amp-hours charged past a threshold.
+
+*Exit (provisional — the spike's answers to A1 and A2 decide what it may say).* On the chosen
+porous model, a cold fast charge plates with no threshold in the code; onset and plated lithium
+match a PyBaMM plating reference on the engine's grid within bars set before the run; capacity
+loss is read off the electrodes; every energy ledger closes; a parallel group and a voltage
+hold converge at 15 min and 1 h steps; LTO plates nothing. Pinned by a
+`sim-data/tests/plating_golden.rs`.
 
 ### Not phases: ~~H5 (determinism across platforms)~~ and ~~H6 (the thermal integrator)~~
 
