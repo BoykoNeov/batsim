@@ -139,6 +139,11 @@ pub const MAX_NODES: usize = 128;
 ///   deal — the cut-off lands at 464 s here against 490 s at 20/10/20 and a reference of
 ///   488.7 s, and the in-window voltage error falls from 62 mV to 22 mV.
 ///
+/// The 3C figures were measured against a golden made on PyBaMM's default x-grid, which
+/// 2026-10-17 found is not converged at 3C either (its cut-off moves 488.7 → 496.3 s on
+/// refinement); they are not re-measured, pending the owner (`docs/plans/phase-11-fitting.md`,
+/// last addendum).
+///
 /// Two knobs, each decisive on a different scenario, which is why neither moved on one
 /// measurement. `dfn_golden.rs`'s `refining_the_x_grid_converges_toward_the_reference` is
 /// the committed form of the table above, and `sim-data/benches/dfn_pack_step.rs` prices
