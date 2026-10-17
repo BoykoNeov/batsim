@@ -281,7 +281,7 @@ Per-step traces in `W:\temp\claude\phase12-spike\out\a1b_*.csv` (column `plated_
 
 **The chosen law does what it was chosen for**, by a factor of 18 at the boundary. Sized so that the
 coldest allowed charge plates, say, 0.002 % of capacity (`k ≈ 6e-11` m/s, 16 times under OKane2022's),
-the forbidden ones plate 0.04 to 0.12 % per charge, before the lost share is applied.
+the forbidden ones plate 0.035 to 0.12 % per charge, before the lost share is applied.
 
 Two caveats the plan has to carry:
 
