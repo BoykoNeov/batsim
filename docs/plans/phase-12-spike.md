@@ -3,7 +3,7 @@
 **Status: SPIKE RUN 2026-10-17/18 — A1, A1b and A3 run (predictions registered before each), A4 not
 runnable; A2's questions answered by the owner. No Rust in the tree: A3's prototype is
 `W:\temp\claude\phase12-spike\proto\patch_dfn.py` applied to commit 951a637. Next: the phase plan, when the
-owner says so.** Step A1 of
+owner says so** — written 2026-10-18: `phase-12-plating.md`, after `dfn-split-nan.md`. Step A1 of
 `docs/ROADMAP.md` §3 "Phase 12". The harness lives outside the tree (`W:\temp\claude\phase12-spike\`);
 only this note is committed.
 

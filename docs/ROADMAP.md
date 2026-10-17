@@ -149,7 +149,8 @@ rate to the WMG LG M50 calendar data. Plan: `phase-10-sei.md`.
 **Still drawn after Phase 10:** cycle fade, reversal damage and **plating**. Plating is a
 threshold (`plating::plating_risk`: below `t_plating_min_k`, above `plating_c_threshold`, a
 fixed fade per amp-hour), so a cell at 0.499 C plates nothing and one at 0.501 C plates fully.
-Proposed as **Phase 12** (§3, 2026-10-17): plating as a side reaction on the porous models.
+Proposed as **Phase 12** (§3, 2026-10-17): plating as a side reaction — on the `Dfn` only, by
+the owner's decision after the spike; planned 2026-10-18 (`phase-12-plating.md`).
 
 ### H3. Nearly every constant that is not extracted from PyBaMM is a labelled placeholder, and there is no fitting pipeline
 
@@ -442,7 +443,7 @@ where the rest-OCV gate refused to correct.
   `soc_deficit` and `tangent`; from then on the voltage is NaN and the state of charge reads 0. Equal
   cells, one cell, half the current or 15-minute steps all converge. The missing piece is the bracketed
   search above, which is not on `Dfn` packs; the defect is that `step()` leaves a non-finite number in
-  the state at all.
+  the state at all. **Planned 2026-10-18** (`dfn-split-nan.md`), ahead of Phase 12.
 * ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
   2026-08-13** (`operating-point-window.md`): a current demand raises
   `OPERATING_POINT_OUT_OF_WINDOW` too, judged per group. `Rest` is still excluded by
@@ -656,7 +657,11 @@ was not converged across the cell; nor was the 25 °C 3C one, regenerated the sa
 `dfn-fine-grid.md`): the opt-in fine grid meets the cut-off but misses the 12 mV whole-run bar
 at the knee, 67 mV, a record the owner accepted as the exit. It ships as a toggle in the page. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
 
-### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; plan not yet written*
+### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; planned 2026-10-18 (`phase-12-plating.md`), after `dfn-split-nan.md`*
+
+**The plan replaces the slices and exit below**, which were provisional on the spike: there is no PyBaMM
+reference for the law the owner chose, and plating is on the `Dfn` alone. They are kept as the proposal
+was written.
 
 *Framing.* Make cold-charge damage come out of the electrode instead of a threshold: lithium
 deposits as metal wherever the negative electrode's potential against lithium falls below zero,
