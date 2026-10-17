@@ -214,9 +214,13 @@ it "does not claim to be representative".
   `"reversible"` is not one (0.50 % at 25 °C 0.3C, never crossing): its stripping rate is proportional
   to the lithium already plated, which starts at zero, so nothing opposes the first plating.
 
-The harness (`W:\temp\claude\phase12-spike\`: `engine\` the Rust reader, `ref\cold_charge.py` the
-PyBaMM side, `out\` every run's CSV) is outside the tree and is deleted once the phase plan
-rebuilds what it needs.
+The harness (`W:\temp\claude\phase12-spike\`: `engine\` the Rust reader, `ref\cold_charge.py` and its
+two variants the PyBaMM side) is outside the tree and is deleted once the phase plan rebuilds what it
+needs. **Every figure above comes from each run's printed summary line, not from a saved trace.** A
+quoting slip in the run loops sent the per-step CSVs of the engine runs and of the main PyBaMM batch to
+one misnamed file per condition, each run overwriting the last, and those files were deleted; what
+survives in `out\` is the main batch's summary log (`pybamm_log.txt`) and the per-step CSVs of the
+reversible and 100-fold runs. Any trace a plan needs is regenerated from the sources.
 
 ## Stop-point A2
 
