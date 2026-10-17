@@ -121,9 +121,10 @@ the sheet.
 | 25 °C 0.7C (cold edge of its row) | +19.0 | **−1.6** (0.741) | −1.9 (0.738) | no |
 | −10 °C 0.3C (the sheet forbids) | −11.4 | **−32.3** (0.562) | — | **no** (0.3C is under its 0.4C) |
 
-The physics puts the plating line where the maker put the limits, to within a few millivolts: comfortably
-above at the warm end of each row, just touching it at the cold end, well past it where the sheet
-forbids charging.
+This is **consistent with** the sheet — comfortably above at the warm end of each row, just touching
+the line at the cold end, well past it where the sheet forbids charging — and no more than that:
+Chen2020 was never fitted to plating, and a maker's limits carry margins for ageing and for
+cell-to-cell spread.
 
 ### PyBaMM with plating on (prediction 5)
 
@@ -144,7 +145,26 @@ first went below 0 V; "later" is how much later 4.2 V came than with plating off
 | −10 °C 1C | 1.85 | 0.4 % | +4.2 % |
 | −10 °C 2C | 0.58 | 0.07 % | +14.4 % |
 
-With `"reversible"` instead: 0.50 % at 25 °C 0.3C (never crossing), 1.31 % at 0 °C 1C.
+With `"reversible"` instead: 0.50 % at 25 °C 0.3C (never crossing), 1.31 % at 0 °C 1C. In that form
+the figure is lithium sitting as metal when the charge stops, not necessarily lost: it can strip back
+on a later rest or discharge, which these runs do not include.
+
+**The rate constant cannot fix it** (added after the table, on review). The same runs with OKane2022's
+constant cut 100-fold, to 1e-11 m/s:
+
+| condition | the sheet | plated at 1e-9 | plated at 1e-11 | ratio |
+| --- | --- | --- | --- | --- |
+| 25 °C 0.3C | allows | 1.73 % | 0.0181 % | ÷96 |
+| 0 °C 0.3C | allows | 2.90 % | 0.0318 % | ÷91 |
+| 0 °C 2C | forbids | 0.95 % | 0.0107 % | ÷88 |
+| −10 °C 1C | forbids | 1.85 % | 0.0212 % | ÷87 |
+
+Every row falls by nearly the same factor, so the order is the constant's to scale and not to change:
+the gentle charge the sheet allows at 0 °C plates more than the 1C charge it forbids at −10 °C, at any
+constant. In this form nothing makes 0 V special — the plating current goes as `k·exp(−α·F·η/RT)`, and
+`η = 0` is just a point on a smooth exponential. The rows differ by less than 2× while the potentials
+differ by more than 200 mV, because time spent charging counts for as much as how far past the line the
+graphite goes.
 
 **These constants plate on every charge, at any potential.** OKane2022's plating rate goes as
 `exp(−α·F·η/RT)` with no stripping to oppose it while no lithium is plated, so it never stops above
@@ -161,10 +181,10 @@ it "does not claim to be representative".
    to 210 mV in the cold, and crosses far later in the charge (at 0 °C 1C: 55 % charged against
    15 %). But it does cross at all four cold conditions, including 0 °C 1C, where it was predicted
    not to.
-3. **Held.** On 40/20/40 the engine's lowest is within 1.1 mV of PyBaMM's and the crossing within
-   0.5 % of charge. On 10/5/10 against the converged reference it reads high by 4 to 38 mV (the
-   prediction said up to 20; −10 °C 2C is −220.7 against −259.0), and stops early at −10 °C 2C
-   (6.5 % charged against 7.7 %).
+3. **Held on the matched grid; failed on the coarse-grid bound.** On 40/20/40 the engine's lowest is
+   within 1.1 mV of PyBaMM's and the crossing within 0.001 of charge state. On 10/5/10 against the
+   converged reference it reads high by 4 to 38 mV, past the registered 20 at 0 °C 2C (21.2) and
+   −10 °C 2C (38.3: −220.7 against −259.0), and stops early at −10 °C 2C (6.5 % charged against 7.7 %).
 4. **Held** (above).
 5. **Failed.** Plated lithium reaches 1.9 % of capacity in one cold charge and 2.9 % in a gentle one;
    4.2 V comes up to 14 % later; and plating is not negligible above 0 V — it is most of it on every
@@ -177,7 +197,7 @@ it "does not claim to be representative".
 
 * **The engine has what plating needs, without new physics.** Both porous models put the graphite
   below lithium's potential on charges that should plate, the `Dfn` agrees with PyBaMM to about a
-  millivolt on a matched grid, and the line falls where the maker's limits fall.
+  millivolt on a matched grid, and the line falls where the maker's limits are consistent with it.
 * **The `Spm` sees the danger late and small.** Its lowest is a quarter or less of the `Dfn`'s in the
   cold, and on the maker's cold-edge charges it reads 6 to 19 mV *above* the line where the `Dfn`
   reads below. It has no electrolyte, so it misses the drop that pushes the separator side over. That
@@ -185,10 +205,14 @@ it "does not claim to be representative".
   nearly safe.
 * **The recommended `Dfn` grid understates it in the cold** (by 38 mV at −10 °C 2C); the fine grid does
   not.
-* **The only plating constants to hand cannot be used.** With OKane2022's, a reaction that ought to be
-  a side effect of crossing the line is instead a steady drain on every charge. Whatever the rate
-  constant is, it has to come from somewhere that makes a 0.3C charge at 25 °C nearly free — which is
-  the A2 question.
+* **The only plating law to hand cannot be used, whatever its constant.** In PyBaMM's form with
+  OKane2022's numbers, a reaction that ought to be a consequence of crossing the line is a steady drain
+  on every charge, and the 100-fold test shows the constant only scales it: no value makes a charge the
+  sheet allows cheap while one it forbids stays costly. So A2 is two questions, not one: a source for
+  the constant, **and which law** — and the law turns on owner decision 1 (whether plated lithium can
+  dissolve back). Only a form whose plating stops above 0 V gives 0 V a meaning, and PyBaMM's own
+  `"reversible"` is not one (0.50 % at 25 °C 0.3C, never crossing): its stripping rate is proportional
+  to the lithium already plated, which starts at zero, so nothing opposes the first plating.
 
 The harness (`W:\temp\claude\phase12-spike\`: `engine\` the Rust reader, `ref\cold_charge.py` the
 PyBaMM side, `out\` every run's CSV) is outside the tree and is deleted once the phase plan
@@ -196,5 +220,13 @@ rebuilds what it needs.
 
 ## Stop-point A2
 
-Whatever A1 finds, the next step asks the owner whether any source for this cell's plating constants
-exists, and stops there before any plan is written.
+Asked of the owner on 2026-10-17, before any plan is written:
+
+1. **The law.** Plating only past the line (a reaction that can run backwards, so lithium plated past 0 V
+   strips again above it, and nothing plates on a fresh graphite above 0 V — a form PyBaMM does not
+   ship: its `"partially reversible"` shares `"reversible"`'s stripping term, `plating.py` lines 90–93
+   in 26.6.2.0, so this would have no reference to be checked against), or PyBaMM's forms as they are, with the
+   steady drain recorded as a limit. This is owner decision 1 brought forward.
+2. **The constant.** Any source for this cell's plating rate — a paper, a dataset, a measured cold-charge
+   fade — or a placeholder, labelled so, sized against the sheet: nearly free at its allowed rates, costly
+   past them.
