@@ -573,8 +573,8 @@ the previous one's tests pass.
   `docs/plans/phase-10-slice-e-lesson.md`). Plan and the other slice notes in
   `docs/plans/phase-10-sei.md`.
 - **Phase 11 — the LG M50 file, fitted where anything can fit it.** **Built** 2026-10-15, exit 5
-  open (its cold bar was set after measurement, the one set before failed; the owner asked for
-  more on 2026-10-17):
+  open (the owner declined a bar set after measurement; re-judged 2026-10-17 on its original
+  bar against a converged reference and an opt-in fine grid, it failed at the knee):
   its circuit fitted to the DFN (`tools/reference/fit_ecm.py`, 4.85 mV RMS at 1C 25 °C, the
   residuals per temperature in its provenance), its limits and mass from LG's specification
   sheet (cited with its CONFIDENTIAL / Tentative marking), ORegan2022's entropy and cold data in
@@ -583,7 +583,10 @@ the previous one's tests pass.
   a fixed list `crates/sim-data/tests/lgm50_provenance.rs` holds. **Recorded limits:** a `Dfn`
   under a thermal network wants steps of at most 15 min now its transport depends on temperature
   (a half-hour 1C step books 10.5 % too much heat); at −10 °C its recommended 10/5/10 grid cuts
-  off 4.4 % early (20/10/20 within a second). Plan, owner decisions and slice addenda in
+  off 5.3 % early against a reference converged across the cell; the opt-in fine grid
+  (`dfn::FINE_*`, 40/20/40 and 40 shells, 6.2× the cost) is within 5 mV for 97 % of the run and
+  misses the 12 mV whole-run bar only at the knee (67 mV, 5 s early) — exit 5 failed as judged
+  2026-10-17, with the owner. Plan, owner decisions and slice addenda in
   `docs/plans/phase-11-fitting.md`.
 - **Phases 12 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it

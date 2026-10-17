@@ -155,6 +155,37 @@ pub const DEFAULT_NODES_SEPARATOR: usize = 5;
 /// [`DEFAULT_NODES_NEGATIVE`].
 pub const DEFAULT_NODES_POSITIVE: usize = 10;
 
+/// Negative-electrode nodes for the **fine** grid: the opt-in alternative to
+/// [`DEFAULT_NODES_NEGATIVE`] for a cell whose electrolyte profile is steep — cold, or at a
+/// high rate. Like the recommendation it is applied by nothing silently; a caller asks for
+/// it by writing these counts into [`crate::CellModelConfig::Dfn`].
+///
+/// # Why a second grid, and what it costs
+/// At −10 °C the electrolyte diffuses 0.4× as fast, its profile steepens, and the
+/// recommended grid cuts a 1C discharge off 5 % early. Refining converges at second order,
+/// to the same place PyBaMM's own DFN converges to (cut-off at 1C, −10 °C: 2664.8, 2783.6,
+/// 2806.7, 2812.2 s on 10/5/10, 20/10/20, 40/20/40, 80/40/80; PyBaMM 2787.3, 2807.5,
+/// 2812.1 s on 20/20/20, 40/40/40, 80/40/80). At 1C and 25 °C it buys nothing. Fixed at
+/// 40/20/40 with [`FINE_SHELLS`] before the cold test judged it
+/// (`docs/plans/phase-11-fitting.md`, 2026-10-17 addenda).
+///
+/// Per step at 1C 25 °C, 0.1 s steps, best of six alternating rounds, against the
+/// recommendation's 158 µs: 20/10/20 1.8×, 40/20/40 with 20 shells 4.1×, **this grid with
+/// [`FINE_SHELLS`] 6.2×**, 80/40/80 9.3×.
+pub const FINE_NODES_NEGATIVE: usize = 40;
+
+/// Separator nodes for the fine grid. See [`FINE_NODES_NEGATIVE`].
+pub const FINE_NODES_SEPARATOR: usize = 20;
+
+/// Positive-electrode nodes for the fine grid. See [`FINE_NODES_NEGATIVE`].
+pub const FINE_NODES_POSITIVE: usize = 40;
+
+/// Radial shells per particle for the fine grid, against the recommended
+/// [`crate::spm::DEFAULT_SHELLS`]. The x-grid cannot move the first step's error: it is the
+/// particle's, larger cold because the solid diffuses slower — 16 mV on the first 5 s of a
+/// cold 1C discharge at 20 shells, 1.7 mV at 40. See [`FINE_NODES_NEGATIVE`].
+pub const FINE_SHELLS: usize = 40;
+
 /// Floor \[mol/m³\] applied to `c_e` **inside the transport and kinetics lookups only**.
 ///
 /// # This is a physics knob wearing a numerical guard's clothes

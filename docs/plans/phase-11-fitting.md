@@ -3,7 +3,10 @@
 **Status: BUILT 2026-10-15; exit 5 OPEN.** Five of the six exit criteria are met as
 written. Exit 5 (the cold `Dfn`) failed the bar set before its run and passes only a bar set
 after measurement (slice C addendum); on 2026-10-17 the owner did not accept that bar and asked
-for more, and accepted the placeholder list's nineteenth entry (last addendum). Written after the spike (`phase-11-spike.md`), which found the
+for more, and accepted the placeholder list's nineteenth entry. Re-judged the same day on the
+original bar, against a reference converged across the cell and on an opt-in fine grid, it
+**failed at the knee** (67 mV; within 5 mV for 97 % of the run, cut-off −0.18 %) and is with the
+owner (last addendum). Written after the spike (`phase-11-spike.md`), which found the
 roadmap's exit unreachable and the fit's lesson cost larger in kind than a re-measure. The
 owner's decisions below supersede `docs/ROADMAP.md` §Phase 11's slices and exit.
 
@@ -493,3 +496,31 @@ What changes around it, and only this:
 
 If the judging run fails this bar, it is reported as failed; the grid is not changed to one
 that passes.
+
+## Addendum 2026-10-17 — the judging run: failed at the knee
+
+Run once, after the bar above was committed (5877c3b), against the regenerated reference
+(160/80/160; its 80/40/80 → 160/80/160 difference 0.9 mV above 2.75 V, 1.1 s at the cut-off,
+cut-off 2813.2 s) on the fine grid (40/20/40, 40 shells):
+
+* **Whole run: 66.96 mV at 2810 s — FAILS the 12 mV bar.** It is the last replayed row; the
+  reference reads 2.544 V there and falls ~6 mV per second.
+* **Cut-off: 2808 s against 2813.2 s, −0.18 % — passes the 1 % bar.**
+* Where the miss lives (not a bar, a location): 4.97 mV worst while the reference reads ≥ 2.75 V
+  (97 % of the discharge), 21.8 mV at ≥ 2.60 V, 33.1 at ≥ 2.55 V. The fine grid reaches the knee
+  five seconds early and the whole-run bar reads that as tens of millivolts — the risk the plan
+  named before the run.
+* Measured **after** the judging run, for the owner only: 80/40/80 with 40 shells reads 11.47 mV
+  whole run (cut-off 2812.8 s) — inside the bar by less than the reference's own 0.9 mV, at
+  roughly twice the fine grid's cost. The grid was not changed.
+* The recommended 10/5/10 cuts off 5.27 % early against the converged reference (4.4 % against
+  the old one); its recorded window, 3–6 %, held both.
+
+`dfn_cold.rs` now pins this record (`the_fine_grid_misses_the_bar_at_the_knee`), with windows
+that notice a change either way and say so if the whole run ever comes inside 12 mV. Exit 5 is
+**failed as judged** and goes back to the owner with three ways forward: accept the record as
+the exit (the knee's timing is the only miss); make 80/40/80 + 40 shells the fine grid (passes
+by 0.5 mV, ~2× the cost again); or keep exit 5 open for an electrolyte discretisation that
+converges faster at the collectors, where the cold profile is steep. Separately, the 25 °C 3C
+golden has the same unconverged x-grid (PyBaMM 488.7 → 496.3 s on refinement, 89 mV above
+2.75 V) and its regeneration, which moves `dfn_golden.rs`'s bars, is the owner's to schedule.

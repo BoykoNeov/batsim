@@ -628,7 +628,8 @@ pulse lessons quote numbers from a fitted circuit; every fit's residual is in it
 provenance line. Pinned by a test that greps the shipped files for the label.
 
 *Built 2026-10-15* against the re-planned exit (`phase-11-fitting.md`); five of six criteria met
-as written, exit 5 open (the owner did not accept its after-measurement bar, 2026-10-17):
+as written, exit 5 open (the owner did not accept its after-measurement bar; re-judged on the original
+bar 2026-10-17, it failed at the knee — with the owner):
 the circuit fitted and its rerun identical; its replay of the DFN within the bar set before the
 run; the placeholders exactly a fixed list (`lgm50_provenance.rs`, 19 — one more than the plan
 named: resistance growth is bounded by the WMG cells, not fitted); entropic heat and the
@@ -636,8 +637,10 @@ potential's shift in all three models, every energy ledger closing; the cold `Df
 (`dfn_cold.rs`) — **whose bar set before the run failed** (415 mV on the recommended grid, the
 electrolyte's diffusivity under-resolved cold), and whose final bar was set after measurement
 and says so; and the suite green with steps 12 and 14 redesigned. Recorded limits: a `Dfn`
-under a thermal network wants steps of at most 15 min; the recommended grid cuts off 4.4 %
-early at −10 °C. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
+under a thermal network wants steps of at most 15 min; the recommended grid cuts off 5.3 %
+early at −10 °C against a converged reference. Re-judged 2026-10-17 (the first cold reference
+was not converged across the cell; nor is the 25 °C 3C one, recorded for the owner): the opt-in
+fine grid meets the cut-off but misses the 12 mV whole-run bar at the knee, 67 mV. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
 
 ### Not phases: ~~H5 (determinism across platforms)~~ and ~~H6 (the thermal integrator)~~
 
