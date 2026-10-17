@@ -453,3 +453,43 @@ pre-set bar named, two closed rows, `SNAPSHOT_VERSION` 28, the note count).
   first step's radial error (16.3 mV, shells not x) is to be stated in that bar beforehand, in or
   out with its reason. Changing the recommended grid or the face rule is the owner's decision,
   brought with the measured table.
+
+## Addendum 2026-10-17 — exit 5 re-opened: the reference was not converged; the bar, set first
+
+**The cold reference was itself under-resolved across the cell.** `dfn_cold_golden.py` refined
+only the particles (`r_n = r_p = 200`) and left PyBaMM's default x-grid, 20/20/20. Rerun cold at
+1C on finer x-grids, PyBaMM's own cut-off moves 2787.3 → 2807.5 → 2812.1 s (20/20/20, 40/40/40,
+80/40/80; differences 20.2 and 4.6 s, second order), and the 20/20/20 voltage is up to 29 mV off
+the 80/40/80 one above 2.75 V. The engine converges to the same place: 2664.8, 2783.6, 2806.7,
+2812.2 s on 10/5/10, 20/10/20, 40/20/40, 80/40/80. **The 20/10/20 "pass" was the engine and the
+reference under-resolved alike.** The same defect sits in the 25 °C **3C** golden (PyBaMM 488.7 →
+494.9 → 496.3 s; 89 mV above 2.75 V at 20/20/20): recorded here and put to the owner, **not**
+fixed in this slice, because regenerating it moves `dfn_golden.rs`'s bars and the
+`DEFAULT_NODES_NEGATIVE` doc's figures. The 25 °C 1C golden is unaffected (the x-grid is worth
+nothing there).
+
+**The first step's 16 mV is the particle, as recorded:** 40 shells take it to 1.7 mV cold; no
+x-grid moves it.
+
+**What was seen before this bar was written, stated so the bar's standing is plain:**
+exploratory comparisons of the engine on several grids against an *uncommitted* PyBaMM 80/40/80
+trace, sampled every 5 s, above 2.75 V only. The whole run, the knee included, has not been
+compared on any grid against any converged reference.
+
+**The bar — the one set before the first run on 2026-10-15, unchanged in every word that judges:**
+the engine's `Dfn` replaying the cold 1C golden is within **12 mV worst over the whole run**
+(every replayed row, first step included), and its cut-off within **1 %** of the reference's.
+What changes around it, and only this:
+
+1. **The reference**: `dfn_cold_golden.py` regenerated with its x-grid set explicitly (written into
+   the CSV header), on the finest grid PyBaMM was run at — 160/80/160 if that run completes,
+   with the 80/40/80 → 160/80/160 difference stated in the test as the reference's own
+   uncertainty. `common.DFN_CONVERGED` is not touched, so `generate.py` regenerates nothing else.
+2. **The grid** (owner, 2026-10-17: the finer grid selectable, default off): new constants
+   `sim_core::dfn::FINE_NODES_*` = **40/20/40** and `FINE_SHELLS` = **40**, fixed here before the
+   judging run; the recommended 10/5/10 with 20 shells is unchanged. Measured cost at 1C 25 °C,
+   0.1 s steps, best of six alternating rounds: 10/5/10 sh20 158 µs, 20/10/20 sh20 289 µs (1.8×),
+   40/20/40 sh20 646 µs (4.1×), **40/20/40 sh40 980 µs (6.2×)**, 80/40/80 sh20 1480 µs (9.3×).
+
+If the judging run fails this bar, it is reported as failed; the grid is not changed to one
+that passes.
