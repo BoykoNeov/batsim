@@ -329,6 +329,69 @@ Predictions:
     its hole equals the plating current's heat misbooked at the cell's equilibrium voltage instead of the
     plating reaction's, `∫ i_pl·U_n dt` (U_n the negative's potential, about 0.1 V), within 10 %.
 
+### A3 results (run 2026-10-18)
+
+Every run twice: the prototype, and the shipped engine as a control, from one harness source
+(`W:\temp\claude\phase12-spike\proto\src\main.rs`, built against the worktree and against the tree).
+
+**The curve (prediction 11: held).** Between any two neighbouring trial currents whose solves both
+converged, the end-of-step voltage falls with current — at 1 s, 15 min and 1 h, at the state past onset
+and at a state with lithium plated (whose sweep crosses the stripping cap), on the prototype and on the
+control alike. What fails is a solve, not the curve: trials that would overfill the negative within the
+step do not converge, 8 of 41 at 15 min and 22 at 1 h on the control, **6 and 16 on the prototype** —
+plating gives the current somewhere to go once the graphite's surface is full.
+
+**The pack (prediction 12: held for the prototype; the control fails).** 1S2P, one cell at 0.9 capacity,
+0 °C, 1C per cell from empty, then an hour at 4.2 V, then rest:
+
+| step | prototype: unconverged steps | control: unconverged steps |
+| --- | --- | --- |
+| 1 s, 60 s, 15 min | 0 | 0 |
+| 1 h | 1 (in the hold) | **every step: the charge never moves the cells off 0 %, the hold's current is NaN, and all 25 rest steps fail** |
+
+**That last row is a defect in the shipped engine, found by the control, not by plating**: a parallel
+`Dfn` pack charged cold at 1C per cell with one-hour steps does not charge at all. It is the gap
+`CLAUDE.md` names — the pack's bracketed search is "not yet on a pack with a `Dfn` cell". The prototype
+gets through only because plating softens the curve where the graphite fills; that is luck, not a fix.
+
+**The rest (prediction 14: held).** The reversible plated lithium strips back completely — within the
+first hour's rest at steps up to 15 min, within 25 h at 1 h steps — and no node's inventory ever goes
+below zero (smallest 0 to the last bit), so the cap holds over a whole hour.
+
+**The ledgers (prediction 15: charge held; energy held in kind, missed its 10 % by 0.4 %).** 1S1P, 1C for
+1500 s then 600 s rest, 1 s steps. Charge: the positive's lost lithium and the negative's + plated + dead
+gain both match the charge passed to 6.3e-8 — identical to the control, so that is the harness's own
+reading, not plating. Energy: the control's ledger is off by −4.96 J of 29.8 kJ (the long-step heat
+already recorded for this model); the prototype's by −5.45 J. The extra **−0.49 J** is plating's, against
+the predicted misbooking of the plating path's heat at the cell's equilibrium voltage instead of the
+plating reaction's, `∫ i_pl·h_n dt` = 0.45 J — 10.4 % apart. Small here because plating is small; it
+grows with it, and the plan closes it by booking plating's heat against its own reaction.
+
+**The step length (prediction 13: failed, badly).** The pack run hinted it; a clean run settled it —
+the same charge at several steps, 1S1P, plated lithium as a multiple of the 1 s run's:
+
+| charge | 10 s | 60 s | 5 min | 15 min | 30 min | 1 h |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1C for 30 min | ×1.009 | ×1.060 | ×1.30 | ×2.03 | ×3.60 | — |
+| 0.5C for 1 h | — | ×1.51 | — | ×8.3 | — | ×45 |
+
+The voltage and the charge state hardly move with the step (state of charge 0.4994 at 1 s, 0.4977 at
+30 min); the plated amount does, because a backward-Euler step books the **whole step at its end
+potential**, and on a charge that is the step's lowest. Plating is exponential in that potential, so the
+error is first order and large. **The plan needs a step-length treatment for the plating integral of its
+own** — sub-stepping it, or integrating the rate along the step — with a bar on this table.
+
+## What A3 settles
+
+* The solve survives the reaction: no new non-convergence at the steps the pack runs at, the curve still
+  falls, the stripping cap holds over an hour, and lithium is conserved.
+* Two things the plan must carry that the roadmap did not list: **(1)** the plating integral's own
+  step-length error, and **(2)** the shipped engine's parallel-`Dfn` failure at one-hour steps, which the
+  plating phase does not cause but would make visible — a parallel `Dfn` pack is where its lesson runs.
+* A4 (LTO plates nothing) cannot run: `lto_20ah_generic.toml` has no `[spm]`, so it has no porous model to
+  plate on, and keeps its "no gate" as an equivalent circuit. Under the chosen law a negative electrode
+  1.55 V above lithium would need 1.55 V of polarization to plate; the plan's check is analytic instead.
+
 ## Stop-point A2
 
 Asked of the owner on 2026-10-17, before any plan is written:
