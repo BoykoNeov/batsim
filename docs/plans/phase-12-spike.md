@@ -311,3 +311,9 @@ Asked of the owner on 2026-10-17, before any plan is written:
    cold charge costs nothing). A fixed share lost, the rest free to strip back; or a share that grows
    with time spent plated (O'Kane's, a second unsourced number); or all of it.
    **Answered 2026-10-18: a fixed share lost**, one labelled number.
+4. **Which model** (the roadmap's owner decision 2), **the threshold's fate** (3) and **the dendrite short**
+   (4), asked with A1b's numbers. **Answered 2026-10-18, as recommended:** plating on the **`Dfn` only** —
+   the `Spm` plates nothing on any allowed charge, so it cannot be sized, and it keeps the threshold; the
+   equivalent circuit keeps the threshold; on a `Dfn` cell with plating on (opt-in, as the film is)
+   `PLATING_RISK` means "plating current above zero" and the loss is the lithium actually lost; the dendrite
+   short keeps its seeded roll, its hazard tied to the lithium lost to plating.
