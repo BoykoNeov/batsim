@@ -142,7 +142,16 @@ Pinned by `crates/sim-data/tests/plating_dfn.rs`:
    refusal of plating on a chemistry with no `[dfn.plating]`.
 7. **Plating off is bit-identical**, and the 28 → 29 snapshot pair test passes.
 
-## Open questions for the owner
+## Two more owner decisions — answered 2026-10-18, both as recommended
+
+1. **The placeholder list grows.** **Answered: the rule is amended** to "may grow only by a phase plan
+   that names the key and the owner decision behind it". The slice that adds the keys to
+   `chemistries/nmc_21700_lgm50.toml` amends the rule's text in `lgm50_provenance.rs` and adds them to its
+   list, naming this plan.
+2. **The grid.** **Answered: the fine grid.** Slice A sizes `k` on `dfn::FINE_*`, records the recommended
+   grid's figure beside it, and the lesson runs on the fine grid.
+
+As asked:
 
 1. **The placeholder list grows.** `crates/sim-data/tests/lgm50_provenance.rs` holds the LG M50 file's
    placeholders to a fixed list that "may only shrink" (Phase 11 exit 3). The plating rate constant and
