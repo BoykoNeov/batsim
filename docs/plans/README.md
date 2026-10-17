@@ -46,6 +46,7 @@ One per phase, the slice notes under it. Each records what was measured, what wa
 | [`phase-10-slice-a-fit.md`](phase-10-slice-a-fit.md) | Phase 10, slice A — the film fitted to the WMG cells: right where, wrong when (the storage effect is front-loaded), resistance 15–25× too high; the owner's re-decision |
 | [`phase-11-spike.md`](phase-11-spike.md) | Phase 11, the spike — the LG M50 circuit fitted to the DFN (10.3 → 4.0 mV RMS), why Chen2020 barely gets colder at pulse currents, which placeholders have any source at all, and the two pulse lessons a fitted circuit breaks; the owner's four decisions |
 | [`phase-11-fitting.md`](phase-11-fitting.md) | Phase 11 — the plan: the LG M50 circuit fitted to the DFN, the cell's limits from LG's sheet, entropic heat and the electrolyte's cold in all three models (v28), and the placeholders nothing can fit held on a fixed list (nineteen, `lgm50_provenance.rs`); the owner's decisions and every slice's addendum; complete 2026-10-17, exit 5 closed on a recorded miss at the knee the owner accepted |
+| [`dfn-fine-grid.md`](dfn-fine-grid.md) | The `Dfn`'s opt-in fine grid after Phase 11: the 25 °C 3C golden regenerated converged across the cell (bars set before the run), the fine grid as a toggle with a note in the client, and the 3C lesson saying which grid it is on |
 
 ## Engine physics slices
 
