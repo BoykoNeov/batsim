@@ -292,6 +292,43 @@ Two caveats the plan has to carry:
 * **Open loop.** At these sizes plating takes well under 1 % of the current, so its feedback on the
   potential is small, as assumed.
 
+## A3 — does the `Dfn`'s solve survive the reaction?
+
+*Predictions registered 2026-10-18, before the prototype ran.*
+
+A throwaway prototype in a detached worktree (`W:\temp\claude\phase12-spike\wt`), never merged: the
+A1b law inside the `Dfn`'s Newton solve, as a second reaction at each negative node sharing that node's
+`φ_s − φ_e` with intercalation. Plating current enters the electrolyte's mass and charge rows and the
+solid's charge row beside the intercalation current; the particle sees intercalation alone. Stripping is
+capped at the node's plated inventory over the step (a kink, as the reversal's edge is). Plated lithium
+per node is state (`#[serde(default)]`, no version bump); a fixed share of each step's plating, 0.5 here,
+is dead and cannot strip. `k = 6e-11` m/s (A1b's sizing), `α = 0.65`, no film. Heat is left as the
+engine books it, so the energy ledger measures the hole the plan has to close.
+
+The runs, on the shipped LG M50 at 40/20/40 with 40 shells:
+
+* **The curve.** At a state just past onset (0 °C, 1C from empty for 600 s), the end-of-step voltage at
+  41 trial currents from 0 to 2C charge, from a restored snapshot, at `dt` of 1 s, 15 min and 1 h.
+* **The pack.** A 1S2P pack, one cell at 0.9 capacity, at 0 °C: a 1C charge (per cell) from empty to
+  4.2 V under a current demand, then a hold at 4.2 V for an hour, at steps of 1 s, 60 s, 15 min and 1 h.
+* **The rest.** After that charge, one 1-hour rest step, then 24 more.
+* **The ledgers.** Charge: the charge passed against intercalated + plated + dead lithium. Energy: the
+  electrodes' stored energy (plated lithium at lithium's own potential, 0 V) against the electrical
+  energy and the booked heat.
+
+Predictions:
+
+11. **The curve still falls with current** at every trial and every step length.
+12. **The pack converges**: no `SOLVE_UNCONVERGED` at 1 s, 60 s and 15 min, on the charge or the hold; at
+    1 h at most a few steps.
+13. **The plated amount depends on the step** as the voltage does: the 1C charge's plated lithium at 60 s
+    within 2 % of 1 s, at 15 min within 10 %, at 1 h within 30 %.
+14. **The rest strips back** most of the reversible plated lithium within a day at 0 °C, and a single
+    1-hour step never takes a node's inventory below zero.
+15. **The charge ledger closes** to rounding (1e-9 of the charge passed). **The energy ledger does not**:
+    its hole equals the plating current's heat misbooked at the cell's equilibrium voltage instead of the
+    plating reaction's, `∫ i_pl·U_n dt` (U_n the negative's potential, about 0.1 V), within 10 %.
+
 ## Stop-point A2
 
 Asked of the owner on 2026-10-17, before any plan is written:
