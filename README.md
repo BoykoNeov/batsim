@@ -200,8 +200,9 @@ Against grid- and time-converged PyBaMM references on the same parameter set, ba
 tracks terminal voltage to **2–7 mV over a whole discharge** and its DFN to **5.8 mV at
 1C**, cut-off knee included — no SOC window, unlike the Phase 1 ECM-vs-DFN goldens, which
 need one because the models genuinely differ. In the 3C depletion scenario the DFN tracks
-the reference to 62 mV where the SPM is off by **521 mV**, which is the clearest single
-statement of what the electrolyte equations buy.
+the reference to 92 mV over the first 90 % of the run on its recommended grid (4 mV on the
+opt-in fine one) where the SPM is off by **521 mV**, which is the clearest single statement of
+what the electrolyte equations buy.
 
 **LFP never got the single-particle model, on purpose.** Lithium iron phosphate
 intercalates through a moving phase boundary, which is what produces the flat plateau this

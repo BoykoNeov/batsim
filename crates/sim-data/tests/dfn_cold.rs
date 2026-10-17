@@ -28,9 +28,10 @@
 //! falling ~6 mV/s; the cut-off **2808 s against 2813.2 (−0.18 %)**, inside its 1 %. The miss is
 //! the knee's timing on a grid five seconds early: the same run is within 4.97 mV while the
 //! reference reads ≥ 2.75 V (97 % of the discharge), 21.8 mV at 2.60 V, 33.1 at 2.55. Exit 5 is
-//! **failed as judged** and put to the owner with that record; the grid was not changed to pass
-//! (80/40/80 with 40 shells reads 11.47 mV whole run, measured after the judging run, for the
-//! owner only). [`the_fine_grid_misses_the_bar_at_the_knee`] pins the record, not a bar.
+//! **failed as judged**, and the owner accepted that record as the exit (2026-10-17, Phase 11
+//! complete); the grid was not changed to pass (80/40/80 with 40 shells reads 11.47 mV whole
+//! run, measured after the judging run and inside the bar by less than the reference's own
+//! uncertainty). [`the_fine_grid_misses_the_bar_at_the_knee`] pins the record, not a bar.
 //!
 //! The recommended grid's cold figure stays visible in
 //! [`the_recommended_grid_is_the_recorded_cold_limit`].

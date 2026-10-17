@@ -96,8 +96,9 @@ inside its unchanged 100 mV bar by 8 %.
 
 **The toggle.** `Scenario::with_fine_dfn_grid` (sim-data) builds a scenario's clone on
 `dfn::FINE_*`; `SimEngine::restart(bms, fine_grid)` rebuilds through it and the facts carry
-`scenario_is_dfn` and `fine_grid` (read back from what the engine built, so the box shows what
-the pack is). `WASM_API_VERSION` 9 → 10 and `WASM_API_MIN` with it; `SNAPSHOT_VERSION` unmoved.
+`scenario_is_dfn` and `fine_grid` (what the last restart asked for and the engine built; a
+snapshot restored since carries its own grid, so after a Restore across grids the box can
+disagree with the pack — the same terms as `bms_enabled`, documented on `PackFacts::fine_grid`). `WASM_API_VERSION` 9 → 10 and `WASM_API_MIN` with it; `SNAPSHOT_VERSION` unmoved.
 The page's **Fine grid (DFN)** box sits under the BMS box with a note; hidden off the `Dfn` and on
 the socket backend. Checked in a browser on the rebuilt bundle (`/app/`, its own server, real
 clicks on the box): hidden on a circuit scenario, shown and off on the 3C `Dfn` one, ticking it

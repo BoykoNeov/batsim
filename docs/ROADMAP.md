@@ -639,8 +639,9 @@ electrolyte's diffusivity under-resolved cold), and whose final bar was set afte
 and says so; and the suite green with steps 12 and 14 redesigned. Recorded limits: a `Dfn`
 under a thermal network wants steps of at most 15 min; the recommended grid cuts off 5.3 %
 early at −10 °C against a converged reference. Re-judged 2026-10-17 (the first cold reference
-was not converged across the cell; nor is the 25 °C 3C one, recorded for the owner): the opt-in
-fine grid meets the cut-off but misses the 12 mV whole-run bar at the knee, 67 mV. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
+was not converged across the cell; nor was the 25 °C 3C one, regenerated the same day,
+`dfn-fine-grid.md`): the opt-in fine grid meets the cut-off but misses the 12 mV whole-run bar
+at the knee, 67 mV, a record the owner accepted as the exit. It ships as a toggle in the page. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
 
 ### Not phases: ~~H5 (determinism across platforms)~~ and ~~H6 (the thermal integrator)~~
 
