@@ -1,6 +1,7 @@
 # Phase 12, the spike — does the LG M50 cell ever reach the plating line when charged cold?
 
-**Status: PREDICTIONS REGISTERED 2026-10-17, before any run. No Rust in the tree.** Step A1 of
+**Status: A1 RUN 2026-10-17 (predictions registered before it, in 61051d3). No
+Rust in the tree. Stopped at A2: the owner is asked for a source before any plan.** Step A1 of
 `docs/ROADMAP.md` §3 "Phase 12". The harness lives outside the tree (`W:\temp\claude\phase12-spike\`);
 only this note is committed.
 
@@ -66,9 +67,132 @@ they agree with PyBaMM about when.
    `SURFACE_OUT_OF_RANGE` near the end of that charge; if so, those rows are kept and reported, not
    dropped.
 
-## Results
+## Results (run 2026-10-17)
 
-*Not run yet.*
+"Potential" below is always the plating driving force, `φ_s − φ_e` at the separator-side negative
+node (the `Dfn`) or `U_n + η_n` of the one particle (the `Spm`), in mV; "crosses at" is the charge
+state when it first goes below 0 V; "4.2 V at" is the charge state the charge stopped at. In every
+run the lowest potential is on the run's last step, at the 4.2 V cut-off.
+
+### The instrument (prediction 4: held)
+
+* **`Spm`.** The recomputed halves rebuild `Telemetry::v_terminal` to **≤ 1.8e-15 V** on every step
+  of every run, so the negative half read outside the engine is the engine's own.
+* **`Dfn`.** `φ_s` at the positive collector node minus `φ_s` at the negative collector node rebuilds
+  `v_terminal` to ≤ 1.8e-15 V on every step: the `u` in the snapshot after a step is that step's
+  committed field.
+* **25 °C 1C, engine against PyBaMM on the same grid:**
+
+| | lowest, engine / PyBaMM | crosses at, engine / PyBaMM | 4.2 V at, engine / PyBaMM |
+| --- | --- | --- | --- |
+| `Spm` | +6.10 / +6.01 | never / never | 0.786 / 0.787 |
+| `Dfn` 10/5/10 | −14.38 / −14.47 | 0.577 / 0.575 | 0.680 / 0.680 |
+| `Dfn` 40/20/40 | −17.52 / −17.59 | 0.555 / 0.553 | 0.680 / 0.679 |
+| PyBaMM DFN 160/80/160 (converged) | −18.41 | 0.547 | 0.679 |
+
+**The first finding is already here: a 1C charge at room temperature takes this cell's graphite
+below 0 V**, from just past half charge to the cut-off, in the `Dfn` and in PyBaMM alike. The `Spm`
+stays 6 mV above.
+
+### The cold charges (predictions 1, 2, 3, 6, 7)
+
+Engine / PyBaMM on the same grid; the converged column is PyBaMM alone.
+
+| condition | `Spm` lowest | `Spm` crosses at | `Dfn` 10/5/10 lowest | `Dfn` 40/20/40 lowest | `Dfn` 40/20/40 crosses at | converged lowest / crosses at / 4.2 V at | today's flag |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 °C 1C | −21.9 / −22.1 | 0.550 / 0.564 | −83.1 / −83.6 | −88.1 / −88.5 | 0.154 / 0.154 | −89.9 / 0.151 / 0.501 | **no** |
+| 0 °C 2C | −30.8 / −30.7 | 0.227 / 0.226 | −189.6 / −190.6 | −206.9 / −207.2 | 0.032 / 0.032 | −210.8 / 0.032 / 0.180 | **no** |
+| −10 °C 1C | −25.7 / −25.4 | 0.273 / 0.273 | −119.9 / −120.1 | −126.7 / −126.8 | 0.074 / 0.073 | −128.5 / 0.072 / 0.387 | every step |
+| −10 °C 2C | −50.5 / −51.0 | 0.166 / 0.167 | −220.7 / −228.4 | −251.5 / −252.6 | 0.024 / 0.024 | −259.0 / 0.024 / 0.077 | every step |
+
+No `SOLVE_UNCONVERGED` and no `SURFACE_OUT_OF_RANGE` on any step of any engine run.
+
+### At the charge rates the maker allows
+
+LG's sheet (cited in the chemistry file) allows 0.3C charge at 0–25 °C and 0.7C at 25–45 °C, and
+none below 0 °C. Not predicted; added after the cold table, because every condition above breaks
+the sheet.
+
+| condition | `Spm` lowest | `Dfn` 40/20/40 lowest (crosses at), engine | PyBaMM 40/20/40 | today's flag |
+| --- | --- | --- | --- | --- |
+| 25 °C 0.3C | +47.9 | +37.0 | — | no |
+| 45 °C 0.7C | +47.5 | +29.7 | — | no |
+| 0 °C 0.3C (cold edge of its row) | +6.3 | **−8.7** (0.705) | −9.0 (0.702) | no |
+| 25 °C 0.7C (cold edge of its row) | +19.0 | **−1.6** (0.741) | −1.9 (0.738) | no |
+| −10 °C 0.3C (the sheet forbids) | −11.4 | **−32.3** (0.562) | — | **no** (0.3C is under its 0.4C) |
+
+The physics puts the plating line where the maker put the limits, to within a few millivolts: comfortably
+above at the warm end of each row, just touching it at the cold end, well past it where the sheet
+forbids charging.
+
+### PyBaMM with plating on (prediction 5)
+
+PyBaMM DFN 40/20/40 (not 160/80/160, for cost), `"lithium plating": "irreversible"`, OKane2022's
+constants. "Plated" is `"Loss of capacity to negative lithium plating [A.h]"` at the cut-off, as a
+share of the 5.153 A·h capacity; "before crossing" is the share of it plated before the potential
+first went below 0 V; "later" is how much later 4.2 V came than with plating off.
+
+| condition | plated, % of capacity | before crossing | later |
+| --- | --- | --- | --- |
+| 25 °C 0.3C | **1.73** | all (never crosses; lowest +40.3 mV) | — |
+| 25 °C 0.7C | 0.90 | all (never crosses; lowest +0.7 mV) | +0.6 % |
+| 45 °C 0.7C | 0.76 | all (never crosses; lowest +31.2 mV) | — |
+| 25 °C 1C | 0.72 | 61 % | +0.4 % |
+| 0 °C 0.3C | 2.90 | 85 % | +1.7 % |
+| 0 °C 1C | 1.44 | 2.5 % | +1.8 % |
+| 0 °C 2C | 0.95 | 0.06 % | +7.4 % |
+| −10 °C 1C | 1.85 | 0.4 % | +4.2 % |
+| −10 °C 2C | 0.58 | 0.07 % | +14.4 % |
+
+With `"reversible"` instead: 0.50 % at 25 °C 0.3C (never crossing), 1.31 % at 0 °C 1C.
+
+**These constants plate on every charge, at any potential.** OKane2022's plating rate goes as
+`exp(−α·F·η/RT)` with no stripping to oppose it while no lithium is plated, so it never stops above
+0 V; at 25 °C 0.3C it is a steady ~29 mA, and a gentle charge the maker allows costs 1.7 % of
+capacity — a cell that would be at 80 % in about a dozen charges. Slow charges plate more than fast
+ones because they last longer. That is not this cell, and it is what the set warns of when it says
+it "does not claim to be representative".
+
+### Against the predictions
+
+1. **Failed, in the cautious direction.** The physics reaches the line everywhere predicted and also
+   where predicted not to: 0 °C 1C goes to −90 mV, and **25 °C 1C crosses too** (−18 mV).
+2. **Held on the order, failed on the absolute.** The `Spm` is the optimist at every condition, by 60
+   to 210 mV in the cold, and crosses far later in the charge (at 0 °C 1C: 55 % charged against
+   15 %). But it does cross at all four cold conditions, including 0 °C 1C, where it was predicted
+   not to.
+3. **Held.** On 40/20/40 the engine's lowest is within 1.1 mV of PyBaMM's and the crossing within
+   0.5 % of charge. On 10/5/10 against the converged reference it reads high by 4 to 38 mV (the
+   prediction said up to 20; −10 °C 2C is −220.7 against −259.0), and stops early at −10 °C 2C
+   (6.5 % charged against 7.7 %).
+4. **Held** (above).
+5. **Failed.** Plated lithium reaches 1.9 % of capacity in one cold charge and 2.9 % in a gentle one;
+   4.2 V comes up to 14 % later; and plating is not negligible above 0 V — it is most of it on every
+   charge at 1C or slower.
+6. **Held, and worse than predicted.** Today's threshold misses both 0 °C conditions, 90 and 210 mV
+   past the line in the converged reference, and the −10 °C 0.3C charge the maker forbids.
+7. **Not needed.** The `Dfn` converged on every step, at −10 °C 2C too.
+
+## What A1 settles
+
+* **The engine has what plating needs, without new physics.** Both porous models put the graphite
+  below lithium's potential on charges that should plate, the `Dfn` agrees with PyBaMM to about a
+  millivolt on a matched grid, and the line falls where the maker's limits fall.
+* **The `Spm` sees the danger late and small.** Its lowest is a quarter or less of the `Dfn`'s in the
+  cold, and on the maker's cold-edge charges it reads 6 to 19 mV *above* the line where the `Dfn`
+  reads below. It has no electrolyte, so it misses the drop that pushes the separator side over. That
+  answers half of owner decision 2: plating on the `Spm` alone would teach that a 1C charge at 0 °C is
+  nearly safe.
+* **The recommended `Dfn` grid understates it in the cold** (by 38 mV at −10 °C 2C); the fine grid does
+  not.
+* **The only plating constants to hand cannot be used.** With OKane2022's, a reaction that ought to be
+  a side effect of crossing the line is instead a steady drain on every charge. Whatever the rate
+  constant is, it has to come from somewhere that makes a 0.3C charge at 25 °C nearly free — which is
+  the A2 question.
+
+The harness (`W:\temp\claude\phase12-spike\`: `engine\` the Rust reader, `ref\cold_charge.py` the
+PyBaMM side, `out\` every run's CSV) is outside the tree and is deleted once the phase plan
+rebuilds what it needs.
 
 ## Stop-point A2
 
