@@ -1,7 +1,9 @@
 # Phase 12, the spike — does the LG M50 cell ever reach the plating line when charged cold?
 
-**Status: A1 RUN 2026-10-17 (predictions registered before it, in 61051d3). No
-Rust in the tree. Stopped at A2: the owner is asked for a source before any plan.** Step A1 of
+**Status: SPIKE RUN 2026-10-17/18 — A1, A1b and A3 run (predictions registered before each), A4 not
+runnable; A2's questions answered by the owner. No Rust in the tree: A3's prototype is
+`W:\temp\claude\phase12-spike\proto\patch_dfn.py` applied to commit 951a637. Next: the phase plan, when the
+owner says so.** Step A1 of
 `docs/ROADMAP.md` §3 "Phase 12". The harness lives outside the tree (`W:\temp\claude\phase12-spike\`);
 only this note is committed.
 
@@ -349,31 +351,51 @@ plating gives the current somewhere to go once the graphite's surface is full.
 | 1 s, 60 s, 15 min | 0 | 0 |
 | 1 h | 1 (in the hold) | **every step: the charge never moves the cells off 0 %, the hold's current is NaN, and all 25 rest steps fail** |
 
-**That last row is a defect in the shipped engine, found by the control, not by plating**: a parallel
-`Dfn` pack charged cold at 1C per cell with one-hour steps does not charge at all. It is the gap
-`CLAUDE.md` names — the pack's bracketed search is "not yet on a pack with a `Dfn` cell". The prototype
-gets through only because plating softens the curve where the graphite fills; that is luck, not a fix.
+**That last row is a defect in the shipped engine, found by the control, not by plating.** Narrowed on
+review, shipped engine, 1 h steps, 1C per cell from empty, isothermal:
+
+| case | result |
+| --- | --- |
+| one cell, 0 °C or 25 °C | converges (and overcharges, as a current demand may) |
+| 1S2P, equal cells, 0 °C | converges |
+| 1S2P, one cell at 0.9, **0 °C or 25 °C** | **every step unconverged**; the split it commits is lopsided (34 % and 17 % charged after the first hour); the **third step**, which takes the small cell past full, commits **NaN** into both cells' `i_last`, `soc_deficit` and `tangent` — from then on the voltage is NaN and the state of charge reads 0 on every step |
+| the same at 0.5C per cell, or at 15 min steps | converges |
+
+So it is not the cold and not one cell's solve: it is the pack's split of a mismatched `Dfn` pair at a long
+step — the pass loop does not settle it, and the bracketed search that settles such a split on the other
+models is "not on `Dfn` packs" (ROADMAP H8, `porous-reversal.md`). That gap is recorded; **what is not
+recorded is that a failed split commits NaN into the cells' state and the pack never recovers** — a
+`step()` that leaves a non-finite number in the snapshot. The prototype gets through only because plating
+softens the curve where the graphite fills; that is luck, not a fix.
 
 **The rest (prediction 14: held).** The reversible plated lithium strips back completely — within the
 first hour's rest at steps up to 15 min, within 25 h at 1 h steps — and no node's inventory ever goes
 below zero (smallest 0 to the last bit), so the cap holds over a whole hour.
 
-**The ledgers (prediction 15: charge held; energy held in kind, missed its 10 % by 0.4 %).** 1S1P, 1C for
+**The ledgers (prediction 15: charge held; energy failed as registered — 10.4 % against 10 % — and not
+resolved: consistent with the predicted hole, too small to measure against the control's own).** 1S1P, 1C for
 1500 s then 600 s rest, 1 s steps. Charge: the positive's lost lithium and the negative's + plated + dead
 gain both match the charge passed to 6.3e-8 — identical to the control, so that is the harness's own
 reading, not plating. Energy: the control's ledger is off by −4.96 J of 29.8 kJ (the long-step heat
 already recorded for this model); the prototype's by −5.45 J. The extra **−0.49 J** is plating's, against
 the predicted misbooking of the plating path's heat at the cell's equilibrium voltage instead of the
-plating reaction's, `∫ i_pl·h_n dt` = 0.45 J — 10.4 % apart. Small here because plating is small; it
-grows with it, and the plan closes it by booking plating's heat against its own reaction.
+plating reaction's, `∫ i_pl·h_n dt` = 0.45 J — 10.4 % apart. But the signal is a tenth of the control's own residual, and
+it is a difference between two trajectories' residuals, so part of it may be the control's step-length
+heat error moving with the trajectory: consistent, not resolved. Small here because plating is small; it
+grows with it, and the plan closes it by booking plating's heat against its own reaction (a run at a
+100-fold rate would resolve it; not done).
 
 **The step length (prediction 13: failed, badly).** The pack run hinted it; a clean run settled it —
 the same charge at several steps, 1S1P, plated lithium as a multiple of the 1 s run's:
 
-| charge | 10 s | 60 s | 5 min | 15 min | 30 min | 1 h |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1C for 30 min | ×1.009 | ×1.060 | ×1.30 | ×2.03 | ×3.60 | — |
-| 0.5C for 1 h | — | ×1.51 | — | ×8.3 | — | ×45 |
+| charge | plated at 1 s | 10 s | 60 s | 5 min | 15 min | 30 min | 1 h |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1C for 30 min | 1.23e-4 mol, 0.064 % of capacity | ×1.009 | ×1.060 | ×1.30 | ×2.03 | ×3.60 | — |
+| 0.5C for 1 h | 4.8e-8 mol, 2.5e-5 % | — | ×1.51 | — | ×8.3 | — | ×45 |
+
+"Plated" is everything plated over the run, dead and reversible. The 0.5C row barely crosses the line
+(its 1 s total is 2,600 times smaller), where any ratio explodes; **the 1C row is the one to size the plan's
+bar on.**
 
 The voltage and the charge state hardly move with the step (state of charge 0.4994 at 1 s, 0.4977 at
 30 min); the plated amount does, because a backward-Euler step books the **whole step at its end

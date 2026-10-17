@@ -327,7 +327,7 @@ where the rest-OCV gate refused to correct.
 
 **Cost.** One slice; the BMS tests gain a control arm per estimator.
 
-### H8. The pack solve has three open soft spots
+### H8. The pack solve has four open soft spots
 
 * ~~**An `Spm` pack diverges at a long step**~~ — **closed 2026-09-23**
   (`spm-end-of-step.md`): the `Spm`'s curve is now its end-of-step one, and the solve's
@@ -435,6 +435,14 @@ where the rest-OCV gate refused to correct.
   group's node voltage is now found by a bracketed search on the cells' own curves,
   committed only if every group settles. Not under an external short, and not on `Dfn`
   packs.
+* **A failed `Dfn` split commits NaN, and the pack never recovers** — found 2026-10-18 by the
+  Phase 12 spike's control runs (`phase-12-spike.md`, A3). A 1S2P `Dfn` pack with one cell at 0.9
+  capacity, charged at 1C per cell with one-hour steps, at 0 °C or 25 °C: every step's split is
+  unconverged, and the step that takes the small cell past full writes NaN into both cells' `i_last`,
+  `soc_deficit` and `tangent`; from then on the voltage is NaN and the state of charge reads 0. Equal
+  cells, one cell, half the current or 15-minute steps all converge. The missing piece is the bracketed
+  search above, which is not on `Dfn` packs; the defect is that `step()` leaves a non-finite number in
+  the state at all.
 * ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
   2026-08-13** (`operating-point-window.md`): a current demand raises
   `OPERATING_POINT_OUT_OF_WINDOW` too, judged per group. `Rest` is still excluded by
@@ -648,7 +656,7 @@ was not converged across the cell; nor was the 25 °C 3C one, regenerated the sa
 `dfn-fine-grid.md`): the opt-in fine grid meets the cut-off but misses the 12 mV whole-run bar
 at the knee, 67 mV, a record the owner accepted as the exit. It ships as a toggle in the page. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
 
-### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner, not yet spiked*
+### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; plan not yet written*
 
 *Framing.* Make cold-charge damage come out of the electrode instead of a threshold: lithium
 deposits as metal wherever the negative electrode's potential against lithium falls below zero,
