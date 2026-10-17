@@ -254,6 +254,44 @@ Predictions:
    the ratio between them is between 3 and 30.
 10. On the `Spm`, every allowed charge plates exactly nothing, and every forbidden one plates something.
 
+### A1b results (run 2026-10-18)
+
+Plated lithium per unit rate constant at the 4.2 V cut-off, in A·h per (m/s), and as a share of the
+5.153 A·h capacity at a reference `k = 1e-12` m/s (it scales linearly with `k` while plating stays small).
+Per-step traces in `W:\temp\claude\phase12-spike\out\a1b_*.csv` (column `plated_ah_per_k`).
+
+| charge | the sheet | `Dfn` 40/20/40, A·h per (m/s) | `Dfn`, % at 1e-12 | `Spm`, A·h per (m/s) | `Spm`, % at 1e-12 |
+| --- | --- | --- | --- | --- | --- |
+| 25 °C 0.3C | allows | 0 | 0 | 0 | 0 |
+| 45 °C 0.7C | allows | 0 | 0 | 0 | 0 |
+| 25 °C 0.7C | allows | 4.74e3 | 9.2e-8 | 0 | 0 |
+| 0 °C 0.3C | allows | **1.66e6** | 3.2e-5 | 0 | 0 |
+| −10 °C 2C | forbids | **3.00e7** | 5.8e-4 | 8.28e7 | 1.6e-3 |
+| −10 °C 0.3C | forbids | 3.01e7 | 5.8e-4 | 4.37e7 | 8.5e-4 |
+| 0 °C 2C | forbids | 5.52e7 | 1.1e-3 | 4.53e7 | 8.8e-4 |
+| 0 °C 1C | forbids | 5.56e7 | 1.1e-3 | 8.20e6 | 1.6e-4 |
+| −10 °C 1C | forbids | 1.00e8 | 1.9e-3 | 8.87e7 | 1.7e-3 |
+
+* **8. Held.** The warm allowed charges plate exactly nothing on either model.
+* **9. Held on the ratio, missed on which case.** On the `Dfn` the worst allowed charge is 0 °C 0.3C, and
+  the mildest forbidden is −10 °C 2C by 0.1 % over −10 °C 0.3C (predicted the other way round — a tie).
+  **The ratio is 18**, inside the registered 3 to 30; the worst forbidden is 61 times the worst allowed.
+* **10. Held.** The `Spm` plates nothing on any allowed charge and something on every forbidden one —
+  which is also why it cannot be sized: on the `Spm` every `k` makes the allowed charges free.
+
+**The chosen law does what it was chosen for**, by a factor of 18 at the boundary. Sized so that the
+coldest allowed charge plates, say, 0.002 % of capacity (`k ≈ 6e-11` m/s, 16 times under OKane2022's),
+the forbidden ones plate 0.04 to 0.12 % per charge, before the lost share is applied.
+
+Two caveats the plan has to carry:
+
+* **No constant-voltage leg.** These charges stop at 4.2 V, which a cold fast charge reaches early (−10 °C
+  2C at 7.6 % charged), so a faster charge can plate *less* per charge than a slower one (−10 °C: 2C
+  plates under a third of 1C). A real charger holds 4.2 V afterwards and keeps plating; the ranking
+  between forbidden charges is the protocol's, not the cell's.
+* **Open loop.** At these sizes plating takes well under 1 % of the current, so its feedback on the
+  potential is small, as assumed.
+
 ## Stop-point A2
 
 Asked of the owner on 2026-10-17, before any plan is written:
