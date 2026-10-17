@@ -1,9 +1,9 @@
 # Phase 11 — the LG M50 file, fitted where anything can fit it
 
-**Status: BUILT 2026-10-15; exit 5 awaits the owner.** Five of the six exit criteria are met as
+**Status: BUILT 2026-10-15; exit 5 OPEN.** Five of the six exit criteria are met as
 written. Exit 5 (the cold `Dfn`) failed the bar set before its run and passes only a bar set
-after measurement (slice C addendum); whether that closes it is the owner's call, with the
-placeholder list's nineteenth entry (slice D addendum). Written after the spike (`phase-11-spike.md`), which found the
+after measurement (slice C addendum); on 2026-10-17 the owner did not accept that bar and asked
+for more, and accepted the placeholder list's nineteenth entry (last addendum). Written after the spike (`phase-11-spike.md`), which found the
 roadmap's exit unreachable and the fit's lesson cost larger in kind than a re-measure. The
 owner's decisions below supersede `docs/ROADMAP.md` §Phase 11's slices and exit.
 
@@ -439,3 +439,17 @@ pre-set bar named, two closed rows, `SNAPSHOT_VERSION` 28, the note count).
 5. The cold `Dfn` (`dfn_cold.rs`) — **not within the bar set before the run**: that bar failed at
    415 mV, and the bar now pinned was set after measurement, as the slice C addendum records.
 6. Suite, clippy and the guided path's claims green; steps 12 and 14 redesigned (slice A).
+
+## Addendum 2026-10-17 — the owner's answers on exit 5 and the list
+
+* **The list of nineteen is accepted.** `r_growth_per_capacity_loss` stays labelled, its WMG bound
+  in its provenance, on the fixed list `lgm50_provenance.rs` holds.
+* **Exit 5's after-measurement bar is not accepted; the owner asked for more.** Exit 5 stays open.
+  The work it asks for, in order: check that the cold PyBaMM reference is itself converged across
+  the cell (it was made on PyBaMM's default x-grid, never refined cold); measure the engine's own
+  x-convergence order against its finest grid; price the candidate fixes (a finer recommended grid,
+  a different face rule for the electrolyte's transport, a grid refined at the region boundaries)
+  on cold 1C, 25 °C 3C and 25 °C 1C; and commit a new bar **before** the run that judges it. The
+  first step's radial error (16.3 mV, shells not x) is to be stated in that bar beforehand, in or
+  out with its reason. Changing the recommended grid or the face rule is the owner's decision,
+  brought with the measured table.

@@ -573,7 +573,8 @@ the previous one's tests pass.
   `docs/plans/phase-10-slice-e-lesson.md`). Plan and the other slice notes in
   `docs/plans/phase-10-sei.md`.
 - **Phase 11 — the LG M50 file, fitted where anything can fit it.** **Built** 2026-10-15, exit 5
-  awaiting the owner (its cold bar was set after measurement, the one set before failed):
+  open (its cold bar was set after measurement, the one set before failed; the owner asked for
+  more on 2026-10-17):
   its circuit fitted to the DFN (`tools/reference/fit_ecm.py`, 4.85 mV RMS at 1C 25 °C, the
   residuals per temperature in its provenance), its limits and mass from LG's specification
   sheet (cited with its CONFIDENTIAL / Tentative marking), ORegan2022's entropy and cold data in
