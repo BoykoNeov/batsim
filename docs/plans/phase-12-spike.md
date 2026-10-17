@@ -231,6 +231,8 @@ Asked of the owner on 2026-10-17, before any plan is written:
    ship: its `"partially reversible"` shares `"reversible"`'s stripping term, `plating.py` lines 90–93
    in 26.6.2.0, so this would have no reference to be checked against), or PyBaMM's forms as they are, with the
    steady drain recorded as a limit. This is owner decision 1 brought forward.
+   **Answered 2026-10-17: plating only past the line** (option a), with no outside reference for the
+   form accepted as its cost.
 2. **The constant.** Any source for this cell's plating rate — a paper, a dataset, a measured cold-charge
    fade — or a placeholder, labelled so, sized against the sheet: nearly free at its allowed rates, costly
    past them.
