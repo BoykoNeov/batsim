@@ -2766,16 +2766,21 @@ pub(crate) fn terminal_v(
 /// Under `hold` that identity needs the pack's own hold as well. A held probe solves at
 /// the range's edge while `advance` runs at the current the split gave; the two agree
 /// because a voltage or power demand's pack current is held to the range too, so every
-/// cell's split current is already inside its own and the probe's clamp does nothing. Two
-/// exceptions, both where the pack widens its range to take zero in (see
-/// `pack_current_window`): a cell resting past an edge, whose own range stops short of zero,
-/// and a group circulating so hard that no pack current keeps every cell inside. There
-/// `advance` can run where no probe did. **No test turns red if the probe is not held**
-/// (perturbation P3 in the plan note): with the pack's hold in place it is reached only in
-/// those two cases, and no case measured is decided by it.
+/// cell's split current is already inside its own and the probe's clamp does nothing. One
+/// exception remains, where the pack widens its range to take zero in (see
+/// `pack_current_window`): a group circulating so hard that no pack current keeps every cell
+/// inside. There `advance` can run where no probe did.
+///
+/// The other case that used to be one — a cell resting past an edge, whose own range stops
+/// short of zero — decided a solve once measured: a mismatched `Dfn` pair charged past full in
+/// one one-hour step, then held at 4.2 V, had every probe clamped to its cells' edges, the same
+/// line every pass, and stalled unconverged. So a held probe is clamped to its range **widened
+/// to take zero in**, as the pack's is (`docs/plans/dfn-hold-past-edge.md`).
 ///
 /// # `hold`: a voltage or power demand's probes stay inside the cell's range
-/// With `hold`, a probe outside [`current_window`] is taken at the nearest edge of it —
+/// With `hold`, a probe outside [`current_window`] — widened to take zero in, so a cell already
+/// past an edge may rest or move back towards inside, never further out — is taken at the
+/// nearest edge of it —
 /// the voltage and the tangent both — as [`crate::spm::probe_at`] does for its own range,
 /// and for the same reason: those are the demands whose current the engine, not the
 /// caller, chooses, and past the range the cell's Newton does not converge and its curve
@@ -2830,8 +2835,10 @@ pub(crate) fn probe_at(
         return stored(s);
     }
     let window = current_window(s, &sides, dt);
+    // Held to the range widened to take zero in, the pack's own rule (`pack_current_window`):
+    // a cell past an edge may carry anything between rest and its range, never further out.
     let i = match window {
-        Some((lo, hi)) if hold => i.clamp(lo, hi),
+        Some((lo, hi)) if hold => i.clamp(lo.min(0.0), hi.max(0.0)),
         _ => i,
     };
     let edge = window.map_or(f64::INFINITY, |(_, hi)| hi);

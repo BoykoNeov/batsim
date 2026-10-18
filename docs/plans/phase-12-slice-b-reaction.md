@@ -195,7 +195,10 @@ with the hold (the quadrature's own 1 s figures differ in the fourth digit).
   against its own reaction is **−4.00 J** — within 2× — but plating's heat is only 28.8 J, so
   without the term the residual is −32.8 J, **6.6×** the control's, not the 10× registered. At
   `k` × 1000 (5.07 %, run after): −3.01 J with the term, −97.2 J without, 19.6×. Both are pinned.
-* **Prediction 11 (exit 5), held at 15 min, missed at 1 h.** 15 min: 14 steps, none unconverged. 1 h:
+* **Prediction 11 (exit 5), held at 15 min, missed at 1 h — since fixed** (`dfn-hold-past-edge.md`,
+  2026-10-18: not the split but a held probe pinned to the edge of a range its cell was already past;
+  with the probe's range widened to take zero in, all three one-hour hold steps converge). As first
+  measured: 15 min: 14 steps, none unconverged. 1 h:
   every value finite, the charge step converged, and **all three hold steps unconverged**, 1.7, 0.35
   and 0.03 mV short of 4.2 V — against "at most 2, all on the charge leg". Re-run as current demands
   at the currents the hold found, every step converges, so it is the pack's voltage solve. From the

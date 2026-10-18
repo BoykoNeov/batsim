@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
 Phases 0–11 are complete; each is pinned by a committed test (see the README's status
-table). A hundred and thirty-three design notes under `docs/plans/` record what each slice measured,
+table). A hundred and thirty-four design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -456,12 +456,15 @@ where the rest-OCV gate refused to correct.
   and past full, where this model's curve is flat, some steps that converged on that flat curve now
   say unconverged. The mismatched pair above still does not settle its **first** hour at 1C per cell
   (−3.6 and −6.7 A at 25 °C, as before; nothing full yet). Phase 12's exit 5 asks for one-hour
-  convergence on exactly this pack (`phase-12-plating.md`), and **missed it on this soft spot**
-  (`phase-12-slice-b-reaction.md`, 2026-10-18): at 0 °C on the fine grid with plating on, the
-  one-hour charge step converges, and all three one-hour 4.2 V hold steps finish unconverged, 1.7 to
-  0.03 mV short of the target, every cell solve at the found currents converging; from the same state
-  with plating off the hold misses by 120 mV and more, and with plating off from the start the pair
-  is nonphysical by its fifth hour (−14.5 V).
+  convergence on exactly this pack (`phase-12-plating.md`). It **missed it first, and not on the
+  split** (`phase-12-slice-b-reaction.md`): the one-hour charge leaves both cells past an edge of a
+  held probe's range, every hold probe was clamped to it, and the hold stalled 1.7 to 0.03 mV short.
+  **Fixed 2026-10-18** (`dfn-hold-past-edge.md`): a held `Dfn` probe is clamped to its range widened
+  to take zero in, the pack's own rule; exit 5 converges at one hour. What remains is the exception
+  that rule leaves — a group circulating so that a cell's committed share lies outside even its widened
+  range: harmless on one sweep run (a 36 µV gap that will not close), and on one already-broken run
+  (both cells overcharged to 5.19 V by an unconverged charge step) it now escalates further, 1.6e14 A
+  against 144 A; the guard that would stop it, clipping a committed share, breaks the shared node.
 * ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
   2026-08-13** (`operating-point-window.md`): a current demand raises
   `OPERATING_POINT_OUT_OF_WINDOW` too, judged per group. `Rest` is still excluded by

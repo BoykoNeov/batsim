@@ -247,7 +247,9 @@ and double as the scenario file format.
   no invented constant — and, on the `Spm`, its particle surfaces inside `(0, c_max)` too.
   A demand the cells cannot meet inside it stops at the edge, and a power past the most the
   cells can give lands on their maximum-power point; both converge and say so with
-  `SOLVE_UNCONVERGED`. A current demand is never held. The damped search scores a trial on
+  `SOLVE_UNCONVERGED`. Both ranges take zero in — the pack's, and since 2026-10-18 each held `Dfn`
+  probe's — so a cell already past an edge may rest or move back, never further out
+  (`docs/plans/dfn-hold-past-edge.md`). A current demand is never held. The damped search scores a trial on
   the step the next pass would take from it, and narrows a sign bracket once one is known,
   so where an unmet demand lands does not depend on the pass cap. See
   `docs/plans/spm-end-of-step.md`, `docs/plans/dfn-long-step-holds.md` and

@@ -1,6 +1,6 @@
 # A `Dfn` cell past its edge, under a held demand
 
-**Status: PREDICTIONS REGISTERED 2026-10-18, before any engine code.** Raised by Phase 12 slice B's
+**Status: BUILT 2026-10-18; one finding awaiting the owner** (an already-broken run got far worse, below). Predictions registered before any engine code (1a418dc). Raised by Phase 12 slice B's
 exit 5 (`phase-12-slice-b-reaction.md`); the owner chose this fix 2026-10-18 over the split's
 per-cell range under current demands, which does not reach this failure.
 
@@ -59,6 +59,38 @@ positive's, which is what bound here, is exact.
 6. **Plating off stays bit-identical to before Phase 12** on the Phase 12 hash harness's six packs
    (none holds a cell past an edge).
 
-## Results
+## Results (run 2026-10-18)
 
-*(to be written after the runs)*
+* **1, held.** Exit 5 converges: the plating pair's three one-hour hold steps land on 4.200000 V,
+  every value finite; 15 min unchanged (14 steps, none unconverged). Pinned in `plating_dfn.rs`.
+* **2, missed on one step.** From the same state with the reaction switched off, two hold steps
+  converge and the first ends **6 µV short**, unconverged (it was 4.33 V at zero current before).
+* **3, reported: worse, not better.** The pair with plating off from the start is broken before its
+  hold, at its first one-hour charge step (the split's first-hour failure under a current demand,
+  untouched here; both cells overcharged to 5.16 V). Its hold was nonphysical before (−14.5 V by the
+  fifth hour) and is more so now (1174 V).
+* **4, held.** The `dfn-split-nan.md` sweep's 100 runs are bit-identical.
+* **5, held as worded, with one already-broken run made far worse.** The new protocol's 20 runs: 14
+  identical, 6 changed, each first at a step the parent flagged unconverged; none non-finite on either.
+  Unconverged steps 1264 → 1068 over the sweep, and in the 20 runs' holds **266 → 70**, the charge
+  legs unchanged. Four runs' holds go from 5–120 unconverged steps to none. Two remain:
+  * `rec-273.15-2p-weak-chghold-60`, 120 → 62: the smaller cell, past full, is given a share a hair
+    on the charging side of rest (−0.15 mA); its probe is held at rest, and a 36 µV gap stays against
+    the 1 nV tolerance. Every value sensible (4.2000 V); the flag says the step did not close.
+  * `fine-273.15-2p-weak-chghold-900`, 8 → 8, **already broken before its hold**: its last charge step
+    drove both cells to 5.19 V, `SURFACE_OUT_OF_RANGE`, unconverged, identically on parent and fix.
+    The hold then circulates current between them — one charged further past full, outside its
+    widened range, while the other discharges — the one exception `probe_at` still names. It ended at
+    8190 V and 144 A on the parent and ends at **160 499 V and 1.6e14 A** now: probes that used to be
+    pinned now follow the circulation further.
+* **6, held.** The Phase 12 hash harness's six packs are bit-identical to the tree before Phase 12.
+* The workspace suite: 858 passed, 0 failed.
+
+### The finding put to the owner
+
+Both runs this change made more extreme are past the model's domain before the change acts: an
+unconverged current-demand charge overfills both cells first. Holding each cell's **committed**
+share under a held demand to its widened range would stop the escalation, but parallel cells share
+one node, so clipping one cell's current breaks that node to hide a state the model cannot
+describe; it is also close to the option `dfn-split-nan.md` declined. Asked: accept as recorded, or
+add such a guard.

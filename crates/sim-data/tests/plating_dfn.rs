@@ -1037,16 +1037,14 @@ fn pair_run(dt: f64, plating: PlatingModel, verbose: bool) -> (usize, usize, usi
     (steps, cc_unc, cv_unc, finite)
 }
 
-/// Exit 5 (prediction 11): at 15 min steps every step converges; at 1 h every step is finite.
+/// Exit 5 (prediction 11): at 15 min and at 1 h steps every step converges and every value is
+/// finite.
 ///
-/// **Registered as "at most 2 unconverged at 1 h, all on the constant-current leg", and missed**:
-/// the one-hour charge step converges, and all three hold steps finish unconverged, 1.7, 0.35 and
-/// 0.03 mV short of 4.2 V. Every cell solve at those currents converges, and the flag is the
-/// pack's voltage solve: from the same state with the reaction switched off the hold misses by far
-/// more (4.33, 4.12, 4.08 V), and with plating off from the start the pair goes nonphysical by the
-/// fifth hour (`report_pair_control`, `report_pair_hold_without_reaction`). So the miss is the
-/// mismatched pair's split at an hour (`docs/plans/dfn-split-nan.md`, ROADMAP H8), which the plan
-/// said in advance would be the split's to fix; what is pinned is what was measured.
+/// **Registered as "at most 2 unconverged at 1 h, all on the constant-current leg", and missed at
+/// first**: the one-hour charge leaves both cells past an edge of the range a held `Dfn` probe is
+/// kept in, every hold probe was clamped to it, and all three hold steps stalled 1.7 to 0.03 mV
+/// short. Fixed by holding a probe to its range widened to take zero in, the pack's own rule
+/// (`docs/plans/dfn-hold-past-edge.md`); since then every step converges.
 #[test]
 fn the_mismatched_pair_converges_with_plating_on() {
     let (r15, r60) = std::thread::scope(|s| {
@@ -1056,11 +1054,12 @@ fn the_mismatched_pair_converges_with_plating_on() {
     });
     println!("15 min: {r15:?}; 1 h: {r60:?} (steps, unconverged CC, unconverged hold, finite)");
     assert!(r15.3 && r15.1 == 0 && r15.2 == 0, "15 min: {r15:?}");
-    assert!(r60.3, "1 h: a value went non-finite");
-    assert!(r60.1 == 0 && r60.2 <= 3, "1 h: {r60:?}");
+    assert!(r60.3 && r60.1 == 0 && r60.2 == 0, "1 h: {r60:?}");
 }
 
-/// Exit 5's control: the same pair, plating on and off, at one-hour steps, step by step.
+/// Exit 5's control: the same pair, plating on and off, at one-hour steps, step by step. Written
+/// while exit 5 failed; since `dfn-hold-past-edge.md` the plating run converges, and the plating-off
+/// run is still broken from its first, unconverged charge step.
 #[test]
 #[ignore = "report: the mismatched pair at 1 h, plating on against off"]
 fn report_pair_control() {
@@ -1084,7 +1083,8 @@ fn report_energy_ledger_k1000() {
     );
 }
 
-/// Exit 5's hold steps at 1 h: is the flag the pack's voltage solve or a cell's own? Each hold
+/// Exit 5's hold steps at 1 h, as first diagnosed (they converge since `dfn-hold-past-edge.md`):
+/// is the flag the pack's voltage solve or a cell's own? Each hold
 /// step is re-run on a copy as a current demand at the current the hold found.
 #[test]
 #[ignore = "report: which solve the one-hour hold's flag is"]
@@ -1116,7 +1116,8 @@ fn report_pair_hold_flag() {
     }
 }
 
-/// Exit 5's attribution: the same one-hour hold from the same state with the reaction switched
+/// Exit 5's attribution, as first diagnosed: the same one-hour hold from the same state with the
+/// reaction switched
 /// off in the snapshot (stores dropped, selector back to the threshold). If it is unconverged too,
 /// the flag is the pack's voltage solve on this pair at an hour, not plating.
 #[test]
