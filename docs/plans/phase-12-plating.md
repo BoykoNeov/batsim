@@ -129,6 +129,9 @@ instrument read the electrolyte raw where it goes negative at 2C (fixed, its two
 
 ### C — what plating does to the cell's health and its flags
 
+**Started 2026-10-18 at the owner's go; predictions registered in `phase-12-slice-c-health.md`**, with
+the owner's decision there: the dendrite short gets its own placeholder per dead amp-hour.
+
 - **Capacity read off the electrodes**: dead lithium is gone from the negative's inventory, as the film's
   is. Reversible plated lithium is lithium that will strip back; what `soc_true` and `soh_capacity` read
   while it sits as metal is the slice's decision, measured on the rest after a cold charge, and stated.
