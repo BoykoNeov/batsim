@@ -55,7 +55,10 @@ owner); the modified PyBaMM model runs at `rtol` 1e-10, so the reference is clos
 exit 2:** the reference and the engine differ by 15 % on the allowed cold charge, from a third of a
 millivolt in their potentials (not feedback, not the particle grid); on the forbidden charges they agree
 to 3 % (8.5 % at −10 °C 2C, all of it plating's feedback). Set the bar on those, or against the engine's
-own open loop at small `k`, and say which.
+own open loop at small `k`, and say which. **Exit 1 has 1.6 % of room:** the allowed cold charge plates
+0.00197 % against the 0.002 % target, and the reference already puts it at 0.00227 %; so exit 1 is read on
+the engine, on the fine grid, at 1 s steps (at most the 60 s step, whose bar is 1 %), not at the long
+steps whose bars allow 10–20 % more.
 
 Pre-registered like a spike. In the reference venv, from the spike harness's sources (moved into
 `tools/reference/` so the result does not depend on `W:\temp\claude`).

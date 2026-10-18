@@ -192,8 +192,10 @@ dead_share = 0.5
 `crates/sim-data/tests/plating_open_loop.rs` (two `#[ignore]` reports, 31 s release) and
 `tools/reference/plating_reference.py` (about 5 min a charge at 40/20/40, 200 shells) are in the tree;
 the spike's `ref\` scripts are superseded by the second and its A1b integrator by the first. **Four
-PyBaMM charges failed when run three at a time** — the hold leg came back empty — and all four ran
-cleanly one at a time with the same arguments. Not traced; run the reference serially.
+PyBaMM charges failed when run three at a time**: the summary step raised on an empty array (which
+part of the solution was empty was not established). All four ran cleanly one at a time with the same
+arguments, and the serial 0 °C 1C re-run matches the two width variants that succeeded in the same
+batch to seven digits, so the batch's other figures stand. Not traced; run the reference serially.
 
 Per-second traces (`py_*.csv`) are not committed: no test reads them, and the slice B comparison will
 fix its own sampling when it writes its golden.

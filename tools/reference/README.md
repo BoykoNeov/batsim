@@ -225,8 +225,8 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
    python tools/reference/plating_reference.py 0 0.3 4.8e-11 --out trace.csv
    ```
 
-   **Run it one charge at a time**: four charges run three at a time came back with an empty
-   hold leg and ran cleanly alone (not traced). Writes nothing in the tree; results in
+   **Run it one charge at a time**: four charges run three at a time failed in the summary on an
+   empty array and ran cleanly alone with the same arguments (not traced). Writes nothing in the tree; results in
    `docs/plans/phase-12-slice-a-reference.md`.
 
 `common.py` holds the shared extraction/simulation helpers and the
