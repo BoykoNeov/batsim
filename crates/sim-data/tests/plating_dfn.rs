@@ -1405,8 +1405,18 @@ fn report_pair_hold_pieces() {
     p.set_cell_factors(0, 1, 0.9, 1.0).expect("cell exists");
     p.step(3600.0, Demand::Current(-2.0 * q), &env(t));
     for k in 0..(3 * 720) {
+        let before = p.clone();
         let tel = p.step(5.0, Demand::Voltage(4.2), &env(t));
         if tel.flags.contains(EventFlags::SOLVE_UNCONVERGED) {
+            // The attribution: the same piece at the current the hold found, as a current demand.
+            let mut c = before.clone();
+            let cur = c.step(5.0, Demand::Current(tel.i_actual), &env(t));
+            println!(
+                "  as a current demand at {:.6} A: unconverged {}, surface flag {}",
+                tel.i_actual,
+                cur.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+                cur.flags.contains(EventFlags::SURFACE_OUT_OF_RANGE)
+            );
             let (a, b) = (p.cell(0, 0).unwrap(), p.cell(0, 1).unwrap());
             println!(
                 "piece {k} ({} s into the hold): v {:.9} i {:.6} flags {:?} cells {:?}/{:?} soc {:.5}/{:.5}",
@@ -1434,6 +1444,50 @@ fn report_held_step_cost() {
                 tel.v_terminal,
                 tel.flags.contains(EventFlags::SOLVE_UNCONVERGED)
             );
+        }
+    }
+}
+
+/// Exit 5's flagged hold pieces, isolated to one cell: cell `k` of the pair cut out into a 1S1P pack
+/// (its snapshot, the other cell removed) and stepped 5 s at the share the pair gave it.
+#[test]
+#[ignore = "diagnostic: a flagged piece's cell solved alone"]
+fn report_pair_piece_one_cell() {
+    let t = 273.15;
+    let q = chem().cell.capacity_ah;
+    let mut cfg = config(fine(), PlatingModel::Reaction, 0.0, t);
+    cfg.parallel = 2;
+    let mut p = Pack::new(&cfg, chem()).expect("builds");
+    p.set_cell_factors(0, 1, 0.9, 1.0).expect("cell exists");
+    p.step(3600.0, Demand::Current(-2.0 * q), &env(t));
+    for _ in 0..2 {
+        p.step(5.0, Demand::Voltage(4.2), &env(t));
+    }
+    let before = p.clone();
+    let tel = p.step(5.0, Demand::Voltage(4.2), &env(t));
+    println!(
+        "pair piece: unconverged {}",
+        tel.flags.contains(EventFlags::SOLVE_UNCONVERGED)
+    );
+    for k in 0..2 {
+        let share = p.cell(0, k).unwrap().current_a.unwrap();
+        let mut v = serde_json::to_value(before.snapshot()).unwrap();
+        let cell = v["pack"]["groups"][0]["cells"][k].clone();
+        v["pack"]["groups"][0]["cells"] = serde_json::Value::Array(vec![cell]);
+        v["pack"]["parallel"] = serde_json::json!(1);
+        if v["pack"]["config"].is_object() {
+            v["pack"]["config"]["parallel"] = serde_json::json!(1);
+        }
+        match serde_json::from_value::<sim_core::Snapshot>(v).map(|s| Pack::restore(&s)) {
+            Ok(Ok(mut one)) => {
+                let r = one.step(5.0, Demand::Current(share), &env(t));
+                println!(
+                    "cell {k} alone at {share:.6} A: unconverged {}, surface flag {}",
+                    r.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+                    r.flags.contains(EventFlags::SURFACE_OUT_OF_RANGE)
+                );
+            }
+            other => println!("cell {k}: could not cut out: {:?}", other.err()),
         }
     }
 }

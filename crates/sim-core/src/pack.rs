@@ -1457,6 +1457,9 @@ pub struct CellView {
     /// step. Neither is wrong: a clone genuinely did take that step. The value is a
     /// report about a step rather than saved state, so the *trajectory* is identical on
     /// both paths; what differs is one frame of one field.
+    ///
+    /// On a voltage hold cut into pieces (`docs/plans/plating-hold-pieces.md`) it is the **last**
+    /// piece's split, not a mean over the step, as every other state in the frame is.
     pub current_a: Option<f64>,
 }
 

@@ -215,6 +215,10 @@ pub struct Telemetry {
     pub v_terminal: f64,
     /// Actual pack current \[A\] leaving the cells, discharge-positive.
     ///
+    /// **The step's mean on a voltage hold cut into pieces** (a pack with a cell running the
+    /// plating reaction, `docs/plans/plating-hold-pieces.md`), so `i_actual·dt` is still the step's
+    /// charge; every other step carries one current, and this is it.
+    ///
     /// This may differ from the demand for three reasons: the BMS derated it, the BMS
     /// opened the contactor, or an injected [`faults::Fault::ExternalShort`] is
     /// drawing current the demand never asked for. In the last case this is the
@@ -282,6 +286,10 @@ pub struct Telemetry {
     ///
     /// At `dt <= 0` the distinction does not arise: a zero-length probe step moves no
     /// overpotential, and this is the instantaneous rate either way.
+    ///
+    /// **On a voltage hold cut into pieces** (a plating pack, `docs/plans/plating-hold-pieces.md`)
+    /// this and every other rate here is the **mean over the pieces**, not the last instant; every
+    /// piece ends at the target, so the four-term balance closes over the step instead.
     pub q_gen_w: f64,
     /// Exothermic self-heating released across every cell this step \[W\], averaged
     /// over the step.

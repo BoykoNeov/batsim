@@ -286,8 +286,9 @@ and double as the scenario file format.
   right power and landed 6.6 K low on a 20 K rise. `Telemetry::q_gen_w` reports an
   instant, not the mean: the step's **last** one, the exact partner of the end-of-step
   terminal voltage in the pack energy ledger — the one instant at which a single node
-  voltage speaks for every cell of a parallel group. See `docs/plans/step-mean-heat.md`
-  and `docs/plans/end-of-step-split.md`. The porous models have no exact mean: the `Spm`
+  voltage speaks for every cell of a parallel group (except on a plating pack's voltage hold cut
+  into pieces, where every rate is the pieces' mean: `docs/plans/plating-hold-pieces.md`). See
+  `docs/plans/step-mean-heat.md` and `docs/plans/end-of-step-split.md`. The porous models have no exact mean: the `Spm`
   integrates a trapezoid of the step's two ends, and the `Dfn` the **end** alone, chosen
   on measurement because its overpotential builds within seconds (the trapezoid read
   0.86 K for a 1.06 K rise). Both read the heat off the cell's own curve at the end of the
@@ -614,9 +615,10 @@ the previous one's tests pass.
   as the exit. Plan, owner decisions and slice addenda in
   `docs/plans/phase-11-fitting.md`.
 - **Phase 12 — lithium plating as a reaction on the `Dfn`.** In progress: slice A (the constant, a
-  closed-loop PyBaMM reference) and B (the reaction, v29) done 2026-10-18, B's two exit misses fixed
-  at the owner's decision (`dfn-hold-past-edge.md`, `plating-hold-pieces.md`); C (health, flags, the
-  dendrite short) next. Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
+  closed-loop PyBaMM reference) and B (the reaction, v29) done 2026-10-18, B's two exit misses worked
+  at the owner's decision: exit 3 met (`plating-hold-pieces.md`); exit 5 finite and on target at one
+  hour, its first hold step flagged by the cells' own solves after the one-hour charge overfilled
+  them (`dfn-hold-past-edge.md`, awaiting the owner); C (health, flags, the dendrite short) next. Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
 - **Phases 13 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

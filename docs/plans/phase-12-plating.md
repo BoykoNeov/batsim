@@ -1,10 +1,10 @@
 # Phase 12 — lithium plating as a reaction on the `Dfn`, instead of a threshold
 
 **Status: PLANNED 2026-10-18; slice A done; slice B built 2026-10-18. Of its two exit misses, the owner
-chose to fix both before C, and both are fixed (2026-10-18): exit 5 by `dfn-hold-past-edge.md` (not the
-split but a held probe's range; its one finding accepted by the owner), exit 3's hold leg by
-`plating-hold-pieces.md` (a plating pack's voltage hold cut into 5 s pieces, within 0.10 %). Slice C
-is next.** Written after the spike (`phase-12-spike.md`), which is the measurement
+chose to fix both before C (2026-10-18). **Exit 3 is met**: `plating-hold-pieces.md` cuts a plating
+pack's voltage hold into 5 s pieces, the hold leg within 0.10 %. **Exit 5 is not quite**: the one-hour
+stall was a held probe's range, fixed by `dfn-hold-past-edge.md` (its one finding accepted by the owner),
+but with the hold in pieces exit 5 is finite and on 4.200000 V at one hour, its first hold step flagged by the cells' own solves after the one-hour charge overfilled them (a miss as registered, put to the owner). Slice C waits.** Written after the spike (`phase-12-spike.md`), which is the measurement
 this plan stands on; where a later slice note contradicts this text, the slice note is the measurement
 and wins. When written the repo was at `SNAPSHOT_VERSION` 28 and `WASM_API_VERSION` 10.
 
