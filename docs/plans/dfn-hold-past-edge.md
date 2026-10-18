@@ -1,6 +1,6 @@
 # A `Dfn` cell past its edge, under a held demand
 
-**Status: BUILT 2026-10-18; one finding awaiting the owner** (an already-broken run got far worse, below). Predictions registered before any engine code (1a418dc). Raised by Phase 12 slice B's
+**Status: DONE 2026-10-18.** The one finding (an already-broken run escalates further) was put to the owner and **accepted as recorded**. Predictions registered before any engine code (1a418dc). Raised by Phase 12 slice B's
 exit 5 (`phase-12-slice-b-reaction.md`); the owner chose this fix 2026-10-18 over the split's
 per-cell range under current demands, which does not reach this failure.
 
@@ -93,4 +93,12 @@ unconverged current-demand charge overfills both cells first. Holding each cell'
 share under a held demand to its widened range would stop the escalation, but parallel cells share
 one node, so clipping one cell's current breaks that node to hide a state the model cannot
 describe; it is also close to the option `dfn-split-nan.md` declined. Asked: accept as recorded, or
-add such a guard.
+add such a guard. **Answered 2026-10-18: accepted as recorded**, no guard.
+
+### Pinned without plating
+
+Once a plating pack's hold is cut into short pieces (Phase 12's next fix), exit 5 no longer reaches a
+one-hour held probe, so the change is pinned on a pack without plating:
+`dfn_parallel_long_step.rs::a_hold_from_past_full_settles` (the mismatched pair at 25 °C, charged
+past full at 1C per cell, then eight 15-minute hold steps, every one converged on 4.2 V). With the
+probe clamped to its unwidened range it fails at the first hold step, 0.8 mV short.

@@ -308,3 +308,37 @@ fn a_cold_fast_discharge_past_empty_stays_finite() {
         );
     }
 }
+
+/// A hold that starts with a cell past its edge settles (`docs/plans/dfn-hold-past-edge.md`): the
+/// mismatched pair charged at 1C per cell for an hour — the smaller cell past full — then held at
+/// 4.2 V, 15-minute steps, recommended grid, 25 °C. Each hold probe of a cell past its edge used to be
+/// clamped to that edge, every pass saw the same line, and five of the eight hold steps stalled
+/// unconverged; with the probe's range widened to take zero in, as the pack's is, none does.
+#[test]
+fn a_hold_from_past_full_settles() {
+    use sim_core::EventFlags;
+    let c_a = chem().cell.capacity_ah;
+    let mut p = mismatched_pair(RECOMMENDED, T0_K, ThermalConfig::Isothermal, 0.0);
+    let dt = 900.0;
+    for _ in 0..4 {
+        p.step(dt, Demand::Current(-2.0 * c_a), &env(T0_K));
+    }
+    let past_full = p.cell(0, 1).expect("cell exists").soc;
+    assert!(
+        past_full >= 1.0,
+        "the smaller cell must end the charge at full ({past_full})"
+    );
+    for k in 0..8 {
+        let t = p.step(dt, Demand::Voltage(4.2), &env(T0_K));
+        assert!(
+            !t.flags.contains(EventFlags::SOLVE_UNCONVERGED),
+            "hold step {k} unconverged at {} V",
+            t.v_terminal
+        );
+        assert!(
+            (t.v_terminal - 4.2).abs() < 1.0e-6,
+            "hold step {k}: {} V",
+            t.v_terminal
+        );
+    }
+}
