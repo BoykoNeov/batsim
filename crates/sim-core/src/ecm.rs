@@ -449,6 +449,31 @@ impl CellModel {
         }
     }
 
+    /// Give this cell an empty plated-lithium store, so its plating reaction runs. `false` on
+    /// every model but the `Dfn`'s, which [`crate::Pack::new`] refuses beforehand.
+    pub(crate) fn start_plating(&mut self) -> bool {
+        match self {
+            CellModel::Dfn(s) => {
+                dfn::start_plating(s);
+                true
+            }
+            CellModel::Ecm1Rc(_)
+            | CellModel::Ecm2Rc(_)
+            | CellModel::Spm(_)
+            | CellModel::SpmEnsemble(_) => false,
+        }
+    }
+
+    /// The lithium \[mol\] plated on this cell, `(reversible, dead)`, or `None` on a cell
+    /// that runs no plating reaction. See [`crate::dfn::plated_lithium_mol`].
+    #[must_use]
+    pub(crate) fn plated_lithium_mol(&self, chem: &ChemistryParams) -> Option<(f64, f64)> {
+        match self {
+            CellModel::Dfn(s) => dfn::plated_lithium_mol(s, chem.spm.as_ref()?),
+            _ => None,
+        }
+    }
+
     /// Grow this cell's SEI film over one aging tick and take its lithium from the negative
     /// electrode. Returns the energy \[J\] that lithium carried, read against lithium metal
     /// (see [`crate::FilmView::energy_last_step_j`]); `0.0` on a cell with no film. See

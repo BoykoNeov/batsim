@@ -8,7 +8,10 @@
 //! against it). Slice D added one the decisions did not name, `r_growth_per_capacity_loss`:
 //! the WMG cells **bound** it (0.5–2.9 % per %, 1.5 inside) without fitting it — a bound is not
 //! a fit, the same reason cycle fade stays listed although LG's sheet bounds it. The list may
-//! only shrink, and only by a later note that says what replaced each constant it drops.
+//! shrink only by a later note that says what replaced each constant it drops, and may grow
+//! only by a phase plan that names the key and the owner decision behind it (amended
+//! 2026-10-18, `docs/plans/phase-12-plating.md`, "Two more owner decisions", 1). Phase 12
+//! added two that way: plating's rate constant and its dead share (decisions 2 and 3 there).
 //!
 //! # What "labelled" means
 //! A key's own label: its inline comment and the comment block directly above it, no blank
@@ -48,6 +51,9 @@ const PLACEHOLDERS: &[&str] = &[
     "safety.plating_short_hazard_per_ah",
     "safety.plating_short_ohms",
     "spm.sei.initial_thickness_m",
+    // Phase 12 (`docs/plans/phase-12-plating.md`, owner decisions 2 and 3).
+    "dfn.plating.rate_constant_m_per_s",
+    "dfn.plating.dead_share",
 ];
 
 /// LG's specification sheet, as every provenance that uses it must name it (decision 1).
@@ -356,8 +362,8 @@ fn check(text: &str) -> Result<(), String> {
 fn the_placeholders_are_the_fixed_list_and_the_rest_is_sourced() {
     assert_eq!(
         PLACEHOLDERS.len(),
-        19,
-        "15 + 3 for the calendar curve + 1 bounded"
+        21,
+        "15 + 3 for the calendar curve + 1 bounded + 2 by Phase 12's plan"
     );
     if let Err(e) = check(LGM50) {
         panic!("{e}");

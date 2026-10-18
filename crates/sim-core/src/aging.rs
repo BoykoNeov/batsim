@@ -133,6 +133,14 @@ pub struct AgingConfig {
     /// before Phase 10 still parses and still means the curve.
     #[serde(default)]
     pub calendar: CalendarModel,
+    /// What charging into a cold or overdriven graphite does: the chemistry's threshold
+    /// ([`PlatingModel::Threshold`], the default) or plating as a reaction in the cell's own
+    /// negative electrode ([`PlatingModel::Reaction`]).
+    ///
+    /// `serde(default)`, so every setup written before Phase 12 still parses and still means
+    /// the threshold.
+    #[serde(default)]
+    pub plating: PlatingModel,
 }
 
 impl Default for AgingConfig {
@@ -140,8 +148,31 @@ impl Default for AgingConfig {
         Self {
             sub_clock_period_s: 10.0,
             calendar: CalendarModel::Curve,
+            plating: PlatingModel::Threshold,
         }
     }
+}
+
+/// Which mechanism carries lithium plating — what a charge the graphite cannot take in costs.
+///
+/// Per pack rather than per chemistry, as [`CalendarModel`] is, so one cell can be charged
+/// cold both ways and compared (Phase 12's lesson). See `docs/plans/phase-12-plating.md`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlatingModel {
+    /// The chemistry's `[safety]` threshold: a charge below `t_plating_min_k` above
+    /// `plating_c_threshold` raises the flag and bills `plating_fade_per_ah`. Runs on every
+    /// cell model.
+    #[default]
+    Threshold,
+    /// Plating as a second reaction at each negative node of a `Dfn` cell
+    /// (`[dfn.plating]`): lithium deposits as metal where the graphite's potential falls past
+    /// 0 V against lithium, strips back where it rises above it, and a fixed share is lost
+    /// at once. [`crate::Pack::new`] refuses it on every other cell model and on a chemistry
+    /// with no `[dfn.plating]`.
+    ///
+    /// **Slice B of the phase builds the reaction only**: until slice C the threshold's flag
+    /// and fade still run beside it on such a cell (`docs/plans/phase-12-slice-b-reaction.md`).
+    Reaction,
 }
 
 /// Which mechanism carries calendar fade — what a cell loses by existing.

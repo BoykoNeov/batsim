@@ -417,6 +417,21 @@ t_ref_k      = 298.15
 diffusivity  = [1010.0, 1.01, -1560.0, -487.0]
 conductivity = [0.521, 228.0, -1.06, 0.353, -0.00359, 0.00148]
 
+# Lithium plating as a reaction on the graphite (Phase 12, docs/plans/phase-12-plating.md).
+# Read ONLY by a Dfn pack whose aging.plating is Reaction; every key required, unknown keys
+# refused. The law plates only past 0 V against lithium and strips back only what it plated,
+# a form PyBaMM does not ship: there is no outside reference for it (owner decision 1).
+[dfn.plating]
+# placeholder — no source (phase-12-plating.md, owner decision 2). Sized on the FINE grid
+# (dfn::FINE_*), open loop, so the coldest charge LG's sheet allows (0 degC 0.3C, then 4.2 V
+# held to C/20) plates 0.00197 % of capacity; 21x under OKane2022's 1e-9. On the recommended
+# grid the same charge plates 3.7 % less. docs/plans/phase-12-slice-a-reference.md.
+rate_constant_m_per_s = 4.8e-11
+# OKane2022 (PyBaMM parameter set; it "does not claim to be representative")
+transfer_coefficient = 0.65
+# placeholder — no source (owner decision 3): a round share of plated lithium lost at once
+dead_share = 0.5
+
 # For reference, the initial electrolyte concentration is 1000 mol/m3 and is NOT
 # repeated here: it is [spm].c_e_mol_per_m3, which an SPM holds CONSTANT and a DFN takes
 # as the initial value of a field it then solves for. Same key, same number, two readings.

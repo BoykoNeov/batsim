@@ -658,6 +658,48 @@ pub struct DfnParams {
     /// temperature-independent, by a path that evaluates no ratio.
     #[serde(default)]
     pub electrolyte_temperature: Option<ElectrolyteTemperature>,
+    /// Lithium plating as a reaction on the negative electrode (`[dfn.plating]`), or `None`
+    /// on a chemistry that has none.
+    ///
+    /// Read only when a pack selects the reaction ([`crate::PlatingModel::Reaction`]), and
+    /// then only by the `Dfn`: [`crate::Pack::new`] refuses the reaction on every other cell
+    /// model and on a chemistry without this section. A pack that does not select it never
+    /// reads it, so adding the section moves none of a chemistry's trajectories. See
+    /// `docs/plans/phase-12-plating.md`.
+    #[serde(default)]
+    pub plating: Option<PlatingParams>,
+}
+
+/// Lithium plating on the negative electrode as a second reaction at each node
+/// (`[dfn.plating]`), beside intercalation and sharing its `η = φ_s − φ_e`:
+///
+/// `J = F·k·c_e · [exp(−α·F·η/(R·T)) − exp((1 − α)·F·η/(R·T))]`,
+///
+/// positive plating, negative stripping, and stripping only while the node holds reversible
+/// plated lithium — so a fresh graphite above 0 V against lithium plates nothing. A fixed
+/// share of what plates is dead at once and never strips back. PyBaMM ships no such form
+/// (its stripping exchange current is proportional to the plated lithium, so it plates above
+/// 0 V); the owner accepted the lack of an outside reference as its cost
+/// (`docs/plans/phase-12-plating.md`, decision 1).
+///
+/// Every field is required and an unknown key is refused, as on [`SeiParams`]: two of the
+/// three are labelled placeholders, and a misspelt one silently defaulting would be an
+/// unlabeled number. See `chemistries/nmc_21700_lgm50.toml` for each one's provenance.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatingParams {
+    /// Rate constant `k` \[m/s\]: the exchange current density is `F·k·c_e`. Must be finite
+    /// and `> 0`. No source exists for any cell; the shipped value is a placeholder sized
+    /// on one grid, which its provenance names, because plating is exponential in a
+    /// potential the grid moves.
+    pub rate_constant_m_per_s: f64,
+    /// Transfer coefficient `α`, in (0, 1): `α` and `1 − α` are both exponents, so either
+    /// endpoint kills a branch (as on [`ElectrodeParams::charge_transfer_alpha`]).
+    pub transfer_coefficient: f64,
+    /// Share of plated lithium that is dead at once and never strips back, in \[0, 1\].
+    /// Both endpoints are meaningful: `0` plates only reversibly, `1` loses everything it
+    /// plates.
+    pub dead_share: f64,
 }
 
 /// The electrolyte's temperature dependence, applied as a **ratio** to the
@@ -2150,6 +2192,30 @@ fn check_dfn(dfn: &DfnParams) -> Result<(), ChemistryError> {
     )?;
     if let Some(et) = &dfn.electrolyte_temperature {
         check_electrolyte_temperature(et)?;
+    }
+    if let Some(pl) = &dfn.plating {
+        check_plating(pl)?;
+    }
+    Ok(())
+}
+
+/// Validate a `[dfn.plating]` block.
+fn check_plating(pl: &PlatingParams) -> Result<(), ChemistryError> {
+    if !is_positive(pl.rate_constant_m_per_s) || !pl.rate_constant_m_per_s.is_finite() {
+        return Err(ChemistryError::NotPositive {
+            what: "dfn.plating.rate_constant_m_per_s",
+            value: pl.rate_constant_m_per_s,
+        });
+    }
+    if !(pl.transfer_coefficient > 0.0 && pl.transfer_coefficient < 1.0) {
+        return Err(ChemistryError::BadRange {
+            what: "dfn.plating.transfer_coefficient must be in (0, 1)",
+        });
+    }
+    if !(0.0..=1.0).contains(&pl.dead_share) {
+        return Err(ChemistryError::BadRange {
+            what: "dfn.plating.dead_share must be in [0, 1]",
+        });
     }
     Ok(())
 }

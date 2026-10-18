@@ -199,3 +199,23 @@ batch to seven digits, so the batch's other figures stand. Not traced; run the r
 
 Per-second traces (`py_*.csv`) are not committed: no test reads them, and the slice B comparison will
 fix its own sampling when it writes its golden.
+
+## Addendum 2026-10-18 (slice B): two 2C rows corrected
+
+Slice B found a defect in `plating_open_loop.rs` (`phase-12-slice-b-reaction.md`, "against the open
+loop"): it read each node's electrolyte concentration raw, and on a 2C charge the `Dfn`'s electrolyte
+at the graphite goes slightly negative (to −0.02 mol/m³ at 0 °C; the solver holds its lookups at
+`C_E_FLOOR_MOL_PER_M3`, not its state). The law's sign flips with `c_e`, so a node above 0 V counted
+as plating. The instrument now reads `c_e` through the same floor. Re-run, fine grid, per unit `k`:
+
+| charge | CC gross | CC–CV gross | hold ÷ CC |
+| --- | --- | --- | --- |
+| 0 °C 2C | 5.435e7 (was 5.518e7) | 4.038e8 (was 4.055e8) | 7.43 (was 7.35) |
+| −10 °C 2C | 2.936e7 (was 3.004e7) | 1.0888e9 (was 1.107e9) | 37.1 (was 36.8) |
+
+Every other row is unchanged to four figures, **the sizing charge (0 °C 0.3C) included**, so `k` does
+not move. On the recommended grid −10 °C 2C reads 9.976e8 with the hold (was 1.004e9) and 1.18e7
+without (was 1.20e7). What moves downstream: at size the engine's open loop is 0.376 % at 0 °C 2C
+and 1.014 % at −10 °C 2C (was 0.378 and 1.031), so PyBaMM ÷ engine is 0.978 and **0.930** (was 0.973
+and 0.915) and the feedback at −10 °C 2C is 7.0 %, not 8.5 %; PyBaMM at `k`/100 ÷ the open loop at
+−10 °C 2C is 1.017 (was 1.0004). The table above is left as it was run.

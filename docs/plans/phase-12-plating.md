@@ -1,6 +1,6 @@
 # Phase 12 — lithium plating as a reaction on the `Dfn`, instead of a threshold
 
-**Status: PLANNED 2026-10-18.** Written after the spike (`phase-12-spike.md`), which is the measurement
+**Status: PLANNED 2026-10-18; slices A and B done 2026-10-18, C next.** Written after the spike (`phase-12-spike.md`), which is the measurement
 this plan stands on; where a later slice note contradicts this text, the slice note is the measurement
 and wins. When written the repo was at `SNAPSHOT_VERSION` 28 and `WASM_API_VERSION` 10.
 
@@ -86,6 +86,17 @@ Output: a `[dfn.plating]` section draft (`k`, `α` = OKane2022's 0.65, the dead 
 its provenance and, for `k`, its grid and its sizing; a note `phase-12-slice-a-reference.md`.
 
 ### B — plating inside the `Dfn` (engine; one snapshot bump, 28 → 29)
+
+**Done 2026-10-18** (`phase-12-slice-b-reaction.md`): the reaction is in the `Dfn`'s solve, opt-in by
+`AgingConfig::plating = Reaction`; plating off is bit-identical; a plating cell's step is marched in
+**5 s sub-steps** (`dfn::PLATING_SUBSTEP_S`) with the whole step's tangent carried by a forward
+sensitivity, which holds the plating integral within 0.4 % of the 1 s figure at every step length
+(the quadrature was measured and refused: it books nothing on a 30-minute step from rest). Exits 1,
+2 (against PyBaMM, 2.4 %), 4 and 6 pass. **Recorded misses:** a cold voltage hold at steps past a
+minute under-books plating by the hold's own one-current-per-step profile (29 % at 15 min; the
+integral is right to 0.4 % on that profile); exit 5's one-hour hold steps finish unconverged, the
+pack's voltage solve on the mismatched pair (worse with plating off); and slice A's open-loop
+instrument read the electrolyte raw where it goes negative at 2C (fixed, its two 2C rows corrected).
 
 - **State:** reversible and dead plated lithium per negative node, inside `DfnState`. Snapshots are
   positional `bincode`, so `#[serde(default)]` is no substitute for the bump (Phase 10 slice B); the

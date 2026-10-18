@@ -329,6 +329,19 @@ and double as the scenario file format.
   multiplier, and its resistance does not go through `r_growth_per_capacity_loss`. Cycle,
   plating and reversal stay drawn. `Pack::new` refuses it on the ECM and the many-particle cell. See
   `docs/plans/phase-10-sei.md`.
+- **Lithium plating as a reaction** (Phase 12, `Dfn` only, opt-in with `AgingConfig::plating =
+  Reaction`; `[dfn.plating]`): a second reaction at each negative node, sharing its `φ_s − φ_e` with
+  intercalation, `J = F·k·c_e·[exp(−α·f·η) − exp((1 − α)·f·η)]` — plating only past 0 V against
+  lithium, stripping back only what the node holds (capped at its reversible store over the step),
+  a fixed `dead_share` lost at once. `k` is a placeholder sized on the fine grid against LG's sheet;
+  there is no outside reference for the law. Its heat is booked against lithium metal at 0 V. A
+  plating cell's step is marched in sub-steps of at most `dfn::PLATING_SUBSTEP_S` (5 s), a count
+  fixed by `dt` alone, its tangent the whole step's (a forward sensitivity through the sub-steps):
+  booked at one end-of-step potential, plating came out ×3.6 at 30 min. **Recorded limit:** a cold
+  voltage hold at steps past a minute under-books plating by the hold's own one-current-per-step
+  profile (29 % at 15 min), which no cell sub-step can see. Until slice C the threshold's flag and
+  fade still run beside it. See `docs/plans/phase-12-plating.md` and
+  `docs/plans/phase-12-slice-b-reaction.md`.
 - All mechanisms reduce `soh_capacity` **and** increase `soh_resistance`
   (roughly: each % capacity lost adds a configurable % resistance). Resistance
   growth is pedagogically important — do not model capacity fade alone.
@@ -378,8 +391,8 @@ and double as the scenario file format.
 
 One file per chemistry. `sim-data` parses and validates (monotone OCV table,
 positive resistances, limits ordered, etc.) into `sim_core::ChemistryParams`.
-Eight ship: LFP 26650, NMC 18650, LG M50 21700 (`[spm]`, the only `[spm.sei]` and the only
-`[dfn]`), the same LFP
+Eight ship: LFP 26650, NMC 18650, LG M50 21700 (`[spm]`, the only `[spm.sei]`, the only
+`[dfn]` and the only `[dfn.plating]`), the same LFP
 26650 as a many-particle cell (`lfp_26650_prada2013`: `[spm]` with
 `[spm.positive.regular_solution]`, which the plain `Spm` and the `Dfn` refuse),
 LTO 20 Ah, sodium-ion 18650, NiMH sub-C (`[hysteresis]`, `[charge_acceptance]`, an OCV
@@ -443,6 +456,9 @@ soc_onset = 0.985            # above this the accepted share falls linearly to 0
 #                 [spm.positive.ocp]; Pack::new refuses it under Spm and Dfn
 #   [spm.sei]     the SEI film's constants (Phase 10). Read ONLY by an Spm or Dfn pack whose
 #                 AgingConfig::calendar is Film; every key required, unknown keys refused
+#   [dfn.plating] lithium plating as a reaction (Phase 12): rate constant, transfer coefficient,
+#                 dead share. Read ONLY by a Dfn pack whose AgingConfig::plating is Reaction;
+#                 every key required, unknown keys refused
 #   [diagram]     what the cell is made of, for the client's carrier diagram. Read by NO
 #                 engine code (sim_data::parse_chemistry_facts); its captions are tied to
 #                 [safety] and the loader rejects a mismatch. See docs/plans/carrier-diagram.md
@@ -594,7 +610,10 @@ the previous one's tests pass.
   misses the 12 mV whole-run bar only at the knee (67 mV, 5 s early), a record the owner accepted
   as the exit. Plan, owner decisions and slice addenda in
   `docs/plans/phase-11-fitting.md`.
-- **Phases 12 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
+- **Phase 12 — lithium plating as a reaction on the `Dfn`.** In progress: slices A (the constant,
+  a closed-loop PyBaMM reference) and B (the reaction, v29) done 2026-10-18; C (health, flags, the
+  dendrite short) next. Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
+- **Phases 13 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.
 - **Phase 8 — new chemistries.** One cheap-tier lithium parameter set added with

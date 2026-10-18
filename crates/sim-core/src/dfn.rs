@@ -90,8 +90,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::aging::GAS_CONSTANT_J_PER_MOL_K;
 use crate::chem::{
-    DfnElectrode, DfnParams, ElectrodeParams, ElectrolyteRatio, PowerTerm, ReversalParams,
-    SeiParams, SpmParams,
+    DfnElectrode, DfnParams, ElectrodeParams, ElectrolyteRatio, PlatingParams, PowerTerm,
+    ReversalParams, SeiParams, SpmParams,
 };
 use crate::flags::EventFlags;
 use crate::math;
@@ -331,6 +331,42 @@ const DAMPING_ATTEMPTS: u32 = 16;
 /// and directly proportional on a run that has left the model's domain.
 pub const NEWTON_ITER_CAP: u32 = 50;
 
+/// Longest sub-step \[s\] a step of a cell running the plating reaction is cut into.
+///
+/// A backward-Euler step books its whole length at its end potential, and on a charge that is
+/// the step's lowest; plating is exponential in it, so a long step over-books it — ×2.03 at
+/// 15 min and ×3.60 at 30 min of the 1 s figure on a 1C charge from empty at 0 °C, while the
+/// voltage and the state of charge hardly move (`docs/plans/phase-12-spike.md`, A3). So a
+/// plating cell's step is marched in sub-steps of at most this, at the step's current, each a
+/// full solve. The count is `dt / PLATING_SUBSTEP_S` rounded up — **a function of the step
+/// length alone, never of the current being tried** (the many-particle cell's rule,
+/// [`crate::ensemble::SUBSTEP_S`]), so the end-of-step curve the pack brackets is one
+/// function of current and the step stays deterministic. A step of this length or less is one
+/// solve, so the real-time path costs what it did. Measured, not chosen:
+/// `docs/plans/phase-12-slice-b-reaction.md`.
+pub const PLATING_SUBSTEP_S: f64 = 5.0;
+
+/// Most sub-steps one plating step is cut into. Above `PLATING_SUBSTEP_S · this` (5 h) the
+/// sub-step grows with the step instead, past every step length this model's envelope covers.
+pub const PLATING_MAX_SUBSTEPS: usize = 3600;
+
+/// The sub-step count for a plating cell's step of `dt` seconds: `dt / PLATING_SUBSTEP_S`
+/// rounded up, at least 1, at most [`PLATING_MAX_SUBSTEPS`]. See [`PLATING_SUBSTEP_S`].
+#[must_use]
+pub fn plating_substeps(dt: f64) -> usize {
+    if dt.is_nan() || dt <= 0.0 {
+        return 1;
+    }
+    let m = (dt / PLATING_SUBSTEP_S).ceil();
+    if m >= PLATING_MAX_SUBSTEPS as f64 {
+        PLATING_MAX_SUBSTEPS
+    } else if m >= 1.0 {
+        m as usize
+    } else {
+        1
+    }
+}
+
 /// Unknowns per x-node: `(c_e, φ_e, φ_s, j)`.
 const NVAR: usize = 4;
 /// Offset of the electrolyte concentration within a node's unknowns.
@@ -422,6 +458,33 @@ pub struct DfnState {
     /// `docs/plans/phase-10-sei.md` (slice D).
     #[serde(default)]
     pub film_thickness_m: Option<Vec<f64>>,
+    /// Lithium plated as metal on each **negative**-electrode node's particles, or `None` on
+    /// a cell whose pack does not run plating as a reaction ([`crate::PlatingModel::Reaction`]
+    /// is not selected). See [`PlatedLithium`] and `docs/plans/phase-12-plating.md`.
+    ///
+    /// **`None` is not an empty inventory**, as [`Self::film_thickness_m`]'s is not a fresh
+    /// film: it is a cell whose solve has no plating reaction in it at all, and it is what
+    /// keeps every such cell's arithmetic exactly what it was.
+    #[serde(default)]
+    pub plating: Option<PlatedLithium>,
+}
+
+/// Lithium plated on one `Dfn` cell's negative electrode, per node, in [`DfnState::c_neg`]'s
+/// order, \[mol per m² of particle interface\] — the interface the reaction current density
+/// is per.
+///
+/// Two stores, because the law strips back only what can strip: **reversible** lithium sits
+/// as metal and dissolves again where the node's potential rises above lithium's, and
+/// **dead** lithium — the chemistry's `dead_share` of everything that plates, set aside at
+/// once — never does. Both are state: the reversible store caps the stripping current, and
+/// both are lithium the cell no longer holds in its graphite.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlatedLithium {
+    /// Reversible plated lithium per negative node \[mol/m²\]. Never negative: stripping is
+    /// capped at it over each step.
+    pub reversible_mol_m2: Vec<f64>,
+    /// Dead plated lithium per negative node \[mol/m²\]. Only ever grows.
+    pub dead_mol_m2: Vec<f64>,
 }
 
 impl DfnState {
@@ -467,6 +530,7 @@ impl DfnState {
             tangent: None,
             soc_deficit: 0.0,
             film_thickness_m: None,
+            plating: None,
         }
     }
 }
@@ -840,6 +904,84 @@ struct System<'a> {
     /// that states `[dfn.electrolyte_temperature]`; `None` leaves [`Self::transport`] on
     /// the concentration fits alone, by the arithmetic it had before Phase 11.
     electrolyte: Option<ElectrolyteRatio>,
+    /// The plating reaction, on a cell that runs it; `None` leaves every row exactly the
+    /// arithmetic it had before Phase 12.
+    plating: Option<Plating<'a>>,
+}
+
+/// One cell's plating reaction as a solve sees it: the chemistry's law and the reversible
+/// inventory the step starts from, which caps stripping.
+#[derive(Clone, Copy)]
+struct Plating<'a> {
+    params: &'a PlatingParams,
+    /// Reversible plated lithium per negative node at the start of the step \[mol/m²\].
+    reversible_mol_m2: &'a [f64],
+}
+
+impl<'a> Plating<'a> {
+    /// The reaction of the cell `s`, or `None` on a cell that runs none or a chemistry with
+    /// no `[dfn.plating]` (which [`crate::Pack::new`] refuses together).
+    fn of(s: &'a DfnState, dfn: &'a DfnParams) -> Option<Plating<'a>> {
+        Some(Plating {
+            params: dfn.plating.as_ref()?,
+            reversible_mol_m2: &s.plating.as_ref()?.reversible_mol_m2,
+        })
+    }
+}
+
+/// The plating current density at one negative node and its derivatives: `j` \[A/m² of
+/// interface, discharge-positive, so plating is negative\], `∂j/∂η` and `∂j/∂c_e`.
+#[derive(Clone, Copy, Default)]
+struct PlatingRate {
+    j: f64,
+    dj_deta: f64,
+    dj_dce: f64,
+    /// `∂j/∂q` \[A/mol\]: `F/dt` where the stripping cap binds on a node holding lithium,
+    /// `0` everywhere else. `q` is not an unknown of the solve, so only the sub-stepped
+    /// tangent reads it ([`march`]).
+    dj_dq: f64,
+}
+
+/// The plating law at overpotential `eta` = `φ_s − φ_e` against lithium \[V\], electrolyte
+/// `ce` \[mol/m³, already floored\] with `live` its floor's derivative, over a step of `dt`
+/// seconds from a node holding `q` mol/m² of reversible lithium.
+///
+/// `j = F·k·c_e·[exp((1 − α)·f·η) − exp(−α·f·η)]` in this file's discharge-positive sign:
+/// negative (plating) past 0 V, positive (stripping) above it — and stripping is capped at
+/// `F·q/dt`, the whole reversible inventory over the step, so a node holding none strips
+/// nothing and a fresh graphite above 0 V does nothing at all. The cap is a kink, as the
+/// reversal's edge is; past it the rate no longer moves with `η` or `c_e`.
+#[must_use]
+fn plating_rate(
+    pl: &PlatingParams,
+    eta: f64,
+    ce: f64,
+    live: f64,
+    q: f64,
+    dt: f64,
+    temp_k: f64,
+) -> PlatingRate {
+    let f = FARADAY_C_PER_MOL / (GAS_CONSTANT_J_PER_MOL_K * temp_k);
+    let alpha = pl.transfer_coefficient;
+    let k_f = FARADAY_C_PER_MOL * pl.rate_constant_m_per_s;
+    let e_plate = math::exp(-alpha * f * eta);
+    let e_strip = math::exp((1.0 - alpha) * f * eta);
+    let j = k_f * ce * (e_strip - e_plate);
+    let cap = FARADAY_C_PER_MOL * q.max(0.0) / dt;
+    if j > cap {
+        return PlatingRate {
+            j: cap,
+            dj_deta: 0.0,
+            dj_dce: 0.0,
+            dj_dq: if q > 0.0 { FARADAY_C_PER_MOL / dt } else { 0.0 },
+        };
+    }
+    PlatingRate {
+        j,
+        dj_deta: k_f * ce * f * ((1.0 - alpha) * e_strip + alpha * e_plate),
+        dj_dce: k_f * (e_strip - e_plate) * live,
+        dj_dq: 0.0,
+    }
 }
 
 /// One cell's SEI film as a solve sees it: a resistance per unit interface at each negative
@@ -992,6 +1134,29 @@ impl<'a> System<'a> {
         )
     }
 
+    /// The plating current at node `i` and `∂η/∂j` (`−r_film`), or `None` on a cell with no
+    /// reaction and at every node outside the negative electrode — a branch rather than a
+    /// zero, so a cell without the reaction adds nothing to any row, not even `+0.0`.
+    ///
+    /// The overpotential is the node's `φ_s − φ_e` less the film's drop where the cell grows
+    /// one: the drop the **intercalation** current makes, `j·r_film`, the one
+    /// [`Self::kinetics`] reads. Plating's own current through the film is left out, which
+    /// keeps this an explicit function of the node's unknowns; the error is `j_pl·r_film`,
+    /// bounded by plating's share of the current (`docs/plans/phase-12-slice-b-reaction.md`).
+    fn plating(&self, u: &[f64], t: &Transport, i: usize) -> Option<(PlatingRate, f64)> {
+        let pl = self.plating?;
+        if self.grid.region(i) != Region::Neg {
+            return None;
+        }
+        let r_film = self.film.map_or(0.0, |f| f.r_area(i));
+        let eta = u[NVAR * i + PHIS] - u[NVAR * i + PHIE] - u[NVAR * i + JJ] * r_film;
+        let q = pl.reversible_mol_m2.get(i).copied().unwrap_or(0.0);
+        Some((
+            plating_rate(pl.params, eta, t.ce, t.live, q, self.dt, self.sides.temp_k),
+            -r_film,
+        ))
+    }
+
     /// Butler–Volmer pieces at one electrode node: the exchange current, the sinh
     /// argument, and the surface concentration the kinetics saw.
     fn kinetics(&self, u: &[f64], t: &Transport, i: usize) -> Kinetics {
@@ -1041,6 +1206,7 @@ impl<'a> System<'a> {
             // is zero — the branch the analytic Jacobian takes and a central difference
             // straddles.
             dcs_dj: if clamped { 0.0 } else { part.beta },
+            cs_live: if clamped { 0.0 } else { 1.0 },
             // d(√(c_e·c_s·(c_max − c_s)))/dc_s, factored through `i0` itself.
             di0_dcs: if prod > 0.0 {
                 i0 * (c_max - 2.0 * cs) / (2.0 * prod)
@@ -1070,6 +1236,12 @@ impl<'a> System<'a> {
         let jr = |i: usize| u[NVAR * i + JJ];
 
         for i in 0..n {
+            // Every reaction the node's interface carries: intercalation, and plating where
+            // the cell runs it.
+            let jt = match self.plating(u, &tr[i], i) {
+                Some((p, _)) => jr(i) + p.j,
+                None => jr(i),
+            };
             // --- electrolyte mass. `q` is the diffusive flux across a face; both current
             // collectors are no-flux.
             let q_l = if i == 0 {
@@ -1084,7 +1256,7 @@ impl<'a> System<'a> {
             };
             r[NVAR * i + CE] = g.eps_e[i] * g.h[i] * (c(i) - self.c_e_old[i]) / self.dt
                 + (q_r - q_l)
-                - g.a_s[i] * (1.0 - t_plus) * jr(i) / FARADAY_C_PER_MOL * g.h[i];
+                - g.a_s[i] * (1.0 - t_plus) * jt / FARADAY_C_PER_MOL * g.h[i];
 
             // --- electrolyte charge. `i_e = −κ·∂φ_e/∂x + κ_D·∂ln c_e/∂x`, zero at both
             // collectors.
@@ -1095,7 +1267,7 @@ impl<'a> System<'a> {
             };
             let ie_l = if i == 0 { 0.0 } else { ie(i - 1) };
             let ie_r = if i == n - 1 { 0.0 } else { ie(i) };
-            r[NVAR * i + PHIE] = (ie_r - ie_l) - g.a_s[i] * jr(i) * g.h[i];
+            r[NVAR * i + PHIE] = (ie_r - ie_l) - g.a_s[i] * jt * g.h[i];
         }
         // Gauge: the `(φ_e, φ_s)` system is Neumann everywhere and singular by exactly one
         // global shift, so one redundant charge row is replaced by a datum.
@@ -1130,7 +1302,13 @@ impl<'a> System<'a> {
             } else {
                 is(i)
             };
-            r[NVAR * i + PHIS] = (is_r - is_l) + g.a_s[i] * jr(i) * g.h[i];
+            // The solid carries both reactions; the particle (the Butler–Volmer row
+            // below) sees intercalation alone.
+            let jt = match self.plating(u, &tr[i], i) {
+                Some((p, _)) => jr(i) + p.j,
+                None => jr(i),
+            };
+            r[NVAR * i + PHIS] = (is_r - is_l) + g.a_s[i] * jt * g.h[i];
 
             let k = self.kinetics(u, &tr[i], i);
             r[NVAR * i + JJ] = jr(i) - 2.0 * k.i0 * math::sinh(k.arg);
@@ -1174,6 +1352,22 @@ impl<'a> System<'a> {
                 band.add(row_ce, NVAR * (i - 1) + CE, -f + df_lo * tr[i - 1].dd * dc);
             }
 
+            // --- plating's share of the reaction in both electrolyte rows. Row 0's is
+            // overwritten by the gauge below, as intercalation's is.
+            if let Some((p, deta_dj)) = self.plating(u, &tr[i], i) {
+                for (row, w) in [
+                    (
+                        row_ce,
+                        -g.a_s[i] * (1.0 - t_plus) / FARADAY_C_PER_MOL * g.h[i],
+                    ),
+                    (row_pe, -g.a_s[i] * g.h[i]),
+                ] {
+                    band.add(row, NVAR * i + PHIS, w * p.dj_deta);
+                    band.add(row, NVAR * i + PHIE, -w * p.dj_deta);
+                    band.add(row, NVAR * i + JJ, w * p.dj_deta * deta_dj);
+                    band.add(row, NVAR * i + CE, w * p.dj_dce);
+                }
+            }
             // --- electrolyte charge. Row 0 is the gauge and is written after this loop.
             band.add(row_pe, NVAR * i + JJ, -g.a_s[i] * g.h[i]);
             // `sign` is +1 for the right-hand face (which enters as `+i_e`) and −1 for the
@@ -1229,6 +1423,13 @@ impl<'a> System<'a> {
                 continue;
             }
             band.add(row_ps, NVAR * i + JJ, g.a_s[i] * g.h[i]);
+            if let Some((p, deta_dj)) = self.plating(u, &tr[i], i) {
+                let w = g.a_s[i] * g.h[i];
+                band.add(row_ps, NVAR * i + PHIS, w * p.dj_deta);
+                band.add(row_ps, NVAR * i + PHIE, -w * p.dj_deta);
+                band.add(row_ps, NVAR * i + JJ, w * p.dj_deta * deta_dj);
+                band.add(row_ps, NVAR * i + CE, w * p.dj_dce);
+            }
             // Mirrors the residual's branch structure exactly; a collector face carries a
             // constant and so contributes nothing here.
             if !(i == 0 || i == first_pos) {
@@ -1274,6 +1475,9 @@ struct Kinetics {
     r_film: f64,
     /// `∂c_s/∂j`, exactly `0` past the surface clamp.
     dcs_dj: f64,
+    /// `∂c_s/∂c0`: `1` while the surface is inside the clamp, `0` past it. Read only by the
+    /// sub-stepped tangent ([`march`]), where a sub-step's start moves with the current.
+    cs_live: f64,
     /// `∂i₀/∂c_s`.
     di0_dcs: f64,
     /// `∂i₀/∂c_e`, already carrying the lookup floor's derivative.
@@ -1433,6 +1637,10 @@ struct Solved {
     r_tangent: f64,
     /// Whether [`NEWTON_TOL`] was actually met.
     converged: bool,
+    /// The Jacobian at [`Self::u`], factorised — the one the tangent was taken off — or
+    /// `None` where the factorisation failed. The sub-stepped tangent ([`march`]) takes one
+    /// more back-substitution against it.
+    jac: Option<Band>,
 }
 
 /// Everything one step's solve needs that is built before it starts: the resolved
@@ -1595,19 +1803,7 @@ fn solve_from(
     let n = grid.n();
     let m = NVAR * n;
     let i_app = i / sides.area_m2;
-    let sys = System {
-        grid,
-        dfn: setup.dfn,
-        sides,
-        parts_neg: &setup.parts_neg,
-        parts_pos: &setup.parts_pos,
-        c_e_old: &s.c_e,
-        dt,
-        i_app,
-        kd_coef: kd_coef(setup.dfn, sides.temp_k),
-        film: Film::of(s, sides),
-        electrolyte: electrolyte_ratio(setup.dfn, sides.temp_k),
-    };
+    let sys = system(s, setup, i, dt);
 
     // Start from the previous step's converged vector, but re-seed the concentration slots
     // from the stored field: they are the same quantity, and a step that ended badly must
@@ -1716,7 +1912,8 @@ fn solve_from(
     sys.transports(&u, &mut tr);
     sys.jacobian(&u, &tr, &mut band);
     let mut dv_di = 0.0;
-    if band.factor() {
+    let factored = band.factor();
+    if factored {
         let mut rhs = vec![0.0; m];
         rhs[PHIS] = 1.0;
         rhs[NVAR * (n - 1) + PHIS] = -1.0;
@@ -1731,7 +1928,331 @@ fn solve_from(
         v_terminal: v_solid - i * sides.r_contact,
         r_tangent,
         converged,
+        jac: factored.then_some(band),
     }
+}
+
+/// The system one solve of the step at current `i` \[A\] over `dt` seconds is made of.
+fn system<'a>(s: &'a DfnState, setup: &'a StepSetup<'a>, i: f64, dt: f64) -> System<'a> {
+    let sides = setup.sides;
+    System {
+        grid: setup.grid,
+        dfn: setup.dfn,
+        sides,
+        parts_neg: &setup.parts_neg,
+        parts_pos: &setup.parts_pos,
+        c_e_old: &s.c_e,
+        dt,
+        i_app: i / sides.area_m2,
+        kd_coef: kd_coef(setup.dfn, sides.temp_k),
+        film: Film::of(s, sides),
+        electrolyte: electrolyte_ratio(setup.dfn, sides.temp_k),
+        plating: Plating::of(s, setup.dfn),
+    }
+}
+
+/// Write one converged solve into the cell: the electrolyte straight off the solved field,
+/// the particles reconstructed by the same linearity the affine map was built on, and the
+/// unknowns as the next solve's starting guess.
+fn commit(s: &mut DfnState, setup: &StepSetup<'_>, solved: &Solved) {
+    let first_pos = setup.grid.first_pos();
+    for (idx, c) in s.c_e.iter_mut().enumerate() {
+        *c = solved.u[NVAR * idx + CE];
+    }
+    for (idx, prof) in s.c_neg.iter_mut().enumerate() {
+        let j = solved.u[NVAR * idx + JJ];
+        let p = &setup.parts_neg[idx];
+        for (k, v) in prof.iter_mut().enumerate() {
+            *v = p.prof0[k] + j * (p.prof1[k] - p.prof0[k]);
+        }
+    }
+    for (idx, prof) in s.c_pos.iter_mut().enumerate() {
+        let j = solved.u[NVAR * (first_pos + idx) + JJ];
+        let p = &setup.parts_pos[idx];
+        for (k, v) in prof.iter_mut().enumerate() {
+            *v = p.prof0[k] + j * (p.prof1[k] - p.prof0[k]);
+        }
+    }
+    s.u.clone_from(&solved.u);
+}
+
+/// What a plating cell's step produced, beyond the end-of-step solve.
+struct Marched {
+    /// The last sub-step's solve, its tangent replaced by the whole step's
+    /// (`dV_end/di` through every sub-step), and `converged` only if every sub-step was.
+    solved: Solved,
+    /// Whether every sub-step's particle surfaces stayed inside `[0, c_max]`.
+    in_range: bool,
+    /// The plating reaction's share of the heat \[W\] at the end of the step: `I_pl·U_n`,
+    /// `I_pl` the cell's plating current (discharge-positive) and `U_n` the negative's bulk
+    /// stored-energy potential. See [`advance`].
+    heat_end_w: f64,
+    /// The same over the step, its sub-steps' end instants averaged.
+    heat_mean_w: f64,
+}
+
+/// The cell's current \[A, discharge-positive\] in the plating reaction, from the per-node
+/// current densities `rates`, and the negative's bulk stored-energy potential \[V\].
+fn plating_current_a(rates: &[PlatingRate], sides: &Sides<'_>, grid: &Grid) -> f64 {
+    let per_node = sides.neg.a_s * sides.area_m2;
+    rates
+        .iter()
+        .enumerate()
+        .map(|(k, r)| r.j * per_node * grid.h[k])
+        .sum()
+}
+
+/// March a plating cell `s` through one step of `dt` seconds at the solid's current `i_p`
+/// \[A\] in [`plating_substeps`] sub-steps, committing each and booking its plating into
+/// [`DfnState::plating`]. `s` is the cell [`advance`] commits, or a probe's throwaway copy.
+///
+/// # The booking is the solve's
+/// Each sub-step's plating is read off its converged field through [`System::plating`] —
+/// the very function its charge rows carried — so the lithium the solve moved and the
+/// lithium booked are one number, and the ledger closes to rounding. A share `dead_share` of
+/// what plates goes to the dead store at once; stripping takes from the reversible store,
+/// which the solve's cap already bounded.
+///
+/// # The tangent is the whole step's
+/// Over one solve the tangent comes off its Jacobian as a sensitivity (see [`solve_from`]).
+/// Over several, each sub-step starts where the last ended, and that start moves with the
+/// current too: the electrolyte, the particles' profiles and the reversible store. They are
+/// carried as sensitivities `∂/∂i` alongside — every one of the maps between sub-steps is
+/// linear (the particles' backward-Euler diffusion, the commit) or differentiated here (the
+/// booking) — and each sub-step's factorised Jacobian takes them in one more
+/// back-substitution. A difference quotient of a chain of Newton solves would read their
+/// tolerance as slope.
+fn march(
+    s: &mut DfnState,
+    spm: &SpmParams,
+    dfn: &DfnParams,
+    sides: &Sides<'_>,
+    grid: &Grid,
+    i_p: f64,
+    dt: f64,
+) -> Marched {
+    let n_sub = plating_substeps(dt);
+    let h = dt / n_sub as f64;
+    let n = grid.n();
+    let n_n = grid.n_n;
+    let dead_share = dfn.plating.as_ref().map_or(0.0, |pl| pl.dead_share);
+    let t_plus = dfn.transference_number;
+    // Sensitivities `∂/∂i` of the sub-step's start: electrolyte per node, each electrode
+    // node's shell profile, and the reversible store per negative node. All zero at the
+    // step's start, which does not move with the current.
+    let sens = n_sub > 1;
+    let mut d = Sensitivity {
+        ce: vec![0.0; if sens { n } else { 0 }],
+        neg: if sens {
+            s.c_neg.iter().map(|c| vec![0.0; c.len()]).collect()
+        } else {
+            Vec::new()
+        },
+        pos: if sens {
+            s.c_pos.iter().map(|c| vec![0.0; c.len()]).collect()
+        } else {
+            Vec::new()
+        },
+        q: vec![0.0; if sens { n_n } else { 0 }],
+    };
+    let mut tr: Vec<Transport> = Vec::with_capacity(n);
+    let mut rates = vec![PlatingRate::default(); n_n];
+    let mut in_range = true;
+    let mut converged = true;
+    let mut heat_sum = 0.0;
+    let mut heat_end = 0.0;
+    let mut last: Option<Solved> = None;
+    let mut dv_di = 0.0;
+    for _ in 0..n_sub {
+        let setup = setup_for(s, spm, dfn, sides, grid, h);
+        let solved = solve(s, &setup, i_p, h);
+        converged &= solved.converged;
+        in_range &= surfaces_in_range(&setup, &solved.u);
+        // The plating each node's charge rows carried, at the converged field.
+        {
+            let sys = system(s, &setup, i_p, h);
+            sys.transports(&solved.u, &mut tr);
+            for (k, rate) in rates.iter_mut().enumerate() {
+                *rate = sys
+                    .plating(&solved.u, &tr[k], k)
+                    .map_or_else(PlatingRate::default, |(r, _)| r);
+            }
+            if sens {
+                dv_di = sub_step_sensitivity(&sys, &setup, &solved, &tr, &rates, t_plus, h, &mut d);
+            }
+        }
+        // Book the sub-step's plating, before the commit moves the particles.
+        if let Some(pl) = s.plating.as_mut() {
+            let nodes = n_n
+                .min(pl.reversible_mol_m2.len())
+                .min(pl.dead_mol_m2.len());
+            let stores = pl
+                .reversible_mol_m2
+                .iter_mut()
+                .zip(pl.dead_mol_m2.iter_mut());
+            for (rate, (rev, dead)) in rates.iter().zip(stores).take(nodes) {
+                let plated = -rate.j * h / FARADAY_C_PER_MOL;
+                if plated > 0.0 {
+                    *dead += dead_share * plated;
+                    *rev += (1.0 - dead_share) * plated;
+                } else {
+                    *rev = (*rev + plated).max(0.0);
+                }
+            }
+        }
+        commit(s, &setup, &solved);
+        let i_pl = plating_current_a(&rates, sides, grid);
+        let x = bulk_stoich(&s.c_neg, spm.negative.c_max_mol_per_m3);
+        heat_end = i_pl * energy_potential(&spm.negative, x, spm.t_ref_k);
+        heat_sum += heat_end;
+        last = Some(solved);
+    }
+    let mut solved = last.expect("plating_substeps is at least 1");
+    solved.converged = converged;
+    if sens {
+        solved.r_tangent = floor_r(-dv_di + sides.r_contact);
+    }
+    Marched {
+        solved,
+        in_range,
+        heat_end_w: heat_end,
+        heat_mean_w: heat_sum / n_sub as f64,
+    }
+}
+
+/// What a sub-step's start owes the current: `∂/∂i` \[per A\] of each quantity one sub-step
+/// hands the next — the electrolyte per node, each electrode node's shell profile, and the
+/// reversible store per negative node. See [`march`].
+struct Sensitivity {
+    ce: Vec<f64>,
+    neg: Vec<Vec<f64>>,
+    pos: Vec<Vec<f64>>,
+    q: Vec<f64>,
+}
+
+/// One sub-step of [`march`]'s tangent: `du/di` at its converged field, from the sensitivities
+/// of its start, which it then advances to its end. Returns `∂(φ_s(last) − φ_s(0))/∂i` at the
+/// end of this sub-step \[ohms, negated\].
+///
+/// The sub-step's residual `R(u; i, c_e,old, c0, q) = 0` moves with `i` directly, where the
+/// applied current enters the two collectors' solid rows, and through its start: the mass rows'
+/// `−ε·h·c_e,old/dt`, each Butler–Volmer row through its particle's zero-current surface `c0`
+/// (linear in the shell profile it starts from), and, where the stripping cap binds, the plating
+/// rate `F·q/h`. So `du/di = −J⁻¹·(∂R/∂i + ∂R/∂start · d start/di)`, one back-substitution.
+#[allow(clippy::too_many_arguments)]
+fn sub_step_sensitivity(
+    sys: &System<'_>,
+    setup: &StepSetup<'_>,
+    solved: &Solved,
+    tr: &[Transport],
+    rates: &[PlatingRate],
+    t_plus: f64,
+    h: f64,
+    d: &mut Sensitivity,
+) -> f64 {
+    let Sensitivity {
+        ce: d_ce,
+        neg: d_neg,
+        pos: d_pos,
+        q: d_q,
+    } = d;
+    let g = setup.grid;
+    let sides = setup.sides;
+    let n = g.n();
+    let first_pos = g.first_pos();
+    let Some(jac) = solved.jac.as_ref() else {
+        return 0.0;
+    };
+    let u = &solved.u;
+    let mut rhs = vec![0.0; NVAR * n];
+    // −∂R/∂i at the collectors.
+    rhs[PHIS] += 1.0 / sides.area_m2;
+    rhs[NVAR * (n - 1) + PHIS] -= 1.0 / sides.area_m2;
+    // −∂R/∂c_e,old · d c_e,old.
+    for i in 0..n {
+        rhs[NVAR * i + CE] += g.eps_e[i] * g.h[i] / h * d_ce[i];
+    }
+    // The particles' start: each node's zero-current surface moves with its profile, and the
+    // map from profile to surface is linear (one diffusion at zero flux, then the surface).
+    // The shifted profile is kept: it is also the profile's own start-of-advance.
+    let zero_flux = |prof: &mut Vec<f64>, side: &Side<'_>| {
+        diffuse(prof, side.p.particle_radius_m, side.d_s, 0.0, h);
+        c_surface(prof, side.p.particle_radius_m, side.d_s, 0.0)
+    };
+    for i in 0..n {
+        let (prof, side) = match g.region(i) {
+            Region::Neg => (&mut d_neg[i], &sides.neg),
+            Region::Pos => (&mut d_pos[i - first_pos], &sides.pos),
+            Region::Sep => continue,
+        };
+        let dc0 = zero_flux(prof, side);
+        let k = sys.kinetics(u, &tr[i], i);
+        let sh = math::sinh(k.arg);
+        let ch = math::cosh(k.arg);
+        // r_j = j − 2·i0(c_s)·sinh(scale·(… − U(c_s))), c_s = c0 + β·j.
+        let dr_dcs = -2.0 * (k.di0_dcs * sh - k.i0 * ch * k.scale * k.docp_dcs) * k.cs_live;
+        rhs[NVAR * i + JJ] -= dr_dcs * dc0;
+    }
+    // Where the stripping cap binds, the plating rate is the store's.
+    for (k, (r, &dq)) in rates.iter().zip(d_q.iter()).enumerate() {
+        if r.dj_dq == 0.0 || dq == 0.0 {
+            continue;
+        }
+        let dj = r.dj_dq * dq;
+        let w_ce = -g.a_s[k] * (1.0 - t_plus) / FARADAY_C_PER_MOL * g.h[k];
+        let w_pe = -g.a_s[k] * g.h[k];
+        let w_ps = g.a_s[k] * g.h[k];
+        rhs[NVAR * k + CE] -= w_ce * dj;
+        if k > 0 {
+            rhs[NVAR * k + PHIE] -= w_pe * dj;
+        }
+        rhs[NVAR * k + PHIS] -= w_ps * dj;
+    }
+    jac.solve(&mut rhs);
+    let du = rhs;
+    // Advance the start's sensitivities to this sub-step's end.
+    for (i, d) in d_ce.iter_mut().enumerate() {
+        *d = du[NVAR * i + CE];
+    }
+    for (i, prof) in d_neg.iter_mut().enumerate() {
+        let p = &setup.parts_neg[i];
+        let dj = du[NVAR * i + JJ];
+        for (k, v) in prof.iter_mut().enumerate() {
+            *v += dj * (p.prof1[k] - p.prof0[k]);
+        }
+    }
+    for (i, prof) in d_pos.iter_mut().enumerate() {
+        let p = &setup.parts_pos[i];
+        let dj = du[NVAR * (first_pos + i) + JJ];
+        for (k, v) in prof.iter_mut().enumerate() {
+            *v += dj * (p.prof1[k] - p.prof0[k]);
+        }
+    }
+    // The store, through the booking rule.
+    let dead_share = sys.plating.map_or(0.0, |pl| pl.params.dead_share);
+    for (k, dq) in d_q.iter_mut().enumerate() {
+        let r = rates[k];
+        let deta_dj = -sys.film.map_or(0.0, |f| f.r_area(k));
+        let dj = r.dj_deta
+            * (du[NVAR * k + PHIS] - du[NVAR * k + PHIE] + deta_dj * du[NVAR * k + JJ])
+            + r.dj_dce * du[NVAR * k + CE]
+            + r.dj_dq * *dq;
+        let plated = -r.j * h / FARADAY_C_PER_MOL;
+        let d_plated = -dj * h / FARADAY_C_PER_MOL;
+        let q = sys
+            .plating
+            .and_then(|pl| pl.reversible_mol_m2.get(k).copied())
+            .unwrap_or(0.0);
+        *dq = if plated > 0.0 {
+            *dq + (1.0 - dead_share) * d_plated
+        } else if q + plated > 0.0 {
+            *dq + d_plated
+        } else {
+            0.0
+        };
+    }
+    // V = φ_s(last) − φ_s(0) − i·r_contact; the contact term is the caller's.
+    du[NVAR * (n - 1) + PHIS] - du[PHIS]
 }
 
 /// `V` is strictly decreasing in `i` on any state this model can reach, so `r > 0`. The
@@ -1884,6 +2405,32 @@ pub(crate) fn film_resistance_ohm(s: &DfnState, spm: &SpmParams) -> Option<f64> 
     }
     let conductance: f64 = l.iter().map(|x| 1.0 / (x - sei.initial_thickness_m)).sum();
     Some(sei.resistivity_ohm_m * l.len() as f64 / (area * conductance))
+}
+
+/// Give this cell an empty plated-lithium store at every negative node: the reaction runs
+/// from the next step on.
+pub(crate) fn start_plating(s: &mut DfnState) {
+    let n_n = s.c_neg.len();
+    s.plating = Some(PlatedLithium {
+        reversible_mol_m2: vec![0.0; n_n],
+        dead_mol_m2: vec![0.0; n_n],
+    });
+}
+
+/// The lithium \[mol\] plated on this cell's negative electrode, `(reversible, dead)`, or
+/// `None` on a cell that runs no plating reaction: each node's store times its share of the
+/// particle interface, `a_s·(L/n)·A`.
+#[must_use]
+pub(crate) fn plated_lithium_mol(s: &DfnState, spm: &SpmParams) -> Option<(f64, f64)> {
+    let pl = s.plating.as_ref()?;
+    let e = &spm.negative;
+    let n_n = s.c_neg.len().max(1) as f64;
+    let per_node = 3.0 * e.active_volume_fraction / e.particle_radius_m * e.thickness_m / n_n
+        * spm.electrode_area_m2;
+    Some((
+        pl.reversible_mol_m2.iter().sum::<f64>() * per_node,
+        pl.dead_mol_m2.iter().sum::<f64>() * per_node,
+    ))
 }
 
 /// Give this cell a fresh SEI film `l0_m` thick \[m\] at every negative node.
@@ -2289,8 +2836,14 @@ pub(crate) fn probe_at(
     };
     let edge = window.map_or(f64::INFINITY, |(_, hi)| hi);
     let (i_p, d_end) = split(s, edge, i, dt, eff_capacity_ah);
-    let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
-    let solved = solve(s, &setup, i_p, dt);
+    let solved = if s.plating.is_some() {
+        // The same march `advance` will run, on a copy: a probe books nothing.
+        let mut copy = s.clone();
+        march(&mut copy, spm, dfn, &sides, &grid, i_p, dt).solved
+    } else {
+        let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
+        solve(s, &setup, i_p, dt)
+    };
     let (v, r) = past_edge(
         spm,
         rev,
@@ -2589,7 +3142,6 @@ pub(crate) fn advance(
         // the end of it.
         return (flags | soc_flags(s, spm), 0.0, 0.0, (0.0, 0.0), 0.0);
     }
-    let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
     // The same division [`probe_at`] read the curve with: `(i, 0.0)` inside the window.
     let edge = current_window(s, &sides, dt).map_or(f64::INFINITY, |(_, hi)| hi);
     let (i_p, d_end) = split(s, edge, i, dt, eff_capacity_ah);
@@ -2609,11 +3161,26 @@ pub(crate) fn advance(
     } else {
         (0.0, 0.0)
     };
-    let solved = solve(s, &setup, i_p, dt);
+    // A plating cell is marched through its sub-steps, committed and booked as it goes; every
+    // other cell is one solve, committed below exactly as it always was.
+    let marched = s
+        .plating
+        .is_some()
+        .then(|| march(s, spm, dfn, &sides, &grid, i_p, dt));
+    let (solved, in_range, plating_w) = match marched {
+        Some(m) => (m.solved, m.in_range, Some((m.heat_end_w, m.heat_mean_w))),
+        None => {
+            let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
+            let solved = solve(s, &setup, i_p, dt);
+            let in_range = surfaces_in_range(&setup, &solved.u);
+            commit(s, &setup, &solved);
+            (solved, in_range, None)
+        }
+    };
     if !solved.converged {
         flags |= EventFlags::SOLVE_UNCONVERGED;
     }
-    if !surfaces_in_range(&setup, &solved.u) {
+    if !in_range {
         flags |= EventFlags::SURFACE_OUT_OF_RANGE;
     }
     let (v_end, r_end) = past_edge(
@@ -2629,26 +3196,6 @@ pub(crate) fn advance(
         eff_capacity_ah,
     );
 
-    // Commit: the electrolyte straight off the solved field, the particles reconstructed by
-    // the same linearity the affine map was built on.
-    for (idx, c) in s.c_e.iter_mut().enumerate() {
-        *c = solved.u[NVAR * idx + CE];
-    }
-    for (idx, prof) in s.c_neg.iter_mut().enumerate() {
-        let j = solved.u[NVAR * idx + JJ];
-        let p = &setup.parts_neg[idx];
-        for (k, v) in prof.iter_mut().enumerate() {
-            *v = p.prof0[k] + j * (p.prof1[k] - p.prof0[k]);
-        }
-    }
-    for (idx, prof) in s.c_pos.iter_mut().enumerate() {
-        let j = solved.u[NVAR * (grid.first_pos() + idx) + JJ];
-        let p = &setup.parts_pos[idx];
-        for (k, v) in prof.iter_mut().enumerate() {
-            *v = p.prof0[k] + j * (p.prof1[k] - p.prof0[k]);
-        }
-    }
-    s.u = solved.u;
     s.i_last = i;
     s.soc_deficit = d_end;
     s.tangent = Some((v_end + i * r_end, r_end));
@@ -2664,7 +3211,15 @@ pub(crate) fn advance(
             i_d * (empty_voltage(spm, s.temp_k) - reversal_drop(spm, rev, d_end, s.temp_k) - u)
         }
     };
+    // The plating reaction's share, `I_pl·U_n`: the pack's `i·(U_eq − V)` books plating's
+    // charge as if it intercalated, at `U_p − U_n`, and plated lithium is lithium metal, at
+    // `U_p − 0`. Folded into the reversal's slot — heat `i·(U_eq − V)` cannot express — and
+    // only on a plating cell, so no other cell's sum moves.
     let rev_w = rev_at(u_end);
+    let (rev_w, rev_mean) = match plating_w {
+        Some((end, mean)) => (rev_w + end, rev_at(u_end) + mean),
+        None => (rev_w, rev_w),
+    };
     let flags = flags | soc_flags(s, spm);
     if !entropic {
         // The end alone, for the instant and for the step (`docs/plans/dfn-end-of-step-heat.md`).
@@ -2672,7 +3227,7 @@ pub(crate) fn advance(
             flags,
             at_end - (u_start - v_node),
             at_end - (u_start - v_node),
-            (rev_w, rev_w),
+            (rev_w, rev_mean),
             0.0,
         );
     }
@@ -2689,7 +3244,13 @@ pub(crate) fn advance(
         flags,
         at_end - (u_start - v_node),
         (u_end_t - v_end) - (u_start - v_node),
-        (rev_w, rev_at(u_end_t)),
+        (
+            rev_w,
+            match plating_w {
+                Some((_, mean)) => rev_at(u_end_t) + mean,
+                None => rev_at(u_end_t),
+            },
+        ),
         crate::spm::entropic_mean_w(
             &spm.negative,
             &spm.positive,
@@ -2822,6 +3383,7 @@ pub mod probe {
             kd_coef: super::kd_coef(dfn, sides.temp_k),
             film: super::Film::of(s, &sides),
             electrolyte: super::electrolyte_ratio(dfn, sides.temp_k),
+            plating: super::Plating::of(s, dfn),
         };
         let m = NVAR * grid.n();
         let mut u = s.u.clone();

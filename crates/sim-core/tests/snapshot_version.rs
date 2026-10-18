@@ -303,35 +303,44 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v27-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v28 restore.
+/// A v28-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v29 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is a stand-in again**, for the first time in ten: v28 appends
-/// `rc_t_ref_k` to every chemistry's `[r0]` table, so this equivalent-circuit fixture's
-/// bytes move too, and a real v27 blob does not reach the version check at all —
-/// [`a_v27_shaped_chemistry_fails_at_its_r0_table`] measures where it stops instead. What
-/// this pair still proves is that the check is live for bytes that *do* parse.
+/// **At this bump the retag is the real case again**: v29 appends to `AgingConfig`, to
+/// `[dfn]` and to the `Dfn`'s state, and this fixture is an equivalent-circuit pack with no
+/// aging on a chemistry with no `[dfn]`, so its bytes are a v28 build's exactly. The stale
+/// blobs v29 does move are measured at their fields by the `a_v28_shaped_*` tests below.
+/// (At v28 this pair was a stand-in: every chemistry's `[r0]` table moved, see
+/// [`a_v27_shaped_chemistry_fails_at_its_r0_table`].)
 #[test]
-fn the_version_field_is_what_rejects_a_v27_snapshot() {
+fn the_version_field_is_what_rejects_a_v28_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 28,
-        "this test is written against the v27 -> v28 bump specifically. A later bump          needs its own pair rather than this one renumbered: what a stale blob does under          the new layout is a fact about that layout change, and the answer has flipped          across this file's history — v15 'it does not parse at all', v16 'it parses,          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to          v27 'for this fixture it parses fine and the version field is all there is' with          a model-specific sibling for each, and v28 'it does not parse at all, at the r0          table, for every chemistry'. A renumbered assertion cannot inherit any of them."
+        SNAPSHOT_VERSION, 29,
+        "this test is written against the v28 -> v29 bump specifically. A later bump \
+         needs its own pair rather than this one renumbered: what a stale blob does under \
+         the new layout is a fact about that layout change, and the answer has flipped \
+         across this file's history — v15 'it does not parse at all', v16 'it parses, \
+         wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to \
+         v27 'for this fixture it parses fine and the version field is all there is' with \
+         a model-specific sibling for each, v28 'it does not parse at all, at the r0 \
+         table, for every chemistry', and v29 back to 'the version field is all there is' \
+         for this fixture. A renumbered assertion cannot inherit any of them."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 27);
+    let stale = retagged(&bytes, 28);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 27,
+            found: 28,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v27-tagged snapshot must be refused"
+        "a v28-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -895,8 +904,10 @@ fn a_v22_shaped_dfn_state_misparses_at_v23() {
         2.5_f64,
         tangent,
         1.0_f64, // capacity_factor
-        // Today's reader closes the state on v27's `film_thickness_m`, which postdates this
-        // test's question: a `None` tag, so what is read here is the v23 reader's answer.
+        // Today's reader closes the state on v27's `film_thickness_m` and v29's `plating`,
+        // which postdate this test's question: two `None` tags, so what is read here is the
+        // v23 reader's answer.
+        0_u8,
         0_u8,
     ))
     .expect("a v22-shaped state and the cell field after it serialize");
@@ -1098,10 +1109,14 @@ fn a_v26_shaped_dfn_state_reads_its_capacity_factor_as_a_film_tag() {
         tangent: Some((3.7, 0.02)),
         soc_deficit: 0.0,
         film_thickness_m: None,
+        plating: None,
     };
     let v26_then = |factor: f64| {
         let mut b = bincode::serialize(&state).expect("a state serializes");
-        assert_eq!(b.pop(), Some(0), "a `None` tag closes the v27 state");
+        // Since v29 a second `None`, the plating store's, follows the film's; a v26 state
+        // had neither. A factor of 1.0's low two bytes are both zero, so both read `None`.
+        assert_eq!(b.pop(), Some(0), "a `None` tag closes the v29 state");
+        assert_eq!(b.pop(), Some(0), "and the film's `None` precedes it");
         b.extend(bincode::serialize(&(factor, 1.0_f64)).expect("the cell's factors"));
         b
     };
@@ -1136,20 +1151,22 @@ fn a_v26_shaped_dfn_state_reads_its_capacity_factor_as_a_film_tag() {
 /// so a v26 reader takes its low four bytes as the variant. An accumulator of `0.0` — every
 /// pack snapshot on a tick — or any round number reads as variant 0, the drawn curve, and the
 /// pack parses on four bytes out of step; `0.1 s` reads as an unknown variant and fails.
+///
+/// Since v29 the config closes on the plating selector too, so the accumulator's *high* four
+/// bytes are read as that variant: `0.0`'s are zero (the threshold) and the read still
+/// parses; a round `3.0`'s are `0x40080000`, no variant, and it now fails there.
 #[test]
 fn a_v25_shaped_aging_config_reads_its_accumulator_as_the_calendar() {
     let v25_then = |accum_s: f64| {
         bincode::serialize(&(10.0_f64, accum_s, 7.0_f64)).expect("a v25 config and accumulator")
     };
-    for accum in [0.0, 3.0] {
-        let read: sim_core::AgingConfig = bincode::deserialize(&v25_then(accum))
-            .expect("an accumulator with zero low bytes reads as variant 0");
-        assert_eq!(
-            read.calendar,
-            sim_core::CalendarModel::Curve,
-            "accum {accum}"
-        );
-    }
+    assert!(
+        bincode::deserialize::<sim_core::AgingConfig>(&v25_then(3.0)).is_err(),
+        "since v29, 3.0's high half is read as the plating selector and is no variant"
+    );
+    let read: sim_core::AgingConfig = bincode::deserialize(&v25_then(0.0))
+        .expect("an accumulator with zero low bytes reads as variant 0");
+    assert_eq!(read.calendar, sim_core::CalendarModel::Curve);
     assert!(
         bincode::deserialize::<sim_core::AgingConfig>(&v25_then(0.1)).is_err(),
         "0.1's low four bytes are no variant, so the v26 note says this fails"
@@ -1200,6 +1217,84 @@ fn a_v25_shaped_spm_section_reads_the_dfn_tag_as_a_film() {
     let read: sim_core::SpmParams =
         bincode::deserialize(&without).expect("a `None` [dfn] tag reads as no film");
     assert_eq!(read.sei, None);
+}
+
+/// A v28 `AgingConfig` at v29 reads the first four bytes after it — the pack's aging
+/// accumulator's low half — as its plating selector.
+///
+/// v29 appends `plating: PlatingModel`, a unit enum `bincode` writes as a `u32` variant, after
+/// `calendar`. An accumulator of `0.0` (every pack on a tick) or any round number — whose low
+/// half is zero — reads as variant 0, the threshold, and the pack parses on four bytes out of
+/// step; `0.1 s`'s low half is no variant and the read fails there.
+#[test]
+fn a_v28_shaped_aging_config_reads_its_accumulator_as_the_plating_model() {
+    let v28_then = |accum_s: f64| {
+        let mut b = bincode::serialize(&10.0_f64).expect("the period");
+        b.extend(0_u32.to_le_bytes()); // the calendar: Curve
+        b.extend(bincode::serialize(&(accum_s, 7.0_f64)).expect("the accumulator"));
+        b
+    };
+    for accum in [0.0, 3.0] {
+        let read: sim_core::AgingConfig = bincode::deserialize(&v28_then(accum))
+            .expect("an accumulator with a zero low half reads as variant 0");
+        assert_eq!(
+            read.plating,
+            sim_core::PlatingModel::Threshold,
+            "accum {accum}"
+        );
+    }
+    assert!(
+        bincode::deserialize::<sim_core::AgingConfig>(&v28_then(0.1)).is_err(),
+        "0.1's low four bytes are no plating variant, so the v29 note says this fails"
+    );
+}
+
+/// A v28 `Dfn` state at v29 reads the byte after it — the cell's `capacity_factor`'s low byte
+/// — as its plating store's tag.
+///
+/// v29 appends `plating: Option<PlatedLithium>` after `film_thickness_m`. As at v27 the cell's
+/// factor follows the state: a scatter-free `1.0` has a zero low byte and reads as `None`,
+/// quietly; a scattered factor's is no tag and the read fails at the field.
+#[test]
+fn a_v28_shaped_dfn_state_reads_its_capacity_factor_as_a_plating_tag() {
+    let state = sim_core::DfnState {
+        c_e: vec![1000.0; 3],
+        c_neg: vec![vec![10_000.0; 2]; 2],
+        c_pos: vec![vec![30_000.0; 2]; 2],
+        u: vec![0.5; 4],
+        temp_k: 298.15,
+        i_last: 2.5,
+        tangent: Some((3.7, 0.02)),
+        soc_deficit: 0.0,
+        film_thickness_m: None,
+        plating: None,
+    };
+    let v28_then = |factor: f64| {
+        let mut b = bincode::serialize(&state).expect("a state serializes");
+        assert_eq!(b.pop(), Some(0), "a `None` tag closes the v29 state");
+        b.extend(bincode::serialize(&(factor, 1.0_f64)).expect("the cell's factors"));
+        b
+    };
+    let quiet: sim_core::DfnState =
+        bincode::deserialize(&v28_then(1.0)).expect("a zero low byte reads as no store");
+    assert_eq!(quiet.plating, None);
+    assert_eq!(quiet.c_neg, state.c_neg);
+    assert!(
+        bincode::deserialize::<sim_core::DfnState>(&v28_then(0.97)).is_err(),
+        "a scattered factor's low byte is not a tag"
+    );
+
+    // The positive control: a plating v29 state round-trips to itself.
+    let plating = sim_core::DfnState {
+        plating: Some(sim_core::PlatedLithium {
+            reversible_mol_m2: vec![1.0e-6, 2.0e-6],
+            dead_mol_m2: vec![3.0e-6, 4.0e-6],
+        }),
+        ..state.clone()
+    };
+    let bytes = bincode::serialize(&plating).expect("a v29 state serializes");
+    let back: sim_core::DfnState = bincode::deserialize(&bytes).expect("that is a v29 state");
+    assert_eq!(back, plating);
 }
 
 fn electrode() -> sim_core::ElectrodeParams {

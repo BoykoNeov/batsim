@@ -134,6 +134,22 @@ fn the_electrolyte_temperature_section_is_landesfeinds() {
     );
 }
 
+/// `[dfn.plating]` (Phase 12 slice B): the rate constant slice A sized on the fine grid, two
+/// labelled placeholders and OKane2022's transfer coefficient, each pinned by name. See
+/// `docs/plans/phase-12-slice-a-reference.md`.
+#[test]
+fn the_plating_section_is_slice_as_sizing() {
+    let chem = parse_chemistry(LGM50).expect("loads");
+    let pl = chem
+        .dfn
+        .as_ref()
+        .and_then(|d| d.plating.as_ref())
+        .expect("[dfn.plating]");
+    assert_eq!(pl.rate_constant_m_per_s, 4.8e-11);
+    assert_eq!(pl.transfer_coefficient, 0.65);
+    assert_eq!(pl.dead_share, 0.5);
+}
+
 #[test]
 fn porosity_and_active_volume_fraction_are_independent_reads() {
     let chem = parse_chemistry(LGM50).expect("loads");
@@ -256,10 +272,11 @@ fn the_dfn_block_has_exactly_the_values_pinned_above() {
 
     // 2 shared scalars + 3 diffusivity terms + 3 conductivity terms, each a pair
     // + 4 per electrode x 2 + 3 for the separator + the electrolyte temperature section's
-    // reference temperature and 4 + 6 coefficients (Phase 11, pinned by name above).
+    // reference temperature and 4 + 6 coefficients (Phase 11, pinned by name above)
+    // + the plating section's 3 (Phase 12, pinned by name above).
     assert_eq!(
         count_numbers(&value),
-        2 + 2 * (3 + 3) + 4 * 2 + 3 + (1 + 4 + 6),
+        2 + 2 * (3 + 3) + 4 * 2 + 3 + (1 + 4 + 6) + 3,
         "the [dfn] value count changed — a field was added or removed. Pin the new \
          value by name in this file before repinning this count; do not just move the \
          number."

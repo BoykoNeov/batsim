@@ -34,7 +34,7 @@ use rand_core::SeedableRng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::aging::{Aging, AgingConfig, CalendarModel, CellAging, FadeParams};
+use crate::aging::{Aging, AgingConfig, CalendarModel, CellAging, FadeParams, PlatingModel};
 use crate::bms::{Bms, BmsConfig};
 use crate::chem::ChemistryParams;
 use crate::dfn;
@@ -600,7 +600,17 @@ use crate::{Demand, Env, Telemetry};
 /// `snapshot_version.rs::a_v27_shaped_chemistry_fails_at_its_r0_table`. Neither API version
 /// moves: no telemetry field changes, and the chemistry on the wire is the TOML a client
 /// already sends.
-pub const SNAPSHOT_VERSION: u32 = 28;
+///
+/// v29 (lithium plating as a reaction, Phase 12 slice B, `docs/plans/phase-12-plating.md`):
+/// [`crate::chem::DfnParams`] gains `plating`, an `Option` appended after
+/// `electrolyte_temperature`; [`crate::DfnState`] gains `plating`, an `Option` appended after
+/// `film_thickness_m`; [`AgingConfig`] gains `plating`, a unit enum appended after `calendar`.
+/// Every aging pack's bytes change, and every `Dfn` pack's twice; what a v28 blob does at v29
+/// is measured at the field by the `a_v28_shaped_*` tests in `snapshot_version.rs`. Neither
+/// API version moves: the selector is one more field of a config the wire already carries,
+/// `serde(default)` so an older client's setup still parses and still means the threshold,
+/// and no telemetry field moves — plated lithium is read through [`Pack::cell_plating`].
+pub const SNAPSHOT_VERSION: u32 = 29;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -1068,6 +1078,24 @@ pub enum BuildError {
         /// Identifier of the chemistry.
         chem_id: String,
     },
+    /// [`crate::PlatingModel::Reaction`] was selected on a cell model other than the `Dfn`.
+    /// The `Spm` plates nothing on any charge LG's sheet allows, so the constant cannot be
+    /// sized on it, and the equivalent circuit and the many-particle cell have no negative
+    /// electrode potential to plate at; all three keep the threshold
+    /// (`docs/plans/phase-12-plating.md`, owner decision 4).
+    #[error("aging.plating = Reaction needs cell_model Dfn; {model} keeps the threshold")]
+    PlatingReactionUnsupportedModel {
+        /// The model that was selected.
+        model: &'static str,
+    },
+    /// [`crate::PlatingModel::Reaction`] was selected against a chemistry with no
+    /// `[dfn.plating]` section. Running at zero rate would look exactly like a cell that
+    /// never plates.
+    #[error("aging.plating = Reaction but chemistry '{chem_id}' has no [dfn.plating] section")]
+    MissingPlatingParams {
+        /// Identifier of the chemistry.
+        chem_id: String,
+    },
 }
 
 /// Reasons [`Pack::restore`] can reject a [`Snapshot`].
@@ -1244,6 +1272,18 @@ pub struct FilmView {
     /// lithium and the electrolyte going into the film) is not in the parameter set and is
     /// not modelled.
     pub energy_last_step_j: Option<f64>,
+}
+
+/// The lithium plated as metal on one cell's negative electrode, returned by
+/// [`Pack::cell_plating`]. Ground truth.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlatingView {
+    /// Reversible plated lithium \[mol\]: metal that strips back where the graphite's
+    /// potential rises above lithium's.
+    pub reversible_mol: f64,
+    /// Dead plated lithium \[mol\]: the chemistry's `dead_share` of everything that plated,
+    /// lost at once and for good.
+    pub dead_mol: f64,
 }
 
 /// A parallel group: the cells wired in parallel that share one terminal node.
@@ -1824,6 +1864,23 @@ impl Pack {
                     });
                 }
             }
+            if aging.plating == PlatingModel::Reaction {
+                let model = match config.cell_model {
+                    CellModelConfig::Dfn { .. } => None,
+                    CellModelConfig::Ecm => Some("Ecm"),
+                    CellModelConfig::Spm { .. } => Some("Spm"),
+                    CellModelConfig::SpmEnsemble { .. } => Some("SpmEnsemble"),
+                };
+                if let Some(model) = model {
+                    return Err(BuildError::PlatingReactionUnsupportedModel { model });
+                }
+                // A missing `[dfn]` is refused below, by the model's own check.
+                if chem.dfn.as_ref().is_some_and(|dfn| dfn.plating.is_none()) {
+                    return Err(BuildError::MissingPlatingParams {
+                        chem_id: chem.meta.id.clone(),
+                    });
+                }
+            }
         }
         // Same refusal as aging's, for the same reason: a pack configured for
         // porous-electrode physics against a chemistry that cannot describe an
@@ -2014,6 +2071,18 @@ impl Pack {
                 }
             }
         }
+        // And with an empty plated-lithium store when it runs plating as a reaction. Validated
+        // above: the model is a `Dfn` and the chemistry has `[dfn.plating]`. Draws nothing.
+        if config
+            .aging
+            .is_some_and(|a| a.plating == PlatingModel::Reaction)
+        {
+            for group in &mut groups {
+                for cell in &mut group.cells {
+                    cell.model.start_plating();
+                }
+            }
+        }
 
         // Built after the scatter draws so that adding a BMS cannot shift the
         // per-cell factors a seed produces; `Bms::new` itself draws nothing.
@@ -2161,6 +2230,20 @@ impl Pack {
                 .0
                 .get(s * self.parallel as usize + p)
                 .copied(),
+        })
+    }
+
+    /// Ground truth for the lithium plated on the cell at series position `s`, parallel
+    /// position `p`, or `None` if either index is out of range or the cell runs no plating
+    /// reaction ([`crate::PlatingModel::Reaction`] is not selected). A pure function of stored
+    /// state. See `docs/plans/phase-12-plating.md`.
+    #[must_use]
+    pub fn cell_plating(&self, s: usize, p: usize) -> Option<PlatingView> {
+        let cell = self.groups.get(s)?.cells.get(p)?;
+        let (reversible_mol, dead_mol) = cell.model.plated_lithium_mol(&self.chem)?;
+        Some(PlatingView {
+            reversible_mol,
+            dead_mol,
         })
     }
 
@@ -4877,7 +4960,11 @@ mod cell_footprint {
         // `docs/plans/porous-reversal.md`. Boxed, like `SpmState`. 168 since
         // SNAPSHOT_VERSION 27: `film_thickness_m`, an `Option<Vec<f64>>` (24 B, the `Vec`'s
         // own pointer is the `None`), one film per negative node (`docs/plans/phase-10-sei.md`,
-        // slice D). Paid by every `Dfn` cell, on the heap block alone.
-        assert_eq!(size_of::<DfnState>(), 168, "DfnState");
+        // slice D). Paid by every `Dfn` cell, on the heap block alone. 216 since
+        // SNAPSHOT_VERSION 29: `plating`, an `Option<PlatedLithium>` (48 B, two `Vec`s, the
+        // first one's pointer the `None`), the plated-lithium stores
+        // (`docs/plans/phase-12-plating.md`). Paid by every `Dfn` cell, plating or not, on
+        // the heap block alone.
+        assert_eq!(size_of::<DfnState>(), 216, "DfnState");
     }
 }

@@ -166,8 +166,12 @@ fn charge(fine: bool, temp_c: f64, c_rate: f64) -> Figures {
             let w = UNKNOWNS_PER_NODE;
             let eta = st.u[w * k + 2] - st.u[w * k + 1];
             out.min_eta_mv = out.min_eta_mv.min(1e3 * eta);
-            // [mol/s per (m/s)], positive plates.
-            let r = st.c_e[k]
+            // [mol/s per (m/s)], positive plates. The electrolyte through the solver's own
+            // lookup floor: read raw it goes slightly negative at the graphite on a 2C charge, and
+            // the law's sign flips with it — a node above 0 V then counts as plating. Found and
+            // measured in slice B (`phase-12-slice-b-reaction.md`); before it, the two 2C rows of
+            // slice A's table were inflated by it.
+            let r = st.c_e[k].max(sim_core::dfn::C_E_FLOOR_MOL_PER_M3)
                 * ((-ALPHA * f * eta).exp() - ((1.0 - ALPHA) * f * eta).exp())
                 * node_area;
             if r > 0.0 {

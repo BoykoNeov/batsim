@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
 Phases 0–11 are complete; each is pinned by a committed test (see the README's status
-table). A hundred and twenty-eight design notes under `docs/plans/` record what each slice measured,
+table). A hundred and thirty-three design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -456,7 +456,12 @@ where the rest-OCV gate refused to correct.
   and past full, where this model's curve is flat, some steps that converged on that flat curve now
   say unconverged. The mismatched pair above still does not settle its **first** hour at 1C per cell
   (−3.6 and −6.7 A at 25 °C, as before; nothing full yet). Phase 12's exit 5 asks for one-hour
-  convergence on exactly this pack (`phase-12-plating.md`).
+  convergence on exactly this pack (`phase-12-plating.md`), and **missed it on this soft spot**
+  (`phase-12-slice-b-reaction.md`, 2026-10-18): at 0 °C on the fine grid with plating on, the
+  one-hour charge step converges, and all three one-hour 4.2 V hold steps finish unconverged, 1.7 to
+  0.03 mV short of the target, every cell solve at the found currents converging; from the same state
+  with plating off the hold misses by 120 mV and more, and with plating off from the start the pair
+  is nonphysical by its fifth hour (−14.5 V).
 * ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
   2026-08-13** (`operating-point-window.md`): a current demand raises
   `OPERATING_POINT_OUT_OF_WINDOW` too, judged per group. `Rest` is still excluded by
@@ -671,7 +676,7 @@ was not converged across the cell; nor was the 25 °C 3C one, regenerated the sa
 `dfn-fine-grid.md`): the opt-in fine grid meets the cut-off but misses the 12 mV whole-run bar
 at the knee, 67 mV, a record the owner accepted as the exit. It ships as a toggle in the page. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
 
-### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; planned 2026-10-18 (`phase-12-plating.md`), after `dfn-split-nan.md`; slice A done 2026-10-18 (`phase-12-slice-a-reference.md`: k = 4.8e-11 m/s, a closed-loop PyBaMM reference)*
+### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; planned 2026-10-18 (`phase-12-plating.md`), after `dfn-split-nan.md`; slice A done 2026-10-18 (`phase-12-slice-a-reference.md`: k = 4.8e-11 m/s, a closed-loop PyBaMM reference); slice B done 2026-10-18 (`phase-12-slice-b-reaction.md`: the reaction in the `Dfn`, v29, 5 s sub-steps; a cold voltage hold at long steps under-books by its own current profile, and the mismatched pair's one-hour hold stays unconverged — the split's)*
 
 **The plan replaces the slices and exit below**, which were provisional on the spike: there is no PyBaMM
 reference for the law the owner chose, and plating is on the `Dfn` alone. They are kept as the proposal

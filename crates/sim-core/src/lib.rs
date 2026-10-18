@@ -38,7 +38,7 @@ pub mod runaway;
 pub mod spm;
 pub mod thermal;
 
-pub use aging::{Aging, AgingConfig, CalendarModel};
+pub use aging::{Aging, AgingConfig, CalendarModel, PlatingModel};
 pub use bms::{
     BalancingConfig, Bms, BmsConfig, EkfConfig, EstimatorConfig, ProtectionConfig, SensorFrame,
 };
@@ -46,16 +46,16 @@ pub use chem::{
     AgingParams, ChargeAcceptanceParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams,
     DfnSeparator, DiffusionParams, ElectrodeParams, ElectrolyteTemperature,
     ElectrolyteTemperatureForm, EntropicTable, HysteresisParams, HysteresisWidth, OcpTable,
-    PowerTerm, RegularSolutionParams, ReversalParams, SafetyParams, SeiParams, SpmParams,
-    ThermalParams,
+    PlatingParams, PowerTerm, RegularSolutionParams, ReversalParams, SafetyParams, SeiParams,
+    SpmParams, ThermalParams,
 };
-pub use dfn::DfnState;
+pub use dfn::{DfnState, PlatedLithium};
 pub use ecm::{CellModel, EcmState};
 pub use ensemble::EnsembleState;
 pub use faults::{Fault, FaultError, FaultState, ScheduledFault, SensorFault, SensorId};
 pub use flags::EventFlags;
 pub use pack::{
-    BuildError, CellIndexError, CellModelConfig, CellView, FilmView, Pack, PackConfig,
+    BuildError, CellIndexError, CellModelConfig, CellView, FilmView, Pack, PackConfig, PlatingView,
     RestoreError, Scatter, Snapshot, SNAPSHOT_VERSION,
 };
 pub use runaway::CellRunaway;
