@@ -1,8 +1,9 @@
 # Phase 12 — lithium plating as a reaction on the `Dfn`, instead of a threshold
 
 **Status: PLANNED 2026-10-18; slice A done; slice B built 2026-10-18. Of its two exit misses, the owner
-chose to fix both before C: exit 5 is fixed (`dfn-hold-past-edge.md`, not the split but a held probe's
-range; its one finding accepted by the owner), and exit 3's hold leg — the pack's hold cut into pieces —
+chose to fix both before C, and both are fixed (2026-10-18): exit 5 by `dfn-hold-past-edge.md` (not the
+split but a held probe's range; its one finding accepted by the owner), exit 3's hold leg by
+`plating-hold-pieces.md` (a plating pack's voltage hold cut into 5 s pieces, within 0.10 %). Slice C
 is next.** Written after the spike (`phase-12-spike.md`), which is the measurement
 this plan stands on; where a later slice note contradicts this text, the slice note is the measurement
 and wins. When written the repo was at `SNAPSHOT_VERSION` 28 and `WASM_API_VERSION` 10.

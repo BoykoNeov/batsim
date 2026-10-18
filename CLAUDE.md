@@ -339,10 +339,11 @@ and double as the scenario file format.
   there is no outside reference for the law. Its heat is booked against lithium metal at 0 V. A
   plating cell's step is marched in sub-steps of at most `dfn::PLATING_SUBSTEP_S` (5 s), a count
   fixed by `dt` alone, its tangent the whole step's (a forward sensitivity through the sub-steps):
-  booked at one end-of-step potential, plating came out ×3.6 at 30 min. **Recorded limit:** a cold
-  voltage hold at steps past a minute under-books plating by the hold's own one-current-per-step
-  profile (29 % at 15 min), which no cell sub-step can see. Until slice C the threshold's flag and
-  fade still run beside it. See `docs/plans/phase-12-plating.md` and
+  booked at one end-of-step potential, plating came out ×3.6 at 30 min. A **voltage hold** on such a
+  pack is cut into whole pack steps of the same length (`Pack::step`): one current per long step
+  could not taper, and under-booked a cold hold's plating 29 % at 15 min. Its frame reports states
+  from the last piece and rates as the mean over the pieces (`docs/plans/plating-hold-pieces.md`).
+  Until slice C the threshold's flag and fade still run beside it. See `docs/plans/phase-12-plating.md` and
   `docs/plans/phase-12-slice-b-reaction.md`.
 - All mechanisms reduce `soh_capacity` **and** increase `soh_resistance`
   (roughly: each % capacity lost adds a configurable % resistance). Resistance
@@ -613,9 +614,9 @@ the previous one's tests pass.
   as the exit. Plan, owner decisions and slice addenda in
   `docs/plans/phase-11-fitting.md`.
 - **Phase 12 — lithium plating as a reaction on the `Dfn`.** In progress: slice A (the constant, a
-  closed-loop PyBaMM reference) done and slice B (the reaction, v29) built 2026-10-18; two of the
-  exits missed (a cold voltage hold at long steps; the mismatched pair's one-hour hold, the split's)
-  and await the owner before slice C (health, flags, the dendrite short). Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
+  closed-loop PyBaMM reference) and B (the reaction, v29) done 2026-10-18, B's two exit misses fixed
+  at the owner's decision (`dfn-hold-past-edge.md`, `plating-hold-pieces.md`); C (health, flags, the
+  dendrite short) next. Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
 - **Phases 13 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

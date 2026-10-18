@@ -464,6 +464,12 @@ impl CellModel {
         }
     }
 
+    /// Whether this cell runs the plating reaction (a `Dfn` with a plated-lithium store).
+    #[must_use]
+    pub(crate) fn runs_plating(&self) -> bool {
+        matches!(self, CellModel::Dfn(s) if s.plating.is_some())
+    }
+
     /// The lithium \[mol\] plated on this cell, `(reversible, dead)`, or `None` on a cell
     /// that runs no plating reaction. See [`crate::dfn::plated_lithium_mol`].
     #[must_use]

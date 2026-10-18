@@ -2540,7 +2540,87 @@ impl Pack {
     /// **do** belong in the same run. Below that gate ignition still waits for the start of
     /// the next step (see [`crate::runaway`]); that is bought deliberately, and it is
     /// bounded by the gate — at most 6080 s for the shipped chemistries.
+    ///
+    /// # A voltage hold on a plating pack is cut into pieces
+    /// At a long step a voltage hold is one pack current, chosen so the step ends at the target,
+    /// where a real hold starts high and tapers — and plating is where the current is high, so a
+    /// cold hold under-booked it by 29 % at 15 min (`docs/plans/phase-12-slice-b-reaction.md`).
+    /// On a pack holding a cell that runs the plating reaction, a `Demand::Voltage` step is
+    /// therefore run as [`crate::dfn::plating_substeps`] whole steps of equal length (at most
+    /// [`crate::dfn::PLATING_SUBSTEP_S`] each), a count fixed by `dt` alone: the electrical
+    /// solve, protection, the thermal network, the BMS, aging and faults all run per piece. The
+    /// one frame it returns reports every **state** from the last piece and every **rate** —
+    /// [`Telemetry::i_actual`], the heats and the leakage currents — as the mean over the pieces,
+    /// so `v_terminal · i_actual · dt` and `i_actual · dt` stay the step's energy and charge; its
+    /// flags are the union. Every other step is one piece. See
+    /// `docs/plans/plating-hold-pieces.md`.
     pub fn step(&mut self, dt: f64, demand: Demand, env: &Env) -> Telemetry {
+        let pieces = self.hold_pieces(dt, demand);
+        if pieces <= 1 {
+            return self.step_once(dt, demand, env);
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let (h, n) = (dt / pieces as f64, pieces as f64);
+        let mut flags = EventFlags::empty();
+        let mut rates = [0.0_f64; 8];
+        let mut film: Vec<f64> = Vec::new();
+        let mut last = None;
+        for _ in 0..pieces {
+            let t = self.step_once(h, demand, env);
+            flags |= t.flags;
+            for (sum, x) in rates.iter_mut().zip([
+                t.i_actual,
+                t.q_gen_w,
+                t.q_runaway_w,
+                t.q_balancing_w,
+                t.i_balancing_a,
+                t.i_internal_short_a,
+                t.i_external_short_a,
+                t.i_rejected_a,
+            ]) {
+                *sum += x;
+            }
+            if film.is_empty() {
+                film.clone_from(&self.film_energy.0);
+            } else {
+                for (a, b) in film.iter_mut().zip(&self.film_energy.0) {
+                    *a += b;
+                }
+            }
+            last = Some(t);
+        }
+        self.film_energy.0 = film;
+        let mut t = last.expect("at least two pieces");
+        let [i_actual, q_gen_w, q_runaway_w, q_balancing_w, i_balancing_a, i_internal_short_a, i_external_short_a, i_rejected_a] =
+            rates.map(|x| x / n);
+        t.flags = flags;
+        t.i_actual = i_actual;
+        t.q_gen_w = q_gen_w;
+        t.q_runaway_w = q_runaway_w;
+        t.q_balancing_w = q_balancing_w;
+        t.i_balancing_a = i_balancing_a;
+        t.i_internal_short_a = i_internal_short_a;
+        t.i_external_short_a = i_external_short_a;
+        t.i_rejected_a = i_rejected_a;
+        t
+    }
+
+    /// How many pieces [`Self::step`] cuts a step into: more than one only for a voltage hold
+    /// on a pack with a cell running the plating reaction, longer than one cell sub-step.
+    fn hold_pieces(&self, dt: f64, demand: Demand) -> usize {
+        let plating = self
+            .groups
+            .iter()
+            .any(|g| g.cells.iter().any(|c| c.model.runs_plating()));
+        if matches!(demand, Demand::Voltage(_)) && plating {
+            dfn::plating_substeps(dt)
+        } else {
+            1
+        }
+    }
+
+    /// One step of the pack, whole: [`Self::step`] is this, once or in pieces.
+    fn step_once(&mut self, dt: f64, demand: Demand, env: &Env) -> Telemetry {
         let cap_ah = self.chem.cell.capacity_ah;
         let (series, parallel) = (self.series as usize, self.parallel as usize);
 

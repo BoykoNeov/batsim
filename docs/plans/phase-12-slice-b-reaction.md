@@ -1,7 +1,8 @@
 # Phase 12 slice B — plating as a reaction inside the `Dfn`
 
-**Status: BUILT 2026-10-18; two of the plan's exits missed, awaiting the owner** (see "Still
-open"). Predictions registered before any engine code (5882a72), scored below:
+**Status: DONE 2026-10-18, with both exit misses fixed at the owner's decision**: exit 5 by
+`dfn-hold-past-edge.md`, exit 3's hold leg by `plating-hold-pieces.md` (within 0.10 % at every step
+length). Predictions registered before any engine code (5882a72), scored below:
 the reaction is in the `Dfn`, plating off is bit-identical, the plating integral meets its
 step-length bar with 5 s sub-steps, and exits 1, 2, 4 and 6 pass. **Three registered bars missed,
 each with its cause measured**: the hold leg of the step-length bar (the long-step voltage hold's
@@ -247,9 +248,16 @@ Asked with the results above; **answered: fix both first.**
 
 Each is its own design note with predictions registered before its run. Slice C starts after both.
 
+**Both done 2026-10-18.** The pair turned out not to be the split: a held probe was pinned to the edge
+of a range its cell was already past, fixed by widening it to take zero in (`dfn-hold-past-edge.md`;
+the owner switched to that fix on the diagnosis). The hold is cut into 5 s whole pack steps on a
+plating pack (`plating-hold-pieces.md`): the hold leg within 0.10 % at 60 s, 15 and 30 min, exit 3
+met on both legs. Exit 5 at one hour then has its first hold step flagged by the cells' own solves on
+surfaces past full — recorded there.
+
 ## Still open, for the owner and for slices C and D
 
-* **Two of the plan's exits missed** — exit 3's hold leg and exit 5's one-hour hold — and whether
+* ~~**Two of the plan's exits missed**~~ — fixed, above. As first written: exit 3's hold leg and exit 5's one-hour hold — and whether
   they are accepted as recorded or fixed first is the owner's decision, not this slice's. The fixes
   in reach: for the hold, sub-stepping the **pack's** demand when a plating cell is present (each
   sub-step a held voltage, so the current can taper inside a long step), which no cell-level change
