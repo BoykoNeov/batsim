@@ -671,7 +671,7 @@ was not converged across the cell; nor was the 25 °C 3C one, regenerated the sa
 `dfn-fine-grid.md`): the opt-in fine grid meets the cut-off but misses the 12 mV whole-run bar
 at the knee, 67 mV, a record the owner accepted as the exit. It ships as a toggle in the page. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
 
-### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; planned 2026-10-18 (`phase-12-plating.md`), after `dfn-split-nan.md`*
+### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; planned 2026-10-18 (`phase-12-plating.md`), after `dfn-split-nan.md`; slice A done 2026-10-18 (`phase-12-slice-a-reference.md`: k = 4.8e-11 m/s, a closed-loop PyBaMM reference)*
 
 **The plan replaces the slices and exit below**, which were provisional on the spike: there is no PyBaMM
 reference for the law the owner chose, and plating is on the `Dfn` alone. They are kept as the proposal

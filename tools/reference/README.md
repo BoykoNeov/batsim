@@ -215,6 +215,20 @@ not the ECM-vs-DFN modelling gap. So the pipeline has two stages:
    (`common.OCV_ADAPTIVE_TOL_V`, 1 mV): the hand-tuned grid below suits LFP's knees and
    left 13.91 mV on the NMC curve. The LFP files keep their grid byte for byte.
 
+8. **`plating_reference.py`** (Phase 12, slice A) — the plating law the owner chose (plating
+   only past 0 V vs lithium, stripping only what is plated, a fixed dead share), closed loop:
+   PyBaMM's DFN with its `"reversible"` plating submodel replaced, on the cell the engine runs.
+   PyBaMM ships no such law, so this is the reference for it. One charge per call; prints a
+   summary line and, with `--out`, the per-second trace.
+
+   ```bash
+   python tools/reference/plating_reference.py 0 0.3 4.8e-11 --out trace.csv
+   ```
+
+   **Run it one charge at a time**: four charges run three at a time came back with an empty
+   hold leg and ran cleanly alone (not traced). Writes nothing in the tree; results in
+   `docs/plans/phase-12-slice-a-reference.md`.
+
 `common.py` holds the shared extraction/simulation helpers and the
 `batsim chemistry id → PyBaMM parameter set` map.
 

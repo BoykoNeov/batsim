@@ -49,6 +49,14 @@ plating in the engine, and the spike's charges had **no constant-voltage leg**.
 
 ### A — the reference and the size (Python only, no Rust)
 
+**Done 2026-10-18** (`phase-12-slice-a-reference.md`): `k = 4.8e-11` m/s on the fine grid, sized on the
+charge with its hold (1.27× from the constant-current size, under the 1.5× that would have gone to the
+owner); the modified PyBaMM model runs at `rtol` 1e-10, so the reference is closed loop. **For slice B's
+exit 2:** the reference and the engine differ by 15 % on the allowed cold charge, from a third of a
+millivolt in their potentials (not feedback, not the particle grid); on the forbidden charges they agree
+to 3 % (8.5 % at −10 °C 2C, all of it plating's feedback). Set the bar on those, or against the engine's
+own open loop at small `k`, and say which.
+
 Pre-registered like a spike. In the reference venv, from the spike harness's sources (moved into
 `tools/reference/` so the result does not depend on `W:\temp\claude`).
 
