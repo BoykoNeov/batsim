@@ -358,7 +358,7 @@ review, shipped engine, 1 h steps, 1C per cell from empty, isothermal:
 | --- | --- |
 | one cell, 0 °C or 25 °C | converges (and overcharges, as a current demand may) |
 | 1S2P, equal cells, 0 °C | converges |
-| 1S2P, one cell at 0.9, **0 °C or 25 °C** | **every step unconverged**; the split it commits is lopsided (34 % and 17 % charged after the first hour); the **third step**, which takes the small cell past full, commits **NaN** into both cells' `i_last`, `soc_deficit` and `tangent` — from then on the voltage is NaN and the state of charge reads 0 on every step |
+| 1S2P, one cell at 0.9, **0 °C or 25 °C** (corrected 2026-10-18, `dfn-split-nan.md`: in the tree the NaN is the fine grid at **0 °C only**; 25 °C and the recommended grid stay finite, unconverged) | **every step unconverged**; the split it commits is lopsided (34 % and 17 % charged after the first hour); the **third step**, which takes the small cell past full, commits **NaN** into both cells' `i_last`, `soc_deficit` and `tangent` — from then on the voltage is NaN and the state of charge reads 0 on every step |
 | the same at 0.5C per cell, or at 15 min steps | converges |
 
 So it is not the cold and not one cell's solve: it is the pack's split of a mismatched `Dfn` pair at a long

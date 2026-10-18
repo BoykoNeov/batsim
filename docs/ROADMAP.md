@@ -436,14 +436,25 @@ where the rest-OCV gate refused to correct.
   group's node voltage is now found by a bracketed search on the cells' own curves,
   committed only if every group settles. Not under an external short, and not on `Dfn`
   packs.
-* **A failed `Dfn` split commits NaN, and the pack never recovers** — found 2026-10-18 by the
-  Phase 12 spike's control runs (`phase-12-spike.md`, A3). A 1S2P `Dfn` pack with one cell at 0.9
-  capacity, charged at 1C per cell with one-hour steps, at 0 °C or 25 °C: every step's split is
-  unconverged, and the step that takes the small cell past full writes NaN into both cells' `i_last`,
-  `soc_deficit` and `tangent`; from then on the voltage is NaN and the state of charge reads 0. Equal
-  cells, one cell, half the current or 15-minute steps all converge. The missing piece is the bracketed
-  search above, which is not on `Dfn` packs; the defect is that `step()` leaves a non-finite number in
-  the state at all. **Planned 2026-10-18** (`dfn-split-nan.md`), ahead of Phase 12.
+* ~~**A failed `Dfn` split commits NaN, and the pack never recovers**~~ — **closed 2026-10-18**
+  (`dfn-split-nan.md`). Found by the Phase 12 spike's control runs; in the tree a 1S2P `Dfn` pack, one
+  cell at 0.9 capacity, 1C per cell, one-hour steps, on the fine grid at 0 °C (the spike's "or 25 °C"
+  did not reproduce), and in the slice's 100-run sweep of parallel `Dfn` packs on **32 runs**, nearly
+  all discharges past empty. Under a current demand the pass loop swung to 1.2e10 A circulating, where
+  the `Dfn`'s past-the-edge slope rounded to 0 Ω with no floor, and the next pass divided by it. Now
+  every `Dfn` slope is floored, and the split itself is damped (next bullet); pinned by
+  `dfn_parallel_long_step.rs`. Over the sweep: 0 runs non-finite (32), 979 unconverged steps (1406).
+* **A parallel `Dfn` pack's split under a current or rest demand: damped now, and still unsettled
+  past its edges** — found and partly closed 2026-10-18 (`dfn-split-nan.md`). With the pack current
+  fixed every damped trial split it the same way, so the damping search could not help and the pass
+  loop cycled. Now each trial walks every cell's current back towards the last accepted split until
+  the residual falls, and where none does the loop keeps that split and stops, flagged. What remains:
+  **11 of the sweep's 100 runs still blow up**, finitely (a cell past the pack's current plus 1C), all
+  2C per cell, or 1C at 0 °C, driven past empty or full, all 11 broken on the engine before as well;
+  and past full, where this model's curve is flat, some steps that converged on that flat curve now
+  say unconverged. The mismatched pair above still does not settle its **first** hour at 1C per cell
+  (−3.6 and −6.7 A at 25 °C, as before; nothing full yet). Phase 12's exit 5 asks for one-hour
+  convergence on exactly this pack (`phase-12-plating.md`).
 * ~~**`Demand::Current` leaving the window is unflagged** where `Power` is~~ — **closed
   2026-08-13** (`operating-point-window.md`): a current demand raises
   `OPERATING_POINT_OUT_OF_WINDOW` too, judged per group. `Rest` is still excluded by

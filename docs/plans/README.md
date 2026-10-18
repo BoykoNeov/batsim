@@ -60,7 +60,7 @@ Changes to what `sim-core` computes. Every one names the snapshot version it cos
 | [`dfn-aging-gap.md`](dfn-aging-gap.md) | The DFN's aging gap: a rule implemented for three commits and verified by none |
 | [`dfn-end-of-step-heat.md`](dfn-end-of-step-heat.md) | The porous-electrode cell's heat at a long step — read at the end of the step |
 | [`dfn-long-step-holds.md`](dfn-long-step-holds.md) | The porous-electrode cell held at a voltage or a power over a long step |
-| [`dfn-split-nan.md`](dfn-split-nan.md) | A failed `Dfn` split must not commit NaN: a 1S2P `Dfn` pack with one cell at 0.9, charged at 1C per cell in one-hour steps, writes NaN into its cells' state when one overfills and never recovers; the plan for the guard, and a measurement of the bracketed settle on `Dfn` packs (planned, ahead of Phase 12) |
+| [`dfn-split-nan.md`](dfn-split-nan.md) | A failed `Dfn` split must not commit NaN: a 1S2P `Dfn` pack with one cell at 0.9, charged at 1C per cell in one-hour steps, wrote NaN into its cells' state and never recovered — and 32 of a 100-run sweep did, mostly discharges past empty. Fixed by a floor on the `Dfn`'s past-the-edge slope and a damped split under current and rest demands (0 non-finite runs; 11 still blow up finitely past the edges, all broken before); a "best pass" fallback built first and refused on the sweep (complete, ahead of Phase 12) |
 | [`diffusion-overpotential.md`](diffusion-overpotential.md) | A diffusion overpotential for lead-acid — can the ECM carry Peukert at all? |
 | [`end-of-step-split.md`](end-of-step-split.md) | The split a long step can survive — end-of-step sources for the equivalent circuit |
 | [`energy-hole.md`](energy-hole.md) | The energy hole: charge that vanishes at the clamp, and charge that appears |

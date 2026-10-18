@@ -1725,22 +1725,29 @@ fn solve_from(
         dv_di = (rhs[NVAR * (n - 1) + PHIS] - rhs[PHIS]) / sides.area_m2;
     }
     let v_solid = u[NVAR * (n - 1) + PHIS] - u[PHIS];
-    // `V` is strictly decreasing in `i` on any state this model can reach, so `r > 0`. The
-    // floor is not physics: the pack solve divides by `r`, and this is the guarantee it
-    // needs held up on a state driven somewhere pathological, so that `step` reports a bad
-    // number rather than panicking. Same constant and same argument as `spm::source_at`.
-    const R_FLOOR_OHMS: f64 = 1.0e-9;
-    let r_tangent = -dv_di + sides.r_contact;
-    let r_tangent = if r_tangent.is_finite() && r_tangent > R_FLOOR_OHMS {
-        r_tangent
-    } else {
-        R_FLOOR_OHMS
-    };
+    let r_tangent = floor_r(-dv_di + sides.r_contact);
     Solved {
         u,
         v_terminal: v_solid - i * sides.r_contact,
         r_tangent,
         converged,
+    }
+}
+
+/// `V` is strictly decreasing in `i` on any state this model can reach, so `r > 0`. The
+/// floor is not physics: the pack solve divides by `r`, and this is the guarantee it needs
+/// held up on a state driven somewhere pathological, so that `step` reports a bad number
+/// rather than panicking or committing NaN. Same constant and same argument as
+/// `spm::probe_at`. Applied to **every** slope this model hands the pack — the solve's own
+/// and the continuation's past the edge ([`past_edge`]), whose difference quotient rounded
+/// to exactly zero at 1.2e10 A (`docs/plans/dfn-split-nan.md`).
+const R_FLOOR_OHMS: f64 = 1.0e-9;
+
+fn floor_r(r: f64) -> f64 {
+    if r.is_finite() && r > R_FLOOR_OHMS {
+        r
+    } else {
+        R_FLOOR_OHMS
     }
 }
 
@@ -2043,7 +2050,10 @@ fn past_edge(
     let kin = |x: f64| crate::spm::kinetics_at_empty_v(spm, temp_k, r0, eff_capacity_ah, x);
     let h = 1.0e-6 * eff_capacity_ah;
     let r = -(kin(i + h) - kin(i - h)) / (2.0 * h);
-    (solved.v_terminal + (kin(i) - kin(i_p)) - drop, r + ramp)
+    (
+        solved.v_terminal + (kin(i) - kin(i_p)) - drop,
+        floor_r(r + ramp),
+    )
 }
 
 /// Equilibrium (open-circuit) voltage \[V\] at the particles' **bulk** stoichiometry,

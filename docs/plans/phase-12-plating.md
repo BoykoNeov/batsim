@@ -8,9 +8,9 @@ This replaces the slice list and exit in `docs/ROADMAP.md` §Phase 12, which wer
 spike. Two of its assumptions did not survive it: there is no PyBaMM reference for the chosen law, and
 the slice that put plating on the `Spm` is dropped by the owner.
 
-**Prerequisite:** `dfn-split-nan.md` lands first. A 1S2P `Dfn` pack at one-hour steps commits NaN into its
-cells' state today; this phase's lesson runs on such a pack, and its convergence exit cannot be read
-while that is possible.
+**Prerequisite:** `dfn-split-nan.md` lands first — **landed 2026-10-18**. A 1S2P `Dfn` pack at one-hour
+steps committed NaN into its cells' state; this phase's lesson runs on such a pack, and its convergence
+exit could not be read while that was possible.
 
 ## The owner's decisions, recorded
 
@@ -137,6 +137,13 @@ Pinned by `crates/sim-data/tests/plating_dfn.rs`:
 5. **Convergence**: the 1S2P mismatched pack with plating on, a 1C charge and a 4.2 V hold, at 15 min
    and 1 h steps — converged at 15 min; at 1 h, finite on every step and converged on all but a number
    stated before the run (the prototype had one).
+   **At risk** (`dfn-split-nan.md`, 2026-10-18): without plating this pack's split does not settle at
+   one-hour steps even in its first hour, before anything is full (ROADMAP H8). The split is damped
+   since that slice, and the first hour still does not settle (−3.6 and −6.7 A at 25 °C, the same
+   split as before it); the slice's sweep has every 1C charge and every 4.2 V hold on it finite and
+   bounded, and every hold converged. The prototype converged where the control did not, but on a
+   different engine; if exit 5's one-hour bar fails for that reason, the fix is the split's, and the
+   plan says so before slice B rather than after.
 6. **LTO plates nothing**, analytically: `lto_20ah_generic.toml` has no porous model, and a graphite-free
    negative 1.55 V above lithium needs 1.55 V of polarization to reach the line; a test pins the
    refusal of plating on a chemistry with no `[dfn.plating]`.

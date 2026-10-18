@@ -1687,6 +1687,14 @@ struct StepScratch {
     /// Per-cell **end-of-step** Thévenin `(E, R)` a linear pack solves against, series-major;
     /// empty on a zero-length step and on a nonlinear pack. See `step_source_shift`.
     step_src: Vec<(f64, f64)>,
+    /// The split damping in `Pack::step`'s damping search: every cell's current \[A\],
+    /// series-major, at the last accepted pass (`split_acc`) and at this pass's full step
+    /// (`split_full`), and each group's node voltage \[V\] at the same two. Filled only on a
+    /// nonlinear pack.
+    split_acc: Vec<f64>,
+    split_full: Vec<f64>,
+    node_acc: Vec<f64>,
+    node_full: Vec<f64>,
 }
 
 impl PartialEq for StepScratch {
@@ -2538,7 +2546,7 @@ impl Pack {
         // memo they carry nothing across the boundary and so never need putting back:
         // each is cleared by the code that fills it, on every arm (see [`StepScratch`]).
         // Destructuring is what keeps this compatible with the `&mut self.groups` loops
-        // below — seven disjoint field borrows, not one borrow of the pack.
+        // below — twelve disjoint field borrows, not one borrow of the pack.
         let StepScratch {
             group_src,
             bleed_g,
@@ -2548,6 +2556,10 @@ impl Pack {
             v_group,
             temp_probe_k,
             step_src,
+            split_acc,
+            split_full,
+            node_acc,
+            node_full,
         } = &mut self.scratch;
 
         // Cleared on *both* arms: an empty `bleed_g` is how the rest of the step
@@ -2776,7 +2788,7 @@ impl Pack {
         // produces; the two currents are not read until a second pass exists, and a
         // linear pack never reads any of the three.
         let mut residual_prev = f64::INFINITY;
-        let mut i_g_prev = 0.0;
+        let mut i_g_prev = 0.0_f64;
         let mut i_short_prev = 0.0;
         // The bounds protection has revealed so far this step, as `[lo, hi]` of load
         // current: a pass whose current it moved shows where its allowance ends. The
@@ -2797,6 +2809,8 @@ impl Pack {
         // Whether the pass loop below gave up at its cap, which is the one exit the split
         // fallback after it answers.
         let mut capped = false;
+        split_acc.clear();
+        node_acc.clear();
 
         // --- the pack current solve.
         //
@@ -3039,12 +3053,41 @@ impl Pack {
             // the degenerate case and behaves: both endpoints are exactly `0.0`, so
             // every trial is exactly `0.0`. The same argument carries the short, which
             // is affine in `i_load` and so rides the same combination.
+            //
+            // # Where the pack current does not move: the split is damped instead
+            // Under a current or rest demand the pack current is the caller's, so every trial
+            // above is the pass's own current and splits it the same way: the search had
+            // nothing to shorten, evaluated one split `DAMPING_ATTEMPTS` times and took it.
+            // The loop was undamped there, and measured, a mismatched `Dfn` pair at one-hour
+            // steps went from 0.74 V to 1.7e5 V in nine passes and committed NaN; a sweep
+            // found the same on 32 of 100 parallel `Dfn` runs (`docs/plans/dfn-split-nan.md`).
+            // So where this pass's current is the last accepted one, bit for bit, the attempts
+            // after the full step walk every cell's current, and each group's node voltage,
+            // back towards the last accepted pass's: `i(λ) = i_acc + λ·(i_full − i_acc)`.
+            // Each end sums to the group current less a leakage linear in the node, so every
+            // blend conserves charge; at `λ = 0` its residual is the last accepted pass's
+            // exactly, and to first order every cell's gap shrinks by `1 − λ`. An accepted
+            // blend is written back as lines through it below. A group of one cell has no
+            // split: its blends are its full step, so it would only stall where it used to
+            // re-probe.
+            let damp_split = solve_iterations > 1
+                && parallel > 1
+                && dt > 0.0
+                && g_ext == 0.0
+                && i_g_full.to_bits() == i_g_prev.to_bits()
+                && split_acc.len() == n_cells;
+            if damp_split {
+                split_full.clear();
+                node_full.clear();
+            }
             let mut lambda = 1.0;
             let mut i_g = i_g_full;
             let mut i_external_short_a = i_short_full;
             let mut residual_v = f64::INFINITY;
             let mut bracketed = false;
+            let mut improved = false;
             for attempt in 0..DAMPING_ATTEMPTS {
+                let blend = damp_split && attempt > 0;
                 let mut narrowing = false;
                 if attempt > 0 {
                     let bracket = match (br_pos, br_neg) {
@@ -3083,10 +3126,25 @@ impl Pack {
                 residual_v = 0.0_f64;
                 for (g_idx, group) in self.groups.iter().enumerate() {
                     let (e_gv, r_gv) = group_src[g_idx];
-                    let v_node = e_gv - i_g * r_gv;
+                    let v_node = if blend {
+                        node_acc[g_idx] + lambda * (node_full[g_idx] - node_acc[g_idx])
+                    } else {
+                        e_gv - i_g * r_gv
+                    };
+                    if damp_split && attempt == 0 {
+                        node_full.push(v_node);
+                    }
                     for (k, cell) in group.cells.iter().enumerate() {
-                        let (e_k, r_k) = src[g_idx * parallel + k];
-                        let i_k = (e_k - v_node) / r_k;
+                        let j = g_idx * parallel + k;
+                        let (e_k, r_k) = src[j];
+                        let i_k = if blend {
+                            split_acc[j] + lambda * (split_full[j] - split_acc[j])
+                        } else {
+                            (e_k - v_node) / r_k
+                        };
+                        if damp_split && attempt == 0 {
+                            split_full.push(i_k);
+                        }
                         // One evaluation of the cell's curve, answering both questions
                         // this attempt has: where the curve is (the residual) and where
                         // it is going (the next pass's tangent). Asking separately would
@@ -3257,13 +3315,15 @@ impl Pack {
                 }
                 // The first pass is accepted whatever it produces: there is no earlier
                 // residual for it to beat, and refusing it would leave the solve with no
-                // iterate at all. Thereafter an attempt has to be a strict improvement,
-                // which is what makes the accepted residuals a decreasing sequence and
-                // the iterate therefore bounded. A non-finite residual can never be an
-                // improvement, so a pass that produces one always backtracks.
+                // iterate at all. Thereafter an attempt has to be a strict improvement, and
+                // a non-finite residual can never be one, so a pass that produces one
+                // always backtracks. That makes the accepted residuals a decreasing
+                // sequence except where the search runs out of attempts, when the smallest
+                // step is taken anyway (below).
                 if (solve_iterations == 1 || (residual_v.is_finite() && residual_v < residual_prev))
                     && !narrowing
                 {
+                    improved = true;
                     break;
                 }
                 // Whether or not the search succeeds, the smallest step it tried is the
@@ -3276,6 +3336,56 @@ impl Pack {
                  last accepted current and this pass's; the argument that damping cannot \
                  defeat protection rests on it being one"
             );
+            // Where no blend improved on the last accepted pass, the smallest step is **not**
+            // taken: the pack current is fixed, so the next pass would re-take the same
+            // tangents and fail the same way to the cap, and measured, a cell past the `Dfn`'s
+            // rate limit answered a finite current with NaN, which the smallest step would have
+            // carried into every later pass. The split stays the last accepted one (`λ = 0`)
+            // and the loop stops there, unconverged.
+            let stalled = damp_split && !improved;
+            if stalled {
+                lambda = 0.0;
+                i_cell.clear();
+                i_cell.extend_from_slice(split_acc);
+                residual_v = residual_prev;
+            }
+            // A blended split lies on no line this pass aggregated, so it is written back as
+            // lines through it, `(V + i·R, R)` with `R` the cell's tangent, and re-derived from
+            // their node by the reporting pass's own expression — the settle's write-back
+            // below, and the identity the reporting pass asserts.
+            if damp_split && lambda < 1.0 {
+                for (g_idx, group) in self.groups.iter().enumerate() {
+                    let base = g_idx * parallel;
+                    // Not `0 × (V_full − V_acc)` on a stall: the full step's node may be NaN.
+                    let v = if stalled {
+                        node_acc[g_idx]
+                    } else {
+                        node_acc[g_idx] + lambda * (node_full[g_idx] - node_acc[g_idx])
+                    };
+                    let mut sum_g = bleed_at(g_idx);
+                    let mut sum_eg = 0.0;
+                    for (k, cell) in group.cells.iter().enumerate() {
+                        let r = tangent[base + k].1;
+                        let e = v + i_cell[base + k] * r;
+                        tangent[base + k] = (e, r);
+                        let g = 1.0 / r;
+                        sum_g += g + cell.shunt_g;
+                        sum_eg += e * g;
+                    }
+                    group_src[g_idx] = (sum_eg / sum_g, 1.0 / sum_g);
+                    let (e_gv, r_gv) = group_src[g_idx];
+                    let v_node = e_gv - i_g * r_gv;
+                    for k in 0..parallel {
+                        let (e, r) = tangent[base + k];
+                        i_cell[base + k] = (e - v_node) / r;
+                    }
+                }
+            }
+            // The accepted pass, for the next pass's blend to start from.
+            split_acc.clear();
+            split_acc.extend_from_slice(&i_cell);
+            node_acc.clear();
+            node_acc.extend(group_src.iter().map(|&(e_gv, r_gv)| e_gv - i_g * r_gv));
             residual_prev = residual_v;
             i_g_prev = i_g;
             i_short_prev = i_external_short_a;
@@ -3290,7 +3400,7 @@ impl Pack {
                 }
                 break (i_g, i_external_short_a, prot_flags);
             }
-            if solve_iterations >= SOLVE_ITER_CAP {
+            if solve_iterations >= SOLVE_ITER_CAP || stalled {
                 capped = true;
                 break (i_g, i_external_short_a, prot_flags);
             }
@@ -3397,10 +3507,10 @@ impl Pack {
                 }
             }
         }
+
         if capped && !settled {
             flags |= EventFlags::SOLVE_UNCONVERGED;
         }
-
         // --- did this step land anywhere a client can use?
         //
         // Both demands that name a *load* ask it, and the reasoning is in
