@@ -230,7 +230,13 @@ and double as the scenario file format.
   bracketed search on each group's node voltage: every cell's curve falls with its current,
   so the root exists. Commit-or-nothing, only where the loop gave up, so a converging step
   is untouched; not under an external short, and not yet on a pack with a `Dfn` cell. See
-  `docs/plans/porous-reversal.md`.
+  `docs/plans/porous-reversal.md`. Inside the loop, under the same demands, the split itself is
+  damped on any group of two or more nonlinear cells: a pass whose full step does not lower the
+  residual walks each cell's current back towards the last accepted split, and where no such blend
+  does, the step keeps that split and stops, flagged `SOLVE_UNCONVERGED` — so a failed split can no
+  longer commit NaN. Measured on parallel `Dfn` packs (32 of 100 sweep runs NaN before, 0 after;
+  11 still blow up, finitely, driven past empty or full at 2C or cold); on the `Spm` and the
+  many-particle cell only by the suite. See `docs/plans/dfn-split-nan.md`.
 - `Demand::Power(P)`: Newton-iterate on pack current with `P = V(I)·I`
   (converges in a few iterations; guard with bisection fallback and iteration cap).
 - `Demand::Voltage(V)`: solve for I from the same linear Thevenin aggregate

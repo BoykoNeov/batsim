@@ -234,7 +234,9 @@ Scored:
   and by its fourth it circulates ±4.96e5 A where the release build has 27.4 / −6.7 A. The parent does
   the same (its first quarter hour differs from the tenth digit too), so it is not this slice's. That
   step is unconverged on both, and an unconverged split amplifies whatever differs; what differs
-  first was not traced. `CLAUDE.md` claims determinism on the **same binary** only, which this does
+  first was not traced (`powi`, the one function exempt from the `libm` rule, is used only at
+  exponents 2–4 and as `0.5^h`, which both builds compute by the same squarings, so probably not it).
+  Recorded under ROADMAP H10. `CLAUDE.md` claims determinism on the **same binary** only, which this does
   not contradict. The test's conservation check had been relative to the pack's current, and the
   debug build's ±5e5 A summed to 20.6 A within 2.7e-8 A, past it; rounding in a sum scales with its
   largest term, so the check is now relative to the cells' own currents.
@@ -257,13 +259,17 @@ parent it stayed finite, and what it pins is the best pass's failure, a design n
 
 ## Exit
 
-* The reproduction test, green; and the sweep, with **zero** committed non-finite values.
+* The reproduction test, green; and the sweep, with **zero** committed non-finite values. **Met.**
 * Every step that converged on the parent is bit-identical (the full suite, and a hash of every
-  telemetry frame across the sweep, parent against slice).
+  telemetry frame across the sweep, parent against slice). **Met but for one**: the suite is green,
+  and one of the sweep's 2794 converged steps moved in its last bits (prediction 7).
 * A perturbation table: delete the guard → which tests go red; disable the fallback's charge
-  balance → which go red.
+  balance → which go red. **Met for what shipped** (the table above); the fallback's row is moot,
+  the fallback being refused.
 * ROADMAP H8's NaN bullet closed or narrowed to what remains (the `Dfn`'s physics past full stays
-  open; it is not this slice's).
+  open; it is not this slice's). **Met**: closed, and the split's bullet narrowed to the 11 runs and
+  the unsettled first hour. The debug/release disagreement is recorded under H10.
+* Prediction 3's "the rest steps converge" was not scored.
 
 ## Deliberately not done
 

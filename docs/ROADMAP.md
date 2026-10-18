@@ -448,7 +448,9 @@ where the rest-OCV gate refused to correct.
   past its edges** — found and partly closed 2026-10-18 (`dfn-split-nan.md`). With the pack current
   fixed every damped trial split it the same way, so the damping search could not help and the pass
   loop cycled. Now each trial walks every cell's current back towards the last accepted split until
-  the residual falls, and where none does the loop keeps that split and stops, flagged. What remains:
+  the residual falls, and where none does the loop keeps that split and stops, flagged — on every
+  parallel group of nonlinear cells, the `Spm` and the many-particle cell included, though only the
+  suite measured it there. What remains:
   **11 of the sweep's 100 runs still blow up**, finitely (a cell past the pack's current plus 1C), all
   2C per cell, or 1C at 0 °C, driven past empty or full, all 11 broken on the engine before as well;
   and past full, where this model's curve is flat, some steps that converged on that flat curve now
@@ -524,6 +526,7 @@ many-particle cell adds none.
 | ~~Heat generation is held constant across a step, so a day-long step burns the day at the heat of its first instant — **measured at 6.6 K of a 20 K rise**~~ — **closed as a ledger 2026-09-23.** The thermal network integrates the exact step mean (`step-mean-heat.md`), and the *reported* pair — `q_gen_w` and `v_terminal` — is now the step's last instant on both sides, which closes the energy ledger step by step with no lag (`end-of-step-split.md`). A step-*mean* pair was the plan and was not built: the measurement for it found the parallel-group divergence instead, and once the split equalises end-of-step voltages the end is the one instant with a single node voltage. What is left is only that `q_gen_w · dt` is not the heat the pack absorbed at a coarse `dt` | `step-mean-heat.md`, `end-of-step-split.md` | a mean pair on `Telemetry` if a client ever needs it; it needs a current-weighted group mean, and at rest with circulating cells that has no voltage to divide by |
 | Reading the `Spm`'s network heat at the end of the step instead of by its trapezoid is closer at an hour on three of four cases (0.81 against 0.70 K for a 0.85 K reference at C/5) and worse on a C/2 charge (5.02 against 4.11 K for 4.60 K) | `dfn-end-of-step-heat.md` | a one-line change and a sweep; mixed, so not taken |
 | Snapshot body at 100S10P ≈ 600 KB is poor for a socket frame | `phase-4-server-wasm.md` | `Content-Encoding` on REST if it ever bites |
+| A debug build and a release build of the engine disagree from the tenth digit on an unconverged parallel `Dfn` step (found 2026-10-18; on the engine before that slice too), and an unconverged split amplifies it to a different trajectory (±5e5 A against 27 A three steps later). `CLAUDE.md` claims determinism on the same binary only, which holds; but browser-equals-native was measured on the parity tool's cases, not on chaotic steps like these. Untraced: `powi`, exempt from the `libm` rule, is used only at exponents 2–4 and as `0.5^h`, which both builds compute by the same squarings, so probably not it | `dfn-split-nan.md` | a bisection of the first differing value; tests on such steps must not assert values that close |
 
 ---
 
