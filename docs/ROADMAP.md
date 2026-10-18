@@ -360,7 +360,7 @@ where the rest-OCV gate refused to correct.
   A cold-charge lesson that ends with a hold, then discharges, runs on it. **Diagnosed** (`dfn-cold-hold.md`):
   the surface clamp freezes a full negative node's exchange current, the hold creeps it past full, and
   the discharge stalls on the clamp's kink at a residual floor (up to 4.4e-5 on the fine grid). A taper
-  to zero at full fixed the coarse grid only and moved the overcharge tests; withdrawn, with the owner.
+  to zero at full fixed the coarse grid only and moved the overcharge tests; withdrawn; the owner chose a lesson without the hold (2026-10-18), so this stays open.
 * ~~**A `Dfn` books the equilibrium voltage's fall across a long step as heat.**~~ —
   **closed 2026-09-23** (`dfn-end-of-step-heat.md`): the heat is read at the end of the
   step off the cell's own solve, for the report and the network both (1.03 K against

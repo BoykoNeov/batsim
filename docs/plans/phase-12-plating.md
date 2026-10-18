@@ -138,7 +138,8 @@ stripping step after a cold constant-current leg is 4.3 mV for about a minute (r
 (older than this slice), and at 0 °C the hold strips back nearly all the metal (1.2 % of the dead
 store is left; 47 % at −10 °C). **Owner decision 2026-10-18: fix the cold hold first**, as its own note with predictions
 registered before the change (as slice B's two misses were); slice D starts after it. **Diagnosed, not fixed** (`dfn-cold-hold.md`): no fix that changes only failing steps
-works on the fine grid; the remaining choices — a model change, or a lesson designed around the hold — are the owner's.
+works on the fine grid; **Owner decision 2026-10-18: slice D's lesson runs without the hold** — each cold charge stops at
+4.2 V, then rests or discharges (where the most strippable metal is left to show); the defect stays open.
 
 - **Capacity read off the electrodes**: dead lithium is gone from the negative's inventory, as the film's
   is. Reversible plated lithium is lithium that will strip back; what `soc_true` and `soh_capacity` read
@@ -152,6 +153,9 @@ works on the fine grid; the remaining choices — a model change, or a lesson de
   plating by, and the roadmap's most teachable one), at what rate and temperature.
 
 ### D — the lesson
+
+**Constraint, owner decision 2026-10-18** (`dfn-cold-hold.md`): no constant-voltage hold on a cold
+charge — stop at 4.2 V, then rest or discharge.
 
 The same cold fast charge on the threshold cell and on the reaction cell, in the ninth chapter or a new
 one (`path-chapters.md`): where the threshold says "no" at 0 °C and the reaction plates; the sheet's

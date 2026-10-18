@@ -1,7 +1,7 @@
 # A cold 4.2 V hold, and the `Dfn` discharge after it
 
 **Status: DIAGNOSED 2026-10-18; the prototyped fix FAILED its registered predictions and is
-withdrawn; back with the owner.** The taper below fixes the recommended grid's case but not the fine
+withdrawn. **Owner decision 2026-10-18: design slice D's lesson without the hold** — each cold charge stops at 4.2 V, then rests or discharges; the defect stays open (ROADMAP H8).** The taper below fixes the recommended grid's case but not the fine
 grid with plating on — the case slice D needs — and it changes results in the overcharge regime that
 four test families pin. No narrower fix passes both of the bars set for one (below, "What is left").
 The engine is unchanged; the prototype is kept as a patch beside this note. Found by Phase 12 slice C (`phase-12-slice-c-health.md`, "Found on the

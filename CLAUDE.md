@@ -628,7 +628,8 @@ the previous one's tests pass.
   them (`dfn-hold-past-edge.md`, accepted by the owner); C (health, flags, the dendrite short, v30)
   built 2026-10-18 (`phase-12-slice-c-health.md`): a one-minute, 4.3 mV stripping step after a cold
   charge's constant-current leg, and — older than the slice — a cold 4.2 V hold that leaves the `Dfn`
-  unable to converge the discharge after it, put to the owner before D (the lesson). Plan, owner
+  unable to converge the discharge after it (`dfn-cold-hold.md`, diagnosed, not fixed): D (the lesson)
+  next, its cold charges stopping at 4.2 V with no hold, by the owner's decision. Plan, owner
   decisions and exit in `docs/plans/phase-12-plating.md`.
 - **Phases 13 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
