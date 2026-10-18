@@ -30,6 +30,12 @@ fn chem() -> ChemistryParams {
     let s = c.safety.as_mut().expect("[safety]");
     s.plating_fade_per_ah = 0.0;
     s.plating_short_hazard_per_ah = 0.0;
+    // And the reaction's own dendrite hazard (slice C), so no run here rolls a short.
+    c.dfn
+        .as_mut()
+        .and_then(|d| d.plating.as_mut())
+        .expect("[dfn.plating]")
+        .short_hazard_per_dead_ah = 0.0;
     c
 }
 
@@ -401,8 +407,10 @@ const CONDITIONS: [(f64, f64, bool); 9] = [
 
 /// A charge from empty on the fine grid, pinned at `temp_c`, the rate constant scaled by
 /// `k_scale`: `c_rate` to [`V_HOLD`], then the voltage held to [`TAPER_C`], 1 s steps — slice
-/// A's protocol. Gross plated \[A·h\] and the unconverged steps.
-fn cccv(temp_c: f64, c_rate: f64, k_scale: f64) -> (f64, u32) {
+/// A's protocol. Gross plated \[A·h\], the unconverged steps, the steps that raised
+/// `PLATING_RISK`, and the steps on which that flag and "this step plated" disagreed (slice C,
+/// `phase-12-slice-c-health.md` prediction 6).
+fn cccv(temp_c: f64, c_rate: f64, k_scale: f64) -> (f64, u32, u32, u32) {
     let mut c = chem();
     let q = c.cell.capacity_ah;
     c.dfn
@@ -415,6 +423,7 @@ fn cccv(temp_c: f64, c_rate: f64, k_scale: f64) -> (f64, u32) {
     let t = 273.15 + temp_c;
     let mut p = Pack::new(&config(fine(), PlatingModel::Reaction, 0.0, t), c).expect("builds");
     let (mut held, mut unconverged, mut secs) = (false, 0, 0.0);
+    let (mut flagged, mut mismatched, mut gross) = (0, 0, 0.0);
     loop {
         let d = if held {
             Demand::Voltage(V_HOLD)
@@ -424,6 +433,11 @@ fn cccv(temp_c: f64, c_rate: f64, k_scale: f64) -> (f64, u32) {
         let tel = p.step(1.0, d, &env(t));
         secs += 1.0;
         unconverged += u32::from(tel.flags.contains(EventFlags::SOLVE_UNCONVERGED));
+        let flag = tel.flags.contains(EventFlags::PLATING_RISK);
+        let g = gross_ah(&p);
+        flagged += u32::from(flag);
+        mismatched += u32::from(flag != (g > gross));
+        gross = g;
         if !held && tel.v_terminal >= V_HOLD {
             held = true;
         } else if held && -tel.i_actual <= TAPER_C * q {
@@ -431,7 +445,7 @@ fn cccv(temp_c: f64, c_rate: f64, k_scale: f64) -> (f64, u32) {
         }
         assert!(secs < 30.0 * 3600.0, "{temp_c} C {c_rate}C never tapered");
     }
-    (gross_ah(&p), unconverged)
+    (gross_ah(&p), unconverged, flagged, mismatched)
 }
 
 /// PyBaMM's closed loop at the sized `k`, gross as % of capacity, from
@@ -491,9 +505,9 @@ fn the_sheet_separates_and_the_reaction_matches_its_references() {
         )
     });
     let pct = |ah: f64| 100.0 * ah / q;
-    for (tc, c, ok, (g, unc)) in &at_size {
+    for (tc, c, ok, (g, unc, flagged, _)) in &at_size {
         println!(
-            "{tc:>5} C {c}C {}: gross {:.6} % ({g:.4e} A·h), unconverged {unc}",
+            "{tc:>5} C {c}C {}: gross {:.6} % ({g:.4e} A·h), unconverged {unc}, flagged {flagged}",
             if *ok { "allows " } else { "forbids" },
             pct(*g)
         );
@@ -512,8 +526,18 @@ fn the_sheet_separates_and_the_reaction_matches_its_references() {
         "mildest forbidden / worst allowed = {:.2}",
         mildest_forbidden / worst_allowed
     );
-    for (tc, c, ok, (g, unc)) in &at_size {
+    for (tc, c, ok, (g, unc, flagged, mismatched)) in &at_size {
         assert_eq!(*unc, 0, "{tc} C {c}C: unconverged steps");
+        // Slice C: the flag is the reaction's, step for step, and rises wherever it plated.
+        assert_eq!(
+            *mismatched, 0,
+            "{tc} C {c}C: PLATING_RISK is not the plating"
+        );
+        assert_eq!(
+            *flagged > 0,
+            *g > 0.0,
+            "{tc} C {c}C: flagged {flagged}, gross {g}"
+        );
         if *ok {
             assert!(pct(*g) < 0.002, "{tc} C {c}C plates {:.6} %", pct(*g));
             if *tc > 20.0 && *c < 0.5 || *tc > 40.0 {

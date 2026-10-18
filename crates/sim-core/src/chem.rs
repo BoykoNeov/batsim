@@ -700,6 +700,14 @@ pub struct PlatingParams {
     /// Both endpoints are meaningful: `0` plates only reversibly, `1` loses everything it
     /// plates.
     pub dead_share: f64,
+    /// Poisson hazard of a dendrite short per amp-hour of **dead** lithium \[1/A·h\],
+    /// finite and `>= 0`: on a cell running the reaction the short rolls `1 − exp(−λ·ah)`
+    /// on each aging tick, `ah` the lithium that died since the last, and lands with
+    /// `[safety].plating_short_ohms`, which a positive value requires. Not the threshold's
+    /// [`SafetyParams::plating_short_hazard_per_ah`], which is per amp-hour *charged* under
+    /// its conditions — a quantity hundreds of times larger, so the two numbers are not
+    /// interchangeable (`docs/plans/phase-12-slice-c-health.md`).
+    pub short_hazard_per_dead_ah: f64,
 }
 
 /// The electrolyte's temperature dependence, applied as a **ratio** to the
@@ -2143,6 +2151,21 @@ impl ChemistryParams {
         // one mistake two different error messages.
         if let Some(dfn) = &self.dfn {
             check_dfn(dfn)?;
+            // The one cross-section rule `[dfn.plating]` has: its short lands with the
+            // resistance `[safety]` states, as the threshold's does, so a positive hazard
+            // needs one there — the same conditional shape as `plating_short_ohms`'s own.
+            let hazard = dfn
+                .plating
+                .as_ref()
+                .map_or(0.0, |pl| pl.short_hazard_per_dead_ah);
+            let ohms = self.safety.as_ref().map_or(0.0, |s| s.plating_short_ohms);
+            if hazard > 0.0 && (!is_positive(ohms) || !ohms.is_finite()) {
+                return Err(ChemistryError::NotPositive {
+                    what: "safety.plating_short_ohms (required when \
+                           dfn.plating.short_hazard_per_dead_ah > 0)",
+                    value: ohms,
+                });
+            }
         }
         Ok(())
     }
@@ -2215,6 +2238,12 @@ fn check_plating(pl: &PlatingParams) -> Result<(), ChemistryError> {
     if !(0.0..=1.0).contains(&pl.dead_share) {
         return Err(ChemistryError::BadRange {
             what: "dfn.plating.dead_share must be in [0, 1]",
+        });
+    }
+    if !is_non_negative(pl.short_hazard_per_dead_ah) || !pl.short_hazard_per_dead_ah.is_finite() {
+        return Err(ChemistryError::Negative {
+            what: "dfn.plating.short_hazard_per_dead_ah",
+            value: pl.short_hazard_per_dead_ah,
         });
     }
     Ok(())

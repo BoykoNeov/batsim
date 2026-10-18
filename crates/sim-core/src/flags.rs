@@ -69,7 +69,10 @@ bitflags! {
         const OT               = 1 << 5;
         /// Under-temperature (e.g. charge inhibit below `t_charge_min`).
         const UT               = 1 << 6;
-        /// Charging below the plating temperature above the C-rate threshold.
+        /// Charging below the plating temperature above the C-rate threshold — or, on a
+        /// `Dfn` cell running the plating reaction (`AgingConfig::plating = Reaction`),
+        /// lithium plated on this step; a zero-length step plates nothing there
+        /// (`docs/plans/phase-12-slice-c-health.md`).
         const PLATING_RISK     = 1 << 7;
         /// A group is actively bleeding charge through its balancing resistor.
         const BALANCING        = 1 << 8;

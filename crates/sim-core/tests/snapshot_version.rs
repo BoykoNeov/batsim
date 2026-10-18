@@ -303,44 +303,45 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v28-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v29 restore.
+/// A v29-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v30 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is the real case again**: v29 appends to `AgingConfig`, to
-/// `[dfn]` and to the `Dfn`'s state, and this fixture is an equivalent-circuit pack with no
-/// aging on a chemistry with no `[dfn]`, so its bytes are a v28 build's exactly. The stale
-/// blobs v29 does move are measured at their fields by the `a_v28_shaped_*` tests below.
-/// (At v28 this pair was a stand-in: every chemistry's `[r0]` table moved, see
+/// **At this bump the retag is the real case**: v30 appends to `[dfn.plating]` alone and
+/// changes what one aging accumulator means on a cell running the plating reaction, and this
+/// fixture is an equivalent-circuit pack with no aging on a chemistry with no `[dfn]`, so its
+/// bytes are a v29 build's exactly. The stale blob v30 does move is measured at its field by
+/// [`a_v29_shaped_plating_section_reads_the_safety_tag_into_its_hazard`]. (At v29 the
+/// same held; at v28 this pair was a stand-in: every chemistry's `[r0]` table moved, see
 /// [`a_v27_shaped_chemistry_fails_at_its_r0_table`].)
 #[test]
-fn the_version_field_is_what_rejects_a_v28_snapshot() {
+fn the_version_field_is_what_rejects_a_v29_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 29,
-        "this test is written against the v28 -> v29 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 30,
+        "this test is written against the v29 -> v30 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
          the new layout is a fact about that layout change, and the answer has flipped \
          across this file's history — v15 'it does not parse at all', v16 'it parses, \
          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to \
          v27 'for this fixture it parses fine and the version field is all there is' with \
          a model-specific sibling for each, v28 'it does not parse at all, at the r0 \
-         table, for every chemistry', and v29 back to 'the version field is all there is' \
-         for this fixture. A renumbered assertion cannot inherit any of them."
+         table, for every chemistry', and v29 and v30 back to 'the version field is all \
+         there is' for this fixture. A renumbered assertion cannot inherit any of them."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 28);
+    let stale = retagged(&bytes, 29);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 28,
+            found: 29,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v28-tagged snapshot must be refused"
+        "a v29-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -1295,6 +1296,47 @@ fn a_v28_shaped_dfn_state_reads_its_capacity_factor_as_a_plating_tag() {
     let bytes = bincode::serialize(&plating).expect("a v29 state serializes");
     let back: sim_core::DfnState = bincode::deserialize(&bytes).expect("that is a v29 state");
     assert_eq!(back, plating);
+}
+
+/// A v29 `[dfn.plating]` at v30 reads the eight bytes after it — the chemistry's `[safety]`
+/// tag and the first seven bytes of its onset temperature — as its short hazard, and the
+/// onset's top byte as the next tag, where the read fails.
+///
+/// v30 appends `short_hazard_per_dead_ah` after `dead_share`, and `[dfn]` is the last section
+/// before `[safety]` in a chemistry. The only shipped chemistry with `[dfn.plating]` (the LG
+/// M50) has a `[safety]`, whose onset, 443.15 K, has a top byte of `0x40`: no `Option` tag.
+#[test]
+fn a_v29_shaped_plating_section_reads_the_safety_tag_into_its_hazard() {
+    let mut v29_then_safety =
+        bincode::serialize(&(4.8e-11_f64, 0.65_f64, 0.5_f64)).expect("three numbers");
+    v29_then_safety.push(1); // `Some(SafetyParams)`
+    v29_then_safety.extend(443.15_f64.to_le_bytes()); // its onset
+    let read: sim_core::PlatingParams =
+        bincode::deserialize(&v29_then_safety).expect("any eight bytes are a hazard");
+    assert_eq!(read.dead_share, 0.5);
+    let mut eight = [1_u8; 8];
+    eight[1..].copy_from_slice(&443.15_f64.to_le_bytes()[..7]);
+    assert_eq!(
+        read.short_hazard_per_dead_ah.to_bits(),
+        f64::from_le_bytes(eight).to_bits()
+    );
+    let next = &v29_then_safety[32..];
+    assert!(
+        bincode::deserialize::<Option<u8>>(next).is_err(),
+        "the onset's top byte, 0x{:02x}, is no Option tag",
+        next[0]
+    );
+
+    // The positive control: a v30 section round-trips to itself.
+    let v30 = sim_core::PlatingParams {
+        rate_constant_m_per_s: 4.8e-11,
+        transfer_coefficient: 0.65,
+        dead_share: 0.5,
+        short_hazard_per_dead_ah: 0.7,
+    };
+    let bytes = bincode::serialize(&v30).expect("a v30 section serializes");
+    let back: sim_core::PlatingParams = bincode::deserialize(&bytes).expect("a v30 section");
+    assert_eq!(back, v30);
 }
 
 fn electrode() -> sim_core::ElectrodeParams {

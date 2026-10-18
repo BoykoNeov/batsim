@@ -148,6 +148,7 @@ fn the_plating_section_is_slice_as_sizing() {
     assert_eq!(pl.rate_constant_m_per_s, 4.8e-11);
     assert_eq!(pl.transfer_coefficient, 0.65);
     assert_eq!(pl.dead_share, 0.5);
+    assert_eq!(pl.short_hazard_per_dead_ah, 0.7);
 }
 
 #[test]
@@ -273,10 +274,10 @@ fn the_dfn_block_has_exactly_the_values_pinned_above() {
     // 2 shared scalars + 3 diffusivity terms + 3 conductivity terms, each a pair
     // + 4 per electrode x 2 + 3 for the separator + the electrolyte temperature section's
     // reference temperature and 4 + 6 coefficients (Phase 11, pinned by name above)
-    // + the plating section's 3 (Phase 12, pinned by name above).
+    // + the plating section's 4 (Phase 12, slices B and C, pinned by name above).
     assert_eq!(
         count_numbers(&value),
-        2 + 2 * (3 + 3) + 4 * 2 + 3 + (1 + 4 + 6) + 3,
+        2 + 2 * (3 + 3) + 4 * 2 + 3 + (1 + 4 + 6) + 4,
         "the [dfn] value count changed — a field was added or removed. Pin the new \
          value by name in this file before repinning this count; do not just move the \
          number."

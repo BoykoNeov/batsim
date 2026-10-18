@@ -610,7 +610,16 @@ use crate::{Demand, Env, Telemetry};
 /// API version moves: the selector is one more field of a config the wire already carries,
 /// `serde(default)` so an older client's setup still parses and still means the threshold,
 /// and no telemetry field moves — plated lithium is read through [`Pack::cell_plating`].
-pub const SNAPSHOT_VERSION: u32 = 29;
+///
+/// v30 (what plating does to a reaction cell, Phase 12 slice C,
+/// `docs/plans/phase-12-slice-c-health.md`): [`crate::chem::PlatingParams`] gains
+/// `short_hazard_per_dead_ah`, appended after `dead_share`; and on a cell running the reaction
+/// the aging accumulator the threshold fed (`ah_plating_since_tick`) now holds **dead**
+/// amp-hours, so a v29 snapshot of such a cell restored mid-tick would mix the two meanings.
+/// Only a chemistry with `[dfn.plating]` moves a byte; the pair test is
+/// `snapshot_version.rs::the_version_field_is_what_rejects_a_v29_snapshot`. Neither API
+/// version moves: no telemetry field is added, and the chemistry on the wire is TOML.
+pub const SNAPSHOT_VERSION: u32 = 30;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -1211,9 +1220,10 @@ impl Cell {
     /// number. That one is what the cell model is *told*; this is what the cell *has*. The
     /// SEI film takes lithium out of the negative electrode, so its loss is inside the model
     /// and only a read of the electrodes can report it: the multiplier times the share of
-    /// its fresh window the cell's electrodes still span — see [`CellAging`].
+    /// its fresh window the cell's electrodes still span — see [`CellAging`]. Dead plated
+    /// lithium (Phase 12 slice C) is read the same way, through the same door.
     fn soh_capacity_reported(&self, chem: &ChemistryParams) -> f64 {
-        match self.model.film_capacity_fraction(chem) {
+        match self.model.electrode_capacity_fraction(chem) {
             Some(held) => self.aging.capacity_multiplier() * held,
             None => self.aging.capacity_multiplier(),
         }
@@ -3906,11 +3916,24 @@ impl Pack {
                 // gated on `dt > 0` — a zero-length probe step reports the conditions
                 // it finds, exactly as it already reports `q_gen_w` and `BALANCING`.
                 // Nothing here mutates, so that stays free.
-                let plating =
-                    safety.is_some_and(|s| plating_risk(s, i_k, temp_before, eff_cap * soh_cap));
+                // On a cell running the plating reaction the threshold is not evaluated at all:
+                // its flag comes out of the cell's own advance (lithium plated on this step),
+                // and its cost out of the electrodes (`docs/plans/phase-12-slice-c-health.md`).
+                let reaction = cell.model.runs_plating();
+                let plating = !reaction
+                    && safety.is_some_and(|s| plating_risk(s, i_k, temp_before, eff_cap * soh_cap));
                 if plating {
                     flags |= EventFlags::PLATING_RISK;
                 }
+                // The dead store before the advance, for the dendrite short's amp-hours: a
+                // difference across it, read only where it is consumed, as the deficit is.
+                let dead_before = if aging_accumulates && reaction {
+                    cell.model
+                        .plated_lithium_mol(&self.chem)
+                        .map_or(0.0, |(_, d)| d)
+                } else {
+                    0.0
+                };
                 // The same multiplier the split above used, from the same start-of-step
                 // state: `advance` has not run yet.
                 let soh_r = cell
@@ -4065,6 +4088,18 @@ impl Pack {
                     // differ, and what goes wrong if they do not.
                     cell.aging
                         .accumulate(i_k, i_g, dt, soc_before, plating, ah_reversed);
+                    // The lithium that died as metal on this step, in amp-hours: what a
+                    // reaction cell's dendrite short rolls against. `max(0, ·)` only guards a
+                    // store that cannot shrink.
+                    if reaction {
+                        let dead = cell
+                            .model
+                            .plated_lithium_mol(&self.chem)
+                            .map_or(0.0, |(_, d)| d);
+                        cell.aging.accumulate_dead_ah(
+                            (dead - dead_before).max(0.0) * spm::FARADAY_C_PER_MOL / 3600.0,
+                        );
+                    }
                 }
             }
         }
@@ -4208,6 +4243,12 @@ impl Pack {
                         safety: self.chem.safety.as_ref(),
                         reversal: &self.chem.reversal,
                         film,
+                        dead_hazard_per_ah: self
+                            .chem
+                            .dfn
+                            .as_ref()
+                            .and_then(|d| d.plating.as_ref())
+                            .map_or(0.0, |pl| pl.short_hazard_per_dead_ah),
                     };
                 // Borrow the two mutable fields once, up front: `groups` and `rng` are
                 // disjoint, and naming them here keeps the plating roll below from
@@ -4222,7 +4263,10 @@ impl Pack {
                 for group in &mut self.groups {
                     for cell in &mut group.cells {
                         let (temp_k, soc) = (cell.model.temp_k(), cell.model.soc(&self.chem));
-                        let shorted = cell.aging.tick(&fade, dt_age, temp_k, soc, rng);
+                        // `Some` exactly on a cell running the reaction (a `Dfn` with a store), the
+                        // same test the step's accumulation used, so the two cannot disagree.
+                        let dead = cell.model.dead_capacity_fraction(&self.chem);
+                        let shorted = cell.aging.tick(&fade, dt_age, temp_k, soc, dead, rng);
                         // The film grows on the same tick, at this cell's own potential and
                         // temperature, after the bookkeeping above read the state it was
                         // stressed at. Its lithium leaves the particle here; the reporting

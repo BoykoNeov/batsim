@@ -535,18 +535,31 @@ impl CellModel {
     }
 
     /// The share of its fresh capacity this cell's electrodes still hold after the lithium
-    /// its SEI film took, in (0, 1\], or `None` on a cell with no film. See
-    /// [`crate::spm::film_capacity_fraction`].
+    /// its SEI film took and, on a `Dfn` running the plating reaction, the lithium that died
+    /// as metal, in (0, 1\], or `None` on a cell with neither. See
+    /// [`crate::spm::film_capacity_fraction`] and [`crate::dfn::electrode_capacity_fraction`].
     #[must_use]
-    pub(crate) fn film_capacity_fraction(&self, chem: &ChemistryParams) -> Option<f64> {
+    pub(crate) fn electrode_capacity_fraction(&self, chem: &ChemistryParams) -> Option<f64> {
         match self {
             CellModel::Spm(s) => {
                 Self::spm_params(chem).and_then(|spm| spm::film_capacity_fraction(s, spm))
             }
             CellModel::Dfn(s) => {
-                Self::spm_params(chem).and_then(|spm| dfn::film_capacity_fraction(s, spm))
+                Self::spm_params(chem).and_then(|spm| dfn::electrode_capacity_fraction(s, spm))
             }
             CellModel::Ecm1Rc(_) | CellModel::Ecm2Rc(_) | CellModel::SpmEnsemble(_) => None,
+        }
+    }
+
+    /// The dead plated lithium as a share of the fresh capacity, or `None` on a cell that
+    /// runs no plating reaction. See [`crate::dfn::dead_capacity_fraction`].
+    #[must_use]
+    pub(crate) fn dead_capacity_fraction(&self, chem: &ChemistryParams) -> Option<f64> {
+        match self {
+            CellModel::Dfn(s) => {
+                Self::spm_params(chem).and_then(|spm| dfn::dead_capacity_fraction(s, spm))
+            }
+            _ => None,
         }
     }
 

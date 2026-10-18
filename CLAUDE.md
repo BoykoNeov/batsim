@@ -344,8 +344,14 @@ and double as the scenario file format.
   pack is cut into whole pack steps of the same length (`Pack::step`): one current per long step
   could not taper, and under-booked a cold hold's plating 29 % at 15 min. Its frame reports states
   from the last piece and rates as the mean over the pieces (`docs/plans/plating-hold-pieces.md`).
-  Until slice C the threshold's flag and fade still run beside it. See `docs/plans/phase-12-plating.md` and
-  `docs/plans/phase-12-slice-b-reaction.md`.
+  On such a cell the threshold is not evaluated (slice C, v30): `PLATING_RISK` means "lithium plated
+  on this step" (never on a zero-length one); the dead lithium shortens the negative's window at the
+  top as the film's does, so `soh_capacity` reads it off the electrodes, and it grows `soh_resistance`
+  at `r_growth_per_capacity_loss`; reversible metal counts in `soc_true` as stored charge, so the
+  reading stays flat while it strips back at rest; the dendrite short rolls per amp-hour of **dead**
+  lithium at `[dfn.plating].short_hazard_per_dead_ah`, landing as `[safety].plating_short_ohms`. See
+  `docs/plans/phase-12-plating.md`, `docs/plans/phase-12-slice-b-reaction.md` and
+  `docs/plans/phase-12-slice-c-health.md`.
 - All mechanisms reduce `soh_capacity` **and** increase `soh_resistance`
   (roughly: each % capacity lost adds a configurable % resistance). Resistance
   growth is pedagogically important — do not model capacity fade alone.
@@ -461,7 +467,8 @@ soc_onset = 0.985            # above this the accepted share falls linearly to 0
 #   [spm.sei]     the SEI film's constants (Phase 10). Read ONLY by an Spm or Dfn pack whose
 #                 AgingConfig::calendar is Film; every key required, unknown keys refused
 #   [dfn.plating] lithium plating as a reaction (Phase 12): rate constant, transfer coefficient,
-#                 dead share. Read ONLY by a Dfn pack whose AgingConfig::plating is Reaction;
+#                 dead share, dendrite hazard per dead A.h. Read ONLY by a Dfn pack whose
+#                 AgingConfig::plating is Reaction;
 #                 every key required, unknown keys refused
 #   [diagram]     what the cell is made of, for the client's carrier diagram. Read by NO
 #                 engine code (sim_data::parse_chemistry_facts); its captions are tied to
@@ -618,7 +625,11 @@ the previous one's tests pass.
   closed-loop PyBaMM reference) and B (the reaction, v29) done 2026-10-18, B's two exit misses worked
   at the owner's decision: exit 3 met (`plating-hold-pieces.md`); exit 5 finite and on target at one
   hour, its first hold step flagged by the cells' own solves after the one-hour charge overfilled
-  them (`dfn-hold-past-edge.md`, accepted by the owner); C (health, flags, the dendrite short) next. Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
+  them (`dfn-hold-past-edge.md`, accepted by the owner); C (health, flags, the dendrite short, v30)
+  built 2026-10-18 (`phase-12-slice-c-health.md`): a one-minute, 4.3 mV stripping step after a cold
+  charge's constant-current leg, and — older than the slice — a cold 4.2 V hold that leaves the `Dfn`
+  unable to converge the discharge after it, put to the owner before D (the lesson). Plan, owner
+  decisions and exit in `docs/plans/phase-12-plating.md`.
 - **Phases 13 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

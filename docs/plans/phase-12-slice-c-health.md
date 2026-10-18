@@ -1,8 +1,14 @@
 # Phase 12 slice C — what plating does to a reaction cell's health and its flags
 
-**Status: PREDICTIONS REGISTERED 2026-10-18, before any engine code.** Plan: `phase-12-plating.md`
-§C; the reaction it builds on: `phase-12-slice-b-reaction.md`. Snapshot 29 → 30. Tests:
-`crates/sim-data/tests/plating_dfn.rs` (slice B's file, extended).
+**Status: BUILT 2026-10-18.** Predictions registered before any engine code (3deefba), scored in
+"Results" below: the design holds, plating off is bit-identical, and reading (a) is chosen on
+measurement. **Recorded misses:** the stripping step after a cold constant-current charge is 4.3 mV,
+not under 2 mV (prediction 11); three estimates were off (4, 7, and 11's premise); and predictions 5
+and 11 could not be read on the protocol registered, because **at 0 °C and below a 4.2 V hold leaves
+the `Dfn` in a state whose next discharge does not converge** — a defect older than this slice,
+found by it, recorded under "Found on the way" for the owner. Plan: `phase-12-plating.md` §C; the
+reaction it builds on: `phase-12-slice-b-reaction.md`. Snapshot 29 → 30. Tests:
+`crates/sim-data/tests/plating_health.rs` (new) and `plating_dfn.rs` (its exit test extended).
 
 Until this slice a `Dfn` cell running the plating reaction still ran the threshold beside it: its
 `PLATING_RISK` was the threshold's, `plating_fade_per_ah` billed the threshold's amp-hours, and the
@@ -131,3 +137,93 @@ key).
 13. **Debug build**: the fast plating tests pass in a debug build.
 14. **Cost**: none measurable — one read of the dead store before and after `advance`, on reaction
     cells with aging only.
+
+## Results (run 2026-10-18)
+
+Release builds, the instruments `plating_health.rs`'s tests (two `#[ignore]`d diagnostics hold the
+defect's numbers) and `plating_dfn.rs`'s exit test. Shipped LG M50, drawn fades and both hazards
+zeroed unless said.
+
+* **1, held.** `cargo test --workspace --release --no-fail-fast`: 108 test binaries, none failing; every golden and test outside the two plating files unchanged; slice B's hash harness
+  (`W:\temp\claude\phase12c\hash_base` / `hash_new`, its six packs) hashes alike on the parent and this
+  slice, and a 1e-15 nudge of the initial SOC moves all six.
+* **2, held.** `the_version_field_is_what_rejects_a_v29_snapshot` and
+  `a_v29_shaped_plating_section_reads_the_safety_tag_into_its_hazard`: a v29 `[dfn.plating]` reads
+  the chemistry's `[safety]` tag and seven bytes of its onset as the hazard, and fails at the
+  onset's top byte.
+* **3, held.** After 0 °C 1C CC–CV the dead lithium is 0.0584 % of the window; the multiplier handed
+  to the model is exactly 1.0, the reported `soh_capacity` 0.999416208 = 1 − δx_dead/Δx to 1e-12,
+  and the stoichiometry conversion agrees with the dead store over the electrodes' capacity to 1e-9.
+* **4, held on its bars; its magnitude missed, and it was rerun where it can be read.** The 0 °C
+  hold leaves almost no metal — 0.0007 % of capacity, 1.2 % of the dead store — so on the registered
+  charge reading (a) drifted 5.0e-13 over the hour while reading (b) rose only 7.2e-6, not the
+  "few × 1e-4" registered. On the charge's constant-current leg alone (to 4.2 V, metal 0.0258 %):
+  (a) drifted 1.6e-11, (b) rose 2.58e-4, all of the metal stripped within the hour. **Reading (a)
+  is chosen.**
+* **5, not readable as registered; held on the constant-current leg (changed after
+  registration).** A C/2 discharge straight after the 0 °C hold runs on unconverged solves (below),
+  so it is not run. After the leg alone the discharge converges on every step, and the reading's
+  change times the capacity it is weighted by is the charge passed to 10 digits (2.425581670 A·h
+  both). *An instrument error first:* the test weighted by the electrodes' window, which the LG M50
+  file's `capacity_ah` rounds — `window/capacity_ah − 1 = 6.3287e-8`, exactly the 6.3e-8 miss it
+  printed. The engine weights by `capacity_ah`; so does the test now.
+* **6, held.** On all nine of the sheet's charges (`plating_dfn.rs`'s exit test, now tracking the flag)
+  `PLATING_RISK` rises on exactly the steps on which the gross plated rose — 0 mismatches — and on at
+  least one step exactly where a charge plates: 1441 steps on 0 °C 0.3C and 91 on 25 °C 0.7C (both
+  allowed), none on 25 °C 0.3C or 45 °C 0.7C, 3766–5964 on the forbidden five. A threshold `Dfn`
+  cell on 0 °C 0.3C and 25 °C 0.7C raises it on no step. Down on every zero-length step mid-charge
+  (where the 1 s step raises it), every rest and every discharge step after a cold charge.
+* **7, held; its estimate missed.** With `[safety]`'s plating fade and hazard at their shipped values
+  the reaction cell's −10 °C 1C CC–CV run is bit-identical to the zeroed run (snapshot, chemistry
+  aside). The threshold cell bills 0.30 %, not the ~0.45 % estimated: it bills only while the
+  current is above its 0.4C, and the hold's taper falls below it. The reaction cell loses 0.164 %.
+* **8, held.** `soh_resistance` 1.002463925 = 1 + 1.5 × 0.001643 to 1e-12; on a filmed reaction cell
+  the multiplier is the same `1 + r_growth·δx_dead/Δx`.
+* **9, held.** Slice B's 13 tests pass unchanged; its printed figures move in the fourth digit or
+  later: the step-length bar ×1.00402 / ×1.00376 / ×1.00373 on the charge (×1.0040 recorded), engine ÷
+  PyBaMM 0.9771–0.9925 on the forbidden charges (0.9765–0.9907), mildest forbidden ÷ worst allowed
+  24.41 (24.4).
+* **10, held — after an instrument fix.** (i) With no tick inside the charge, the accumulator holds
+  the dead lithium to 13 digits at 1 s and 60 s steps; (ii) −10 °C 1C CC–CV dies 8.46e-3 A·h at the
+  shipped 0.7, a 0.591 % chance of a short (0.616 % sized on slice A's 8.66e-3); (iii) a warm charge
+  that plates nothing leaves the RNG untouched; (iv) at a hazard of 1e6 the first tick after lithium
+  dies lands one `[safety]` short. *The test first asserted the shunt stayed one short*; at that
+  hazard every later tick that sees more lithium die lands another, as the threshold's shorts add.
+* **11, missed as registered — on the constant-current leg; not readable on its own protocol.** The
+  registered charge (−10 °C 1C CC–CV) is followed by a discharge on unconverged solves, so the
+  measurement was taken after the leg alone (to 4.2 V, metal 2.39e-3 A·h, the store at its largest):
+  **the reaction arm starts 4.3 mV above the control** — stripping carries up to 9.0 % of a C/2
+  current beside the intercalation — and the gap fades as the store empties: 3.9 mV at 10 s, 1.3 mV
+  at 60 s, the store empty at 76 s, 0.2 mV at 120 s. Against "under 2 mV over the control's first
+  90 %", a miss: a short stripping step, about a minute long, is there. The extra charge (2.86e-3
+  A·h) matches the metal stripped (2.39e-3) within one step's charge — the registered 1e-6 of
+  capacity is below one 1 s step's own charge, so the bar was widened to two steps' after
+  registration. Pinned as measured (`a_short_stripping_step_after_the_constant_current_leg`). C/10
+  was not run. **Its premise was also wrong**: it assumed the metal left after a CC–CV is about the
+  dead store. At −10 °C it is 47 % of it (`what_a_cold_hold_leaves_as_metal`), at 0 °C 1.2 % — the
+  colder the hold, the less it strips back.
+* **12, held.** A reaction pack holding dead amp-hours seven seconds past a tick, at a hazard that
+  rolls, restores through bincode and JSON and continues bit for bit.
+* **13, held.** In a debug build, this slice's four fast tests (the mid-tick snapshot, the flag on probe, rest and discharge steps, the filmed multiplier, the short's draws and landing) and slice B's five (refusals, store, Jacobian, ledger, snapshot replay) pass.
+* **14, not measured.** The change adds two reads of the dead store per step on reaction cells with
+  aging, and one call per cell per tick; no timing was taken.
+
+## Found on the way
+
+* **A cold 4.2 V hold leaves the `Dfn` unable to converge a discharge** (`report_discharge_after_a_hold_*`,
+  older than this slice: a threshold cell, no reaction, does the same). After 0 °C 1C to 4.2 V and the
+  hold to C/20, 1413 of the hold's steps flag `SURFACE_OUT_OF_RANGE` — a particle surface past full,
+  the first 6883 s into the charge, every hold step converged — and the C/2 discharge that follows is
+  out of range from its first step and unconverged on 1146 of its first 1200, costing 30 ms a step on the recommended
+  grid and 190–250 ms on the fine one (0.2 and 1.1 ms after the leg alone). At 25 °C: no step out of
+  range, none unconverged. The same family as ROADMAP H8's "no physics past full", reached now by
+  an ordinary cold charge at 1 s steps rather than a charge driven past the ceiling. Slice D's lesson
+  runs a cold charge; whether it may end with a hold is the owner's.
+* **The dead lithium is in a feedback loop the threshold never had**: it grows the resistance, which
+  deepens the overpotential that plates more. `plating.rs`'s "cannot run away" argument is the
+  threshold's and does not cover a reaction cell; at the shipped numbers one forbidden charge raises
+  the resistance 0.25 %, but nothing here bounds the loop over many cold cycles. Open.
+* **A per-pack switch would have disagreed with a per-cell one**: `tick` first chose its branch from
+  the pack's selector while the step's accumulation keyed off whether the cell holds a store, so a
+  store-less cell on a reaction pack (what a hand-edited snapshot, or this slice's control arms,
+  build) would have rolled threshold amp-hours at the dead-lithium hazard. Both now key off the cell.

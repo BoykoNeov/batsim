@@ -11,7 +11,9 @@
 //! shrink only by a later note that says what replaced each constant it drops, and may grow
 //! only by a phase plan that names the key and the owner decision behind it (amended
 //! 2026-10-18, `docs/plans/phase-12-plating.md`, "Two more owner decisions", 1). Phase 12
-//! added two that way: plating's rate constant and its dead share (decisions 2 and 3 there).
+//! added two that way: plating's rate constant and its dead share (decisions 2 and 3 there);
+//! its slice C a third, the dendrite short's hazard per dead amp-hour
+//! (`docs/plans/phase-12-slice-c-health.md`, the owner's decision of 2026-10-18).
 //!
 //! # What "labelled" means
 //! A key's own label: its inline comment and the comment block directly above it, no blank
@@ -54,6 +56,9 @@ const PLACEHOLDERS: &[&str] = &[
     // Phase 12 (`docs/plans/phase-12-plating.md`, owner decisions 2 and 3).
     "dfn.plating.rate_constant_m_per_s",
     "dfn.plating.dead_share",
+    // Phase 12 slice C (`docs/plans/phase-12-slice-c-health.md`, the owner's decision of
+    // 2026-10-18): the dendrite short's hazard per amp-hour of dead lithium.
+    "dfn.plating.short_hazard_per_dead_ah",
 ];
 
 /// LG's specification sheet, as every provenance that uses it must name it (decision 1).
@@ -362,8 +367,9 @@ fn check(text: &str) -> Result<(), String> {
 fn the_placeholders_are_the_fixed_list_and_the_rest_is_sourced() {
     assert_eq!(
         PLACEHOLDERS.len(),
-        21,
-        "15 + 3 for the calendar curve + 1 bounded + 2 by Phase 12's plan"
+        22,
+        "15 + 3 for the calendar curve + 1 bounded + 2 by Phase 12's plan + 1 by its slice C \
+         note (the owner's decision of 2026-10-18)"
     );
     if let Err(e) = check(LGM50) {
         panic!("{e}");

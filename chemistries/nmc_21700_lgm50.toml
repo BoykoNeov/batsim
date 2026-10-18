@@ -431,6 +431,10 @@ rate_constant_m_per_s = 4.8e-11
 transfer_coefficient = 0.65
 # placeholder — no source (owner decision 3): a round share of plated lithium lost at once
 dead_share = 0.5
+# placeholder — no source (phase-12-slice-c-health.md, owner decision 2026-10-18): dendrite-short
+# hazard per A.h of DEAD lithium, sized so a -10 degC 1C charge then a 4.2 V hold (8.66e-3 A.h
+# dead on the fine grid) keeps the threshold's 0.616 % per full cold charge: 0.714, rounded
+short_hazard_per_dead_ah = 0.7
 
 # For reference, the initial electrolyte concentration is 1000 mol/m3 and is NOT
 # repeated here: it is [spm].c_e_mol_per_m3, which an SPM holds CONSTANT and a DFN takes

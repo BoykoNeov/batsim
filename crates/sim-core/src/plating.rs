@@ -72,6 +72,16 @@
 //! * The hazard is charged per amp-hour plated, not per second spent cold, so an
 //!   interval in which plating stopped partway is accounted exactly: the accumulator is
 //!   the integral, and a cell that stopped plating simply stopped adding to it.
+//!
+//! # A cell that plates by reaction instead
+//!
+//! Everything above is the **threshold**. A `Dfn` cell whose pack selects
+//! `AgingConfig::plating = Reaction` (Phase 12) plates by its own electrochemistry, and on it
+//! none of this module's threshold runs: [`plating_risk`] is not evaluated, the flag is raised
+//! by the cell's advance when lithium plated, the lost lithium is read off its electrodes
+//! rather than billed through [`plating_fade_increment`], and the short rolls through
+//! [`hazard_probability`] per amp-hour of *dead* lithium at `[dfn.plating]`'s own hazard. See
+//! `docs/plans/phase-12-slice-c-health.md`.
 
 use crate::chem::SafetyParams;
 use crate::math;
@@ -179,9 +189,17 @@ pub fn plating_fade_increment(params: &SafetyParams, ah_plating: f64) -> f64 {
 /// the *caller* depends on, since a zero probability must consume no RNG draw at all.
 #[must_use]
 pub fn short_probability(params: &SafetyParams, ah_plating: f64) -> f64 {
-    let lambda = params.plating_short_hazard_per_ah;
-    if !is_positive(lambda) || !is_positive(ah_plating) {
+    hazard_probability(params.plating_short_hazard_per_ah, ah_plating)
+}
+
+/// Probability in \[0, 1) of a short at Poisson hazard `lambda` \[1/A·h\] over `ah` \[A·h\],
+/// `−expm1(−λ·ah)`: [`short_probability`]'s body, shared with the plating reaction's short,
+/// whose hazard is per amp-hour of dead lithium (`[dfn.plating]`, Phase 12 slice C). Exactly
+/// `0.0` for a non-positive hazard or amount, which is what lets a zero consume no draw.
+#[must_use]
+pub fn hazard_probability(lambda: f64, ah: f64) -> f64 {
+    if !is_positive(lambda) || !is_positive(ah) {
         return 0.0;
     }
-    -math::exp_m1(-lambda * ah_plating)
+    -math::exp_m1(-lambda * ah)
 }

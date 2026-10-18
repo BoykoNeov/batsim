@@ -5,7 +5,7 @@ chose to fix both before C (2026-10-18). **Exit 3 is met**: `plating-hold-pieces
 pack's voltage hold into 5 s pieces, the hold leg within 0.10 %. **Exit 5 is not quite**: the one-hour
 stall was a held probe's range, fixed by `dfn-hold-past-edge.md` (its one finding accepted by the owner),
 but with the hold in pieces exit 5 is finite and on 4.200000 V at one hour, its first hold step flagged by the cells' own solves after the one-hour charge overfilled them (a miss as registered, **accepted by the owner 2026-10-18** as the cell model's limit on overfilled
-cells). Slice B is done; slice C waits for the owner's go.** Written after the spike (`phase-12-spike.md`), which is the measurement
+cells). Slice B is done; slice C built 2026-10-18 (`phase-12-slice-c-health.md`, v30); slice D, the lesson, waits on the owner's answer about a cold hold (§C).** Written after the spike (`phase-12-spike.md`), which is the measurement
 this plan stands on; where a later slice note contradicts this text, the slice note is the measurement
 and wins. When written the repo was at `SNAPSHOT_VERSION` 28 and `WASM_API_VERSION` 10.
 
@@ -129,8 +129,14 @@ instrument read the electrolyte raw where it goes negative at 2C (fixed, its two
 
 ### C — what plating does to the cell's health and its flags
 
-**Started 2026-10-18 at the owner's go; predictions registered in `phase-12-slice-c-health.md`**, with
-the owner's decision there: the dendrite short gets its own placeholder per dead amp-hour.
+**Built 2026-10-18** (`phase-12-slice-c-health.md`, v30), with the owner's decision there: the
+dendrite short gets its own placeholder per dead amp-hour (0.7). Dead lithium is read off the
+electrodes as capacity, once, and grows the resistance at the threshold's ratio; reversible metal is
+stored charge in `soc_true` (chosen on measurement); `PLATING_RISK` is "plated this step". The
+stripping step after a cold constant-current leg is 4.3 mV for about a minute (registered: under
+2 mV). **For slice D:** a cold 4.2 V hold leaves the `Dfn` unable to converge the discharge after it
+(older than this slice), and at 0 °C the hold strips back nearly all the metal (1.2 % of the dead
+store is left; 47 % at −10 °C).
 
 - **Capacity read off the electrodes**: dead lithium is gone from the negative's inventory, as the film's
   is. Reversible plated lithium is lithium that will strip back; what `soc_true` and `soh_capacity` read

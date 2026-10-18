@@ -74,7 +74,7 @@ use serde::{Deserialize, Serialize};
 use crate::chem::{AgingParams, ReversalParams, SafetyParams};
 use crate::math;
 use crate::noise::uniform_unit;
-use crate::plating::{plating_fade_increment, short_probability};
+use crate::plating::{hazard_probability, plating_fade_increment, short_probability};
 
 /// True iff `x` is strictly positive. NaN yields `false`, so `!is_positive(x)`
 /// rejects NaN as well as non-positive values (and reads clear of clippy's
@@ -242,6 +242,12 @@ impl Aging {
         self.config.calendar
     }
 
+    /// The configured plating mechanism.
+    #[must_use]
+    pub fn plating(&self) -> PlatingModel {
+        self.config.plating
+    }
+
     /// Simulation time accumulated since the last aging update \[s\].
     #[must_use]
     pub fn pending_s(&self) -> f64 {
@@ -268,6 +274,12 @@ pub(crate) struct FadeParams<'a> {
     /// Whether the SEI film carries calendar fade, in which case [`CellAging::tick`] adds
     /// none of the drawn curve's: the film grows in the cell model instead.
     pub(crate) film: bool,
+    /// `[dfn.plating]`'s `short_hazard_per_dead_ah` \[1/A·h\] on a chemistry that has one,
+    /// else `0.0`: the hazard a cell **running the plating reaction** rolls its dendrite short
+    /// at. Which cells those are is the caller's, per cell — see [`CellAging::tick`]'s
+    /// `dead_fraction` — so a cell without a plated-lithium store on a reaction pack (a state
+    /// only a hand-edited snapshot reaches) keeps the threshold's branch whole.
+    pub(crate) dead_hazard_per_ah: f64,
 }
 
 /// One cell's aging state: its two states of health and the accumulators behind
@@ -320,7 +332,9 @@ pub(crate) struct CellAging {
     q_reversal: f64,
     /// Charge throughput \[Ah\] since the last aging update, both directions counted.
     ah_since_tick: f64,
-    /// The subset of `ah_since_tick` carried under plating conditions \[Ah\].
+    /// The subset of `ah_since_tick` carried under plating conditions \[Ah\] — or, on a
+    /// cell running the plating reaction, the lithium that died as metal since the last
+    /// update \[Ah\], which is not a subset of anything ([`Self::accumulate_dead_ah`]).
     ///
     /// An integral, not a state: an interval in which plating started and stopped
     /// partway is accounted exactly, because a cell that stops plating simply stops
@@ -478,9 +492,26 @@ impl CellAging {
         }
     }
 
+    /// Fold the lithium \[Ah\] that died as metal on this step into the plating accumulator,
+    /// on a cell running the plating reaction: what its dendrite short rolls against at the
+    /// next [`Self::tick`]. Measured by the caller, as the reversal's amp-hours are, from the
+    /// dead store before and after the cell's advance; [`Self::accumulate`] is handed
+    /// `plating = false` for such a cell, so nothing else reaches the accumulator.
+    pub(crate) fn accumulate_dead_ah(&mut self, ah_dead: f64) {
+        self.ah_plating_since_tick += ah_dead;
+    }
+
     /// Apply one aging update covering `dt_age` seconds, using the cell's
     /// end-of-step temperature and SOC as the stress conditions for the whole
     /// interval.
+    ///
+    /// `dead_fraction` is, on a cell running the plating reaction, its dead plated lithium as
+    /// a share of its fresh capacity, read off its electrodes; `None` on every other cell, and
+    /// that is what picks the branch: `Some` bills no threshold fade, reads the plating
+    /// accumulator as dead amp-hours and rolls the short at
+    /// [`FadeParams::dead_hazard_per_ah`] (`docs/plans/phase-12-slice-c-health.md`). The
+    /// fraction is already in the reported capacity (the electrodes hold it), so it enters only
+    /// the loss the resistance grows with.
     ///
     /// Returns `true` iff the plating hazard rolled a **new soft internal short** on
     /// this cell this tick; the caller owns the cell's shunt conductance and applies
@@ -503,6 +534,7 @@ impl CellAging {
         dt_age: f64,
         temp_k: f64,
         soc: f64,
+        dead_fraction: Option<f64>,
         rng: &mut ChaCha8Rng,
     ) -> bool {
         // Calendar fade: the drawn `√t` curve, and the one mechanism of the four that
@@ -525,7 +557,15 @@ impl CellAging {
         // the flag be raised, and letting untaxed plating throughput pile up would
         // mean adding the section later retroactively billed for it.
         let mut shorted = false;
-        if let Some(s) = fade.safety {
+        if dead_fraction.is_some() {
+            // The reaction's: no threshold fade — the dead lithium is gone from the
+            // electrodes, which is where the reported capacity reads it — and the short per
+            // amp-hour of it. The same one draw at most, and none at zero probability.
+            let p = hazard_probability(fade.dead_hazard_per_ah, self.ah_plating_since_tick);
+            if p > 0.0 {
+                shorted = uniform_unit(rng) < p;
+            }
+        } else if let Some(s) = fade.safety {
             let ah_plating = self.ah_plating_since_tick;
             self.q_plating += plating_fade_increment(s, ah_plating);
             let p = short_probability(s, ah_plating);
@@ -563,7 +603,16 @@ impl CellAging {
         // preference — at 1C on the shipped LFP cell the extra sag it would buy is under
         // 5 mV, so it would add an unfitted number and change nothing a reader can see.
         // See `docs/plans/reversal-damage.md`.
-        self.soh_resistance = 1.0 + fade.aging.r_growth_per_capacity_loss * loss;
+        //
+        // On a cell running the plating reaction the dead lithium's share joins the loss the
+        // resistance grows with, at the same ratio, and not the capacity's: the electrodes
+        // already hold it, and `CLAUDE.md` forbids the fade without the growth. Branched
+        // rather than `+ 0.0` so no other cell's sum is touched.
+        let r_loss = match dead_fraction {
+            Some(dead) => loss + dead,
+            None => loss,
+        };
+        self.soh_resistance = 1.0 + fade.aging.r_growth_per_capacity_loss * r_loss;
         shorted
     }
 }

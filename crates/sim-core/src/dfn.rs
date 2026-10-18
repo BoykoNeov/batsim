@@ -1989,6 +1989,9 @@ struct Marched {
     heat_end_w: f64,
     /// The same over the step, its sub-steps' end instants averaged.
     heat_mean_w: f64,
+    /// Whether any node plated lithium on any sub-step: what raises
+    /// [`EventFlags::PLATING_RISK`] on a cell running the reaction.
+    plated: bool,
 }
 
 /// The cell's current \[A, discharge-positive\] in the plating reaction, from the per-node
@@ -2063,6 +2066,7 @@ fn march(
     let mut heat_end = 0.0;
     let mut last: Option<Solved> = None;
     let mut dv_di = 0.0;
+    let mut any_plated = false;
     for _ in 0..n_sub {
         let setup = setup_for(s, spm, dfn, sides, grid, h);
         let solved = solve(s, &setup, i_p, h);
@@ -2093,6 +2097,7 @@ fn march(
             for (rate, (rev, dead)) in rates.iter().zip(stores).take(nodes) {
                 let plated = -rate.j * h / FARADAY_C_PER_MOL;
                 if plated > 0.0 {
+                    any_plated = true;
                     *dead += dead_share * plated;
                     *rev += (1.0 - dead_share) * plated;
                 } else {
@@ -2117,6 +2122,7 @@ fn march(
         in_range,
         heat_end_w: heat_end,
         heat_mean_w: heat_sum / n_sub as f64,
+        plated: any_plated,
     }
 }
 
@@ -2298,6 +2304,14 @@ fn bulk_stoich(profiles: &[Vec<f64>], c_max: f64) -> f64 {
 /// what that costs and why it is still the right meaning. The only difference here is that
 /// the mean runs over x as well as r, because a DFN has a lithium distribution through the
 /// electrode and not just through a particle.
+///
+/// # Lithium sitting as metal
+/// On a cell running the plating reaction, the **reversible** plated lithium counts as stored
+/// charge, as if it were in the graphite (`δx_rev`, [`plated_shift`]): it never entered a
+/// particle, but it strips back into one on a rest and delivers its charge on a discharge, so
+/// leaving it out would make the reading rise at zero current and break `∫I·dt = ΔSOC·Q`.
+/// The **dead** lithium is gone, and shortens the window at the top instead
+/// ([`lithium_loss_shift`]). See `docs/plans/phase-12-slice-c-health.md`.
 #[must_use]
 pub(crate) fn soc(s: &DfnState, spm: &SpmParams) -> f64 {
     raw_soc(s, spm).clamp(0.0, 1.0)
@@ -2307,7 +2321,42 @@ pub(crate) fn soc(s: &DfnState, spm: &SpmParams) -> f64 {
 #[must_use]
 fn raw_soc(s: &DfnState, spm: &SpmParams) -> f64 {
     let e = &spm.negative;
-    cell_window_fraction_neg(s, spm, bulk_stoich(&s.c_neg, e.c_max_mol_per_m3))
+    let x = bulk_stoich(&s.c_neg, e.c_max_mol_per_m3);
+    match plated_shift(s, spm) {
+        Some((rev, _)) => cell_window_fraction_neg(s, spm, x + rev),
+        None => cell_window_fraction_neg(s, spm, x),
+    }
+}
+
+/// The reversible and dead plated lithium on this cell's negative, each as the
+/// stoichiometry it would be in the graphite, `(δx_rev, δx_dead)`, or `None` on a cell that
+/// runs no plating reaction.
+///
+/// A node's store is per m² of particle interface, and a particle's interface per its volume
+/// is `3/R_p`, so `q` mol/m² is `3·q/(R_p·c_max)` of stoichiometry; the electrode's is the
+/// mean over its nodes, which are equal in width ([`bulk_stoich`]'s reason).
+#[must_use]
+fn plated_shift(s: &DfnState, spm: &SpmParams) -> Option<(f64, f64)> {
+    let pl = s.plating.as_ref()?;
+    let e = &spm.negative;
+    let to_stoich = |q: &[f64]| {
+        if q.is_empty() {
+            0.0
+        } else {
+            3.0 * (q.iter().sum::<f64>() / q.len() as f64)
+                / (e.particle_radius_m * e.c_max_mol_per_m3)
+        }
+    };
+    Some((to_stoich(&pl.reversible_mol_m2), to_stoich(&pl.dead_mol_m2)))
+}
+
+/// The dead plated lithium as a share of the fresh electrodes' window, `δx_dead/Δx`, or `None`
+/// on a cell that runs no plating reaction: the capacity plating has cost, which the pack adds
+/// to the loss its resistance grows with (`docs/plans/phase-12-slice-c-health.md`).
+#[must_use]
+pub(crate) fn dead_capacity_fraction(s: &DfnState, spm: &SpmParams) -> Option<f64> {
+    let e = &spm.negative;
+    plated_shift(s, spm).map(|(_, dead)| dead / (e.stoich_max - e.stoich_min))
 }
 
 /// The mean over the negative's nodes of the film's growth past its fresh thickness \[m\],
@@ -2351,23 +2400,40 @@ fn film_shift(s: &DfnState, spm: &SpmParams) -> Option<f64> {
     )
 }
 
+/// How far the lithium this cell has lost has moved the negative's **full** down, as a
+/// stoichiometry: the film's [`film_shift`] plus the dead plated lithium's ([`plated_shift`]).
+/// Both are lithium gone from the cyclable inventory, so both shorten the window at the top
+/// by the same conversion. `None` on a cell with neither; a cell with one carries exactly
+/// that one's shift, no `+ 0.0` taken, so a film-only cell reads as it did.
+#[must_use]
+fn lithium_loss_shift(s: &DfnState, spm: &SpmParams) -> Option<f64> {
+    match (film_shift(s, spm), plated_shift(s, spm)) {
+        (Some(film), Some((_, dead))) => Some(film + dead),
+        (Some(film), None) => Some(film),
+        (None, Some((_, dead))) => Some(dead),
+        (None, None) => None,
+    }
+}
+
 /// Where a negative stoichiometry sits on the usable window this cell has today; exactly
-/// [`window_fraction_neg`] on a cell with no film. The `Spm`'s twin, for the same reason.
+/// [`window_fraction_neg`] on a cell that has lost no lithium to a film or to plating. The
+/// `Spm`'s twin, for the same reason.
 #[must_use]
 fn cell_window_fraction_neg(s: &DfnState, spm: &SpmParams, stoich: f64) -> f64 {
     let e = &spm.negative;
-    match film_shift(s, spm) {
+    match lithium_loss_shift(s, spm) {
         Some(dx) => (stoich - e.stoich_min) / (e.stoich_max - dx - e.stoich_min),
         None => window_fraction_neg(stoich, e),
     }
 }
 
 /// The share of the fresh cell's capacity this cell's electrodes still hold, `1 − δx/Δx`,
-/// or `None` on a cell with no film. See [`crate::spm::film_capacity_fraction`].
+/// `δx` the film's and the dead plated lithium's together, or `None` on a cell with neither.
+/// See [`crate::spm::film_capacity_fraction`].
 #[must_use]
-pub(crate) fn film_capacity_fraction(s: &DfnState, spm: &SpmParams) -> Option<f64> {
+pub(crate) fn electrode_capacity_fraction(s: &DfnState, spm: &SpmParams) -> Option<f64> {
     let e = &spm.negative;
-    film_shift(s, spm).map(|dx| 1.0 - dx / (e.stoich_max - e.stoich_min))
+    lithium_loss_shift(s, spm).map(|dx| 1.0 - dx / (e.stoich_max - e.stoich_min))
 }
 
 /// The lithium \[mol\] the film has taken from the negative since the cell was built,
@@ -3175,7 +3241,15 @@ pub(crate) fn advance(
         .is_some()
         .then(|| march(s, spm, dfn, &sides, &grid, i_p, dt));
     let (solved, in_range, plating_w) = match marched {
-        Some(m) => (m.solved, m.in_range, Some((m.heat_end_w, m.heat_mean_w))),
+        Some(m) => {
+            // On a reaction cell the flag is the reaction's: lithium plated on this step
+            // (`docs/plans/phase-12-slice-c-health.md`). A zero-length step returned above,
+            // plating nothing, so it does not raise it.
+            if m.plated {
+                flags |= EventFlags::PLATING_RISK;
+            }
+            (m.solved, m.in_range, Some((m.heat_end_w, m.heat_mean_w)))
+        }
         None => {
             let setup = setup_for(s, spm, dfn, &sides, &grid, dt);
             let solved = solve(s, &setup, i_p, dt);
