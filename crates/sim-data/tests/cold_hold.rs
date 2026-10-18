@@ -396,7 +396,10 @@ fn report_the_fine_grid_stall() {
             break;
         }
     }
-    eprintln!("CASE {arg}: discharge starts; plating {:?}", p.cell_plating(0, 0));
+    eprintln!(
+        "CASE {arg}: discharge starts; plating {:?}",
+        p.cell_plating(0, 0)
+    );
     let mut unc = 0;
     for k in 1..=300 {
         let tel = p.step(1.0, Demand::Current(0.5 * q), &env(t));
@@ -404,8 +407,14 @@ fn report_the_fine_grid_stall() {
             unc += 1;
         }
         if k % 100 == 0 {
-            eprintln!("CASE {arg} step {k}: {:.6} V {:?}", tel.v_terminal, tel.flags);
+            eprintln!(
+                "CASE {arg} step {k}: {:.6} V {:?}",
+                tel.v_terminal, tel.flags
+            );
         }
     }
-    eprintln!("CASE {arg}: unconverged {unc} of 300; plating {:?}", p.cell_plating(0, 0));
+    eprintln!(
+        "CASE {arg}: unconverged {unc} of 300; plating {:?}",
+        p.cell_plating(0, 0)
+    );
 }
