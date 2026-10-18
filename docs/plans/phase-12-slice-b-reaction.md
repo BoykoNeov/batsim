@@ -2,7 +2,7 @@
 
 **Status: BUILT 2026-10-18; its two exit misses worked at the owner's decision**: exit 3's hold leg met
 by `plating-hold-pieces.md` (within 0.10 % at every step length); exit 5 is finite and on 4.200000 V at one hour, its first hold step flagged by the cells' own solves after the one-hour charge overfilled them (`dfn-hold-past-edge.md`,
-`plating-hold-pieces.md`; put to the owner). Predictions registered before any engine code (5882a72), scored below:
+`plating-hold-pieces.md`; accepted by the owner 2026-10-18). Predictions registered before any engine code (5882a72), scored below:
 the reaction is in the `Dfn`, plating off is bit-identical, the plating integral meets its
 step-length bar with 5 s sub-steps, and exits 1, 2, 4 and 6 pass. **Three registered bars missed,
 each with its cause measured**: the hold leg of the step-length bar (the long-step voltage hold's
@@ -254,7 +254,7 @@ the owner switched to that fix on the diagnosis). The hold is cut into 5 s whole
 plating pack (`plating-hold-pieces.md`): the hold leg within 0.10 % at 60 s, 15 and 30 min, exit 3
 met on both legs. Exit 5 at one hour then has its first hold step flagged by the cells' own solves
 after the overfill (each cell cut out alone fails at its share; one has a surface past full) —
-recorded there and put to the owner.
+recorded there; **accepted by the owner 2026-10-18**.
 
 ## Still open, for the owner and for slices C and D
 

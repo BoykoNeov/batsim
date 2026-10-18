@@ -618,7 +618,7 @@ the previous one's tests pass.
   closed-loop PyBaMM reference) and B (the reaction, v29) done 2026-10-18, B's two exit misses worked
   at the owner's decision: exit 3 met (`plating-hold-pieces.md`); exit 5 finite and on target at one
   hour, its first hold step flagged by the cells' own solves after the one-hour charge overfilled
-  them (`dfn-hold-past-edge.md`, awaiting the owner); C (health, flags, the dendrite short) next. Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
+  them (`dfn-hold-past-edge.md`, accepted by the owner); C (health, flags, the dendrite short) next. Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
 - **Phases 13 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

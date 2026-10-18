@@ -76,7 +76,8 @@ break the frame's energy identity, and no measurement asks for it.
   one of the two with a particle surface past full (`SURFACE_OUT_OF_RANGE`). That is the overfill the
   one-hour current-demand charge left, which one hour-long solve smoothed over and five-second pieces
   resolve (ROADMAP H8's limit past full). Every value finite. Pinned as measured: at most that one
-  step, and with the surface flag. **A miss as registered, put to the owner.**
+  step, and with the surface flag. **A miss as registered, accepted by the owner 2026-10-18** as the cell model's limit on overfilled
+  cells; exit 5's protocol is kept.
 * **4, held**: a plating cell held at 4.2 V for an hour at 15 min steps — `Σ i_actual·dt` equals the
   positive's lithium lost to the tenth digit printed, and the frames' energy residual is 12.1576 J,
   the 5 s run's exactly (`a_hold_in_pieces_closes_its_books_from_the_frames`).
