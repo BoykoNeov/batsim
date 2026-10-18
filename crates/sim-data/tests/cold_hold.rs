@@ -81,7 +81,8 @@ fn edges(s: &sim_core::DfnState, c: &ChemistryParams) -> String {
     // expression the solve used — not the outer shell.
     let e = &spm.negative;
     let d_s = e.diffusivity_m2_per_s
-        * ((e.diffusivity_ea_j_per_mol / 8.314_462_618) * (1.0 / spm.t_ref_k - 1.0 / s.temp_k)).exp();
+        * ((e.diffusivity_ea_j_per_mol / 8.314_462_618) * (1.0 / spm.t_ref_k - 1.0 / s.temp_k))
+            .exp();
     let kappa = sim_core::dfn::probe::spm_capacity(spm) / c.cell.capacity_ah;
     let nv = sim_core::dfn::UNKNOWNS_PER_NODE;
     let surf: Vec<f64> = s
@@ -90,13 +91,15 @@ fn edges(s: &sim_core::DfnState, c: &ChemistryParams) -> String {
         .enumerate()
         .map(|(i, prof)| {
             let j = s.u[nv * i + 3];
-            sim_core::spm::c_surface(prof, e.particle_radius_m, d_s, j * kappa / F) / e.c_max_mol_per_m3
+            sim_core::spm::c_surface(prof, e.particle_radius_m, d_s, j * kappa / F)
+                / e.c_max_mol_per_m3
         })
         .collect();
-    let (smax, sat) = surf
-        .iter()
-        .enumerate()
-        .fold((f64::NEG_INFINITY, 0), |(m, a), (i, &x)| if x > m { (x, i) } else { (m, a) });
+    let (smax, sat) =
+        surf.iter().enumerate().fold(
+            (f64::NEG_INFINITY, 0),
+            |(m, a), (i, &x)| if x > m { (x, i) } else { (m, a) },
+        );
     let j_hot = s.u[nv * sat + 3];
     format!(
         "neg outer {:.5}..{:.5} (max at node {}), surface max {:.9} at node {sat} (j {j_hot:.4e} A/m2), pos outer {:.5}..{:.5} (max at {}), c_e min {ce:.2}",
@@ -125,7 +128,10 @@ fn report_the_cold_hold() {
             k += 1;
             if !held && tel.v_terminal >= 4.2 {
                 held = true;
-                println!("{temp_c} C: CC ends at {k} s; {}", edges(&dfn_state(&p), &c));
+                println!(
+                    "{temp_c} C: CC ends at {k} s; {}",
+                    edges(&dfn_state(&p), &c)
+                );
             }
             if held && k % 600 == 0 {
                 println!(
@@ -136,7 +142,10 @@ fn report_the_cold_hold() {
                 );
             }
             if held && -tel.i_actual <= 0.05 * q {
-                println!("{temp_c} C: hold ends at {k} s; {}", edges(&dfn_state(&p), &c));
+                println!(
+                    "{temp_c} C: hold ends at {k} s; {}",
+                    edges(&dfn_state(&p), &c)
+                );
                 break;
             }
         }
@@ -166,7 +175,11 @@ fn report_jacobian_after_the_cold_hold() {
     let mut p = pack(t, None);
     let mut held = false;
     loop {
-        let d = if held { Demand::Voltage(4.2) } else { Demand::Current(-q) };
+        let d = if held {
+            Demand::Voltage(4.2)
+        } else {
+            Demand::Current(-q)
+        };
         let tel = p.step(1.0, d, &env(t));
         if !held && tel.v_terminal >= 4.2 {
             held = true;
@@ -229,7 +242,13 @@ fn a_cold_hold_leaves_a_discharge_that_converges() {
     let s = c.safety.as_mut().unwrap();
     s.plating_fade_per_ah = 0.0;
     s.plating_short_hazard_per_ah = 0.0;
-    c.dfn.as_mut().unwrap().plating.as_mut().unwrap().short_hazard_per_dead_ah = 0.0;
+    c.dfn
+        .as_mut()
+        .unwrap()
+        .plating
+        .as_mut()
+        .unwrap()
+        .short_hazard_per_dead_ah = 0.0;
     let fine = CellModelConfig::Dfn {
         shells: sim_core::dfn::FINE_SHELLS,
         nodes_negative: sim_core::dfn::FINE_NODES_NEGATIVE,
@@ -239,7 +258,12 @@ fn a_cold_hold_leaves_a_discharge_that_converges() {
     let cases = [
         ("fine, reaction, 0 C", fine, PlatingModel::Reaction, 0.0),
         ("fine, reaction, -10 C", fine, PlatingModel::Reaction, -10.0),
-        ("recommended, threshold, 0 C", recommended(), PlatingModel::Threshold, 0.0),
+        (
+            "recommended, threshold, 0 C",
+            recommended(),
+            PlatingModel::Threshold,
+            0.0,
+        ),
     ];
     let q = c.cell.capacity_ah;
     let rows: Vec<_> = std::thread::scope(|sc| {
@@ -270,11 +294,16 @@ fn a_cold_hold_leaves_a_discharge_that_converges() {
                     .expect("builds");
                     let (mut held, mut out, mut hold_unc) = (false, 0, 0);
                     loop {
-                        let d = if held { Demand::Voltage(4.2) } else { Demand::Current(-q) };
+                        let d = if held {
+                            Demand::Voltage(4.2)
+                        } else {
+                            Demand::Current(-q)
+                        };
                         let tel = p.step(1.0, d, &env(t));
                         if held {
                             out += u32::from(tel.flags.contains(EventFlags::SURFACE_OUT_OF_RANGE));
-                            hold_unc += u32::from(tel.flags.contains(EventFlags::SOLVE_UNCONVERGED));
+                            hold_unc +=
+                                u32::from(tel.flags.contains(EventFlags::SOLVE_UNCONVERGED));
                         }
                         if !held && tel.v_terminal >= 4.2 {
                             held = true;
