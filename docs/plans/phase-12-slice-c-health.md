@@ -144,9 +144,16 @@ Release builds, the instruments `plating_health.rs`'s tests (two `#[ignore]`d di
 defect's numbers) and `plating_dfn.rs`'s exit test. Shipped LG M50, drawn fades and both hazards
 zeroed unless said.
 
-* **1, held.** `cargo test --workspace --release --no-fail-fast`: 108 test binaries, none failing; every golden and test outside the two plating files unchanged; slice B's hash harness
-  (`W:\temp\claude\phase12c\hash_base` / `hash_new`, its six packs) hashes alike on the parent and this
-  slice, and a 1e-15 nudge of the initial SOC moves all six.
+* **1, held.** `cargo test --workspace --release --no-fail-fast`: 108 test binaries, none failing.
+  Every golden is unchanged, and so is every test outside the two plating files except three
+  repinned for the new key and the bump — a count or a version each, nothing that moves a
+  trajectory: `dfn_chemistry.rs` (the `[dfn]` value count, the plating section's 3 → 4, and the new
+  key pinned by name), `lgm50_provenance.rs` (the placeholder list 21 → 22) and `snapshot_version.rs`
+  (the v29 pair, and the v29-shaped section). Slice B's hash harness (its source kept at
+  `W:\temp\claude\phase12b\hash\src\main.rs`; this slice built it twice, against an export of the
+  parent and against this tree, and deleted both builds) hashes the six packs alike, and a 1e-15
+  nudge of the initial SOC moves all six. The browser build, rebuilt after, reads 172/172
+  bit-identical against native (`tools/wasm-parity/parity.mjs`).
 * **2, held.** `the_version_field_is_what_rejects_a_v29_snapshot` and
   `a_v29_shaped_plating_section_reads_the_safety_tag_into_its_hazard`: a v29 `[dfn.plating]` reads
   the chemistry's `[safety]` tag and seven bytes of its onset as the hazard, and fails at the
