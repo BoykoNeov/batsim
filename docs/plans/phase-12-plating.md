@@ -1,6 +1,7 @@
 # Phase 12 — lithium plating as a reaction on the `Dfn`, instead of a threshold
 
-**Status: PLANNED 2026-10-18; slices A and B done 2026-10-18, C next.** Written after the spike (`phase-12-spike.md`), which is the measurement
+**Status: PLANNED 2026-10-18; slice A done, slice B built 2026-10-18 — exits 3 (its hold leg) and 5
+missed, awaiting the owner before C.** Written after the spike (`phase-12-spike.md`), which is the measurement
 this plan stands on; where a later slice note contradicts this text, the slice note is the measurement
 and wins. When written the repo was at `SNAPSHOT_VERSION` 28 and `WASM_API_VERSION` 10.
 
@@ -87,7 +88,7 @@ its provenance and, for `k`, its grid and its sizing; a note `phase-12-slice-a-r
 
 ### B — plating inside the `Dfn` (engine; one snapshot bump, 28 → 29)
 
-**Done 2026-10-18** (`phase-12-slice-b-reaction.md`): the reaction is in the `Dfn`'s solve, opt-in by
+**Built 2026-10-18; two exit misses awaiting the owner** (`phase-12-slice-b-reaction.md`): the reaction is in the `Dfn`'s solve, opt-in by
 `AgingConfig::plating = Reaction`; plating off is bit-identical; a plating cell's step is marched in
 **5 s sub-steps** (`dfn::PLATING_SUBSTEP_S`) with the whole step's tangent carried by a forward
 sensitivity, which holds the plating integral within 0.4 % of the 1 s figure at every step length
@@ -193,6 +194,6 @@ As asked:
 
 ## The spike's instruments
 
-`W:\temp\claude\phase12-spike\` is kept until slice A has moved what it needs into `tools/reference/`
+**Deleted 2026-10-18 with slice B.** `W:\temp\claude\phase12-spike\` was kept until slice A had moved what it needed into `tools/reference/`
 (the PyBaMM cold-charge scripts and the A1b integrator) and slice B has rebuilt the prototype's reaction
 in the tree (`proto\patch_dfn.py` is its only record). It is deleted then, and the slice note says so.

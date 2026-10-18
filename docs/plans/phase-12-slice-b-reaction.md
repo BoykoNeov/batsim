@@ -1,6 +1,7 @@
 # Phase 12 slice B — plating as a reaction inside the `Dfn`
 
-**Status: DONE 2026-10-18.** Predictions registered before any engine code (5882a72), scored below:
+**Status: BUILT 2026-10-18; two of the plan's exits missed, awaiting the owner** (see "Still
+open"). Predictions registered before any engine code (5882a72), scored below:
 the reaction is in the `Dfn`, plating off is bit-identical, the plating integral meets its
 step-length bar with 5 s sub-steps, and exits 1, 2, 4 and 6 pass. **Three registered bars missed,
 each with its cause measured**: the hold leg of the step-length bar (the long-step voltage hold's
@@ -220,3 +221,37 @@ with the hold (the quadrature's own 1 s figures differ in the fourth digit).
 * **The `Dfn`'s electrolyte goes negative at the graphite on a 2C cold charge** (−0.02 mol/m³ at
   0 °C), held there by the floor's design (`C_E_FLOOR_MOL_PER_M3` is on lookups, not state). Not
   new, but plating is the first reaction whose sign depends on it.
+
+### Added after review
+
+* **Snapshot, restore, continue with the reaction on**: a mismatched pair holding reversible and
+  dead lithium, restored through bincode and through JSON (not `restore(&snapshot())`, a clone),
+  continues bit for bit across 60 s sub-stepped current steps and a 4.2 V hold at 60 s and 1 s
+  (`a_plating_pack_snapshot_restores_and_continues_bit_for_bit`).
+* **Debug build**: every run above was a release build, so the pack's `debug_assert` that the
+  converged pass's probe and `advance` agree bit for bit had not run on a plating cell — and the
+  probe now marches a copy. The fast tests (refusals, store, Jacobian, ledger, the snapshot replay
+  on the parallel pair under a hold) pass in a debug build.
+
+## Still open, for the owner and for slices C and D
+
+* **Two of the plan's exits missed** — exit 3's hold leg and exit 5's one-hour hold — and whether
+  they are accepted as recorded or fixed first is the owner's decision, not this slice's. The fixes
+  in reach: for the hold, sub-stepping the **pack's** demand when a plating cell is present (each
+  sub-step a held voltage, so the current can taper inside a long step), which no cell-level change
+  can do; for exit 5, the split's own fix (`dfn-split-nan.md` left "hold each cell's share to a
+  physical range" open). The hold leg's bar was not reachable as the plan wrote it: a voltage hold
+  at one long step is one current.
+* **Fast-forward cost.** The sub-step count depends on `dt` alone, so it is paid at rest too: at a
+  day-long step a plating cell runs `dfn::PLATING_MAX_SUBSTEPS` = 3600 sub-steps per probe of 24 s each
+  (the step-length error is then the 24 s sub-step's, a few per cent), and at a week 168 s. A
+  shelf lesson at the Phase 10 speeds with plating on would pay that on every step. A count that
+  also reads the start-of-step state (no reversible lithium and no charging current possible) would
+  not break the one-curve rule, which forbids only the trial current; not built.
+* **Slice C's**: what `soc_true` and `soh_capacity` read while lithium sits as metal; `PLATING_RISK`
+  on a reaction cell and the threshold's fade switched off there (it still runs beside the reaction
+  now); the dendrite short per amp-hour of dead lithium; the stripping plateau.
+
+The spike's harness `W:\temp\claude\phase12-spike\` is deleted with this slice, as the plan said it
+would be: its PyBaMM scripts and its A1b integrator were moved into the tree by slice A, and its
+prototype reaction is rebuilt here.

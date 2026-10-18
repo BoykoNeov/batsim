@@ -610,9 +610,10 @@ the previous one's tests pass.
   misses the 12 mV whole-run bar only at the knee (67 mV, 5 s early), a record the owner accepted
   as the exit. Plan, owner decisions and slice addenda in
   `docs/plans/phase-11-fitting.md`.
-- **Phase 12 — lithium plating as a reaction on the `Dfn`.** In progress: slices A (the constant,
-  a closed-loop PyBaMM reference) and B (the reaction, v29) done 2026-10-18; C (health, flags, the
-  dendrite short) next. Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
+- **Phase 12 — lithium plating as a reaction on the `Dfn`.** In progress: slice A (the constant, a
+  closed-loop PyBaMM reference) done and slice B (the reaction, v29) built 2026-10-18; two of the
+  exits missed (a cold voltage hold at long steps; the mismatched pair's one-hour hold, the split's)
+  and await the owner before slice C (health, flags, the dendrite short). Plan, owner decisions and exit in `docs/plans/phase-12-plating.md`.
 - **Phases 13 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

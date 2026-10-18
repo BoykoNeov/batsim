@@ -1114,6 +1114,7 @@ dependencies = [
 name = "sim-data"
 version = "0.0.0"
 dependencies = [
+ "bincode",
  "criterion",
  "serde",
  "serde_json",

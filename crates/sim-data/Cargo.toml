@@ -33,6 +33,10 @@ criterion = { version = "0.8.2", default-features = false, features = ["cargo_be
 toml = { workspace = true }
 # The same test deserializes that claims file. Same reasoning as `toml` above.
 serde = { workspace = true }
+# `tests/plating_dfn.rs`'s snapshot replay: the byte-exact format sim-core's own replay test
+# uses, here because a plating pack needs the shipped chemistry off disk. Same version as
+# sim-core's entry, so it adds nothing to the dependency graph.
+bincode = "1.3"
 
 # Criterion supplies its own harness, so libtest's must be off.
 [[bench]]

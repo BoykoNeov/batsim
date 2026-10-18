@@ -1206,3 +1206,53 @@ fn report_cost() {
         );
     }
 }
+
+// --- snapshot, restore, continue ------------------------------------------------------------
+
+/// Design principle 5 with the reaction on: a plating pack snapshotted mid-charge, with
+/// reversible and dead lithium on the graphite, restored through **bincode** and through **JSON**
+/// (not `restore(&snapshot())`, which is a clone and exercises no serde), continues bit for bit.
+/// A parallel pair, recommended grid, 0 °C: a 2C-per-cell charge at 1 s, the snapshot, then a
+/// 60 s-step current leg (sub-stepped) and a 4.2 V hold at 60 s and 1 s.
+#[test]
+fn a_plating_pack_snapshot_restores_and_continues_bit_for_bit() {
+    let t = 273.15;
+    let q = chem().cell.capacity_ah;
+    let mut cfg = config(recommended(), PlatingModel::Reaction, 0.5, t);
+    cfg.parallel = 2;
+    let mut p = Pack::new(&cfg, chem()).expect("builds");
+    p.set_cell_factors(0, 1, 0.9, 1.0).expect("cell exists");
+    for _ in 0..120 {
+        p.step(1.0, Demand::Current(-4.0 * q), &env(t));
+    }
+    let v = p.cell_plating(0, 0).unwrap();
+    assert!(
+        v.reversible_mol > 0.0 && v.dead_mol > 0.0,
+        "the fixture must hold plated lithium"
+    );
+    let snap = p.snapshot();
+    let by_bincode =
+        Pack::restore(&bincode::deserialize(&bincode::serialize(&snap).unwrap()).unwrap())
+            .expect("restores from bincode");
+    let by_json =
+        Pack::restore(&serde_json::from_str(&serde_json::to_string(&snap).unwrap()).unwrap())
+            .expect("restores from JSON");
+    let run = |mut p: Pack| -> Vec<String> {
+        let mut out = Vec::new();
+        for (dt, d, n) in [
+            (60.0, Demand::Current(-2.0 * q), 3),
+            (60.0, Demand::Voltage(4.2), 3),
+            (1.0, Demand::Voltage(4.2), 30),
+        ] {
+            for _ in 0..n {
+                out.push(format!("{:?}", p.step(dt, d, &env(t))));
+                out.push(format!("{:?}", p.cell_plating(0, 1)));
+            }
+        }
+        out.push(serde_json::to_string(&p.snapshot()).unwrap());
+        out
+    };
+    let original = run(p);
+    assert_eq!(run(by_bincode), original, "bincode restore diverged");
+    assert_eq!(run(by_json), original, "JSON restore diverged");
+}
