@@ -877,7 +877,7 @@ fn report_discharge_after_a_hold_extent() {
                 unc += 1;
                 last_unc = k;
             }
-            if k <= 3 || k % 300 == 0 {
+            if k <= 3 || k % 300 == 0 || k == 60 || k == 120 {
                 println!(
                     "{temp_c} C step {k}: {:.4} V, {:.4} A, {:?}",
                     tel.v_terminal, tel.i_actual, tel.flags
