@@ -1,7 +1,10 @@
 # A cold 4.2 V hold, and the `Dfn` discharge after it
 
-**Status: DIAGNOSED AND PROTOTYPED 2026-10-18; predictions for the remaining measurements registered
-below, before they were run.** Found by Phase 12 slice C (`phase-12-slice-c-health.md`, "Found on the
+**Status: DIAGNOSED 2026-10-18; the prototyped fix FAILED its registered predictions and is
+withdrawn; back with the owner.** The taper below fixes the recommended grid's case but not the fine
+grid with plating on — the case slice D needs — and it changes results in the overcharge regime that
+four test families pin. No narrower fix passes both of the bars set for one (below, "What is left").
+The engine is unchanged; the prototype is kept as a patch beside this note. Found by Phase 12 slice C (`phase-12-slice-c-health.md`, "Found on the
 way"); the owner chose to fix it before slice D (`phase-12-plating.md` §C). Tests:
 `crates/sim-data/tests/cold_hold.rs`; the diagnostics `plating_health.rs::report_discharge_after_a_hold_*`.
 
@@ -82,3 +85,44 @@ Measured while choosing:
 7. **3C past its cut-off** (`dfn-scenario.md`'s unconverged steps, the positive's choke): unchanged —
    the positive keeps its clamp.
 8. **Cost**: a converged step pays nothing (one comparison).
+
+## Results (run 2026-10-18, the negative-only taper, release, `--no-fail-fast`)
+
+* **1, missed.** Besides `cold_hold.rs`, four test files fail, every failure in the regime past full:
+  `dfn_parallel_long_step.rs` (all four "stays finite" runs: on the second hour of a 2C charge driven
+  past full, unconverged, the cells' currents no longer sum to the pack's — −10.3063964 against
+  −10.306396 A), `plating_dfn.rs` (`the_sub_stepped_tangent_is_the_whole_steps_slope`: its central
+  difference's trials no longer converge; `the_mismatched_pair_converges_with_plating_on` at 1 h),
+  and `surface_gap.rs::an_overcharged_cell_relaxes_to_no_gradient_at_all` (gradients of −0.059 and
+  −0.385 remain at rest). **The cause is the taper's own:** where a node's zero-current surface is at
+  or past full, an exchange current of exactly zero makes "no reaction" a root, and a node can freeze
+  there — an overcharged cell then cannot relax. Every golden passed.
+* **2, missed.** Fine grid, plating on, 0 °C: no hold step out of range, but **1507 of 5777**
+  discharge steps unconverged. (−10 °C was not reached: the test stops at the first case.)
+* **3, held**: recommended grid, threshold cell, 0 °C — 0 and 0 (the prototyping run).
+* **4–8**: not scored; the exit test passed, the rest was not read once 1 and 2 had missed.
+
+**What the fine grid's case is** (the committed engine, a temporary trace, removed): plating on at
+0 °C and −10 °C and a threshold cell at 0 °C, 1C CC–CV then C/2 — **every one of the first 300
+discharge steps unconverged in all three**, the stalling row a negative node near the separator
+(nodes 34–36 of 40), its Butler–Volmer row, the surface within ±1e-10 of the clamp's edge — the same
+mechanism as on the recommended grid. Not plating's stripping cap: the reversible store is empty
+within the first 300 s, and the threshold cell does the same. But the residual floor is **4.5e-7 to
+4.4e-5** scaled, not just over `NEWTON_TOL` as on the coarse grid.
+
+## What is left
+
+The two bars any fix was held to: it fixes the fine grid with plating on at 0 °C and −10 °C, and it
+changes only steps that do not converge today (commit-or-nothing, everything else bit-identical).
+
+* **The taper** fails both, as above. A floor under it, or a smoother ramp, is the same move again.
+* **Accepting the stall** on a node in the clamp band carrying almost no current: the fine grid's
+  floor is up to 4.4e-5 — three thousand times the tolerance — and there is no tighter reference to
+  check the voltages against, since the solve cannot get below the floor at any iteration count.
+* **So it is a model change or no change**, and that is the owner's: a change to how a full surface
+  reacts (the taper, with its frozen-node root dealt with, and the H8 tests re-pinned as measured),
+  or a lesson designed around it (no hold, a discharge after the constant-current leg only, which
+  converges at normal speed — `plating_health.rs::cc_leg_rest_and_discharge_keep_reading_a`), or a
+  lesson that runs on the flagged steps (190–250 ms each on the fine grid).
+
+The prototype is kept beside this note as `dfn-cold-hold-taper.patch` (a `git apply`-able diff of `crates/sim-core/src/dfn.rs` against 531f069), not in the engine.

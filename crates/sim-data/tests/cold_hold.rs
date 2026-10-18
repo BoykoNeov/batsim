@@ -334,3 +334,78 @@ fn a_cold_hold_leaves_a_discharge_that_converges() {
         assert!(steps < 3 * 3600, "{name}: no cut-off");
     }
 }
+
+/// Diagnostic (with a temporary trace in the engine): the first 300 s of the C/2 discharge after
+/// a 1C CC–CV, fine grid — plating on at 0 °C and −10 °C, and a threshold cell at 0 °C.
+#[test]
+#[ignore = "diagnostic: which row stalls on the fine grid"]
+fn report_the_fine_grid_stall() {
+    let mut c = chem();
+    c.dfn
+        .as_mut()
+        .unwrap()
+        .plating
+        .as_mut()
+        .unwrap()
+        .short_hazard_per_dead_ah = 0.0;
+    c.safety.as_mut().unwrap().plating_short_hazard_per_ah = 0.0;
+    let fine = CellModelConfig::Dfn {
+        shells: sim_core::dfn::FINE_SHELLS,
+        nodes_negative: sim_core::dfn::FINE_NODES_NEGATIVE,
+        nodes_separator: sim_core::dfn::FINE_NODES_SEPARATOR,
+        nodes_positive: sim_core::dfn::FINE_NODES_POSITIVE,
+    };
+    let q = c.cell.capacity_ah;
+    let arg = std::env::var("CASE").unwrap_or_default();
+    let (plating, temp_c) = match arg.as_str() {
+        "r0" => (PlatingModel::Reaction, 0.0),
+        "r10" => (PlatingModel::Reaction, -10.0),
+        _ => (PlatingModel::Threshold, 0.0),
+    };
+    let t = 273.15 + temp_c;
+    let mut p = Pack::new(
+        &PackConfig {
+            series: 1,
+            parallel: 1,
+            initial_soc: 0.0,
+            initial_temp_k: t,
+            seed: 0,
+            scatter: Scatter::default(),
+            thermal: ThermalConfig::Isothermal,
+            bms: None,
+            aging: Some(AgingConfig {
+                plating,
+                ..AgingConfig::default()
+            }),
+            cell_model: fine,
+        },
+        c.clone(),
+    )
+    .expect("builds");
+    let mut held = false;
+    loop {
+        let d = if held {
+            Demand::Voltage(4.2)
+        } else {
+            Demand::Current(-q)
+        };
+        let tel = p.step(1.0, d, &env(t));
+        if !held && tel.v_terminal >= 4.2 {
+            held = true;
+        } else if held && -tel.i_actual <= 0.05 * q {
+            break;
+        }
+    }
+    eprintln!("CASE {arg}: discharge starts; plating {:?}", p.cell_plating(0, 0));
+    let mut unc = 0;
+    for k in 1..=300 {
+        let tel = p.step(1.0, Demand::Current(0.5 * q), &env(t));
+        if tel.flags.contains(EventFlags::SOLVE_UNCONVERGED) {
+            unc += 1;
+        }
+        if k % 100 == 0 {
+            eprintln!("CASE {arg} step {k}: {:.6} V {:?}", tel.v_terminal, tel.flags);
+        }
+    }
+    eprintln!("CASE {arg}: unconverged {unc} of 300; plating {:?}", p.cell_plating(0, 0));
+}

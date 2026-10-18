@@ -1,0 +1,74 @@
+diff --git a/crates/sim-core/src/dfn.rs b/crates/sim-core/src/dfn.rs
+index 7aba4f4..e94854c 100644
+--- a/crates/sim-core/src/dfn.rs
++++ b/crates/sim-core/src/dfn.rs
+@@ -235,7 +235,9 @@ pub const C_E_FLOOR_MOL_PER_M3: f64 = 0.01;
+ /// exchange current collapses, `η = (R·T/(α·F))·asinh(i/(2·i_0))` diverges, and the cell
+ /// hits its cut-off. Clamping wide short-circuits exactly that feedback — a clamped
+ /// surface no longer moves with `j` (`dcs_dj = 0`), so the reaction stops resisting and
+-/// the node accepts lithium without bound.
++/// the node accepts lithium without bound. At a full **negative** surface that is no longer
++/// so: there the exchange current tapers to zero at `c_max` instead (`System::kinetics`,
++/// `docs/plans/dfn-cold-hold.md`), because a long cold hold reached it.
+ ///
+ /// # What a wide clamp cost, measured against PyBaMM's own DFN
+ /// This constant was `1e-6`, inherited from [`crate::spm`]'s `clamp_surface`, and at 3C on
+@@ -1180,7 +1182,24 @@ impl<'a> System<'a> {
+         let clamped = cs_raw < lo || cs_raw > hi;
+         let cs = cs_raw.clamp(lo, hi);
+         let prod = cs * (c_max - cs);
+-        let i0 = side.m_ref * (t.ce * prod).sqrt();
++        let i0_band = side.m_ref * (t.ce * prod).sqrt();
++        // Past the band at a **full negative** surface, the exchange current falls linearly to
++        // zero at `c_max` and the surface keeps moving with `j`, so a full graphite surface
++        // takes no more lithium and its equation has no kink at its solution. The frozen
++        // clamp let a long cold 4.2 V hold creep a node past full, and the discharge after it
++        // stalled on the clamp's edge (`docs/plans/dfn-cold-hold.md`). The positive's full
++        // edge and both empty edges keep the clamp: the positive's is reached on a discharge
++        // past the rate limit, where choking it collapses the voltage under a forced current
++        // (ROADMAP H8). Inside the band nothing here runs, so a solve that stays in it is
++        // bit-identical.
++        let taper = cs_raw > hi && self.grid.region(i) == Region::Neg;
++        let (i0, taper_slope) = if taper {
++            let w = c_max - hi;
++            let f = ((c_max - cs_raw) / w).max(0.0);
++            (i0_band * f, if f > 0.0 { -i0_band / w } else { 0.0 })
++        } else {
++            (i0_band, 0.0)
++        };
+         let eta = u[NVAR * i + PHIS]
+             - u[NVAR * i + PHIE]
+             - ocp_at(side.p, cs / c_max, self.sides.temp_k, self.sides.t_ref_k);
+@@ -1204,11 +1223,14 @@ impl<'a> System<'a> {
+             r_film,
+             // A clamped surface no longer moves with `j`, so every derivative through it
+             // is zero — the branch the analytic Jacobian takes and a central difference
+-            // straddles.
+-            dcs_dj: if clamped { 0.0 } else { part.beta },
+-            cs_live: if clamped { 0.0 } else { 1.0 },
++            // straddles. A tapered one still does, through the taper's slope; the potential
++            // it reads stays on the band's edge, so its slope there is zero.
++            dcs_dj: if clamped && !taper { 0.0 } else { part.beta },
++            cs_live: if clamped && !taper { 0.0 } else { 1.0 },
+             // d(√(c_e·c_s·(c_max − c_s)))/dc_s, factored through `i0` itself.
+-            di0_dcs: if prod > 0.0 {
++            di0_dcs: if taper {
++                taper_slope
++            } else if prod > 0.0 {
+                 i0 * (c_max - 2.0 * cs) / (2.0 * prod)
+             } else {
+                 0.0
+@@ -1218,8 +1240,11 @@ impl<'a> System<'a> {
+             } else {
+                 0.0
+             },
+-            docp_dcs: ocp_at_slope(side.p, cs / c_max, self.sides.temp_k, self.sides.t_ref_k)
+-                / c_max,
++            docp_dcs: if taper {
++                0.0
++            } else {
++                ocp_at_slope(side.p, cs / c_max, self.sides.temp_k, self.sides.t_ref_k) / c_max
++            },
+         }
+     }
+ 

@@ -357,7 +357,10 @@ where the rest-OCV gate refused to correct.
   **Reached by an ordinary cold charge** (found 2026-10-18, `phase-12-slice-c-health.md`): 0 °C 1C
   to 4.2 V then held there to C/20 at 1 s steps puts a surface past full on 1413 of the hold's
   steps, and the C/2 discharge after it is unconverged on 1146 of its first 1200 steps (25 °C: none).
-  A cold-charge lesson that ends with a hold, then discharges, runs on it.
+  A cold-charge lesson that ends with a hold, then discharges, runs on it. **Diagnosed** (`dfn-cold-hold.md`):
+  the surface clamp freezes a full negative node's exchange current, the hold creeps it past full, and
+  the discharge stalls on the clamp's kink at a residual floor (up to 4.4e-5 on the fine grid). A taper
+  to zero at full fixed the coarse grid only and moved the overcharge tests; withdrawn, with the owner.
 * ~~**A `Dfn` books the equilibrium voltage's fall across a long step as heat.**~~ —
   **closed 2026-09-23** (`dfn-end-of-step-heat.md`): the heat is read at the end of the
   step off the cell's own solve, for the report and the network both (1.03 K against
