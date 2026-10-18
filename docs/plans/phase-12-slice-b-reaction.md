@@ -233,6 +233,17 @@ with the hold (the quadrature's own 1 s figures differ in the fourth digit).
   probe now marches a copy. The fast tests (refusals, store, Jacobian, ledger, the snapshot replay
   on the parallel pair under a hold) pass in a debug build.
 
+## Owner decision, 2026-10-18: fix both before slice C
+
+Asked with the results above; **answered: fix both first.**
+
+1. **The hold**: the pack cuts its own step into short held pieces when a plating cell is present,
+   so a voltage hold's current can taper inside a long step.
+2. **The pair**: the parallel split is fixed first, by the option `dfn-split-nan.md` left open —
+   each cell's share of the current held to a physical range.
+
+Each is its own design note with predictions registered before its run. Slice C starts after both.
+
 ## Still open, for the owner and for slices C and D
 
 * **Two of the plan's exits missed** — exit 3's hold leg and exit 5's one-hour hold — and whether
