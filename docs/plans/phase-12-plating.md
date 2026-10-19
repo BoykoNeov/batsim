@@ -162,7 +162,7 @@ one (`path-chapters.md`): where the threshold says "no" at 0 °C and the reactio
 gentle charge nearly free; lithium left on the graphite stripping back on the rest; the dead share as
 lost capacity. On the fine grid, by its toggle. The guided-path ledger rules apply as for every lesson.
 
-**Measured before asking, 2026-10-19** (out-of-tree probe, `W:\temp\claude\phase12d\`; shipped LG M50,
+**Measured before asking, 2026-10-19** (out-of-tree probe, not kept; shipped LG M50,
 fine grid, isothermal, aging on as a scenario has it, from empty, constant current to 4.2 V, no hold,
 then an hour's rest, then C/2 to 2.5 V; 1 s steps unless said):
 

@@ -25,10 +25,30 @@ unconverged iterates and stays finite. A reaction cell does not:
   26, where the same charge on a threshold cell stays finite on every one of its 120 unconverged rest
   steps.
 
-The eight cases (fine grid, rest 600 s after the charge; `W:\temp\claude\phase12d\sweep.txt`):
-0 °C 2C at 1 s; 0 °C 3C at 1 and 5 s; −10 °C 1.5C at 2 s; −10 °C 2C at 1 and 5 s; −10 °C 3C at 0.5
-and 2 s. Plus 0 °C 3C at 0.5 and 2 s and −10 °C 2C at 2 s, which went NaN too and were not re-run in
-the experiment. None at 1C.
+The cases, from a sweep of 64 (0 °C and −10 °C; 1C, 1.5C, 2C and 3C from empty to 4.2 V; steps of
+0.5, 1, 2 and 5 s; reaction and threshold; then 600 s of rest; fine grid). The harness was out of tree
+and is not kept; its rows for the reaction cell that failed are here. The experiment (E3) re-ran the
+first eight below; the full sweep was re-run on the shipped fix (Results).
+
+| charge | step | before: rest steps unconverged | before: plated, most | before: NaN | after |
+| --- | --- | --- | --- | --- | --- |
+| 0 °C 2C | 1 s | 46 of 46, 44 flagged | infinite | at 46 s | finite, 600 of 600 unconverged, stores flat |
+| 0 °C 3C | 1 s | 82 of 82 | infinite | at 82 s | finite, 600 of 600, flat |
+| 0 °C 3C | 5 s | 62 of 62 | 6.7e11 % | at 310 s | finite, 120 of 120, flat |
+| −10 °C 1.5C | 2 s | 40 of 40 | infinite | at 80 s | finite, 300 of 300, flat |
+| −10 °C 2C | 1 s | 43 of 43 | infinite | at 43 s | finite, 600 of 600, flat |
+| −10 °C 2C | 5 s | 22 of 22 | infinite | at 110 s | finite, 120 of 120, flat |
+| −10 °C 3C | 0.5 s | 201 of 201 | infinite | at 100.5 s | finite, 1200 of 1200, flat |
+| −10 °C 3C | 2 s | 45 of 45 | 2.9e11 % | at 90 s | finite, 300 of 300, flat |
+| 0 °C 3C | 0.5 s | 83 of 83 | infinite | at 41.5 s | finite, 1200 of 1200, flat |
+| 0 °C 3C | 2 s | 26 of 26 | infinite | at 52 s | finite, 300 of 300, flat |
+| −10 °C 2C | 2 s | 26 of 26 | 8.6e9 % | at 52 s | finite, 24 of 300, flat |
+| −10 °C 3C | 1 s | 50 of 50 | 1.1e14 % | at 50 s | finite, 595 of 600, flat |
+| −10 °C 2C | 0.5 s | 535 of 1200, 105 flagged | **6.3e12 %** | never | finite, 1200 of 1200, flat |
+
+The last row ran away without reaching NaN in the 600 s, which is the same defect: a store of
+6e12 % of the cell's capacity is no less wrong for being finite. None of this happened at 1C or 1.5C
+at 0 °C, at any step length. The plated store at the end of each charge was 0.004–0.09 % of capacity.
 
 ## The change
 
@@ -40,7 +60,7 @@ the reaction converges: the reaction's solve failed, and the step is not what th
 same rule runs in the probe (`probe_at` marches a throwaway copy), so the pack's curve and the
 committed step stay one computation. No state changes shape: no snapshot bump.
 
-Tried out of tree (`W:\temp\claude\phase12d\wt`, experiment E3): all eight cases finite on every
+Tried out of tree (a throwaway worktree, not kept; experiment E3): all eight cases finite on every
 rest step, the plated stores flat across the rest, `PLATING_RISK` never raised on it.
 
 Not changed: the failure to converge underneath, which the threshold cell shares; that stays open

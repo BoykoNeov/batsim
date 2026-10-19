@@ -2,7 +2,7 @@
 
 **Status: BUILT 2026-10-19.** Plan: `phase-12-plating.md` §D, whose addendum records the
 measurements taken before asking and the owner's four decisions. Harness (out of tree, not kept):
-`W:/temp/claude/phase12d/` — `probe/` the instruments, `scen/` the drafts.
+a probe crate of instruments, the scenario drafts, and a throwaway worktree the lesson was built in.
 
 ## The owner's decisions, recorded
 

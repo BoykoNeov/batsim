@@ -5,8 +5,9 @@
 //! cell cold, judged by the chemistry's threshold rule or plating as a reaction. Every number
 //! they print is a claim or a ledger rule in `web/path-claims.toml`. What is here is what the
 //! prose says in words: the four files are one file with one field changed, the rule is silent
-//! at 0 °C because the file sits on its edge, and the cell rests higher while it strips because
-//! of the metal and not the charge it holds. See `docs/plans/phase-12-plating.md` §D.
+//! at 0 °C because the file sits on its edge, the reaction plates first next to the separator, and
+//! the cell rests higher while it strips because of the metal and not the charge it holds. See
+//! `docs/plans/phase-12-plating.md` §D.
 
 use sim_core::dfn::{FINE_NODES_NEGATIVE, FINE_NODES_POSITIVE, FINE_NODES_SEPARATOR, FINE_SHELLS};
 use sim_core::{
@@ -204,4 +205,51 @@ fn the_resting_gap_is_the_metal() {
     );
     // And it is not the charge: the reaction cell holds less.
     assert!(reaction.cell(0, 0).unwrap().soc < rule.cell(0, 0).unwrap().soc);
+}
+
+/// "It gets there first next to the separator, where the current crowds hardest" (step 41): on
+/// the first step of the 0 °C 1C charge that plates, the node holding the most metal is the
+/// negative electrode's last, the one against the separator (the grid runs from the negative's
+/// current collector to the separator, `dfn::Grid::region`), and the metal falls away from it.
+#[test]
+fn plating_starts_next_to_the_separator() {
+    let sc = scenario("plating_cold_reaction");
+    let mut p = sc.build_pack(chem()).expect("the lesson pack builds");
+    let env = Env {
+        t_ambient: sc.pack.initial_temp_k,
+        t_coolant: None,
+    };
+    loop {
+        let tel = p.step(DT_S, Demand::Current(ONE_C_A), &env);
+        if tel.flags.contains(EventFlags::PLATING_RISK) {
+            break;
+        }
+        assert!(p.sim_time_s() < ON_S, "the charge never plated");
+    }
+    let v = serde_json::to_value(p.snapshot()).expect("a snapshot is JSON");
+    let rev: Vec<f64> = v["pack"]["groups"][0]["cells"][0]["model"]["Dfn"]["plating"]
+        ["reversible_mol_m2"]
+        .as_array()
+        .expect("a reaction cell's stores")
+        .iter()
+        .map(|x| x.as_f64().expect("finite"))
+        .collect();
+    let last = rev.len() - 1;
+    println!(
+        "first plating at {} s: the last four nodes {:?}",
+        p.sim_time_s(),
+        &rev[last - 3..]
+    );
+    let argmax = rev
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.total_cmp(b.1))
+        .map(|(k, _)| k)
+        .expect("nodes");
+    assert_eq!(argmax, last, "the most metal is against the separator");
+    assert!(rev[last] > 0.0);
+    assert!(
+        rev[..last].iter().all(|&q| q < rev[last]),
+        "and less of it everywhere further from the separator"
+    );
 }
