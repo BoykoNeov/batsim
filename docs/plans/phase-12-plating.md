@@ -5,7 +5,7 @@ chose to fix both before C (2026-10-18). **Exit 3 is met**: `plating-hold-pieces
 pack's voltage hold into 5 s pieces, the hold leg within 0.10 %. **Exit 5 is not quite**: the one-hour
 stall was a held probe's range, fixed by `dfn-hold-past-edge.md` (its one finding accepted by the owner),
 but with the hold in pieces exit 5 is finite and on 4.200000 V at one hour, its first hold step flagged by the cells' own solves after the one-hour charge overfilled them (a miss as registered, **accepted by the owner 2026-10-18** as the cell model's limit on overfilled
-cells). Slice B is done; slice C built 2026-10-18 (`phase-12-slice-c-health.md`, v30); slice D, the lesson, waits on the cold-hold fix the owner chose first (§C).** Written after the spike (`phase-12-spike.md`), which is the measurement
+cells). Slice B is done; slice C built 2026-10-18 (`phase-12-slice-c-health.md`, v30); slice D, the lesson, runs without the cold hold (§C) and waits on a smaller fix its measurements found, by the owner's decision of 2026-10-19 (§D).** Written after the spike (`phase-12-spike.md`), which is the measurement
 this plan stands on; where a later slice note contradicts this text, the slice note is the measurement
 and wins. When written the repo was at `SNAPSHOT_VERSION` 28 and `WASM_API_VERSION` 10.
 
@@ -161,6 +161,50 @@ The same cold fast charge on the threshold cell and on the reaction cell, in the
 one (`path-chapters.md`): where the threshold says "no" at 0 °C and the reaction plates; the sheet's
 gentle charge nearly free; lithium left on the graphite stripping back on the rest; the dead share as
 lost capacity. On the fine grid, by its toggle. The guided-path ledger rules apply as for every lesson.
+
+**Measured before asking, 2026-10-19** (out-of-tree probe, `W:\temp\claude\phase12d\`; shipped LG M50,
+fine grid, isothermal, aging on as a scenario has it, from empty, constant current to 4.2 V, no hold,
+then an hour's rest, then C/2 to 2.5 V; 1 s steps unless said):
+
+| charge | rule | first `PLATING_RISK` | dead lithium (% of capacity) | `soh cap` at 4.2 V |
+| --- | --- | --- | --- | --- |
+| 0 °C 1C | threshold | never | 0 | 99.983 % |
+| 0 °C 1C | reaction | 554 s | 0.0258 | 99.958 % |
+| 0 °C 0.3C | threshold | never | 0 | 99.961 % |
+| 0 °C 0.3C | reaction | 8453 s | 0.00077 | 99.960 % |
+| −10 °C 1C | threshold | 1 s (every step) | 0 (bills 0.18 points) | 99.818 % |
+| −10 °C 1C | reaction | 265 s | 0.0464 | 99.946 % |
+
+Both rules carry the drawn calendar and cycle fades, which move `soh cap` on the rest too (about
+0.01 point an hour at 0 °C); plating is read by subtracting the two files, never off one. The threshold
+is silent at 0 °C only because the file sits exactly on `t_plating_min_k` ("below 273.15 K"). The
+reversible metal strips back within about five minutes of rest (0 °C 1C: 0.0258 → 0.0167 % at 60 s,
+0.0005 % at 300 s, 0 by 600 s) while `soc (true)` stays flat. **The stripping shows at the terminals**:
+charged for a fixed 1800 s (the page's `Pulse`, which stops just under 4.2 V) the reaction cell rests
+3.8 mV above the threshold cell at 5 s, 2.3 mV at 60 s, 0.2 mV at 300 s and nothing at 600 s, and with
+the rate constant scaled by 1e-6 the gap is zero to five decimals: it is the metal, not the charge
+level. 5 s steps reproduce the 1 s readings (0 °C 1C dead 0.0260 %); the recommended grid gives 0.0254 %.
+Every one of these runs converged on every step.
+
+**Found: a cold fast charge then a rest can commit NaN.** On the fine grid, a rest after a constant-current
+charge that ran the negative's electrolyte to zero does not converge — on a threshold cell too, so that
+part is older than this phase — and on a reaction cell each unconverged step books the plating its
+unsettled field implies, at one node near the current collector, growing about tenfold a step to
+infinity and then NaN within a minute. Seen at 0 °C 2C (1 s steps) and 3C (every step length), −10 °C
+1.5C (2 s), 2C (1, 2, 5 s) and 3C (0.5–2 s); never at 1C. A reader reaches it by typing a current.
+
+**Owner decisions, 2026-10-19** (asked with the above):
+
+1. **Stop the runaway first**, as its own note with predictions registered before the change: a step
+   that does not converge may no longer pile up plated lithium, so it cannot reach NaN. The older
+   failure to converge under it stays open and recorded. Then the lesson.
+2. **The stripping is shown by the voltage gap and a plated-lithium readout** (reversible and dead, on
+   the wire): a `WASM_API_VERSION` bump and a parity rerun.
+3. **The fine grid is written into the lesson's scenario files**, not left to the toggle, so the
+   claims harness measures what the reader sees.
+4. **Four steps in a new chapter**: 0 °C 1C on the threshold (the reaction file as the arm), its rest,
+   0 °C 0.3C, and −10 °C 1C, where the threshold bills about four times what the reaction loses — stated
+   as one placeholder against another.
 
 ## Exit
 
