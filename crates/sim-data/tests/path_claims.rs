@@ -134,7 +134,7 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is forty-four steps and 944 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is forty-four steps and 945 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
@@ -2109,8 +2109,20 @@ struct Lesson {
 enum Prog {
     Current(f64),
     Rest,
-    CcCv { i: f64, v_cell: f64, taper: f64 },
-    Pulse { i: f64, on_s: f64, off_s: f64 },
+    CcCv {
+        i: f64,
+        v_cell: f64,
+        taper: f64,
+    },
+    /// `stop_v` is the pulse box's optional voltage stop \[V per series cell\]: a charging
+    /// pulse rests to its edge from the step after the first one at or above it
+    /// (`pulseStopNow`, mirrored in [`drive`]).
+    Pulse {
+        i: f64,
+        on_s: f64,
+        off_s: f64,
+        stop_v: Option<f64>,
+    },
 }
 
 /// The demand program an **arm** runs under: the step's, unless the reader typed a current.
@@ -2135,7 +2147,24 @@ fn arm_prog(arm: &Arm, step_demand: Prog) -> Prog {
         // The pulse box: the current changes and the legs do not, which is exactly what the
         // page's three-field group lets a reader do. Refused off a `Pulse` step in
         // `check_pulse_current`, and written out here for the same reason its neighbour is.
-        (None, Some(i), _, Prog::Pulse { on_s, off_s, .. }) => Prog::Pulse { i, on_s, off_s },
+        // The stop goes with the legs: it is the box's fourth field, and dropping it here
+        // would test the one case it exists for — a bigger current typed in — without it.
+        (
+            None,
+            Some(i),
+            _,
+            Prog::Pulse {
+                on_s,
+                off_s,
+                stop_v,
+                ..
+            },
+        ) => Prog::Pulse {
+            i,
+            on_s,
+            off_s,
+            stop_v,
+        },
         (None, Some(_), _, other) => other,
         (None, None, Some(i), _) => Prog::Current(i),
         (None, None, None, other) => other,
@@ -2203,6 +2232,9 @@ fn parse_demand(block: &str) -> Prog {
             i: demand_num(line, "value"),
             on_s: demand_num(line, "on_s"),
             off_s: demand_num(line, "off_s"),
+            stop_v: line
+                .contains("stop_v: ")
+                .then(|| demand_num(line, "stop_v")),
         },
         other => panic!("web/app.js uses a demand mode this test does not mirror: {other}"),
     }
@@ -2529,13 +2561,29 @@ fn pulse_on(sim_time_s: f64, on_s: f64, off_s: f64, dt: f64) -> bool {
     phase < k_on
 }
 
-/// The demand a program asks for at this instant.
-fn demand_now(prog: Prog, pack: &Pack, dt: f64, last: Option<&Telemetry>) -> Demand {
+/// The page's 1-based pulse number at this instant (`pulsePhase`'s `pulse`), counted in steps.
+fn pulse_number(sim_time_s: f64, on_s: f64, off_s: f64, dt: f64) -> i64 {
+    let k_period = (on_s / dt).round() as i64 + (off_s / dt).round() as i64;
+    let index = (sim_time_s / dt).round() as i64;
+    index.div_euclid(k_period.max(1)) + 1
+}
+
+/// The demand a program asks for at this instant. `stopped` is the pulse number a voltage
+/// stop has ended early, which [`drive`] decides; nothing else reads it.
+fn demand_now(
+    prog: Prog,
+    pack: &Pack,
+    dt: f64,
+    last: Option<&Telemetry>,
+    stopped: Option<i64>,
+) -> Demand {
     match prog {
         Prog::Current(i) => Demand::Current(i),
         Prog::Rest => Demand::Rest,
-        Prog::Pulse { i, on_s, off_s } => {
-            if pulse_on(pack.sim_time_s(), on_s, off_s, dt) {
+        Prog::Pulse { i, on_s, off_s, .. } => {
+            let now = pack.sim_time_s();
+            if pulse_on(now, on_s, off_s, dt) && stopped != Some(pulse_number(now, on_s, off_s, dt))
+            {
                 Demand::Current(i)
             } else {
                 Demand::Rest
@@ -3093,6 +3141,10 @@ fn cccv_window_steps(dt: f64) -> u64 {
 struct Trace {
     rows: Vec<Row>,
     last: Option<Telemetry>,
+    /// The pulse number a voltage stop has ended early (`state.pulseStopped`). Kept here and
+    /// not in [`drive`] because an arm drives the same pack more than once and the page's
+    /// memory of it survives the mark.
+    pulse_stopped: Option<i64>,
 }
 
 fn drive(
@@ -3110,14 +3162,41 @@ fn drive(
     // `<=` because a mark that lands exactly on a step boundary is a mark the page
     // stops *at*, not one step before it.
     while pack.sim_time_s() < end_s - dt * 0.5 {
+        // `pulseStopNow`: a charging pulse with a stop, not yet stopped, stops for good on the
+        // step after the first frame at or above it.
+        if let Prog::Pulse {
+            i,
+            on_s,
+            off_s,
+            stop_v: Some(stop_v),
+        } = prog
+        {
+            let now = pack.sim_time_s();
+            let pulse = pulse_number(now, on_s, off_s, dt);
+            // A stepped frame only, never the zero-length probe: `state.stepV`.
+            let last_v = trace.last.as_ref().map(|t| t.v_terminal);
+            if i < 0.0
+                && pulse_on(now, on_s, off_s, dt)
+                && trace.pulse_stopped != Some(pulse)
+                && last_v.is_some_and(|v| v >= stop_v * f64::from(pack.series()))
+            {
+                trace.pulse_stopped = Some(pulse);
+            }
+        }
         let d = if windowed {
             let index = (pack.sim_time_s() / dt).round() as u64;
             if index.is_multiple_of(k) || held.is_none() {
-                held = Some(demand_now(prog, pack, dt, trace.last.as_ref()));
+                held = Some(demand_now(
+                    prog,
+                    pack,
+                    dt,
+                    trace.last.as_ref(),
+                    trace.pulse_stopped,
+                ));
             }
             held.expect("a window's demand is decided before it is used")
         } else {
-            demand_now(prog, pack, dt, trace.last.as_ref())
+            demand_now(prog, pack, dt, trace.last.as_ref(), trace.pulse_stopped)
         };
         let t = pack.step(dt, d, env);
         trace.last = Some(t);
@@ -3287,7 +3366,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
         Some(a) if a.start == Start::Restart => arm_prog(a, lesson.demand),
         _ => lesson.demand,
     };
-    let probe_telemetry = pack.step(0.0, demand_now(probe_prog, &pack, dt, None), &before);
+    let probe_telemetry = pack.step(0.0, demand_now(probe_prog, &pack, dt, None, None), &before);
     let (probe_deficit_min, probe_deficit_max) = deficit_range(&pack);
     let probe = Row {
         t_s: pack.sim_time_s(),
@@ -6695,14 +6774,16 @@ fn same_shape(a: Prog, b: Prog) -> bool {
             Prog::Pulse {
                 on_s: ona,
                 off_s: offa,
+                stop_v: sa,
                 ..
             },
             Prog::Pulse {
                 on_s: onb,
                 off_s: offb,
+                stop_v: sb,
                 ..
             },
-        ) => (ona - onb).abs() < f64::EPSILON && (offa - offb).abs() < f64::EPSILON,
+        ) => (ona - onb).abs() < f64::EPSILON && (offa - offb).abs() < f64::EPSILON && sa == sb,
         _ => false,
     }
 }
@@ -9203,6 +9284,11 @@ enum Control {
     ///
     /// Reads as nothing on any program but CC-CV, exactly as the taper does.
     CcCvVoltage,
+    /// The pulse program's voltage stop, per series cell \[V\]: the step's `stop_v`, written
+    /// into the `stop charging at` box. Not the chemistry's ceiling either, for the reason
+    /// [`Self::CcCvVoltage`] gives; the plating steps set it to the same digits. Reads as
+    /// nothing on a pulse step with no stop and on any other program.
+    PulseStop,
 }
 
 /// The vocabulary, one entry per way a ledgered step names a number some file decides.
@@ -14168,6 +14254,13 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         pow10: 0,
     },
     LedgerRule {
+        // The pulse box's stop, which is what ends a bigger current's charge; the ceiling one
+        // sentence up is the chemistry's and spells the same digits.
+        phrase: "stops early if the cell reaches {n} V first",
+        ties: &[Tie::Setting(Control::PulseStop)],
+        pow10: 0,
+    },
+    LedgerRule {
         // The cliff: the file's temperature, and the gate it is not below.
         phrase: "{n} \u{b0}C is not below {n} \u{b0}C, so the rule says nothing",
         ties: &[
@@ -14559,6 +14652,10 @@ fn control_value(control: Control, lesson: &Lesson) -> Option<f64> {
             Prog::CcCv { v_cell, .. } => Some(v_cell),
             _ => None,
         },
+        Control::PulseStop => match lesson.demand {
+            Prog::Pulse { stop_v, .. } => stop_v,
+            _ => None,
+        },
         Control::Ambient => Some(lesson.ambient_c),
         Control::Until => Some(lesson.until_s),
         Control::Speed => lesson.speed_x,
@@ -14594,7 +14691,8 @@ fn arm_control_value(control: Control, arm: &Arm) -> Option<f64> {
         | Control::Until
         | Control::Speed
         | Control::Taper
-        | Control::CcCvVoltage => None,
+        | Control::CcCvVoltage
+        | Control::PulseStop => None,
     }
 }
 
@@ -16967,7 +17065,7 @@ fn a_zero_length_probe_moves_nothing() {
         let json = |p: &Pack| serde_json::to_string(&p.snapshot()).expect("a snapshot serialises");
 
         let before = json(&pack);
-        let d = demand_now(lesson.demand, &pack, lesson.dt, None);
+        let d = demand_now(lesson.demand, &pack, lesson.dt, None, None);
         let first = pack.step(0.0, d, &env);
         let between = json(&pack);
         let second = pack.step(0.0, d, &env);
@@ -19010,5 +19108,79 @@ fn a_repayment_refuses_a_run_that_never_repays() {
         0.0,
         false,
         lesson.until_s,
+    );
+}
+
+/// The trajectories on which the page's solve notice (`renderSolveNotice`) comes up.
+///
+/// The notice is latched on `SOLVE_UNCONVERGED` or `SURFACE_OUT_OF_RANGE` in any frame, and
+/// says the numbers from then on are the model past its own edge. That is true on the one
+/// step listed here, whose prose says so in its own words; a new step or arm that raises
+/// either flag has to be added here, after its prose has been read against the notice. The
+/// step's mark and every arm's actions are what is run, not a reader running on past them.
+/// Measured when it was written: only `the-electrolyte-starves`, from 464 s, never on a
+/// voltage hold (`docs/plans/phase-12-slice-d-lesson.md`, the addendum).
+const SOLVE_NOTICE_ON: &[(&str, Option<&str>)] = &[("the-electrolyte-starves", None)];
+
+#[test]
+fn the_solve_flags_rise_only_where_listed() {
+    let lessons = lessons();
+    let arms = arms();
+    let mut trajectories: Vec<(&Lesson, Option<&Arm>)> =
+        lessons.iter().map(|l| (l, None)).collect();
+    for arm in &arms {
+        let lesson = lessons
+            .iter()
+            .find(|l| l.id == arm.step)
+            .unwrap_or_else(|| panic!("no lesson `{}`", arm.step));
+        trajectories.push((lesson, Some(arm)));
+    }
+    let mut seen = Vec::new();
+    let ran = trajectories.len();
+    for (lesson, arm) in trajectories {
+        let r = run(lesson, arm, &[], &lessons);
+        let unconv: Vec<&Row> = r
+            .rows
+            .iter()
+            .filter(|row| {
+                row.telemetry
+                    .flags
+                    .contains(sim_core::EventFlags::SOLVE_UNCONVERGED)
+            })
+            .collect();
+        let surface: Vec<&Row> = r
+            .rows
+            .iter()
+            .filter(|row| {
+                row.telemetry
+                    .flags
+                    .contains(sim_core::EventFlags::SURFACE_OUT_OF_RANGE)
+            })
+            .collect();
+        if unconv.is_empty() && surface.is_empty() {
+            continue;
+        }
+        let held = unconv.iter().filter(|row| row.voltage_hold).count();
+        println!(
+            "{} / {:?}: {} rows, unconverged {} (first {:?} s, on a voltage hold {}), surface {} (first {:?} s)",
+            lesson.id,
+            arm.map(|a| a.name.as_str()),
+            r.rows.len(),
+            unconv.len(),
+            unconv.first().map(|row| row.t_s),
+            held,
+            surface.len(),
+            surface.first().map(|row| row.t_s),
+        );
+        seen.push((lesson.id.clone(), arm.map(|a| a.name.clone())));
+    }
+    println!("{ran} trajectories run, {} with a solve flag", seen.len());
+    let want: Vec<(String, Option<String>)> = SOLVE_NOTICE_ON
+        .iter()
+        .map(|(s, a)| ((*s).to_string(), a.map(str::to_string)))
+        .collect();
+    assert_eq!(
+        seen, want,
+        "the solve notice comes up on these trajectories"
     );
 }

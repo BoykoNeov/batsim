@@ -112,7 +112,9 @@ checked byte for byte.
   open.
 * **The failure to converge under the runaway stays open.** After a cold 2C or 3C charge on the fine
   grid the rest is finite and flagged, and still not a rest (`plating-unconverged-runaway.md`). A
-  reader who types 2C into these steps sees a flagged, wrong curve, not NaN.
+  reader who typed 2C into these steps saw an overcharged, partly flagged, wrong curve, not NaN;
+  since the addendum below the steps stop the charge at 4.2 V, and a plain constant current typed
+  outside the pulse program still overcharges (recorded, by the owner's decision).
 * **The sizes are placeholders'**: the rate constant, the dead share, and the threshold's fade per
   amp-hour. The −10 °C step's comparison says so in its prose.
 * **No discharge after the charge.** The stripping shoulder on a following discharge — the
@@ -121,7 +123,8 @@ checked byte for byte.
 
 ## Addendum: the charge stops at 4.2 V, and a notice when the model cannot answer (2026-10-19)
 
-**Status: predictions registered before any change.**
+**Status: BUILT 2026-10-19**, predictions registered before any change (079da53) and scored under
+"Results": 1 and 3 held, 2 missed in part.
 
 ### What a reader got by typing a bigger current
 
@@ -183,3 +186,41 @@ the pulse program still overcharges, with only the solve notice. Recorded, not b
    charge and the rest that follows no `SOLVE_UNCONVERGED` or `SURFACE_OUT_OF_RANGE`, every value
    finite, the plated store under 0.1 % of capacity.
 3. **No engine change**: no snapshot or `WASM_API_VERSION` bump, parity untouched.
+
+### Results
+
+1. **Held, after one fix the predictions did not foresee.** The first build decided the stop on the
+   last frame including `readNow`'s zero-length probe, as the design said. That probe has no time
+   for anything to move: under the 1C charge from empty it reads 5.03 V at 0 °C and 6.83 V at
+   −10 °C (3.26 V under step 43's 0.3C), so the stop fired before the first step and step 44's
+   `soh cap` claim read 99.995 % for 99.82 %. The stop now decides on stepped frames only
+   (`state.stepV`, cleared by `resetHistory`), and every claim in `path_claims` matches the engine
+   again, unchanged. The new sentence's `4.2 V` is tied to a new control, `Control::PulseStop`.
+2. **Missed in part.** The stop holds on every run (`plating_lesson.rs::a_bigger_current_stops_at_the_ceiling`,
+   2C and 3C typed into all four steps' programs on both files): it stops on the step after the
+   first at or above 4.2 V, at most 44 mV past it (3C at −10 °C, inside that step's 74 mV rise), with the cell
+   3.7–18.3 % full and at most 0.0334 % plated, against 43–375 % before. Every value is finite and
+   no unflagged step reads above where the charge stopped. **But the rest after the stop is
+   flagged on ten of the twelve runs**, which the prediction said it would not be: the older
+   failure `plating-unconverged-runaway.md` records, a cold rest after a fast charge (17 steps on
+   the 0 °C threshold at 2C; nearly all at 3C, and at −10 °C already at 2C), with voltages from
+   −0.24 V to 6.48 V. Only 2C on the 0 °C reaction file rests clean. The notice comes up on those
+   runs, and the test pins which ones. The lesson says so in one sentence with no number: "Push
+   much harder than that and even the rest after the stop is more than this model can solve; a
+   notice under the flags then says from when."
+3. **Held.** No engine change, no snapshot or `WASM_API_VERSION` bump; parity not rerun.
+
+**The survey** (`path_claims.rs::the_solve_flags_rise_only_where_listed`): every step to its mark and
+every arm's actions; only `the-electrolyte-starves` raises either flag, pinned in `SOLVE_NOTICE_ON`.
+
+**Walked in a real page** (`sim-server` on its own port, headless Chrome on its own profile and port,
+both closed by CDP and by the PID recorded at launch): step 41 at its own current unchanged
+(`4.200 V`, `99.98 %`, no notice); 2C typed into the pulse box, Restart, Run: the charge ends at 330 s,
+nothing charges after it, `soc` 18.1 %, and the notice reads "From t = 5m 30s (SOLVE_UNCONVERGED)";
+`the-electrolyte-starves` shows "From t = 7m 44s (SURFACE_OUT_OF_RANGE)" (464 s) and Load clears it;
+the stop box is blank on a pulse step reached after the plating chapter. No console errors.
+
+**Recorded limits.** A plain constant current typed in free play still overcharges (owner's
+decision). The notice reads reported frames, so an isolated failed step dropped by decimation is
+not seen. A restored snapshot starts with no notice and no stop latch. The page's history records
+`readNow`'s probe at t = 0 as before, so the voltage plot of a typed 2C run starts at 7.55 V.

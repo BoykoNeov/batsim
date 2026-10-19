@@ -6,8 +6,9 @@
 //! they print is a claim or a ledger rule in `web/path-claims.toml`. What is here is what the
 //! prose says in words: the four files are one file with one field changed, the rule is silent
 //! at 0 °C because the file sits on its edge, the reaction plates first next to the separator, and
-//! the cell rests higher while it strips because of the metal and not the charge it holds. See
-//! `docs/plans/phase-12-plating.md` §D.
+//! the cell rests higher while it strips because of the metal and not the charge it holds; and a
+//! bigger current typed into the pulse box stops at the 4.2 V ceiling instead of overcharging.
+//! See `docs/plans/phase-12-plating.md` §D and `docs/plans/phase-12-slice-d-lesson.md`.
 
 use sim_core::dfn::{FINE_NODES_NEGATIVE, FINE_NODES_POSITIVE, FINE_NODES_SEPARATOR, FINE_SHELLS};
 use sim_core::{
@@ -97,9 +98,26 @@ fn plating_files_differ_only_where_their_headers_say() {
     );
 }
 
+/// The steps' voltage stop \[V per cell\] (`stop_v` on all four; the cells are 1S1P).
+const STOP_V: f64 = 4.2;
+
+/// What one run of the steps' program saw.
+struct Pulsed {
+    pack: Pack,
+    /// Whether `PLATING_RISK` rose on any step.
+    plated: bool,
+    /// Each step's end time \[s\], terminal voltage \[V\], current \[A\] and flags.
+    rows: Vec<(f64, f64, f64, EventFlags)>,
+    /// The zero-length probe under the charge, before the first step \[V\].
+    probe_v: f64,
+}
+
 /// Run `sc` on the steps' `Pulse` (on-leg iff `round(t/dt) % (kOn + kOff) < kOn`) for `secs`,
-/// returning the pack and whether `PLATING_RISK` rose on any step.
-fn pulse(sc: &Scenario, i: f64, on_s: f64, off_s: f64, secs: f64) -> (Pack, bool) {
+/// with the page's voltage stop (`pulseStopNow`): a charging pulse rests to its edge from the
+/// step after the first stepped frame at or above [`STOP_V`]. Never decided on a zero-length
+/// probe, which on these cold charges reads above the ceiling before anything has moved; the
+/// first step charges. Returns the probe's voltage beside the run, for the test that says so.
+fn pulse(sc: &Scenario, i: f64, on_s: f64, off_s: f64, secs: f64) -> Pulsed {
     let mut p = sc.build_pack(chem()).expect("the lesson pack builds");
     let env = Env {
         t_ambient: sc.pack.initial_temp_k,
@@ -107,21 +125,34 @@ fn pulse(sc: &Scenario, i: f64, on_s: f64, off_s: f64, secs: f64) -> (Pack, bool
     };
     #[allow(clippy::cast_possible_truncation)]
     let (k_on, k_off) = ((on_s / DT_S).round() as i64, (off_s / DT_S).round() as i64);
-    let mut flagged = false;
+    let probe_v = p.step(0.0, Demand::Current(i), &env).v_terminal;
+    let mut last_v = f64::NEG_INFINITY;
+    let mut stopped: Option<i64> = None;
+    let (mut plated, mut rows) = (false, Vec::new());
     while p.sim_time_s() + 1e-9 < secs {
         #[allow(clippy::cast_possible_truncation)]
         let idx = (p.sim_time_s() / DT_S).round() as i64;
-        let d = if idx.rem_euclid(k_on + k_off) < k_on {
+        let pulse_no = idx.div_euclid(k_on + k_off);
+        let on = idx.rem_euclid(k_on + k_off) < k_on;
+        if on && i < 0.0 && last_v >= STOP_V {
+            stopped = Some(pulse_no);
+        }
+        let d = if on && stopped != Some(pulse_no) {
             Demand::Current(i)
         } else {
             Demand::Rest
         };
-        flagged |= p
-            .step(DT_S, d, &env)
-            .flags
-            .contains(EventFlags::PLATING_RISK);
+        let t = p.step(DT_S, d, &env);
+        plated |= t.flags.contains(EventFlags::PLATING_RISK);
+        last_v = t.v_terminal;
+        rows.push((p.sim_time_s(), t.v_terminal, t.i_actual, t.flags));
     }
-    (p, flagged)
+    Pulsed {
+        pack: p,
+        plated,
+        rows,
+        probe_v,
+    }
 }
 
 /// "0 °C is not below 0 °C, so the rule says nothing; it is a cliff, and this file sits
@@ -130,11 +161,11 @@ fn pulse(sc: &Scenario, i: f64, on_s: f64, off_s: f64, secs: f64) -> (Pack, bool
 #[test]
 fn the_rule_is_silent_on_its_edge_and_not_below_it() {
     let sc = scenario("plating_cold_threshold");
-    let (_, on_edge) = pulse(&sc, ONE_C_A, ON_S, 7200.0, ON_S);
+    let on_edge = pulse(&sc, ONE_C_A, ON_S, 7200.0, ON_S).plated;
     assert!(!on_edge, "the rule flags at exactly 0 degC");
     let mut below = sc.clone();
     below.pack.initial_temp_k -= 0.01;
-    let (_, under) = pulse(&below, ONE_C_A, ON_S, 7200.0, 300.0);
+    let under = pulse(&below, ONE_C_A, ON_S, 7200.0, 300.0).plated;
     assert!(
         under,
         "the rule is silent a hundredth of a kelvin below its edge"
@@ -155,9 +186,9 @@ fn the_resting_gap_is_the_metal() {
         7200.0,
         mark,
     )
-    .0;
+    .pack;
     let reaction_sc = scenario("plating_cold_reaction");
-    let reaction = pulse(&reaction_sc, ONE_C_A, ON_S, 7200.0, mark).0;
+    let reaction = pulse(&reaction_sc, ONE_C_A, ON_S, 7200.0, mark).pack;
     let v = |p: &Pack| {
         let mut probe = p.clone();
         probe
@@ -251,5 +282,147 @@ fn plating_starts_next_to_the_separator() {
     assert!(
         rev[..last].iter().all(|&q| q < rev[last]),
         "and less of it everywhere further from the separator"
+    );
+}
+
+/// "A bigger current typed into the pulse box ends the charge sooner, with the cell less full,
+/// instead of driving it past its ceiling" (step 41): 2C and 3C typed into each of the four
+/// steps' programs, on both files, to the step's mark. Before the stop these ran the step's
+/// fixed on-time and plated 43 % to 375 % of the cell's capacity (the slice D note's addendum).
+///
+/// Each stops on the step after the first at or above 4.2 V, within that step's own rise of the
+/// ceiling; the rest after it is a rest; every value is finite; no step the page's solve notice
+/// does not cover reads above where the charge stopped; and the cell plates under 0.1 % of its
+/// capacity. And at each step's own current the stop never fires. "Push much harder than that
+/// and even the rest after the stop is more than this model can solve; a notice under the flags
+/// then says from when": the runs whose rest raises a flag the notice reads are pinned.
+#[test]
+fn a_bigger_current_stops_at_the_ceiling() {
+    let steps = [
+        (
+            "plating_cold_threshold",
+            "plating_cold_reaction",
+            ONE_C_A,
+            ON_S,
+            7200.0,
+        ),
+        (
+            "plating_cold_reaction",
+            "plating_cold_threshold",
+            -1.5459594,
+            9440.0,
+            3600.0,
+        ),
+        (
+            "plating_colder_threshold",
+            "plating_colder_reaction",
+            ONE_C_A,
+            1390.0,
+            3600.0,
+        ),
+    ];
+    let lost = EventFlags::SOLVE_UNCONVERGED | EventFlags::SURFACE_OUT_OF_RANGE;
+    let mut noticed = Vec::new();
+    for (own, other, i_own, on_s, off_s) in steps {
+        for file in [own, other] {
+            let sc = scenario(file);
+            let at_own = pulse(&sc, i_own, on_s, off_s, on_s);
+            assert!(
+                at_own.rows.iter().all(|r| r.1 < STOP_V && r.2 < 0.0),
+                "{file} at its own current reaches the stop"
+            );
+            // Why the stop must not read the probe.
+            println!(
+                "{file}: the probe under the charge reads {:.4} V",
+                at_own.probe_v
+            );
+            for c in [2.0, 3.0] {
+                let i = ONE_C_A * c;
+                let run = pulse(&sc, i, on_s, off_s, on_s);
+                let k = run
+                    .rows
+                    .iter()
+                    .position(|r| r.1 >= STOP_V)
+                    .unwrap_or_else(|| panic!("{file} at {c}C never reaches {STOP_V} V"));
+                let (t_stop, v_stop) = (run.rows[k].0, run.rows[k].1);
+                let rise = v_stop - run.rows[k - 1].1;
+                let peak = run
+                    .rows
+                    .iter()
+                    .map(|r| r.1)
+                    .fold(f64::NEG_INFINITY, f64::max);
+                let pl = run
+                    .pack
+                    .cell_plating(0, 0)
+                    .map_or(0.0, |v| v.reversible_fraction + v.dead_fraction);
+                let soc = run.pack.cell(0, 0).expect("one cell").soc;
+                let flagged: Vec<&(f64, f64, f64, EventFlags)> =
+                    run.rows.iter().filter(|r| r.3.intersects(lost)).collect();
+                if let (Some(first), Some(last)) = (flagged.first(), flagged.last()) {
+                    let vs = flagged.iter().map(|r| r.1);
+                    println!(
+                        "  {file} {c}C: {} of {} steps flagged, {} s to {} s, {:?}, v {:.4}..{:.4} V",
+                        flagged.len(),
+                        run.rows.len(),
+                        first.0,
+                        last.0,
+                        first.3,
+                        vs.clone().fold(f64::INFINITY, f64::min),
+                        vs.fold(f64::NEG_INFINITY, f64::max)
+                    );
+                }
+                println!(
+                    "{file} {c}C: stops at {t_stop} s, {v_stop:.4} V (rise {:.1} mV), {:.1} % full, plated {:.4} %",
+                    rise * 1e3,
+                    soc * 100.0,
+                    pl * 100.0
+                );
+                assert!(
+                    v_stop - STOP_V <= rise,
+                    "{file} {c}C: past the stop by more than a step"
+                );
+                // Where the rest after the stop cannot be solved its voltages are not the cell's,
+                // and the page's notice is up from the first such step. What must hold is that
+                // no step the notice does not cover reads above where the charge stopped.
+                assert!(
+                    run.rows
+                        .iter()
+                        .filter(|r| !r.3.intersects(lost))
+                        .all(|r| r.1 <= v_stop),
+                    "{file} {c}C: an unflagged step higher than the stop (peak {peak})"
+                );
+                assert!(
+                    run.rows[k + 1..].iter().all(|r| r.2 == 0.0),
+                    "{file} {c}C: charged again after the stop"
+                );
+                if !flagged.is_empty() {
+                    noticed.push(format!("{file} {c}C"));
+                }
+                assert!(
+                    run.rows.iter().all(|r| r.1.is_finite() && r.2.is_finite()),
+                    "{file} {c}C: a value that is not finite"
+                );
+                assert!(pl.is_finite() && pl < 1.0e-3, "{file} {c}C: plated {pl}");
+            }
+        }
+    }
+    // The rest after a fast cold charge, stopped at the ceiling, is the older failure
+    // `plating-unconverged-runaway.md` records (ROADMAP H8's family): flagged, so the notice
+    // is up. Only 2C on the 0 °C reaction file rests clean. Pinned so a change shows.
+    assert_eq!(
+        noticed,
+        [
+            "plating_cold_threshold 2C",
+            "plating_cold_threshold 3C",
+            "plating_cold_reaction 3C",
+            "plating_cold_reaction 3C",
+            "plating_cold_threshold 2C",
+            "plating_cold_threshold 3C",
+            "plating_colder_threshold 2C",
+            "plating_colder_threshold 3C",
+            "plating_colder_reaction 2C",
+            "plating_colder_reaction 3C",
+        ],
+        "the typed-current runs the solve notice comes up on"
     );
 }

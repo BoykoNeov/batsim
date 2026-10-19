@@ -634,7 +634,10 @@ the previous one's tests pass.
   unable to converge the discharge after it (`dfn-cold-hold.md`, diagnosed, not fixed); D (the lesson,
   guided-path steps 41–44, a `plated` readout, `WASM_API_VERSION` 11) built 2026-10-19
   (`phase-12-slice-d-lesson.md`), its cold charges stopping just under 4.2 V with no hold, by the
-  owner's decision, after a fix its measurements found first (`plating-unconverged-runaway.md`). Plan,
+  owner's decision, after a fix its measurements found first (`plating-unconverged-runaway.md`); a
+  bigger current typed into them stops at 4.2 V too (the pulse program's voltage stop), and the page
+  latches a notice from the first frame the model cannot answer (`SOLVE_UNCONVERGED`,
+  `SURFACE_OUT_OF_RANGE`). A plain constant current typed in free play still overcharges, recorded. Plan,
   owner decisions and exit in `docs/plans/phase-12-plating.md`.
 - **Phases 13 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it

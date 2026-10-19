@@ -113,3 +113,12 @@ where the reaction cell's rest after the same charge at 5 s steps, which converg
 reads 3.47 V at 300 s (3.46 V on the recommended grid at 1 s, also converged). That is the older
 failure the plan records (H8's family) and it is not fixed here; what is fixed is that it can no longer
 turn into NaN on a plating cell.
+
+**What a reader got, and what it was not.** Typing 2C or 3C into the lesson steps' pulse box ran the
+step's fixed on-time, sized for 1C, and charged the cell far past full. Ten such runs on the shipped
+fix, none NaN: the reaction cell plated 43 % of its capacity at 0 °C 2C, 106 % at 3C, 46 % at
+−10 °C 2C, 375 % on the 0.3C step's 9440 s at 2C; the threshold cell reached 5.5–6.2 V at 0 °C and,
+at −10 °C 3C, swung between −1.6 MV and 26 MV, finite. **The plated stores are not this note's
+defect**: on the reaction file the charge solves on all but a few steps (at −10 °C 2C on every one),
+so they are the model's converged answer to an overcharge, out of a placeholder rate constant. The
+lesson's steps now stop the charge at 4.2 V (`phase-12-slice-d-lesson.md`, the addendum).

@@ -100,6 +100,11 @@
   }
   .flag.severe { background: #3a1c1c; color: var(--bad); border-color: #6f2b2b; }
   .flag.none { background: transparent; border-color: var(--line); color: var(--dim); }
+  #solve-notice {
+    margin-top: 8px; padding: 8px 10px; border-radius: 4px; max-width: 78ch;
+    border: 1px solid var(--bad); background: #2a1a1c; color: #ffd7d7; font-size: 12px;
+  }
+  #solve-notice[hidden] { display: none; }
 
   canvas { display: block; width: 100%; background: var(--panel);
            border: 1px solid var(--line); border-radius: 4px; }
@@ -458,6 +463,8 @@
     <input type="number" id="pulse-on" value="60" min="0" step="10">
     <label for="pulse-off">off [s] — rest</label>
     <input type="number" id="pulse-off" value="600" min="0" step="10">
+    <label for="pulse-stop">stop charging at [V per series cell] — blank for never</label>
+    <input type="number" id="pulse-stop" value="" step="0.05">
     <div class="note" id="pulse-note"></div>
   </div>
 
@@ -559,6 +566,8 @@
 
   <div>
     <div id="flags"></div>
+    <!-- Latched from the first frame the model could not answer; see `renderSolveNotice`. -->
+    <div id="solve-notice" hidden></div>
   </div>
 
   <!--

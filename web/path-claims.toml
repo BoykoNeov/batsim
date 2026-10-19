@@ -4673,7 +4673,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # claimed — all of them.
 #
 # WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: forty-four
-# steps, 944 numerals, and no longer all of them scenario constants. This count is NOT
+# steps, 945 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -12042,7 +12042,7 @@ steps = [
   "drawn-on-the-shelf",     # 16 numbers: the cell, the controls, the mark in days, four panel rows and the arithmetic on them
   "grown-on-the-shelf",     # 11 numbers: the conditions, the cell, three panel rows and the arithmetic on them
   "stored-low",             # 21 numbers: the charge level, the conditions, two runs at the mark and the multiples between them
-  "judged-by-a-rule",       # 19 numbers: the conditions, the threshold's gates, the pulse, two runs at the mark
+  "judged-by-a-rule",       # 20 numbers: the conditions, the threshold's gates, the pulse and its stop, two runs at the mark
   "some-of-it-goes-back",   # 13 numbers: the mark, two runs a minute into the rest, a third run on through it
   "the-charge-the-datasheet-allows", # 11 numbers: the gentle pulse, two runs at the mark, the 1C figure from before
   "colder-and-billed-throughout",    # 14 numbers: the colder conditions, two runs at the mark and their gap

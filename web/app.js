@@ -257,13 +257,48 @@ function ccCvDone(telemetry, cfg, series) {
 // The pulse train, which is CC-CV's machinery with the feedback taken out
 // ---------------------------------------------------------------------------
 
-/** What the three pulse fields currently say. `i` is signed: positive discharges. */
+/**
+ * What the four pulse fields currently say. `i` is signed: positive discharges.
+ *
+ * `v_stop` is the optional fourth: a voltage per series cell at which a **charging** pulse
+ * stops early and rests to its edge, or null for a blank box. See `pulseStopNow`.
+ */
 function pulseConfig() {
+  const stop = $("pulse-stop").value.trim();
   return {
     i: Number($("pulse-i").value) || 0,
     t_on: Math.max(0, Number($("pulse-on").value) || 0),
     t_off: Math.max(0, Number($("pulse-off").value) || 0),
+    v_stop: stop === "" || !Number.isFinite(Number(stop)) ? null : Number(stop),
   };
+}
+
+/**
+ * Whether the step about to be taken on a charging pulse has been stopped at `v_stop`.
+ *
+ * The plating steps' on-times are sized for their own current: a bigger one typed into the
+ * pulse box ran the same time and charged the cell far past full, where the model plated
+ * 43 % to 375 % of the cell's capacity on steps it solved without complaint
+ * (docs/plans/phase-12-slice-d-lesson.md, the addendum). So a charging pulse stops on the
+ * step after the first one whose terminal voltage is at or above `v_stop` times the series
+ * count, and rests to its edge. No voltage hold: the cold hold is the defect
+ * docs/plans/dfn-cold-hold.md records.
+ *
+ * Decided on the terminal voltage of the last **stepped** frame (`state.stepV`), never on
+ * `readNow`'s `dt = 0` probe: that read has no time for anything to move, and on a cold charge
+ * from empty it sits far above anything the first step reaches — 5.03 V at 0 °C and 1C, 7.55 V
+ * at 2C, whose first step reads 3.23 V — so a stop decided on it would end the charge before
+ * it began, which is what the first build of this did. With no stepped
+ * frame yet (a load, a restart, a restore) the pulse charges. Remembered per pulse in `state.pulseStopped` — once the cell has reached the stop it
+ * rests, and a memoryless `v >= stop` would charge again as soon as the rest relaxed it,
+ * a pulsed hold by another name. That memory is the one thing this controller keeps beyond
+ * `sim_time_s`, so a restored snapshot loses it: the restored pack charges one more step
+ * and stops again. `resetHistory` clears it on a load, a restart and a restore.
+ */
+function pulseStopNow(phase, cfg, series) {
+  if (phase === null || !phase.on || cfg.v_stop === null || !(cfg.i < 0)) return false;
+  if (state.pulseStopped === phase.pulse) return true;
+  return state.stepV !== null && state.stepV >= cfg.v_stop * series;
 }
 
 /**
@@ -304,10 +339,14 @@ function pulsePhase(simTimeS, cfg, dt) {
  * memorylessness. CC-CV reads back the pack's own voltage and therefore needed a band
  * sized by the solver's residual; this reads back nothing at all, so there is no
  * residual, no chatter, and nothing a restore could resurrect — a snapshot carries
- * `sim_time_s`, and `sim_time_s` is the entire state of this controller.
+ * `sim_time_s`, and `sim_time_s` is the entire state of this controller — unless the
+ * optional voltage stop is set, which reads back the last frame and remembers one pulse
+ * number (`pulseStopNow`).
  */
-function pulseDemand(phase, cfg) {
-  return phase !== null && phase.on ? demandJson("Current", cfg.i) : demandJson("Rest", 0);
+function pulseDemand(phase, cfg, series) {
+  return phase !== null && phase.on && !pulseStopNow(phase, cfg, series)
+    ? demandJson("Current", cfg.i)
+    : demandJson("Rest", 0);
 }
 
 /**
@@ -1172,6 +1211,11 @@ const history = {
 function resetHistory() {
   for (const key of Object.keys(history)) history[key].length = 0;
   resetFlow();
+  // Both describe the run being thrown away: a load, a restart and a restore all come
+  // through here.
+  state.pulseStopped = null;
+  state.stepV = null;
+  state.solveLost = null;
   invalidate();
 }
 
@@ -1193,6 +1237,10 @@ function record(frame) {
   history.soh_capacity.push(m.soh_capacity * 100);
   history.soh_resistance.push(m.soh_resistance * 100);
   advanceFlow(frame.sim_time_s, m.i_actual);
+  if (state.solveLost === null) {
+    const lost = parseFlags(m.flags).filter((f) => SOLVE_LOST_FLAGS.includes(f));
+    if (lost.length > 0) state.solveLost = { t_s: frame.sim_time_s, flags: lost };
+  }
 
   if (history.t.length > MAX_SAMPLES) {
     // Drop the oldest tenth in one go rather than shifting every sample.
@@ -1444,6 +1492,48 @@ function renderFlags(telemetry) {
     el.textContent = name;
     host.appendChild(el);
   }
+}
+
+/**
+ * The two flags that say the model could not answer a step, in the order the notice names
+ * them. `SURFACE_OUT_OF_RANGE`: a particle holds more lithium than any can, or less than
+ * none, so the state is not a physical one. `SOLVE_UNCONVERGED`: a solve did not settle — or,
+ * under a held voltage or power, settled on something short of the demand, which is why the
+ * notice says the numbers *may* be far off rather than that they are.
+ */
+const SOLVE_LOST_FLAGS = ["SURFACE_OUT_OF_RANGE", "SOLVE_UNCONVERGED"];
+
+/**
+ * The notice under the flags: from when the model could not answer, and what that means.
+ *
+ * The flags themselves show only the frame on screen, and a run that failed for a minute and
+ * recovered would leave no trace of it; this stays up until the run is thrown away
+ * (`resetHistory`). Latched on reported frames only, so a step dropped by decimation — only
+ * above about 300 steps in one batch — is not seen; the failures it was built for come in
+ * runs of tens to hundreds of steps. Measured over the guided path, only
+ * `the-electrolyte-starves` raises it, and that step's prose says what it means there.
+ * A restored snapshot starts with no notice, whatever the run it was taken from did.
+ */
+let solveLostShown;
+
+function renderSolveNotice() {
+  const lost = state.solveLost;
+  const key = lost ? `${lost.t_s}|${lost.flags.join()}` : null;
+  if (key === solveLostShown) return;
+  solveLostShown = key;
+  const el = $("solve-notice");
+  el.hidden = lost === null;
+  if (lost === null) return;
+  const said = lost.flags.includes("SURFACE_OUT_OF_RANGE")
+    ? "the cell reached a state no real cell can be in (a particle fuller than full, or " +
+      "emptier than empty)"
+    : "the model's solve could not settle on an answer, or could not meet a held voltage " +
+      "or power";
+  el.textContent =
+    // The cursor's clock, not the axis's: `fmtTime` would print 464 s as "8m".
+    `From t = ${fmtTimeAt(lost.t_s)} (${lost.flags.join(", ")}): ${said}. Numbers from that ` +
+    "point on are the model past its own edge and may be far from what a real cell would " +
+    "do. Load or Restart clears this.";
 }
 
 // ---------------------------------------------------------------------------
@@ -3180,6 +3270,14 @@ const state = {
   // Why the picker below is the page's own hand-written list rather than the server's,
   // or null when the listing loaded. Sticky for the session: nothing retries it.
   scenarioListError: null,
+  // The pulse number a voltage stop has ended early, or null; and the terminal voltage of
+  // the last frame a real step produced [V], which is what the stop decides on. See
+  // `pulseStopNow`.
+  pulseStopped: null,
+  stepV: null,
+  // The first reported frame since the last load, restart or restore on which the model
+  // could not answer, or null. See `renderSolveNotice`.
+  solveLost: null,
 };
 
 /**
@@ -3252,6 +3350,7 @@ async function advance(nSteps) {
     for (const frame of frames) record(frame);
     if (frames.length > 0) {
       state.latest = frames[frames.length - 1].telemetry;
+      state.stepV = state.latest.v_terminal;
       state.facts = state.backend.facts();
     }
   };
@@ -3262,12 +3361,21 @@ async function advance(nSteps) {
     // quantisation to explain: the demand changes exactly where `pulsePhase` says and
     // nowhere else. No completion test, because a train does not finish; the guided
     // path's mark or the reader stops it.
+    //
+    // With a voltage stop set, a charging pulse that has not stopped yet goes one step at
+    // a time, because each step decides the next (`pulseStopNow`); once it stops, the rest
+    // of the pulse is batched to the edge like any rest.
     const cfg = pulseConfig();
+    const series = state.facts?.series ?? 1;
     let left = steps;
     while (left > 0) {
       const phase = pulsePhase(state.facts?.sim_time_s ?? 0, cfg, dt);
-      const n = phase === null ? left : Math.min(left, phase.toEdge);
-      await take(n, pulseDemand(phase, cfg));
+      const watching =
+        phase !== null && phase.on && cfg.v_stop !== null && cfg.i < 0 &&
+        state.pulseStopped !== phase.pulse;
+      if (watching && pulseStopNow(phase, cfg, series)) state.pulseStopped = phase.pulse;
+      const n = phase === null ? left : watching ? 1 : Math.min(left, phase.toEdge);
+      await take(n, pulseDemand(phase, cfg, series));
       left -= n;
     }
     return;
@@ -3344,7 +3452,11 @@ async function readNow() {
     demand = demandJson("Current", -ccCvConfig().i_charge);
   } else if (mode === "Pulse") {
     const cfg = pulseConfig();
-    demand = pulseDemand(pulsePhase(state.facts?.sim_time_s ?? 0, cfg, dt), cfg);
+    demand = pulseDemand(
+      pulsePhase(state.facts?.sim_time_s ?? 0, cfg, dt),
+      cfg,
+      state.facts?.series ?? 1,
+    );
   } else {
     demand = demandJson(mode, Number($("demand-value").value) || 0);
   }
@@ -3446,9 +3558,15 @@ function pulseNote() {
   const previous = simT <= 0 ? phase : pulsePhase(simT - dt, cfg, dt);
   const fresh = state.latest && previous !== null && previous.on === phase.on;
   const measured = fresh ? `${state.latest.i_actual.toFixed(3)} A measured, ` : "";
-  el.textContent = phase.on
-    ? `pulse ${phase.pulse}, on: ${measured}${secs} s to the rest.`
-    : `pulse ${phase.pulse}, resting: ${measured}${secs} s to the next pulse.`;
+  const stopped = pulseStopNow(phase, cfg, state.facts?.series ?? 1);
+  // Stopped, the pulse rests through the rest of its on-leg and the whole off-leg.
+  const toNext = ((phase.toEdge + Math.round(cfg.t_off / dt)) * dt).toFixed(0);
+  el.textContent = stopped
+    ? `pulse ${phase.pulse}, stopped at ${cfg.v_stop} V per cell: resting, ${toNext} s to ` +
+      "the next pulse."
+    : phase.on
+      ? `pulse ${phase.pulse}, on: ${measured}${secs} s to the rest.`
+      : `pulse ${phase.pulse}, resting: ${measured}${secs} s to the next pulse.`;
 }
 
 function draw() {
@@ -3502,6 +3620,7 @@ function draw() {
 
   renderReadouts(state.latest, state.facts ?? { sim_time_s: 0 }, state.cells);
   renderFlags(state.latest);
+  renderSolveNotice();
   paintGrid();
   drawCarriers();
   view.drawMs = performance.now() - began;
@@ -5103,9 +5222,12 @@ const LESSONS = [
     // grid, written into the file. Isothermal, so the ambient field matches the file and the
     // slider moves nothing. The charge is a `Pulse` with a long rest after it, because a
     // cold 4.2 V hold leaves this model unable to converge the discharge after it
-    // (docs/plans/dfn-cold-hold.md): each charge stops just under the ceiling instead.
+    // (docs/plans/dfn-cold-hold.md): each charge stops just under the ceiling instead. `stop_v`
+    // ends a charging pulse at 4.2 V too, so a bigger current typed into the pulse box stops
+    // there instead of overcharging the cell (`pulseStopNow`); at the steps' own currents it
+    // never fires.
     scenario: "plating_cold_threshold.toml",
-    demand: { mode: "Pulse", value: -5.153198, on_s: 1800, off_s: 7200 },
+    demand: { mode: "Pulse", value: -5.153198, on_s: 1800, off_s: 7200, stop_v: 4.2 },
     ambient_c: 0,
     bms: null,
     dt: 5,
@@ -5115,7 +5237,7 @@ const LESSONS = [
     watch: ["flags", "readouts"],
     prose: [
       "A new chapter, about the flag step 11 first raised: `PLATING_RISK`. Charge a graphite cell too cold or too fast and lithium comes out of the electrolyte as metal on the surface of the graphite instead of going in. One LG M50 cell, the model with the electrolyte from step 16 on its finer grid, charged from empty at 0 °C. The file holds the temperature where it is, so the ambient slider does nothing here, and there is no BMS: this chemistry's would cut the charge down to the 0.3C its datasheet allows.",
-      "Every cell on this path so far has judged plating by a rule in its chemistry file: a charge below 0 °C and faster than 0.4C raises the flag and bills capacity for every amp-hour it takes. This file uses that rule. The pulse charges at 1C, 5.153198 A, for 1800 s, which stops just under the cell's 4.2 V ceiling, and the mark is there. Watch the flags, `soh cap`, and the new `plated` row.",
+      "Every cell on this path so far has judged plating by a rule in its chemistry file: a charge below 0 °C and faster than 0.4C raises the flag and bills capacity for every amp-hour it takes. This file uses that rule. The pulse charges at 1C, 5.153198 A, for 1800 s, which stops just under the cell's 4.2 V ceiling, and the mark is there. The pulse also stops early if the cell reaches 4.2 V first, so a bigger current typed into the pulse box ends the charge sooner, with the cell less full, instead of driving it past its ceiling, where this model's numbers stop meaning anything. Push much harder than that and even the rest after the stop is more than this model can solve; a notice under the flags then says from when. Watch the flags, `soh cap`, and the new `plated` row.",
     ],
     expect:
       "No flag at all. At the mark `soh cap` reads **`99.98 %`**, and all of that loss is the ordinary wear every cell on this path has had, calendar and cycling. `plated` reads **`no plating reaction`**: this cell has the rule and nothing else. 0 °C is not below 0 °C, so the rule says nothing; it is a cliff, and this file sits exactly on its edge. Now the arm. Load `plating_cold_reaction` from the picker, the same file with a line added under `[pack.aging]` that sets `plating` to `Reaction`, and run it to the same mark. `PLATING_RISK` comes up at **`555 s`** and stays up. That cell has no rule. At each point across its negative electrode it solves another reaction beside the ordinary one: where the graphite's potential falls below that of lithium metal, lithium plates out as metal, faster the further below it falls. It gets there first next to the separator, where the current crowds hardest. At the mark `plated` reads **`0.0257 % reversible, 0.0257 % dead`** and `soh cap` reads **`99.96 %`**. The dead lithium is gone for good, and it is what separates the two health rows: the same wear on both, and this cell also short by what died. How what plates splits between reversible and dead is a fixed share in the chemistry file, and like the reaction's rate constant it is a placeholder that nothing has measured for this cell. What the model supplies is where and when the graphite crosses lithium's potential, out of the same equations step 16 solved.",
@@ -5124,7 +5246,7 @@ const LESSONS = [
     id: "some-of-it-goes-back",
     title: "Some of it goes back",
     scenario: "plating_cold_reaction.toml",
-    demand: { mode: "Pulse", value: -5.153198, on_s: 1800, off_s: 7200 },
+    demand: { mode: "Pulse", value: -5.153198, on_s: 1800, off_s: 7200, stop_v: 4.2 },
     ambient_c: 0,
     bms: null,
     dt: 5,
@@ -5144,7 +5266,7 @@ const LESSONS = [
     id: "the-charge-the-datasheet-allows",
     title: "The charge the datasheet allows",
     scenario: "plating_cold_reaction.toml",
-    demand: { mode: "Pulse", value: -1.5459594, on_s: 9440, off_s: 3600 },
+    demand: { mode: "Pulse", value: -1.5459594, on_s: 9440, off_s: 3600, stop_v: 4.2 },
     ambient_c: 0,
     bms: null,
     dt: 5,
@@ -5163,7 +5285,7 @@ const LESSONS = [
     id: "colder-and-billed-throughout",
     title: "Colder, and billed throughout",
     scenario: "plating_colder_threshold.toml",
-    demand: { mode: "Pulse", value: -5.153198, on_s: 1390, off_s: 3600 },
+    demand: { mode: "Pulse", value: -5.153198, on_s: 1390, off_s: 3600, stop_v: 4.2 },
     ambient_c: -10,
     bms: null,
     dt: 5,
@@ -5381,6 +5503,9 @@ async function applyStep(L, fresh = false) {
       $("pulse-i").value = String(L.demand.value);
       $("pulse-on").value = String(L.demand.on_s);
       $("pulse-off").value = String(L.demand.off_s);
+      // Written blank where the step sets no stop, so the plating steps' 4.2 V cannot
+      // follow a reader into another pulse step by Back or a chapter jump.
+      $("pulse-stop").value = L.demand.stop_v === undefined ? "" : String(L.demand.stop_v);
     }
     applyDemandMode();
     // Optional, and only the steps whose subject is step-sized set it. Every other step
