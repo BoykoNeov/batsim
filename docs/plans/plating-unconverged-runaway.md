@@ -1,6 +1,7 @@
 # A failed plating solve may not pile up plated lithium
 
-**Status: PREDICTIONS REGISTERED 2026-10-19, before any change to the engine.** Found by Phase 12
+**Status: BUILT 2026-10-19**, predictions registered before any change to the engine (417210c) and
+scored under "Results": all four that were measured held. Found by Phase 12
 slice D's measurements (`phase-12-plating.md` §D); the owner chose to fix it before the lesson
 (decision 1 there).
 
@@ -65,4 +66,30 @@ with H8.
 
 ## Results
 
-(Filled in after the change.)
+Scored 2026-10-19, release builds below normal priority on a machine another project's suite held at
+100 % load (so wall-clock times here are slow, not comparable across rows).
+
+1. **Held.** `cargo test --workspace --release --no-fail-fast`: 110 test binaries, 876 passed,
+   none failed. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all
+   --check` clean.
+2. **Held.** `plating_dfn.rs`, `plating_health.rs` and `cold_hold.rs`: every assertion passes. The
+   one test with unconverged trials, `the_end_of_step_curve_still_falls_with_current` (3, 5 and 7 of
+   11 trials unconverged at 900 s and 3600 s), prints the same counts and passes; its trials at one
+   hour read the same voltages to 1e-5 V and take the same time as on the engine before (23–59 s
+   failed, 8–10 s converged, both engines side by side). The slice D probe's lesson runs print the
+   same text to the byte at 1 s and at 5 s steps; the one line that moved is the 0 °C 2C case at 1 s,
+   which was NaN.
+3. **Held.** Exit 5: `15 min: (14, 0, 0, true); 1 h: (4, 0, 1, true)`, as before.
+4. **Held**, `crates/sim-data/tests/plating_runaway.rs`: both cases finite on every rest step, stores
+   flat, no `PLATING_RISK`, every rest step `SOLVE_UNCONVERGED` (120 of 120 on both).
+5. **Not separately measured.** Where both solves fail the cost is two failed solves; on the one test
+   that has them the time did not move measurably (item 2).
+
+**Finite is not right.** The rest the fix makes finite is still not a rest: on the 0 °C 2C charge at
+1 s steps the reaction cell's terminal falls through 3.46 V at 60 s and 2.64 V at 300 s to 0.65 V and
+stays there, flagged on every step, and its reversible metal never strips (no sub-step converges, so
+none is booked). The threshold cell on the same rest is unphysical too — 3.39 V at 120 s, falling —
+where the reaction cell's rest after the same charge at 5 s steps, which converges on every step,
+reads 3.47 V at 300 s (3.46 V on the recommended grid at 1 s, also converged). That is the older
+failure the plan records (H8's family) and it is not fixed here; what is fixed is that it can no longer
+turn into NaN on a plating cell.

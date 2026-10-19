@@ -349,7 +349,10 @@ and double as the scenario file format.
   top as the film's does, so `soh_capacity` reads it off the electrodes, and it grows `soh_resistance`
   at `r_growth_per_capacity_loss`; reversible metal counts in `soc_true` as stored charge, so the
   reading stays flat while it strips back at rest; the dendrite short rolls per amp-hour of **dead**
-  lithium at `[dfn.plating].short_hazard_per_dead_ah`, landing as `[safety].plating_short_ohms`. See
+  lithium at `[dfn.plating].short_hazard_per_dead_ah`, landing as `[safety].plating_short_ohms`. A
+  sub-step whose solve with the reaction fails is solved without it, books no plating and stays
+  flagged: booking the plating an unconverged field implied ran to NaN within a minute of rest
+  after a cold 2C charge (`docs/plans/plating-unconverged-runaway.md`). See
   `docs/plans/phase-12-plating.md`, `docs/plans/phase-12-slice-b-reaction.md` and
   `docs/plans/phase-12-slice-c-health.md`.
 - All mechanisms reduce `soh_capacity` **and** increase `soh_resistance`

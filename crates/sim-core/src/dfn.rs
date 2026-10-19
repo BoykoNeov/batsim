@@ -2025,6 +2025,17 @@ fn plating_current_a(rates: &[PlatingRate], sides: &Sides<'_>, grid: &Grid) -> f
 /// booking) — and each sub-step's factorised Jacobian takes them in one more
 /// back-substitution. A difference quotient of a chain of Newton solves would read their
 /// tolerance as slope.
+///
+/// # A sub-step the reaction cannot be solved on is solved without it
+/// Where the solve with the reaction fails, that sub-step is solved again with
+/// [`DfnState::plating`] set aside, and that solve is the one committed: nothing plated,
+/// nothing booked, every rate zero. An unconverged field is not a state, and booking the
+/// plating it implies ran away — after a cold 2C charge on the fine grid the rest's failed
+/// Newtons put one node near the current collector, its electrolyte at the floor, at a rate
+/// growing tenfold a step to infinity and NaN within a minute, where a threshold cell on the
+/// same unconverged rest stays finite. Booking nothing was not enough: the reaction's term
+/// inside the solve still dragged the particles off. The sub-step still reports itself
+/// unconverged. See `docs/plans/plating-unconverged-runaway.md`.
 fn march(
     s: &mut DfnState,
     spm: &SpmParams,
@@ -2069,8 +2080,19 @@ fn march(
     let mut any_plated = false;
     for _ in 0..n_sub {
         let setup = setup_for(s, spm, dfn, sides, grid, h);
-        let solved = solve(s, &setup, i_p, h);
+        let mut solved = solve(s, &setup, i_p, h);
         converged &= solved.converged;
+        // A failed reaction solve is solved again without the reaction (above). The stores
+        // are set aside until the rates and the tangent below have been read off that solve,
+        // so both see no reaction either; the booking after puts them back untouched.
+        let set_aside = if solved.converged {
+            None
+        } else {
+            s.plating.take()
+        };
+        if set_aside.is_some() {
+            solved = solve(s, &setup, i_p, h);
+        }
         in_range &= surfaces_in_range(&setup, &solved.u);
         // The plating each node's charge rows carried, at the converged field.
         {
@@ -2084,6 +2106,9 @@ fn march(
             if sens {
                 dv_di = sub_step_sensitivity(&sys, &setup, &solved, &tr, &rates, t_plus, h, &mut d);
             }
+        }
+        if set_aside.is_some() {
+            s.plating = set_aside;
         }
         // Book the sub-step's plating, before the commit moves the particles.
         if let Some(pl) = s.plating.as_mut() {

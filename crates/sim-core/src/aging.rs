@@ -170,8 +170,10 @@ pub enum PlatingModel {
     /// at once. [`crate::Pack::new`] refuses it on every other cell model and on a chemistry
     /// with no `[dfn.plating]`.
     ///
-    /// **Slice B of the phase builds the reaction only**: until slice C the threshold's flag
-    /// and fade still run beside it on such a cell (`docs/plans/phase-12-slice-b-reaction.md`).
+    /// On such a cell the threshold is not evaluated: `PLATING_RISK` means "lithium plated on
+    /// this step", the dead lithium is read off the electrodes as lost capacity and grows the
+    /// resistance, and the dendrite short rolls per amp-hour of it
+    /// (`docs/plans/phase-12-slice-c-health.md`).
     Reaction,
 }
 
