@@ -1,0 +1,38 @@
+# One LG M50 cell charged colder, at -10 degC, with lithium plating as a REACTION.
+#
+# `plating_cold_reaction.toml` with `initial_temp_k` changed from 273.15 to 263.15 and nothing
+# else. Read that file's header first; the four files, why each section is there, and what they
+# are not are all stated there once.
+#
+# Charged at 1C for 1390 s (5 s steps), the reaction plates from 270 s and holds 0.0455 % of the
+# cell's capacity as reversible metal and as much again dead at the end of the charge; the
+# reversible share strips back on the rest (0.0352 % left at 60 s, none by 600 s). `soh cap`
+# reads 99.947 %, against 99.818 % on the threshold file, which bills about four times as much
+# for the same charge. Both sizes are placeholders' — the reaction's rate constant and dead
+# share, the threshold's fade per amp-hour — so the ratio is one placeholder against another.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "Colder charge, plating as a reaction (-10 degC)"
+description = """
+One LG M50 cell (Doyle-Fuller-Newman, fine grid) charged from empty at -10 degC with lithium \
+plating as a reaction at the graphite: it plates from 270 s of a 1C charge, half of it lost \
+at once. Compare plating_colder_threshold, which bills about four times as much."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.0
+initial_temp_k = 263.15
+seed = 0
+
+[pack.cell_model.Dfn]
+shells = 40
+nodes_negative = 40
+nodes_separator = 20
+nodes_positive = 40
+
+[pack.aging]
+sub_clock_period_s = 10.0
+plating = "Reaction"

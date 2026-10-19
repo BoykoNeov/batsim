@@ -3,7 +3,7 @@
 //!
 //! # What this is for
 //!
-//! `web/app.js`'s `const LESSONS` is 40 teaching steps whose prose states hundreds of
+//! `web/app.js`'s `const LESSONS` is 44 teaching steps whose prose states hundreds of
 //! specific quantities. Until this test existed, not one of them was checked by
 //! anything in the repo. Four slices found numbers in that prose that had drifted, or
 //! were never true, or were true about a quantity no reader can see — and every one of
@@ -134,11 +134,11 @@
 //! this was written — which is how six figures in step 19 went stale, and how a contrast in
 //! step 14 that never existed survived, both under a fully green suite. Two steps are
 //! still in that position. Coverage is opt-in per step
-//! (`[ledger]` in `path-claims.toml`) and today it is forty steps and 887 numbers —
+//! (`[ledger]` in `path-claims.toml`) and today it is forty-four steps and 944 numbers —
 //! which for one slice collided with the fourteen above and no longer does: that fourteen
 //! is the steps that had no claim when this paragraph was written and is frozen, and this
 //! count is the steps scanned whole today, which moves every time one is.
-//! Twenty-nine arms exist — a scenario field, a chemistry field, a control on the lesson
+//! Thirty arms exist — a scenario field, a chemistry field, a control on the lesson
 //! block,
 //! the sentence's own arithmetic over those as a product, a ratio, a difference or a sum,
 //! one of their durations read in hours, one that comes out in hours read back in seconds
@@ -255,10 +255,10 @@
 //!   must be anchored in that sentence and must be a real change from the step's own.
 //! * **Sentences no claim is about, in the steps the ledger has not reached — none of them.**
 //!   Check 6 closed the half of this that lived *inside* a claimed literal, and the ledger
-//!   has now closed forty whole steps — but only forty. Steps here carrying
+//!   has now closed forty-four whole steps — but only forty-four. Steps here carrying
 //!   neither a claim nor a ledger entry: none. With claimed sentences checked and the rest
 //!   of the prose free: none. `[ledger].unledgered`
-//!   names what is left — none of the forty — one line each, so this list cannot go
+//!   names what is left — none of the forty-four — one line each, so this list cannot go
 //!   quietly out of date; it is empty, and it stays in the file so that the next lesson
 //!   added to the path has somewhere to say it is not checked.
 //!   **What that closes is one axis and not the gap.** Every numeral in every step of the
@@ -513,6 +513,30 @@ const MIRRORED: &[(&str, &str, &str)] = &[
         "the `particles` row's two placeholders",
         "app.js",
         "isPorous(cells?.cells?.[0]) ? \"one per electrode\" : \"circuit — no particles\",",
+    ),
+    // --- the `plated` row (Phase 12 slice D) ----------------------------------
+    //
+    // Its line, the two reductions it prints (the pack's largest of each, `over-drained`'s
+    // terms), and its one silence. Pinned for `surface gap`'s reason.
+    (
+        "the `plated` row",
+        "app.js",
+        "return `${(rev * 100).toFixed(4)} % reversible, ${(dead * 100).toFixed(4)} % dead`;",
+    ),
+    (
+        "the `plated` row's reversible share is the pack's largest",
+        "app.js",
+        "const rev = Math.max(...ps.map((x) => x.reversible_fraction));",
+    ),
+    (
+        "the `plated` row's dead share is the pack's largest",
+        "app.js",
+        "const dead = Math.max(...ps.map((x) => x.dead_fraction));",
+    ),
+    (
+        "the `plated` row's placeholder",
+        "app.js",
+        "    \"no plating reaction\",",
     ),
     (
         "isPorous: which cells have the quantity at all",
@@ -812,6 +836,16 @@ fn render_row(label: &str, row: &Row) -> String {
             None if row.surface_gap.is_some() => "one per electrode".to_string(),
             None => "circuit — no particles".to_string(),
         },
+        // One silence: a pack whose cells run no plating reaction says so rather than
+        // printing zeros, which a reaction cell that has plated nothing does print.
+        "plated" => match row.plated {
+            Some((rev, dead)) => format!(
+                "{} % reversible, {} % dead",
+                to_fixed(rev * 100.0, 4),
+                to_fixed(dead * 100.0, 4)
+            ),
+            None => "no plating reaction".to_string(),
+        },
         "over-drained" => panic!(
             "`over-drained` is a readout row this test deliberately does not mirror: it is \
              formatted from per-cell state and sampled on a wall-clock throttle, so it has \
@@ -822,7 +856,7 @@ fn render_row(label: &str, row: &Row) -> String {
             "path-claims.toml names a readout row that is not in web/app.js's READOUTS: \
              `{other}`. Known: sim time, terminal, current, soc (true), soc (bms), \
              cell v, cell t, heat, soh cap, soh res, balancing, short (int), clamp, \
-             surface gap, particles."
+             surface gap, particles, plated."
         ),
     }
 }
@@ -2597,6 +2631,13 @@ struct Row {
     /// is read at a mark. "Full" is past `0.5`, the line `lfp_ensemble.rs` and the page's
     /// row both draw.
     particles_full: Option<(usize, usize)>,
+    /// The `plated` row's two numbers: the pack's largest reversible and largest dead plated
+    /// lithium, as fractions of the chemistry's rated capacity — `None` on a pack whose cells
+    /// run no plating reaction, which is what that row's placeholder says. Read off
+    /// `Pack::cell_plating`, which is what the page's `cells.plated` is, on the same
+    /// `CELLS_PERIOD_MS` throttle as [`Self::surface_gap`]; every claim on it is read at a
+    /// mark.
+    plated: Option<(f64, f64)>,
     /// What the BMS had **measured** as of the end of this step — `None` on a pack with no
     /// BMS, which has no sensors at all.
     ///
@@ -2747,6 +2788,22 @@ fn rc_overpotential_v(pack: &Pack) -> f64 {
 fn particles_full(pack: &Pack) -> Option<(usize, usize)> {
     let ps = pack.positive_particles(0, 0)?;
     Some((ps.iter().filter(|&&y| y > 0.5).count(), ps.len()))
+}
+
+/// The `plated` row's pair, the largest of each over the pack's cells, as the page's row
+/// reduces them.
+fn plated(pack: &Pack) -> Option<(f64, f64)> {
+    pack.cell_plating(0, 0)?;
+    let (mut rev, mut dead) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for s in 0..usize::from(pack.series()) {
+        for p in 0..usize::from(pack.parallel()) {
+            if let Some(v) = pack.cell_plating(s, p) {
+                rev = rev.max(v.reversible_fraction);
+                dead = dead.max(v.dead_fraction);
+            }
+        }
+    }
+    Some((rev, dead))
 }
 
 fn surface_gap(pack: &Pack) -> Option<(f64, f64)> {
@@ -3092,6 +3149,7 @@ fn drive(
             deficit_min_cell: (deficit_min.series, deficit_min.parallel),
             surface_gap: surface_gap(pack),
             particles_full: particles_full(pack),
+            plated: plated(pack),
             sensed: sensed(pack),
             rest_v,
             overpotential_v: pack
@@ -3240,6 +3298,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
         deficit_min_cell: (probe_deficit_min.series, probe_deficit_min.parallel),
         surface_gap: surface_gap(&pack),
         particles_full: particles_full(&pack),
+        plated: plated(&pack),
         sensed: sensed(&pack),
         // The open-circuit end of the first tooth's sag, and the only place to get it: at
         // t = 0 a pulse train is already on its first ON leg, so the probe above is taken
@@ -3338,7 +3397,7 @@ fn run(lesson: &Lesson, arm: Option<&Arm>, capture: &[f64], lessons: &[Lesson]) 
 #[serde(rename_all = "lowercase")]
 enum TolFrom {
     /// The prose spells this claim's quantity, and `tol` is exactly half a unit in that
-    /// number's last printed place. The default shape: 350 of 397 claims.
+    /// number's last printed place. The default shape: 374 of 421 claims.
     Spelled,
     /// Same, but `tol` is strictly *tighter* than that rule. Safe by construction — a
     /// smaller tolerance can only redden the test — so it needs no cap, only proof that
@@ -3349,12 +3408,12 @@ enum TolFrom {
     /// index is an integer the engine either reports or does not, so half a unit in its
     /// last place is slack with no meaning — and for four grid times whose prose *does*
     /// spell them: half a step is tighter than the whole second those sentences print, so
-    /// the number was always right and only the declaration was wrong. 40 of 397.
+    /// the number was always right and only the declaration was wrong. 40 of 421.
     Tighter,
     /// The quantity is a time the engine can only report on the step grid, and the prose
     /// spells no number in it — it gives a consequence, or a rendering of the clock.
     /// `tol` is half a timestep, which for a grid time is the tightest meaningful bound:
-    /// the engine either hits the claimed step or misses by a whole one. 7 of 397, every
+    /// the engine either hits the claimed step or misses by a whole one. 7 of 421, every
     /// one of them a claim whose [`States`] is `nothing` or `displayed`: a claim that
     /// spells its own number takes that number's rule instead, however coarse the grid is.
     ///
@@ -3394,7 +3453,7 @@ enum TolFrom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum States {
-    /// The sentence prints the quantity itself. 359 of 397, and the shape to prefer: it is
+    /// The sentence prints the quantity itself. 383 of 421, and the shape to prefer: it is
     /// the only variant with no second reading available to an author.
     Same,
     /// The sentence prints the magnitude and puts the sign in a word — `refused 0.822 A`
@@ -5076,6 +5135,23 @@ fn measure_row(quantity: &str, row: &Row) -> Option<f64> {
             },
             |(full, _)| full as f64,
         ),
+        // The `plated` row's two numbers, as fractions of the rated capacity (a claim spells
+        // them in percent, `spells_pow10 = 2`). Panics on a pack with no plating reaction, on
+        // `particles_full_at`'s terms.
+        "plated_reversible_at" | "plated_dead_at" => {
+            let (rev, dead) = row.plated.unwrap_or_else(|| {
+                panic!(
+                    "a claim reads `{quantity}` at t = {} s on a pack whose cells run no \
+                     plating reaction; the `plated` row there prints its reason",
+                    row.t_s
+                )
+            });
+            if quantity == "plated_reversible_at" {
+                rev
+            } else {
+                dead
+            }
+        }
         "surface_gap_neg_pts" | "surface_gap_pos_pts" => {
             let (neg, pos) = row.surface_gap.unwrap_or_else(|| {
                 panic!(
@@ -6127,7 +6203,8 @@ fn measure(quantity: &str, run: &Run, at_s: f64, probe: bool, mark_s: f64) -> f6
              soc_lost_pts_at, t_rise_k_at and 
              v_below_cccv_target_mv_at (all three of which take an instant tag too), 
              soc_gap_pts_at, soc_gap_pts_min, t_gap_k_at, v_group_min_at, \
-             surface_gap_neg_pts, surface_gap_pos_pts, particles_full_at, gap_neg_zero_s, \
+             surface_gap_neg_pts, surface_gap_pos_pts, particles_full_at, plated_reversible_at, \
+             plated_dead_at, gap_neg_zero_s, \
              flag_first_s:<FLAG>, \
              v_at_soc_below:<fraction>, t_at_v_below:<volts>, overpotential_mv_at, \
              rc_overpotential_mv_at, diffusion_overpotential_mv_at, leg_delivered_ah, \
@@ -8493,6 +8570,12 @@ enum Tie {
     /// say so as "365 days", because the unit a reader would reach for is banned
     /// (`BANNED_UNITS` refuses the year whether or not a tie could answer it).
     Days(&'static Tie),
+    /// A temperature in kelvin stated in **degrees Celsius**: the value minus [`K`], compared
+    /// the way [`Tie::Hours`] is. Phase 12's plating steps print the chemistry's plating gate,
+    /// `[safety] t_plating_min_k`, as the "0 °C" the rule is silent at — a field that speaks
+    /// kelvin in a sentence that speaks Celsius, where the step's own ambient, a Celsius
+    /// control, would be the right number off the wrong field.
+    Celsius(&'static Tie),
     /// The **span of a table** the chemistry declares: its largest value minus its
     /// smallest, at this path.
     ///
@@ -14034,6 +14117,201 @@ const LEDGER_VOCABULARY: &[LedgerRule] = &[
         ties: &[Tie::Scenario("pack.initial_soc")],
         pow10: 2,
     },
+    // --- Phase 12 slice D: plating, by a rule and as a reaction (steps 41-44) ---------------
+    //
+    // The four files are one with the plating model or the temperature changed
+    // (`plating_lesson.rs`), each isothermal with the slider set to match, so the step's
+    // ambient is the file's temperature. The pulse is the charge; its current is negative
+    // and the prose prints its size.
+    LedgerRule {
+        phrase: "about the flag step {n} first raised",
+        ties: &[Tie::Ordinal("what-protection-costs")],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "One LG M{n} cell, the model with the electrolyte from step {n} on its finer grid, charged from empty at {n} \u{b0}C",
+        ties: &[
+            Tie::Name {
+                field: "meta.name",
+                prefix: "M",
+            },
+            Tie::Ordinal("the-electrolyte-starves"),
+            Tie::Setting(Control::Ambient),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "cut the charge down to the {n}C its datasheet allows",
+        ties: &[Tie::Chemistry("cell.max_charge_c")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The threshold's two gates, the first in the Celsius the sentence speaks.
+        phrase: "a charge below {n} \u{b0}C and faster than {n}C raises the flag",
+        ties: &[
+            Tie::Celsius(&Tie::Chemistry("safety.t_plating_min_k")),
+            Tie::Chemistry("safety.plating_c_threshold"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "The pulse charges at {n}C, {n} A, for {n} s, which stops just under the cell's {n} V ceiling",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Magnitude(&Tie::Setting(Control::DemandValue)),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+            Tie::Magnitude(&Tie::Setting(Control::DemandValue)),
+            Tie::Setting(Control::PulseOn),
+            Tie::Chemistry("cell.v_max"),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The cliff: the file's temperature, and the gate it is not below.
+        phrase: "{n} \u{b0}C is not below {n} \u{b0}C, so the rule says nothing",
+        ties: &[
+            Tie::Setting(Control::Ambient),
+            Tie::Celsius(&Tie::Chemistry("safety.t_plating_min_k")),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "out of the same equations step {n} solved",
+        ties: &[Tie::Ordinal("the-electrolyte-starves")],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The mark against the pulse's end.
+        phrase: "the mark a little later: {n} s after the pulse ends",
+        ties: &[Tie::Difference(&[
+            Tie::Setting(Control::Until),
+            Tie::Setting(Control::PulseOn),
+        ])],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The two resting voltages a minute into the rest, this file's and the rule's.
+        phrase: "there, {n} mV lower",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "some-of-it-goes-back",
+                arm: None,
+                quantity: "v_at:1860",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "some-of-it-goes-back",
+                arm: Some("threshold"),
+                quantity: "v_at:1860",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 3,
+    },
+    LedgerRule {
+        phrase: "The reaction file again at the same {n} \u{b0}C, charged at {n}C, {n} A: the most the datasheet allows",
+        ties: &[
+            Tie::Setting(Control::Ambient),
+            Tie::Chemistry("cell.max_charge_c"),
+            Tie::Magnitude(&Tie::Setting(Control::DemandValue)),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "It takes {n} s to reach the same ceiling",
+        ties: &[Tie::Setting(Control::PulseOn)],
+        pow10: 0,
+    },
+    LedgerRule {
+        // Step 41's arm, the same reaction file at 1C.
+        phrase: "against {n} % of each",
+        ties: &[Tie::Quoted {
+            step: "judged-by-a-rule",
+            arm: Some("reaction"),
+            quantity: "plated_dead_at:1800",
+            states: QuotedAs::Same,
+        }],
+        pow10: 2,
+    },
+    LedgerRule {
+        phrase: "of each at {n}C, and",
+        ties: &[Tie::Elsewhere {
+            step: "judged-by-a-rule",
+            tie: &Tie::Ratio(&[
+                Tie::Magnitude(&Tie::Setting(Control::DemandValue)),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "Back to {n}C on the rule, at -{n} \u{b0}C",
+        ties: &[
+            Tie::Ratio(&[
+                Tie::Magnitude(&Tie::Setting(Control::DemandValue)),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+            Tie::Magnitude(&Tie::Setting(Control::Ambient)),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "is the file from step {n} with its temperature changed",
+        ties: &[Tie::Ordinal("judged-by-a-rule")],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "so the pulse stops at {n} s",
+        ties: &[Tie::Setting(Control::PulseOn)],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "at -{n} \u{b0}C and {n}C both of the rule's conditions hold",
+        ties: &[
+            Tie::Magnitude(&Tie::Setting(Control::Ambient)),
+            Tie::Ratio(&[
+                Tie::Magnitude(&Tie::Setting(Control::DemandValue)),
+                Tie::Chemistry("cell.capacity_ah"),
+            ]),
+        ],
+        pow10: 0,
+    },
+    LedgerRule {
+        phrase: "sooner than at {n} \u{b0}C",
+        ties: &[Tie::Elsewhere {
+            step: "judged-by-a-rule",
+            tie: &Tie::Setting(Control::Ambient),
+        }],
+        pow10: 0,
+    },
+    LedgerRule {
+        // The two health rows at the mark, the reaction's above the rule's.
+        phrase: "{n} points more on the health row",
+        ties: &[Tie::Difference(&[
+            Tie::Quoted {
+                step: "colder-and-billed-throughout",
+                arm: Some("reaction"),
+                quantity: "soh_cap_at:1390",
+                states: QuotedAs::Same,
+            },
+            Tie::Quoted {
+                step: "colder-and-billed-throughout",
+                arm: None,
+                quantity: "soh_cap_at:1390",
+                states: QuotedAs::Same,
+            },
+        ])],
+        pow10: 2,
+    },
+    LedgerRule {
+        phrase: "where at {n} \u{b0}C it charged nothing at all",
+        ties: &[Tie::Elsewhere {
+            step: "judged-by-a-rule",
+            tie: &Tie::Setting(Control::Ambient),
+        }],
+        pow10: 0,
+    },
 ];
 
 /// The scenario file, as the file writes it.
@@ -14547,6 +14825,13 @@ fn tie_values(
             };
             vec![seconds / 86400.0]
         }
+        Tie::Celsius(kelvin) => {
+            let kelvin = tie_values(kelvin, lesson, lessons, scenario, chemistry, ctx);
+            let [kelvin] = &kelvin[..] else {
+                return Vec::new();
+            };
+            vec![kelvin - K]
+        }
         Tie::Seconds(hours) => {
             let hours = tie_values(hours, lesson, lessons, scenario, chemistry, ctx);
             let [hours] = &hours[..] else {
@@ -14936,6 +15221,7 @@ fn tie_describe(tie: &Tie) -> String {
             .join(" plus "),
         Tie::Hours(seconds) => format!("{}, in hours", tie_describe(seconds)),
         Tie::Days(seconds) => format!("{}, in days", tie_describe(seconds)),
+        Tie::Celsius(kelvin) => format!("{}, in degrees Celsius", tie_describe(kelvin)),
         Tie::Instant {
             step,
             arm,
@@ -15023,6 +15309,7 @@ fn tie_arm_name(tie: &Tie) -> &'static str {
         Tie::Sum(_) => "sum",
         Tie::Hours(_) => "duration in hours",
         Tie::Days(_) => "duration in days",
+        Tie::Celsius(_) => "temperature in degrees Celsius",
         Tie::Span(_) => "table span",
         Tie::Clock => "clock",
         Tie::Page(_) => "page constant",
@@ -15068,6 +15355,7 @@ fn tie_agrees(tie: &Tie, values: &[f64], token: &str, pow10: i32, unit: f64) -> 
         | Tie::Sum(_)
         | Tie::Hours(_)
         | Tie::Days(_)
+        | Tie::Celsius(_)
         | Tie::Seconds(_)
         | Tie::PerSecond(_)
         | Tie::Span(_)

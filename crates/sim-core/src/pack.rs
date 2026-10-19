@@ -1294,6 +1294,13 @@ pub struct PlatingView {
     /// Dead plated lithium \[mol\]: the chemistry's `dead_share` of everything that plated,
     /// lost at once and for good.
     pub dead_mol: f64,
+    /// [`Self::reversible_mol`] as charge, a fraction of the chemistry's rated
+    /// `capacity_ah` \[-\]: what a client prints as a percentage of the cell.
+    pub reversible_fraction: f64,
+    /// [`Self::dead_mol`] as charge, a fraction of the chemistry's rated `capacity_ah` \[-\].
+    /// Not the capacity the cell has lost to it, which is read off the electrodes' window
+    /// (`CellView::soh_capacity`) and differs from this by the window's own size.
+    pub dead_fraction: f64,
 }
 
 /// A parallel group: the cells wired in parallel that share one terminal node.
@@ -2254,9 +2261,12 @@ impl Pack {
     pub fn cell_plating(&self, s: usize, p: usize) -> Option<PlatingView> {
         let cell = self.groups.get(s)?.cells.get(p)?;
         let (reversible_mol, dead_mol) = cell.model.plated_lithium_mol(&self.chem)?;
+        let per_mol = spm::FARADAY_C_PER_MOL / 3600.0 / self.chem.cell.capacity_ah;
         Some(PlatingView {
             reversible_mol,
             dead_mol,
+            reversible_fraction: reversible_mol * per_mol,
+            dead_fraction: dead_mol * per_mol,
         })
     }
 

@@ -86,8 +86,13 @@ function clearBanner() {
  * print "one per electrode" about a cell with twenty, and the diagram would draw carrier
  * dots where the particles are. A wrong sentence rather than a blank, which is the case
  * this rule moves for.
+ *
+ * v11 is another field on the cells frame — `plated`, the lithium a plating cell holds as
+ * metal, reversible and dead, and `null` on every other pack. Against a v10 bundle it is
+ * `undefined`, and the `plated` row would print "no plating reaction" about a cell that
+ * runs one: v9's case again.
  */
-const WASM_API_MIN = 10;
+const WASM_API_MIN = 11;
 
 let wasm = null;
 try {
@@ -1317,6 +1322,26 @@ const READOUTS = [
     // DFN models have one per electrode — nothing to fill one at a time.
     (m, f, cells) =>
       isPorous(cells?.cells?.[0]) ? "one per electrode" : "circuit — no particles",
+  ],
+  // The lithium a plating cell holds as metal on its graphite, as a percentage of the cell's
+  // rated capacity: the reversible share, which strips back on a rest, and the dead share,
+  // lost for good. Four decimals, because a cold fast charge here plates a few hundredths of
+  // a percent and the gentle one a few ten-thousandths.
+  //
+  // The pack's largest of each, on `over-drained`'s terms, though the packs that run the
+  // reaction are 1S1P. Formatted from `cells`, so it is on `CELLS_PERIOD_MS` like the rows
+  // above. Silent on a pack whose cells run no plating reaction — every pack but a `Dfn` one
+  // with `plating = "Reaction"` — where the threshold, if any, raises `PLATING_RISK` instead.
+  [
+    "plated",
+    (m, f, cells) => {
+      const ps = cells?.plated;
+      if (!ps || ps.length === 0) return null;
+      const rev = Math.max(...ps.map((x) => x.reversible_fraction));
+      const dead = Math.max(...ps.map((x) => x.dead_fraction));
+      return `${(rev * 100).toFixed(4)} % reversible, ${(dead * 100).toFixed(4)} % dead`;
+    },
+    "no plating reaction",
   ],
 ];
 
@@ -5069,6 +5094,89 @@ const LESSONS = [
     expect:
       "At the mark `soh cap` reads **`99.79 %`**: 0.21 points, against 1.40 stored full, 6.65 times less. Now load `shelf_drawn_low` from the picker, the drawn curve stored at 30 %, and run it to the same mark. `soh cap` reads **`90.66 %`** there: 9.34 points against the 15.86 it lost stored full, only 1.70 times less. The drawn curve was told how much charge matters, by a stress factor in the chemistry file; the film works it out from the graphite. Two things this does not show, so do not take them from it. First, the 6.65 belongs to this span. Stored low, the film has barely outgrown its starting thickness and still grows nearly in a straight line: 0.21 points against 0.07 in the first quarter, 2.98 times as much for 4 times the time, where stored full it was 2.24. So over a shorter span the gap between full and 30 % is wider, and over a longer one narrower. Second, this law grows the film at much the same rate anywhere near the top of the charge range, where the graphite's potential is flat, so it cannot say that storing a little below full is kinder than storing full. The cells it was fitted to do not settle that either: near the top, over the same later months, some stored full lost less than some stored a little lower. Full against 30 % is what this model can show, and it shows it plainly.",
   },
+  {
+    id: "judged-by-a-rule",
+    title: "Charged cold, and judged by a rule",
+    // Phase 12's lesson (docs/plans/phase-12-plating.md, slice D, and its owner decisions).
+    // Four files that differ only where their names say (`plating_lesson.rs` holds that): the
+    // threshold rule or the reaction, at 0 °C or -10 °C. All four run the `Dfn` on its fine
+    // grid, written into the file. Isothermal, so the ambient field matches the file and the
+    // slider moves nothing. The charge is a `Pulse` with a long rest after it, because a
+    // cold 4.2 V hold leaves this model unable to converge the discharge after it
+    // (docs/plans/dfn-cold-hold.md): each charge stops just under the ceiling instead.
+    scenario: "plating_cold_threshold.toml",
+    demand: { mode: "Pulse", value: -5.153198, on_s: 1800, off_s: 7200 },
+    ambient_c: 0,
+    bms: null,
+    dt: 5,
+    speed_x: 100,
+    until_s: 1800,
+    rearm: true,
+    watch: ["flags", "readouts"],
+    prose: [
+      "A new chapter, about the flag step 11 first raised: `PLATING_RISK`. Charge a graphite cell too cold or too fast and lithium comes out of the electrolyte as metal on the surface of the graphite instead of going in. One LG M50 cell, the model with the electrolyte from step 16 on its finer grid, charged from empty at 0 °C. The file holds the temperature where it is, so the ambient slider does nothing here, and there is no BMS: this chemistry's would cut the charge down to the 0.3C its datasheet allows.",
+      "Every cell on this path so far has judged plating by a rule in its chemistry file: a charge below 0 °C and faster than 0.4C raises the flag and bills capacity for every amp-hour it takes. This file uses that rule. The pulse charges at 1C, 5.153198 A, for 1800 s, which stops just under the cell's 4.2 V ceiling, and the mark is there. Watch the flags, `soh cap`, and the new `plated` row.",
+    ],
+    expect:
+      "No flag at all. At the mark `soh cap` reads **`99.98 %`**, and all of that loss is the ordinary wear every cell on this path has had, calendar and cycling. `plated` reads **`no plating reaction`**: this cell has the rule and nothing else. 0 °C is not below 0 °C, so the rule says nothing; it is a cliff, and this file sits exactly on its edge. Now the arm. Load `plating_cold_reaction` from the picker, the same file with a line added under `[pack.aging]` that sets `plating` to `Reaction`, and run it to the same mark. `PLATING_RISK` comes up at **`555 s`** and stays up. That cell has no rule. At each point across its negative electrode it solves another reaction beside the ordinary one: where the graphite's potential falls below that of lithium metal, lithium plates out as metal, faster the further below it falls. It gets there first next to the separator, where the current crowds hardest. At the mark `plated` reads **`0.0257 % reversible, 0.0257 % dead`** and `soh cap` reads **`99.96 %`**. The dead lithium is gone for good, and it is what separates the two health rows: the same wear on both, and this cell also short by what died. How what plates splits between reversible and dead is a fixed share in the chemistry file, and like the reaction's rate constant it is a placeholder that nothing has measured for this cell. What the model supplies is where and when the graphite crosses lithium's potential, out of the same equations step 16 solved.",
+  },
+  {
+    id: "some-of-it-goes-back",
+    title: "Some of it goes back",
+    scenario: "plating_cold_reaction.toml",
+    demand: { mode: "Pulse", value: -5.153198, on_s: 1800, off_s: 7200 },
+    ambient_c: 0,
+    bms: null,
+    dt: 5,
+    speed_x: 100,
+    until_s: 1860,
+    rearm: true,
+    reload: true,
+    watch: ["readouts", "plot-v"],
+    prose: [
+      "The reaction file again with the same charge, and the mark a little later: 60 s after the pulse ends, with the cell resting.",
+      "Watch `plated`, and `terminal`.",
+    ],
+    expect:
+      "At the mark `plated` reads **`0.0166 % reversible, 0.0257 % dead`**: the reversible share is already down from the 0.0257 % it ended the charge on, and the dead share has not moved. `terminal` reads **`3.878 V`**. With the current off nothing drives the metal on any more, and it dissolves back into the electrolyte and goes into the graphite, the reverse of plating, which is called stripping. Press Run again and let it go on: by 2100 s `plated` reads **`0.0004 % reversible, 0.0257 % dead`**, and by 2400 s **`0.0000 % reversible, 0.0257 % dead`**. Through all of it `soc (true)` does not move. Stripped lithium goes into the graphite, and the cell holds the same charge whether that lithium sits as metal or inside the electrode. What is not coming back is the dead share. While there was metal on the graphite it held the electrode's potential down, so a cell that is stripping rests a little higher. Load `plating_cold_threshold` from the picker, leave the pulse as it is, and run it to the same mark: `terminal` reads **`3.876 V`** there, 2 mV lower, and `the_resting_gap_is_the_metal` checks that the gap is gone when the reaction is made too slow to plate. A short raised shoulder while metal strips, at rest or under a following discharge, is how laboratories detect plating in a real cell.",
+  },
+  {
+    id: "the-charge-the-datasheet-allows",
+    title: "The charge the datasheet allows",
+    scenario: "plating_cold_reaction.toml",
+    demand: { mode: "Pulse", value: -1.5459594, on_s: 9440, off_s: 3600 },
+    ambient_c: 0,
+    bms: null,
+    dt: 5,
+    speed_x: 500,
+    until_s: 9440,
+    rearm: true,
+    reload: true,
+    watch: ["flags", "readouts"],
+    prose: [
+      "The reaction file again at the same 0 °C, charged at 0.3C, 1.5459594 A: the most the datasheet allows at this temperature. It takes 9440 s to reach the same ceiling, and the speed is up to match.",
+    ],
+    expect:
+      "`PLATING_RISK` does come up, at **`8455 s`**, late in the charge, when the cell is most of the way full and its graphite's potential is at its lowest. At the mark `plated` reads **`0.0008 % reversible, 0.0008 % dead`**, against 0.0257 % of each at 1C, and `soh cap` reads **`99.96 %`**. Load `plating_cold_threshold`, leave the pulse as it is, and run it to the same mark: `soh cap` reads **`99.96 %`** there too. The plating this charge does cannot be seen on the health row at all. That is partly by construction. The reaction's rate constant had nothing to be fitted to, so it was sized against the datasheet: the charges it allows plate almost nothing and the ones it forbids plate a good deal more. That the gentle charge is nearly free is the sizing. What the reaction adds is that the line between allowed and forbidden is a slope and not a cliff, and that the plating it does comes at the end of a charge, not the start.",
+  },
+  {
+    id: "colder-and-billed-throughout",
+    title: "Colder, and billed throughout",
+    scenario: "plating_colder_threshold.toml",
+    demand: { mode: "Pulse", value: -5.153198, on_s: 1390, off_s: 3600 },
+    ambient_c: -10,
+    bms: null,
+    dt: 5,
+    speed_x: 100,
+    until_s: 1390,
+    rearm: true,
+    watch: ["flags", "readouts"],
+    prose: [
+      "Back to 1C on the rule, at -10 °C: `plating_colder_threshold` is the file from step 41 with its temperature changed and nothing else. The cold brings the ceiling sooner, so the pulse stops at 1390 s.",
+    ],
+    expect:
+      "`PLATING_RISK` is up from the first step: at -10 °C and 1C both of the rule's conditions hold, and it bills every amp-hour from there on. At the mark `soh cap` reads **`99.82 %`**. Load `plating_colder_reaction` from the picker and run it to the same mark. The flag comes up at **`270 s`**, sooner than at 0 °C, and at the mark `plated` reads **`0.0455 % reversible, 0.0455 % dead`**, with `soh cap` at **`99.95 %`**. So here the rule charged this cell more than the reaction did, 0.13 points more on the health row, where at 0 °C it charged nothing at all. Do not read that as the rule being too harsh or the reaction too gentle. The rule's charge per amp-hour, and the reaction's rate constant and dead share, are all placeholders, and comparing their sizes compares guesses. What the reaction shows that the rule cannot is the shape: plating that starts part-way through a charge rather than on its first step, comes sooner the colder the cell, and partly comes back when the current stops.",
+  },
 ];
 
 // The path's chapters: headings over the lessons above, in the order they already run.
@@ -5099,6 +5207,7 @@ const CHAPTERS = [
   { first: "a-curve-worth-reading", title: "Gauges that read the curve" },
   { first: "no-particle-is-halfway", title: "LFP's particles" },
   { first: "drawn-on-the-shelf", title: "Aging, drawn and grown" },
+  { first: "judged-by-a-rule", title: "Plating, by a rule and as a reaction" },
 ];
 
 /** Each chapter's first lesson as an index into `LESSONS`; a bad id fails at load. */

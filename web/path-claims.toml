@@ -49,7 +49,7 @@
 #
 # All seven are about a CLAIM. The LEDGER at the foot of this file is about a STEP: it
 # scans a step's whole prose and requires every number in it to be tied to something,
-# whether a claim quotes the sentence or not. Forty steps so far. See "THE LEDGER".
+# whether a claim quotes the sentence or not. Forty-four steps so far. See "THE LEDGER".
 #
 # And one more is about THIS FILE'S OWN PROSE — the comments you are reading. Every count
 # stated here about the file's contents (how many claims take each `tol_from`, how many
@@ -129,7 +129,7 @@
 #              case where the sentence and the panel must agree word for word. A
 #              typographic minus in the prose still matches the ASCII one a
 #              formatter emits; nothing else is normalised.
-#              Be clear about what this buys TODAY: in all 171 claims below that set
+#              Be clear about what this buys TODAY: in all 185 claims below that set
 #              `quoted`, `shows` is a substring of that claim's own `literal`, and
 #              `literal` is already required to be in the prose — so the quoted check
 #              currently follows from the literal check
@@ -148,7 +148,7 @@
 # `every_tolerance_follows_its_declared_rule` checks it. Three variants, and nothing
 # else is accepted:
 #
-#   spelled 350 claims. `tol` is exactly the rule for `spells`. The ordinary case.
+#   spelled 374 claims. `tol` is exactly the rule for `spells`. The ordinary case.
 #   tighter  40 claims. `tol` is strictly under the rule. Needs no upper bound and is
 #             given none: a smaller tolerance can only redden the test. Used for a
 #             chemistry constant, for an exactly-1.0 starting point, for the two
@@ -208,7 +208,7 @@
 # "does the engine's number round to the one the reader is shown" — not `tol`, which
 # bounds the engine against `value` and is deliberately tighter on 40 claims.
 #
-#   same 359 claims. The sentence prints the quantity. Prefer it: it is the only
+#   same 383 claims. The sentence prints the quantity. Prefer it: it is the only
 #               variant with no second reading available to an author.
 #   magnitude 11. The sentence prints the size and the sign is a word — `refused
 #               0.822 A` of −0.82224 A, and `late by 1.3 K` of a sensor gap of
@@ -254,8 +254,8 @@
 # So check 6 scans each claimed literal for numbers and requires every one of them to be
 # accounted for by the claims already on that sentence. Five accountings, and no sixth:
 #
-#   spelled  a claim on this sentence names it in `spells` — 382 of the 451 numbers the
-#            255 claimed sentences print. Signs are ignored on both sides.
+#   spelled  a claim on this sentence names it in `spells` — 406 of the 477 numbers the
+#            273 claimed sentences print. Signs are ignored on both sides.
 #   read at  it is the instant a claim on this sentence is read at, in that claim's own
 #            frame — absolute before the mark, since the mark on a leg. `99.45 % at
 #            250 s` prints a health and a moment, and the moment is the `read_at_s`.
@@ -286,7 +286,7 @@
 # or about the numbers beside it, so a declared one that disagreed with the fact would be a
 # fresh instance of the defect `tol_from` was introduced to kill. And there is no
 # "not a measurement" variant: an escape hatch is precisely what re-opens this hole, and
-# the 255 claimed sentences need none. A future literal printing a chemistry constant will
+# the 273 claimed sentences need none. A future literal printing a chemistry constant will
 # fail loudly, and the answer will be an arm that checks it against the chemistry file —
 # not a waiver.
 #
@@ -301,7 +301,7 @@
 #
 # What check 6 does NOT do is find sentences nobody has claimed at all: a step with no
 # claim has no literal to scan. That is the other axis, and it is the LEDGER at the foot
-# of this file — forty steps of the forty so far, which is all of them.
+# of this file — forty-four steps of the forty-four so far, which is all of them.
 #
 # `display` costs nothing to add and is worth adding wherever a row exists, even when
 # the prose does not quote it: it is the only half of this file that knows what the
@@ -4672,8 +4672,8 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # to end, and EVERY NUMERAL in it must be tied to something. Not the sentences that are
 # claimed — all of them.
 #
-# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: forty
-# steps, 887 numerals, and no longer all of them scenario constants. This count is NOT
+# WHAT IS LEDGERED TODAY, and it is a beginning rather than a coverage claim: forty-four
+# steps, 944 numerals, and no longer all of them scenario constants. This count is NOT
 # the fourteen a few lines above: that one is frozen, and counts the steps that had no
 # claim when the ledger was written. They were equal for one slice and have now parted,
 # which is what the last slice said would happen — a live count moves and a frozen one
@@ -4720,7 +4720,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # and "all but three points of what it holds" is tied to that step's own charge claim.
 #
 # So "digits-closed is less than closed" is no longer a fact about the whole path — it is a
-# fact about the steps in `word_blind` below, which is nine of forty. The sentence
+# fact about the steps in `word_blind` below, which is nine of forty-four. The sentence
 # stays because the gap it names is real for every one of them, and because the pairing of
 # `spelled` and `word_blind` is what keeps it honest: a step is now one or the other by
 # declaration, never by silence.
@@ -4746,7 +4746,7 @@ The furthest thing this step's prose asks a reader to look at on the charge leg 
 # vocabulary anywhere short of that would be drawing it exactly where the claims that
 # already pass happen to sit.
 #
-# THE ARMS THEMSELVES, and there are twenty-nine of them. An arm says what decides a number:
+# THE ARMS THEMSELVES, and there are thirty of them. An arm says what decides a number:
 # a NAMED FIELD of the step's scenario file, a named field of the CHEMISTRY that scenario
 # names, a CONTROL on the lesson's own block, the sentence's own arithmetic over those as a
 # PRODUCT, a RATIO, a DIFFERENCE or a SUM, a duration of theirs read IN HOURS, one of theirs
@@ -11214,6 +11214,483 @@ note = """
 The loss at the quarter mark: nearly a third of the mark's, nearly a straight line.
 """
 
+# --- Phase 12 slice D: plating, by a rule and as a reaction (steps 41-44) --------------------
+#
+# Four files that are one with the plating model or the temperature changed
+# (`plating_lesson.rs`), each on the `Dfn`'s fine grid, charged by the page's `Pulse` at 5 s
+# steps. Every value below was measured on the page's shape out of tree first
+# (`docs/plans/phase-12-plating.md` §D) and is checked here against the engine.
+
+[[claim]]
+step = "judged-by-a-rule"
+literal = "At the mark `soh cap` reads **`99.98 %`**"
+quantity = "soh_cap_at:1800"
+value = 0.9998344
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.98"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1800.0
+display = "soh cap"
+shows = "99.98 %"
+quoted = true
+note = """
+The threshold cell at the end of its 1C charge: the drawn calendar and cycle fades alone, the
+rule silent at exactly 0 degC.
+"""
+
+[[arm]]
+step = "judged-by-a-rule"
+name = "reaction"
+instruction = "Load `plating_cold_reaction` from the picker, the same file with a line added under `[pack.aging]` that sets `plating` to `Reaction`, and run it to the same mark"
+start = "restart"
+scenario = "plating_cold_reaction.toml"
+actions = [{ do = "run", to_s = 1800.0 }]
+note = """
+The same charge on the reaction cell. The step re-arms its mark (`rearm: true`), so the run
+stops at 1800 s as the instruction says.
+"""
+
+[[claim]]
+step = "judged-by-a-rule"
+arm = "reaction"
+literal = "`PLATING_RISK` comes up at **`555 s`** and stays up"
+quantity = "flag_first_s:PLATING_RISK"
+value = 555.0
+tol = 0.5
+tol_from = "spelled"
+spells = "555"
+states = "same"
+read_at_s = 555.0
+note = """
+The first step that plated, on the 5 s grid: the graphite's potential crosses lithium's next to
+the separator. 554 s at 1 s steps.
+"""
+
+[[claim]]
+step = "judged-by-a-rule"
+arm = "reaction"
+literal = "At the mark `plated` reads **`0.0257 % reversible, 0.0257 % dead`**"
+quantity = "plated_reversible_at:1800"
+value = 0.00025739
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0257"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1800.0
+display = "plated"
+shows = "0.0257 % reversible, 0.0257 % dead"
+quoted = true
+note = """
+The reversible metal at the end of the charge, as a share of the rated capacity.
+"""
+
+[[claim]]
+step = "judged-by-a-rule"
+arm = "reaction"
+literal = "At the mark `plated` reads **`0.0257 % reversible, 0.0257 % dead`**"
+quantity = "plated_dead_at:1800"
+value = 0.00025739
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0257"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1800.0
+note = """
+The dead lithium: the same as the reversible, because `dead_share` is 0.5 and nothing has
+stripped yet.
+"""
+
+[[claim]]
+step = "judged-by-a-rule"
+arm = "reaction"
+literal = "and `soh cap` reads **`99.96 %`**"
+quantity = "soh_cap_at:1800"
+value = 0.9995771
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.96"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1800.0
+display = "soh cap"
+shows = "99.96 %"
+quoted = true
+note = """
+The reaction cell's health row: the same drawn wear as the threshold cell, and the dead lithium.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+literal = "At the mark `plated` reads **`0.0166 % reversible, 0.0257 % dead`**"
+quantity = "plated_reversible_at:1860"
+value = 0.00016603
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0166"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1860.0
+display = "plated"
+shows = "0.0166 % reversible, 0.0257 % dead"
+quoted = true
+note = """
+A minute into the rest: the reversible metal stripping back.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+literal = "At the mark `plated` reads **`0.0166 % reversible, 0.0257 % dead`**"
+quantity = "plated_dead_at:1860"
+value = 0.00025739
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0257"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1860.0
+note = """
+The dead share, unmoved by the rest.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+literal = "the reversible share is already down from the 0.0257 % it ended the charge on"
+quantity = "plated_reversible_at:1800"
+value = 0.00025739
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0257"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1800.0
+note = """
+The end of this step's own charge, the same instant step 41's arm read.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+literal = "`terminal` reads **`3.878 V`**"
+quantity = "v_at:1860"
+value = 3.87849
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.878"
+states = "same"
+read_at_s = 1860.0
+display = "terminal"
+shows = "3.878 V"
+quoted = true
+note = """
+The stripping cell a minute into its rest.
+"""
+
+[[arm]]
+step = "some-of-it-goes-back"
+name = "threshold"
+instruction = "Load `plating_cold_threshold` from the picker, leave the pulse as it is, and run it to the same mark"
+start = "restart"
+scenario = "plating_cold_threshold.toml"
+actions = [{ do = "run", to_s = 1860.0 }]
+note = """
+The same charge and rest on the threshold cell, which plates nothing.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+arm = "threshold"
+literal = "`terminal` reads **`3.876 V`** there"
+quantity = "v_at:1860"
+value = 3.876168
+tol = 5.0e-4
+tol_from = "spelled"
+spells = "3.876"
+states = "same"
+read_at_s = 1860.0
+display = "terminal"
+shows = "3.876 V"
+quoted = true
+note = """
+The threshold cell at the same instant: lower by the metal, not by the charge — it holds more.
+`the_resting_gap_is_the_metal` holds the attribution.
+"""
+
+[[arm]]
+step = "some-of-it-goes-back"
+name = "runs on"
+instruction = "Press Run again and let it go on"
+start = "mark"
+actions = [{ do = "run", to_s = 2400.0 }]
+note = """
+On from the mark through the rest, on this step's own file.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+arm = "runs on"
+literal = "by 2100 s `plated` reads **`0.0004 % reversible, 0.0257 % dead`**"
+quantity = "plated_reversible_at:2100"
+value = 0.00000449
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0004"
+spells_pow10 = 2
+states = "same"
+read_at_s = 2100.0
+display = "plated"
+shows = "0.0004 % reversible, 0.0257 % dead"
+quoted = true
+note = """
+Five minutes into the rest, nearly all of the reversible metal back in the graphite.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+arm = "runs on"
+literal = "by 2100 s `plated` reads **`0.0004 % reversible, 0.0257 % dead`**"
+quantity = "plated_dead_at:2100"
+value = 0.00025739
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0257"
+spells_pow10 = 2
+states = "same"
+read_at_s = 2100.0
+note = """
+The dead share, still unmoved.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+arm = "runs on"
+literal = "by 2400 s **`0.0000 % reversible, 0.0257 % dead`**"
+quantity = "plated_reversible_at:2400"
+value = 0.0
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0000"
+spells_pow10 = 2
+states = "same"
+read_at_s = 2400.0
+display = "plated"
+shows = "0.0000 % reversible, 0.0257 % dead"
+quoted = true
+note = """
+Ten minutes into the rest: the reversible store empty.
+"""
+
+[[claim]]
+step = "some-of-it-goes-back"
+arm = "runs on"
+literal = "by 2400 s **`0.0000 % reversible, 0.0257 % dead`**"
+quantity = "plated_dead_at:2400"
+value = 0.00025739
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0257"
+spells_pow10 = 2
+states = "same"
+read_at_s = 2400.0
+note = """
+And the dead share, what the charge cost for good.
+"""
+
+[[claim]]
+step = "the-charge-the-datasheet-allows"
+literal = "`PLATING_RISK` does come up, at **`8455 s`**"
+quantity = "flag_first_s:PLATING_RISK"
+value = 8455.0
+tol = 0.5
+tol_from = "spelled"
+spells = "8455"
+states = "same"
+read_at_s = 8455.0
+note = """
+Late in the 0.3C charge, with the cell most of the way full.
+"""
+
+[[claim]]
+step = "the-charge-the-datasheet-allows"
+literal = "At the mark `plated` reads **`0.0008 % reversible, 0.0008 % dead`**"
+quantity = "plated_reversible_at:9440"
+value = 0.00000766
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0008"
+spells_pow10 = 2
+states = "same"
+read_at_s = 9440.0
+display = "plated"
+shows = "0.0008 % reversible, 0.0008 % dead"
+quoted = true
+note = """
+The coldest charge LG's sheet allows: what the rate constant was sized to keep small.
+"""
+
+[[claim]]
+step = "the-charge-the-datasheet-allows"
+literal = "At the mark `plated` reads **`0.0008 % reversible, 0.0008 % dead`**"
+quantity = "plated_dead_at:9440"
+value = 0.00000766
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0008"
+spells_pow10 = 2
+states = "same"
+read_at_s = 9440.0
+note = """
+Its dead share.
+"""
+
+[[claim]]
+step = "the-charge-the-datasheet-allows"
+literal = "and `soh cap` reads **`99.96 %`**"
+quantity = "soh_cap_at:9440"
+value = 0.9996031
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.96"
+spells_pow10 = 2
+states = "same"
+read_at_s = 9440.0
+display = "soh cap"
+shows = "99.96 %"
+quoted = true
+note = """
+The reaction cell after the gentle charge: drawn wear, and a dead share too small to print.
+"""
+
+[[arm]]
+step = "the-charge-the-datasheet-allows"
+name = "threshold"
+instruction = "Load `plating_cold_threshold`, leave the pulse as it is, and run it to the same mark"
+start = "restart"
+scenario = "plating_cold_threshold.toml"
+actions = [{ do = "run", to_s = 9440.0 }]
+note = """
+The same gentle charge on the threshold cell.
+"""
+
+[[claim]]
+step = "the-charge-the-datasheet-allows"
+arm = "threshold"
+literal = "`soh cap` reads **`99.96 %`** there too"
+quantity = "soh_cap_at:9440"
+value = 0.9996107
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.96"
+spells_pow10 = 2
+states = "same"
+read_at_s = 9440.0
+display = "soh cap"
+shows = "99.96 %"
+quoted = true
+note = """
+The threshold cell: the same row to the digit, 7.6e-6 of capacity apart.
+"""
+
+[[claim]]
+step = "colder-and-billed-throughout"
+literal = "At the mark `soh cap` reads **`99.82 %`**"
+quantity = "soh_cap_at:1390"
+value = 0.9981806
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.82"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1390.0
+display = "soh cap"
+shows = "99.82 %"
+quoted = true
+note = """
+The threshold at -10 degC: flagged on every step, every amp-hour billed at `plating_fade_per_ah`.
+"""
+
+[[arm]]
+step = "colder-and-billed-throughout"
+name = "reaction"
+instruction = "Load `plating_colder_reaction` from the picker and run it to the same mark"
+start = "restart"
+scenario = "plating_colder_reaction.toml"
+actions = [{ do = "run", to_s = 1390.0 }]
+note = """
+The same charge on the reaction cell at -10 degC.
+"""
+
+[[claim]]
+step = "colder-and-billed-throughout"
+arm = "reaction"
+literal = "The flag comes up at **`270 s`**"
+quantity = "flag_first_s:PLATING_RISK"
+value = 270.0
+tol = 0.5
+tol_from = "spelled"
+spells = "270"
+states = "same"
+read_at_s = 270.0
+note = """
+Sooner than at 0 degC, where it was 555 s.
+"""
+
+[[claim]]
+step = "colder-and-billed-throughout"
+arm = "reaction"
+literal = "at the mark `plated` reads **`0.0455 % reversible, 0.0455 % dead`**"
+quantity = "plated_reversible_at:1390"
+value = 0.00045473
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0455"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1390.0
+display = "plated"
+shows = "0.0455 % reversible, 0.0455 % dead"
+quoted = true
+note = """
+The reversible metal at the end of the colder charge.
+"""
+
+[[claim]]
+step = "colder-and-billed-throughout"
+arm = "reaction"
+literal = "at the mark `plated` reads **`0.0455 % reversible, 0.0455 % dead`**"
+quantity = "plated_dead_at:1390"
+value = 0.00045473
+tol = 5.0e-7
+tol_from = "spelled"
+spells = "0.0455"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1390.0
+note = """
+Its dead share.
+"""
+
+[[claim]]
+step = "colder-and-billed-throughout"
+arm = "reaction"
+literal = "with `soh cap` at **`99.95 %`**"
+quantity = "soh_cap_at:1390"
+value = 0.9994669
+tol = 5.0e-5
+tol_from = "spelled"
+spells = "99.95"
+spells_pow10 = 2
+states = "same"
+read_at_s = 1390.0
+display = "soh cap"
+shows = "99.95 %"
+quoted = true
+note = """
+The reaction cell's health row at -10 degC: above the threshold cell's by 0.13 points.
+"""
+
 
 [ledger]
 steps = [
@@ -11565,9 +12042,13 @@ steps = [
   "drawn-on-the-shelf",     # 16 numbers: the cell, the controls, the mark in days, four panel rows and the arithmetic on them
   "grown-on-the-shelf",     # 11 numbers: the conditions, the cell, three panel rows and the arithmetic on them
   "stored-low",             # 21 numbers: the charge level, the conditions, two runs at the mark and the multiples between them
+  "judged-by-a-rule",       # 19 numbers: the conditions, the threshold's gates, the pulse, two runs at the mark
+  "some-of-it-goes-back",   # 13 numbers: the mark, two runs a minute into the rest, a third run on through it
+  "the-charge-the-datasheet-allows", # 11 numbers: the gentle pulse, two runs at the mark, the 1C figure from before
+  "colder-and-billed-throughout",    # 14 numbers: the colder conditions, two runs at the mark and their gap
 ]
 # Not scanned, and why. THIS LIST IS EMPTY for the first time, which is what the
-# forty entries above amount to: every step of the guided path now has its whole
+# forty-four entries above amount to: every step of the guided path now has its whole
 # prose scanned, not only the sentences a claim quotes. Of the steps below, those that
 # carry claims: none of them. Unchecked entirely: none. Both sentences are derived and
 # both now say the same thing.
@@ -11603,17 +12084,17 @@ unledgered = [
 # unit noun, and thirteen vocabulary rules — almost all of them for an instant stated
 # RELATIVE to another one, which the first batch never met. The third batch needed no shape
 # at all and the fourth needed one UNIT NOUN — the volt — which is what let the last two
-# steps holding one join the scan. The list holds thirty-one steps now.
+# steps holding one join the scan. The list holds thirty-five steps now.
 #
 # THE ENTRIES DO NOT ALL SAY THE SAME THING, and the split is a result rather than a gap:
-# twenty-four of them read nothing at all. Fifteen are the steps whose English quantities had
+# twenty-eight of them read nothing at all. Fifteen are the steps whose English quantities had
 # been read and tied to something; the digits rule rewrote all twenty-nine of them into
 # digits, so the word scan ran over those steps and found nothing left to account for. The
 # sixteenth is `protection-off`, whose one spelled quantity — "ten seconds" between its two
 # flags — stopped being true when `docs/plans/end-of-step-split.md` moved the first flag
 # half a step earlier, and was dropped rather than respelled. The rest are steps written
 # under the ban, which never held one. What ties those
-# quantities today is the ordinary digit ledger, which has covered all forty steps since
+# quantities today is the ordinary digit ledger, which has covered all forty-four steps since
 # before this list existed.
 #
 # THE THIRD BATCH IS WHAT PUT A NONZERO COUNT BACK, and the two batches after it were one
@@ -11651,6 +12132,10 @@ spelled = [
   "drawn-on-the-shelf",              # 0, written under the ban
   "grown-on-the-shelf",              # 0, written under the ban
   "stored-low",                      # 0, written under the ban
+  "judged-by-a-rule",                # 0, written under the ban
+  "some-of-it-goes-back",            # 0, written under the ban
+  "the-charge-the-datasheet-allows", # 0, written under the ban
+  "colder-and-billed-throughout",    # 0, written under the ban
   "the-loop-is-wider-down-here",     # 0, and it was written under the ban rather than
                                      # cleaned up afterwards: the phrase "for an hour" was
                                      # in the first draft of its opening sentence, which is

@@ -325,7 +325,7 @@ path's numbers are read on each scenario's own grid.
 If you do not already know what to look at, press **Start** under *Guided path*
 instead. The steps are grouped into chapters, and a menu beside Back and Next jumps to
 the start of any chapter on a freshly built pack; the steps keep one numbering from
-start to end, because the lessons point at each other by step number. It walks forty steps — one cell on its own, the same discharge on a
+start to end, because the lessons point at each other by step number. It walks forty-four steps — one cell on its own, the same discharge on a
 different chemistry, a pack disagreeing with itself, the BMS's estimate drifting from
 the truth, a short hidden by the sensor that should have caught it, the same overload
 with protection on and then off, a pack that wears out while doing nothing at all,
@@ -359,12 +359,17 @@ being put back and the recovery is the acid finding its way to the plate. Later 
 add an LTO cell, a NiMH cell, a sodium-ion cell and two lessons on fuel gauges, and
 three that build LFP out of twenty particles: halfway through a charge no particle is
 halfway, they switch in turn, and the voltage a half-charged cell rests at depends on
-which way it arrived — by a gap that in the cold is a throw of the dice. The last three
+which way it arrived — by a gap that in the cold is a throw of the dice. Three more
 leave one LG M50 cell on a shelf for 365 days, at a million times real time: aged along
 a curve someone drew, then by a film that grows on its graphite and was fitted to lab
 cells — which loses about a tenth as much, stored full grows roughly as the square root of
 time without being told to, and cares far more whether the cell was stored full or at
-30 %. Each
+30 %. The last four charge that cell cold through the Doyle–Fuller–Newman model and judge
+the lithium it plates two ways: by the chemistry file's threshold, which is silent at
+exactly 0 °C and bills every amp-hour at −10 °C, and as a reaction at the graphite, which
+starts part-way through the charge, loses a fixed share of what it plates for good, and
+strips the rest back within minutes of rest — visible as a new `plated` readout and as the
+cell resting a couple of millivolts higher while the metal goes back. Each
 step sets the controls for itself and outlines the panel it is about. Every control
 stays live throughout; stepping back and forward re-applies a step's whole control set,
 so there is nothing you can break by fiddling mid-lesson. A step reloads the pack when

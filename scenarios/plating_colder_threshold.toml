@@ -1,0 +1,36 @@
+# One LG M50 cell charged colder, at -10 degC, with lithium plating by the THRESHOLD rule.
+#
+# `plating_cold_threshold.toml` with `initial_temp_k` changed from 273.15 to 263.15 and nothing
+# else. Read `plating_cold_reaction.toml`'s header first; the four files, why each section is
+# there, and what they are not are all stated there once.
+#
+# At -10 degC the threshold's conditions hold from the first step of a 1C charge, so
+# PLATING_RISK is up on every step and `plating_fade_per_ah` (a placeholder) bills every
+# amp-hour charged. Charged at 1C for 1390 s (5 s steps; the constant current crosses 4.2 V a
+# few seconds later), `soh cap` reads 99.818 %, against 99.947 % on the reaction file, which
+# plates from 270 s and loses 0.0455 % of the cell's capacity as dead lithium.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "Colder charge, plating by threshold (-10 degC)"
+description = """
+One LG M50 cell (Doyle-Fuller-Newman, fine grid) charged from empty at -10 degC, plating by \
+the chemistry's threshold rule, which flags every step of a 1C charge this cold and bills \
+every amp-hour. Compare plating_colder_reaction."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.0
+initial_temp_k = 263.15
+seed = 0
+
+[pack.cell_model.Dfn]
+shells = 40
+nodes_negative = 40
+nodes_separator = 20
+nodes_positive = 40
+
+[pack.aging]
+sub_clock_period_s = 10.0

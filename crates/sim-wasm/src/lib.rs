@@ -237,7 +237,16 @@ use wasm_bindgen::prelude::*;
 /// dropped without a word and the toggle would rebuild the pack on the coarse grid while
 /// saying it had not. `sim_core::SNAPSHOT_VERSION` stays at 28: the grid is already the shape
 /// of the stored state. See `docs/plans/dfn-fine-grid.md`.
-pub const WASM_API_VERSION: u32 = 10;
+///
+/// v11 (plated lithium): [`Cells`] gains `plated`, each cell's `sim_core::PlatingView` —
+/// reversible and dead plated lithium, in moles and as fractions of the rated capacity —
+/// `null` for the whole pack on every pack whose cells run no plating reaction. An addition
+/// on `particles`' terms: `sim_server::API_VERSION` stays put and its `/cells` route gains the
+/// same key; `WASM_API_MIN` in `web/app.js` moves with it, because against a v10 bundle the
+/// page's `plated` row would print "no plating reaction" about a cell that runs one.
+/// `sim_core::SNAPSHOT_VERSION` stays at 30: the view is a pure function of the stored
+/// stores. See `docs/plans/phase-12-slice-d-lesson.md`.
+pub const WASM_API_VERSION: u32 = 11;
 
 /// [`WASM_API_VERSION`], reachable from JS.
 ///

@@ -1,0 +1,36 @@
+# One LG M50 cell charged cold, with lithium plating by the THRESHOLD rule — the control arm.
+#
+# `plating_cold_reaction.toml` with its `plating = "Reaction"` line removed, which leaves the
+# default, `Threshold`: the chemistry's `[safety]` rule that raises PLATING_RISK and bills
+# `plating_fade_per_ah` on a charge BELOW `t_plating_min_k` (273.15 K) above
+# `plating_c_threshold` (0.4C). Read that file's header first; the four files, why each section
+# is there, and what they are not are all stated there once.
+#
+# At 0 degC and 1C for 1800 s (5 s steps) PLATING_RISK never rises — 0 degC is not below
+# 273.15 K — and `soh cap` reads 99.983 % at the end of the charge, the drawn calendar and cycle
+# fades alone. The reaction file reads 99.958 % at the same instant and has plated from 555 s.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "Cold charge, plating by threshold (0 degC)"
+description = """
+One LG M50 cell (Doyle-Fuller-Newman, fine grid) charged from empty at 0 degC, plating by \
+the chemistry's threshold rule, which judges only temperature and rate and is silent at \
+0 degC itself. The control arm for plating_cold_reaction."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.0
+initial_temp_k = 273.15
+seed = 0
+
+[pack.cell_model.Dfn]
+shells = 40
+nodes_negative = 40
+nodes_separator = 20
+nodes_positive = 40
+
+[pack.aging]
+sub_clock_period_s = 10.0

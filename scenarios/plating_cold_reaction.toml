@@ -1,0 +1,80 @@
+# One LG M50 cell charged cold, with lithium plating as a REACTION.
+#
+# Phase 12's lesson (docs/plans/phase-12-plating.md, slice D) charges the same cell two ways
+# and at two temperatures. Four files, identical except where their names say:
+#
+#   plating_cold_threshold.toml    0 degC, plating by the [safety] threshold (the default)
+#   plating_cold_reaction.toml     this file: `[pack.aging] plating = "Reaction"`
+#   plating_colder_threshold.toml  the threshold, `initial_temp_k = 263.15` (-10 degC)
+#   plating_colder_reaction.toml   the reaction at -10 degC
+#
+# `plating_files_differ_only_where_their_headers_say` (crates/sim-data/tests/plating_lesson.rs)
+# holds that sentence over the whole PackConfig.
+#
+# ## Why each section is here
+#
+# The Doyle-Fuller-Newman model on its FINE grid (`dfn::FINE_*`: 40/20/40 nodes, 40 shells),
+# written here rather than left to the page's toggle: the reaction's rate constant was sized on
+# this grid ([dfn.plating]'s provenance), plating is exponential in the potential the grid
+# resolves, and the guided path's numbers must be the file's own. About six times the cost of
+# the recommended grid per step.
+#
+# From empty, isothermal (the ambient slider does nothing), no BMS — at 0 degC the BMS would
+# derate the charge to the 0.3C LG's sheet allows, and at -10 degC inhibit it — no faults, no
+# scatter, one cell. Aging is on, so the drawn calendar and cycle fades run beside plating on
+# all four files: compare a file with its twin, never one file with itself.
+#
+# ## What it does, measured (5 s steps, the lesson's)
+#
+# Charged at 1C (5.153198 A) for 1800 s — the page's `Pulse` program, which stops 1 mV under
+# 4.2 V, a few seconds before the constant current would cross it — then rested:
+#
+#   file                       first PLATING_RISK   soh cap at 1800 s   plated at 1800 s
+#   plating_cold_threshold     never                99.983 %            -
+#   plating_cold_reaction      555 s                99.958 %            0.0257 % + 0.0257 % dead
+#
+# The threshold is silent because 0 degC is not BELOW its `t_plating_min_k` (273.15 K): a cliff,
+# and this file sits on its edge. The reaction plates from 555 s, as the graphite's potential
+# falls past lithium's near the separator; half of what plates is lost at once (`dead_share`,
+# a placeholder), and the reversible half strips back on the rest — 0.0166 % left at 60 s,
+# 0.0004 % at 300 s, none by 600 s — while `soc (true)` stays flat. While it strips, the cell
+# rests above the threshold file: 3.952 V against 3.948 V at 5 s into the rest, 3.878 against
+# 3.876 at 60 s, the same to the millivolt from 300 s. With the rate constant scaled by 1e-6
+# the gap is zero to five decimals: it is the metal, not the charge level.
+#
+# At 0.3C (1.5459594 A) for 9440 s, the coldest charge LG's sheet allows: the reaction plates
+# 0.0008 % from 8455 s on, and both files read 99.96 % on `soh cap` at the end of it.
+#
+# ## What these numbers are and are not
+#
+# The rate constant and the dead share are placeholders with no source (owner decisions 2 and
+# 3); the constant is sized so the allowed charges are nearly free and the forbidden ones are
+# not. Every size here is theirs. What is the model's: WHERE and WHEN the graphite crosses
+# 0 V against lithium, which the `Dfn` matches PyBaMM on to about a millivolt.
+
+chemistry = "nmc_21700_lgm50"
+
+[meta]
+name = "Cold charge, plating as a reaction (0 degC)"
+description = """
+One LG M50 cell (Doyle-Fuller-Newman, fine grid) charged from empty at 0 degC with lithium \
+plating as a reaction at the graphite. At 1C it plates from 555 s; half of it is lost at \
+once and the rest strips back within minutes of rest. Compare plating_cold_threshold, the \
+same cell with the threshold rule, which is silent at 0 degC."""
+
+[pack]
+series = 1
+parallel = 1
+initial_soc = 0.0
+initial_temp_k = 273.15
+seed = 0
+
+[pack.cell_model.Dfn]
+shells = 40
+nodes_negative = 40
+nodes_separator = 20
+nodes_positive = 40
+
+[pack.aging]
+sub_clock_period_s = 10.0
+plating = "Reaction"

@@ -25,7 +25,7 @@ use axum::response::{Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
-use sim_core::{CellView, Pack, Snapshot, Telemetry, SNAPSHOT_VERSION};
+use sim_core::{CellView, Pack, PlatingView, Snapshot, Telemetry, SNAPSHOT_VERSION};
 use sim_data::{parse_scenario, ChemistrySource, Scenario};
 use tower_http::services::ServeDir;
 
@@ -352,6 +352,9 @@ struct CellsResponse {
     /// cell model has one positive particle per cell. Matches `sim_wasm::Cells::particles`,
     /// whose doc is the authority.
     particles: Option<Vec<Vec<f64>>>,
+    /// Each cell's plated lithium, in the order of `cells`, or `None` for a pack whose cells
+    /// run no plating reaction. Matches `sim_wasm::Cells::plated`, whose doc is the authority.
+    plated: Option<Vec<PlatingView>>,
 }
 
 /// `GET /sessions/{id}/sensors` response: what the BMS measured.
@@ -565,11 +568,18 @@ fn cells_of(session: &Session) -> CellsResponse {
             .filter_map(|(s, p)| pack.positive_particles(s, p))
             .collect()
     });
+    let plated = pack.cell_plating(0, 0).map(|_| {
+        (0..usize::from(series))
+            .flat_map(|s| (0..usize::from(parallel)).map(move |p| (s, p)))
+            .filter_map(|(s, p)| pack.cell_plating(s, p))
+            .collect()
+    });
     CellsResponse {
         series,
         parallel,
         cells,
         particles,
+        plated,
     }
 }
 

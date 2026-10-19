@@ -150,7 +150,10 @@ rate to the WMG LG M50 calendar data. Plan: `phase-10-sei.md`.
 threshold (`plating::plating_risk`: below `t_plating_min_k`, above `plating_c_threshold`, a
 fixed fade per amp-hour), so a cell at 0.499 C plates nothing and one at 0.501 C plates fully.
 Proposed as **Phase 12** (§3, 2026-10-17): plating as a side reaction — on the `Dfn` only, by
-the owner's decision after the spike; planned 2026-10-18 (`phase-12-plating.md`).
+the owner's decision after the spike; planned 2026-10-18 (`phase-12-plating.md`); **complete
+2026-10-19**. What it leaves open: the threshold still runs on every other cell model, the reaction's
+rate constant and dead share are placeholders, and a rest after a cold 2C or faster charge on the fine
+grid does not converge (finite and flagged since `plating-unconverged-runaway.md`, not right).
 
 ### H3. Nearly every constant that is not extracted from PyBaMM is a labelled placeholder, and there is no fitting pipeline
 
@@ -687,7 +690,7 @@ was not converged across the cell; nor was the 25 °C 3C one, regenerated the sa
 `dfn-fine-grid.md`): the opt-in fine grid meets the cut-off but misses the 12 mV whole-run bar
 at the knee, 67 mV, a record the owner accepted as the exit. It ships as a toggle in the page. Lead-acid's refit (slice C above) was left out by the owner and stays under H3.
 
-### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; planned 2026-10-18 (`phase-12-plating.md`), after `dfn-split-nan.md`; slice A done 2026-10-18 (`phase-12-slice-a-reference.md`: k = 4.8e-11 m/s, a closed-loop PyBaMM reference); slice B built 2026-10-18 (`phase-12-slice-b-reaction.md`: the reaction in the `Dfn`, v29, 5 s sub-steps; exit 3 met by `plating-hold-pieces.md`; exit 5 finite and on target at one hour after `dfn-hold-past-edge.md`, its first hold step flagged by the cells' own solves after the overfill, accepted by the owner); slice C built 2026-10-18 (`phase-12-slice-c-health.md`: health, flag and dendrite short from the reaction, v30)*
+### Phase 12 — plating as a side reaction (H2) — *proposed 2026-10-17, chosen by the owner; spiked 2026-10-18 (`phase-12-spike.md`), the owner's decisions in; planned 2026-10-18 (`phase-12-plating.md`), after `dfn-split-nan.md`; slice A done 2026-10-18 (`phase-12-slice-a-reference.md`: k = 4.8e-11 m/s, a closed-loop PyBaMM reference); slice B built 2026-10-18 (`phase-12-slice-b-reaction.md`: the reaction in the `Dfn`, v29, 5 s sub-steps; exit 3 met by `plating-hold-pieces.md`; exit 5 finite and on target at one hour after `dfn-hold-past-edge.md`, its first hold step flagged by the cells' own solves after the overfill, accepted by the owner); slice C built 2026-10-18 (`phase-12-slice-c-health.md`: health, flag and dendrite short from the reaction, v30); slice D built 2026-10-19 (`phase-12-slice-d-lesson.md`: guided-path steps 41–44 and a `plated` readout, `WASM_API_VERSION` 11), after `plating-unconverged-runaway.md` stopped a failed solve's plating from running to NaN — **complete 2026-10-19***
 
 **The plan replaces the slices and exit below**, which were provisional on the spike: there is no PyBaMM
 reference for the law the owner chose, and plating is on the `Dfn` alone. They are kept as the proposal

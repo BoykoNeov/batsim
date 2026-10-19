@@ -49,8 +49,8 @@
 
 use serde::Serialize;
 use sim_core::{
-    CellView, ChemistryParams, Demand, Env, Fault, NonFinite, Pack, Snapshot, Telemetry,
-    SNAPSHOT_VERSION,
+    CellView, ChemistryParams, Demand, Env, Fault, NonFinite, Pack, PlatingView, Snapshot,
+    Telemetry, SNAPSHOT_VERSION,
 };
 use sim_data::{
     parse_chemistry, parse_chemistry_facts, parse_scenario, ChemistryFacts, ChemistrySource,
@@ -154,6 +154,12 @@ pub struct Cells {
     /// pack does not put a thousand nulls in every frame. The model is chosen in the pack
     /// config, so the first cell answers for all of them.
     pub particles: Option<Vec<Vec<f64>>>,
+    /// Each cell's plated lithium, in the same order as [`Self::cells`] — reversible and dead,
+    /// in moles and as fractions of the chemistry's rated capacity — or `None` for the whole
+    /// pack when its cells run no plating reaction (every pack but a `Dfn` one with
+    /// `AgingConfig::plating = Reaction`). See `sim_core::Pack::cell_plating`. `None` for the
+    /// pack on [`Self::particles`]' terms.
+    pub plated: Option<Vec<PlatingView>>,
 }
 
 /// Everything the BMS measured, as the BMS sees it.
@@ -595,11 +601,18 @@ impl SimEngine {
                 .filter_map(|(s, p)| self.pack.positive_particles(s, p))
                 .collect()
         });
+        let plated = self.pack.cell_plating(0, 0).map(|_| {
+            (0..usize::from(series))
+                .flat_map(|s| (0..usize::from(parallel)).map(move |p| (s, p)))
+                .filter_map(|(s, p)| self.pack.cell_plating(s, p))
+                .collect()
+        });
         Cells {
             series,
             parallel,
             cells,
             particles,
+            plated,
         }
     }
 

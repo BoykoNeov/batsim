@@ -5,7 +5,7 @@ chose to fix both before C (2026-10-18). **Exit 3 is met**: `plating-hold-pieces
 pack's voltage hold into 5 s pieces, the hold leg within 0.10 %. **Exit 5 is not quite**: the one-hour
 stall was a held probe's range, fixed by `dfn-hold-past-edge.md` (its one finding accepted by the owner),
 but with the hold in pieces exit 5 is finite and on 4.200000 V at one hour, its first hold step flagged by the cells' own solves after the one-hour charge overfilled them (a miss as registered, **accepted by the owner 2026-10-18** as the cell model's limit on overfilled
-cells). Slice B is done; slice C built 2026-10-18 (`phase-12-slice-c-health.md`, v30); slice D, the lesson, runs without the cold hold (§C) and waits on a smaller fix its measurements found, by the owner's decision of 2026-10-19 (§D).** Written after the spike (`phase-12-spike.md`), which is the measurement
+cells). Slice B is done; slice C built 2026-10-18 (`phase-12-slice-c-health.md`, v30); slice D, the lesson, built 2026-10-19 (`phase-12-slice-d-lesson.md`) without the cold hold (§C), after the fix its measurements found (`plating-unconverged-runaway.md`, §D). Phase 12 is complete.** Written after the spike (`phase-12-spike.md`), which is the measurement
 this plan stands on; where a later slice note contradicts this text, the slice note is the measurement
 and wins. When written the repo was at `SNAPSHOT_VERSION` 28 and `WASM_API_VERSION` 10.
 
