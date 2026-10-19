@@ -118,3 +118,68 @@ checked byte for byte.
 * **No discharge after the charge.** The stripping shoulder on a following discharge — the
   laboratory signature — is named in the prose and not shown: it is about 4 mV for about a minute
   (slice C), under the panel's three decimals of a falling voltage.
+
+## Addendum: the charge stops at 4.2 V, and a notice when the model cannot answer (2026-10-19)
+
+**Status: predictions registered before any change.**
+
+### What a reader got by typing a bigger current
+
+The steps charge for a fixed time sized for their own current. Typed into the pulse current box,
+2C or 3C runs the same on-time, so the cell is charged far past full. Out-of-tree probes (5 s steps,
+the steps' own `Pulse`, then the rest), none of them NaN:
+
+| typed | file | past 4.2 V | first `SOLVE_UNCONVERGED` | first `SURFACE_OUT_OF_RANGE` | plated at the first flag | at the end of the charge |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2C | 0 °C reaction | 330 s (18 % charged) | 1465 s | 1690 s | 29.8 % | 5.186 V, 43.4 % plated |
+| 3C | 0 °C reaction | 65 s (5 %) | 590 s | 595 s | 33.4 % | 5.826 V, 105.8 % plated |
+| 2C | 0 °C threshold | 325 s | 505 s | 505 s | — | 5.539 V |
+| 3C | 0 °C threshold | 65 s | 85 s | 85 s | — | 6.175 V |
+| 2C | −10 °C reaction | 145 s | never | never | — | 5.170 V, 46.2 % plated |
+| 2C, on step 43's 9440 s | 0 °C reaction | 330 s | | | | 5.682 V, 375.0 % plated |
+
+The plated stores are the model's **converged** answer to an overcharge, not failed solves: on the
+reaction file the charge solves on all but a handful of steps, and at −10 °C on every one. So a
+notice keyed on the flags arrives minutes after the absurd number is on screen, or never.
+
+### The owner's decisions
+
+1. **Both**: a notice on the page whenever the model cannot answer a step, and a sentence in the
+   lesson.
+2. **Stop at 4.2 V**: the four plating steps stop charging when the cell reaches 4.2 V, whatever
+   current is typed, and rest. Still no constant-voltage hold (`dfn-cold-hold.md`).
+
+A ceiling notice for free play was offered and not chosen: a plain constant current typed outside
+the pulse program still overcharges, with only the solve notice. Recorded, not built.
+
+### The design
+
+* **A voltage stop on the pulse train**, a fourth field (`stop charging at`, V per series cell,
+  blank for none), acting only on a charging pulse. Before each step of an on-leg, if the last
+  frame's terminal voltage is at or above it, that pulse is latched off and rests to its edge. The
+  latch is per pulse (the pulse number is a function of `sim_time_s`), held by the page and cleared
+  by `resetHistory` (Load, Restart, restore). A restore loses it: the restored pack charges one more
+  step and latches again. Stepped one at a time only while a stop could still fire; rests and
+  latched remainders are batched to the edge as before. Every pulse step writes the field, blank
+  where it has none, so the stop cannot leak into another step.
+* **Mirrored in `path_claims.rs`** (`Prog::Pulse` gains the stop, `arm_prog` carries it, the latch
+  lives in the trace across an arm's drives, the probe respects it) and in `plating_lesson.rs`.
+* **The notice**: latched on either `SOLVE_UNCONVERGED` or `SURFACE_OUT_OF_RANGE` in any reported
+  frame, cleared by `resetHistory`, saying from what simulation time the model could not answer.
+  Measured over every step and arm of the path: only `the-electrolyte-starves` raises either (the
+  "not physical" flag at 464 s, the solve flag at 466 s, neither on a voltage hold), and its prose
+  already says so. A survey test pins that. Reports are dropped only above about 300 steps a batch,
+  and the failures above come in runs of tens to hundreds of steps, so the page-side latch is not
+  expected to miss one; it would miss an isolated failed step at high speed, recorded as a limit.
+
+### Predictions
+
+1. **Every existing claim is bit-identical.** The highest voltage on each lesson charge, at the
+   steps' own currents, on both files: 4.19962 / 4.19925 V (0 °C 1C, threshold / reaction),
+   4.19971 / 4.19968 V (0 °C 0.3C), 4.19887 / 4.19723 V (−10 °C 1C). None reaches 4.2 V, so the
+   stop never fires on any step or arm. `path_claims` and `plating_lesson` pass unchanged.
+2. **Typed 2C and 3C into each of the four steps, on both files**: the charge stops on the step
+   after the first one at or above 4.2 V, the peak is within one step's rise of it, and on the
+   charge and the rest that follows no `SOLVE_UNCONVERGED` or `SURFACE_OUT_OF_RANGE`, every value
+   finite, the plated store under 0.1 % of capacity.
+3. **No engine change**: no snapshot or `WASM_API_VERSION` bump, parity untouched.
