@@ -364,6 +364,10 @@ where the rest-OCV gate refused to correct.
   the surface clamp freezes a full negative node's exchange current, the hold creeps it past full, and
   the discharge stalls on the clamp's kink at a residual floor (up to 4.4e-5 on the fine grid). A taper
   to zero at full fixed the coarse grid only and moved the overcharge tests; withdrawn; the owner chose a lesson without the hold (2026-10-18), so this stays open.
+  **Counted 2026-10-20** (`phase-13-spike.md`): pushed on past full at a constant current with the BMS
+  off, every porous model stores lithium its particles cannot hold — a negative at 1.4–1.8 of `c_max`,
+  a positive at −0.2 to −0.8 — and whether the cell then ignites is decided by that artifact. Phase 13,
+  proposed below.
 * ~~**A `Dfn` books the equilibrium voltage's fall across a long step as heat.**~~ —
   **closed 2026-09-23** (`dfn-end-of-step-heat.md`): the heat is read at the end of the
   step off the cell's own solve, for the report and the network both (1.03 K against
@@ -762,6 +766,37 @@ match a PyBaMM plating reference on the engine's grid within bars set before the
 loss is read off the electrodes; every energy ledger closes; a parallel group and a voltage
 hold converge at 15 min and 1 h steps; LTO plates nothing. Pinned by a
 `sim-data/tests/plating_golden.rs`.
+
+### Phase 13 — the porous models past full (H8) — *chosen by the owner 2026-10-20; spiked 2026-10-20 (`phase-13-spike.md`), the owner's decisions pending*
+
+*Framing.* A porous cell charged on past full must stop where its particles do, and send what they
+cannot take somewhere physical, so that the lithium book, the energy ledger and the road to
+runaway all close on physics rather than on impossible concentrations.
+
+*What the spike counted* (one cell, BMS off, a constant current pushed one capacity in from 80 %):
+on the `Spm`, the `Dfn` and the many-particle cell every amp-hour past full goes into the particles —
+a negative at 1.44–1.83 of `c_max`, a positive bulk at −0.21 to −0.78. The space between the cell's
+full and its particles' limits is real (on LG M50 the negative reaches `c_max` 0.4–0.8 A·h past full,
+the positive empties 1.5–2.3 A·h past it); on LFP the positive is empty at full. The `Dfn`'s plating
+reaction carries 85 % of the charge past full on the negative, and the positive empties regardless.
+The circuit cell ignites at 1C; the `Spm` never does; the `Dfn` does at 3C, by resistive heat on an
+overfilled state. PyBaMM 26.6 has no overcharge reaction to compare against.
+
+*Slices (provisional, by the owner's answers).* A: the `Spm` — the particles stop at `c_max` and at
+0, the rest goes to the chosen outlet, heat at its potential, `soc_true` and `SOC_CLAMPED_HIGH`
+made truthful. B: the many-particle cell (its positive is the limit at full). C: the `Dfn`, with
+the plating reaction's 1 % creep. D, if the owner includes it: the cold 4.2 V hold's kink
+(`dfn-cold-hold.md`), with its own bars.
+
+*Owner decisions, in plain terms* (`phase-13-spike.md` §"Decisions for the owner"): (1) one unnamed
+side reaction that turns refused charge into heat, or named reactions (plating plus electrolyte
+oxidation at the positive); (2) which models, in which order; (3) whether the cold hold is in this
+phase; (4) an exit that promises conservation, convergence and boundedness, not a reference curve.
+
+*Exit (provisional).* On each porous model, a BMS-off constant-current overcharge keeps every
+particle concentration inside `[0, c_max]`, refuses what they cannot take, closes the lithium and
+energy ledgers, and reaches runaway by that refused energy under a thermal network; parallel groups
+and voltage holds converge at 15 min and 1 h steps past full; every golden unchanged.
 
 ### Not phases: ~~H5 (determinism across platforms)~~ and ~~H6 (the thermal integrator)~~
 
