@@ -29,8 +29,8 @@ Key invariants:
 
 ## Status
 
-Phases 0–11 are complete (Phase 11's cold `Dfn` exit closed on a recorded miss at the knee,
-accepted by the owner; see its plan). Each phase's exit criterion is a committed test rather than a
+Phases 0–12 are complete (Phase 11's cold `Dfn` exit closed on a recorded miss at the knee, and
+Phase 12's one-hour hold step on a flag, both accepted by the owner; see their plans). Each phase's exit criterion is a committed test rather than a
 judgement call, so the right-hand column is the thing to run if you doubt a row.
 
 | phase | what landed | exit criterion pinned by |
@@ -47,13 +47,21 @@ judgement call, so the right-hand column is the thing to run if you doubt a row.
 | 9 | the LFP many-particle cell (`SpmEnsemble`): a flat plateau and rest hysteresis from particles filling one at a time | `sim-data/tests/ensemble.rs`, `lfp_ensemble.rs` |
 | 10 | an SEI film that ages the `Spm` and `Dfn` by physics, fitted to the WMG LG M50 storage data | `sim-data/tests/sei_golden.rs`, `sei_film.rs`, `sei_wmg.rs`, `sei_dfn.rs` |
 | 11 | the LG M50 file fitted where anything can fit it: its circuit fitted to the DFN, its limits from LG's sheet, entropic heat and the cold in all three models, the rest on a fixed placeholder list | `sim-data/tests/ecm_fit.rs`, `entropic.rs`, `dfn_cold.rs`, `lgm50_provenance.rs` |
+| 12 | lithium plating as a reaction on the `Dfn`: it plates where the electrode's potential says so, with no threshold, and its dead lithium costs capacity and resistance and can short the cell | `sim-data/tests/plating_dfn.rs`, `plating_health.rs`, `plating_lesson.rs` |
 
 Work continues past the phase plan, and [`docs/ROADMAP.md`](docs/ROADMAP.md) is where it
 is planned: every scientific hurdle the design notes record as open, what each costs, and
-the phases proposed after 8 (Phases 9–11 since built). [`docs/plans/README.md`](docs/plans/README.md) indexes the
+the phases proposed after 8 (Phases 9–12 since built). [`docs/plans/README.md`](docs/plans/README.md) indexes the
 notes themselves.
 
-The most recent phase, 11, fitted the LG M50 file where anything can fit it. Its
+The most recent phase, 12, made lithium plating a reaction on the `Dfn` rather than a rule.
+A cold or fast charge plates where the negative electrode's potential falls below that of lithium
+metal — first beside the separator, as in real cells — with no temperature or rate threshold in the
+code; some of the metal strips back at rest, the rest is dead lithium that costs capacity and
+resistance and can short the cell. The guided path teaches it in four steps. See
+[`docs/plans/phase-12-plating.md`](docs/plans/phase-12-plating.md).
+
+Phase 11 fitted the LG M50 file where anything can fit it. Its
 equivalent circuit is now fitted to the DFN rather than guessed (4.85 mV RMS at 1C and
 25 °C, residuals per temperature in the file); the cell's limits and mass come from LG's
 specification sheet; all three models carry ORegan2022's measured entropy — reversible heat,

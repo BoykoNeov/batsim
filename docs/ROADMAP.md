@@ -1,7 +1,7 @@
 # Roadmap — the scientific hurdles, and the phases after 8
 
-Phases 0–11 are complete; each is pinned by a committed test (see the README's status
-table). A hundred and thirty-five design notes under `docs/plans/` record what each slice measured,
+Phases 0–12 are complete; each is pinned by a committed test (see the README's status
+table). A hundred and forty design notes under `docs/plans/` record what each slice measured,
 built, and deliberately did not build, and most of them end with a list of what is still
 open. This file reads across all of them and puts those lists in one place, ranked by how
 much they limit what the engine can honestly claim, with what each would cost. It was
@@ -21,7 +21,7 @@ test passes — not when the list of interesting things runs out.
 Four cell models behind one API (`Ecm`, `Spm`, `Dfn`, and since Phase 9 slice B the
 many-particle `SpmEnsemble`), eight chemistries, a thermal
 network, a sensor-limited BMS, four capacity-fade mechanisms with matching resistance
-growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 28,
+growth, a fault queue, emergent plating and runaway, snapshots at `SNAPSHOT_VERSION` 30,
 and four clients (server, browser, Godot, an example script). Against grid-converged
 PyBaMM references the SPM tracks to 2–7 mV over a discharge and the DFN to 5.8 mV at 1 C.
 
