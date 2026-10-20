@@ -641,8 +641,9 @@ the previous one's tests pass.
   owner decisions and exit in `docs/plans/phase-12-plating.md`.
 - **Phase 13 — the porous models past full** (ROADMAP H8), chosen by the owner 2026-10-20. Spiked
   the same day (`docs/plans/phase-13-spike.md`): charged on past full with the BMS off, every porous
-  model stores lithium its particles cannot hold, and ignition is decided by that. The owner's
-  decisions are pending; no plan yet.
+  model stores lithium its particles cannot hold, and ignition is decided by that. Owner's decisions
+  in: gross overcharge only, named reactions (plating; electrolyte oxidation at the positive), the
+  cold hold as a last slice, `Spm` then the many-particle cell then the `Dfn`. No plan yet.
 - **Phases 14 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

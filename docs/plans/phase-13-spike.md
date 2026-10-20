@@ -4,7 +4,7 @@
 tests no design). No Rust in the tree. The harness lives outside it
 (`W:\temp\claude\phase13-spike\engine\`, a binary against the tree at 31916d5; per-run traces in
 `W:\temp\claude\phase13-spike\out\*.csv`, summaries in `out\census2.txt`); only this note is
-committed. Next: the owner's decisions below, then the phase plan.** The phase is ROADMAP H8's
+committed. The owner's decisions are in (below); next: the phase plan.** The phase is ROADMAP H8's
 "no physics past FULL", chosen by the owner 2026-10-20 as Phase 13 (`docs/ROADMAP.md` §3).
 
 ## The question
@@ -150,6 +150,24 @@ of its capacity and the threshold cell reached 5.5–6.2 V, and at −10 °C 3C 
 4. **What the exit can promise**: conservation, convergence and boundedness, and a BMS-off
    overcharge that reaches runaway by refused energy; not agreement with a reference, since none
    exists.
+
+## The owner's decisions (2026-10-20)
+
+Asked after the spike had corrected the pitch the phase was chosen on (it had been offered as the root
+of both Phase 12 leftovers; it is the root of neither):
+
+1. **Phase 13 stays, scoped to (a), gross overcharge.**
+2. **Named reactions**, not one unnamed heat sink: plating at a full negative where the cell runs it,
+   and electrolyte oxidation at an empty positive as a reaction of its own. Every constant a labelled
+   placeholder; the exit promises conservation, convergence and boundedness, not a reference curve.
+3. **(b), the cold hold, is in the phase as its own slice, last**, after (a) has changed the clamp it
+   sits on, with its own bars; whether (a) fixed it is a registered prediction, not an assumption.
+4. **Order: the `Spm`, then the many-particle cell, then the `Dfn`.**
+
+Open for the plan: the `Spm` and the many-particle cell have no plating reaction (Phase 12 built it on
+the `Dfn` only), so "plating where the cell runs it" leaves their full negative without a named outlet
+— the plan must propose one and put it to the owner; and the oxidation reaction's form and
+placeholders need a published overcharge model to borrow from, since PyBaMM has none.
 
 ## What this spike did not do
 

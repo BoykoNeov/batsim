@@ -767,7 +767,7 @@ loss is read off the electrodes; every energy ledger closes; a parallel group an
 hold converge at 15 min and 1 h steps; LTO plates nothing. Pinned by a
 `sim-data/tests/plating_golden.rs`.
 
-### Phase 13 — the porous models past full (H8) — *chosen by the owner 2026-10-20; spiked 2026-10-20 (`phase-13-spike.md`), the owner's decisions pending*
+### Phase 13 — the porous models past full (H8) — *chosen by the owner 2026-10-20; spiked 2026-10-20 (`phase-13-spike.md`); the owner's decisions in the same day: gross overcharge only, named reactions (plating, and electrolyte oxidation at the positive), the cold hold as a last slice, `Spm` then the many-particle cell then the `Dfn`*
 
 *Framing.* A porous cell charged on past full must stop where its particles do, and send what they
 cannot take somewhere physical, so that the lithium book, the energy ledger and the road to
@@ -788,10 +788,11 @@ made truthful. B: the many-particle cell (its positive is the limit at full). C:
 the plating reaction's 1 % creep. D, if the owner includes it: the cold 4.2 V hold's kink
 (`dfn-cold-hold.md`), with its own bars.
 
-*Owner decisions, in plain terms* (`phase-13-spike.md` §"Decisions for the owner"): (1) one unnamed
-side reaction that turns refused charge into heat, or named reactions (plating plus electrolyte
-oxidation at the positive); (2) which models, in which order; (3) whether the cold hold is in this
-phase; (4) an exit that promises conservation, convergence and boundedness, not a reference curve.
+*Owner decisions* (`phase-13-spike.md` §"The owner's decisions"): named reactions — plating at a full
+negative where the cell runs it, electrolyte oxidation at an empty positive — every constant a
+labelled placeholder; the cold hold as slice D; the `Spm` first; an exit that promises conservation,
+convergence and boundedness, not a reference curve. Open for the plan: the full negative's outlet on
+the `Spm` and the many-particle cell, which have no plating reaction.
 
 *Exit (provisional).* On each porous model, a BMS-off constant-current overcharge keeps every
 particle concentration inside `[0, c_max]`, refuses what they cannot take, closes the lithium and
