@@ -767,7 +767,7 @@ loss is read off the electrodes; every energy ledger closes; a parallel group an
 hold converge at 15 min and 1 h steps; LTO plates nothing. Pinned by a
 `sim-data/tests/plating_golden.rs`.
 
-### Phase 13 — the porous models past full (H8) — *chosen by the owner 2026-10-20; spiked 2026-10-20 (`phase-13-spike.md`); the owner's decisions in the same day: gross overcharge only, named reactions (plating, and electrolyte oxidation at the positive), the cold hold as a last slice, `Spm` then the many-particle cell then the `Dfn`; planned 2026-10-20 (`phase-13-past-full.md`), three owner questions open*
+### Phase 13 — the porous models past full (H8) — *chosen by the owner 2026-10-20; spiked 2026-10-20 (`phase-13-spike.md`); the owner's decisions in the same day: gross overcharge only, named reactions (plating, and electrolyte oxidation at the positive), the cold hold as a last slice, `Spm` then the many-particle cell then the `Dfn`; planned 2026-10-20 (`phase-13-past-full.md`), its owner questions answered: deposition only at the edge on cells without the reaction, placeholder constants, a lesson slice E*
 
 *Framing.* A porous cell charged on past full must stop where its particles do, and send what they
 cannot take somewhere physical, so that the lithium book, the energy ledger and the road to

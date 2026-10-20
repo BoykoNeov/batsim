@@ -644,7 +644,7 @@ the previous one's tests pass.
   model stores lithium its particles cannot hold, and ignition is decided by that. Owner's decisions
   in: gross overcharge only, named reactions (plating; electrolyte oxidation at the positive), the
   cold hold as a last slice, `Spm` then the many-particle cell then the `Dfn`. Planned in
-  `docs/plans/phase-13-past-full.md`; three owner questions open before slice A.
+  `docs/plans/phase-13-past-full.md`; owner questions answered, slice A (the `Spm`) next.
 - **Phases 14 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

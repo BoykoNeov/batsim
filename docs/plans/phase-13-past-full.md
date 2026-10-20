@@ -1,8 +1,9 @@
 # Phase 13 — the porous models past full: the plan
 
 **Status: PLANNED 2026-10-20, after the spike (`phase-13-spike.md`) and the owner's four decisions
-there. Three questions for the owner are open (§"Owner questions"); slice A does not start before
-they are answered.** ROADMAP H8's "no physics past FULL" bullet; `docs/ROADMAP.md` §3 "Phase 13".
+there; the owner answered this plan's three questions the same day (§"Owner questions"): deposition
+only at the edge on cells without the reaction, placeholders with sizing rules, and a lesson slice E.
+Next: slice A, the `Spm`.** ROADMAP H8's "no physics past FULL" bullet; `docs/ROADMAP.md` §3 "Phase 13".
 
 ## What the phase does
 
@@ -144,6 +145,9 @@ one-key change if a source turns up.
 * **D — the cold 4.2 V hold** (`dfn-cold-hold.md`), with its own bars (that note's: the fine grid
   with plating on at 0 °C and −10 °C, and nothing else moving). Whether A–C already removed its kink
   is a registered prediction.
+* **E — the lesson** (owner, 2026-10-20): a guided-path step or steps on a porous cell overcharged
+  with the BMS off — the voltage climbing onto the oxidation, the metal depositing, the heat,
+  runaway. Scoped in its own note after D.
 
 ## Predictions for slice A (registered before the engine changes)
 
@@ -189,8 +193,11 @@ bars in `cold_hold.rs`.
    once the graphite is truly full, so everything before that stays as today and the plating
    lesson's threshold-against-reaction contrast holds. The alternative, running the plating reaction
    on every cell, is more physical and changes every cold charge on the default cells.
+   **Answered 2026-10-20: only at the edge, as recommended.**
 2. **Ren et al. 2017.** If the owner can supply the full text, its oxidation constants replace the
    sizing rules above (cited); if not, they stay placeholders.
+   **Answered 2026-10-20: placeholders with their sizing rules.**
 3. **A lesson.** Phases 9, 10 and 12 ended in a guided-path lesson. A slice E — overcharge with the
    BMS off on a porous cell: the voltage climbing onto the oxidation, the metal depositing, the
    heat, runaway — or none in this phase.
+   **Answered 2026-10-20: yes, slice E, after D.**
