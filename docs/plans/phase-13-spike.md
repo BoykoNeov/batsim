@@ -117,6 +117,17 @@ test, not something to promise. The prototype that failed (`dfn-cold-hold-taper.
 "an exchange current of exactly zero makes 'no reaction' a root"; an outlet at the edge would
 remove that root on the charge side only.
 
+## The other Phase 12 leftover, the 0.65 V rest — not this
+
+`plating-unconverged-runaway.md`'s rest that settles at 0.65 V follows a cold 2C charge from **empty
+to 4.2 V**, which stops far short of full; its solves fail because the negative's electrolyte runs
+to zero near its current collector during the charge (on a threshold cell too). That is a third
+mechanism — electrolyte exhaustion on a fast cold charge, the charge-side relative of (c) — and
+nothing proposed here touches it. Read from that note, not re-run. The same note's typed 2C and 3C
+charges in the plating steps (before their 4.2 V stop) **are** (a): the reaction cell plated 43–375 %
+of its capacity and the threshold cell reached 5.5–6.2 V, and at −10 °C 3C swung between −1.6 MV and
+26 MV.
+
 ## Decisions for the owner
 
 1. **What happens at the particle limits.**
@@ -143,8 +154,10 @@ remove that root on the charge side only.
 ## What this spike did not do
 
 * It registered no predictions; any prototype must, before it runs.
-* It did not measure parallel groups, voltage or power demands past full (the pack's range already
-  holds those to the particles' edges — `spm-pack-window.md`, `dfn-long-step-holds.md`), long
-  steps, or the page.
+* It did not measure parallel groups, voltage or power demands past full, long steps, or the page.
+  The pack's range holds a voltage or power demand's current to the chemistry's bulk empty and full
+  and, on the `Spm`, to the surface range (`spm-pack-window.md`, `dfn-long-step-holds.md`) — which
+  does **not** keep a `Dfn` node's surface inside `c_max`: (b) is a voltage hold whose surface crept
+  past it.
 * The outer shell stands in for the surface, so a surface figure may lag the solve's own by up to
   one shell's gradient; the many-particle cell's positive figures are the emptiest particle's.
