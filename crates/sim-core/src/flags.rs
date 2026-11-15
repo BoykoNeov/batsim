@@ -27,10 +27,15 @@ bitflags! {
         /// the difference is not guessable from the name.** For an equivalent
         /// circuit, state really was discarded: the charge is gone from the coulomb
         /// count, and [`crate::Telemetry::i_rejected_a`] says how much. For a
-        /// porous-electrode cell (`Spm`, `Dfn`) nothing is discarded — the particle
-        /// keeps the lithium it was pushed and the flag reports only that the *SOC
-        /// readout* has run past its window, so `i_rejected_a` stays zero. See
-        /// [`crate::spm::advance`].
+        /// `Dfn` cell nothing is discarded — the particle keeps the lithium it was pushed
+        /// and the flag reports only that the *SOC readout* has run past its window, so
+        /// `i_rejected_a` stays zero. On an `Spm` cell it means that too, and since Phase 13
+        /// it also rises on any step an **outlet** carried charge — lithium deposited as metal
+        /// on a full negative, or the electrolyte oxidised at the positive, which can run by
+        /// potential before the readout leaves its window — with `i_rejected_a` carrying the
+        /// oxidation's share. The readout's half kept, by the owner's decision of
+        /// 2026-11-15: it is the warning a student sees 0.4–0.8 A·h before the negative is
+        /// truly full. See [`crate::spm::advance`] and `docs/plans/phase-13-past-full.md`.
         const SOC_CLAMPED_HIGH = 1 << 0;
         /// SOC hit the lower clamp (0.0): the cell is being discharged past empty.
         ///
@@ -72,7 +77,8 @@ bitflags! {
         /// Charging below the plating temperature above the C-rate threshold — or, on a
         /// `Dfn` cell running the plating reaction (`AgingConfig::plating = Reaction`),
         /// lithium plated on this step; a zero-length step plates nothing there
-        /// (`docs/plans/phase-12-slice-c-health.md`).
+        /// (`docs/plans/phase-12-slice-c-health.md`). On an `Spm` cell, also: lithium
+        /// deposited as metal on its full negative on this step (Phase 13).
         const PLATING_RISK     = 1 << 7;
         /// A group is actively bleeding charge through its balancing resistor.
         const BALANCING        = 1 << 8;

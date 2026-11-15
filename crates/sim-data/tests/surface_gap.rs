@@ -323,7 +323,9 @@ fn resistance_growth_cannot_reach_the_gradient_but_capacity_can() {
 /// This is the fixture that discriminates, and a plain discharge is not. On a discharge
 /// nothing leaves \[0, 1\] and a clamp on either side is inert; charged past `stoich_max`
 /// the surface reaches 1.16 on the shipped cell, so a clamp pins it at 1.0 against a bulk
-/// of 1.19 and reports a standing 0.19 of gradient on a pack that is uniformly at rest.
+/// of 1.19 and reports a standing 0.19 of gradient on a pack that is uniformly at rest. Since
+/// Phase 13 slice A the `Spm`'s particles stop at their edges, so that overfill is the `Dfn`'s
+/// alone until slice C, and the `Spm` arm stops its charge 0.43 A·h past full (see below).
 ///
 /// `SOC_CLAMPED_HIGH` is asserted first: without it the run might not have gone past the
 /// window at all, and the test would be vacuous — which is a mistake this repo has made
@@ -332,7 +334,20 @@ fn resistance_growth_cannot_reach_the_gradient_but_capacity_can() {
 fn an_overcharged_cell_relaxes_to_no_gradient_at_all() {
     for model in [SPM, DFN] {
         let mut p = pack(model, 0.5);
-        let flags = run(&mut p, -I_3C, 10.0, 300);
+        // 700 s on the `Spm`, 0.43 A·h past full, not the `Dfn`'s 3000 s (Phase 13 slice A,
+        // measured 2026-11-15). Pushed 3000 s the `Spm`'s negative stops at its edge, full
+        // through (a gap of −3.4e-11), and its emptied positive rests above the electrolyte's
+        // oxidation onset, so the oxidation runs on at open circuit — 0.43 A after the charge,
+        // 0.018 A ten hours on — and the positive never settles: a gap of 0.003 after this
+        // test's two hours. That is self-discharge, not a clamp. At 620–700 s the oxidation
+        // has run briefly (from 410 s, by potential), the readout is past full, both gaps
+        // are open (−0.035 and −0.33 at 700 s) and both rest to 1e-10.
+        let steps = if matches!(model, CellModelConfig::Spm { .. }) {
+            70
+        } else {
+            300
+        };
+        let flags = run(&mut p, -I_3C, 10.0, steps);
         assert!(
             flags.contains(EventFlags::SOC_CLAMPED_HIGH),
             "the fixture must actually leave the window, or the clamp is untested"

@@ -46,8 +46,8 @@ pub use chem::{
     AgingParams, ChargeAcceptanceParams, ChemistryError, ChemistryParams, DfnElectrode, DfnParams,
     DfnSeparator, DiffusionParams, ElectrodeParams, ElectrolyteTemperature,
     ElectrolyteTemperatureForm, EntropicTable, HysteresisParams, HysteresisWidth, OcpTable,
-    PlatingParams, PowerTerm, RegularSolutionParams, ReversalParams, SafetyParams, SeiParams,
-    SpmParams, ThermalParams,
+    OverchargeParams, PlatingParams, PowerTerm, RegularSolutionParams, ReversalParams,
+    SafetyParams, SeiParams, SpmParams, ThermalParams,
 };
 pub use dfn::{DfnState, PlatedLithium};
 pub use ecm::{CellModel, EcmState};
@@ -374,9 +374,11 @@ pub struct Telemetry {
     /// asymmetry between the two ends of the window is deliberate and is argued in
     /// `docs/plans/low-clamp-reversal.md`.
     ///
-    /// A porous-electrode cell (`Spm`, `Dfn`) never rejects charge — it keeps the
-    /// lithium it was pushed — so this stays zero on such a pack even while
-    /// `SOC_CLAMPED_HIGH` is raised.
+    /// A porous-electrode cell (`Spm`, `Dfn`) keeps the lithium it is pushed, so this stays
+    /// zero on such a pack **except** where an `Spm`'s electrolyte oxidises past full (Phase
+    /// 13, `docs/plans/phase-13-past-full.md`): that charge crosses the terminals and moves no
+    /// lithium out of the positive, so it is the oxidation's current that is reported here.
+    /// Its heat is the cell's own, booked by the cell model, not at an `OCV(1.0)`.
     pub i_rejected_a: f64,
     /// How many passes the pack's current solve took this step.
     ///

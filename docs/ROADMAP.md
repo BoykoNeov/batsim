@@ -344,7 +344,9 @@ where the rest-OCV gate refused to correct.
   engine reached −1.26 of a stoichiometry), a rested over-drained cell reads its floor
   (0.00 V, was 1.10), and the energy ledger closes linearly in `dt` (the old engine's was
   ~16 kJ out at any step length).
-* **An `Spm` has no physics past FULL within a step — and nor does a `Dfn`.** Once a step would drive a particle's
+* **A `Dfn` and a many-particle cell have no physics past FULL within a step — the `Spm` has, since
+  Phase 13 slice A (2026-10-20, v31, `phase-13-past-full.md`): its particles stop at their edges and
+  the rest deposits as metal or oxidises the electrolyte; what follows is the history.** Once a step would drive a particle's
   surface past `c_max`, the clamp holds it at the edge and `V(i)` goes flat.
   `spm::current_window` states that range in closed form, and since 2026-09-30
   (`spm-pack-window.md`) the `Spm` also declares a range to the pack — that surface range
@@ -367,7 +369,8 @@ where the rest-OCV gate refused to correct.
   **Counted 2026-10-20** (`phase-13-spike.md`): pushed on past full at a constant current with the BMS
   off, every porous model stores lithium its particles cannot hold — a negative at 1.4–1.8 of `c_max`,
   a positive at −0.2 to −0.8 — and whether the cell then ignites is decided by that artifact. Phase 13,
-  proposed below.
+  below; its slice A gives the `Spm` the physics (no shell outside `[0, c_max]`, the lithium book and
+  the energy ledger closed, runaway at 1C and 3C by the oxidation's heat).
 * ~~**A `Dfn` books the equilibrium voltage's fall across a long step as heat.**~~ —
   **closed 2026-09-23** (`dfn-end-of-step-heat.md`): the heat is read at the end of the
   step off the cell's own solve, for the report and the network both (1.03 K against
@@ -794,6 +797,11 @@ labelled placeholder; the cold hold as slice D; the `Spm` first; an exit that pr
 convergence and boundedness, not a reference curve. The plan (`phase-13-past-full.md`) mirrors
 `porous-reversal.md`'s edge at the top: the particle carries no more, the rest goes to lithium
 deposition or to electrolyte oxidation (exactly zero below its onset, so no golden moves).
+
+*Progress.* Slice A (the `Spm`, v31) built 2026-10-20, scored 2026-11-15 in the plan's addendum:
+seven of eight predictions met, the first after the owner kept the early past-full warning; the
+eighth, cost, missed (+7–10 % on an `Spm` step inside the window), a trim left for a follow-up.
+Slice B (the many-particle cell) next.
 
 *Exit (provisional).* On each porous model, a BMS-off constant-current overcharge keeps every
 particle concentration inside `[0, c_max]`, refuses what they cannot take, closes the lithium and

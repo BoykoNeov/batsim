@@ -370,6 +370,44 @@ pub struct SpmParams {
     /// chemistry moves none of its trajectories. See `docs/plans/phase-10-sei.md`.
     #[serde(default)]
     pub sei: Option<SeiParams>,
+    /// What a porous cell does with charge its particles cannot take (`[spm.overcharge]`):
+    /// lithium deposited as metal at a full negative and the electrolyte oxidised at an empty
+    /// positive. **Required** on every chemistry with `[spm]` — a porous cell charged on past
+    /// full has to send that charge somewhere, and a missing section would leave it nowhere.
+    /// See `docs/plans/phase-13-past-full.md`.
+    pub overcharge: OverchargeParams,
+}
+
+/// The two reactions a porous cell charged on past full sends its surplus to
+/// (`[spm.overcharge]`, Phase 13).
+///
+/// * **Electrolyte oxidation** at the positive, by potential: an irreversible Tafel law,
+///   `j_ox = i0_ox·[exp(α·f·η) − 1 − α·f·η]` for `η = φ_s − φ_e − U_ox > 0` and exactly `0`
+///   below, the form Lee, Park & Lu (J. Electrochem. Soc. 166 (2019) A1340, eq. 6) use for
+///   solvent oxidation, with this engine's `−1 − α·f·η` added so it is zero, and flat, at its
+///   onset.
+/// * **Lithium deposition** at the negative once its particle is full: Phase 12's law,
+///   `J = F·k·c_e·[exp(−α·f·η) − exp((1 − α)·f·η)]` against lithium metal.
+///
+/// Every field is required and an unknown key is refused, as on [`SeiParams`]. No outside
+/// reference sizes any of them; each is a placeholder with a stated sizing rule, and the
+/// chemistry file says which.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverchargeParams {
+    /// The electrolyte's oxidation onset `U_ox` \[V, against lithium metal\]: the positive's
+    /// `φ_s − φ_e` above which `j_ox` is non-zero. Must be finite and `> 0`.
+    pub oxidation_onset_v: f64,
+    /// The oxidation's exchange current density `i0_ox` \[A/m²\] over the positive's
+    /// interfacial area. Must be finite and `> 0`.
+    pub oxidation_exchange_a_per_m2: f64,
+    /// The oxidation's transfer coefficient `α`, in (0, 1).
+    pub oxidation_transfer_coefficient: f64,
+    /// The deposition law's rate constant `k` \[m/s\]: its exchange current density is
+    /// `F·k·c_e`. Must be finite and `> 0`.
+    pub deposition_rate_constant_m_per_s: f64,
+    /// The deposition law's transfer coefficient `α`, in (0, 1).
+    pub deposition_transfer_coefficient: f64,
 }
 
 /// The SEI film on the negative electrode (`[spm.sei]`): PyBaMM's "interstitial-diffusion
@@ -2424,6 +2462,38 @@ fn check_spm(spm: &SpmParams) -> Result<(), ChemistryError> {
     check_electrode("spm.positive", &spm.positive)?;
     if let Some(sei) = &spm.sei {
         check_sei(sei)?;
+    }
+    check_overcharge(&spm.overcharge)
+}
+
+/// Validate a `[spm.overcharge]` block: three positive finite constants and two transfer
+/// coefficients strictly inside (0, 1), where either endpoint would kill a branch of its law.
+fn check_overcharge(oc: &OverchargeParams) -> Result<(), ChemistryError> {
+    let positive: [(&'static str, f64); 3] = [
+        ("spm.overcharge.oxidation_onset_v", oc.oxidation_onset_v),
+        (
+            "spm.overcharge.oxidation_exchange_a_per_m2",
+            oc.oxidation_exchange_a_per_m2,
+        ),
+        (
+            "spm.overcharge.deposition_rate_constant_m_per_s",
+            oc.deposition_rate_constant_m_per_s,
+        ),
+    ];
+    for (what, value) in positive {
+        if !is_positive(value) || !value.is_finite() {
+            return Err(ChemistryError::NotPositive { what, value });
+        }
+    }
+    if !(oc.oxidation_transfer_coefficient > 0.0 && oc.oxidation_transfer_coefficient < 1.0) {
+        return Err(ChemistryError::BadRange {
+            what: "spm.overcharge.oxidation_transfer_coefficient must be in (0, 1)",
+        });
+    }
+    if !(oc.deposition_transfer_coefficient > 0.0 && oc.deposition_transfer_coefficient < 1.0) {
+        return Err(ChemistryError::BadRange {
+            what: "spm.overcharge.deposition_transfer_coefficient must be in (0, 1)",
+        });
     }
     Ok(())
 }

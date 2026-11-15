@@ -499,6 +499,11 @@ impl CellAging {
     /// next [`Self::tick`]. Measured by the caller, as the reversal's amp-hours are, from the
     /// dead store before and after the cell's advance; [`Self::accumulate`] is handed
     /// `plating = false` for such a cell, so nothing else reaches the accumulator.
+    ///
+    /// Also, since Phase 13, the lithium \[Ah\] a full `Spm` negative deposited as metal on a
+    /// step the threshold did not already bill: on such a cell the accumulator keeps the
+    /// threshold's meaning (amp-hours plated, billed at `plating_fade_per_ah` and
+    /// `plating_short_hazard_per_ah`), and a deposit is plated amp-hours.
     pub(crate) fn accumulate_dead_ah(&mut self, ah_dead: f64) {
         self.ah_plating_since_tick += ah_dead;
     }

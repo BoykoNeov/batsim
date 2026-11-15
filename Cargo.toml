@@ -67,3 +67,22 @@ libm = "=0.2.16"
 [profile.release]
 lto = true
 codegen-units = 1
+
+# The test suite is numerical: the porous models' solves dominate it, and unoptimized they
+# took the full `cargo test --workspace` past half an hour (2026-11-15; one file,
+# `dfn_parallel_long_step.rs`, 152 s unoptimized against 21 s optimized). So the engine, the
+# crate the tests drive it through, and the maths library build optimized in the dev and test
+# profiles too. Debug assertions and overflow checks stay ON (separate settings), and Rust's
+# optimizer never reassociates or contracts floating-point operations, so results should be the
+# same bit for bit; only the speed changes. Measured 2026-11-15 on 36 of 48 runs of the shipped
+# scenarios (calendar_fade_hot through over_discharge_damage_lfp, alphabetically, every step's
+# telemetry hashed): identical. The plating, pulse, shelf, soft-short and mismatched-pair
+# scenarios were not reached. Every exact-bit test and golden in the suite passes with it.
+[profile.dev.package.sim-core]
+opt-level = 3
+
+[profile.dev.package.sim-data]
+opt-level = 3
+
+[profile.dev.package.libm]
+opt-level = 3

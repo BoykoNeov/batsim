@@ -187,8 +187,21 @@ and double as the scenario file format.
   cut-off, the positive electrode is pinched — full particles where there is electrolyte, no
   electrolyte where there is room — and the solve fails or converges on a particle surface
   past full, which `SURFACE_OUT_OF_RANGE` flags without changing a value (ROADMAP H8) — as
-  it does on either porous model charged on past full. See
+  it does on the `Dfn` and the many-particle cell charged on past full. See
   `docs/plans/porous-reversal.md` and `docs/plans/dfn-electrolyte-limit.md`.
+- **Past full** (Phase 13 slice A, the `Spm` only so far): each particle carries no more charge
+  than takes it to its own edge — the negative's surface or bulk to `c_max`, the positive's to
+  empty — and the rest goes to an outlet named in `[spm.overcharge]`: lithium deposited as metal
+  at the full negative (Phase 12's law, counted from the lower of 0 V and the full graphite's
+  own potential, by the owner's decision), and the electrolyte oxidised at the positive, which
+  also runs by potential above its onset before that edge. The metal is stored charge, counted
+  in `soc_true`, stripped first by a discharge and taken back by the particle at rest; the
+  oxidation's charge is reported in `i_rejected_a`, and its cation is counted as lithium
+  arriving at the negative, so the lithium book closes as negative + positive + metal −
+  oxidised. The oxidation runs at open circuit too: a positive resting above its onset after a
+  gross overcharge discharges itself through it, slowly. `SOC_CLAMPED_HIGH` on the `Spm` still
+  rises when the readout passes its window (owner, 2026-11-15) and also on any step an outlet
+  carried charge. See `docs/plans/phase-13-past-full.md`.
 - **Charge acceptance** (optional, `[charge_acceptance]`): above `soc_onset` the cell stores
   a linearly falling share `η = (1 − soc)/(1 − soc_onset)` of a charging current and turns
   the rest into heat — oxygen evolution on a nickel electrode. Integrated in closed form
@@ -469,6 +482,10 @@ soc_onset = 0.985            # above this the accepted share falls linearly to 0
 #                 [spm.positive.ocp]; Pack::new refuses it under Spm and Dfn
 #   [spm.sei]     the SEI film's constants (Phase 10). Read ONLY by an Spm or Dfn pack whose
 #                 AgingConfig::calendar is Film; every key required, unknown keys refused
+#   [spm.overcharge]  REQUIRED with [spm] (Phase 13): the electrolyte's oxidation onset, exchange
+#                 current and transfer coefficient, and the deposition law's rate constant and
+#                 transfer coefficient — what a porous cell does with charge past its particles'
+#                 edges. Read by the Spm since slice A; every key required, unknown keys refused
 #   [dfn.plating] lithium plating as a reaction (Phase 12): rate constant, transfer coefficient,
 #                 dead share, dendrite hazard per dead A.h. Read ONLY by a Dfn pack whose
 #                 AgingConfig::plating is Reaction;
@@ -644,7 +661,10 @@ the previous one's tests pass.
   model stores lithium its particles cannot hold, and ignition is decided by that. Owner's decisions
   in: gross overcharge only, named reactions (plating; electrolyte oxidation at the positive), the
   cold hold as a last slice, `Spm` then the many-particle cell then the `Dfn`. Planned in
-  `docs/plans/phase-13-past-full.md`; owner questions answered, slice A (the `Spm`) next.
+  `docs/plans/phase-13-past-full.md`; owner questions answered. Slice A (the `Spm`, v31) built
+  2026-10-20 and scored 2026-11-15 in the plan's addendum: seven of its eight predictions met (the
+  first after the owner kept the early past-full warning), the cost missed (+7–10 % on an `Spm` step
+  inside the window, left for a follow-up); slice B (the many-particle cell) next.
 - **Phases 14 and later** are proposed, not scheduled, in `docs/ROADMAP.md`, which also
   lists every hurdle the plan documents record as open, with what each costs. Read it
   before starting anything that is not a slice against an existing phase's recipe.

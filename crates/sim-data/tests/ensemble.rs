@@ -251,7 +251,12 @@ fn one_particle_is_the_single_particle_model_bit_for_bit() {
             // runaway, which tests the thermal integrator rather than the two models.
             ThermalConfig::Isothermal,
             vec![
-                (Demand::Current(-10.0), 10.0, 200),
+                // 60 steps, not 200: the readout passes full at step 37 and both models flag
+                // it there, but from step 69 the single-particle model's particles stop at
+                // their edges and its outlets carry the rest (Phase 13 slice A), which the
+                // many-particle cell gains only in slice B. Measured 2026-11-15: no outlet
+                // carries charge anywhere in this program at 60, at either shell count.
+                (Demand::Current(-10.0), 10.0, 60),
                 (Demand::Voltage(4.2), 30.0, 30),
                 (Demand::Rest, 3600.0, 3),
             ],

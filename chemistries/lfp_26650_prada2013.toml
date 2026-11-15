@@ -216,6 +216,28 @@ volts  = [3.907700, 3.854249, 3.806508, 3.763868, 3.708296, 3.676148, 3.634249, 
 u0_v     = 3.42
 omega_ev = 0.07591738897375097
 
+[spm.overcharge]
+# What the particles cannot take past full (Phase 13, docs/plans/phase-13-past-full.md). Read
+# by the many-particle cell from Phase 13 slice B; slice A only carries the section, which is
+# required on every [spm]. Every value is a placeholder.
+#
+# placeholder — the LG M50 file's 4.57 V, shared: the onset is a property of the carbonate
+# electrolyte rather than of the cell (phase-13-past-full.md, sizing table). Its sizing rule
+# (at least 0.2 V above the highest positive potential this cell's own window reaches at its
+# rated charge rate) is checked on the many-particle cell in slice B.
+oxidation_onset_v               = 4.57
+# placeholder — sizing rule as the LG M50 file's: 1C (2.303451 A) over the positive's
+# interfacial area at the MEDIAN particle radius (3 eps L A / R = 323.136 m2) is
+# 7.128426e-3 A/m2, over exp(a f eta) - 1 - a f eta = 44.125182 at eta = 0.2 V, 298.15 K.
+# The many-particle cell's own area differs by its radius spread; slice B re-sizes it.
+oxidation_exchange_a_per_m2     = 1.62e-4
+# placeholder — the symmetric default
+oxidation_transfer_coefficient  = 0.5
+# BORROWED from the LG M50 file's [dfn.plating] (a graphite negative there too): no value
+# exists for this cell
+deposition_rate_constant_m_per_s = 4.8e-11
+deposition_transfer_coefficient  = 0.65
+
 # ---------------------------------------------------------------------------------------
 # [diagram] — what this cell is made of, for the browser client's carrier diagram.
 #

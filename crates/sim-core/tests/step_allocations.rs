@@ -210,6 +210,13 @@ fn ensemble_chem() -> ChemistryParams {
         negative: neg,
         positive: pos,
         sei: None,
+        overcharge: sim_core::OverchargeParams {
+            oxidation_onset_v: 4.57,
+            oxidation_exchange_a_per_m2: 3.94e-2,
+            oxidation_transfer_coefficient: 0.5,
+            deposition_rate_constant_m_per_s: 4.8e-11,
+            deposition_transfer_coefficient: 0.65,
+        },
     });
     c
 }

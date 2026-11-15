@@ -1,9 +1,11 @@
 # Phase 13 — the porous models past full: the plan
 
-**Status: PLANNED 2026-10-20, after the spike (`phase-13-spike.md`) and the owner's four decisions
+**Status: slice A (the `Spm`, v31) BUILT 2026-10-20 and SCORED 2026-11-15 (§"Addendum — slice A
+scored"): six predictions met, the first met after an owner decision on the flag, the eighth (cost)
+missed. Planned 2026-10-20, after the spike (`phase-13-spike.md`) and the owner's four decisions
 there; the owner answered this plan's three questions the same day (§"Owner questions"): deposition
 only at the edge on cells without the reaction, placeholders with sizing rules, and a lesson slice E.
-Next: slice A, the `Spm`.** ROADMAP H8's "no physics past FULL" bullet; `docs/ROADMAP.md` §3 "Phase 13".
+Next: slice B, the many-particle cell.** ROADMAP H8's "no physics past FULL" bullet; `docs/ROADMAP.md` §3 "Phase 13".
 
 ## What the phase does
 
@@ -110,7 +112,7 @@ The lithium that arrives at the negative in its place must come from somewhere.
 | --- | --- | --- |
 | particle stocks | outside `[0, c_max]` | inside, always |
 | `i_rejected_a` | 0 | the oxidation's current: charge passed and not stored, the circuit's meaning |
-| `SOC_CLAMPED_HIGH` | every step past the window's full | a step on which an outlet carried charge |
+| `SOC_CLAMPED_HIGH` | every step past the window's full | as before, **and** a step on which an outlet carried charge (owner, 2026-11-15; this row first read "a step on which an outlet carried charge" alone — the addendum, prediction 1) |
 | `soc_true` | 1.0 while the cell holds 1.6 times its negative's capacity | in `[0, 1]` as before, the reversible metal counted as stored charge |
 | `SURFACE_OUT_OF_RANGE` | from 0.4–0.7 A·h past full | unreachable on the charge side; kept for the `Dfn`'s discharge-side limit |
 
@@ -175,6 +177,75 @@ one-key change if a source turns up.
 
 Predictions for B, C and D are written at the head of each slice's own note, before its engine
 change.
+
+## Addendum — slice A scored (2026-11-15)
+
+Built 2026-10-20 (v31); scored 2026-11-15 by `crates/sim-data/tests/overcharge_spm.rs`
+(predictions 2–7, the figures below are what it prints), the full suite (1) and a step-loop timing
+(8). **Six met, one met after an owner decision, one missed.**
+
+1. **Met after the owner's decision on the flag; as first built, missed.** Every golden passes
+   unchanged, `spm_exact_bits.rs` included. Four tests moved, each one that drives an `Spm` past an
+   edge, which this prediction allowed; only the first was named in advance:
+   * `surface_gap.rs::an_overcharged_cell_relaxes_to_no_gradient_at_all` (named): its `Spm` arm now
+     charges 700 s, not 3000 s. Pushed the full 3000 s, the negative is full through (a gap of
+     −3.4e-11, where it was the overfilled 1.16 surface on a 1.19 bulk), and the emptied positive
+     rests **above `U_ox`**, so the oxidation runs on at open circuit — 0.43 A after the charge,
+     0.018 A ten hours on — and the positive's gap is 0.003 after the test's two-hour rest against
+     its 1e-6 bar. At 700 s (0.43 A·h past full) the readout is past full, both gaps are open
+     (−0.035 and −0.33) and both rest to 1e-10. The `Dfn` arm is unchanged until slice C.
+   * `spm_cell.rs::a_single_particle_clamps_its_readout_without_rejecting_charge`: its premise — a
+     porous cell rejects nothing — is the one this slice reverses. Replaced by
+     `overcharge_spm.rs::a_single_particle_rejects_only_what_its_electrolyte_oxidises`, on the same
+     drive (20 A from 0.98 for 400 s): past the readout on 4 steps with nothing rejected, then
+     depositing on 345 and oxidising on 378, and `i_rejected_a` exactly the oxidation's current.
+   * `dfn_electrolyte_limit.rs::an_spm_charged_on_past_full_is_flagged`: inverted to
+     `…_is_not_flagged_since_its_particles_stop_at_their_edges`. Before the slice the 3C drive was
+     first flagged `SURFACE_OUT_OF_RANGE` at 600–700 s; now never, with a control that the
+     oxidation ran.
+   * `ensemble.rs::one_particle_is_the_single_particle_model_bit_for_bit`, case "past full and a
+     voltage hold": its charge is 60 steps, not 200. Both models flag the readout past full from
+     step 37; from step 69 the `Spm`'s outlets carry charge, which the many-particle cell gains
+     only in slice B. **Slice B restores the 200.**
+
+   Not physics: `pack.rs`'s footprint test, `SpmState` 96 → 128 bytes (the four new counters; heap
+   only, no `Cell` wider).
+
+   **The flag.** This plan's readings table said `SOC_CLAMPED_HIGH` would mean "a step on which an
+   outlet carried charge" in place of "every step past the window's full", and the slice was first
+   built that way. That moved the warning 0.4–0.8 A·h later, a change before any edge, which this
+   prediction did not allow; it parted the many-particle comparison at step 37 on the flag alone.
+   The owner kept the early warning (2026-11-15): on the `Spm` the flag rises when the readout runs
+   past its window, as it always has, **and** on any step an outlet carried charge (the oxidation can
+   run by potential while the readout is still inside). No guided-path step or claim relied on the
+   late meaning. With that, nothing before an edge or `U_ox` changes.
+2. **Met.** Pushed 3.5 A·h from 0.95 at 1C and 3C, no shell of either particle outside `[0, c_max]`
+   on any step (worst 0), no unconverged step, `soc_true` never outside `[0, 1]`.
+3. **Met.** The book holds to 4.3e-13 (1C) and 1.3e-13 (3C) of the charge passed — against 0.58 and
+   0.40 with the metal and the oxidised moles left out.
+4. **Met.** Residual 1.08 J at 1 s and 10.8 J at 10 s, against the existing `Spm` ledger's bar of
+   50 J at 1 s. The outlets' share of the heat is −16.7 kJ; booked at the particles' equilibrium
+   instead, the residual would be 16.7 kJ.
+5. **Met.** Runaway at 1C after 2101 s (3.01 A·h charged) and at 3C after 582 s (2.50 A·h), hottest
+   cell 444 K.
+6. **Met.** After the 1C overcharge a 1C discharge reaches 2.498 V in 4364 s, converged on every step,
+   the metal stripped before the negative gave any lithium of its own (0 steps otherwise) and none
+   left.
+7. **Met.** A scattered 1S2P charging at 1C a cell and discharging at C/2 a cell, and a 1S1P held at
+   4.2 V, all started past full, at 1 s, 15 min and 1 h: 0 unconverged steps of 36, every cell inside
+   its edges (worst 0).
+8. **Missed.** The step loop inside the window (`Spm` at 0.6, 1C alternating with −1C at 0.1 s; the
+   same harness built on the commit before the slice and after; release; best of three alternating
+   rounds): **1S1P 3530 → 3884 ns per step (+10 %), 1S10P 39 398 → 42 264 ns (+7 %)**, the
+   trajectories identical. Not one comparison per particle: every step now computes each particle's
+   charge edge (two shell-volume means) and, when it commits, the positive's potential for the
+   onset test. Left as built; a trim is a follow-up for the owner to schedule.
+
+**Found on the way: an overcharged cell discharges itself.** The oxidation runs by potential, at
+open circuit too, so an `Spm` whose positive rests above `U_ox` after a gross overcharge keeps
+oxidising its electrolyte and putting lithium back into that positive until the potential falls
+to the onset — slowly, on the law's tail near `U_ox` (the first item above). It is the law as
+designed, and slice E's lesson can show it, but after a gross overcharge "rest" is not rest.
 
 ## Exit
 

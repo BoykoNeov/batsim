@@ -817,24 +817,37 @@ fn the_end_of_step_curve_still_falls_with_current() {
         .iter()
         .flat_map(|&dt| [("past onset", &onset, dt), ("plated", &plated, dt)])
         .collect();
+    // One thread per trial. Every trial steps its own clone, so the numbers do not depend on how
+    // they are spread. This is still the suite's slowest test, about an hour optimized
+    // (2026-11-15): 63 of the 66 trials take under 40 s, but three 1-h charges at about 1.6–1.8C
+    // (plated −8.2 A; past onset −8.2 and −9.3 A) had not finished after close to an hour, while
+    // their neighbours on either side, the stronger −10.3 A included, end unconverged in under
+    // 40 s. So it is not how far past full they go: the solve stalls at those currents. To be
+    // diagnosed in the next session.
     let rows: Vec<_> = std::thread::scope(|s| {
         let hs: Vec<_> = cases
             .iter()
             .map(|&(label, p, dt)| {
-                s.spawn(move || {
-                    #[allow(clippy::cast_precision_loss)]
-                    let vs: Vec<(f64, f64, bool)> = (0..=10)
-                        .map(|k| {
-                            let i = -2.0 * q + 0.2 * q * k as f64;
+                #[allow(clippy::cast_precision_loss)]
+                let trials: Vec<_> = (0..=10)
+                    .map(|k| {
+                        let i = -2.0 * q + 0.2 * q * k as f64;
+                        s.spawn(move || {
                             let (v, ok) = v_end(p, dt, i);
                             (i, v, ok)
                         })
-                        .collect();
-                    (label, dt, vs)
-                })
+                    })
+                    .collect();
+                (label, dt, trials)
             })
             .collect();
-        hs.into_iter().map(|h| h.join().unwrap()).collect()
+        hs.into_iter()
+            .map(|(label, dt, trials)| {
+                let vs: Vec<(f64, f64, bool)> =
+                    trials.into_iter().map(|h| h.join().unwrap()).collect();
+                (label, dt, vs)
+            })
+            .collect()
     });
     for (label, dt, vs) in rows {
         let unconverged = vs.iter().filter(|x| !x.2).count();

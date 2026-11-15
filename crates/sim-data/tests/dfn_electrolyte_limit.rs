@@ -197,20 +197,27 @@ fn an_spm_drained_past_empty_is_not_flagged_for_sitting_on_its_margin() {
     );
 }
 
-/// An `Spm` charged on past full at 3 C is flagged, nine minutes after its 4.2 V ceiling:
-/// the same over-full surface the `Dfn` reaches, reported the same way.
+/// An `Spm` charged on past full at 3 C is **not** flagged: since Phase 13 slice A its
+/// particles stop at their edges and the rest goes to the outlets, so the over-full surface
+/// the `Dfn` still reaches cannot form (`docs/plans/phase-13-past-full.md`, "What the readings
+/// say past full"). Before the slice this same drive was first flagged at 600–700 s, nine
+/// minutes after the 4.2 V ceiling; the test was inverted then, and the control below is
+/// what keeps it from passing on a run that never reached an edge.
 #[test]
-fn an_spm_charged_on_past_full_is_flagged() {
+fn an_spm_charged_on_past_full_is_not_flagged_since_its_particles_stop_at_their_edges() {
     let mut p = spm_pack(0.5);
-    let first = (1..=100).find_map(|k| {
-        p.step(10.0, Demand::Current(-3.0 * Q_AH), &env())
-            .flags
-            .contains(EventFlags::SURFACE_OUT_OF_RANGE)
-            .then_some(10.0 * f64::from(k))
-    });
-    let first = first.expect("flagged within 1000 s");
+    let mut oxidising = 0;
+    for k in 1..=100 {
+        let tele = p.step(10.0, Demand::Current(-3.0 * Q_AH), &env());
+        assert!(
+            !tele.flags.contains(EventFlags::SURFACE_OUT_OF_RANGE),
+            "flagged at {} s",
+            10 * k
+        );
+        oxidising += usize::from(tele.i_rejected_a < 0.0);
+    }
     assert!(
-        (600.0..=700.0).contains(&first),
-        "first flagged at {first} s"
+        oxidising > 0,
+        "the electrolyte never oxidised: the run did not reach an outlet, so this proves nothing"
     );
 }

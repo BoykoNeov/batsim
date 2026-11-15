@@ -1062,6 +1062,8 @@ impl CellModel {
             reversal_w: 0.0,
             reversal_mean_w: 0.0,
             entropic_mean_w: 0.0,
+            deposited_as: 0.0,
+            oxidised_as: 0.0,
         };
         match self {
             CellModel::Ecm1Rc(s) | CellModel::Ecm2Rc(s) => advance_cell(
@@ -1082,22 +1084,25 @@ impl CellModel {
                 chem.spm
                     .as_ref()
                     .map_or(no_rejection(EventFlags::empty()), |spm| {
-                        let (flags, delta_v, mean_excess_v, rev_w, entropic_w) = spm::advance(
-                            s,
-                            spm,
-                            &chem.reversal,
-                            i,
-                            dt,
-                            eff_r0_factor,
-                            eff_capacity_ah * soh_capacity,
-                            v_node,
-                        );
+                        let (flags, delta_v, mean_excess_v, rev_w, entropic_w, outlet_as) =
+                            spm::advance(
+                                s,
+                                spm,
+                                &chem.reversal,
+                                i,
+                                dt,
+                                eff_r0_factor,
+                                eff_capacity_ah * soh_capacity,
+                                v_node,
+                            );
                         Advanced {
                             rc_mean_excess_v: mean_excess_v,
                             rc_delta_v: delta_v,
                             reversal_w: rev_w.0,
                             reversal_mean_w: rev_w.1,
                             entropic_mean_w: entropic_w,
+                            deposited_as: outlet_as.0,
+                            oxidised_as: outlet_as.1,
                             ..no_rejection(flags)
                         }
                     })
@@ -2257,7 +2262,9 @@ pub(crate) struct Advanced {
     ///
     /// Always `0.0` for `Spm` and `Dfn`, and that is physics rather than a stub: a
     /// porous-electrode cell never discards the lithium it was pushed, so there is
-    /// nothing for it to reject. See [`crate::spm::advance`]. Since the reversal branch
+    /// nothing for it to reject. See [`crate::spm::advance`]. An `Spm`'s electrolyte
+    /// oxidation past full is reported through [`Self::oxidised_as`] instead, because its
+    /// heat is the cell's own and must not be booked again here. Since the reversal branch
     /// the equivalent circuit no longer discards anything at the *bottom* of its window
     /// either, so this is non-zero only on an over-charge.
     pub rejected_as: f64,
@@ -2310,6 +2317,17 @@ pub(crate) struct Advanced {
     /// `rc_mean_excess_v` as `U(T) − V` rather than as the stored-energy form. Exactly `0.0`
     /// everywhere else, and the pack adds it behind a guard.
     pub entropic_mean_w: f64,
+    /// Charge \[A·s, discharge-positive\] an `Spm`'s deposition carried on this step: negative
+    /// while lithium deposited as metal on a full negative, positive while it stripped. The
+    /// pack bills what deposited to the cell's plating cost. Exactly `0.0` on every other
+    /// model and on every `Spm` never charged past its negative's edge
+    /// (`docs/plans/phase-13-past-full.md`).
+    pub deposited_as: f64,
+    /// Charge \[A·s, discharge-positive, `<= 0`\] an `Spm`'s electrolyte oxidation carried on
+    /// this step: passed through the terminals and stored nowhere, so the pack reports it in
+    /// [`crate::Telemetry::i_rejected_a`]. Its heat is already in the cell's own terms
+    /// ([`Self::reversal_w`]), so unlike [`Self::rejected_as`] the pack books none for it.
+    pub oxidised_as: f64,
 }
 
 /// Advance one cell's internal state by `dt` seconds under the current `i`
@@ -2469,6 +2487,8 @@ pub(crate) fn advance_cell(
         reversal_w: 0.0,
         reversal_mean_w: 0.0,
         entropic_mean_w,
+        deposited_as: 0.0,
+        oxidised_as: 0.0,
     }
 }
 

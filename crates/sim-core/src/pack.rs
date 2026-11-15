@@ -619,7 +619,19 @@ use crate::{Demand, Env, Telemetry};
 /// Only a chemistry with `[dfn.plating]` moves a byte; the pair test is
 /// `snapshot_version.rs::the_version_field_is_what_rejects_a_v29_snapshot`. Neither API
 /// version moves: no telemetry field is added, and the chemistry on the wire is TOML.
-pub const SNAPSHOT_VERSION: u32 = 30;
+///
+/// v31 (the `Spm` past full, Phase 13 slice A, `docs/plans/phase-13-past-full.md`):
+/// [`crate::chem::SpmParams`] gains `overcharge`, a **required** section appended after `sei`;
+/// [`crate::SpmState`] gains `metal_mol`, `oxidised_mol`, `i_deposit_last` and
+/// `i_oxidise_last`, appended after `film_thickness_m`. Only a chemistry with `[spm]` and an
+/// `Spm` pack move a byte. A v30 `Spm` state at v31 reads the cell's two factors and its
+/// health's two multipliers as the new fields — a fresh cell comes back holding a mole of
+/// metal, quietly — measured by
+/// `snapshot_version.rs::a_v30_shaped_spm_state_reads_the_cells_factors_as_metal`; the pair test
+/// is `the_version_field_is_what_rejects_a_v30_snapshot`. Neither API version moves: no
+/// telemetry field is added, though `i_rejected_a` is now non-zero on an `Spm` pack whose
+/// electrolyte oxidises, as it always was on an equivalent circuit refusing charge.
+pub const SNAPSHOT_VERSION: u32 = 31;
 
 /// Convergence tolerance \[V\] for the pack's nonlinear current solve.
 ///
@@ -4017,6 +4029,12 @@ impl Pack {
                         q -= cell.model.rejection_ocv_v(&self.chem) * advanced.rejected_as / dt;
                     }
                 }
+                // A porous cell's electrolyte oxidation past full (Phase 13): charge passed
+                // and stored nowhere, so it is the circuit's meaning of a rejection — but its
+                // heat is already in the cell's own terms, so it is counted and not booked.
+                if advanced.oxidised_as != 0.0 && dt > 0.0 {
+                    i_rejected_a += advanced.oxidised_as / dt;
+                }
                 // Tallied here, below `advance`, for the reason above. The mutation is
                 // guarded on a non-zero rejection rather than written unconditionally:
                 // `q + 0.0` is bit-identical to `q` for every value except `-0.0`,
@@ -4098,6 +4116,13 @@ impl Pack {
                     // differ, and what goes wrong if they do not.
                     cell.aging
                         .accumulate(i_k, i_g, dt, soc_before, plating, ah_reversed);
+                    // Lithium a full `Spm` negative deposited as metal (Phase 13), billed at the
+                    // threshold's own per-amp-hour keys — unless the threshold already billed
+                    // this step's whole charge, of which the deposit is a part.
+                    if advanced.deposited_as < 0.0 && !plating {
+                        cell.aging
+                            .accumulate_dead_ah(-advanced.deposited_as / 3600.0);
+                    }
                     // The lithium that died as metal on this step, in amp-hours: what a
                     // reaction cell's dendrite short rolls against. `max(0, ·)` only guards a
                     // store that cannot shrink.
@@ -5091,8 +5116,13 @@ mod cell_footprint {
         // land on the heap block of the cells that have the model and on no `Cell`. 96 since
         // SNAPSHOT_VERSION 26: `film_thickness_m`, an `Option<f64>` (16 B, a tag and its
         // padding before the value), the SEI film's state (`docs/plans/phase-10-sei.md`).
-        // Paid by every `Spm` cell, filmed or not, on the heap block alone.
-        assert_eq!(size_of::<SpmState>(), 96, "SpmState");
+        // Paid by every `Spm` cell, filmed or not, on the heap block alone. 128 since
+        // SNAPSHOT_VERSION 31: `metal_mol`, `oxidised_mol`, `i_deposit_last` and
+        // `i_oxidise_last`, four `f64`s — the lithium deposited past full, the electrolyte
+        // oxidised, and the share of the last current each outlet took
+        // (`docs/plans/phase-13-past-full.md`). On the heap block alone again: 32 KB on a
+        // 1000-cell `Spm` pack, and nothing on any `Cell`.
+        assert_eq!(size_of::<SpmState>(), 128, "SpmState");
         // `DfnState` is 144 since SNAPSHOT_VERSION 23: `soc_deficit`, the `Dfn`'s half of
         // `docs/plans/porous-reversal.md`. Boxed, like `SpmState`. 168 since
         // SNAPSHOT_VERSION 27: `film_thickness_m`, an `Option<Vec<f64>>` (24 B, the `Vec`'s

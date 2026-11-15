@@ -332,6 +332,13 @@ stoich_max = 0.9
 [spm.positive.ocp]
 stoich = [0.0, 0.5, 1.0]
 volts  = [4.4, 4.0, 3.5]
+
+[spm.overcharge]
+oxidation_onset_v = 4.57
+oxidation_exchange_a_per_m2 = 3.94e-2
+oxidation_transfer_coefficient = 0.5
+deposition_rate_constant_m_per_s = 4.8e-11
+deposition_transfer_coefficient = 0.65
 "#
     )
 }
@@ -625,5 +632,81 @@ fn a_positive_electrode_fault_names_the_positive_electrode() {
             assert_eq!(value, -1.0);
         }
         other => panic!("expected a positive-electrode rejection, got {other:?}"),
+    }
+}
+
+/// `[spm.overcharge]` is required on every `[spm]` (Phase 13): a porous cell charged on past
+/// full has to send what its particles cannot take somewhere, so a chemistry without the
+/// section does not parse, and neither does one with a key the section does not know.
+#[test]
+fn the_overcharge_section_is_required_and_closed() {
+    let spm = good_spm(GOOD_NEG_OCP);
+    let cut = spm
+        .find("[spm.overcharge]")
+        .expect("the template has the section");
+    assert!(
+        matches!(
+            parse_chemistry(&chemistry_with_spm(&spm[..cut])),
+            Err(DataError::Toml(_))
+        ),
+        "a chemistry with [spm] and no [spm.overcharge] parsed"
+    );
+    let extra = spm.replace(
+        "oxidation_onset_v = 4.57",
+        "oxidation_onset_v = 4.57\noxidation_onset_volts = 4.6",
+    );
+    assert!(
+        matches!(
+            parse_chemistry(&chemistry_with_spm(&extra)),
+            Err(DataError::Toml(_))
+        ),
+        "an unknown key in [spm.overcharge] parsed"
+    );
+}
+
+/// Each `[spm.overcharge]` value is validated, by name.
+#[test]
+fn a_bad_overcharge_value_is_rejected_by_name() {
+    let broken = |old: &str, new: &str| {
+        let spm = good_spm(GOOD_NEG_OCP);
+        assert!(spm.contains(old), "template has no line `{old}` to break");
+        reject(&spm.replacen(old, new, 1))
+    };
+    for (old, new, name) in [
+        (
+            "oxidation_onset_v = 4.57",
+            "oxidation_onset_v = 0.0",
+            "spm.overcharge.oxidation_onset_v",
+        ),
+        (
+            "oxidation_exchange_a_per_m2 = 3.94e-2",
+            "oxidation_exchange_a_per_m2 = -1.0",
+            "spm.overcharge.oxidation_exchange_a_per_m2",
+        ),
+        (
+            "deposition_rate_constant_m_per_s = 4.8e-11",
+            "deposition_rate_constant_m_per_s = 0.0",
+            "spm.overcharge.deposition_rate_constant_m_per_s",
+        ),
+    ] {
+        match broken(old, new) {
+            ChemistryError::NotPositive { what, .. } => assert_eq!(what, name),
+            other => panic!("expected {name} rejected as not positive, got {other:?}"),
+        }
+    }
+    for (old, new) in [
+        (
+            "oxidation_transfer_coefficient = 0.5",
+            "oxidation_transfer_coefficient = 1.0",
+        ),
+        (
+            "deposition_transfer_coefficient = 0.65",
+            "deposition_transfer_coefficient = 0.0",
+        ),
+    ] {
+        assert!(
+            matches!(broken(old, new), ChemistryError::BadRange { .. }),
+            "{new} was not rejected as out of range"
+        );
     }
 }

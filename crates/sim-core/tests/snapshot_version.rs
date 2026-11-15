@@ -303,45 +303,45 @@ fn retagged(bytes: &[u8], version: u32) -> Snapshot {
     snapshot
 }
 
-/// A v29-tagged snapshot is rejected by the version check, and the **same bytes**
-/// tagged v30 restore.
+/// A v30-tagged snapshot is rejected by the version check, and the **same bytes**
+/// tagged v31 restore.
 ///
 /// The pair is the test. Alone, the rejection is indistinguishable from
 /// deserialization failing; alone, the acceptance says only that the fixture is
 /// well-formed. Together they say the version field, and only the version field,
 /// decided.
 ///
-/// **At this bump the retag is the real case**: v30 appends to `[dfn.plating]` alone and
-/// changes what one aging accumulator means on a cell running the plating reaction, and this
-/// fixture is an equivalent-circuit pack with no aging on a chemistry with no `[dfn]`, so its
-/// bytes are a v29 build's exactly. The stale blob v30 does move is measured at its field by
-/// [`a_v29_shaped_plating_section_reads_the_safety_tag_into_its_hazard`]. (At v29 the
-/// same held; at v28 this pair was a stand-in: every chemistry's `[r0]` table moved, see
-/// [`a_v27_shaped_chemistry_fails_at_its_r0_table`].)
+/// **At this bump the retag is the real case**: v31 appends a required `[spm.overcharge]` to
+/// `[spm]` and four `f64`s to the single-particle state (Phase 13 slice A,
+/// `docs/plans/phase-13-past-full.md`), and this fixture is an equivalent-circuit pack on a
+/// chemistry with no `[spm]`, so its bytes are a v30 build's exactly. The stale blob v31 does
+/// move is measured at its field by [`a_v30_shaped_spm_state_reads_the_cells_factors_as_metal`].
+/// (At v29 and v30 the same held; at v28 this pair was a stand-in: every chemistry's `[r0]`
+/// table moved, see [`a_v27_shaped_chemistry_fails_at_its_r0_table`].)
 #[test]
-fn the_version_field_is_what_rejects_a_v29_snapshot() {
+fn the_version_field_is_what_rejects_a_v30_snapshot() {
     assert_eq!(
-        SNAPSHOT_VERSION, 30,
-        "this test is written against the v29 -> v30 bump specifically. A later bump \
+        SNAPSHOT_VERSION, 31,
+        "this test is written against the v30 -> v31 bump specifically. A later bump \
          needs its own pair rather than this one renumbered: what a stale blob does under \
          the new layout is a fact about that layout change, and the answer has flipped \
          across this file's history — v15 'it does not parse at all', v16 'it parses, \
          wrongly and silently', v17 and v18 back to 'it does not parse at all', v19 to \
          v27 'for this fixture it parses fine and the version field is all there is' with \
          a model-specific sibling for each, v28 'it does not parse at all, at the r0 \
-         table, for every chemistry', and v29 and v30 back to 'the version field is all \
+         table, for every chemistry', and v29 to v31 back to 'the version field is all \
          there is' for this fixture. A renumbered assertion cannot inherit any of them."
     );
     let bytes = snapshot_bytes();
 
-    let stale = retagged(&bytes, 29);
+    let stale = retagged(&bytes, 30);
     assert_eq!(
         Pack::restore(&stale),
         Err(RestoreError::VersionMismatch {
-            found: 29,
+            found: 30,
             expected: SNAPSHOT_VERSION,
         }),
-        "a v29-tagged snapshot must be refused"
+        "a v30-tagged snapshot must be refused"
     );
 
     let current = retagged(&bytes, SNAPSHOT_VERSION);
@@ -852,6 +852,11 @@ fn a_v21_shaped_spm_state_misparses_at_v22() {
         // Today's reader closes the state on v26's `film_thickness_m`, which postdates this
         // test's question: a `None` tag, so what is read here is the v22 reader's answer.
         0_u8,
+        // And on v31's four outlet fields, which postdate it too.
+        0.0_f64,
+        0.0_f64,
+        0.0_f64,
+        0.0_f64,
     ))
     .expect("a v21-shaped state and the cell fields after it serialize");
     let read: sim_core::SpmState = bincode::deserialize(&v21_then_cell).expect(
@@ -877,6 +882,10 @@ fn a_v21_shaped_spm_state_misparses_at_v22() {
         soc_deficit: 0.25,
         i_reversal_last: 0.5,
         film_thickness_m: None,
+        metal_mol: 0.0,
+        oxidised_mol: 0.0,
+        i_deposit_last: 0.0,
+        i_oxidise_last: 0.0,
     };
     let bytes = bincode::serialize(&v22).expect("a v22 state serializes");
     let back: sim_core::SpmState = bincode::deserialize(&bytes).expect("that is a v22 state");
@@ -1012,6 +1021,13 @@ fn a_v24_shaped_spm_section_fails_by_its_radius_or_its_table_length() {
         negative: electrode(5.86e-6),
         positive: electrode(r_pos),
         sei: None,
+        overcharge: sim_core::OverchargeParams {
+            oxidation_onset_v: 4.57,
+            oxidation_exchange_a_per_m2: 3.94e-2,
+            oxidation_transfer_coefficient: 0.5,
+            deposition_rate_constant_m_per_s: 4.8e-11,
+            deposition_transfer_coefficient: 0.65,
+        },
     };
     // A v24 writer's bytes: each electrode's v25 bytes without the new field's tag, which a
     // `None` writes as one zero byte at the electrode's end. Then the `f64` that follows.
@@ -1068,11 +1084,21 @@ fn a_v25_shaped_spm_state_reads_its_capacity_factor_as_a_film_tag() {
         soc_deficit: 0.0,
         i_reversal_last: 0.0,
         film_thickness_m: None,
+        metal_mol: 0.0,
+        oxidised_mol: 0.0,
+        i_deposit_last: 0.0,
+        i_oxidise_last: 0.0,
     };
     let v25_then = |factor: f64| {
         let mut b = bincode::serialize(&state).expect("a state serializes");
+        // Since v31 the state closes on four `f64`s after the film's tag; a v25 writer wrote
+        // none of them, and the cell's fields after it supply today's reader with them.
+        b.truncate(b.len() - 4 * 8);
         assert_eq!(b.pop(), Some(0), "a `None` tag closes the v26 state");
-        b.extend(bincode::serialize(&(factor, 1.0_f64)).expect("the cell's factors"));
+        b.extend(
+            bincode::serialize(&(factor, 1.0_f64, 1.0_f64, 1.0_f64, 0.0_f64))
+                .expect("the cell's factors and its health's first fields"),
+        );
         b
     };
     let quiet: sim_core::SpmState = bincode::deserialize(&v25_then(1.0))
@@ -1192,12 +1218,26 @@ fn a_v25_shaped_spm_section_reads_the_dfn_tag_as_a_film() {
         negative: electrode(),
         positive: electrode(),
         sei: None,
+        overcharge: sim_core::OverchargeParams {
+            oxidation_onset_v: 4.57,
+            oxidation_exchange_a_per_m2: 3.94e-2,
+            oxidation_transfer_coefficient: 0.5,
+            deposition_rate_constant_m_per_s: 4.8e-11,
+            deposition_transfer_coefficient: 0.65,
+        },
     };
     let v25 = {
         let mut b = bincode::serialize(&section()).expect("a section serializes");
+        // Since v31 the section closes on `[spm.overcharge]`'s five numbers after the film's
+        // tag; a v25 writer wrote neither.
+        b.truncate(b.len() - 5 * 8);
         assert_eq!(b.pop(), Some(0), "a `None` tag closes the v26 section");
         b
     };
+    // What follows the film at v31: five numbers, which a v25 blob supplies from whatever its
+    // chemistry goes on with. They do not decide anything below.
+    let tail =
+        bincode::serialize(&(1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64, 5.0_f64)).expect("five numbers");
     let mut with_dfn = v25.clone();
     with_dfn.push(1);
     with_dfn.extend(
@@ -1206,6 +1246,7 @@ fn a_v25_shaped_spm_section_reads_the_dfn_tag_as_a_film() {
         ))
         .expect("seven numbers"),
     );
+    with_dfn.extend(&tail);
     let read: sim_core::SpmParams =
         bincode::deserialize(&with_dfn).expect("any seven numbers are a film's constants");
     let film = read.sei.expect("the [dfn] tag became a film");
@@ -1215,6 +1256,7 @@ fn a_v25_shaped_spm_section_reads_the_dfn_tag_as_a_film() {
     );
     let mut without = v25;
     without.push(0);
+    without.extend(&tail);
     let read: sim_core::SpmParams =
         bincode::deserialize(&without).expect("a `None` [dfn] tag reads as no film");
     assert_eq!(read.sei, None);
@@ -1360,4 +1402,55 @@ fn electrode() -> sim_core::ElectrodeParams {
         regular_solution: None,
         entropic: None,
     }
+}
+
+/// A v30 single-particle state at v31 does not fail to parse — the cell's next four numbers
+/// become its metal, its oxidised counter and its two outlet shares.
+///
+/// v31 closes `SpmState` on four `f64`s after `film_thickness_m` (Phase 13 slice A). In a
+/// `Cell` the state is followed by `capacity_factor`, `r0_factor` and the health's
+/// `soh_capacity` and `soh_resistance`, all `1.0` on a fresh scatter-free cell. So a v31 reader
+/// brings that cell back holding **a mole of deposited lithium** — 26.8 A·h, five times the
+/// LG M50's capacity — and depositing and oxidising an ampere each, quietly. Any eight bytes
+/// are an `f64`. The field, not a snapshot, on its siblings' terms.
+#[test]
+fn a_v30_shaped_spm_state_reads_the_cells_factors_as_metal() {
+    let v31 = sim_core::SpmState {
+        c_neg: vec![10_000.0; 3],
+        c_pos: vec![30_000.0; 3],
+        temp_k: 298.15,
+        i_last: 2.5,
+        soc_deficit: 0.0,
+        i_reversal_last: 0.0,
+        film_thickness_m: None,
+        metal_mol: 0.0,
+        oxidised_mol: 0.0,
+        i_deposit_last: 0.0,
+        i_oxidise_last: 0.0,
+    };
+    let mut v30_then_cell = bincode::serialize(&v31).expect("a state serializes");
+    v30_then_cell.truncate(v30_then_cell.len() - 4 * 8);
+    v30_then_cell.extend(
+        bincode::serialize(&(1.0_f64, 1.0_f64, 1.0_f64, 1.0_f64))
+            .expect("the cell's two factors and its health's two multipliers"),
+    );
+    let read: sim_core::SpmState = bincode::deserialize(&v30_then_cell).expect(
+        "a v30 state parses quietly at v31 by the note above; if it no longer does, correct the \
+         note rather than this test",
+    );
+    assert_eq!(read.c_neg, v31.c_neg);
+    assert_eq!(
+        (
+            read.metal_mol,
+            read.oxidised_mol,
+            read.i_deposit_last,
+            read.i_oxidise_last
+        ),
+        (1.0, 1.0, 1.0, 1.0),
+        "the cell's factors have been read as a mole of metal and two outlet currents"
+    );
+    // The positive control: a v31 state round-trips to itself.
+    let bytes = bincode::serialize(&v31).expect("a v31 state serializes");
+    let back: sim_core::SpmState = bincode::deserialize(&bytes).expect("that is a v31 state");
+    assert_eq!(back, v31);
 }

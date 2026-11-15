@@ -337,6 +337,34 @@ partial_molar_volume_m3_per_mol  = 9.585e-5   # Chen2020 "SEI partial molar volu
 c_li0_mol_per_m3                 = 15         # Chen2020 "Lithium interstitial reference concentration [mol.m-3]" — not fitted; only D_li*c_li0 enters
 li_per_sei                       = 2          # Chen2020 "Ratio of lithium moles to SEI moles" — not fitted
 
+[spm.overcharge]
+# What the particles cannot take past full (Phase 13, docs/plans/phase-13-past-full.md): the
+# electrolyte oxidised at the positive, by potential, and lithium deposited as metal at a full
+# negative. No outside reference sizes any of these (PyBaMM 26.6 has no overcharge reaction);
+# each is a placeholder with the sizing rule the plan states.
+#
+# placeholder — sizing rule: at least 0.2 V above the highest positive potential (against
+# lithium) this cell's own window reaches at its rated charge rate. Measured on the Spm,
+# 20 shells, 25 degC, 0.3C (max_charge_c) from empty until soc_true reads 1: 4.3679 V
+# (4.2480 V if the charge stops at v_max). 4.3679 + 0.2, rounded up to 10 mV. A 1C charge to
+# full reaches 4.5051 V, below it; any charge stopped at v_max stays at or below 4.25 V (2C
+# 4.2036, 3C 4.1988). A constant 2C or 3C pushed on to soc_true = 1 past v_max crosses it
+# before full (4.6184 and 4.7146 V, terminal 4.68 and 4.81 V). A property of the carbonate
+# electrolyte, not of the cell.
+oxidation_onset_v               = 4.57
+# placeholder — sizing rule: the value at which a 1C overcharge is carried at eta = 0.2 V
+# above the onset, at 298.15 K and the transfer coefficient below: 1C (5.153198 A) over the
+# positive's interfacial area (3 eps L A / R = 2.967322 m2) is 1.736650 A/m2, and
+# exp(a f eta) - 1 - a f eta = 44.125182 there.
+oxidation_exchange_a_per_m2     = 3.94e-2
+# placeholder — the symmetric default (phase-13-past-full.md, sizing table)
+oxidation_transfer_coefficient  = 0.5
+# placeholder — [dfn.plating].rate_constant_m_per_s, cited there: sized on the Dfn's fine
+# grid, no source (phase-12-plating.md, owner decision 2)
+deposition_rate_constant_m_per_s = 4.8e-11
+# [dfn.plating].transfer_coefficient: OKane2022 (PyBaMM parameter set)
+deposition_transfer_coefficient  = 0.65
+
 # --- extracted from PyBaMM Chen2020 (pybamm 26.6.2.0) by tools/reference/extract_dfn.py ---
 # Every value below is a key of the parameter set or a coefficient of one of its published
 # closed-form electrolyte fits, read out of the function source and cross-checked against

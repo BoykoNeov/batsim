@@ -169,6 +169,29 @@ pub struct SpmState {
     /// [`grow_film`] and `docs/plans/phase-10-sei.md`.
     #[serde(default)]
     pub film_thickness_m: Option<f64>,
+    /// Lithium \[mol\] deposited as metal on the negative because its particle was full, and
+    /// not yet stripped back — the charge-side sibling of [`Self::soc_deficit`]
+    /// (`docs/plans/phase-13-past-full.md`). Stored charge: [`soc`] counts it as lithium in
+    /// the negative, a discharge strips it before it reaches the particle, and at rest the
+    /// particle takes it back as fast as its surface allows. Exactly `0.0` on every cell never
+    /// charged past its negative's edge.
+    #[serde(default)]
+    pub metal_mol: f64,
+    /// Electrolyte oxidised at the positive since the cell was built, in moles of the
+    /// lithium-equivalent cation it released \[mol\]. A counter: the oxidation's cation is
+    /// counted with lithium (it arrives at the negative), so the cell's lithium book closes as
+    /// negative + positive + metal − this.
+    #[serde(default)]
+    pub oxidised_mol: f64,
+    /// The share of [`Self::i_last`] \[A, discharge-positive\] the deposition carried: negative
+    /// while metal deposited, positive while it stripped. **State**, for the reason
+    /// [`Self::i_reversal_last`] is. Exactly `0.0` on every cell never charged past full.
+    #[serde(default)]
+    pub i_deposit_last: f64,
+    /// The share of [`Self::i_last`] \[A, discharge-positive, `<= 0`\] the electrolyte's
+    /// oxidation carried. State, as [`Self::i_deposit_last`] is.
+    #[serde(default)]
+    pub i_oxidise_last: f64,
 }
 
 impl SpmState {
@@ -189,6 +212,10 @@ impl SpmState {
             soc_deficit: 0.0,
             i_reversal_last: 0.0,
             film_thickness_m: None,
+            metal_mol: 0.0,
+            oxidised_mol: 0.0,
+            i_deposit_last: 0.0,
+            i_oxidise_last: 0.0,
         }
     }
 }
@@ -498,17 +525,29 @@ pub(crate) fn grow_film(
     let neg = &w.neg;
     let c_max = neg.p.c_max_mol_per_m3;
     let i = s.i_last;
-    let c_s = clamp_surface(
-        c_surface(
-            &s.c_neg,
-            neg.p.particle_radius_m,
-            neg.d_s,
-            w.j_neg(stored_split(s, i)),
-        ),
-        c_max,
-    );
-    let dphi = ocp_at(neg.p, c_s / c_max, temp_k, spm.t_ref_k)
-        + overpotential(neg, temp_k, spm.c_e_mol_per_m3, c_s, i / neg.g.area_m2);
+    let div = stored_division(s, i);
+    let dphi = if div.metal {
+        // Past full the negative's potential is the metal's (see [`negative_potential`]).
+        negative_potential(
+            &w,
+            s.c_neg[s.c_neg.len() - 1],
+            s.c_neg.len(),
+            &div,
+            i - div.i_p,
+        )
+    } else {
+        let c_s = clamp_surface(
+            c_surface(
+                &s.c_neg,
+                neg.p.particle_radius_m,
+                neg.d_s,
+                w.j_neg(stored_split(s, i)),
+            ),
+            c_max,
+        );
+        ocp_at(neg.p, c_s / c_max, temp_k, spm.t_ref_k)
+            + overpotential(neg, temp_k, spm.c_e_mol_per_m3, c_s, i / neg.g.area_m2)
+    };
     let dl = film_growth_m(sei, spm.t_ref_k, temp_k, l, dphi, dt_age);
     s.film_thickness_m = Some(l + dl);
     let moles = sei.li_per_sei * dl * neg.g.area_m2 / sei.partial_molar_volume_m3_per_mol;
@@ -730,9 +769,10 @@ pub(crate) fn surface_from_outer(
 ///
 /// `i_0 ∝ √(c_s·(c_max − c_s))` is real only inside `(0, c_max)`, and an
 /// overdriven cell can put a *surface* concentration outside it for a step. The
-/// state itself is never clamped — an overcharged particle keeps the lithium it was
-/// given and has to give it back — so this guard is confined to the lookups, which
-/// is what keeps `step` free of NaNs without quietly rewriting the physics.
+/// state itself is never clamped — since `docs/plans/porous-reversal.md` and Phase 13 the
+/// particles stop at their edges instead ([`split`], [`divide`]), carrying no more than
+/// takes a surface here — so this guard is confined to the lookups, which is what keeps
+/// `step` free of NaNs without quietly rewriting the physics.
 #[must_use]
 pub(crate) fn clamp_surface(c_s: f64, c_max: f64) -> f64 {
     c_s.clamp(SURFACE_EDGE * c_max, (1.0 - SURFACE_EDGE) * c_max)
@@ -834,8 +874,11 @@ pub(crate) fn kinetics_at_empty_v(
 /// it a hair outside — up to 2.4e-18 of `c_max` below the empty edge and 1e-16 above the
 /// full one, on 494 steps of 2–5 C discharges driven past empty. A band test flagged every one
 /// of them as a surface past full or empty.
+///
+/// Each particle at its own current since Phase 13 ([`Division`]); the one current `i_p`
+/// everywhere inside the window.
 #[must_use]
-fn surfaces_in_range(w: &Working<'_>, s: &SpmState, i_p: f64) -> bool {
+fn surfaces_in_range(w: &Working<'_>, s: &SpmState, div: &Division) -> bool {
     let in_band = |c: &[f64], side: &Side<'_>, j_surf: f64| {
         let c_max = side.p.c_max_mol_per_m3;
         let c_s = surface_from_outer(
@@ -847,7 +890,7 @@ fn surfaces_in_range(w: &Working<'_>, s: &SpmState, i_p: f64) -> bool {
         );
         (0.0..=c_max).contains(&c_s)
     };
-    in_band(&s.c_neg, &w.neg, w.j_neg(i_p)) && in_band(&s.c_pos, &w.pos, w.j_pos(i_p))
+    in_band(&s.c_neg, &w.neg, w.j_neg(div.i_n)) && in_band(&s.c_pos, &w.pos, w.j_pos(div.i_pp))
 }
 
 /// Terminal voltage \[V\] at cell current `i` \[A, discharge-positive\], evaluated
@@ -976,6 +1019,413 @@ fn stored_split(s: &SpmState, i: f64) -> f64 {
     i - s.i_reversal_last
 }
 
+// --- past full: the two outlets (Phase 13, `docs/plans/phase-13-past-full.md`) -------------
+
+/// How one step's current divides inside the cell, all discharge-positive \[A\]: the
+/// particles' share after the reversal ([`split`]), and — past full — each particle's own
+/// current once the two outlets have taken theirs. Inside the window both outlets are exactly
+/// `0.0` and both particles carry `i_p`, which is the single current every read used before.
+#[derive(Clone, Copy, Debug)]
+struct Division {
+    /// The particles' share of the cell current, after the reversal's.
+    i_p: f64,
+    /// The negative particle's own current, `i_p − i_dep`.
+    i_n: f64,
+    /// The positive particle's own current, `i_p − i_ox`.
+    i_pp: f64,
+    /// Deposition's share: negative while lithium deposits as metal, positive while it strips.
+    i_dep: f64,
+    /// The electrolyte oxidation's share, `<= 0`.
+    i_ox: f64,
+    /// Whether the negative's potential is the metal's (see [`negative_potential`]): metal was
+    /// held at the step's start, or the step deposited some.
+    metal: bool,
+    /// The metal \[mol\] the step leaves; what [`advance`] commits.
+    metal_end_mol: f64,
+}
+
+impl Division {
+    /// Inside the window: the one current, no outlet.
+    fn plain(i_p: f64, metal_mol: f64) -> Self {
+        Self {
+            i_p,
+            i_n: i_p,
+            i_pp: i_p,
+            i_dep: 0.0,
+            i_ox: 0.0,
+            metal: false,
+            metal_end_mol: metal_mol,
+        }
+    }
+
+    /// Whether either outlet is in play, so the reads below leave the old arithmetic.
+    fn outlets(&self) -> bool {
+        self.metal || self.i_ox != 0.0
+    }
+}
+
+/// `F/(R·T)` \[1/V\].
+fn f_over_rt(temp_k: f64) -> f64 {
+    FARADAY_C_PER_MOL / (GAS_CONSTANT_J_PER_MOL_K * temp_k)
+}
+
+/// The electrolyte oxidation's current \[A, discharge-positive, `<= 0`\] at a positive
+/// potential `phi` \[V against lithium\]: `−A_p·i0·[exp(α·f·η) − 1 − α·f·η]` with
+/// `η = phi − U_ox`, and **exactly `0.0`** at and below the onset. The law is Lee 2019's
+/// irreversible Tafel form; the `− 1 − α·f·η` is this engine's, so that the current and its
+/// slope both start from zero at the onset (`docs/plans/phase-13-past-full.md`).
+#[must_use]
+fn oxidation_current(w: &Working<'_>, phi: f64) -> f64 {
+    let oc = &w.spm.overcharge;
+    let eta = phi - oc.oxidation_onset_v;
+    if eta.is_nan() || eta <= 0.0 {
+        return 0.0;
+    }
+    let u = oc.oxidation_transfer_coefficient * f_over_rt(w.temp_k) * eta;
+    -w.pos.g.area_m2 * oc.oxidation_exchange_a_per_m2 * (math::exp_m1(u) - u)
+}
+
+/// The positive's potential \[V against lithium\] at which the oxidation carries `i_ox`
+/// \[A, `< 0`\]: [`oxidation_current`] inverted.
+///
+/// With `c = −i_ox/(A_p·i0)` it solves `expm1(u) − u = c` for `u = α·f·η >= 0`. The left side
+/// is convex and rising, so Newton started at or above the root walks down to it without
+/// overshooting; the start `min(√(2c), max(1.7, ln 2c))` bounds the root from above (the left
+/// side is at least `u²/2` everywhere and at least `e^u/2` past 1.68). It stops when a step no
+/// longer moves `u` down — rounding — so the answer is the same bits on every run.
+#[must_use]
+fn oxidation_potential(w: &Working<'_>, i_ox: f64) -> f64 {
+    let oc = &w.spm.overcharge;
+    let c = -i_ox / (w.pos.g.area_m2 * oc.oxidation_exchange_a_per_m2);
+    let mut u = if c > 0.0 && c.is_finite() {
+        (2.0 * c).sqrt().min(math::ln(2.0 * c).max(1.7))
+    } else {
+        0.0
+    };
+    for _ in 0..200 {
+        let e = math::exp_m1(u);
+        if e.is_nan() || e <= 0.0 {
+            break;
+        }
+        let next = u - (e - u - c) / e;
+        if next.is_nan() || next >= u {
+            break;
+        }
+        u = next.max(0.0);
+    }
+    oc.oxidation_onset_v + u / (oc.oxidation_transfer_coefficient * f_over_rt(w.temp_k))
+}
+
+/// The deposition law's overpotential \[V\] carrying `i_dep` \[A, discharge-positive:
+/// negative deposits, positive strips\] over the negative's interfacial area: Phase 12's
+/// `J = F·k·c_e·[exp(−α·f·η) − exp((1 − α)·f·η)]`, `J = −i_dep/A_n` the plating current
+/// density, inverted. Zero at zero current, negative while depositing, and strictly falling
+/// as more charge deposits.
+///
+/// No closed form for `α ≠ ½`. The root is bracketed — `z = f·η` lies in
+/// `[−ln(1 + c)/α, 0]` for `c = J/(F·k·c_e) > 0` and `[0, ln(1 − c)/(1 − α)]` for `c < 0`,
+/// since each exponential alone bounds the difference — and bisected to rounding.
+#[must_use]
+fn deposition_overpotential(w: &Working<'_>, i_dep: f64) -> f64 {
+    let oc = &w.spm.overcharge;
+    let a = oc.deposition_transfer_coefficient;
+    let i0 = FARADAY_C_PER_MOL * oc.deposition_rate_constant_m_per_s * w.spm.c_e_mol_per_m3;
+    let c = -i_dep / (w.neg.g.area_m2 * i0);
+    if c == 0.0 || !c.is_finite() {
+        return 0.0;
+    }
+    // Falling in `z`.
+    let h = |z: f64| math::exp(-a * z) - math::exp((1.0 - a) * z) - c;
+    let (lo, hi) = if c > 0.0 {
+        (-math::ln(1.0 + c) / a, 0.0)
+    } else {
+        (0.0, math::ln(1.0 - c) / (1.0 - a))
+    };
+    // `h` falls, so `-h` rises: the bisection below wants a rising function.
+    bisect_rising(lo, hi, |z| -h(z)) / f_over_rt(w.temp_k)
+}
+
+/// The root of a **rising** function `r` on `[lo, hi]` with `r(lo) <= 0 <= r(hi)`, by
+/// bisection until the midpoint is one of the ends — rounding. Bisection rather than Newton
+/// because the functions it serves run through piecewise-linear tables, where a Newton step
+/// can straddle a breakpoint; the cost is paid only past full.
+#[must_use]
+fn bisect_rising(mut lo: f64, mut hi: f64, r: impl Fn(f64) -> f64) -> f64 {
+    for _ in 0..300 {
+        let mid = 0.5 * (lo + hi);
+        if !(mid > lo && mid < hi) {
+            break;
+        }
+        if r(mid) > 0.0 {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    lo
+}
+
+/// The most **charge** \[A, discharge-positive, so `<= 0`\] each particle can take over a step
+/// of `dt > 0`, `(negative, positive)`: the current that takes the negative's surface to the
+/// edge [`clamp_surface`] holds or its bulk to `c_max`, and the positive's surface to its edge
+/// or its bulk to empty, whichever comes first on each. The particles' physical limits, not
+/// the window's full: the space between the two stays as it was. Past either, that particle
+/// carries no more and the rest goes to its outlet.
+///
+/// `−∞` where the closed form is not finite (no edge to hold to).
+#[must_use]
+fn charge_edges(
+    w: &Working<'_>,
+    s: &SpmState,
+    ends: (OuterShell, OuterShell),
+    dt: f64,
+) -> (f64, f64) {
+    // The surface: `c_s(i) = a − b·g·i`, as in [`current_window`]; the bulk:
+    // `c̄ − 3·dt·g·i/R_p`, as in [`bulk_window`].
+    let edge = |c: &[f64], side: &Side<'_>, o: OuterShell, g: f64, surf: f64, bulk: f64| {
+        let n = c.len();
+        let r_p = side.p.particle_radius_m;
+        let dr = r_p / n as f64;
+        let b = o.k / o.d + 0.5 * dr / side.d_s;
+        let a = (o.t - o.m) / o.d;
+        let at_surface = (a - surf) / (b * g);
+        let at_bulk = (mean_concentration(c) - bulk) / (3.0 * dt * g / r_p);
+        let e = at_surface.max(at_bulk);
+        if e.is_finite() {
+            e
+        } else {
+            f64::NEG_INFINITY
+        }
+    };
+    let (cn, cp) = (w.neg.p.c_max_mol_per_m3, w.pos.p.c_max_mol_per_m3);
+    (
+        edge(
+            &s.c_neg,
+            &w.neg,
+            ends.0,
+            w.j_neg(1.0),
+            (1.0 - SURFACE_EDGE) * cn,
+            cn,
+        ),
+        edge(
+            &s.c_pos,
+            &w.pos,
+            ends.1,
+            w.j_pos(1.0),
+            SURFACE_EDGE * cp,
+            0.0,
+        ),
+    )
+}
+
+/// Divide the particles' share `i_p` \[A\] of a step of `dt > 0` between each particle and its
+/// outlet. `rev` is the reversal's share (`i − i_p`), which the kinetics carry too; `p0` the
+/// positive's potential at `i_p` read the way the window always read it, which is all this
+/// needs where no outlet is in play.
+///
+/// * **The negative.** With no metal it carries `i_p` down to its edge `e_n`; past it, the
+///   rest deposits. With metal held it carries exactly its edge — all the lithium it can take
+///   — and the metal makes up the difference, stripping (or depositing more) as the current
+///   asks: the mirror of [`split`]'s deficit, which a charge repays first. A step that would
+///   strip more than the metal holds strips it all and the particle carries the rest.
+/// * **The positive.** Below the onset at `i_p`, nothing. Above it, intercalation and
+///   oxidation share the positive's potential: the intercalation current `x` is the root of
+///   `x + i_ox(φ(x)) = i_p`, rising in `x` because a smaller charge lowers `φ`. And it may
+///   not pass the edge `e_p`: if the root would, intercalation carries `e_p` and the
+///   oxidation the rest, at the potential its own law needs ([`oxidation_potential`]).
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+fn divide(
+    w: &Working<'_>,
+    s: &SpmState,
+    pos: OuterShell,
+    (e_n, e_p): (f64, f64),
+    i_p: f64,
+    rev: f64,
+    p0: f64,
+    dt: f64,
+) -> Division {
+    let m0 = s.metal_mol;
+    let (i_n, i_dep, metal_end_mol) = if m0 > 0.0 {
+        let per_amp = w.kappa * dt / FARADAY_C_PER_MOL;
+        let cap = m0 / per_amp;
+        let dep = i_p - e_n;
+        if dep > cap {
+            (i_p - cap, cap, 0.0)
+        } else {
+            (e_n, dep, (m0 - dep * per_amp).max(0.0))
+        }
+    } else if i_p < 0.0 && i_p < e_n {
+        let dep = i_p - e_n;
+        (e_n, dep, -dep * w.kappa * dt / FARADAY_C_PER_MOL)
+    } else {
+        (i_p, 0.0, 0.0)
+    };
+    let onset = w.spm.overcharge.oxidation_onset_v;
+    let capped = i_p < 0.0 && i_p < e_p;
+    let (i_pp, i_ox) = if !capped && (p0.is_nan() || p0 <= onset) {
+        (i_p, 0.0)
+    } else {
+        let np = s.c_pos.len();
+        let phi = |x: f64| {
+            let k = if rev == 0.0 { x } else { x + rev };
+            half(
+                w,
+                pos.at(w.j_pos(x)),
+                np,
+                &w.pos,
+                w.j_pos(x),
+                -k / w.pos.g.area_m2,
+            )
+        };
+        let r = |x: f64| x + oxidation_current(w, phi(x)) - i_p;
+        let lo = if capped { e_p } else { i_p };
+        if capped && r(lo) > 0.0 {
+            (e_p, i_p - e_p)
+        } else {
+            let mut hi = lo.max(0.0);
+            let mut step = w.capacity_ah;
+            let mut found = r(hi) > 0.0;
+            for _ in 0..64 {
+                if found {
+                    break;
+                }
+                hi += step;
+                step *= 2.0;
+                found = r(hi) > 0.0;
+            }
+            if found {
+                let x = bisect_rising(lo, hi, r);
+                (x, i_p - x)
+            } else {
+                (i_p, 0.0)
+            }
+        }
+    };
+    Division {
+        i_p,
+        i_n,
+        i_pp,
+        i_dep,
+        i_ox,
+        metal: m0 > 0.0 || i_dep != 0.0,
+        metal_end_mol,
+    }
+}
+
+/// The division a read where no time passes holds: the shares the step that produced this
+/// state left the reversal and the two outlets carrying, the particles the rest. The plain
+/// division, bit for bit, on every cell never driven past an edge.
+#[must_use]
+fn stored_division(s: &SpmState, i: f64) -> Division {
+    let i_p = stored_split(s, i);
+    let metal = s.metal_mol > 0.0 || s.i_deposit_last != 0.0;
+    if !metal && s.i_oxidise_last == 0.0 {
+        return Division::plain(i_p, s.metal_mol);
+    }
+    Division {
+        i_p,
+        i_n: i_p - s.i_deposit_last,
+        i_pp: i_p - s.i_oxidise_last,
+        i_dep: s.i_deposit_last,
+        i_ox: s.i_oxidise_last,
+        metal,
+        metal_end_mol: s.metal_mol,
+    }
+}
+
+/// The negative's potential \[V against lithium\] with its outlet in play: intercalation's at
+/// the particle's own current `i_n` (the kinetics carrying `i_n` and the reversal's share
+/// `rev`), and — while metal is in play — the deposition law's overpotential counted from the
+/// **lower** of lithium's 0 V and that potential.
+///
+/// The owner's decision of 2026-10-20 (`docs/plans/phase-13-past-full.md`): at every rate
+/// above about C/400 a full graphite surface sits below 0 V against lithium (−0.07 V at C/100,
+/// −0.31 V at 1C on the LG M50), and a law counted from 0 V would raise the electrode's
+/// potential the moment it took over, so the cell's voltage would fall as more charge went
+/// in. Counted from the lower of the two, the curve keeps falling with current at the edge;
+/// where the full graphite sits above 0 V — late in a long overcharge, as the particle's bulk
+/// fills — the law is Phase 12's as written.
+#[must_use]
+fn negative_potential(
+    w: &Working<'_>,
+    c_outer: f64,
+    shells: usize,
+    div: &Division,
+    rev: f64,
+) -> f64 {
+    let k = if rev == 0.0 { div.i_n } else { div.i_n + rev };
+    let phi = half(
+        w,
+        c_outer,
+        shells,
+        &w.neg,
+        w.j_neg(div.i_n),
+        k / w.neg.g.area_m2,
+    );
+    if div.metal {
+        phi.min(0.0) + deposition_overpotential(w, div.i_dep)
+    } else {
+        phi
+    }
+}
+
+/// The positive's potential \[V against lithium\]: the oxidation's, from its own law, while it
+/// carries current (inside the edge that equals intercalation's at the shared root); else
+/// intercalation's at the particle's own current.
+#[must_use]
+fn positive_potential(
+    w: &Working<'_>,
+    c_outer: f64,
+    shells: usize,
+    div: &Division,
+    rev: f64,
+) -> f64 {
+    if div.i_ox != 0.0 {
+        return oxidation_potential(w, div.i_ox);
+    }
+    let k = if rev == 0.0 { div.i_pp } else { div.i_pp + rev };
+    half(
+        w,
+        c_outer,
+        shells,
+        &w.pos,
+        w.j_pos(div.i_pp),
+        -k / w.pos.g.area_m2,
+    )
+}
+
+/// Terminal voltage \[V\] for a division, given each particle's outer shell **at that
+/// particle's own flux** `(concentration, shell count)`. Exactly [`voltage_split`] where no
+/// outlet is in play.
+#[must_use]
+fn voltage_div(
+    w: &Working<'_>,
+    neg: (f64, usize),
+    pos: (f64, usize),
+    div: &Division,
+    i: f64,
+) -> f64 {
+    if !div.outlets() {
+        return voltage_split(w, neg, pos, div.i_p, i);
+    }
+    let rev = i - div.i_p;
+    let n = negative_potential(w, neg.0, neg.1, div, rev);
+    let p = positive_potential(w, pos.0, pos.1, div, rev);
+    p - n - i * w.r_contact
+}
+
+/// [`voltage_div`] from the stored profiles: the start of a step, its end once advanced, or a
+/// read where no time passes. Exactly [`voltage`] where no outlet is in play.
+#[must_use]
+fn voltage_held(w: &Working<'_>, s: &SpmState, div: &Division, i: f64) -> f64 {
+    if !div.outlets() {
+        return voltage(w, s, div.i_p, i);
+    }
+    let outer = |c: &[f64]| (c[c.len() - 1], c.len());
+    voltage_div(w, outer(&s.c_neg), outer(&s.c_pos), div, i)
+}
+
 /// The potential \[V\] the cell's heat and stored energy are counted against: each
 /// electrode's [`energy_potential`] at the particles' bulk stoichiometries.
 ///
@@ -1013,10 +1463,12 @@ fn equilibrium_voltage(w: &Working<'_>, s: &SpmState) -> f64 {
 /// [`OuterShell`]s, at the stored state otherwise.
 ///
 /// # What this is the model saying about itself
-/// Past **full**, nothing in this model describes a surface outside this range: the clamp
-/// holds the surface at the edge, the tables stop there, and `V(i)` goes **flat** — it
-/// moves only through the kinetics and the contact resistance, not through the lithium the
-/// step moved. Past **empty** that was true as well until `docs/plans/porous-reversal.md`.
+/// Past **full**, nothing in this model described a surface outside this range until Phase
+/// 13: the clamp held the surface at the edge, the tables stop there, and `V(i)` went
+/// **flat** — it moved only through the kinetics and the contact resistance, not through the
+/// lithium the step moved. Now each particle stops at its own edge on the charge side
+/// ([`charge_edges`]) and an outlet takes the rest (`docs/plans/phase-13-past-full.md`).
+/// Past **empty** that was true as well until `docs/plans/porous-reversal.md`.
 /// Now this range's upper end, with the bulk's, is where the particles stop
 /// ([`discharge_edge`]): beyond it they carry nothing more and the reversal carries the
 /// rest down the chemistry's ramp, so the curve keeps falling. The measurements below are
@@ -1244,18 +1696,27 @@ pub(crate) fn forward_sweep(
 /// `1.0` at its own full too.
 ///
 /// Clamped, because the window is the *usable* range rather than a physical bound —
-/// an overcharged particle really can sit past `stoich_max`, and [`advance`] flags
-/// that rather than the clamp hiding it.
+/// an overcharged particle really can sit past `stoich_max`, up to its `c_max`, where it
+/// stops and deposits metal (Phase 13); [`raw_soc`] counts that metal as stored charge.
 #[must_use]
 pub(crate) fn soc(s: &SpmState, spm: &SpmParams) -> f64 {
     raw_soc(s, spm).clamp(0.0, 1.0)
 }
 
 /// [`soc`] before the clamp — the value that says whether a limit was passed.
+///
+/// Metal deposited past full ([`SpmState::metal_mol`]) is stored charge and is counted as
+/// lithium in the negative, as Phase 12's reaction cell counts its reversible metal.
 #[must_use]
 fn raw_soc(s: &SpmState, spm: &SpmParams) -> f64 {
     let e = &spm.negative;
-    cell_window_fraction_neg(s, spm, mean_concentration(&s.c_neg) / e.c_max_mol_per_m3)
+    let x = mean_concentration(&s.c_neg) / e.c_max_mol_per_m3;
+    let x = if s.metal_mol > 0.0 {
+        x + s.metal_mol / (e.c_max_mol_per_m3 * Geometry::of(spm, e).volume_m3)
+    } else {
+        x
+    };
+    cell_window_fraction_neg(s, spm, x)
 }
 
 /// Where a **negative**-electrode stoichiometry sits on its usable window, as a
@@ -1316,7 +1777,7 @@ pub(crate) fn overpotential_v(
     let w = working_at(s, spm, eff_r0_factor, eff_capacity_ah);
     let i = s.i_last;
     // The particles' own: the reversal ramp is a separate channel's voltage, not theirs.
-    equilibrium_voltage(&w, s) - voltage(&w, s, stored_split(s, i), i) - i * w.r_contact
+    equilibrium_voltage(&w, s) - voltage_held(&w, s, &stored_division(s, i), i) - i * w.r_contact
 }
 
 /// Bulk minus surface stoichiometry on each electrode, `(negative, positive)`, both on
@@ -1348,8 +1809,27 @@ pub(crate) fn surface_gap(s: &SpmState, spm: &SpmParams, eff_capacity_ah: f64) -
     let w = Working::new(spm, s.temp_k, 1.0, eff_capacity_ah);
     let n = &spm.negative;
     let p = &spm.positive;
-    let cs_n = c_surface(&s.c_neg, n.particle_radius_m, w.neg.d_s, w.j_neg(s.i_last));
-    let cs_p = c_surface(&s.c_pos, p.particle_radius_m, w.pos.d_s, w.j_pos(s.i_last));
+    // Past full each particle's surface sits along its own flux, without its outlet's share
+    // (exactly `i_last` on a cell never charged past full).
+    let own = |share: f64| {
+        if share == 0.0 {
+            s.i_last
+        } else {
+            s.i_last - share
+        }
+    };
+    let cs_n = c_surface(
+        &s.c_neg,
+        n.particle_radius_m,
+        w.neg.d_s,
+        w.j_neg(own(s.i_deposit_last)),
+    );
+    let cs_p = c_surface(
+        &s.c_pos,
+        p.particle_radius_m,
+        w.pos.d_s,
+        w.j_pos(own(s.i_oxidise_last)),
+    );
     (
         cell_window_fraction_neg(s, spm, mean_concentration(&s.c_neg) / n.c_max_mol_per_m3)
             - cell_window_fraction_neg(s, spm, cs_n / n.c_max_mol_per_m3),
@@ -1525,18 +2005,45 @@ pub(crate) fn probe_at(
     // the reversal ramp (see [`split`]). Inside the window this is `(i, 0.0)` and the curve
     // is the particles' alone, bit for bit.
     let hi = end.map_or(f64::INFINITY, |e| discharge_edge(&w, s, e, dt));
-    let curve = |i: f64| match end {
-        Some((neg, pos)) => {
+    // Past full each particle stops at its own edge and an outlet takes the rest (see
+    // [`divide`]). Inside the window the division is the plain one and the curve below is the
+    // old expression, bit for bit, at the cost of the comparisons `divide` makes.
+    let edges = end.map(|e| charge_edges(&w, s, e, dt));
+    let (nn, np) = (s.c_neg.len(), s.c_pos.len());
+    let curve = |i: f64| match (end, edges) {
+        (Some((neg, pos)), Some(edges)) => {
             let (i_p, d) = split(&w, s, hi, i, dt);
-            voltage_split(
+            let p0 = half(
                 &w,
-                (neg.at(w.j_neg(i_p)), s.c_neg.len()),
-                (pos.at(w.j_pos(i_p)), s.c_pos.len()),
-                i_p,
-                i,
-            ) - reversal_drop(&w, rev, d)
+                pos.at(w.j_pos(i_p)),
+                np,
+                &w.pos,
+                w.j_pos(i_p),
+                -i / w.pos.g.area_m2,
+            );
+            let div = divide(&w, s, pos, edges, i_p, i - i_p, p0, dt);
+            let v = if div.outlets() {
+                voltage_div(
+                    &w,
+                    (neg.at(w.j_neg(div.i_n)), nn),
+                    (pos.at(w.j_pos(div.i_pp)), np),
+                    &div,
+                    i,
+                )
+            } else {
+                let n = half(
+                    &w,
+                    neg.at(w.j_neg(i_p)),
+                    nn,
+                    &w.neg,
+                    w.j_neg(i_p),
+                    i / w.neg.g.area_m2,
+                );
+                p0 - n - i * w.r_contact
+            };
+            v - reversal_drop(&w, rev, d)
         }
-        None => voltage(&w, s, stored_split(s, i), i) - reversal_drop(&w, rev, s.soc_deficit),
+        _ => voltage_held(&w, s, &stored_division(s, i), i) - reversal_drop(&w, rev, s.soc_deficit),
     };
     let h = 1.0e-6 * eff_capacity_ah;
     let i = match current_window(&w, s, end) {
@@ -1649,7 +2156,7 @@ pub(crate) fn step_current_window(
 /// The last current is the natural place to start: a steady demand converges in one
 /// pass from it. But it was chosen for the previous step's length, and on a much longer
 /// step it can empty or overfill the particle several times over. There the curve was
-/// flat — past full it still is — a tangent to it has almost no slope, and the pass it
+/// flat — past full too, until Phase 13 — a tangent to it has almost no slope, and the pass it
 /// seeds puts almost any current anywhere. Measured on the shipped LG M50: a 1S2P pack rested for 1e6 s after
 /// a 5 A discharge seeded at 5 A and ran to 1e9 A on its first rest step, and to NaN
 /// after it (the start-of-step engine did the same one step later). Pulled back to the
@@ -1658,8 +2165,8 @@ pub(crate) fn step_current_window(
 /// Under a current demand only the **seed** is held to the range, not the iteration's own
 /// probes, because a current demand that really does drive a cell past empty has its answer
 /// out there, on the reversal, and a solve held away from it would never converge on it.
-/// Power and voltage demands hold their probes too; see [`probe_at`]. Past FULL this model
-/// still has no physics, which `docs/ROADMAP.md` (H8) records.
+/// Power and voltage demands hold their probes too; see [`probe_at`]. Past full the outlets
+/// carry what a particle cannot (`docs/plans/phase-13-past-full.md`).
 #[must_use]
 pub(crate) fn first_pass_tangent(
     s: &SpmState,
@@ -1690,10 +2197,15 @@ pub(crate) fn first_pass_tangent(
 ///
 /// Returns the SOC-clamp flags, on the same contract as [`crate::ecm::coulomb_step`]
 /// — but note what is and is not clamped. The concentration profile is **never**
-/// clamped: an overcharged particle keeps the lithium it was pushed, so the flag
-/// says the *readout* has run past its window rather than that state was discarded.
-/// Getting that lithium back out is then a discharge, which is the physical answer
-/// and a more honest one than the equivalent circuit's hard SOC clamp.
+/// clamped. Past **full**, since Phase 13 (`docs/plans/phase-13-past-full.md`), each
+/// particle carries no more than takes it to its edge — the negative's surface or bulk to
+/// `c_max`, the positive's to empty — and [`divide`] sends the rest to an outlet: lithium
+/// deposited as metal ([`SpmState::metal_mol`]) at the negative, the electrolyte oxidised
+/// at the positive, which also runs by potential before its edge. `SOC_CLAMPED_HIGH` is
+/// raised when the readout is past its window or an outlet carried charge on the step, and
+/// `PLATING_RISK` on one that deposited.
+/// The metal is stored charge: a discharge strips it before the particle gives any of its
+/// own, and at rest the particle takes it back as fast as its surface allows.
 ///
 /// Past **empty** it is the other way round, since `docs/plans/porous-reversal.md`: the
 /// particles carry only what [`split`] gives them, the rest of the current goes into
@@ -1746,6 +2258,12 @@ pub(crate) fn first_pass_tangent(
 /// Watts and not volts because at rest the particle can be paying the deficit back at zero
 /// terminal current, which no voltage times `i` can express. Exactly `0.0` on every step
 /// with no current past the edge.
+///
+/// Past full the same two slots carry the outlets' share too, `−i_ox·U_p + i_dep·U_n` at
+/// the particles' bulk: the oxidation moves no lithium out of the positive, and the
+/// deposition puts lithium in metal at 0 V rather than in the graphite. And the last value
+/// returned is what each outlet carried, `(deposited, oxidised)` \[A·s\]: the pack reports the
+/// oxidation's in `i_rejected_a` and bills the deposit to the plating cost.
 #[must_use]
 // Eight with `rev`; see `probe_at` for why the list stays flat.
 #[allow(clippy::too_many_arguments)]
@@ -1758,31 +2276,45 @@ pub(crate) fn advance(
     eff_r0_factor: f64,
     eff_capacity_ah: f64,
     v_node: f64,
-) -> (EventFlags, f64, f64, (f64, f64), f64) {
+) -> (EventFlags, f64, f64, (f64, f64), f64, (f64, f64)) {
     let moves = !dt.is_nan() && dt > 0.0;
     // The heat terms read the kinetics, so they need the real resistance factor; the
     // diffusion below does not, which is the note on its own `Working`.
     let wk = working_at(s, spm, eff_r0_factor, eff_capacity_ah);
-    // What the particles carry and what goes down the reversal ramp — the same division
-    // [`probe_at`] read the curve with. `(i, 0.0)` everywhere inside the window.
-    let (i_p, d_end) = if moves {
-        let edge = discharge_edge(&wk, s, step_ends(s, spm, &wk, dt), dt);
-        split(&wk, s, edge, i, dt)
+    // What the particles carry, what goes down the reversal ramp, and past full what each
+    // outlet takes — the same division [`probe_at`] read the curve with. The plain division
+    // everywhere inside the window.
+    let (div, d_end) = if moves {
+        let ends = step_ends(s, spm, &wk, dt);
+        let edge = discharge_edge(&wk, s, ends, dt);
+        let (i_p, d) = split(&wk, s, edge, i, dt);
+        let p0 = half(
+            &wk,
+            ends.1.at(wk.j_pos(i_p)),
+            s.c_pos.len(),
+            &wk.pos,
+            wk.j_pos(i_p),
+            -i / wk.pos.g.area_m2,
+        );
+        let edges = charge_edges(&wk, s, ends, dt);
+        (divide(&wk, s, ends.1, edges, i_p, i - i_p, p0, dt), d)
     } else {
-        (i, s.soc_deficit)
+        (stored_division(s, i), s.soc_deficit)
     };
+    let outlets = div.outlets();
     let d_start = s.soc_deficit;
     let start = if moves {
         (
             energy_voltage(&wk, s),
-            voltage(&wk, s, i_p, i) - reversal_drop(&wk, rev, d_start),
+            voltage_held(&wk, s, &div, i) - reversal_drop(&wk, rev, d_start),
         )
     } else {
         (0.0, 0.0)
     };
     // The step-mean path's own start: the equilibrium voltage at the cell's temperature and
     // the bulk stoichiometries the reversible mean integrates from. Read only where a
-    // coefficient exists; elsewhere `equilibrium_voltage` IS `energy_voltage`'s arithmetic.
+    // coefficient exists, or where an outlet's heat needs the bulk; elsewhere
+    // `equilibrium_voltage` IS `energy_voltage`'s arithmetic.
     let entropic = has_entropic(wk.neg.p) || has_entropic(wk.pos.p);
     let bulk = |s: &SpmState| {
         (
@@ -1792,6 +2324,8 @@ pub(crate) fn advance(
     };
     let (u_start_t, bulk_start) = if moves && entropic {
         (equilibrium_voltage(&wk, s), bulk(s))
+    } else if moves && outlets {
+        (start.0, bulk(s))
     } else {
         (start.0, (0.0, 0.0))
     };
@@ -1804,43 +2338,64 @@ pub(crate) fn advance(
         &mut s.c_neg,
         spm.negative.particle_radius_m,
         w.neg.d_s,
-        w.j_neg(i_p),
+        w.j_neg(div.i_n),
         dt,
     );
     diffuse(
         &mut s.c_pos,
         spm.positive.particle_radius_m,
         w.pos.d_s,
-        w.j_pos(i_p),
+        w.j_pos(div.i_pp),
         dt,
     );
     if dt > 0.0 {
         s.i_last = i;
-        s.i_reversal_last = i - i_p;
+        s.i_reversal_last = i - div.i_p;
+        s.i_deposit_last = div.i_dep;
+        s.i_oxidise_last = div.i_ox;
     }
     if moves {
         s.soc_deficit = d_end;
+        s.metal_mol = div.metal_end_mol;
+        if div.i_ox != 0.0 {
+            s.oxidised_mol -= div.i_ox * w.kappa * dt / FARADAY_C_PER_MOL;
+        }
     }
     let raw = raw_soc(s, spm);
     let mut flags = EventFlags::empty();
-    if raw > 1.0 {
+    // The flag rises when the readout runs past its window, as it always has — a cell does
+    // that 0.4–0.8 A·h before its particles are full, and the owner kept that warning
+    // (2026-11-15) — and on any step an outlet carried charge, which the electrolyte's
+    // oxidation can do by potential before the readout is past full
+    // (`docs/plans/phase-13-past-full.md`).
+    if raw > 1.0 || div.i_dep < 0.0 || div.i_ox < 0.0 {
         flags |= EventFlags::SOC_CLAMPED_HIGH;
     } else if raw < 0.0 || s.soc_deficit > 0.0 {
         flags |= EventFlags::SOC_CLAMPED_LOW;
     }
+    if div.i_dep < 0.0 {
+        flags |= EventFlags::PLATING_RISK;
+    }
+    // What the outlets carried \[A·s, discharge-positive\]: the pack reports the oxidation's as
+    // charge passed and not stored, and bills the deposition's to the cell's plating cost.
+    let outlet_as = if moves {
+        (div.i_dep * dt, div.i_ox * dt)
+    } else {
+        (0.0, 0.0)
+    };
     if !moves {
-        return (flags, 0.0, 0.0, (0.0, 0.0), 0.0);
+        return (flags, 0.0, 0.0, (0.0, 0.0), 0.0, outlet_as);
     }
     let (u_start, v_start) = start;
-    if !surfaces_in_range(&wk, s, i_p) {
+    if !surfaces_in_range(&wk, s, &div) {
         flags |= EventFlags::SURFACE_OUT_OF_RANGE;
     }
     let u_end = energy_voltage(&wk, s);
-    let v_end = voltage(&wk, s, i_p, i) - reversal_drop(&wk, rev, s.soc_deficit);
+    let v_end = voltage_held(&wk, s, &div, i) - reversal_drop(&wk, rev, s.soc_deficit);
     // The reversal channel's share of the heat, `i_d·(OCV_d − U_eq)` at each end: what
     // `i·(U_eq − V)` misbooks when part of the current is not the particles'. Exactly
     // `0.0` with no deficit at either end and no current past the edge.
-    let i_d = i - i_p;
+    let i_d = i - div.i_p;
     let rev_at = |u: f64, d: f64| {
         if i_d == 0.0 {
             0.0
@@ -1849,36 +2404,97 @@ pub(crate) fn advance(
         }
     };
     let (rev_start, rev_end) = (rev_at(u_start, d_start), rev_at(u_end, s.soc_deficit));
+    // The outlets' share, `−i_ox·U_p + i_dep·U_n` at the bulk: what `i·(U_eq − V)` misbooks
+    // once the two particles no longer carry one current. The oxidation's charge leaves the
+    // positive's lithium where it was, and the deposition puts lithium in metal at 0 V rather
+    // than in the graphite (`docs/plans/phase-13-past-full.md`, "Heat"). `stored` reads the
+    // stored-energy potentials, for the instant the ledger closes at; otherwise the cell's
+    // own `U(T)`, for the step mean beside the exact reversible term.
+    let outlet_w = |(x, y): (f64, f64), stored: bool| {
+        let t_ref = spm.t_ref_k;
+        let (un, up) = if stored {
+            (
+                energy_potential(wk.neg.p, x, t_ref),
+                energy_potential(wk.pos.p, y, t_ref),
+            )
+        } else {
+            (
+                ocp_at(wk.neg.p, x, wk.temp_k, t_ref),
+                ocp_at(wk.pos.p, y, wk.temp_k, t_ref),
+            )
+        };
+        let mut q = 0.0;
+        if div.i_ox != 0.0 {
+            q -= div.i_ox * up;
+        }
+        if div.i_dep != 0.0 {
+            q += div.i_dep * un;
+        }
+        q
+    };
+    let carried = div.i_dep != 0.0 || div.i_ox != 0.0;
+    let bulk_end = if entropic || carried {
+        bulk(s)
+    } else {
+        (0.0, 0.0)
+    };
+    let (out_end, out_mean) = if carried {
+        (
+            outlet_w(bulk_end, true),
+            0.5 * (outlet_w(bulk_start, !entropic) + outlet_w(bulk_end, !entropic)),
+        )
+    } else {
+        (0.0, 0.0)
+    };
     // What the pack's estimate already holds, and so what each correction takes back out.
     let estimate = u_start - v_node;
     let at_end = u_end - v_end;
     if !entropic {
+        let rev_mean = 0.5 * (rev_start + rev_end);
         return (
             flags,
             at_end - estimate,
             0.5 * ((u_start - v_start) + at_end) - estimate,
-            (rev_end, 0.5 * (rev_start + rev_end)),
+            if carried {
+                (rev_end + out_end, rev_mean + out_mean)
+            } else {
+                (rev_end, rev_mean)
+            },
             0.0,
+            outlet_as,
         );
     }
     // With an entropy coefficient the step mean splits: the irreversible part on the same
     // trapezoid, but of `U(T) − V`, and the reversible part exactly, from the bulk path.
     // The end instant above keeps the stored-energy form, which closes the ledger there.
     let u_end_t = equilibrium_voltage(&wk, s);
-    let bulk_end = bulk(s);
     let rev_mean = 0.5 * (rev_at(u_start_t, d_start) + rev_at(u_end_t, s.soc_deficit));
-    (
-        flags,
-        at_end - estimate,
-        0.5 * ((u_start_t - v_start) + (u_end_t - v_end)) - estimate,
-        (rev_end, rev_mean),
+    let reversible = if div.i_n == div.i_pp {
         entropic_mean_w(
             wk.neg.p,
             wk.pos.p,
             s.temp_k,
-            i_p,
+            div.i_n,
             (bulk_start.0, bulk_end.0),
             (bulk_start.1, bulk_end.1),
-        ),
+        )
+    } else {
+        // Each particle's reversible heat at its own current, `−T·(i_pp·c̄_p − i_n·c̄_n)`;
+        // the outlets' reactions are taken to carry none.
+        -s.temp_k
+            * (div.i_pp * entropic_mean(wk.pos.p, bulk_start.1, bulk_end.1)
+                - div.i_n * entropic_mean(wk.neg.p, bulk_start.0, bulk_end.0))
+    };
+    (
+        flags,
+        at_end - estimate,
+        0.5 * ((u_start_t - v_start) + (u_end_t - v_end)) - estimate,
+        if carried {
+            (rev_end + out_end, rev_mean + out_mean)
+        } else {
+            (rev_end, rev_mean)
+        },
+        reversible,
+        outlet_as,
     )
 }
