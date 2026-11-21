@@ -846,6 +846,26 @@ predicted re-pinning cost did not exist: no test moved.
   is closed (2026-10-06): it can come in now, as a native-versus-wasm parity check rather
   than a committed baseline.
 * **`docs/plans/` has an index now** (`docs/plans/README.md`). Add a row per note.
+* **Possible future step: merge the integration tests into fewer test binaries** (proposed
+  2026-11-22, not scheduled; the owner decides). Each file under `crates/*/tests/` is built
+  as its own program — 40 in `sim-core`, 52 in `sim-data`, 5 in `sim-server`, 3 in
+  `sim-godot`, 1 in `sim-wasm`, 101 in all — and every one links its own copy of the engine
+  and has its own debug-symbol file and incremental cache. That is most of what a build
+  writes to disk: a cold `cargo test --workspace --no-run` is 3.4 GB even after line-table
+  debug info only (6.7 GB before; commit bcab609), and `target/` had reached 33.5 GB from
+  the old copies Cargo keeps (`tools/trim-target.ps1` now clears it above 12 GB).
+  *The change:* per crate, one `tests/<name>/main.rs` (or a handful, split by speed — e.g.
+  the hour-long porous runs apart from the fast ones) that declares the existing files as
+  modules, so the test code itself does not move. *Gains:* build size and link time fall
+  roughly with the binary count (not measured yet — measure a cold `--no-run` before and
+  after, as bcab609 did); one link per crate instead of dozens per edit. *Costs:* test names
+  gain a module prefix and `cargo test --test <file>` filters stop working, which the
+  suite-timing work and many plan notes' recorded commands rely on; tests in one binary share
+  a process, so any test that relies on process-wide state (environment variables, the
+  working directory, a fixed port in `sim-server`) must be checked first; and a crash that
+  ends the whole process (a stack overflow, an abort) takes down every test in the merged
+  binary rather than one file's worth — an ordinary panic still fails only its own test. Do it crate by crate, `sim-core` first, and
+  update the recorded commands in the same commit.
 
 ---
 
