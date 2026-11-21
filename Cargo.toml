@@ -86,3 +86,16 @@ opt-level = 3
 
 [profile.dev.package.libm]
 opt-level = 3
+
+# Disk, not speed or numbers (2026-11-22): `target/` had grown to 33.5 GB, a third of it Windows
+# debug-symbol files (.pdb), one per test binary. Nobody here steps through the engine in a
+# debugger; what a failing test needs is a panic backtrace with file and line, and
+# "line-tables-only" keeps exactly that. Third-party crates get no symbols at all (`"*"` matches
+# only non-workspace packages, and a named override above still wins for `opt-level`). Debug-info
+# level does not change generated arithmetic, so no result moves. Measured on a cold
+# `cargo test --workspace --no-run`: see the commit that added this.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

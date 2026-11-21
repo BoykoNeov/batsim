@@ -702,7 +702,13 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 python tools/reference/generate.py     # regenerate golden CSVs (needs pybamm; commit results)
 node tools/wasm-parity/parity.mjs      # browser build vs native, bit for bit (build web/pkg first)
+pwsh -File tools/trim-target.ps1       # cargo clean if target/ is over 12 GB (-ReportOnly to just measure)
 ```
+
+**Disk:** a full test build is ~3.4 GB, but Cargo never deletes old copies, so `target/` grows
+without bound (33.5 GB on 2026-11-22). At the end of a batch of work, once nothing is still using
+the build, run `tools/trim-target.ps1`. Dev builds carry line-table debug info only, set in
+`Cargo.toml`; keep it that way unless someone really needs a debugger.
 
 ## Never do
 
